@@ -4,10 +4,6 @@ import :semantic.evaluation.execution;
 import :semantic.evaluation.executor;
 import std;
 
-auto SemanticExecutionContext::arithmetic() const noexcept -> IntegerArithmetic {
-    return IntegerArithmetic::Checked;
-}
-
 auto SemanticExecutionContext::trace(const ExecutionTraceEvent&) noexcept -> void {}
 
 ExecutionBody::ExecutionBody(const StructuredBodyDraft& body) noexcept
@@ -49,6 +45,42 @@ auto ExecutionBody::binding_type(LocalBindingID id) const noexcept -> Constructi
         return (*draft)->bindings.get(id).type;
     }
     return ConstructionTypeRef(std::get<const SemIRBody*>(body)->binding(id).type);
+}
+
+auto ExecutionBody::binding_access(LocalBindingID id) const noexcept -> AccessMode {
+    const auto storage = body.visit([&](const auto* source) noexcept -> BindingStorage {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(*source)>, StructuredBodyDraft>) {
+            return source->bindings.get(id).storage;
+        } else {
+            return source->binding(id).storage;
+        }
+    });
+    if (const auto* parameter = std::get_if<ParameterBindingStorage>(&storage)) {
+        return parameter->access;
+    }
+    return AccessMode::Read;
+}
+
+auto ExecutionBody::bindings_in(LifetimeRegionID lifetime) const noexcept
+    -> std::vector<std::size_t> {
+    return body.visit([&](const auto* source) noexcept {
+        auto result = std::vector<std::size_t>();
+        const auto bindings = [&]() noexcept {
+            if constexpr (std::same_as<
+                              std::remove_cvref_t<decltype(*source)>,
+                              StructuredBodyDraft>) {
+                return source->bindings.entries();
+            } else {
+                return source->bindings();
+            }
+        }();
+        for (const auto entry : bindings) {
+            if (entry.value.lifetime == lifetime) {
+                result.push_back(entry.id.index());
+            }
+        }
+        return result;
+    });
 }
 
 namespace {
@@ -99,13 +131,13 @@ auto execute_function(
     ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     FunctionID function,
-    std::vector<ExecutionValue> arguments,
     ProgramOriginID origin,
     ExecutionLimits limits
 ) noexcept -> ExecutionTask<ExecutionValue> {
     auto executor = SemanticExecutor(values, context, limits);
-    co_return finish_execution(
-        context,
-        (co_await executor.invoke(function, std::move(arguments), origin))
-    );
+    auto result = (co_await executor.invoke(function, {}, origin));
+    if (result) {
+        result = executor.detach_result(std::move(*result), origin);
+    }
+    co_return finish_execution(context, std::move(result));
 }

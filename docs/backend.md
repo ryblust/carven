@@ -37,11 +37,13 @@ lifetimes, origins, constants, effects, patterns, and structured control flow.
 Propagation markers select their operand operation. Summary queries require an
 occurrence from the prepared body. The published program outlives realization.
 
-Builtin numeric, Boolean, and character Read parameters own immutable copies, so
-later operand execution needs no snapshot of them. Owners and Take parameters can
-expose native `T&&`; captures can change when a callback replaces the enclosing
-closure. These bindings, Write parameters, aggregates, and native values retain
-storage-observation obligations across later execution.
+Read parameters whose types neither borrow storage nor contain native values
+own immutable copies, so later operand execution needs no snapshot of them.
+A stable slice descriptor does not make its elements stable; indexing still
+observes backing storage. Owners and Take parameters can expose native `T&&`;
+captures can change when a callback replaces the enclosing closure. These bindings,
+Write parameters, borrowed aggregates, and native values retain storage-observation
+obligations across later execution.
 
 `BodyRealizer` traverses those structured regions directly. A failure receiver is
 active only in its protected region; a loop target is active only in its body.
@@ -124,11 +126,13 @@ The qualifier alone supplies no call-result fact or permission to discard a call
 Read parameters, Read argument temporaries, and Read range bindings preserve
 Carven array, String, and closure storage, including storage in Carven aggregate
 fields, through const references. Lowering uses the resolved type-contents query
-shared with ownership analysis. Other builtin Read parameters use native const
-values. Remaining types use `runtime::ReadArg<T>`, which selects a const value for trivially
-copy-constructed and destroyed types and a const reference otherwise. This also
-covers Carven records whose native members determine their copying and
-destruction. Native template arguments alone leave the instantiated type's
+shared with ownership analysis. Other pure Carven Read parameters use const
+values. Types containing native C++ values by value use
+`runtime::ReadArg<T>`, which selects a const value for trivially copy-constructed
+and destroyed types and a const reference otherwise. The type-contents query
+propagates native value containment through array elements, struct fields,
+and enum payloads; pointer and slice targets do not contribute. Native template
+arguments alone leave the instantiated type's
 storage contents unknown. Interface planning includes complete definitions for
 these trait queries. A pointer representation is complete without completing its
 target; pointer dependencies request target declarations. Forming that target's
@@ -152,6 +156,9 @@ pointer to T, composed per layer for nested ptr values. Read ptr operands
 snapshot the address before later operands can replace its slot. Dereference
 selects that saved address before evaluating the rest of a store or call. Typed
 null constants retain the complete pointer type in native overload resolution.
+`addressof` selects the source place once and lowers its address through
+`std::addressof`, preserving the selected Read or Write target access. It does
+not construct a temporary owner or change that owner's lifetime.
 Native adoption uses typed initialization and C++ conversion checks. External
 owners supply resource cleanup.
 
@@ -280,6 +287,8 @@ escaping, and bounded output. Its completed text uses the ordinary runtime
 printing entry. Callable leaves remain opaque. Native leaves use the runtime scalar classifier;
 unsupported types remain opaque and no user formatter participates. The wrapper is
 consumed synchronously after ordinary Read argument sequencing.
+The wrapper routes top-level C strings to the text printing entry. Nested C strings
+use the writer's quoting and escaping rules; null C strings render as `nullptr`.
 
 Known successful conditions retain their execution effects and need no report
 or explanation storage. Known failures need no report guard. Dynamic conditions
@@ -435,7 +444,7 @@ prepared operands. Cleanup-frame links share retained declarations across
 operations with the same source lifetime.
 
 Composition uses execution and storage-read facts with C++ sequencing guarantees.
-Storage access preserves scalar Read snapshots and Read aliases to owned storage.
+Storage access preserves Read value snapshots and Read aliases to owned storage.
 Write operands retain the selected place before later operand evaluation; a later
 closure rebind cannot change an already selected assignment target or receiver.
 Callees are selected before arguments. Structured regions deliver through explicit

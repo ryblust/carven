@@ -98,6 +98,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             : text == "check"                ? std::optional(BuiltinFunction::Check)
             : text == "require"              ? std::optional(BuiltinFunction::Require)
             : text == "fail"                 ? std::optional(BuiltinFunction::Fail)
+            : text == "addressof"            ? std::optional(BuiltinFunction::Addressof)
                                              : std::nullopt;
         if (builtin) {
             co_return BuiltinSelection {
@@ -177,6 +178,13 @@ auto BodyElaborator::validate_builtin(
     std::span<const ConstructionCallableParameter> parameters,
     std::span<const Span> argument_spans
 ) noexcept -> AnalysisResult<void> {
+    if (selection.function == BuiltinFunction::Addressof) {
+        return std::unexpected(fail(
+            selection.span,
+            DiagnosticCode::TypeNotCallable,
+            "addressof must be called on a place"
+        ));
+    }
     const auto assertion = selection.function == BuiltinFunction::Assert;
     const auto reporting = selection.function == BuiltinFunction::Assert
         || selection.function == BuiltinFunction::Check
@@ -352,10 +360,15 @@ auto BodyElaborator::builtin_callable(
     const auto exits_test = operation.exits_test;
     auto statements = std::vector<SemanticStatement>();
     statements.push_back(
-        {.origin = site, .lifetime = full, .value = SemExpressionStatement {std::move(operation)}}
+        {.origin = site,
+         .lifetime = full,
+         .reachable = true,
+         .value = SemExpressionStatement {std::move(operation)}}
     );
     if (selection.function != BuiltinFunction::Fail) {
-        statements.push_back({.origin = site, .lifetime = full, .value = SemReturn {std::nullopt}});
+        statements.push_back(
+            {.origin = site, .lifetime = full, .reachable = true, .value = SemReturn {std::nullopt}}
+        );
     }
     auto body = std::move(builder).finish(
         SemanticRegion {
@@ -363,6 +376,7 @@ auto BodyElaborator::builtin_callable(
             .origin = site,
             .statements = std::move(statements),
             .result = std::nullopt,
+            .result_reachable = false,
             .failures = BodyFailures(failures),
             .exits_test = exits_test
         }

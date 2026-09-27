@@ -83,6 +83,9 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemDereference>) {
             auto& value = operation;
             child(value.source);
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemAddressOf>) {
+            auto& value = operation;
+            child(value.source);
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemField>) {
             auto& value = operation;
             child(value.source);

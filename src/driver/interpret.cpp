@@ -85,7 +85,7 @@ auto report_execution_error(
             }
         };
         field("module", provenance.module_record(module.provenance_module).path.value());
-        field("name", provenance.spelling(test.name));
+        field("name", block_display_name(provenance, test.source));
     }
     if (error.report_kind) {
         const auto source = provenance.source_origin(error.origin);

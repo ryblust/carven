@@ -235,7 +235,6 @@ test "Pointers: failure exits and iteration retain their contracts" {
 }
 
 fn no_effect() {}
-
 fn pair(left: ptr<i32>, &&right: ptr<i32>) -> bool => left == right;
 
 test "Pointers: local Write iteration does not expose storage after the loop" {

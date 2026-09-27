@@ -149,16 +149,21 @@ struct ASTConstantDecl final {
     ASTExprID initializer;
 };
 
+struct ASTBlockLabel final {
+    Span span;
+    std::string text;
+};
+
 struct ASTConstantBlock final {
     Span keyword_span;
+    std::optional<ASTBlockLabel> label;
     ASTBlockID body;
 };
 
 struct ASTTestDecl final {
     bool is_const;
     Span keyword_span;
-    Span name_span;
-    std::string name;
+    std::optional<ASTBlockLabel> label;
     ASTBlockID body;
 };
 

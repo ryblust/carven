@@ -71,14 +71,11 @@ TEST_CASE("Classes: receivers and member names follow their declared contracts")
     CHECK(contains_diagnostic_code(duplicate, DiagnosticCode::Catalog));
 }
 
-TEST_CASE("Classes: runtime value support does not admit constant class execution") {
-    const auto diagnostics =
-        analyze_test_errors("class C {} const fn copy(value: C) -> C { return value; }");
-    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstAdmission));
-    const auto nested = analyze_test_errors(
-        "class C {} struct S { value: C } const fn copy(value: S) -> S { return value; }"
-    );
-    CHECK(contains_diagnostic_code(nested, DiagnosticCode::ConstAdmission));
+TEST_CASE("Classes: ordinary function definitions have no constant execution gate") {
+    static_cast<void>(analyze_test_program("class C {} fn copy(value: C) -> C { return value; }"));
+    static_cast<void>(analyze_test_program(
+        "class C {} struct S { value: C } fn copy(value: S) -> S { return value; }"
+    ));
 }
 
 TEST_CASE("Classes: private storage remains visible to borrow checking") {

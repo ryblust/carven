@@ -1,5 +1,4 @@
 fn private_answer() -> i32 => 42;
-
 fn ordinary_check(value: bool) -> bool => value;
 
 fn traced_condition(&trace: i32, digit: i32, value: bool) -> bool {
@@ -71,15 +70,9 @@ test "Testing: test exits do not participate in value-region merges" {
 
 test "Testing: local callable names shadow builtins in every position" {
     let assertion: fn(bool) -> void = check;
-    let check = [](value: bool) -> bool {
-        return !value;
-    };
-    let fail = []() -> i32 {
-        return 17;
-    };
-    let println = [](value: i32) -> i32 {
-        return value + 1;
-    };
+    let check = [](value: bool) -> bool => !value;
+    let fail = []() -> i32 => 17;
+    let println = [](value: i32) -> i32 => value + 1;
     assertion(check(false));
     check(false);
     assertion(fail() == 17);
@@ -104,7 +97,6 @@ test "Assertions: successful continuation retains conditional message owners" {
     require_preserves_message_owner(true);
     assert_preserves_message_owner(true);
 }
-
 
 test "Assertions: callable values evaluate messages as ordinary arguments" {
     var trace = 0;

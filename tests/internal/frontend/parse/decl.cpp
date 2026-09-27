@@ -247,20 +247,39 @@ TEST_CASE("Parser: imports form one contiguous nonempty-selection prefix") {
 
 TEST_CASE("Parser: test declarations use distinct typed items") {
     static constexpr auto text = std::string_view(
-        "test \"empty\" {}\n"
+        "test {}\n"
+        "test {}\n"
+        "test \"\" {}\n"
         "test \"with body\" { let value = 1; }\n"
+        "const test {}\n"
+        "const test \"compile\" {}\n"
     );
     const auto result = parse_valid(text);
     const auto ast = result.view();
-    REQUIRE_EQ(root(result).items.size(), 2u);
-    const auto& declaration = get<ASTTestDecl>(item(result, 1));
+    REQUIRE_EQ(root(result).items.size(), 6u);
+    CHECK_FALSE(get<ASTTestDecl>(item(result, 0)).label.has_value());
+    CHECK_FALSE(get<ASTTestDecl>(item(result, 1)).label.has_value());
+    const auto& empty = get<ASTTestDecl>(item(result, 2));
+    REQUIRE(empty.label.has_value());
+    CHECK_EQ(slice(text, empty.label->span), "\"\"");
+    CHECK(empty.label->text.empty());
+    const auto& declaration = get<ASTTestDecl>(item(result, 3));
     CHECK_EQ(slice(text, declaration.keyword_span), "test");
-    CHECK_EQ(slice(text, declaration.name_span), "\"with body\"");
-    CHECK_EQ(declaration.name, "with body");
+    REQUIRE(declaration.label.has_value());
+    CHECK_EQ(slice(text, declaration.label->span), "\"with body\"");
+    CHECK_EQ(declaration.label->text, "with body");
     CHECK_EQ(ast.block(declaration.body).statements.size(), 1u);
+    CHECK(get<ASTTestDecl>(item(result, 4)).is_const);
+    CHECK_FALSE(get<ASTTestDecl>(item(result, 4)).label.has_value());
+    const auto& compile = get<ASTTestDecl>(item(result, 5));
+    CHECK(compile.is_const);
+    REQUIRE(compile.label.has_value());
+    CHECK_EQ(compile.label->text, "compile");
 
-    check_invalid("test name {}", "expected test name string");
-    check_invalid("test {}", "expected test name string");
+    check_invalid("test name {}", "expected '{'");
+    check_invalid("test 42 {}", "expected '{'");
+    check_invalid("test \"label\";", "expected '{'");
+    check_invalid("const test name {}", "expected '{'");
     check_invalid(
         "export test \"name\" {}",
         "expected enum, struct, function, or const after visibility modifier"

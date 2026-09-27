@@ -8,7 +8,7 @@ import :diagnostics.code;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
-TEST_CASE("Const fn admission: supported definitions do not require a call site") {
+TEST_CASE("Const functions prove executable bodies at their definitions") {
     const auto sources = std::to_array<std::string_view>({
         R"(const fn empty() {})",
         R"(struct Failure {} const fn fail() throw Failure { throw Failure {}; })",
@@ -67,44 +67,170 @@ TEST_CASE("Const fn admission: supported definitions do not require a call site"
         CAPTURE(source);
         const auto program = analyze_test_program(std::string(source));
         CHECK(program.declarations().functions().size() > 0uz);
-        for (const auto entry : program.declarations().functions()) {
-            CHECK(entry.value.is_const);
-        }
     }
 }
 
-TEST_CASE("Const fn admission: unsupported operations are rejected in unused and inactive source") {
+TEST_CASE("Ordinary functions have no definition-time execution capability gate") {
     struct Scenario final {
         std::string_view name;
         std::string_view source;
     };
 
     const auto scenarios = std::to_array<Scenario>({
-        {"unused native call", R"(import "provider.hpp";
-            const fn invalid() -> i32 { return ::provider::value() as i32; })"},
         {"inactive ordinary call", R"(fn ordinary() {}
-            const fn invalid() { if false { ordinary(); } })"},
+            fn example() { if false { ordinary(); } })"},
         {"inactive short circuit call", R"(fn ordinary() -> bool => true;
-            const fn invalid() -> bool { return false && ordinary(); })"},
-        {"Write parameter", R"(const fn invalid(&value: i32) { value = 1; })"},
-        {"pointer signature", R"(const fn invalid(value: ptr<i32>) -> bool {
+            fn example() -> bool { return false && ordinary(); })"},
+        {"Write parameter", R"(fn example(&value: i32) { value = 1; })"},
+        {"pointer signature", R"(fn example(value: ptr<i32>) -> bool {
             return value == nullptr;
         })"},
-        {"slice signature", R"(const fn invalid(value: [i32]) -> usize { return value.len(); })"},
-        {"array operation", R"(const fn invalid() -> usize { return [1, 2].as_slice().len(); })"},
-        {"closure value", R"(const fn invalid() -> i32 { let call = []() => 1; return call(); })"},
-        {"unchecked scalar construction", R"(const fn invalid() -> char {
+        {"slice signature", R"(fn example(value: [i32]) -> usize { return value.len(); })"},
+        {"array operation", R"(fn example() -> usize { return [1, 2].as_slice().len(); })"},
+        {"closure value", R"(fn example() -> i32 { let call = []() => 1; return call(); })"},
+        {"unchecked scalar construction", R"(fn example() -> char {
             return char::from_u32_unchecked(65u32);
         })"},
-        {"character range", R"(const fn invalid(value: str) {
+        {"character range", R"(fn example(value: str) {
             for character in value.chars { let copy = character; }
         })"},
     });
     for (const auto& scenario : scenarios) {
         CAPTURE(scenario.name);
-        const auto diagnostics = analyze_test_errors(std::string(scenario.source));
-        const auto* finding = find_diagnostic_code(diagnostics, DiagnosticCode::ConstAdmission);
-        REQUIRE(finding != nullptr);
-        CHECK(finding->attachment.primary.has_value());
+        const auto program = analyze_test_program(std::string(scenario.source));
+        CHECK(program.declarations().functions().size() > 0uz);
     }
+}
+
+TEST_CASE("Const function capability proof requires marked reachable callees") {
+    const auto accepted = std::to_array<std::string_view>({
+        "import(cpp) fn native(); const fn guaranteed() { if false { native(); } }",
+        "import(cpp) fn native(); const fn guaranteed() { return; native(); }",
+        "import(cpp) fn native(); const fn guaranteed(flag: bool) { if flag { return; } else { return; } native(); }",
+        "import(cpp) fn native(); const fn example(value: i32) { "
+        "match value { _ => { return; }, } native(); }",
+        "struct Failure {} fn ordinary() -> i32 => 1; "
+        "const fn example(flag: bool) -> i32 throw Failure { "
+        "return if flag { throw Failure {}; ordinary() } else { 2 }; }",
+        "struct Failure {} fn ordinary(value: i32) -> i32 => value; "
+        "const fn example() -> i32 throw Failure { "
+        "return ordinary(if true { throw Failure {}; } else { throw Failure {}; }); }",
+        "struct Failure {} fn ordinary() -> i32 => 1; "
+        "const fn allowed(first: i32, second: i32) -> i32 => first + second; "
+        "const fn example() -> i32 throw Failure { "
+        "return allowed(if true { throw Failure {}; } else { throw Failure {}; }, ordinary()); }",
+        "fn ordinary() -> bool => true; const fn guaranteed() -> bool => false && ordinary();",
+        "const fn guaranteed(&value: i32) { value = 1; }",
+        "const fn guaranteed(value: ptr<i32>) -> bool => value == nullptr;",
+    });
+    for (const auto source : accepted) {
+        CAPTURE(source);
+        static_cast<void>(analyze_test_program(std::string(source)));
+    }
+
+    const auto rejected = std::to_array<std::string_view>({
+        "fn ordinary() -> i32 => 42; const fn guaranteed() -> i32 => ordinary();",
+        "fn leaf() -> i32 => 42; const fn middle() -> i32 => leaf(); "
+        "const fn outer() -> i32 => middle();",
+        "import(cpp) fn native(); const fn guaranteed(flag: bool) { if flag { native(); } }",
+        "fn ordinary() -> i32 => 1; const fn example(flag: bool) -> i32 { "
+        "return if flag { ordinary() } else { 2 }; }",
+        "struct Failure {} fn ordinary() -> i32 => 1; "
+        "const fn allowed(first: i32, second: i32) -> i32 => first + second; "
+        "const fn example() -> i32 throw Failure { "
+        "return allowed(ordinary(), if true { throw Failure {}; } else { throw Failure {}; }); }",
+        "import(cpp) fn native(); fn ordinary() { native(); } const fn guaranteed() { ordinary(); }",
+        "const fn guaranteed(action: fn() -> i32) -> i32 => action();",
+        "const fn guaranteed() -> i32 { let action = []() => 1; return action(); }",
+        "const fn guaranteed(value: str) { for character in value.chars {} }",
+    });
+    for (const auto source : rejected) {
+        CAPTURE(source);
+        const auto diagnostics = analyze_test_errors(std::string(source));
+        CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstAdmission));
+    }
+}
+
+TEST_CASE("Const functions: control dispatch does not construct an unreachable native result") {
+    const auto accepted = std::to_array<std::string_view>({
+        R"(struct Failure {}
+            fn ordinary(value: ::Native) {}
+            const fn example() throw Failure {
+                ordinary(if true { throw Failure {}; } else { throw Failure {}; });
+            })",
+        R"(struct Failure {}
+            fn ordinary(value: ::Native) {}
+            const fn example(value: i32) throw Failure {
+                ordinary(match value { _ => { throw Failure {}; }, });
+            })",
+        R"(struct Failure {}
+            fn ordinary(value: ::Native) {}
+            const fn example() throw Failure {
+                ordinary(try { throw Failure {}; } catch { _ => { throw Failure {}; }, });
+            })",
+    });
+    for (const auto source : accepted) {
+        CAPTURE(source);
+        static_cast<void>(analyze_test_program(std::string(source)));
+    }
+
+    const auto rejected = std::to_array<std::string_view>({
+        R"(const fn example() { let value = if true { ::Native {} } else { ::Native {} }; })",
+        R"(const fn example(value: i32) {
+            let selected = match value { _ => ::Native {}, };
+        })",
+        R"(struct Failure {} const fn example() {
+            let value = try { throw Failure {}; } catch { _ => ::Native {}, };
+        })",
+    });
+    for (const auto source : rejected) {
+        CAPTURE(source);
+        const auto diagnostics = analyze_test_errors(std::string(source));
+        CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstAdmission));
+    }
+}
+
+TEST_CASE("Const functions: view signatures do not require executable target storage") {
+    const auto accepted = std::to_array<std::string_view>({
+        "const fn ignore(action: fn(::Native) -> ::Native) {}",
+        "const fn length(values: [::Native]) -> usize => values.len();",
+    });
+    for (const auto source : accepted) {
+        CAPTURE(source);
+        static_cast<void>(analyze_test_program(std::string(source)));
+    }
+    const auto rejected = std::to_array<std::string_view>({
+        "const fn own(value: ::Native) {}",
+        "const fn own(values: [::Native; 2]) {}",
+        "const fn invoke(action: fn(::Native) -> ::Native, value: ::Native) { action(value); }",
+    });
+    for (const auto source : rejected) {
+        CAPTURE(source);
+        const auto diagnostics = analyze_test_errors(std::string(source));
+        CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstAdmission));
+    }
+}
+
+TEST_CASE("Required constant contexts call only explicitly declared const functions") {
+    const auto rejected = std::to_array<std::string_view>({
+        "fn ordinary() -> i32 => 1 + 2; const answer = ordinary();",
+        "fn ordinary() -> usize => 2; fn use(value: [i32; ordinary()]) {}",
+        "fn ordinary() -> i32 => 42; const { let answer = ordinary(); }",
+        "fn ordinary() -> i32 => 42; const test \"ordinary\" { check(ordinary() == 42); }",
+        "fn ordinary() -> i32 => 42; const test \"named value\" { "
+        "let selected = ordinary; check(selected() == 42); }",
+    });
+    for (const auto source : rejected) {
+        CAPTURE(source);
+        const auto diagnostics = analyze_test_errors(std::string(source));
+        CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstAdmission));
+    }
+
+    const auto program = analyze_test_program(R"(
+        const fn value() -> i32 => 42;
+        const answer = value();
+        fn ordinary() -> i32 => value();
+        const test "named const value" { let selected = value; check(selected() == 42); }
+    )");
+    CHECK(program.declarations().functions().size() == 2uz);
 }

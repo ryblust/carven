@@ -10,18 +10,16 @@ import std;
 
 namespace {
 
-// Read scalar parameters own immutable copies. Owners and Take parameters can
-// still be exposed as native T&&; captures can change with their enclosing closure.
+// Non-borrowing Carven Read parameters are immutable value snapshots.
+// Owners and Take parameters can still be exposed as native T&&; captures can
+// change with their enclosing closure.
 auto stable_binding(const SemIRProgram& semantic, const LocalBinding& binding) noexcept -> bool {
     const auto* parameter = std::get_if<ParameterBindingStorage>(&binding.storage);
     if (parameter == nullptr || parameter->access != AccessMode::Read) {
         return false;
     }
-    const auto* builtin = std::get_if<BuiltinTypeValue>(&semantic.types().type(binding.type).value);
-    return builtin != nullptr
-        && (builtin_is_numeric(builtin->kind)
-            || builtin->kind == BuiltinType::Bool
-            || builtin->kind == BuiltinType::Char);
+    const auto contents = semantic.type_contents(binding.type);
+    return !contents.read_borrows_storage() && !contents.contains_native_value;
 }
 
 template<typename Operation>
@@ -43,7 +41,13 @@ BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noex
         const auto rule = evaluation_rule(semantic, source);
         auto execution = rule.action == EvaluationAction::Required;
         const auto* binding = std::get_if<SemBinding>(&source.value);
+        const auto* index = std::get_if<SemIndex>(&source.value);
+        const auto reads_slice = index != nullptr
+            && std::holds_alternative<SliceTypeValue>(
+                                     semantic.types().type(index->source->type.resolved()).value
+            );
         auto reads = execution
+            || reads_slice
             || (binding != nullptr
                 && !stable_binding(semantic, metadata.binding(binding->binding)));
         for (const auto* input : rule.operands) {

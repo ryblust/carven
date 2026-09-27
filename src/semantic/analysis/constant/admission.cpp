@@ -4,222 +4,279 @@ import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.constant.admission;
 import :semantic.evaluation.admission;
-import :semantic.evaluation.shape;
 import :semantic.semir.body;
+import :semantic.semir.children;
+import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
-import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :support.visit;
 import std;
 
 namespace {
 
-class ConstantBodyAdmission final {
+using PendingNode =
+    std::variant<const SemanticRegion*, const SemanticStatement*, const SemanticExpression*>;
+
+class ConstFunctionValidator final {
 public:
-    ConstantBodyAdmission(
+    ConstFunctionValidator(
         ProgramDraft& draft,
-        std::optional<FunctionID> function,
-        const StructuredBodyDraft& body
+        std::span<const std::optional<BodyID>> function_bodies
     ) noexcept;
     auto run() noexcept -> AnalysisResult<void>;
 
 private:
     auto reject(ProgramOriginID origin, std::string message) noexcept -> void;
+    auto known_truth(const SemanticExpression& expression) const noexcept -> std::optional<bool>;
     auto supported_type(ConstructionTypeRef type, bool allow_void = false) const noexcept -> bool;
-    auto expression(const SemanticExpression& source) noexcept -> void;
-    auto statement(const SemanticStatement& source) noexcept -> void;
-    auto call(const SemCall& value, ProgramOriginID origin) noexcept -> void;
+    auto check_function(FunctionID function) noexcept -> void;
+    auto check_body(const StructuredBodyDraft& body) noexcept -> void;
+    auto check_call(const SemCall& operation, ProgramOriginID origin) noexcept -> void;
 
-    ExecutionTypeShapes shapes;
     ProgramDraft& draft;
-    std::optional<FunctionID> function;
-    const StructuredBodyDraft& body;
+    std::span<const std::optional<BodyID>> function_bodies;
+    std::optional<FunctionID> current_function;
     std::optional<AnalysisFailure> failure;
-    std::set<const SemanticExpression*> direct_callees;
 };
 
-ConstantBodyAdmission::ConstantBodyAdmission(
+ConstFunctionValidator::ConstFunctionValidator(
     ProgramDraft& draft,
-    std::optional<FunctionID> function,
-    const StructuredBodyDraft& body
+    std::span<const std::optional<BodyID>> function_bodies
 ) noexcept
-    : shapes(draft),
-      draft(draft),
-      function(function),
-      body(body) {}
+    : draft(draft),
+      function_bodies(function_bodies) {}
 
-auto ConstantBodyAdmission::reject(ProgramOriginID origin, std::string message) noexcept -> void {
+auto ConstFunctionValidator::run() noexcept -> AnalysisResult<void> {
+    for (const auto id : draft.function_declaration_ids()) {
+        if (!draft.function_declaration_copy(id).is_const) {
+            continue;
+        }
+        current_function = id;
+        check_function(id);
+        if (failure) {
+            return std::unexpected(*failure);
+        }
+    }
+    return {};
+}
+
+auto ConstFunctionValidator::reject(ProgramOriginID origin, std::string message) noexcept -> void {
     if (failure) {
         return;
     }
     auto diagnostic = DiagnosticBuilder(DiagnosticCode::ConstAdmission, std::move(message));
     diagnostic.primary(draft.source_span(origin));
+    const auto declaration = draft.function_declaration_copy(*current_function);
+    if (declaration.origin != origin) {
+        diagnostic.related(
+            draft.source_span(declaration.origin),
+            "const fn promises compile-time capability"
+        );
+    }
     failure = draft.diagnostics().error(diagnostic.build());
 }
 
-auto ConstantBodyAdmission::supported_type(ConstructionTypeRef type, bool allow_void) const noexcept
-    -> bool {
-    auto pending = std::vector<ConstructionTypeRef> {type};
-    auto visited = std::set<ConstructionTypeRef>();
+auto ConstFunctionValidator::known_truth(const SemanticExpression& expression) const noexcept
+    -> std::optional<bool> {
+    if (!expression.constant) {
+        return std::nullopt;
+    }
+    if (const auto* boolean =
+            std::get_if<BooleanConstant>(&draft.constant(*expression.constant).value)) {
+        return boolean->value;
+    }
+    return std::nullopt;
+}
+
+auto ConstFunctionValidator::supported_type(
+    ConstructionTypeRef type,
+    bool allow_void
+) const noexcept -> bool {
+    auto pending = std::vector<std::pair<ConstructionTypeRef, bool>> {{type, allow_void}};
+    auto visited = std::set<TypeTermID>();
     while (!pending.empty()) {
-        const auto current = pending.back();
+        const auto [next, void_allowed] = pending.back();
         pending.pop_back();
-        if (!visited.insert(current).second) {
-            continue;
-        }
-        const auto* concrete = std::get_if<TypeID>(&current);
-        if (!concrete) {
-            return false;
-        }
-        const auto canonical = draft.type_copy(*concrete);
-        if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
-            const auto declaration = draft.construction_struct_declaration_copy(record->structure);
-            if (declaration.kind == RecordKind::Class) {
+        if (std::holds_alternative<TypeID>(next)) {
+            if (!supported_execution_type(draft, next, void_allowed)) {
                 return false;
             }
-            for (const auto& field : declaration.fields) {
-                pending.push_back(field.type);
-            }
-        } else if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
-            pending.push_back(array->element);
-        } else if (const auto* slice = std::get_if<SliceTypeValue>(&canonical.value)) {
-            pending.push_back(slice->element);
-        } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&canonical.value)) {
-            for (const auto id : draft.enum_declaration_copy(enumeration->enumeration).cases) {
-                for (const auto payload :
-                     draft.construction_enum_case_declaration_copy(id).payload_types) {
-                    pending.push_back(payload);
-                }
-            }
+            continue;
+        }
+        const auto term = std::get<TypeTermID>(next);
+        if (!visited.insert(term).second) {
+            continue;
+        }
+        const auto construction = draft.construction_type_copy(term);
+        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
+            pending.emplace_back(array->element, false);
+        } else if (std::holds_alternative<ConstructionSliceTypeValue>(construction.value)
+                   || std::holds_alternative<ConstructionCallableViewTypeValue>(
+                       construction.value
+                   )) {
+            // Views do not contain their targets' storage.
+        } else {
+            return false;
         }
     }
-    return supported_execution_type(draft, shapes, type, allow_void);
+    return true;
 }
 
-auto ConstantBodyAdmission::run() noexcept -> AnalysisResult<void> {
-    if (function) {
-        const auto declaration = draft.function_declaration_copy(*function);
-        if (!declaration.is_const) {
-            return {};
-        }
-        if (draft.pending_function_contract_copy(declaration.callable)) {
-            reject(declaration.origin, "const fn requires a completed concrete signature");
-            return std::unexpected(*failure);
-        }
-        const auto contract = draft.construction_callable_contract_copy(declaration.callable);
-        if (!supported_type(contract.result, true)) {
-            reject(
-                declaration.origin,
-                "const fn result requires a supported scalar, text, aggregate, or void type"
-            );
-        }
-        for (const auto& parameter : contract.parameters) {
-            if (parameter.access == AccessMode::Write) {
-                reject(declaration.origin, "const fn parameters cannot use Write access");
-            } else if (!supported_type(parameter.type)) {
-                reject(
-                    declaration.origin,
-                    "const fn parameters require supported scalar, text, or aggregate values"
-                );
-            }
-        }
-        for (const auto type :
-             draft.construction_failure_term_copy(contract.failures).direct_members) {
-            if (!supported_type(type)) {
-                reject(
-                    declaration.origin,
-                    "const fn failure payload requires a supported execution type"
-                );
-            }
-        }
-    }
-    for (const auto entry : body.bindings.entries()) {
-        if (!supported_type(entry.value.type)) {
-            reject(
-                entry.value.origin,
-                "constant execution local values require supported scalar, text, or aggregate types"
-            );
-        }
-    }
-    for (const auto entry : body.patterns.entries()) {
-        if (!supported_type(entry.value.type) || !supported_execution_pattern(entry.value.value)) {
-            reject(
-                entry.value.origin,
-                "constant execution match requires supported values and literal, binding, wildcard, or alternative patterns"
-            );
-        }
-    }
-    visit_semantic_nodes(
-        body.region,
-        Overloaded {
-            [&](const SemanticExpression& source) noexcept { expression(source); },
-            [&](const SemanticStatement& source) noexcept { statement(source); },
-        }
-    );
-    return failure ? AnalysisResult<void>(std::unexpected(*failure)) : AnalysisResult<void>();
-}
-
-auto ConstantBodyAdmission::call(const SemCall& value, ProgramOriginID origin) noexcept -> void {
-    const auto* selected = std::get_if<SemCallable>(&value.callee->value);
-    const auto callee =
-        selected == nullptr ? std::nullopt : draft.function_for_callable(selected->callable);
-    if (!callee || !draft.function_declaration_copy(*callee).is_const) {
-        reject(origin, "constant execution calls must directly select a const fn");
+auto ConstFunctionValidator::check_function(FunctionID function) noexcept -> void {
+    const auto declaration = draft.function_declaration_copy(function);
+    if (draft.pending_function_contract_copy(declaration.callable)) {
+        reject(
+            declaration.origin,
+            "cannot prove compile-time capability of an unresolved function signature"
+        );
         return;
     }
-    direct_callees.insert(std::addressof(*value.callee));
-    for (const auto& argument : value.arguments) {
-        if (argument.access == AccessMode::Write) {
-            reject(
-                argument.expression.origin,
-                "constant execution calls cannot pass Write arguments"
-            );
+    const auto contract = draft.construction_callable_contract_copy(declaration.callable);
+    if (!supported_type(contract.result, true)
+        || std::ranges::any_of(
+            contract.parameters,
+            [&](const auto& parameter) noexcept { return !supported_type(parameter.type); }
+        )
+        || std::ranges::any_of(
+            draft.construction_failure_term_copy(contract.failures).direct_members,
+            [&](const auto type) noexcept { return !supported_type(type); }
+        )) {
+        reject(
+            declaration.origin,
+            "function signature uses a value without compile-time execution support"
+        );
+        return;
+    }
+    if (function.index() >= function_bodies.size() || !function_bodies[function.index()]) {
+        reject(declaration.origin, "native function has no compile-time provider");
+        return;
+    }
+    check_body(draft.body_draft(*function_bodies[function.index()]));
+}
+
+auto ConstFunctionValidator::check_call(const SemCall& operation, ProgramOriginID origin) noexcept
+    -> void {
+    auto target = operation.target;
+    if (!target) {
+        if (const auto* named = std::get_if<SemCallable>(&operation.callee->value)) {
+            target = named->callable;
         }
+    }
+    if (!target) {
+        reject(origin, "cannot prove compile-time capability of indirect call target");
+        return;
+    }
+    const auto function = draft.function_for_callable(*target);
+    if (!function) {
+        reject(origin, "call target has no compile-time provider");
+        return;
+    }
+    if (!draft.function_declaration_copy(*function).is_const) {
+        reject(origin, "const fn can only call an explicitly declared const fn");
+        return;
     }
 }
 
-auto ConstantBodyAdmission::expression(const SemanticExpression& source) noexcept -> void {
-    if (failure) {
-        return;
-    }
-    if (std::holds_alternative<SemCallable>(source.value)) {
-        if (!direct_callees.contains(std::addressof(source))) {
-            reject(source.origin, "constant execution cannot form callable values");
-        }
-        return;
-    }
-    if (!supported_type(source.type.construction(), true)) {
-        reject(source.origin, "expression type is not supported in constant execution");
-        return;
-    }
-    if (const auto reason = unsupported_execution_expression(source)) {
-        reject(source.origin, std::string(*reason));
-    } else if (const auto* selected = std::get_if<SemCall>(&source.value)) {
-        call(*selected, source.origin);
-    }
-}
-
-auto ConstantBodyAdmission::statement(const SemanticStatement& source) noexcept -> void {
-    if (failure) {
-        return;
-    }
-    if (const auto reason = unsupported_execution_statement(source)) {
-        reject(source.origin, std::string(*reason));
+auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcept -> void {
+    auto nodes = std::vector<PendingNode> {&body.region};
+    while (!nodes.empty() && !failure) {
+        const auto next = nodes.back();
+        nodes.pop_back();
+        std::visit(
+            Overloaded {
+                [&](const SemanticRegion* region) noexcept {
+                    auto children = std::vector<PendingNode>();
+                    for (const auto& statement : region->statements) {
+                        if (statement.reachable) {
+                            children.emplace_back(&statement);
+                        }
+                    }
+                    if (region->result && region->result_reachable) {
+                        children.emplace_back(&*region->result);
+                    }
+                    nodes.insert(nodes.end(), children.rbegin(), children.rend());
+                },
+                [&](const SemanticStatement* statement) noexcept {
+                    if (const auto reason = unsupported_execution_statement(*statement)) {
+                        reject(statement->origin, std::string(*reason));
+                        return;
+                    }
+                    auto children = std::vector<PendingNode>();
+                    statement->value.visit([&](const auto& operation) noexcept {
+                        visit_evaluation_children(
+                            operation,
+                            [&](const auto& expression) noexcept {
+                                return known_truth(expression);
+                            },
+                            [&](const auto& child) noexcept {
+                                using Child = std::remove_cvref_t<decltype(child)>;
+                                if constexpr (std::same_as<Child, SemanticExpression>) {
+                                    children.emplace_back(&child);
+                                } else if constexpr (std::same_as<Child, SemanticRegion>) {
+                                    children.emplace_back(&child);
+                                }
+                            }
+                        );
+                    });
+                    nodes.insert(nodes.end(), children.rbegin(), children.rend());
+                },
+                [&](const SemanticExpression* expression) noexcept {
+                    // Control operations select a child result rather than construct
+                    // their contextual result type. Check the reachable producers;
+                    // a noncompleting branch need not produce that type at all.
+                    const auto selects_result = std::holds_alternative<SemIf>(expression->value)
+                        || std::holds_alternative<SemMatch>(expression->value)
+                        || std::holds_alternative<SemTry>(expression->value);
+                    if (expression->operation_reachable
+                        && !selects_result
+                        && !supported_type(expression->type.construction(), true)) {
+                        reject(
+                            expression->origin,
+                            "expression type is not supported in compile-time execution"
+                        );
+                        return;
+                    }
+                    if (expression->operation_reachable) {
+                        if (const auto reason = unsupported_execution_expression(*expression)) {
+                            reject(expression->origin, std::string(*reason));
+                            return;
+                        }
+                    }
+                    auto children = std::vector<PendingNode>();
+                    expression->value.visit([&](const auto& operation) noexcept {
+                        visit_evaluation_children(
+                            operation,
+                            [&](const auto& value) noexcept { return known_truth(value); },
+                            [&](const auto& child) noexcept {
+                                using Child = std::remove_cvref_t<decltype(child)>;
+                                if constexpr (std::same_as<Child, SemanticExpression>) {
+                                    children.emplace_back(&child);
+                                } else if constexpr (std::same_as<Child, SemanticRegion>) {
+                                    children.emplace_back(&child);
+                                }
+                            }
+                        );
+                        using Operation = std::remove_cvref_t<decltype(operation)>;
+                        if constexpr (std::same_as<Operation, SemCall>) {
+                            if (expression->operation_reachable) {
+                                check_call(operation, expression->origin);
+                            }
+                        }
+                    });
+                    nodes.insert(nodes.end(), children.rbegin(), children.rend());
+                },
+            },
+            next
+        );
     }
 }
 
 } // namespace
 
-auto validate_constant_function(
+auto validate_const_contracts(
     ProgramDraft& draft,
-    FunctionID function,
-    const StructuredBodyDraft& body
+    std::span<const std::optional<BodyID>> function_bodies
 ) noexcept -> AnalysisResult<void> {
-    return ConstantBodyAdmission(draft, function, body).run();
-}
-
-auto validate_constant_body(ProgramDraft& draft, const StructuredBodyDraft& body) noexcept
-    -> AnalysisResult<void> {
-    return ConstantBodyAdmission(draft, std::nullopt, body).run();
+    return ConstFunctionValidator(draft, function_bodies).run();
 }

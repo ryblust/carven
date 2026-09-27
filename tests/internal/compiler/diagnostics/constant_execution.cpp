@@ -115,27 +115,62 @@ TEST_CASE("Compiler: static checks continue and requirements stop nested calls")
     CHECK(errors.empty());
 }
 
-TEST_CASE("Compiler: required execution rejects unsupported values and untaken operations") {
+TEST_CASE("Compiler: required execution rejects an executed native construction") {
     const auto cases = std::array {
-        CompilerErrorExpectation {
-            .name = "ordinary call",
-            .source = "fn ordinary() {} const test \"t\" { ordinary(); }",
-            .code = "CV-CONST-ADMISSION",
-            .primary_text = "ordinary()"
-        },
         CompilerErrorExpectation {
             .name = "native construction in constant block",
             .source = "import <vector> using std::vector; const { let v = vector { 1, 2, 3 }; }",
             .code = "CV-CONST-ADMISSION",
-            .primary_text = "v"
-        },
-        CompilerErrorExpectation {
-            .name = "dead native call",
-            .source = "import(cpp) fn native(); const test \"t\" { if false { native(); } }",
-            .code = "CV-CONST-ADMISSION",
-            .primary_text = "native()"
+            .primary_text = "vector { 1, 2, 3 }"
         },
     };
+    check_compiler_errors(cases);
+}
+
+TEST_CASE("Compiler: untaken native calls do not constrain constant execution") {
+    auto output = std::string();
+    auto errors = std::string();
+    const auto result = compile_constant_program(
+        "import(cpp) fn native(); const test \"t\" { if false { native(); } check(true); }",
+        output,
+        errors
+    );
+    CHECK(result.has_value());
+    CHECK(output.empty());
+    CHECK(errors.empty());
+}
+
+TEST_CASE("Compiler: named callable values execute in constant tests") {
+    auto output = std::string();
+    auto errors = std::string();
+    const auto result = compile_constant_program(
+        R"(const fn answer() -> i32 => 42;
+           const test "indirect" {
+               let selected = answer;
+               check(selected() == 42);
+               let view: fn() -> i32 = selected;
+               check(view() == 42);
+           })",
+        output,
+        errors
+    );
+    CHECK(result.has_value());
+    CHECK(output.empty());
+    CHECK(errors.empty());
+}
+
+TEST_CASE("Compiler: constant calls through callable values require a const target") {
+    const auto cases = std::to_array<CompilerErrorExpectation>({
+        {.name = "ordinary function selected through a local callable",
+         .source = R"(fn answer() -> i32 => 42;
+             const test "indirect" { let selected = answer; check(selected() == 42); })",
+         .code = "CV-CONST-ADMISSION",
+         .primary_text = "selected()"},
+        {.name = "unprovable callback in a const function",
+         .source = R"(const fn invoke(callback: fn() -> i32) -> i32 => callback();)",
+         .code = "CV-CONST-ADMISSION",
+         .primary_text = "callback()"},
+    });
     check_compiler_errors(cases);
 }
 
@@ -272,13 +307,11 @@ TEST_CASE("Compiler: constant blocks diagnose stage boundaries and execution fai
 
     const auto cases = std::array {
         Case {"fn f(value: i32) { const { println(value); } }", "CV-CONST-ADMISSION"},
-        Case {"fn f() {} const { f(); }", "CV-CONST-ADMISSION"},
         Case {"const { check(true); }", "CV-CONST-TEST"},
         Case {"const { while true {} }", "CV-CONST-LIMIT"},
         Case {"struct Error {} const { throw Error {}; }", "CV-CONST-EVALUATION"},
-        Case {"const { let n = 2147483647; println(n + 1); }", "CV-CONST-OVERFLOW"},
-        Case {"const { println(c\"x\"); }", "CV-CONST-EVALUATION"},
-        Case {"const { let values = [c\"x\"]; println(values); }", "CV-CONST-EVALUATION"},
+        Case {R"(const { let value = c"x"; println(f"{value:p}"); })", "CV-CONST-EVALUATION"},
+        Case {R"(const { let value = c"x"; println(value == value); })", "CV-CONST-ADMISSION"},
         Case {"const equal = c\"x\" == c\"x\";", "CV-CONST-INITIALIZER"},
     };
     for (const auto& scenario : cases) {
@@ -291,23 +324,21 @@ TEST_CASE("Compiler: constant blocks diagnose stage boundaries and execution fai
     }
 }
 
-TEST_CASE("Compiler: constant blocks retain ownership checks after execution") {
+TEST_CASE("Compiler: constant blocks enforce lexical loans and stage isolation") {
     const auto cases = std::to_array<CompilerErrorExpectation>({
-        {.name = "block locals retain borrowed backing",
+        {.name = "block loan prevents mutation even without a later read",
          .source = R"(const {
              var text: String = "local";
              let view = text.as_str();
              text.clear();
-             println(view);
          })",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "text.clear()"},
-        {.name = "local blocks retain borrowed backing",
+        {.name = "local block loan prevents mutation even without a later read",
          .source = R"(fn unused() { const {
              var text: String = "local";
              let view = text.as_str();
              text.clear();
-             println(view);
          } })",
          .code = "CV-ACCESS-BORROW-CONFLICT",
          .primary_text = "text.clear()"},
@@ -392,4 +423,52 @@ TEST_CASE("Compiler: assertions fail constant execution without requiring a test
             && diagnostic.finding.message.contains("value: 1")
             && diagnostic.finding.message.contains("constant assertion");
     }));
+}
+
+TEST_CASE("Compiler: compile-time blocks share labeled diagnostic context") {
+    struct Scenario final {
+        std::string_view name;
+        std::string_view block;
+        std::string_view context;
+    };
+
+    const auto scenarios = std::to_array<Scenario>({
+        {"anonymous constant block",
+         "const { divide(0); }",
+         "while evaluating this constant block"},
+        {"labeled constant block",
+         "const \"table\" { divide(0); }",
+         "while evaluating this constant block \"table\""},
+        {"anonymous static test", "const test { divide(0); }", "while evaluating this const test"},
+        {"named static test",
+         "const test \"division\" { divide(0); }",
+         "while evaluating this const test \"division\""},
+        {"empty label", "const \"\" { divide(0); }", "while evaluating this constant block \"\""},
+        {"nested independent root",
+         "const \"outer\" { const \"inner\" { divide(0); } }",
+         "while evaluating this constant block \"inner\""},
+    });
+    for (const auto& scenario : scenarios) {
+        CAPTURE(scenario.name);
+        auto output = std::string();
+        auto errors = std::string();
+        const auto result = compile_constant_program(
+            std::string("const fn divide(divisor: i32) -> i32 => 1 / divisor; ")
+                + std::string(scenario.block),
+            output,
+            errors
+        );
+        REQUIRE(!result.has_value());
+        const auto* diagnostic =
+            find_compiler_diagnostic(result.error(), "CV-CONST-DIVIDE-BY-ZERO");
+        REQUIRE(diagnostic != nullptr);
+        REQUIRE_EQ(diagnostic->attachment.related.size(), 2uz);
+        CHECK_EQ(diagnostic->attachment.related.back().message, scenario.context);
+        CHECK_EQ(
+            diagnostic->attachment.related.front().message,
+            "while evaluating this const function call"
+        );
+        CHECK(output.empty());
+        CHECK(errors.empty());
+    }
 }

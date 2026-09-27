@@ -335,8 +335,7 @@ TEST_CASE("SemIR publication invariant: a test has one owning module item") {
         TestDeclaration {
             .is_const = false,
             .module_id = module_id,
-            .name = builder.intern_spelling("test"),
-            .origin = facts.origin,
+            .source = {.label = builder.intern_spelling("test"), .origin = facts.origin},
             .body = body_id,
         }
     );

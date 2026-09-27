@@ -14,6 +14,7 @@ struct BoundStorage final {
 
 struct PlaceExpression final {
     std::optional<LocalBindingID> root;
+    AccessMode access;
     SemanticExpression expression;
 };
 
@@ -54,7 +55,6 @@ public:
     auto add_pattern(ElaboratedPattern) noexcept -> PatternID;
     auto pattern_copy(PatternID) const noexcept -> ElaboratedPattern;
     auto pattern_table() const noexcept -> const MutableBodyTable<ElaboratedPattern, PatternID>&;
-    auto place_access(const PlaceExpression&) const noexcept -> AccessMode;
     auto binding_expression(LocalBindingID) noexcept -> PlaceExpression;
     auto remember_initializer(LocalBindingID, const SemanticExpression&) noexcept -> void;
     auto known_callable(const SemanticExpression&) const noexcept -> std::optional<CallableID>;
@@ -63,6 +63,7 @@ public:
         -> std::optional<std::uint64_t>;
     auto make_place(
         std::optional<LocalBindingID>,
+        AccessMode,
         ConstructionTypeRef,
         SemanticExpressionValue,
         ProgramOriginID

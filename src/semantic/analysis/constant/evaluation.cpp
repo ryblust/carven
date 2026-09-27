@@ -4,39 +4,40 @@ import :diagnostics.builder;
 import :semantic.analysis.constant.evaluation;
 import :semantic.evaluation.execution;
 import :semantic.semir.decl;
-import :support.invariant;
 import std;
 
 namespace {
 
 class ConstantAnalysisContext final : public SemanticExecutionContext {
 public:
-    ConstantAnalysisContext(ProgramDraft& draft, ConstructionRequests& requests) noexcept;
+    ConstantAnalysisContext(
+        ProgramDraft& draft,
+        ConstructionRequests& requests,
+        std::optional<ConstantBodyRoot> root = std::nullopt
+    ) noexcept;
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-        -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> override;
+        -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> override;
     auto report(const ExecutionDiagnostic& diagnostic) noexcept -> void override;
     auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
 
 private:
-    struct CompletedCall final {
-        const StructuredBodyDraft& body;
-        std::vector<ConstructionTypeRef> parameters;
-    };
-
     std::map<ProgramSourceID, ProgramModuleID> modules;
-    std::map<FunctionID, CompletedCall> completed_calls;
+    std::map<FunctionID, BodyID> completed_calls;
     ProgramDraft& draft;
     ConstructionRequests& requests;
+    std::optional<ConstantBodyRoot> root;
 };
 
 ConstantAnalysisContext::ConstantAnalysisContext(
     ProgramDraft& draft,
-    ConstructionRequests& requests
+    ConstructionRequests& requests,
+    std::optional<ConstantBodyRoot> root
 ) noexcept
     : draft(draft),
-      requests(requests) {}
+      requests(requests),
+      root(root) {}
 
 auto ConstantAnalysisContext::write(ExecutionOutputStream stream, std::string_view bytes) noexcept
     -> void {
@@ -49,24 +50,22 @@ auto ConstantAnalysisContext::function_for_callable(CallableID callable) const n
 }
 
 auto ConstantAnalysisContext::prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-    -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> {
-    if (const auto found = completed_calls.find(function); found != completed_calls.end()) {
-        co_return ExecutionCallBody {
-            .body = ExecutionBody(found->second.body),
-            .parameter_types = found->second.parameters
-        };
-    }
+    -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> {
     const auto declaration = draft.function_declaration_copy(function);
     if (!declaration.is_const) {
         co_return std::unexpected(
             ExecutionDiagnostic {
                 .origin = origin,
                 .code = DiagnosticCode::ConstAdmission,
-                .message = "constant execution can call only const fn",
+                .message =
+                    "required constant expression can only call an explicitly declared const fn",
                 .calls = {},
                 .report_kind = std::nullopt,
             }
         );
+    }
+    if (const auto found = completed_calls.find(function); found != completed_calls.end()) {
+        co_return ExecutionBody(draft.body_draft(found->second));
     }
     if (modules.empty()) {
         for (auto index = 0uz; index < draft.module_count(); ++index) {
@@ -80,25 +79,8 @@ auto ConstantAnalysisContext::prepare_call(FunctionID function, ProgramOriginID 
     if (!completed) {
         co_return std::unexpected(ExecutionDependencyFailure {});
     }
-    const auto contract = draft.construction_callable_contract_copy(declaration.callable);
-    auto parameters = std::vector<ConstructionTypeRef>();
-    parameters.reserve(contract.parameters.size());
-    for (const auto& parameter : contract.parameters) {
-        parameters.push_back(parameter.type);
-    }
-    const auto stored = completed_calls
-                            .emplace(
-                                function,
-                                CompletedCall {
-                                    .body = draft.body_draft(*completed),
-                                    .parameters = std::move(parameters)
-                                }
-                            )
-                            .first;
-    co_return ExecutionCallBody {
-        .body = ExecutionBody(stored->second.body),
-        .parameter_types = stored->second.parameters
-    };
+    completed_calls.emplace(function, *completed);
+    co_return ExecutionBody(draft.body_draft(*completed));
 }
 
 auto ConstantAnalysisContext::report(const ExecutionDiagnostic& failure) noexcept -> void {
@@ -113,6 +95,15 @@ auto ConstantAnalysisContext::report(const ExecutionDiagnostic& failure) noexcep
         if (++shown == 8uz) {
             break;
         }
+    }
+    if (root) {
+        const auto kind =
+            draft.body_draft(root->body).kind == BodyKind::Test ? "const test" : "constant block";
+        auto message = std::format("while evaluating this {}", kind);
+        if (root->source.label) {
+            message += std::format(" {:?}", draft.spelling(*root->source.label));
+        }
+        diagnostic.related(draft.source_span(root->source.origin), std::move(message));
     }
     static_cast<void>(draft.diagnostics().error(diagnostic.build()));
 }
@@ -138,11 +129,11 @@ auto evaluate_constant_root(
 auto evaluate_constant_body(
     ProgramDraft& draft,
     ConstructionRequests& requests,
-    BodyID body
+    ConstantBodyRoot root
 ) noexcept -> AnalysisTask<void> {
-    auto context = ConstantAnalysisContext(draft, requests);
+    auto context = ConstantAnalysisContext(draft, requests, root);
     const auto result =
-        (co_await execute_body(draft, context, ExecutionBody(draft.body_draft(body))));
+        (co_await execute_body(draft, context, ExecutionBody(draft.body_draft(root.body))));
     if (!result) {
         if (const auto failure = draft.diagnostics().failure()) {
             co_return std::unexpected(*failure);

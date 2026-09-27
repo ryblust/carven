@@ -330,12 +330,14 @@ private:
         visit_fields(value.visibility, value.name_span, value.type, value.initializer);
     }
 
+    auto visit(const ASTBlockLabel& value) noexcept -> void { visit(value.span); }
+
     auto visit(const ASTConstantBlock& value) noexcept -> void {
-        visit_fields(value.keyword_span, value.body);
+        visit_fields(value.keyword_span, value.label, value.body);
     }
 
     auto visit(const ASTTestDecl& value) noexcept -> void {
-        visit_fields(value.keyword_span, value.name_span, value.body);
+        visit_fields(value.keyword_span, value.label, value.body);
     }
 
     auto visit(const ASTItem& value) noexcept -> void { visit_fields(value.span, value.value); }

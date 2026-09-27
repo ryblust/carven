@@ -3,15 +3,11 @@ import <functional> using std::identity;
 private class NativeCallback {
     callback: identity,
 
-    fn create() -> NativeCallback {
-        return {
-            callback: identity {}
-        };
-    }
+    fn create() -> NativeCallback => {
+        callback: identity {}
+    };
 
-    fn invoke(self, value: i32) -> i32 {
-        return self.callback(value);
-    }
+    fn invoke(self, value: i32) -> i32 => self.callback(value);
 }
 
 test "Classes: a private native callable field uses ordinary C++ invocation" {

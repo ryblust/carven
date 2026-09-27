@@ -2,6 +2,6 @@ export const fn announce() {
     println("helper call");
 }
 
-const {
+const "helper" {
     println("helper block");
 }

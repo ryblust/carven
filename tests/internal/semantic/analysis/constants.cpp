@@ -4,8 +4,6 @@ module;
 
 module carven:test.internal.semantic.analysis.constants;
 
-import :diagnostics.code;
-import :diagnostics.diagnostic;
 import :frontend.program.parse;
 import :semantic.analyze;
 import :semantic.semir.body;
@@ -48,12 +46,12 @@ TEST_CASE("Semantic constants: declarations publish values without executable bo
     CHECK(equality->value);
 }
 
-TEST_CASE("Semantic constants: known results do not broaden static syntax") {
-    const auto diagnostics = analyze_test_errors(
-        "fn source() -> i32 { return 1; } "
-        "fn invalid() { const _ = (source() == 1) && false; }"
+TEST_CASE("Semantic constants: const calls execute in local constant initializers") {
+    const auto program = analyze_test_program(
+        "const fn source() -> i32 { return 1; } "
+        "fn use() { const _ = (source() == 1) && false; }"
     );
-    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstInitializer));
+    CHECK_EQ(program.declarations().functions().size(), 2uz);
 }
 
 TEST_CASE("Constant roots: arithmetic intermediates and extent results are not retained") {

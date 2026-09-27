@@ -17,7 +17,6 @@ fn narrow(value: i32) -> i32 throw ZFailure {
 }
 
 fn exact_tail(value: i32) -> i32 throw ZFailure => narrow(value)?;
-
 fn widened_tail(value: i32) -> i32 throw ZFailure + AFailure => narrow(value)?;
 
 fn selected_failure(select_a: bool) -> i32 throw ZFailure + AFailure {

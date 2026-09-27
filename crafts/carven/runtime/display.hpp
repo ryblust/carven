@@ -8,7 +8,8 @@
 
 namespace carven::runtime {
 
-// A bounded logical display. It never invokes a user formatter or dereferences pointers.
+// A bounded logical display. Only C string pointers are read as text;
+// user formatters are never invoked.
 class DisplayWriter final {
 public:
     auto text(std::string_view value) noexcept -> void {
@@ -63,6 +64,12 @@ public:
             quoted(value);
         } else if constexpr (std::is_same_v<T, String>) {
             quoted(value.as_str());
+        } else if constexpr (std::is_same_v<T, const char*> || std::is_same_v<T, char*>) {
+            if (value == nullptr) {
+                text("nullptr");
+            } else {
+                quoted(value);
+            }
         } else if constexpr (std::is_same_v<T, char32_t>) {
             quoted(carven::runtime::format_argument(value).as_str(), true);
         } else if constexpr (std::is_same_v<T, char8_t>

@@ -111,8 +111,7 @@ TEST_CASE("SemIR publication: String operations validate arity types access and 
                 TestDeclaration {
                     .is_const = false,
                     .module_id = module_id,
-                    .name = builder.intern_spelling("text"),
-                    .origin = facts.origin,
+                    .source = {.label = builder.intern_spelling("text"), .origin = facts.origin},
                     .body = reservation.id(),
                 }
             );
@@ -131,6 +130,7 @@ TEST_CASE("SemIR publication: String operations validate arity types access and 
             statements.push_back({
                 .origin = facts.origin,
                 .lifetime = lifetime,
+                .reachable = true,
                 .value = SemExpressionStatement {
                     .expression = body.make_expression(
                         result_type,
@@ -150,6 +150,7 @@ TEST_CASE("SemIR publication: String operations validate arity types access and 
                         .origin = facts.origin,
                         .statements = std::move(statements),
                         .result = std::nullopt,
+                        .result_reachable = false,
                         .failures = BodyFailures(builder.add_empty_failure_term()),
                         .exits_test = false,
                     }

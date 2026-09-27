@@ -26,7 +26,7 @@ public:
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
     auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-        -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> override;
+        -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> override;
     auto report(const ExecutionDiagnostic& diagnostic) noexcept -> void override;
 
     auto write(ExecutionOutputStream, std::string_view) noexcept -> void override;
@@ -60,7 +60,7 @@ auto ExecutionContext::function_for_callable(CallableID callable) const noexcept
 }
 
 auto ExecutionContext::prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-    -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> {
+    -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> {
     calls.push_back(function);
     const auto body = co_await construction.ensure_function_body(
         function,
@@ -69,10 +69,7 @@ auto ExecutionContext::prepare_call(FunctionID function, ProgramOriginID origin)
     );
     REQUIRE(body.has_value());
     REQUIRE(draft.body_draft(*body).inputs.parameters.empty());
-    co_return ExecutionCallBody {
-        .body = ExecutionBody(draft.body_draft(*body)),
-        .parameter_types = {}
-    };
+    co_return ExecutionBody(draft.body_draft(*body));
 }
 
 auto ExecutionContext::report(const ExecutionDiagnostic& diagnostic) noexcept -> void {
@@ -317,17 +314,17 @@ TEST_CASE("Constant execution: step limits include nested calls and recursive eq
             check_limit(context, "steps");
             CHECK_FALSE(evaluate(
                             "leaf",
-                            {.steps = 4uz,
+                            {.steps = 5uz,
                              .text_work = 8uz * maximum_constant_text_bytes,
                              .aggregate_work = maximum_constant_aggregate_work}
             )
                             .has_value());
             check_limit(context, "steps");
-            // Call, invocation, body region, return, and literal each use one step.
+            // Call, callee value, invocation, body region, return, and literal each use one step.
             for (auto root = 0uz; root < 2uz; ++root) {
                 CHECK(evaluate(
                           "leaf",
-                          {.steps = 5uz,
+                          {.steps = 6uz,
                            .text_work = 8uz * maximum_constant_text_bytes,
                            .aggregate_work = maximum_constant_aggregate_work}
                 )
@@ -335,7 +332,7 @@ TEST_CASE("Constant execution: step limits include nested calls and recursive eq
             }
             CHECK_FALSE(evaluate(
                             "run",
-                            {.steps = 14uz,
+                            {.steps = 17uz,
                              .text_work = 8uz * maximum_constant_text_bytes,
                              .aggregate_work = maximum_constant_aggregate_work}
             )
@@ -343,14 +340,14 @@ TEST_CASE("Constant execution: step limits include nested calls and recursive eq
             check_limit(context, "steps");
             CHECK(evaluate(
                       "run",
-                      {.steps = 15uz,
+                      {.steps = 18uz,
                        .text_work = 8uz * maximum_constant_text_bytes,
                        .aggregate_work = maximum_constant_aggregate_work}
             )
                       .has_value());
             CHECK_FALSE(evaluate(
                             "equal",
-                            {.steps = 13uz,
+                            {.steps = 14uz,
                              .text_work = 8uz * maximum_constant_text_bytes,
                              .aggregate_work = maximum_constant_aggregate_work}
             )
@@ -358,7 +355,7 @@ TEST_CASE("Constant execution: step limits include nested calls and recursive eq
             check_limit(context, "comparison");
             CHECK(evaluate(
                       "equal",
-                      {.steps = 14uz,
+                      {.steps = 15uz,
                        .text_work = 8uz * maximum_constant_text_bytes,
                        .aggregate_work = maximum_constant_aggregate_work}
             )
@@ -393,7 +390,7 @@ TEST_CASE("Constant execution: text work counts produced bytes across copies app
         CAPTURE(scenario.body);
         with_execution(
             std::format("const fn run() -> String {{ {} }}", scenario.body),
-            [&](ProgramDraft&, ExecutionContext& context, const auto& evaluate) {
+            [&](ProgramDraft& draft, ExecutionContext& context, const auto& evaluate) {
                 CHECK_FALSE(evaluate(
                                 "run",
                                 {.steps = maximum_constant_steps,
@@ -409,7 +406,7 @@ TEST_CASE("Constant execution: text work counts produced bytes across copies app
                      .aggregate_work = maximum_constant_aggregate_work}
                 );
                 REQUIRE(result.has_value());
-                CHECK(std::get<ExecutionOwnedText>(*result).bytes == scenario.result);
+                CHECK(execution_text(draft, *result) == scenario.result);
                 CHECK(context.diagnostics.empty());
             }
         );
@@ -437,6 +434,128 @@ TEST_CASE("Constant execution: print output consumes the text-work budget") {
             )
                       .has_value());
             CHECK(context.output == "ab 3\n");
+        }
+    );
+}
+
+TEST_CASE("Constant execution: slice elements retain their array addresses") {
+    with_execution(
+        R"(
+            fn direct() -> bool {
+                var values = [10, 20, 30];
+                let view = values.as_slice();
+                return addressof(view[0]) == addressof(values[0]);
+            }
+            fn copied() -> bool {
+                var values = [10, 20, 30];
+                let original = values.as_slice();
+                let copy = original;
+                return addressof(copy[1]) == addressof(values[1]);
+            }
+            fn nested() -> bool {
+                var values = [10, 20, 30];
+                let view = values.as_slice().slice(1usize, 3usize).slice(1usize, 2usize);
+                return addressof(view[0]) == addressof(values[2]);
+            }
+        )",
+        [](ProgramDraft& draft, ExecutionContext& context, const auto& evaluate) static noexcept {
+            for (const auto name : {"direct", "copied", "nested"}) {
+                CAPTURE(name);
+                const auto result = evaluate(name);
+                REQUIRE(result.has_value());
+                const auto atom = execution_atom(draft, *result);
+                REQUIRE(atom.has_value());
+                CHECK(std::get<BooleanConstant>(atom->value).value);
+                CHECK(context.diagnostics.empty());
+            }
+        }
+    );
+}
+
+TEST_CASE("Constant execution: slice display borrows its elements") {
+    with_execution(
+        R"(const fn run() -> bool {
+            let values = [1, 2];
+            let view = values.as_slice();
+            println(view);
+            return view[0] == 1;
+        })",
+        [](ProgramDraft& draft, ExecutionContext& context, const auto& evaluate) static {
+            const auto result = evaluate(
+                "run",
+                {.steps = maximum_constant_steps,
+                 .text_work = maximum_constant_text_bytes,
+                 .aggregate_work = 2uz}
+            );
+            REQUIRE(result.has_value());
+            const auto atom = execution_atom(draft, *result);
+            REQUIRE(atom.has_value());
+            CHECK(std::get<BooleanConstant>(atom->value).value);
+            CHECK(context.output.contains("1"));
+            CHECK(context.output.contains("2"));
+            CHECK(context.diagnostics.empty());
+        }
+    );
+}
+
+TEST_CASE("Constant execution: text views query and project without constructing their contents") {
+    with_execution(
+        R"(
+            const fn owned() -> bool {
+                let text = String::from_str("abc");
+                let view = text.as_str();
+                let bytes = view.bytes.slice(1usize, 3usize);
+                return view == "abc" && bytes.len() == 2usize && bytes[0] == 98u8
+                    && addressof(bytes[0]) == addressof(text.bytes[1]);
+            }
+            const fn retained() -> bool {
+                let text = "abc";
+                let bytes = text.bytes;
+                let copy = bytes;
+                return bytes.len() == 3usize && bytes[1] == 98u8
+                    && addressof(bytes[1]) == addressof(copy[1]);
+            }
+            const fn frozen() -> [u8] => "ab".bytes;
+        )",
+        [](ProgramDraft& draft, ExecutionContext& context, const auto& evaluate) static noexcept {
+            for (const auto& [name, text_work] :
+                 std::array {std::pair {"owned", 3uz}, std::pair {"retained", 0uz}}) {
+                CAPTURE(name);
+                const auto result = evaluate(
+                    name,
+                    {.steps = maximum_constant_steps, .text_work = text_work, .aggregate_work = 0uz}
+                );
+                REQUIRE(result.has_value());
+                const auto atom = execution_atom(draft, *result);
+                REQUIRE(atom.has_value());
+                CHECK(std::get<BooleanConstant>(atom->value).value);
+                CHECK(context.diagnostics.empty());
+            }
+            CHECK_FALSE(
+                evaluate(
+                    "owned",
+                    {.steps = maximum_constant_steps, .text_work = 2uz, .aggregate_work = 0uz}
+                )
+                    .has_value()
+            );
+            check_limit(context, "text");
+            CHECK_FALSE(
+                evaluate(
+                    "frozen",
+                    {.steps = maximum_constant_steps, .text_work = 0uz, .aggregate_work = 1uz}
+                )
+                    .has_value()
+            );
+            check_limit(context, "aggregate");
+            const auto frozen = evaluate(
+                "frozen",
+                {.steps = maximum_constant_steps, .text_work = 0uz, .aggregate_work = 2uz}
+            );
+            REQUIRE(frozen.has_value());
+            const auto children = execution_compound_view(draft, *frozen);
+            REQUIRE(children.has_value());
+            CHECK(children->size() == 2uz);
+            CHECK(context.diagnostics.empty());
         }
     );
 }

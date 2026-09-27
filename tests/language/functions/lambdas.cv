@@ -1,11 +1,7 @@
 fn increment(value: i32) -> i32 => value + 1;
-
 fn first(value: i32) -> i32 => value + 1;
-
 fn second(value: i32) -> i32 => value + 2;
-
 fn invoke(callback: fn(i32) -> i32, value: i32) -> i32 => callback(value);
-
 fn apply(callback: fn(i32) -> i32, value: i32) -> i32 => callback(value);
 
 fn replace_with_second(&callback: fn(i32) -> i32) {

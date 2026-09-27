@@ -9,7 +9,6 @@ struct Pair {
 }
 
 fn sum(&&pair: Pair) -> i32 => pair.left + pair.right;
-
 fn combine(&&left: Pair, &&right: Pair) -> i32 => left.left + right.left;
 
 test "Ownership: Take transfers ownership preserves order and permits var restoration" {

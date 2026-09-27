@@ -1,0 +1,4 @@
+fn main() {
+    let value = c"abc";
+    println(f"{value:p}");
+}

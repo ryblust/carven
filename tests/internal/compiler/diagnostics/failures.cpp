@@ -201,8 +201,7 @@ TEST_CASE("Compiler diagnostics: control and fixed-point failures remain semanti
         },
         {
             .name = "nonconstant binding",
-            .source = "fn runtime() -> i32 { return 1; } "
-                      "fn invalid() { const value = runtime(); }",
+            .source = "fn invalid(input: i32) { const value = input; }",
             .code = "CV-CONST-INITIALIZER",
             .primary_text = {},
         },

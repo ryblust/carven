@@ -1,5 +1,0 @@
-import "pointers/provider.hpp";
-
-export struct Node {
-    callback: ptr<fn(Node) -> void>,
-}

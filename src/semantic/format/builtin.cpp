@@ -328,6 +328,9 @@ auto format_builtin(
 
 auto builtin_format_value(const ConstantValueReader& values, const ConstantFact& fact) noexcept
     -> BuiltinFormatValue {
+    if (const auto* text = std::get_if<CStringConstant>(&fact.value)) {
+        return values.spelling(text->value);
+    }
     const auto type = values.type_copy(fact.type);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
     if (builtin == nullptr) {

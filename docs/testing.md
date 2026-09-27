@@ -100,7 +100,10 @@ A language fixture may use a same-stem C++ provider header for observations that
 Carven cannot express. Tests whose subject is that C++ boundary belong in
 `interop`. Internal tests use doctest; generated programs use Carven's testing
 support. `const test` checks execute during Carven compilation and do not generate
-runtime test functions. `carven interpret --tests` executes ordinary tests in the
+runtime test functions. Test names may be omitted; an anonymous failure reports
+its file, line, and column. Explicit names retain module-local uniqueness.
+Constant block labels are optional diagnostic strings and may repeat.
+`carven interpret --tests` executes ordinary tests in the
 interpreter subset with runtime semantics. Use shared fixtures to compare interpreted
 and native behavior, including helper assertions and execution ordering.
 

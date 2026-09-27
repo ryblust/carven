@@ -95,8 +95,7 @@ auto BodyElaborator::cpp_projection(
     }
     auto* place = std::get_if<PlaceExpression>(&receiver.storage);
     inputs.push_back(
-        {.type = *concrete,
-         .access = place != nullptr ? active_builder().place_access(*place) : AccessMode::Read}
+        {.type = *concrete, .access = place != nullptr ? place->access : AccessMode::Read}
     );
     for (const auto& operand : operands) {
         const auto* type = std::get_if<TypeID>(&operand.expression.type.construction());
@@ -284,7 +283,7 @@ auto BodyElaborator::cpp_call(
             return std::unexpected(consumed.error());
         }
         if (auto* place = std::get_if<PlaceExpression>(&built.storage)) {
-            const auto access = active_builder().place_access(*place);
+            const auto access = place->access;
             return Operand {
                 .access = access,
                 .expression = UniqueIndirect(std::move(place->expression))

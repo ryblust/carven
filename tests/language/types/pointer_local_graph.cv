@@ -1,0 +1,160 @@
+struct CycleLink {
+    value: i32,
+    previous: ptr<&CycleLink>,
+    next: ptr<&CycleLink>,
+}
+
+const fn connect_cycle(&first: CycleLink, &second: CycleLink) {
+    let first_address = addressof(&first);
+    let second_address = addressof(&second);
+    first.previous = second_address;
+    first.next = second_address;
+    second.previous = first_address;
+    second.next = first_address;
+}
+
+const fn increase_through_address(address: ptr<&CycleLink>) {
+    if address == nullptr { return; }
+    address -> value += 1;
+}
+
+const fn run_local_cycle() -> i32 {
+    var first = CycleLink {
+        value: 1,
+        previous: nullptr,
+        next: nullptr
+    };
+    var second = CycleLink {
+        value: 2,
+        previous: nullptr,
+        next: nullptr
+    };
+    connect_cycle(&first, &second);
+
+    let first_address = addressof(&first);
+    let second_address = addressof(&second);
+    if first.next != second_address || first.previous != second_address { return -1; }
+    if second.next != first_address || second.previous != first_address { return -2; }
+
+    increase_through_address(first.next);
+    var current = first_address;
+    var total = 0;
+    for _ in 0..4 {
+        if current == nullptr { return -3; }
+        total += current -> value;
+        current = current -> next;
+    }
+    if current != first_address { return -4; }
+    return total;
+}
+
+const fn relink_local_nodes() -> i32 {
+    var first = CycleLink {
+        value: 1,
+        previous: nullptr,
+        next: nullptr
+    };
+    var middle = CycleLink {
+        value: 2,
+        previous: nullptr,
+        next: nullptr
+    };
+    var last = CycleLink {
+        value: 3,
+        previous: nullptr,
+        next: nullptr
+    };
+    let first_address = addressof(&first);
+    let middle_address = addressof(&middle);
+    let last_address = addressof(&last);
+    first.next = middle_address;
+    middle.previous = first_address;
+    middle.next = last_address;
+    last.previous = middle_address;
+
+    // Replacing links through aliases changes the same two-way graph.
+    first_address -> next = last_address;
+    last_address -> previous = first_address;
+    let forward = first.next;
+    let backward = last.previous;
+    if forward == nullptr || backward == nullptr { return -1; }
+    return forward -> value * 10 + backward -> value;
+}
+
+const fn assignment_keeps_address() -> i32 {
+    var value = 3;
+    let address = addressof(&value);
+    value = 5;
+    return *address;
+}
+
+const fn first_array_address(values: [i32; 2]) -> ptr<i32> => addressof(values[0]);
+
+const fn read_address_now(address: ptr<i32>) -> i32 {
+    if address == nullptr { return -1; }
+    return *address;
+}
+
+const fn read_temporary_array_address() -> i32 => read_address_now(first_array_address([1, 2]));
+
+const fn observe_array_alias(values: [i32; 2], address: ptr<&i32>) -> i32 {
+    if address == nullptr { return -1; }
+    *address = 7;
+    return values[0];
+}
+
+const fn observe_scalar_snapshot(value: i32, address: ptr<&i32>) -> i32 {
+    if address == nullptr { return -1; }
+    *address = 7;
+    return value;
+}
+
+const fn read_aliases_and_snapshots() -> i32 {
+    var array = [1, 2];
+    let array_result = observe_array_alias(array, addressof(&array[0]));
+    var scalar = 1;
+    let scalar_result = observe_scalar_snapshot(scalar, addressof(&scalar));
+    return array_result * 10 + scalar_result;
+}
+
+const fn retain_rows(rows: [[i32; 2]]) -> [[i32; 2]] => rows;
+
+const fn read_returned_slice_element() -> i32 {
+    var rows = [
+        [1, 2],
+        [3, 4]
+    ];
+    return observe_array_alias(retain_rows(rows.as_slice())[0], addressof(&rows[0][0]));
+}
+
+const fn write_same_target_twice(&first: i32, &second: i32) -> i32 {
+    first = 3;
+    second = 9;
+    return first;
+}
+
+const fn observe_write_order() -> i32 {
+    var value = 1;
+    let result = write_same_target_twice(&value, &value);
+    return result * 10 + value;
+}
+
+const test "Pointers: local graph and aliases execute at compile time" {
+    check(run_local_cycle() == 8);
+    check(relink_local_nodes() == 31);
+    check(assignment_keeps_address() == 5);
+    check(read_temporary_array_address() == 1);
+    check(read_aliases_and_snapshots() == 71);
+    check(read_returned_slice_element() == 7);
+    check(observe_write_order() == 99);
+}
+
+test "Pointers: local graph and aliases execute at runtime" {
+    check(run_local_cycle() == 8);
+    check(relink_local_nodes() == 31);
+    check(assignment_keeps_address() == 5);
+    check(read_temporary_array_address() == 1);
+    check(read_aliases_and_snapshots() == 71);
+    check(read_returned_slice_element() == 7);
+    check(observe_write_order() == 99);
+}

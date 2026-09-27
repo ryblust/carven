@@ -1,25 +1,36 @@
 module carven:semantic.evaluation.control.impl;
 
+import :semantic.evaluation.admission;
 import :semantic.evaluation.display;
 import :semantic.evaluation.executor;
 import std;
 
-auto SemanticExecutor::region(ExecutionFrame& frame, const SemanticRegion& source) noexcept
-    -> ExecutionTask<ExecutionCompletion> {
-    if (auto checked = step(source.origin); !checked) {
-        co_return std::unexpected(checked.error());
-    }
-    for (const auto& child : source.statements) {
-        auto result = (co_await statement(frame, child));
-        if (!result || result->flow != ExecutionFlow::Normal) {
-            co_return result;
+auto SemanticExecutor::region(
+    ExecutionFrame& frame,
+    const SemanticRegion& source,
+    bool cleanup
+) noexcept -> ExecutionTask<ExecutionCompletion> {
+    const auto execute = [&]() noexcept -> ExecutionTask<ExecutionCompletion> {
+        if (auto checked = step(source.origin); !checked) {
+            co_return std::unexpected(checked.error());
         }
+        for (const auto& child : source.statements) {
+            auto result = (co_await statement(frame, child));
+            if (!result || result->flow != ExecutionFlow::Normal) {
+                co_return result;
+            }
+        }
+        co_return source.result
+            ? (co_await expression(frame, *source.result))
+            : ExecutionResult<ExecutionCompletion>(
+                  ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}}
+              );
+    };
+    auto result = (co_await execute());
+    if (cleanup) {
+        release_region(frame, source.lifetime);
     }
-    co_return source.result
-        ? (co_await expression(frame, *source.result))
-        : ExecutionResult<ExecutionCompletion>(
-              ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}}
-          );
+    co_return result;
 }
 
 auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement& source) noexcept
@@ -33,7 +44,13 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
     if (auto checked = step(source.origin); !checked) {
         co_return std::unexpected(checked.error());
     }
-    co_return (co_await source.value.visit(
+    if (const auto reason = unsupported_execution_statement(source)) {
+        co_return std::unexpected(
+            fail(source.origin, DiagnosticCode::ConstAdmission, std::string(*reason))
+        );
+    }
+    const auto temporaries = frame.temporaries.size();
+    auto result = (co_await source.value.visit(
         [&](const auto& operation) noexcept -> ExecutionTask<ExecutionCompletion> {
             using Operation = std::remove_cvref_t<decltype(operation)>;
             if constexpr (std::same_as<Operation, SemReturn>) {
@@ -97,20 +114,29 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                 if (!stored) {
                     co_return std::unexpected(stored.error());
                 }
-                frame.slots[operation.binding.index()] = std::move(*stored);
+                bind(frame, operation.binding.index(), std::move(*stored));
                 co_return ExecutionCompletion {
                     .flow = ExecutionFlow::Normal,
                     .value = ExecutionVoid {}
                 };
             } else if constexpr (std::same_as<Operation, SemAssign>) {
-                auto target = (co_await place(frame, operation.target));
-                if (!target) {
-                    co_return std::unexpected(target.error());
+                const auto* binding = std::get_if<SemBinding>(&operation.target.value);
+                const auto restore = binding != nullptr
+                    && std::holds_alternative<ExecutionTaken>(
+                                         frame.slots[binding->binding.index()]
+                    );
+                auto target = std::optional<ExecutionPlace>();
+                if (!restore) {
+                    auto selected = (co_await place(frame, operation.target));
+                    if (!selected) {
+                        co_return std::unexpected(selected.error());
+                    }
+                    target = std::move(*selected);
                 }
                 // Compound assignment snapshots its left operand before the right executes.
                 auto prior = std::optional<ConstantFact>();
                 if (operation.compound) {
-                    auto selected = located(frame, *target, source.origin);
+                    auto selected = located(*target, source.origin);
                     if (!selected) {
                         co_return std::unexpected(selected.error());
                     }
@@ -136,8 +162,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                             *operation.compound,
                             *prior,
                             *rhs,
-                            *result_type,
-                            context.arithmetic()
+                            *result_type
                         ),
                         source.origin
                     );
@@ -149,23 +174,30 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                 if (!right) {
                     co_return std::unexpected(right.error());
                 }
-                if (target->path.empty()) {
-                    frame.slots[target->slot] = std::move(*right);
-                } else {
-                    auto selected = located(frame, *target, source.origin);
-                    if (!selected) {
-                        co_return std::unexpected(selected.error());
-                    }
-                    **selected = std::move(*right);
+                if (binding != nullptr
+                    && std::holds_alternative<ExecutionTaken>(
+                        frame.slots[binding->binding.index()]
+                    )) {
+                    bind(frame, binding->binding.index(), std::move(*right));
+                } else if (!target || !memory.assign(*target, std::move(*right))) {
+                    co_return std::unexpected(fail(
+                        source.origin,
+                        DiagnosticCode::ConstEvaluation,
+                        "pointer target is no longer alive"
+                    ));
                 }
                 co_return ExecutionCompletion {
                     .flow = ExecutionFlow::Normal,
                     .value = ExecutionVoid {}
                 };
             } else if constexpr (std::same_as<Operation, SemLoop>) {
-                co_return (co_await loop(frame, operation, source.origin));
+                auto result = (co_await loop(frame, operation, source.origin));
+                release_region(frame, operation.initializer->lifetime);
+                co_return result;
             } else if constexpr (std::same_as<Operation, SemRangeLoop>) {
-                co_return (co_await range_loop(frame, operation, source.origin));
+                auto result = (co_await range_loop(frame, operation, source.origin));
+                release_region(frame, operation.lifetime);
+                co_return result;
             } else if constexpr (std::same_as<Operation, OwnedSemanticRegion>) {
                 co_return (co_await region(frame, *operation));
             } else {
@@ -177,6 +209,8 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
             }
         }
     ));
+    release_temporaries(frame, temporaries);
+    co_return result;
 }
 
 auto SemanticExecutor::loop(
@@ -184,7 +218,7 @@ auto SemanticExecutor::loop(
     const SemLoop& source,
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionCompletion> {
-    auto initialized = (co_await region(frame, *source.initializer));
+    auto initialized = (co_await region(frame, *source.initializer, false));
     if (!initialized || initialized->flow != ExecutionFlow::Normal) {
         co_return initialized;
     }
@@ -193,7 +227,9 @@ auto SemanticExecutor::loop(
             co_return std::unexpected(checked.error());
         }
         if (source.condition) {
+            const auto temporaries = frame.temporaries.size();
             auto condition = (co_await value(frame, *source.condition));
+            release_temporaries(frame, temporaries);
             if (!condition) {
                 co_return std::unexpected(condition.error());
             }
@@ -218,7 +254,7 @@ auto SemanticExecutor::loop(
                 .value = ExecutionVoid {}
             };
         }
-        auto steps = (co_await region(frame, *source.steps));
+        auto steps = (co_await region(frame, *source.steps, false));
         if (!steps || steps->flow == ExecutionFlow::Return) {
             co_return steps;
         }
@@ -256,8 +292,11 @@ auto SemanticExecutor::range_loop(
                 co_return std::unexpected(checked.error());
             }
             if (source.binding) {
-                frame.slots[source.binding->index()] =
-                    ConstantAtom {.type = range_type->element, .value = current};
+                bind(
+                    frame,
+                    source.binding->index(),
+                    ConstantAtom {.type = range_type->element, .value = current}
+                );
             }
             auto body = co_await region(frame, *source.body);
             if (!body || body->flow == ExecutionFlow::Return) {
@@ -272,37 +311,12 @@ auto SemanticExecutor::range_loop(
         }
         co_return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
     }
-    const auto slots = frame.slots.size();
     const auto execute = [&]() noexcept -> ExecutionTask<ExecutionCompletion> {
-        auto owner = ExecutionPlace {.slot = slots, .path = {}};
-        if (local_place(source.source)) {
-            auto selected = (co_await place(frame, source.source));
-            if (!selected) {
-                co_return std::unexpected(selected.error());
-            }
-            owner = std::move(*selected);
-        } else {
-            auto evaluated = (co_await value(frame, source.source));
-            if (!evaluated) {
-                co_return std::unexpected(evaluated.error());
-            }
-            auto stored = own_storage(std::move(*evaluated), origin);
-            if (!stored) {
-                co_return std::unexpected(stored.error());
-            }
-            frame.slots.emplace_back(std::move(*stored));
+        auto sequence = (co_await sequence_view(frame, source.source, origin));
+        if (!sequence) {
+            co_return std::unexpected(sequence.error());
         }
-        auto storage = located(frame, owner, origin);
-        if (!storage) {
-            co_return std::unexpected(storage.error());
-        }
-        const auto view = execution_compound_view(values, **storage);
-        if (!view) {
-            co_return std::unexpected(
-                fail(origin, DiagnosticCode::ConstEvaluation, "iteration requires array storage")
-            );
-        }
-        const auto extent = view->size();
+        const auto extent = sequence->extent;
         auto borrow_element = source.access == AccessMode::Write;
         if (source.binding) {
             const auto element_type = type(frame.body->binding_type(*source.binding), origin);
@@ -316,12 +330,16 @@ auto SemanticExecutor::range_loop(
                 co_return std::unexpected(checked.error());
             }
             if (source.binding) {
-                auto element = owner;
-                element.path.push_back(index);
+                auto selected = slice_element(*sequence, index, origin);
+                if (!selected) {
+                    co_return std::unexpected(selected.error());
+                }
+                auto element = std::move(*selected);
+                release(frame, source.binding->index());
                 if (borrow_element) {
                     frame.slots[source.binding->index()] = std::move(element);
                 } else {
-                    auto selected = located(frame, element, origin);
+                    auto selected = located(element, origin);
                     if (!selected) {
                         co_return std::unexpected(selected.error());
                     }
@@ -329,7 +347,7 @@ auto SemanticExecutor::range_loop(
                     if (!copied) {
                         co_return std::unexpected(copied.error());
                     }
-                    frame.slots[source.binding->index()] = std::move(*copied);
+                    bind(frame, source.binding->index(), std::move(*copied));
                 }
             }
             auto body = co_await region(frame, *source.body);
@@ -344,9 +362,8 @@ auto SemanticExecutor::range_loop(
     };
     auto result = (co_await execute());
     if (source.binding) {
-        frame.slots[source.binding->index()] = ExecutionUninitialized {};
+        release(frame, source.binding->index());
     }
-    frame.slots.resize(slots);
     co_return result;
 }
 
@@ -459,9 +476,9 @@ auto SemanticExecutor::observe_condition(
     }
     auto& output = *condition_observation->explanation;
     output += std::string(values.spelling(condition_observation->sources[0])) + ": "
-        + display_execution_value(values, left, true).value_or("<opaque>") + "\n";
+        + display_execution_value(values, left, true, &memory).value_or("<opaque>") + "\n";
     output += std::string(values.spelling(condition_observation->sources[1])) + ": "
-        + (right ? display_execution_value(values, *right, true).value_or("<opaque>")
+        + (right ? display_execution_value(values, *right, true, &memory).value_or("<opaque>")
                  : "<not evaluated>")
         + "\n";
     if (output.size() > 16384uz) {

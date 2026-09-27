@@ -1,6 +1,7 @@
 module carven:semantic.semir.decl.impl;
 
 import :semantic.semir.decl;
+import :source.provenance;
 import :support.invariant;
 import std;
 
@@ -822,4 +823,17 @@ auto DeclarationBuilder::require_heads_defined() const noexcept -> void {
         || !module_constants.all_defined()) {
         invariant_violation("declaration heads completed with an undefined shell");
     }
+}
+
+auto block_display_name(CompilationProvenanceView provenance, const BlockSource& source) noexcept
+    -> std::string {
+    if (source.label) {
+        return std::string(provenance.spelling(*source.label));
+    }
+    const auto origin = provenance.source_origin(source.origin);
+    return std::format(
+        "{}:{}",
+        provenance.source_snapshot(origin.source_id).display_origin(),
+        provenance.location(source.origin)
+    );
 }

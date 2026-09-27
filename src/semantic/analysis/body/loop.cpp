@@ -105,7 +105,7 @@ auto BodyElaborator::c_style_for_statement(
     for (const auto& step : header.steps) {
         [[maybe_unused]] const auto path = BodyReferencePathGuard(
             reference_path_reachable,
-            condition_reachable && step_reachable && (!known.has_value() || *known)
+            condition_reachable && step_reachable && reachable && (!known.has_value() || *known)
         );
         begin_full_expression(step.span);
         auto result = (co_await step.value.visit(

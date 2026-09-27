@@ -6,9 +6,7 @@ export struct Link {
 }
 
 export fn identity(p: ptr<Link>) -> ptr<Link> => p;
-
 export fn opaque() -> ptr<::pointer_probe::Incomplete> => ::pointer_probe::opaque();
-
 export fn accept_opaque(p: ptr<::pointer_probe::Incomplete>) -> bool => p == nullptr;
 
 export struct CallbackHolder {

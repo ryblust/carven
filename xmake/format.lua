@@ -12,9 +12,10 @@ function main(check)
     if os.host() == "macosx" then
         local brew = find_program("brew")
         if brew then
-            local prefix = try {function () return os.iorunv(brew, {"--prefix", "llvm"}) end}
+            -- A formula query may fetch package metadata; the installation prefix is local.
+            local prefix = try {function () return os.iorunv(brew, {"--prefix"}) end}
             if prefix then
-                local candidate = path.join(prefix:trim(), "bin", "clang-format")
+                local candidate = path.join(prefix:trim(), "opt", "llvm", "bin", "clang-format")
                 if os.isfile(candidate) then
                     program = candidate
                 end

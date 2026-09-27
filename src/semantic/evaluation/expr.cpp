@@ -1,6 +1,8 @@
 module carven:semantic.evaluation.expr.impl;
 
+import :semantic.evaluation.admission;
 import :semantic.evaluation.executor;
+import :semantic.semir.children;
 import std;
 
 auto SemanticExecutor::value(ExecutionFrame& frame, const SemanticExpression& source) noexcept
@@ -24,6 +26,23 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
     if (auto checked = step(source.origin); !checked) {
         co_return std::unexpected(checked.error());
     }
+    if (const auto reason = unsupported_execution_expression(source)) {
+        auto operands = std::vector<const SemanticExpression*>();
+        visit_semantic_children(source.value, [&](const auto& child) noexcept {
+            if constexpr (std::same_as<std::remove_cvref_t<decltype(child)>, SemanticExpression>) {
+                operands.push_back(&child);
+            }
+        });
+        for (const auto* operand : operands) {
+            auto result = (co_await expression(frame, *operand));
+            if (!result || result->flow != ExecutionFlow::Normal) {
+                co_return result;
+            }
+        }
+        co_return std::unexpected(
+            fail(source.origin, DiagnosticCode::ConstAdmission, std::string(*reason))
+        );
+    }
     if (const auto* propagation = std::get_if<SemPropagate>(&source.value)) {
         co_return (co_await expression(frame, *propagation->operand));
     }
@@ -41,7 +60,7 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
         for (const auto& arm : attempt->arms) {
             const auto reset = [&]() noexcept {
                 for (const auto binding : arm.bindings) {
-                    frame.slots[binding.index()] = ExecutionUninitialized {};
+                    release(frame, binding.index());
                 }
             };
             auto matched = false;
@@ -50,6 +69,7 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     continue;
                 }
                 reset();
+                const auto pattern_temporaries = frame.temporaries.size();
                 if (std::holds_alternative<CatchAllPattern>(alternative.pattern)) {
                     matched = true;
                 } else if (const auto* typed =
@@ -68,11 +88,13 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                         arm.pattern_bounds
                     ));
                     if (!accepted) {
+                        release_temporaries(frame, pattern_temporaries);
                         reset();
                         co_return std::unexpected(accepted.error());
                     }
                     matched = *accepted;
                 }
+                release_temporaries(frame, pattern_temporaries);
                 if (matched) {
                     break;
                 }
@@ -85,11 +107,14 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
             auto recover =
                 co_await [&]() noexcept -> ExecutionTask<std::optional<ExecutionCompletion>> {
                 if (arm.guard) {
+                    const auto temporaries = frame.temporaries.size();
                     auto guard = (co_await value(frame, *arm.guard));
                     if (!guard) {
+                        release_temporaries(frame, temporaries);
                         co_return std::unexpected(guard.error());
                     }
                     auto truth = boolean(*guard, arm.guard->origin);
+                    release_temporaries(frame, temporaries);
                     if (!truth) {
                         co_return std::unexpected(truth.error());
                     }
@@ -116,11 +141,14 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
     }
     if (const auto* conditional = std::get_if<SemIf>(&source.value)) {
         for (const auto& branch : conditional->branches) {
+            const auto temporaries = frame.temporaries.size();
             auto condition = (co_await value(frame, branch.condition));
             if (!condition) {
+                release_temporaries(frame, temporaries);
                 co_return std::unexpected(condition.error());
             }
             auto truth = boolean(*condition, branch.condition.origin);
+            release_temporaries(frame, temporaries);
             if (!truth) {
                 co_return std::unexpected(truth.error());
             }
@@ -152,8 +180,14 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
             if (!arm.reachable) {
                 continue;
             }
+            const auto reset = [&]() noexcept {
+                for (const auto binding : arm.bindings) {
+                    release(frame, binding.index());
+                }
+            };
+            reset();
             if (selected) {
-                auto target = located(frame, *selected, match->subject->origin);
+                auto target = located(*selected, match->subject->origin);
                 if (!target) {
                     co_return std::unexpected(target.error());
                 }
@@ -162,27 +196,39 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     co_return std::unexpected(subject.error());
                 }
             }
+            const auto pattern_temporaries = frame.temporaries.size();
             auto accepted = (co_await matches(frame, arm.pattern, *subject, arm.pattern_bounds));
+            release_temporaries(frame, pattern_temporaries);
             if (!accepted) {
+                reset();
                 co_return std::unexpected(accepted.error());
             }
             if (!*accepted) {
+                reset();
                 continue;
             }
             if (arm.guard) {
+                const auto guard_temporaries = frame.temporaries.size();
                 auto guard = (co_await value(frame, *arm.guard));
                 if (!guard) {
+                    release_temporaries(frame, guard_temporaries);
+                    reset();
                     co_return std::unexpected(guard.error());
                 }
                 auto truth = boolean(*guard, arm.guard->origin);
+                release_temporaries(frame, guard_temporaries);
                 if (!truth) {
+                    reset();
                     co_return std::unexpected(truth.error());
                 }
                 if (!*truth) {
+                    reset();
                     continue;
                 }
             }
-            co_return (co_await region(frame, arm.body));
+            auto result = (co_await region(frame, arm.body));
+            reset();
+            co_return result;
         }
         co_return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
     }
@@ -197,18 +243,60 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                 co_return (co_await default_value(*target, source.origin));
             } else if constexpr (std::same_as<Operation, SemConstant>) {
                 co_return ExecutionValue(operation.constant);
+            } else if constexpr (std::same_as<Operation, SemCallable>) {
+                co_return ExecutionFunction {
+                    .type = source.type.construction(),
+                    .callable = operation.callable
+                };
+            } else if constexpr (std::same_as<Operation, SemBorrowCallable>) {
+                auto function = (co_await value(frame, *operation.source));
+                if (!function) {
+                    co_return std::unexpected(function.error());
+                }
+                if (auto* target = std::get_if<ExecutionFunction>(&*function)) {
+                    target->type = source.type.construction();
+                    co_return std::move(*function);
+                }
+                co_return std::unexpected(fail(
+                    source.origin,
+                    DiagnosticCode::ConstEvaluation,
+                    "callable is not supported in execution"
+                ));
             } else if constexpr (std::same_as<Operation, SemBinding>) {
                 auto local = slot_value(frame, operation.binding.index(), source.origin);
                 if (!local) {
                     co_return std::unexpected(local.error());
                 }
                 co_return copy_value(**local, source.origin);
+            } else if constexpr (std::same_as<Operation, SemAddressOf>) {
+                auto selected = (co_await place(frame, *operation.source));
+                if (!selected) {
+                    co_return std::unexpected(selected.error());
+                }
+                if (auto target = located(*selected, source.origin); !target) {
+                    co_return std::unexpected(target.error());
+                }
+                const auto pointer_type = type(source.type.construction(), source.origin);
+                if (!pointer_type) {
+                    co_return std::unexpected(pointer_type.error());
+                }
+                co_return ExecutionPointer {.type = *pointer_type, .target = std::move(*selected)};
+            } else if constexpr (std::same_as<Operation, SemDereference>) {
+                auto selected = (co_await place(frame, source));
+                if (!selected) {
+                    co_return std::unexpected(selected.error());
+                }
+                auto target = located(*selected, source.origin);
+                if (!target) {
+                    co_return std::unexpected(target.error());
+                }
+                co_return copy_value(**target, source.origin);
             } else if constexpr (std::same_as<Operation, SemTake>) {
                 auto selected = (co_await place(frame, *operation.place));
                 if (!selected) {
                     co_return std::unexpected(selected.error());
                 }
-                auto local = located(frame, *selected, source.origin);
+                auto local = located(*selected, source.origin);
                 if (!local) {
                     co_return std::unexpected(local.error());
                 }
@@ -219,8 +307,18 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                         "take requires a whole binding"
                     ));
                 }
+                transfer_owned_text(**local);
                 auto result = std::move(**local);
-                frame.slots[selected->slot] = ExecutionTaken {};
+                const auto* binding = std::get_if<SemBinding>(&operation.place->value);
+                if (binding == nullptr) {
+                    co_return std::unexpected(fail(
+                        source.origin,
+                        DiagnosticCode::ConstEvaluation,
+                        "take requires an owned binding"
+                    ));
+                }
+                release(frame, binding->binding.index());
+                frame.slots[binding->binding.index()] = ExecutionTaken {};
                 co_return result;
             } else if constexpr (std::same_as<Operation, SemStruct>) {
                 auto result_type = type(source.type.construction(), source.origin);
@@ -248,12 +346,12 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     .elements = std::move(elements)
                 };
             } else if constexpr (std::same_as<Operation, SemField>) {
-                if (local_place(source)) {
+                if (has_bound_storage(source)) {
                     auto selected = (co_await place(frame, source));
                     if (!selected) {
                         co_return std::unexpected(selected.error());
                     }
-                    auto target = located(frame, *selected, source.origin);
+                    auto target = located(*selected, source.origin);
                     if (!target) {
                         co_return std::unexpected(target.error());
                     }
@@ -305,17 +403,13 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     .payload = std::move(elements)
                 };
             } else if constexpr (std::same_as<Operation, SemSliceIntrinsic>) {
-                auto receiver = (co_await value(frame, operation.operands[0].expression));
-                if (!receiver) {
-                    co_return std::unexpected(receiver.error());
-                }
-                const auto sequence = execution_compound_view(values, *receiver);
+                auto sequence = (co_await sequence_view(
+                    frame,
+                    operation.operands[0].expression,
+                    source.origin
+                ));
                 if (!sequence) {
-                    co_return std::unexpected(fail(
-                        source.origin,
-                        DiagnosticCode::ConstEvaluation,
-                        "slice requires a sequence"
-                    ));
+                    co_return std::unexpected(sequence.error());
                 }
                 auto target = type(source.type.construction(), source.origin);
                 if (!target) {
@@ -325,17 +419,17 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     case SliceIntrinsic::Len:
                         co_return ConstantAtom {
                             .type = *target,
-                            .value = IntegerConstant::from_parts(sequence->size(), false)
+                            .value = IntegerConstant::from_parts(sequence->extent, false)
                         };
                     case SliceIntrinsic::IsEmpty:
                         co_return ConstantAtom {
                             .type = *target,
-                            .value = BooleanConstant {.value = sequence->size() == 0uz}
+                            .value = BooleanConstant {.value = sequence->extent == 0uz}
                         };
                     case SliceIntrinsic::FromArray:
                     case SliceIntrinsic::Slice:     {
                         auto begin = 0uz;
-                        auto end = sequence->size();
+                        auto end = sequence->extent;
                         if (operation.intrinsic == SliceIntrinsic::Slice) {
                             auto bounds = std::vector<std::uint64_t>();
                             for (auto index = 1uz; index < operation.operands.size(); ++index) {
@@ -349,7 +443,7 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                                     fact ? std::get_if<IntegerConstant>(&fact->value) : nullptr;
                                 if (!integer
                                     || integer->negative()
-                                    || integer->magnitude() > sequence->size()) {
+                                    || integer->magnitude() > sequence->extent) {
                                     co_return std::unexpected(fail(
                                         source.origin,
                                         DiagnosticCode::ConstIndexBounds,
@@ -368,30 +462,18 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                             begin = static_cast<std::size_t>(bounds[0]);
                             end = static_cast<std::size_t>(bounds[1]);
                         }
-                        if (auto checked = account_aggregate(end - begin, source.origin);
-                            !checked) {
-                            co_return std::unexpected(checked.error());
+                        if (!memory.view(*sequence)) {
+                            co_return std::unexpected(fail(
+                                source.origin,
+                                DiagnosticCode::ConstEvaluation,
+                                "slice backing is no longer alive"
+                            ));
                         }
-                        auto* aggregate = std::get_if<ExecutionAggregateValue>(&*receiver);
-                        if (aggregate && operation.intrinsic == SliceIntrinsic::FromArray) {
-                            aggregate->type = *target;
-                            co_return std::move(*receiver);
-                        }
-                        auto elements = std::vector<ExecutionValue>();
-                        elements.reserve(end - begin);
-                        if (const auto* retained =
-                                std::get_if<std::span<const ConstantID>>(&sequence->elements)) {
-                            for (const auto child : retained->subspan(begin, end - begin)) {
-                                elements.emplace_back(child);
-                            }
-                        } else {
-                            for (auto index = begin; index < end; ++index) {
-                                elements.push_back(std::move(execution_elements(*receiver)[index]));
-                            }
-                        }
-                        co_return ExecutionAggregateValue {
+                        co_return ExecutionSlice {
                             .type = *target,
-                            .elements = std::move(elements)
+                            .backing = std::move(sequence->backing),
+                            .offset = sequence->offset + begin,
+                            .extent = end - begin
                         };
                     }
                 }
@@ -450,12 +532,12 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     .elements = std::move(elements),
                 };
             } else if constexpr (std::same_as<Operation, SemIndex>) {
-                if (local_place(source)) {
+                if (has_bound_storage(source)) {
                     auto selected = (co_await place(frame, source));
                     if (!selected) {
                         co_return std::unexpected(selected.error());
                     }
-                    auto target = located(frame, *selected, source.origin);
+                    auto target = located(*selected, source.origin);
                     if (!target) {
                         co_return std::unexpected(target.error());
                     }
@@ -468,6 +550,35 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                 auto subscript = (co_await value(frame, *operation.index));
                 if (!subscript) {
                     co_return std::unexpected(subscript.error());
+                }
+                auto slice = std::optional<ExecutionSlice>();
+                if (const auto* view = std::get_if<ExecutionSlice>(&*receiver)) {
+                    slice = *view;
+                } else if (const auto* constant = std::get_if<ConstantID>(&*receiver);
+                           constant
+                           && std::holds_alternative<SliceConstant>(
+                               values.constant(*constant).value
+                           )) {
+                    auto retained = retained_slice(*constant, source.origin);
+                    if (!retained) {
+                        co_return std::unexpected(retained.error());
+                    }
+                    slice = std::move(*retained);
+                }
+                if (slice) {
+                    auto position = offset(*subscript, slice->extent, operation.index->origin);
+                    if (!position) {
+                        co_return std::unexpected(position.error());
+                    }
+                    auto selected = slice_element(*slice, *position, source.origin);
+                    if (!selected) {
+                        co_return std::unexpected(selected.error());
+                    }
+                    auto element = located(*selected, source.origin);
+                    if (!element) {
+                        co_return std::unexpected(element.error());
+                    }
+                    co_return copy_value(**element, source.origin);
                 }
                 const auto sequence = execution_compound_view(values, *receiver);
                 if (!sequence) {
@@ -496,6 +607,17 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                     if (operation.kind == CastKind::Identity) {
                         co_return std::move(*operand);
                     }
+                    if (operation.kind == CastKind::PointerRead) {
+                        const auto target = type(source.type.construction(), source.origin);
+                        if (!target) {
+                            co_return std::unexpected(target.error());
+                        }
+                        if (auto* pointer = std::get_if<ExecutionPointer>(&*operand)) {
+                            pointer->type = *target;
+                            co_return std::move(*operand);
+                        }
+                        co_return ConstantAtom {.type = *target, .value = NullPointerConstant {}};
+                    }
                 }
                 auto fact = read_fact(*operand, source.origin);
                 auto target = type(source.type.construction(), source.origin);
@@ -504,13 +626,7 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                 }
                 if constexpr (std::same_as<Operation, SemUnary>) {
                     co_return finish(
-                        evaluate_unary_constant_value(
-                            values,
-                            operation.operation,
-                            *fact,
-                            *target,
-                            context.arithmetic()
-                        ),
+                        evaluate_unary_constant_value(values, operation.operation, *fact, *target),
                         source.origin
                     );
                 } else {
@@ -568,8 +684,7 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                         operation.operation,
                         *lhs,
                         *rhs,
-                        *target,
-                        context.arithmetic()
+                        *target
                     ),
                     source.origin
                 );
@@ -605,33 +720,50 @@ auto SemanticExecutor::expression(ExecutionFrame& frame, const SemanticExpressio
                 }
                 co_return right;
             } else if constexpr (std::same_as<Operation, SemCall>) {
-                const auto* callee = std::get_if<SemCallable>(&operation.callee->value);
+                auto evaluated_callee = (co_await value(frame, *operation.callee));
+                if (!evaluated_callee) {
+                    co_return std::unexpected(evaluated_callee.error());
+                }
+                const auto* callee = std::get_if<ExecutionFunction>(&*evaluated_callee);
                 const auto function =
                     callee ? context.function_for_callable(callee->callable) : std::nullopt;
                 if (!function) {
                     co_return std::unexpected(fail(
                         source.origin,
                         DiagnosticCode::ConstAdmission,
-                        "execution requires a direct function call"
+                        "callable has no executable Carven body"
                     ));
                 }
                 auto operands = std::vector<ExecutionOperand>();
                 for (const auto& argument : operation.arguments) {
-                    auto evaluated = (co_await read_operand(frame, argument.expression));
-                    if (!evaluated) {
-                        co_return std::unexpected(evaluated.error());
+                    if (argument.access == AccessMode::Write) {
+                        auto selected = (co_await place(frame, argument.expression));
+                        if (!selected) {
+                            co_return std::unexpected(selected.error());
+                        }
+                        operands.emplace_back(std::move(*selected));
+                    } else {
+                        auto evaluated = (co_await read_operand(frame, argument.expression));
+                        if (!evaluated) {
+                            co_return std::unexpected(evaluated.error());
+                        }
+                        if (argument.access == AccessMode::Read) {
+                            if (auto* temporary = std::get_if<ExecutionValue>(&*evaluated);
+                                temporary
+                                && read_borrows_storage(execution_value_type(values, *temporary))) {
+                                auto owned = own_storage(std::move(*temporary), source.origin);
+                                if (!owned) {
+                                    co_return std::unexpected(owned.error());
+                                }
+                                auto selected = memory.create(std::move(*owned));
+                                frame.temporaries.push_back(selected);
+                                *evaluated = std::move(selected);
+                            }
+                        }
+                        operands.push_back(std::move(*evaluated));
                     }
-                    operands.push_back(std::move(*evaluated));
                 }
-                auto arguments = std::vector<ExecutionValue>();
-                for (auto& operand : operands) {
-                    auto evaluated = materialize(frame, std::move(operand), source.origin);
-                    if (!evaluated) {
-                        co_return std::unexpected(evaluated.error());
-                    }
-                    arguments.push_back(std::move(*evaluated));
-                }
-                co_return (co_await invoke(*function, std::move(arguments), source.origin));
+                co_return (co_await invoke(*function, std::move(operands), source.origin));
             } else if constexpr (std::same_as<Operation, SemPrint>) {
                 co_return (co_await print(frame, operation, source.origin));
             } else if constexpr (std::same_as<Operation, SemReport>) {
@@ -681,7 +813,7 @@ auto SemanticExecutor::matches(
                         if (!copied) {
                             co_return std::unexpected(copied.error());
                         }
-                        frame.slots[pattern_value.binding.index()] = std::move(*copied);
+                        bind(frame, pattern_value.binding.index(), std::move(*copied));
                         co_return true;
                     } else if constexpr (std::same_as<Pattern, TypeConstraintPattern>
                                          || std::
@@ -691,7 +823,8 @@ auto SemanticExecutor::matches(
                         if (!expected) {
                             co_return std::unexpected(expected.error());
                         }
-                        co_return execution_value_type(values, subject) == *expected;
+                        co_return execution_value_type(values, subject)
+                            == ConstructionTypeRef(*expected);
                     } else if constexpr (std::same_as<Pattern, EnumCasePattern>) {
                         const auto compound = execution_compound_view(values, subject);
                         if (!compound) {
@@ -772,8 +905,7 @@ auto SemanticExecutor::matches(
                                     operation,
                                     *selected,
                                     bound,
-                                    values.builtin_type(BuiltinType::Bool),
-                                    context.arithmetic()
+                                    values.builtin_type(BuiltinType::Bool)
                                 ),
                                 pattern.origin
                             );

@@ -1,18 +1,33 @@
-const {
+const "module" {
     println("module");
 }
 
 fn work() {
-    const {
+    const "local" {
         var value = 1;
-        const {
+        const "nested" {
             println("nested");
         }
         println(value);
     }
 }
 
+test {}
+test "" {}
+
+const test {}
+
 const test "kept" {
     const {}
     check(true);
+}
+
+const {}
+const "" {}
+
+test "comment" { // retained
+}
+
+const "blank" {
+
 }

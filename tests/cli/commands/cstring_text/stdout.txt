@@ -1,0 +1,18 @@
+constant=123
+123  我😀
+[
+    "a\n",
+    "\"\\",
+    "",
+]
+text=123; empty=; unicode=我😀
+<123>
+constant=123
+123  我😀
+[
+    "a\n",
+    "\"\\",
+    "",
+]
+text=123; empty=; unicode=我😀
+<123>

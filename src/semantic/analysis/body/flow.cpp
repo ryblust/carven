@@ -52,6 +52,7 @@ auto BodyElaborator::empty_region(Span span) noexcept -> SemanticRegion {
         .origin = origin(span),
         .statements = {},
         .result = std::nullopt,
+        .result_reachable = false,
         .failures = BodyFailures(draft().add_empty_failure_term()),
         .exits_test = false
     };
@@ -174,6 +175,7 @@ auto BodyElaborator::append_statement(
     destination.statements.push_back(
         {.origin = statement_origin,
          .lifetime = active_full_expression.value_or(frames.back().lifetime),
+         .reachable = reference_path_reachable,
          .value = std::move(value)}
     );
 }

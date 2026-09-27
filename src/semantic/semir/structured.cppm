@@ -116,6 +116,10 @@ struct SemDereference final {
     ProgramOriginID origin;
 };
 
+struct SemAddressOf final {
+    OwnedSemanticExpression source;
+};
+
 struct SemField final {
     auto consumes_source() const noexcept -> bool;
 
@@ -257,6 +261,7 @@ using SemanticExpressionValue = TreeValue<
     SemCast,
     SemField,
     SemDereference,
+    SemAddressOf,
     SemIndex,
     SemTextIntrinsic,
     SemSliceIntrinsic,
@@ -285,6 +290,8 @@ struct SemanticExpression final {
     BodyFailures failures;
     // Body completion includes callee effects before publication.
     bool exits_test;
+    // Whether evaluation reaches this operation after its required operands.
+    bool operation_reachable;
     SemanticValueCategory category;
     SemanticExpressionValue value;
 
@@ -298,6 +305,8 @@ struct SemanticRegion final {
     ProgramOriginID origin;
     std::vector<SemanticStatement> statements;
     std::optional<SemanticExpression> result;
+    // Whether control can enter the result expression after preceding statements.
+    bool result_reachable;
     BodyFailures failures;
     bool exits_test;
 };
@@ -415,6 +424,8 @@ struct SemanticStatementCleanup final {
 struct SemanticStatement final {
     ProgramOriginID origin;
     LifetimeRegionID lifetime;
+    // Whether control can enter this statement in its containing region.
+    bool reachable;
     SemanticStatementValue value;
 };
 

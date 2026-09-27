@@ -57,6 +57,7 @@ auto BodyElaborator::dereference_expression(const ASTPrefixExpr& source, Span sp
     co_return BuiltExpression {
         .storage = active_builder().make_place(
             std::nullopt,
+            pointer->access == PointerAccess::Write ? AccessMode::Write : AccessMode::Read,
             pointer->target,
             SemDereference {.source = UniqueIndirect(std::move(*value)), .origin = origin(span)},
             origin(span)
@@ -117,6 +118,7 @@ auto BodyExprSite::finish_index(
         return Value {
             .storage = body.active_builder().make_place(
                 place->root,
+                place->access,
                 type,
                 SemIndex {
                     UniqueIndirect(std::move(place->expression)),
@@ -133,6 +135,26 @@ auto BodyExprSite::finish_index(
     auto value = consume_read(state, std::move(receiver), span);
     if (!value) {
         return std::unexpected(value.error());
+    }
+    if (!array) {
+        // A slice value borrows its elements from another owner. Indexing still
+        // denotes that element's place, but grants only Read access.
+        return Value {
+            .storage = body.active_builder().make_place(
+                std::nullopt,
+                AccessMode::Read,
+                type,
+                SemIndex {
+                    UniqueIndirect(std::move(*value)),
+                    UniqueIndirect(std::move(*subscript)),
+                    bounds
+                },
+                body.origin(span)
+            ),
+            .pending_failures = std::move(state.pending),
+            .takeable = false,
+            .completes = state.completes
+        };
     }
     return finish_constructed(
         type,
@@ -152,6 +174,7 @@ auto BodyExprSite::finish_field(
         return Value {
             .storage = body.active_builder().make_place(
                 place->root,
+                place->access,
                 type,
                 SemField {UniqueIndirect(std::move(place->expression)), field},
                 body.origin(span)

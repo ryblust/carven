@@ -25,5 +25,4 @@ for value in values {
 
 var message: String = "result";
 message.append_format(f" {prepared}");
-
 println(message, total, fib(6));

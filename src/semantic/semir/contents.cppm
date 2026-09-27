@@ -8,9 +8,12 @@ struct TypeContents final {
     bool closure_owner;
     bool callable_view;
     bool storage_owner;
+    // A value contains a native C++ value by value. Its Read ABI must retain
+    // native copy/destruction behavior even inside Carven aggregates.
+    bool contains_native_value;
 
-    // Read preserves the identity of Carven-owned storage. Other representations
-    // use the native copy/destruction policy without inventing owned contents.
+    // Read preserves the identity of Carven-owned storage. Native value
+    // containment is queried separately and does not imply Carven-owned storage.
     auto read_borrows_storage() const noexcept -> bool;
 };
 

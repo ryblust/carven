@@ -16,6 +16,13 @@ local case_specs = {
                 output_files = {"emit/input.cpp", "emit/crafts/demo/helper.cpp", "emit/crafts/demo/unrelated.cpp"}},
         },
     },
+    ["commands/cstring_text"] = {
+        inputs = {"input.cv"},
+        steps = {
+            {args = {"interpret", "input.cv"}, stdout = "stdout.txt", stderr = "stderr.txt"},
+            {args = {"input.cv"}, stdout = "stdout.txt", stderr = "stderr.txt"},
+        },
+    },
     ["commands/structural_display"] = {
         inputs = {"input.cv", "failure.cv"},
         steps = {
@@ -135,7 +142,7 @@ local case_specs = {
             {args = {"check", "input.cv", "helper.cv"}, stderr = "../check/passed.txt", stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
             {args = {"compile", "input.cv", "helper.cv", "-o", "emit"}, stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
             {args = {"interpret", "input.cv", "helper.cv"}, stdout = "run.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n", "runtime\nruntime\n"}},
-            {args = {"dump", "ast", "input.cv"}, stdout_contains = {"ConstantBlock", "ConstTestDeclaration"}},
+            {args = {"dump", "ast", "input.cv"}, stdout_contains = {"ConstantBlock", "ConstTestDeclaration", "label ["}},
         },
     },
     ["commands/static_execution"] = {
@@ -412,14 +419,22 @@ case_specs["commands/native_execution"] = {
 }
 
 case_specs["commands/interpretation"] = {
-    fixtures = {["../../../language/functions/interpreted_runtime.cv"] = "shared.cv"},
+    fixtures = {
+        ["../../../language/functions/interpreted_runtime.cv"] = "shared.cv",
+        ["../../../language/types/pointer_local_graph.cv"] = "local_graph.cv",
+        ["../../../language/text/backing_identity.cv"] = "text_backing.cv",
+    },
     inputs = {
-        "input.cv", "unsupported.cv", "failure.cv", "implicit_failure.cv", "implicit_recovery.cv", "limit.cv", "wrapping.cv",
+        "input.cv", "unsupported.cv", "inactive_native.cv", "failure.cv", "implicit_failure.cv", "implicit_recovery.cv", "limit.cv", "wrapping.cv",
         "declarations.cv", "static_only.cv", "static_failure.cv", "main.cv", "floating.cv", "typed_failures.cv", "escaped_failure.cv",
     },
     steps = {
         {args = {"interpret"}, exit_code = 1, stderr_contains = {"requires at least one source file", "carven interpret --help"}},
         {args = {"interpret", "--tests", "shared.cv"}, stdout_contains = {"shared runtime test\n"},
+            stderr_contains = {"tests: 1 passed; 0 failed"}},
+        {args = {"interpret", "--tests", "local_graph.cv"},
+            stderr_contains = {"tests: 1 passed; 0 failed"}},
+        {args = {"interpret", "--tests", "text_backing.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
         {
             args = {"interpret", "typed_failures.cv"},
@@ -474,6 +489,7 @@ case_specs["commands/interpretation"] = {
             args = {"interpret", "unsupported.cv"}, exit_code = 1,
             stderr_contains = {"CV-INTERPRET-ADMISSION"},
         },
+        {args = {"interpret", "inactive_native.cv"}, exit_code = 0},
         {
             args = {"interpret", "failure.cv"}, exit_code = 1,
             stdout = "failure.txt",
@@ -523,6 +539,34 @@ case_specs["commands/test_report"] = {
             stdout = "stdout.txt", stderr = "stderr.txt"},
         {args = {"--tests", "input.cv"}, exit_code = 1,
             stdout = "stdout.txt", stderr = "stderr.txt"},
+    },
+}
+
+case_specs["commands/anonymous_tests"] = {
+    inputs = {"input.cv", "duplicate_label.cv", "reserved_label.cv"},
+    steps = {
+        {args = {"check", "duplicate_label.cv"}, exit_code = 1,
+            stderr_contains = {"CV-TEST-DUPLICATE-NAME", "duplicate_label.cv:4:6"}},
+        {args = {"check", "reserved_label.cv"}, exit_code = 1,
+            stderr_contains = {"CV-TEST-MAIN-NAME", "reserved_label.cv:2:6"}},
+        {args = {"interpret", "--tests", "input.cv"}, exit_code = 1,
+            stderr_contains = {
+                "module: input\n    name: input.cv:1:1",
+                "module: input\n    name: input.cv:5:1",
+                "module: input\n    name: \"\"",
+                "first anonymous failure", "second anonymous failure", "explicit empty label",
+                "tests: 0 passed; 3 failed",
+            },
+            stderr_not_contains = {"input.cv:13:7", "input.cv:17:7"}},
+        {args = {"--tests", "input.cv"}, exit_code = 1,
+            stderr_contains = {
+                "module: input\n    name: input.cv:1:1",
+                "module: input\n    name: input.cv:5:1",
+                "module: input\n    name: \"\"",
+                "first anonymous failure", "second anonymous failure", "explicit empty label",
+                "tests: 0 passed; 3 failed",
+            },
+            stderr_not_contains = {"input.cv:13:7", "input.cv:17:7"}},
     },
 }
 

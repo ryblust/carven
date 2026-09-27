@@ -474,7 +474,11 @@ public:
         }
         const auto declaration = program.function_declaration_copy(**selected);
         if (!declaration.is_const) {
-            co_return std::unexpected(ExpressionNotAdmitted {});
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::ConstAdmission,
+                "required constant expression can only call an explicitly declared const fn"
+            ));
         }
         auto& requests = scope.construction_requests();
         auto completed =
@@ -583,6 +587,7 @@ private:
             .constant = known,
             .failures = empty_failures,
             .exits_test = false,
+            .operation_reachable = true,
             .category = SemanticValueCategory::Value,
             .value = std::move(operation),
         };

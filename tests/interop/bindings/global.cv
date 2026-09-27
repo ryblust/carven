@@ -6,7 +6,6 @@ struct GlobalPoint {
 }
 
 fn global_calculate() -> i32 => ::global_calculate(5) as i32;
-
 fn make_global() -> ::GlobalPoint => ::GlobalPoint { 1, 2 };
 
 struct GlobalRows {

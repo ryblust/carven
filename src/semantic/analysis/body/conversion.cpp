@@ -81,12 +81,15 @@ auto BodyElaborator::consume_value(
         const auto evaluation_origin = expansion(span, ProgramExpansionReason::EvaluationTemporary);
         if (access == AccessMode::Take) {
             const auto type = source.type.construction();
-            return active_builder().make_expression(
+            const auto operation_reachable = built.completes && source.operation_reachable;
+            auto value = active_builder().make_expression(
                 type,
                 active_builder().lifetime(),
                 evaluation_origin,
                 SemTake {UniqueIndirect(std::move(source))}
             );
+            value.operation_reachable = operation_reachable;
+            return value;
         }
         source.category = SemanticValueCategory::Value;
         source.lifetime = active_builder().lifetime();
@@ -275,6 +278,7 @@ auto BodyElaborator::coerce_to(
         return {};
     }
     if (is_cpp_type(built.type()) || is_cpp_type(target)) {
+        const auto operation_reachable = built.completes && built.expression().operation_reachable;
         auto value = consume_value(built, span, AccessMode::Read);
         if (!value.has_value()) {
             return std::unexpected(value.error());
@@ -291,6 +295,7 @@ auto BodyElaborator::coerce_to(
             return std::unexpected(converted.error());
         }
         converted->completes = built.completes;
+        std::get<SemanticExpression>(converted->storage).operation_reachable = operation_reachable;
         built = std::move(*converted);
         return {};
     }
@@ -309,6 +314,7 @@ auto BodyElaborator::coerce_to(
         if (!source_array || !target_array || source_array->extent != target_array->extent) {
             invariant_violation("compatible array coercion lost its matching shape");
         }
+        const auto operation_reachable = built.completes && built.expression().operation_reachable;
         auto source = take_built(expression, span);
         auto value = active_builder().make_expression(
             target,
@@ -316,6 +322,7 @@ auto BodyElaborator::coerce_to(
             origin(span),
             SemArrayAdopt {UniqueIndirect(std::move(source))}
         );
+        value.operation_reachable = operation_reachable;
         built.storage = std::move(value);
         return {};
     }
@@ -329,6 +336,7 @@ auto BodyElaborator::coerce_to(
         return {};
     }
     const auto adoption_origin = expansion(span, ProgramExpansionReason::CallableAdoption);
+    const auto operation_reachable = built.completes && built.expression().operation_reachable;
     auto source = take_built(built, span);
     auto value = active_builder().make_expression(
         target,
@@ -336,6 +344,7 @@ auto BodyElaborator::coerce_to(
         adoption_origin,
         SemBorrowCallable {.source = UniqueIndirect(std::move(source))}
     );
+    value.operation_reachable = operation_reachable;
     built.storage = std::move(value);
     return {};
 }

@@ -13,6 +13,7 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.resolve;
+import :semantic.analysis.constant.evaluation;
 import :semantic.analysis.construction.requests;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
@@ -77,7 +78,17 @@ struct CppSelection final {
     Span span;
 };
 
-enum class BuiltinFunction { Print, Println, Eprint, Eprintln, Assert, Check, Require, Fail };
+enum class BuiltinFunction {
+    Print,
+    Println,
+    Eprint,
+    Eprintln,
+    Assert,
+    Check,
+    Require,
+    Fail,
+    Addressof
+};
 
 struct BuiltinSelection final {
     BuiltinFunction function;
@@ -598,6 +609,11 @@ private:
         BodyLocalNames locals;
     };
 
+    auto block_source(
+        ProgramModuleID module,
+        Span keyword,
+        const std::optional<ASTBlockLabel>& label
+    ) noexcept -> BlockSource;
     auto build_constant_block(PendingConstantBlock source) noexcept -> AnalysisTask<void>;
 
     struct Unvisited final {};
@@ -617,7 +633,7 @@ private:
     std::vector<State> states;
     std::vector<std::optional<BodyID>> body_ids;
     std::vector<FunctionID> active_path;
-    std::vector<BodyID> constant_roots;
+    std::vector<ConstantBodyRoot> constant_roots;
     std::vector<PendingConstantBlock> constant_blocks;
     std::map<std::pair<SourceID, Span>, Diagnostic> unused_locals;
     std::set<std::pair<SourceID, Span>> used_locals;

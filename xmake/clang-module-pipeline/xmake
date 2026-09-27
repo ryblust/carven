@@ -101,6 +101,11 @@ if [ ! -f "$overlay/core/_xmake_main.lua" ]; then
             printf '%s\n' "Run the same command with xmake to use the stock pipeline." >&2
             exit 1
         fi
+        # A previous interrupted overlay may exist without its main script.
+        # Remove it before publishing, since mv would otherwise nest staging in it.
+        if [ -e "$overlay" ]; then
+            rm -rf -- "$overlay"
+        fi
         mv "$staging" "$overlay"
         staging=
     fi

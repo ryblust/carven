@@ -12,7 +12,6 @@ const fn factorial(value: i32) -> i32 {
 }
 
 const fn positive(value: i32) -> bool => value > 0;
-
 const fn extent() -> usize => 3usize;
 
 const fn make_label(count: i32) -> String {
@@ -62,7 +61,6 @@ const fn unicode() -> String {
 }
 
 const fn formatted(value: i32, width: i32) -> String => f"{{{value:0{width}x}}}";
-
 const fn wrap_at_runtime(value: u8) -> u8 => value + 1u8;
 
 test "Const functions: recursion, local state and ranges share ordinary runtime bodies" {

@@ -402,22 +402,24 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     }
                 }
             }
-            if (const auto* test = std::get_if<ASTTestDecl>(&item.value)) {
-                if (test->name == "main") {
+            if (const auto* test = std::get_if<ASTTestDecl>(&item.value);
+                test != nullptr && test->label) {
+                if (test->label->text == "main") {
                     diagnostics.push_back(DiagnosticBuilder(
                                               DiagnosticCode::TestMainName,
                                               "a test cannot be named 'main'"
                     )
-                                              .primary(locate(source_id, test->name_span))
+                                              .primary(locate(source_id, test->label->span))
                                               .build());
                 }
-                const auto [position, inserted] = test_names.emplace(test->name, test->name_span);
+                const auto [position, inserted] =
+                    test_names.emplace(test->label->text, test->label->span);
                 if (!inserted) {
                     auto diagnostic = DiagnosticBuilder(
                         DiagnosticCode::TestDuplicateName,
                         "a test name is defined more than once"
                     );
-                    diagnostic.primary(locate(source_id, test->name_span), "duplicate test name");
+                    diagnostic.primary(locate(source_id, test->label->span), "duplicate test name");
                     diagnostic.related(locate(source_id, position->second), "first definition");
                     diagnostics.push_back(diagnostic.build());
                 }

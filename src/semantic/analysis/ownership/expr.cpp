@@ -45,18 +45,35 @@ auto OwnershipBodyAnalyzer::place(
             }
         }
     } else if (const auto* index = std::get_if<SemIndex>(&source.value)) {
-        result = (co_await place(*index->source, std::move(result.normal->state)));
+        const auto slice = std::holds_alternative<SliceTypeValue>(
+            program.types().type(index->source->type.resolved()).value
+        );
+        result = slice ? (co_await expression(*index->source, std::move(result.normal->state)))
+                       : (co_await place(*index->source, std::move(result.normal->state)));
         if (result.normal.has_value()) {
-            const auto previous = accesses.size();
-            for (const auto& target : result.normal->storage) {
-                accesses.push_back({target, false});
+            auto relationships = std::move(result.normal->value);
+            auto storage = slice ? select_element_storage(
+                                       program.types(),
+                                       index->source->type.resolved(),
+                                       result.normal->storage,
+                                       relationships,
+                                       constant_index(*index->index)
+                                   )
+                                 : std::move(result.normal->storage);
+            if (!slice) {
+                for (auto& selected : storage) {
+                    selected.path.push_back(constant_index(*index->index));
+                }
             }
-            auto storage = std::move(result.normal->storage);
-            for (auto& selected : storage) {
-                selected.path.push_back(constant_index(*index->index));
+            const auto previous = accesses.size();
+            const auto previous_readers = storage_readers.size();
+            protect_storage(relationships);
+            for (const auto& target : storage) {
+                accesses.push_back({target, false});
             }
             auto indexed = (co_await expression(*index->index, std::move(result.normal->state)));
             accesses.resize(previous);
+            restore_storage_readers(previous_readers);
             result.normal = std::move(indexed.normal);
             if (result.normal) {
                 result.normal->storage = std::move(storage);
@@ -298,6 +315,14 @@ auto OwnershipBodyAnalyzer::expression(
                 },
                 [&](const SemDereference&) noexcept -> ContinuationTask<std::monostate> {
                     flow = (co_await place(source, std::move(flow.normal->state)));
+                    co_return {};
+                },
+                [&](const SemAddressOf& value) noexcept -> ContinuationTask<std::monostate> {
+                    flow = (co_await place(*value.source, std::move(flow.normal->state)));
+                    if (flow.normal) {
+                        flow.normal->value = {};
+                        flow.normal->storage.clear();
+                    }
                     co_return {};
                 },
                 [&](const SemField& value) noexcept -> ContinuationTask<std::monostate> {

@@ -1,0 +1,9 @@
+// Tests: anonymous declarations coexist; constant block labels may repeat.
+const "preparation" {}
+const "preparation" {}
+
+const test {}
+const test {}
+
+test {}
+test {}

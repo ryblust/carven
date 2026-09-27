@@ -303,15 +303,20 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         && !cpp_export
         && !cpp_import
         && check(TokenKind::Const)
-        && check_next(TokenKind::LeftBrace)) {
+        && (check_next(TokenKind::LeftBrace) || check_next(TokenKind::StringLiteral))) {
         const auto keyword = consume();
+        auto label = parse_block_label();
         const auto body = parse_ordinary_block();
         if (!body) {
             return std::nullopt;
         }
         return builder.append_item({
             .span = join(start, builder.block(*body).span),
-            .value = ASTConstantBlock {.keyword_span = keyword.span, .body = *body},
+            .value = ASTConstantBlock {
+                .keyword_span = keyword.span,
+                .label = std::move(label),
+                .body = *body,
+            },
         });
     }
     if (check(TokenKind::Const)) {
@@ -345,10 +350,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
 
 auto Parser::parse_test(bool is_const) noexcept -> std::optional<std::pair<Span, ASTTestDecl>> {
     const auto keyword = expect(TokenKind::Test, "expected 'test'");
-    auto name = expect_string_literal("expected test name string");
-    if (!name.has_value()) {
-        return std::nullopt;
-    }
+    auto label = parse_block_label();
     const auto body = parse_ordinary_block();
     if (!body) {
         return std::nullopt;
@@ -359,12 +361,19 @@ auto Parser::parse_test(bool is_const) noexcept -> std::optional<std::pair<Span,
             ASTTestDecl {
                 .is_const = is_const,
                 .keyword_span = keyword.span,
-                .name_span = name->span,
-                .name = std::move(name->value.bytes),
+                .label = std::move(label),
                 .body = *body,
             },
         },
     };
+}
+
+auto Parser::parse_block_label() noexcept -> std::optional<ASTBlockLabel> {
+    if (!check(TokenKind::StringLiteral)) {
+        return std::nullopt;
+    }
+    auto literal = expect_string_literal("expected block label string");
+    return ASTBlockLabel {.span = literal->span, .text = std::move(literal->value.bytes)};
 }
 
 auto Parser::parse_enum(ASTDeclarationVisibility visibility) noexcept

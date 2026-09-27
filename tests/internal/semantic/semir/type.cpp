@@ -210,6 +210,8 @@ TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed p
             const auto module_id = declarations.reserve_module();
             const auto first = declarations.reserve_struct();
             const auto second = declarations.reserve_struct();
+            const auto enumeration = declarations.reserve_enum();
+            const auto enum_case = declarations.reserve_enum_case();
             const auto& source = program.declarations().structure(first);
             auto nominal = std::vector<TypeID>();
             for (const auto id : {first, second}) {
@@ -249,6 +251,17 @@ TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed p
                      .extent = 1u,
                  }}
             );
+            const auto native =
+                types.intern({.value = CppTypeValue {.form = CppConstCharPointerType {}}});
+            const auto native_array =
+                types.intern({.value = ArrayTypeValue {.element = native, .extent = 1u}});
+            const auto native_pointer = types.intern(
+                {.value = PointerTypeValue {
+                     .target = native,
+                     .access = PointerAccess::Read,
+                 }}
+            );
+            const auto native_slice = types.intern({.value = SliceTypeValue {.element = native}});
             for (auto index = 0uz; index < nominal.size(); ++index) {
                 auto fields = std::vector<ConstructionStructField> {
                     {.name = source.name, .type = slices[1uz - index], .origin = source.origin},
@@ -256,6 +269,11 @@ TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed p
                 if (index == 0uz && seeded) {
                     fields.push_back(
                         {.name = source.fields.front().name, .type = owner, .origin = source.origin}
+                    );
+                    fields.push_back(
+                        {.name = program.declarations().structure(second).name,
+                         .type = native,
+                         .origin = source.origin}
                     );
                 }
                 if (reverse) {
@@ -275,6 +293,30 @@ TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed p
                     }
                 );
             }
+            declarations.define(
+                enum_case,
+                ConstructionEnumCaseDeclaration {
+                    .owner = enumeration,
+                    .name = source.fields.front().name,
+                    .origin = source.origin,
+                    .payload_types = {nominal.front()},
+                    .constant = std::nullopt,
+                }
+            );
+            declarations.define(
+                enumeration,
+                EnumDeclaration {
+                    .module_id = module_id,
+                    .name = source.name,
+                    .origin = source.origin,
+                    .visibility = source.visibility,
+                    .representation = PayloadEnumRepresentation {},
+                    .cases = {enum_case},
+                    .capabilities = {.equality = false},
+                }
+            );
+            const auto enum_type =
+                types.intern({.value = EnumTypeValue {.enumeration = enumeration}});
             declarations.define(module_id, program.declarations().module_decl(module_id));
             static_cast<void>(declarations.finish_heads());
             for (const auto type : nominal) {
@@ -292,6 +334,16 @@ TEST_CASE("Type contents: cyclic slice graphs reach an order-independent fixed p
                 CHECK_EQ(contents[type.index()].callable_view, seeded);
                 CHECK_FALSE(contents[type.index()].closure_owner);
             }
+            CHECK(contents[native.index()].contains_native_value);
+            CHECK(contents[native_array.index()].contains_native_value);
+            CHECK_EQ(contents[nominal[0].index()].contains_native_value, seeded);
+            CHECK_FALSE(contents[nominal[1].index()].contains_native_value);
+            CHECK_EQ(contents[enum_type.index()].contains_native_value, seeded);
+            CHECK_FALSE(contents[native_pointer.index()].contains_native_value);
+            CHECK_FALSE(contents[native_slice.index()].contains_native_value);
+            CHECK_FALSE(contents[pointer.index()].contains_native_value);
+            CHECK_FALSE(contents[slices[0].index()].contains_native_value);
+            CHECK_FALSE(contents[slices[1].index()].contains_native_value);
             CHECK_EQ(contents[nominal[0].index()].storage_owner, seeded);
             CHECK_FALSE(contents[nominal[1].index()].storage_owner);
             CHECK_FALSE(contents[slices[0].index()].storage_owner);

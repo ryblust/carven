@@ -18,4 +18,7 @@ fn main() {
     var pointer = c"safe";
     pointer = ::display_null_cstring();
     println(pointer);
+    println(::display_cstring(), ::display_mutable_cstring());
+    println([::display_cstring(), ::display_null_cstring()]);
+    println(::display_long_cstring());
 }

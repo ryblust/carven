@@ -184,15 +184,15 @@ TEST_CASE("Constant arrays: equality compares nested values after independent co
     CHECK(std::get<BooleanConstant>(named_constant(program, "result").value).value);
 }
 
-TEST_CASE("Constant arrays: unsupported element types are rejected without executing a call") {
+TEST_CASE("Constant arrays: unused functions do not require executable element types") {
     const auto sources = std::to_array<std::string_view>({
-        "const fn invalid(value: [ptr<i32>; 1]) -> [ptr<i32>; 1] => value;",
-        "const fn invalid(value: [[i32]; 1]) -> [[i32]; 1] => value;",
+        "fn invalid(value: [ptr<i32>; 1]) -> [ptr<i32>; 1] => value;",
+        "fn invalid(value: [[i32]; 1]) -> [[i32]; 1] => value;",
     });
     for (const auto source : sources) {
         CAPTURE(source);
-        const auto diagnostics = analyze_test_errors(std::string(source));
-        CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstAdmission));
+        const auto program = analyze_test_program(std::string(source));
+        CHECK(program.declarations().functions().size() == 1uz);
     }
 }
 

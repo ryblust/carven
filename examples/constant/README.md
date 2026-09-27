@@ -1,6 +1,6 @@
 # Constant computation
 
-Build text and tables during compilation using ordinary functions, local
+Build text and tables during compilation using `const fn`, local
 variables, loops, and mutation. The same functions also run at runtime. This
 example follows four forms of construction and retained storage in one program.
 
@@ -51,11 +51,9 @@ static storage; selecting a field during compilation produces `11`.
 `catalog_view` returns a view of those records.
 The runtime call to `entries(offset)` produces a local array.
 
-Freezing preserves nominal identity and field types. Supported records contain
-admitted scalars, static text, fixed arrays, and other supported records. Owning
-String fields are not replaced with `str` fields. These tables have fixed extents;
-growable containers and class operations need separate admission and retention
-contracts. Slice operations remain outside the `const fn` body subset; completed
+Freezing preserves nominal identity and field types. These records contain
+scalars, static text, fixed arrays, and other records. Owning String fields are
+not replaced with `str` fields. These tables have fixed extents; completed
 arrays can become frozen slices at a constant initializer.
 
 ## Inspect the generated C++
@@ -78,8 +76,10 @@ runtime slice representation. Constant table construction needs no runtime call
 or loop. Ordinary function bodies retain their loops, mutation, ownership,
 and checked array operations; output and iteration still execute normally.
 
-The `const fn` qualifier permits required constant execution and does not request
-automatic folding of runtime calls. Constant text construction uses the bounded
+Only explicitly declared `const fn` functions can be called during required
+constant execution. Their reachable bodies and `const fn` dependencies are
+checked at definition time. These functions also run normally at runtime.
+Constant text construction uses the bounded
 builtin formatting subset and a 1 MiB per-value limit, plus execution step,
 call-depth, and cumulative work budgets. Unsupported required operations produce
 source diagnostics.

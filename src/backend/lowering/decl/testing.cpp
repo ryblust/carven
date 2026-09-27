@@ -59,7 +59,7 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
     );
     return source_item(
         context.semantic(),
-        test.origin,
+        test.source.origin,
         TargetDecl {TargetFunctionDecl {
             .name = TargetName {context.names().test_function(id)},
             .parameters = {},
@@ -93,7 +93,7 @@ auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> t
                     target_expressions(
                         string_expression(module_name, TargetStringLiteralKind::String),
                         string_expression(
-                            std::string(context.semantic().provenance().spelling(test.name)),
+                            block_display_name(context.semantic().provenance(), test.source),
                             TargetStringLiteralKind::String
                         )
                     )

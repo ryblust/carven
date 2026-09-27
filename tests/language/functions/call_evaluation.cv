@@ -11,13 +11,9 @@ struct RecordedPair {
 }
 
 fn recorded_one(&trace: i32) -> i32 => record(&trace, 1);
-
 fn recorded_two(&trace: i32) -> i32 => record(&trace, 2);
-
 fn source_first(&trace: i32, operand: i32) -> i32 => pair(record(&trace, 3), operand);
-
 fn identity(value: i32) -> i32 => value;
-
 fn reserved_identifier(__value: i32) -> i32 => __value;
 
 fn next_value(&value: i32) -> i32 {
@@ -100,9 +96,7 @@ struct TextContainer {
     text: String,
 }
 
-fn text_length_after(value: String, marker: i32) -> usize {
-    return value.len() + marker as usize;
-}
+fn text_length_after(value: String, marker: i32) -> usize => value.len() + marker as usize;
 
 test "Evaluation: read-only owner projections retain backing across later effects" {
     var trace = 0;
@@ -147,4 +141,38 @@ test "Evaluation: assignment selects a capture place before evaluating its value
     closure(change);
     check(first == 2);
     check(second == 9);
+}
+
+fn replace_pointed_value(address: ptr<&i32>) -> i32 {
+    if address == nullptr { return -1; }
+    *address = 9;
+    return *address;
+}
+
+fn observe_read_record(value: RecordedPair, address: ptr<&i32>) -> i32 {
+    return pair(value.first, replace_pointed_value(address));
+}
+
+fn observe_read_slice(values: [i32], address: ptr<&i32>) -> i32 {
+    return pair(values[0], replace_pointed_value(address));
+}
+
+fn observe_read_pointer(address: ptr<&i32>) -> i32 {
+    if address == nullptr { return -1; }
+    return pair(*address, replace_pointed_value(address));
+}
+
+test "Evaluation: Read value snapshots preserve observations through pointers and slices" {
+    var record = RecordedPair {
+        first: 1,
+        second: 2
+    };
+    check(observe_read_record(record, addressof(&record.first)) == 19);
+    check(record.first == 9);
+    var values = [1, 2];
+    check(observe_read_slice(values.as_slice(), addressof(&values[0])) == 19);
+    check(values[0] == 9);
+    var value = 1;
+    check(observe_read_pointer(addressof(&value)) == 19);
+    check(value == 9);
 }

@@ -221,6 +221,13 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 set_value({});
                 co_return {};
             },
+            [&](const SemAddressOf& value) noexcept -> ContinuationTask<std::monostate> {
+                static_cast<void>((co_await evaluate(*value.source)));
+                if (flow.normal) {
+                    set_value({{{}, NullFact::NonNull}});
+                }
+                co_return {};
+            },
             [&](const SemField& value) noexcept -> ContinuationTask<std::monostate> {
                 const auto target = (co_await evaluate(*value.source));
                 if (!flow.normal) {

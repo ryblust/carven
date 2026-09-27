@@ -69,13 +69,16 @@ Graver uses one fixed style: four-space indentation and a target line width of 1
 - Within an if-chain or a match/catch arm list, simple branch blocks may fit on
   one line. A complex body, comment, authored blank line, or multiline branch
   expands all nonempty block bodies in that group. Expression-only arms keep
-  their syntax. Loop/test bodies and match/catch lists stay expanded.
-- Adjacent top-level declarations of the same category stay together when both
-  are single-line. Different categories or a multiline declaration require one
-  separating blank line. Visibility modifiers do not change the category.
-- Author-written blank lines retain their count, including inside blocks and at
-  file boundaries. Spaces on blank lines are removed. Declaration-leading
-  comments stay with the declaration, after any added separator.
+  their syntax. Loop bodies and match/catch lists stay expanded. Empty test and
+  constant blocks use `{}` unless they contain comments or authored blank lines;
+  nonempty bodies expand.
+- Adjacent single-line top-level items of the same category need no blank line.
+  Different categories or a multiline item require one separating blank line.
+  Constant and runtime tests form separate categories; visibility modifiers do
+  not change the category.
+- Author-written blank lines are preserved up to one consecutive blank line,
+  including inside blocks and around comments. Spaces on blank lines are removed.
+  Item-leading comments stay with the item, after any added separator.
 
 Ordinary line endings become LF. Nonempty output ends in a newline. Token and
 literal spelling, punctuation other than import-list trailing commas, comment text

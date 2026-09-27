@@ -15,7 +15,7 @@ import :test.internal.harness.death;
 import :test.internal.semantic.evaluation.fixture;
 import std;
 
-TEST_CASE("Semantic constant evaluation: checked integer folds preserve diagnostic classes") {
+TEST_CASE("Semantic constant evaluation: integer folds use the runtime arithmetic contract") {
     auto fixture = ConstantEvaluationFixture();
     ConstantValueAccess& values = fixture.compilation;
     const auto boolean = values.builtin_type(BuiltinType::Bool);
@@ -24,9 +24,9 @@ TEST_CASE("Semantic constant evaluation: checked integer folds preserve diagnost
 
     const auto maximum = values.intern_constant(constant_test_integer_fact(i8, 127));
     const auto one_i8 = values.intern_constant(constant_test_integer_fact(i8, 1));
-    const auto overflow = fold_binary_constant(values, BinaryOperator::Add, maximum, one_i8, i8);
-    REQUIRE_FALSE(overflow.has_value());
-    CHECK_EQ(overflow.error(), ConstantEvaluationFailure::IntegerOverflow);
+    const auto wrapped = fold_binary_constant(values, BinaryOperator::Add, maximum, one_i8, i8);
+    REQUIRE(wrapped.has_value());
+    CHECK(std::get<IntegerConstant>(wrapped->value) == IntegerConstant::from_signed(-128));
 
     const auto zero_i8 = values.intern_constant(constant_test_integer_fact(i8, 0));
     const auto divide_by_zero =
@@ -216,7 +216,13 @@ TEST_CASE("Semantic execution: runtime integer arithmetic wraps at the operand w
     );
     REQUIRE(negated.has_value());
     CHECK(std::get<IntegerConstant>(negated->value) == IntegerConstant::from_signed(-128));
-    const auto checked = evaluate_unary_constant_value(values, UnaryOperator::Negate, minimum, i8);
+    const auto checked = evaluate_unary_constant_value(
+        values,
+        UnaryOperator::Negate,
+        minimum,
+        i8,
+        IntegerArithmetic::Checked
+    );
     REQUIRE_FALSE(checked.has_value());
     CHECK(checked.error() == ConstantEvaluationFailure::IntegerOverflow);
     for (const auto shift : {-1, 8}) {

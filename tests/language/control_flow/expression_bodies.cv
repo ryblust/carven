@@ -1,9 +1,7 @@
 struct ExpressionFailure {}
 
 fn forward_expression(value: i32) => expression_increment(value);
-
 fn expression_increment(value: i32) => value + 1;
-
 fn expression_invoke(callback: fn(i32) -> i32, value: i32) => callback(value);
 
 fn expression_record(&count: i32) {
@@ -11,7 +9,6 @@ fn expression_record(&count: i32) {
 }
 
 fn expression_void(&count: i32) => expression_record(&count);
-
 fn expression_select(value: bool) => if value { 10 } else { 20 };
 
 fn expression_match(value: bool) => match value {
@@ -20,7 +17,6 @@ fn expression_match(value: bool) => match value {
 };
 
 fn expression_closure(offset: i32) => [offset](value: i32) => offset + value;
-
 fn expression_nested() => [](offset: i32) => [offset](value: i32) => offset + value;
 
 private fn expression_failure() -> i32 throw ExpressionFailure {

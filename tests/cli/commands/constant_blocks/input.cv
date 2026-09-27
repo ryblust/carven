@@ -1,15 +1,16 @@
 import .helper using announce;
 
-const {
+const "module" {
     announce();
     println("module");
 }
 
 fn work() {
     const label = "local";
-    const {
+    const "local" {
         println(label);
     }
+    const "" {}
     println("runtime");
 }
 

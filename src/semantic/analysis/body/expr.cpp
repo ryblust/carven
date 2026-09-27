@@ -343,6 +343,7 @@ auto BodyElaborator::expression(
     bool allow_pointer_narrowing
 ) noexcept -> AnalysisTask<BuiltExpression> {
     const auto was_reachable = reachable;
+    const auto entry_reachable = reachable && reference_path_reachable;
     const auto& source = ast.expression(id);
     auto selected = (co_await select_expression(id, expected, allow_pointer_narrowing));
     if (!selected.has_value()) {
@@ -358,6 +359,25 @@ auto BodyElaborator::expression(
         result->storage = std::move(node);
     }
     if (result.has_value()) {
+        auto& node = std::visit(
+            Overloaded {
+                [](SemanticExpression& value) static noexcept -> SemanticExpression& {
+                    return value;
+                },
+                [](PlaceExpression& value) static noexcept -> SemanticExpression& {
+                    return value.expression;
+                },
+            },
+            result->storage
+        );
+        const auto dispatches_before_children = std::holds_alternative<SemIf>(node.value)
+            || std::holds_alternative<SemMatch>(node.value)
+            || std::holds_alternative<SemTry>(node.value)
+            || std::holds_alternative<SemShortCircuit>(node.value);
+        node.operation_reachable = std::holds_alternative<SemReport>(node.value)
+            ? entry_reachable && node.operation_reachable
+            : dispatches_before_children ? entry_reachable
+                                         : reachable && reference_path_reachable;
         reachable = was_reachable && result->completes;
     }
     co_return result;

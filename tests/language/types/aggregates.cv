@@ -6,7 +6,6 @@ struct Point {
 struct Empty {}
 
 fn first(values: [i32; 3]) -> i32 => values[0];
-
 fn sum(point: Point) -> i32 => point.x + point.y;
 
 test "Basics: representative primitives aggregates and arrays run end to end" {

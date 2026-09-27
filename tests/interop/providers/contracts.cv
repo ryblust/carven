@@ -26,9 +26,7 @@ import(cpp) fn contract_identity(value: [i32; 2]) -> [i32; 2];
 import(cpp) fn contract_void(fail: bool, error: Failure) throw Failure;
 import(cpp) fn contract_access(&&value: i32) -> i32;
 import(cpp) fn contract_consumer() -> bool;
-
 export(cpp) fn make_failure() -> Failure => Failure { 17 };
-
 export(cpp) fn text() -> String => "owned";
 export(cpp) fn copy(value: String) -> String => contract_text(value);
 export(cpp) fn replace(&value: String) => contract_replace(&value);

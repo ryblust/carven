@@ -12,7 +12,8 @@ namespace {
 constexpr auto closure_content = 1u;
 constexpr auto callable_content = 2u;
 constexpr auto storage_content = 4u;
-constexpr auto all_contents = closure_content | callable_content | storage_content;
+constexpr auto native_content = 8u;
+constexpr auto all_contents = closure_content | callable_content | storage_content | native_content;
 
 struct ContentDependent final {
     std::size_t index;
@@ -93,6 +94,7 @@ auto solve_type_contents(
                     }
                 },
                 [&](const CppTypeValue& value) noexcept {
+                    contents[index] = native_content;
                     if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
                         for (const auto argument : named->arguments) {
                             depend(argument, callable_content);
@@ -139,6 +141,7 @@ auto solve_type_contents(
             .closure_owner = (contents[index] & closure_content) != 0u,
             .callable_view = (contents[index] & callable_content) != 0u,
             .storage_owner = (contents[index] & storage_content) != 0u,
+            .contains_native_value = (contents[index] & native_content) != 0u,
         });
     }
     return result;

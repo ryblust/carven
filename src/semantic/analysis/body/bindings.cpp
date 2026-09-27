@@ -1,7 +1,6 @@
 module carven:semantic.analysis.body.bindings.impl;
 
 import :semantic.analysis.body.builder;
-import :semantic.analysis.operations;
 import :support.invariant;
 import std;
 
@@ -65,40 +64,4 @@ auto BodyBuilder::pattern_copy(PatternID id) const noexcept -> ElaboratedPattern
         invariant_violation("body builder queried a foreign or invalid pattern");
     }
     return patterns.copy(id);
-}
-
-auto BodyBuilder::place_access(const PlaceExpression& place) const noexcept -> AccessMode {
-    if (!place.root) {
-        const auto* source = &place.expression;
-        for (;;) {
-            if (const auto* dereference = std::get_if<SemDereference>(&source->value)) {
-                const auto pointer = pointer_shape(draft, dereference->source->type.construction());
-                if (!pointer) {
-                    invariant_violation("indirect place lost its ptr type");
-                }
-                return pointer->access == PointerAccess::Write ? AccessMode::Write
-                                                               : AccessMode::Read;
-            }
-            if (const auto* field = std::get_if<SemField>(&source->value)) {
-                source = &*field->source;
-            } else if (const auto* index = std::get_if<SemIndex>(&source->value)) {
-                source = &*index->source;
-            } else if (const auto* cpp = std::get_if<SemCpp>(&source->value)) {
-                source = &cpp->operands.front().expression;
-            } else {
-                invariant_violation("indirect place has no dereference root");
-            }
-        }
-    }
-    return bindings.copy(*place.root)
-        .storage.visit([](const auto& storage) static noexcept -> AccessMode {
-            using Storage = std::remove_cvref_t<decltype(storage)>;
-            if constexpr (std::same_as<Storage, OwnerBindingStorage>) {
-                return storage.writable ? AccessMode::Write : AccessMode::Read;
-            } else if constexpr (std::same_as<Storage, ParameterBindingStorage>) {
-                return storage.access == AccessMode::Write ? AccessMode::Write : AccessMode::Read;
-            } else {
-                return storage.mode == CaptureMode::Write ? AccessMode::Write : AccessMode::Read;
-            }
-        });
 }

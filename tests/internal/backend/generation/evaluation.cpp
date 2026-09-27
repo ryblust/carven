@@ -862,7 +862,7 @@ TEST_CASE("Generation: discarded operations use their native result contract") {
             struct Record { value: i32, }
             enum Tag { First, Second, }
             fn scalar() -> i32 => 1;
-            fn record() -> Record => Record { value: 1 };
+            fn record() -> Record => { value: 1 };
             fn tag() -> Tag => Tag::First;
             fn effect() -> bool => true;
             fn discard(value: f64, divisor: i32) {

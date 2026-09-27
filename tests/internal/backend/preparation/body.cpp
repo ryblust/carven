@@ -95,3 +95,54 @@ TEST_CASE("Preparation: a foreign occurrence cannot acquire another body's facts
         static_cast<void>(preparation.prepare(*foreign));
     }));
 }
+
+TEST_CASE("Preparation: Read snapshots are stable while pointed-to storage remains observable") {
+    const auto semantic = analyze_test_program(R"(
+        struct Record { value: i32 }
+        fn stable(record: Record, address: ptr<i32>, text: str, interval: range<i32>, view: [i32]) {
+            let _ = record.value;
+            let _ = text.len();
+            let _ = interval;
+            if address != nullptr { let _ = *address; }
+            let _ = view[0];
+        }
+        fn borrowed(values: [i32; 2], owned: String, native: ::Native) {
+            let _ = values;
+            let _ = owned;
+            let _ = native;
+        }
+    )");
+    auto stable = 0uz;
+    auto borrowed = 0uz;
+    auto indirect = 0uz;
+    for (const auto entry : semantic.bodies().entries()) {
+        const auto preparation = BodyPreparation(semantic, entry.id);
+        visit_semantic_nodes(entry.value.region(), [&](const SemanticExpression& source) noexcept {
+            const auto& summary = preparation.summary(source);
+            if (const auto* binding = std::get_if<SemBinding>(&source.value)) {
+                const auto& local = entry.value.binding(binding->binding);
+                const auto* parameter = std::get_if<ParameterBindingStorage>(&local.storage);
+                if (parameter == nullptr) {
+                    return;
+                }
+                const auto name = semantic.provenance().spelling(local.name);
+                if (name == "values" || name == "owned" || name == "native") {
+                    CHECK(summary.reads_storage);
+                    ++borrowed;
+                } else {
+                    CHECK_FALSE(summary.reads_storage);
+                    ++stable;
+                }
+            } else if (std::holds_alternative<SemDereference>(source.value)
+                       || std::holds_alternative<SemIndex>(source.value)) {
+                CHECK(summary.reads_storage);
+                ++indirect;
+            } else if (std::holds_alternative<SemField>(source.value)) {
+                CHECK_FALSE(summary.reads_storage);
+            }
+        });
+    }
+    CHECK(stable >= 5uz);
+    CHECK(borrowed == 3uz);
+    CHECK(indirect == 2uz);
+}

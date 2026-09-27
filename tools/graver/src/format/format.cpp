@@ -278,22 +278,25 @@ auto SyntaxFormatter::format() noexcept -> std::string {
             std::size_t first;
             std::size_t last;
             std::size_t category;
+            bool is_const_test;
         };
 
         auto entries = std::vector<TopLevelEntry>();
-        const auto add = [&](Span span, std::size_t category) noexcept {
+        const auto add = [&](Span span, std::size_t category, bool is_const_test = false) noexcept {
             entries.push_back(
                 TopLevelEntry {
                     .first = token_at(span.start()),
                     .last = token_covering(span.end() - 1u),
                     .category = category,
+                    .is_const_test = is_const_test,
                 }
             );
         };
         for (const auto& item : syntax.items()) {
             const auto* function = std::get_if<ASTFunctionDecl>(&item.value);
             if (function == nullptr || !function->is_implicit_entry) {
-                add(item.span, item.value.index());
+                const auto* test = std::get_if<ASTTestDecl>(&item.value);
+                add(item.span, item.value.index(), test != nullptr && test->is_const);
             }
         }
         if (top_level_body != nullptr) {
@@ -315,11 +318,11 @@ auto SyntaxFormatter::format() noexcept -> std::string {
         for (auto i = 1uz; i < entries.size(); ++i) {
             const auto& previous = entries[i - 1uz];
             const auto& current = entries[i];
-            if (previous.category != current.category
+            const auto separate = previous.category != current.category
+                || previous.is_const_test != current.is_const_test
                 || multiline(previous.first, previous.last)
-                || multiline(current.first, current.last)) {
-                minimum_breaks[current.first] = 2uz;
-            }
+                || multiline(current.first, current.last);
+            minimum_breaks[current.first] = separate ? 2uz : 1uz;
         }
         return render();
     }
@@ -529,9 +532,6 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                 } else {
                     mark_members(value.cases);
                 }
-            } else if constexpr (std::same_as<T, ASTTestDecl>
-                                 || std::same_as<T, ASTConstantBlock>) {
-                block_layouts[block_open(syntax.block(value.body).span)] = BlockLayout::Expanded;
             } else if constexpr (std::same_as<T, ASTFunctionDecl>) {
                 for (const auto& parameter : value.parameters) {
                     mark_access(parameter.access);
@@ -821,7 +821,7 @@ auto SyntaxFormatter::gap(std::size_t index, Separation desired, bool closing) n
     };
     for (const auto trivia : source.trivia_before(index)) {
         if (trivia.kind == TriviaKind::LineEnding) {
-            ++endings;
+            endings = std::min(endings + 1uz, index == 0uz && comment_count == 0uz ? 1uz : 2uz);
         } else if (trivia.kind == TriviaKind::LineComment) {
             if (endings != 0uz) {
                 breaks(std::max(endings, required));

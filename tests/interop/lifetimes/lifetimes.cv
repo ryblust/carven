@@ -21,9 +21,8 @@ fn returning() -> i32 {
     return 7;
 }
 
-fn fixed_success() -> FixedOwner throw Failure => FixedOwner { 41 };
-
-fn fixed_plain() -> FixedOwner => FixedOwner { 42 };
+fn fixed_success() -> FixedOwner throw Failure => 41;
+fn fixed_plain() -> FixedOwner => 42;
 
 fn observe_fixed_view(callback: fn() -> FixedOwner throw Failure) throw Failure {
     callback()?.probe(0, 0);

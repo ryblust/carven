@@ -227,11 +227,69 @@ auto BodyElaborator::call_expression(
     }
     if (auto* builtin = std::get_if<BuiltinSelection>(&*selected_callee)) {
         builtin->span = span;
+        if (builtin->function == BuiltinFunction::Addressof) {
+            if (source.arguments.size() != 1uz) {
+                co_return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::TypeCallArity,
+                    "addressof requires exactly one argument"
+                ));
+            }
+            const auto argument_id = source.arguments.front().expression;
+            const auto selected = call_argument_operand(ast, argument_id);
+            if (selected.access == AccessMode::Take) {
+                co_return std::unexpected(fail(
+                    ast.expression(argument_id).span,
+                    DiagnosticCode::AccessCallMismatch,
+                    "addressof cannot take its argument"
+                ));
+            }
+            auto argument = (co_await expression(selected.expression));
+            if (!argument) {
+                co_return std::unexpected(argument.error());
+            }
+            auto pending = take_pending_failures(*argument);
+            auto place = consume_place(*argument, ast.expression(argument_id).span);
+            if (!place) {
+                co_return std::unexpected(place.error());
+            }
+            if (selected.access == AccessMode::Write && place->access != AccessMode::Write) {
+                co_return std::unexpected(fail(
+                    ast.expression(argument_id).span,
+                    DiagnosticCode::AccessImmutable,
+                    "addressof Write requires writable storage"
+                ));
+            }
+            const auto* target = std::get_if<TypeID>(&place->expression.type.construction());
+            if (target == nullptr) {
+                co_return std::unexpected(fail(
+                    ast.expression(argument_id).span,
+                    DiagnosticCode::TypeUnresolved,
+                    "addressof target requires a concrete type"
+                ));
+            }
+            const auto pointer = draft().intern_type(
+                {.value = PointerTypeValue {
+                     .target = *target,
+                     .access = selected.access == AccessMode::Write ? PointerAccess::Write
+                                                                    : PointerAccess::Read
+                 }}
+            );
+            auto result = make_built(
+                pointer,
+                SemAddressOf {.source = UniqueIndirect(std::move(place->expression))},
+                span,
+                std::move(pending)
+            );
+            result.completes = argument->completes;
+            co_return result;
+        }
         auto argument_spans = std::vector<Span>();
         auto arguments = std::vector<SemCallArgument>();
         auto parameters = std::vector<ConstructionCallableParameter>();
         auto pending = BodyPendingFailureTerms();
         auto completes = true;
+        auto report_condition_completes = true;
         auto known = std::optional<bool>();
         const auto conditional_report = builtin->function == BuiltinFunction::Assert
             || builtin->function == BuiltinFunction::Check
@@ -285,6 +343,7 @@ auto BodyElaborator::call_expression(
             append_pending_failures(pending, built->pending_failures);
             if (condition) {
                 known = known_boolean_constant(draft(), built->argument.expression.constant);
+                report_condition_completes = built->completes;
             }
             if (!conditional_report || condition || known == false) {
                 completes &= built->completes;
@@ -295,8 +354,12 @@ auto BodyElaborator::call_expression(
         if (!valid) {
             co_return std::unexpected(valid.error());
         }
+        auto operation = builtin_operation(active_builder(), *builtin, std::move(arguments));
+        if (std::holds_alternative<SemReport>(operation.value)) {
+            operation.operation_reachable = report_condition_completes;
+        }
         co_return BuiltExpression {
-            .storage = builtin_operation(active_builder(), *builtin, std::move(arguments)),
+            .storage = std::move(operation),
             .pending_failures = std::move(pending),
             .takeable = true,
             .completes = completes

@@ -1,0 +1,22 @@
+const fn literal() => c"123";
+
+const fn display() {
+    let value = literal();
+    println(value, c"", c"我😀");
+    println([c"a\n", c"\"\\", c""]);
+    println(f"text={value}; empty={c""}; unicode={c"我😀"}");
+    var text = String {};
+    text.append_format(f"<{value}>");
+    println(text);
+    eprintln(c"error");
+}
+
+const formatted = f"constant={c"123"}";
+
+const {
+    println(formatted);
+    display();
+}
+
+println(formatted);
+display();

@@ -269,18 +269,32 @@ TEST_CASE("Parser: ranges require value endpoints and a closed upper bound") {
 }
 
 TEST_CASE("Parser: constant blocks compose with constants functions tests and nested statements") {
-    const auto tree = parse_valid(R"(
-        const { const { println("nested"); } }
+    static constexpr auto text = std::string_view(R"(
+        const "module" { const "nested" { println("nested"); } }
         const answer = 42;
-        const fn compute() -> i32 { const {} return answer; }
-        const test "answer" { const {} check(compute() == answer); }
+        const fn compute() -> i32 { const "local" {} return answer; }
+        const test "answer" { const "test body" {} check(compute() == answer); }
+        const {}
     )");
+    const auto tree = parse_valid(text);
     const auto ast = tree.view();
-    REQUIRE(root(tree).items.size() == 4uz);
+    REQUIRE(root(tree).items.size() == 5uz);
     const auto& block = get<ASTConstantBlock>(item(tree, 0));
+    REQUIRE(block.label.has_value());
+    CHECK_EQ(block.label->text, "module");
+    CHECK_EQ(slice(text, block.label->span), "\"module\"");
     REQUIRE(ast.block(block.body).statements.size() == 1uz);
-    CHECK(is<ASTConstantBlock>(ast.statement(ast.block(block.body).statements.front())));
+    const auto& nested =
+        get<ASTConstantBlock>(ast.statement(ast.block(block.body).statements.front()));
+    REQUIRE(nested.label.has_value());
+    CHECK_EQ(nested.label->text, "nested");
     CHECK(is<ASTConstantDecl>(item(tree, 1)));
     CHECK(get<ASTFunctionDecl>(item(tree, 2)).const_span.has_value());
     CHECK(get<ASTTestDecl>(item(tree, 3)).is_const);
+    CHECK_FALSE(get<ASTConstantBlock>(item(tree, 4)).label.has_value());
+
+    check_invalid("const \"label\";", "expected '{'");
+    check_invalid("fn f() { const \"label\"; }", "expected '{'");
+    check_invalid("private const \"label\" {}", "expected constant name");
+    check_invalid("export const \"label\" {}", "expected constant name");
 }

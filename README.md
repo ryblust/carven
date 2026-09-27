@@ -55,7 +55,7 @@ build systems, and introduce Carven into a native project alongside existing cod
 
 Building the Carven compiler requires [Xmake](https://xmake.io/) and an
 LLVM/Clang toolchain with C++26 support. The validated host toolchain is
-LLVM/Clang and libc++ 23.1.0. Generated programs and support headers use C++20.
+LLVM 23. Generated programs and support headers use C++20.
 
 Use `./xmakew` on POSIX systems or `.\xmakew.ps1` in Windows PowerShell for
 repository commands.

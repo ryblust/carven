@@ -143,6 +143,23 @@ TEST_CASE("Dump: declaration visibility and constants remain structured") {
     CHECK(output.contains("initializer Literal"));
 }
 
+TEST_CASE("Dump: test and constant block labels distinguish absent and empty") {
+    const auto owned =
+        dump_source("labels.cv", "test {} test \"\" {} const \"scope\" { const {} }");
+    const auto source = owned.sources.view(owned.source_id);
+    const auto lexical = lex(source);
+    REQUIRE(lexical.diagnostics.empty());
+    const auto parsed = parse(owned.sources, lexical.value);
+    REQUIRE(parsed.has_value());
+
+    const auto output = render_ast_dump(owned.sources, *parsed);
+    CHECK(output.contains("TestDeclaration"));
+    CHECK(output.contains("ConstantBlock"));
+    CHECK(output.contains("label <absent>"));
+    CHECK(output.contains("label [13, 15) \"\\\"\\\"\""));
+    CHECK(output.contains("label [25, 32) \"\\\"scope\\\"\""));
+}
+
 TEST_CASE("Dump: local module references expose their owned fields") {
     const auto owned = dump_source("main.cv", "import .model.user using User;");
     const auto source = owned.sources.view(owned.source_id);

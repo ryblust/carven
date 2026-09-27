@@ -1,3 +1,1 @@
-export fn unrelated() -> i32 {
-    return 7;
-}
+export fn unrelated() -> i32 => 7;

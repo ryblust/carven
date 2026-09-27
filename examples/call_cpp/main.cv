@@ -21,8 +21,7 @@ auto parse_port_native(std::string_view text, const Failure& invalid) noexcept
 ---
 
 import(cpp) fn parse_port_native(text: str, invalid: InvalidPort) -> i32 throw InvalidPort;
-
-fn port(text: str) -> i32 throw InvalidPort => parse_port_native(text, InvalidPort {})?;
+fn port(text: str) -> i32 throw InvalidPort => parse_port_native(text, {})?;
 
 fn report(text: str) {
     try {

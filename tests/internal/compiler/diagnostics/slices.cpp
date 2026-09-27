@@ -87,7 +87,7 @@ TEST_CASE("Compiler diagnostics: slices retain storage and nested borrows") {
          .primary_text = "let v = [[1].as_slice()]"},
         {.name = "readonly index",
          .source = "fn bad(v: [i32]) { v[0] = 1; }",
-         .code = "CV-ACCESS-NOT-ASSIGNABLE",
+         .code = "CV-ACCESS-IMMUTABLE",
          .primary_text = "v[0]"},
         {.name = "array elements are invariant",
          .source = "fn take(v: [u8]) {} fn bad(a: [i32; 2]) { take(a); }",

@@ -25,10 +25,9 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
                 co_return ConstantAtom {.type = target, .value = F32Constant {0.0f}};
             case BuiltinType::F64:
                 co_return ConstantAtom {.type = target, .value = F64Constant {0.0}};
-            case BuiltinType::String: co_return ExecutionOwnedText {.bytes = {}};
-            case BuiltinType::Str:
-                co_return ExecutionText {.bytes = std::make_shared<const std::string>()};
-            default: break;
+            case BuiltinType::String: co_return make_owned_execution_text({});
+            case BuiltinType::Str:    co_return ExecutionText {.storage = make_execution_text({})};
+            default:                  break;
         }
     } else if (std::holds_alternative<RangeTypeValue>(canonical.value)) {
         co_return ConstantAtom {

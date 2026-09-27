@@ -96,6 +96,7 @@ auto minimal_body(
             .origin = origin,
             .statements = {},
             .result = std::nullopt,
+            .result_reachable = false,
             .failures = BodyFailures(program.add_empty_failure_term()),
             .exits_test = false,
         }
@@ -117,6 +118,7 @@ auto body_with_closure(
         SemanticStatement {
             .origin = origin,
             .lifetime = lifetime,
+            .reachable = true,
             .value = SemExpressionStatement {
                 .expression = body.make_expression(
                     closure_type,
@@ -133,6 +135,7 @@ auto body_with_closure(
             .origin = origin,
             .statements = std::move(statements),
             .result = std::nullopt,
+            .result_reachable = false,
             .failures = BodyFailures(program.add_empty_failure_term()),
             .exits_test = false,
         }

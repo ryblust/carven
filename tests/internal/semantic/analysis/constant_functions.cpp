@@ -68,9 +68,7 @@ auto require_text(
 
 } // namespace
 
-TEST_CASE(
-    "Const functions: module constants, local constants and array extents execute in Carven"
-) {
+TEST_CASE("Const functions execute for required constants and array extents") {
     const auto program = analyze_test_program(R"(
         const answer = increment(41);
         const repeated = increment(8);
@@ -440,16 +438,19 @@ TEST_CASE("Const failures: root propagation uses inferred contracts and preserve
     }
 }
 
-TEST_CASE("Const failures: language recovery cannot catch evaluator errors or failed tests") {
-    const auto arithmetic = analyze_test_errors(R"(
+TEST_CASE("Const failures: wrapping arithmetic is shared with runtime execution") {
+    const auto arithmetic = analyze_test_program(R"(
         struct Failure {}
-        const fn overflow(value: i32) -> i32 throw Failure { return value + 1; }
+        const fn increment(value: i32) -> i32 => value + 1;
         const fn recover() -> i32 {
-            return try { overflow(2147483647)? } catch { _ => 0, };
+            return increment(2147483647);
         }
         const value = recover();
     )");
-    CHECK(contains_diagnostic_code(arithmetic, DiagnosticCode::ConstOverflow));
+    require_integer(module_constant(arithmetic, "value"), -2147483648ll);
+}
+
+TEST_CASE("Const failures: language recovery cannot catch failed tests") {
     const auto checks = analyze_test_errors(R"(
         struct Failure {}
         const fn fail() throw Failure { check(false); }

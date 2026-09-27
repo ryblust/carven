@@ -12,11 +12,12 @@ import std;
 TEST_CASE("Generation: only runtime tests enter module schedules") {
     for (const auto runtime : {false, true}) {
         CAPTURE(runtime);
-        const auto source =
-            std::string(
-                R"(const {} const { var n = 1; ++n; } const test "static" { check(2 + 2 == 4); })"
-            )
-            + (runtime ? R"(test "runtime" { check(3 + 3 == 6); })" : "");
+        const auto source = std::string(
+                                R"(const "phase" {} const "" {} const "phase" { var n = 1; ++n; }
+                   const test { check(2 + 2 == 4); }
+                   const test "" { check(true); })"
+                            )
+            + (runtime ? R"(test {} test {} test "runtime" {})" : "");
         const auto compilation = PlannedCompilation::build(
             analyze_test_program(source),
             {.test_mode = TestGenerationMode::RunnerEntryPoint,
@@ -32,7 +33,7 @@ TEST_CASE("Generation: only runtime tests enter module schedules") {
                 }
             }
         }
-        CHECK(tests == (runtime ? 1uz : 0uz));
+        CHECK(tests == (runtime ? 3uz : 0uz));
         for (const auto artifact : compilation.target().artifacts()) {
             if (const auto* runner = std::get_if<TargetTestRunnerHeaderArtifact>(&artifact.value)) {
                 CHECK(runner->module_runners.size() == (runtime ? 1uz : 0uz));

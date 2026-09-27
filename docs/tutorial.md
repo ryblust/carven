@@ -180,9 +180,7 @@ fn increment(&value: i32) {
     value += 1;
 }
 
-fn consume(&&point: Point) -> i32 {
-    return point.x + point.y;
-}
+fn consume(&&point: Point) -> i32 => point.x + point.y;
 
 fn use_values() -> i32 {
     var counter = 41;
@@ -406,7 +404,7 @@ struct InvalidPort {}
 
 import(cpp) fn parse_port_native(text: str, invalid: InvalidPort) -> i32 throw InvalidPort;
 
-fn port(text: str) -> i32 throw InvalidPort => parse_port_native(text, InvalidPort {})?;
+fn port(text: str) -> i32 throw InvalidPort => parse_port_native(text, {})?;
 ```
 
 Implement `parse_port_native` as a C++ function template that deduces the generated
@@ -472,12 +470,10 @@ The condition executes once and the message is evaluated only when it fails.
 
 ## Tests
 
-A test is a named module-local body:
+A test is a module-local body. Its name is optional:
 
 ```carven
-fn add(left: i32, right: i32) -> i32 {
-    return left + right;
-}
+fn add(left: i32, right: i32) -> i32 => left + right;
 
 test "addition produces the expected value" {
     let answer = add(20, 22);
@@ -519,9 +515,12 @@ calling the function does not repeat the block. They cannot read enclosing
 parameters or runtime locals, and their own locals stay inside the block.
 Separate blocks have no guaranteed execution order; keep ordered operations in
 one block. Their locals and control flow follow the same supported execution
-rules as `const fn`.
+rules as `const fn` calls. Add a string before `{` when a block needs a label in
+diagnostics: `const "prepare table" { ... }`. Labels need not be unique.
 
-Use `const test` to execute a test during compilation. It shares the ordinary
+Use `const test` to execute a test during compilation. Both `test` and
+`const test` may omit the name; an anonymous failure reports its source location.
+Explicit names remain unique within a module. It shares the ordinary
 `check`, `require`, `fail`, and print operations, within the supported constant
 execution subset:
 
@@ -545,7 +544,10 @@ test "sum at runtime" {
 The first test runs during Carven compilation and produces no runtime test
 function. A failed check makes compilation fail. The ordinary test checks the
 generated C++ when run natively, or the runtime semantics when run with
-`interpret --tests`. Calling a `const fn` at runtime still executes it at runtime.
+`interpret --tests`. A `const fn` definition checks that its reachable operations
+and callees support compile-time execution; those callees must also be `const fn`.
+Each invocation still checks execution limits and dynamic errors. The same
+function has the same arithmetic and output behavior at runtime.
 Use `carven check source.cv` to evaluate the constant blocks, initializers, and
 static tests without running the program or ordinary tests.
 

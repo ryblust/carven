@@ -1,0 +1,58 @@
+// Text views preserve their backing identity through copying and projection.
+const fn text_views_share_backing() -> bool {
+    let source = String::from_str("abc");
+    let view = source.as_str();
+    let bytes = source.bytes;
+    let copy = bytes;
+    let suffix = view.bytes.slice(1usize, 3usize);
+    let independent = source;
+    return addressof(bytes[1])
+        == addressof(copy[1])
+        && addressof(bytes[1]) == addressof(source.bytes[1])
+        && addressof(bytes[1]) == addressof(suffix[0])
+        && addressof(bytes[1]) != addressof(independent.bytes[1]);
+}
+
+const fn retained_text_views_share_backing() -> bool {
+    let source = "abc";
+    let copy = source;
+    let bytes = source.bytes;
+    return addressof(bytes[1]) == addressof(copy.bytes[1]);
+}
+
+const fn transferred_text_has_live_backing() -> bool {
+    var source = String::from_str("a");
+    source.append("b");
+    let moved = &&source;
+    let view = moved.as_str();
+    return view.bytes[1] == 98u8 && moved.bytes.len() == 2usize;
+}
+
+const fn default_text_byte_queries_are_empty() -> bool {
+    var count = 0;
+    for _ in (str {}).bytes {
+        ++count;
+    }
+    return (str {}).bytes.len() == 0usize && count == 0;
+}
+
+const frozen_text_view = String::from_str("ab").as_str();
+const frozen_byte_view = String::from_str("ab").bytes;
+
+const test "Text: borrowed backing identity executes at compile time" {
+    check(text_views_share_backing());
+    check(retained_text_views_share_backing());
+    check(transferred_text_has_live_backing());
+    check(default_text_byte_queries_are_empty());
+    check(frozen_text_view == "ab");
+    check(frozen_byte_view[1] == 98u8);
+}
+
+test "Text: borrowed backing identity executes at runtime" {
+    check(text_views_share_backing());
+    check(retained_text_views_share_backing());
+    check(transferred_text_has_live_backing());
+    check(default_text_byte_queries_are_empty());
+    check(frozen_text_view == "ab");
+    check(frozen_byte_view[1] == 98u8);
+}

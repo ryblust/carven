@@ -90,7 +90,7 @@ TEST_CASE("SemIR constants: typed execution fields freeze in declaration order")
         draft,
         ExecutionAggregateValue {
             .type = type,
-            .elements = {ExecutionOwnedText {.bytes = "7"}, boolean}
+            .elements = {make_owned_execution_text("7"), boolean}
         }
     ));
     CHECK(std::move(draft).finish().has_value());

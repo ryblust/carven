@@ -15,7 +15,6 @@ fn implicit(&count: i32) {
 }
 
 fn explicit(&count: i32) -> void => implicit(&count);
-
 fn invoke(callback: fn() -> void) => callback();
 
 fn fallible(&count: i32, stop: bool) throw Stop {

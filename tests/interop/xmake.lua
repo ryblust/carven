@@ -32,14 +32,11 @@ local rejection_cases = {
     ["pointers/const_conversion"] = {"cannot initialize", "pointer_probe::readonly_fixed", site = "source"},
     ["pointers/noncopyable_target"] = {"deleted constructor", "Fixed", site = "source"},
     ["pointers/native_double_output"] = {"cannot initialize a parameter", "pointer_probe::output", site = "source"},
-    ["pointers/self_dependent_callable"] = {
-        "incomplete type", "Node", site = "header",
-        note = "'ReadArg'", line_contains = "ReadArg<Node>",
-    },
     ["interpolation/invalid_specification"] = {"format", "format", site = "source"},
     ["interpolation/mixed_invalid_specification"] = {"format", "format", site = "source"},
     ["interpolation/append_invalid_specification"] = {"format", "format", site = "source"},
     ["interpolation/wrong_type"] = {"format", "format", site = "source"},
+    ["interpolation/cstring_pointer_specification"] = {"format", "format", site = "source"},
     ["interpolation/unicode_char_is_text"] = {"format", "format", site = "source"},
     ["interpolation/missing_formatter"] = {
         "format", "formatter", site = "source", note = "std::basic_format_string",
@@ -158,7 +155,9 @@ target("carven-test-interop-structural")
     add_tests("output", {group = "interop"})
     on_test(function (target)
         local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-        assert(output:gsub("\r\n", "\n") == "<opaque>\ncustom\nEnvelope {\n    value: <opaque>,\n}\n1\ntrue 1.5 65\n<opaque>\nnullptr\n" and errors == "",
+        assert(output:gsub("\r\n", "\n") == "<opaque>\ncustom\nEnvelope {\n    value: <opaque>,\n}\n1\ntrue 1.5 65\n<opaque>\nnullptr\n"
+            .. 'native\ntext mutable\n[\n    "native\\ntext",\n    nullptr,\n]\n'
+            .. string.rep("x", 17000) .. "\n" and errors == "",
             "structural display invoked a custom formatter or changed output: " .. output .. errors)
         return true
     end)

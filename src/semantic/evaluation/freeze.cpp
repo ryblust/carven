@@ -74,13 +74,17 @@ auto freeze_value(
         elements.reserve(children.size());
         for (auto index = 0uz; index < children.size(); ++index) {
             auto& child = children[index];
-            const auto actual = execution_value_type(values, child);
+            const auto reference = execution_value_type(values, child);
+            const auto* actual = std::get_if<TypeID>(&reference);
+            if (!actual) {
+                return std::nullopt;
+            }
             const auto expected = array ? array->element
                 : slice                 ? slice->element
                 : fields                ? (*fields)[index]
                 : payload               ? (*payload)[index]
-                                        : actual;
-            if (actual != expected) {
+                                        : *actual;
+            if (*actual != expected) {
                 return std::nullopt;
             }
             const auto frozen = freeze_value(values, shapes, std::move(child), depth + 1uz);

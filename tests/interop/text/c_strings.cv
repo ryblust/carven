@@ -10,7 +10,6 @@ import "text/c_strings.hpp" using c_strings::{
 };
 
 import .cstring_constant_api using constant_text_value;
-
 import "text/c_strings.hpp" using c_strings::select;
 import "text/c_strings.hpp" using c_other::*;
 

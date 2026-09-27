@@ -13,15 +13,11 @@ private enum Mode {
 class Box {
     hidden: Hidden,
 
-    fn create(value: i32) -> Box {
-        return {
-            hidden: Hidden { value: value }
-        };
-    }
+    fn create(value: i32) -> Box => {
+        hidden: { value: value }
+    };
 
-    fn read(self) -> i32 {
-        return self.hidden.value;
-    }
+    fn read(self) -> i32 => self.hidden.value;
 }
 
 export class Indirect {

@@ -513,6 +513,15 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     invariant_violation("dereference has an invalid target type");
                 }
             },
+            [&](const SemAddressOf& value) noexcept {
+                const auto& result = require_type(source.type.resolved());
+                const auto* pointer = std::get_if<PointerTypeValue>(&result.value);
+                if (pointer == nullptr
+                    || pointer->target != value.source->type.resolved()
+                    || value.source->category != SemanticValueCategory::Place) {
+                    invariant_violation("address-of requires a place with matching pointer type");
+                }
+            },
             [&](const SemField& value) noexcept {
                 const auto& type = require_type(value.source->type.resolved());
                 const auto* structure = std::get_if<StructTypeValue>(&type.value);

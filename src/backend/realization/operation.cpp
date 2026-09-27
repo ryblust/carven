@@ -421,6 +421,12 @@ auto realize_operation(
             [&](const SemDereference&) noexcept -> TargetExpr {
                 return dereference_expression(std::move(operands[0]));
             },
+            [&](const SemAddressOf&) noexcept -> TargetExpr {
+                return call_expression(
+                    intrinsic_expression(TargetSymbol::StdAddressof),
+                    target_expressions(std::move(operands[0]))
+                );
+            },
             [&](const SemField& value) noexcept -> TargetExpr {
                 return member_expression(
                     std::move(operands[0]),

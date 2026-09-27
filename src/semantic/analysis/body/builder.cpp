@@ -87,6 +87,7 @@ auto BodyBuilder::make_expression(
                              || std::same_as<Operation, SemBinary>
                              || std::same_as<Operation, SemCast>
                              || std::same_as<Operation, SemDereference>
+                             || std::same_as<Operation, SemAddressOf>
                              || std::same_as<Operation, SemField>
                              || std::same_as<Operation, SemIndex>
                              || std::same_as<Operation, SemPrint>
@@ -159,6 +160,7 @@ auto BodyBuilder::make_expression(
         .constant = constant,
         .failures = BodyFailures(failures),
         .exits_test = exits_test,
+        .operation_reachable = true,
         .category = SemanticValueCategory::Value,
         .value = std::move(value)
     };
@@ -169,7 +171,18 @@ auto BodyBuilder::binding_expression(LocalBindingID id) noexcept -> PlaceExpress
     auto expression =
         make_expression(binding.type, binding.lifetime, binding.origin, SemBinding {.binding = id});
     expression.category = SemanticValueCategory::Place;
-    return {.root = id, .expression = std::move(expression)};
+    const auto access =
+        binding.storage.visit([](const auto& storage) static noexcept -> AccessMode {
+            using Storage = std::remove_cvref_t<decltype(storage)>;
+            if constexpr (std::same_as<Storage, OwnerBindingStorage>) {
+                return storage.writable ? AccessMode::Write : AccessMode::Read;
+            } else if constexpr (std::same_as<Storage, ParameterBindingStorage>) {
+                return storage.access == AccessMode::Write ? AccessMode::Write : AccessMode::Read;
+            } else {
+                return storage.mode == CaptureMode::Write ? AccessMode::Write : AccessMode::Read;
+            }
+        });
+    return {.root = id, .access = access, .expression = std::move(expression)};
 }
 
 auto BodyBuilder::remember_initializer(
@@ -307,13 +320,14 @@ auto BodyBuilder::known_sequence_extent(const SemanticExpression& expression) co
 
 auto BodyBuilder::make_place(
     std::optional<LocalBindingID> root,
+    AccessMode access,
     ConstructionTypeRef type,
     SemanticExpressionValue value,
     ProgramOriginID origin
 ) noexcept -> PlaceExpression {
     auto expression = make_expression(type, lifetime(), origin, std::move(value));
     expression.category = SemanticValueCategory::Place;
-    return {.root = root, .expression = std::move(expression)};
+    return {.root = root, .access = access, .expression = std::move(expression)};
 }
 
 auto BodyBuilder::callable_expression(CallableID callable, ProgramOriginID origin) noexcept
@@ -344,9 +358,11 @@ auto BodyBuilder::cpp_place(
     ProgramOriginID origin
 ) noexcept -> PlaceExpression {
     const auto root = source.root;
+    const auto access = source.access;
+    const auto operation_reachable = source.expression.operation_reachable;
     operands.insert(
         operands.begin(),
-        {.access = place_access(source), .expression = std::move(source.expression)}
+        {.access = access, .expression = std::move(source.expression)}
     );
     auto expression = make_expression(
         type,
@@ -354,8 +370,9 @@ auto BodyBuilder::cpp_place(
         origin,
         SemCpp {.operation = std::move(operation), .operands = std::move(operands)}
     );
+    expression.operation_reachable = operation_reachable;
     expression.category = SemanticValueCategory::Place;
-    return {.root = root, .expression = std::move(expression)};
+    return {.root = root, .access = access, .expression = std::move(expression)};
 }
 
 auto BodyBuilder::identity() const noexcept -> BodyIdentity {

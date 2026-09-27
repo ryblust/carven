@@ -116,15 +116,21 @@ auto Parser::starts_unambiguous_statement() const noexcept -> bool {
 }
 
 auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
-    if (check(TokenKind::Const) && check_next(TokenKind::LeftBrace)) {
+    if (check(TokenKind::Const)
+        && (check_next(TokenKind::LeftBrace) || check_next(TokenKind::StringLiteral))) {
         const auto keyword = consume();
+        auto label = parse_block_label();
         const auto body = parse_ordinary_block();
         if (!body) {
             return std::nullopt;
         }
         return builder.append_statement({
             .span = join(keyword.span, builder.block(*body).span),
-            .value = ASTConstantBlock {.keyword_span = keyword.span, .body = *body},
+            .value = ASTConstantBlock {
+                .keyword_span = keyword.span,
+                .label = std::move(label),
+                .body = *body,
+            },
         });
     }
     if (check(TokenKind::Let) || check(TokenKind::Var) || check(TokenKind::Const)) {

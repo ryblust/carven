@@ -136,8 +136,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics) noexcept -> Co
         TestDeclaration {
             .is_const = false,
             .module_id = module_id,
-            .name = compilation.intern_spelling("coverage"),
-            .origin = origin,
+            .source = {.label = compilation.intern_spelling("coverage"), .origin = origin},
             .body = reservation.id(),
         }
     );

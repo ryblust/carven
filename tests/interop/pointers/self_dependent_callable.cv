@@ -1,0 +1,14 @@
+import "pointers/provider.hpp";
+
+export struct Node {
+    callback: ptr<fn(Node) -> void>,
+}
+
+export fn has_no_callback(node: Node) -> bool => node.callback == nullptr;
+
+test "Pointers: self-dependent callable pointer crosses a generated interface" {
+    let node = Node { callback: nullptr };
+    let copied = node;
+    check(has_no_callback(copied));
+    check(copied.callback == nullptr);
+}

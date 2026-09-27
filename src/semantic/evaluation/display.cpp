@@ -7,9 +7,22 @@ import std;
 
 namespace {
 
+auto display_text(const ConstantValueReader& values, const ExecutionValue& value) noexcept
+    -> std::optional<std::string_view> {
+    if (const auto text = execution_text(values, value)) {
+        return text;
+    }
+    if (const auto atom = execution_atom(values, value)) {
+        if (const auto* text = std::get_if<CStringConstant>(&atom->value)) {
+            return values.spelling(text->value);
+        }
+    }
+    return std::nullopt;
+}
+
 class ExecutionDisplay final {
 public:
-    explicit ExecutionDisplay(const ExecutionValueAccess& values) noexcept;
+    ExecutionDisplay(const ExecutionValueAccess& values, const ExecutionMemory* memory) noexcept;
     auto write(const ExecutionValue& value, std::size_t depth, bool nested) noexcept -> bool;
     auto finish() noexcept -> std::string;
 
@@ -18,12 +31,17 @@ private:
     auto quoted(std::string_view value, bool character_literal = false) noexcept -> void;
     auto line(std::size_t depth) noexcept -> void;
     const ExecutionValueAccess& values;
+    const ExecutionMemory* memory;
     std::string bytes;
     bool truncated = false;
 };
 
-ExecutionDisplay::ExecutionDisplay(const ExecutionValueAccess& values) noexcept
-    : values(values) {}
+ExecutionDisplay::ExecutionDisplay(
+    const ExecutionValueAccess& values,
+    const ExecutionMemory* memory
+) noexcept
+    : values(values),
+      memory(memory) {}
 
 auto ExecutionDisplay::text(std::string_view value) noexcept -> void {
     if (truncated) {
@@ -84,7 +102,7 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
         text("...");
         return true;
     }
-    if (const auto string = execution_text(values, value)) {
+    if (const auto string = display_text(values, value)) {
         if (nested) {
             quoted(*string);
         } else {
@@ -92,9 +110,13 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
         }
         return true;
     }
-    const auto type = execution_value_type(values, value);
-    const auto names = values.display_names(type);
-    const auto compound = execution_compound_view(values, value);
+    const auto reference = execution_value_type(values, value);
+    const auto* type = std::get_if<TypeID>(&reference);
+    if (!type) {
+        return false;
+    }
+    const auto names = values.display_names(*type);
+    const auto compound = execution_compound_view(values, value, memory);
     auto enum_case = compound ? compound->enum_case : std::nullopt;
     const auto atom = execution_atom(values, value);
     if (atom) {
@@ -117,7 +139,7 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
     }
     if (compound) {
         const auto structure =
-            std::holds_alternative<StructTypeValue>(values.type_copy(type).value);
+            std::holds_alternative<StructTypeValue>(values.type_copy(*type).value);
         if (structure) {
             text(names.name);
             text(" {");
@@ -133,7 +155,7 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
                 text(": ");
             }
             const auto success = compound->elements.visit([&](const auto elements) noexcept {
-                return write(ExecutionValue(elements[index]), depth + 1, true);
+                return write(elements[index], depth + 1, true);
             });
             if (!success) {
                 return false;
@@ -155,7 +177,7 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
     }
     if (atom) {
         if (const auto* range = std::get_if<RangeConstant>(&atom->value)) {
-            const auto canonical = values.type_copy(type);
+            const auto canonical = values.type_copy(*type);
             const auto* range_type = std::get_if<RangeTypeValue>(&canonical.value);
             if (range_type == nullptr) {
                 return false;
@@ -203,10 +225,11 @@ auto ExecutionDisplay::finish() noexcept -> std::string {
 auto display_execution_value(
     const ExecutionValueAccess& values,
     const ExecutionValue& value,
-    bool nested
+    bool nested,
+    const ExecutionMemory* memory
 ) noexcept -> std::optional<std::string> {
     if (!nested) {
-        if (const auto text = execution_text(values, value)) {
+        if (const auto text = display_text(values, value)) {
             return std::string(*text);
         }
         if (const auto atom = execution_atom(values, value)) {
@@ -220,7 +243,7 @@ auto display_execution_value(
             }
         }
     }
-    auto display = ExecutionDisplay(values);
+    auto display = ExecutionDisplay(values, memory);
     if (!display.write(value, 0, nested)) {
         return std::nullopt;
     }

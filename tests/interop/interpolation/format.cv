@@ -1,5 +1,9 @@
 import "interpolation/provider.hpp";
 
+test "Interpolation interop: C strings use string width and precision" {
+    check(f"{c"abc":>5.2}" == "   ab");
+}
+
 struct FormatError {
     code: i32,
 }

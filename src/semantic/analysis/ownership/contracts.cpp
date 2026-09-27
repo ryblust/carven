@@ -34,6 +34,11 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
             return self(*field->source);
         }
         if (const auto* index = std::get_if<SemIndex>(&source.value)) {
+            if (std::holds_alternative<SliceTypeValue>(
+                    program.types().type(index->source->type.resolved()).value
+                )) {
+                return false;
+            }
             return self(*index->source);
         }
         if (const auto* cpp = std::get_if<SemCpp>(&source.value);

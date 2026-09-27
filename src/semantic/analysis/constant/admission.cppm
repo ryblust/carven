@@ -3,14 +3,12 @@ module carven:semantic.analysis.constant.admission;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
 import :semantic.semir.ids;
-import :semantic.semir.structured;
+import std;
 
-// Validate the complete source operation tree, independently of calls or execution.
-auto validate_constant_function(
+// A const fn promises structural compile-time executability for every
+// semantically reachable path. Reachable function dependencies must also
+// explicitly promise that capability.
+auto validate_const_contracts(
     ProgramDraft& draft,
-    FunctionID function,
-    const StructuredBodyDraft& body
+    std::span<const std::optional<BodyID>> function_bodies
 ) noexcept -> AnalysisResult<void>;
-
-auto validate_constant_body(ProgramDraft& draft, const StructuredBodyDraft& body) noexcept
-    -> AnalysisResult<void>;

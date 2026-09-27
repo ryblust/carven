@@ -1,6 +1,7 @@
 #pragma once
 
 #include <format>
+#include <string>
 
 struct DisplayNative final {
     DisplayNative() = default;
@@ -37,4 +38,18 @@ inline auto display_function() noexcept {
 
 inline auto display_null_cstring() noexcept -> const char* {
     return nullptr;
+}
+
+inline auto display_cstring() noexcept -> const char* {
+    return "native\ntext";
+}
+
+inline auto display_mutable_cstring() noexcept -> char* {
+    static char text[] = "mutable";
+    return text;
+}
+
+inline auto display_long_cstring() noexcept -> const char* {
+    static const auto text = std::string(17000, 'x');
+    return text.c_str();
 }

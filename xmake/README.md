@@ -33,12 +33,12 @@ Run commands from the repository root using `./xmakew`; on Windows, use
 `format-check` reports formatting violations; `format` applies formatting.
 Both use clang-format for `.cpp`, `.cppm`, `.h`, and `.hpp` files under `src/`,
 `tests/`, `crafts/`, `examples/`, and Graver's source and test directories.
-On macOS, the script first looks for clang-format in Homebrew's LLVM installation,
-then falls back to PATH. Other platforms use PATH.
+On macOS, the script queries Homebrew's local installation prefix and looks in
+`opt/llvm/bin`, then falls back to PATH. Other platforms use PATH.
 
-Both commands build Graver and use it for `.cv` files under `crafts/`, `examples/`,
-and `tests/`, plus Graver's expected-output fixtures. Deliberately unformatted
-Graver inputs and the three lexical/syntax rejection fixtures listed in
+Build Graver with `./xmakew build graver`. Both commands use it for `.cv` files
+under `crafts/`, `examples/`, and `tests/`, plus Graver's expected-output fixtures.
+Deliberately unformatted Graver inputs and the three lexical/syntax rejection fixtures listed in
 `format.lua` are excluded. Other formatting or parse failures fail the command.
 See [C++ conventions](../docs/conventions.md) for source conventions and
 [Testing](../docs/testing.md) for test responsibilities and validation workflow.

@@ -319,6 +319,11 @@ auto ProgramDraft::construction_callable_contract_copy(CallableID id) const noex
     return storage.declarations.construction_view().callable_contract(id);
 }
 
+auto ProgramDraft::callable_signature_copy(CallableSignatureID id) const noexcept
+    -> CallableSignature {
+    return storage.callable_signatures.copy(id);
+}
+
 auto ProgramDraft::construction_failure_term_copy(FailureTermID failures) const noexcept
     -> FailureTerm {
     return storage.failure_constraints.copy(failures);
@@ -622,8 +627,9 @@ auto ProgramDraft::define_test(TestID id, TestDeclaration test) noexcept -> void
     require_state(State::Bodies, "define test");
     if (test.module_id.owner() != program_identity
         || test.body.owner() != program_identity
-        || test.name.owner() != provenance_appender.reader().identity()
-        || test.origin.owner() != provenance_appender.reader().identity()) {
+        || (test.source.label
+            && test.source.label->owner() != provenance_appender.reader().identity())
+        || test.source.origin.owner() != provenance_appender.reader().identity()) {
         invariant_violation("test declaration mixed semantic or provenance owners");
     }
     static_cast<void>(storage.declarations.construction_view().module_decl(test.module_id));

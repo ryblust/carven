@@ -47,6 +47,8 @@ auto BodyElaborator::branch_block(
         co_return std::optional<BuiltExpression>();
     }
     ensure_reachable_diagnostics(ast.expression(*source.result).span);
+    regions.back().result_reachable = reachable && reference_path_reachable;
+    [[maybe_unused]] const auto path = BodyReferencePathGuard(reference_path_reachable, reachable);
     auto result = (co_await expression(*source.result, expected, allow_pointer_narrowing));
     if (!result.has_value()) {
         active_full_expression = enclosing_full_expression;
@@ -118,6 +120,8 @@ auto BodyElaborator::build_branch(
             regions.back().exits_test |= regions.back().result->exits_test;
         } else {
             collect_pending(pending, value);
+            [[maybe_unused]] const auto path =
+                BodyReferencePathGuard(reference_path_reachable, regions.back().result_reachable);
             append_expression(value, span);
         }
     } else if (value_form && reachable) {
@@ -149,6 +153,9 @@ auto BodyElaborator::build_arm(
         value_boundary_loop_depths.push_back(loops.size());
     }
     if (const auto* expression_id = std::get_if<ASTExprID>(&source.value)) {
+        regions.back().result_reachable = reachable && reference_path_reachable;
+        [[maybe_unused]] const auto path =
+            BodyReferencePathGuard(reference_path_reachable, reachable);
         auto built = (co_await expression(
             *expression_id,
             value_form ? type : std::nullopt,

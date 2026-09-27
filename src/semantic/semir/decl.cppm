@@ -5,6 +5,7 @@ import :semantic.semir.ids;
 import :semantic.semir.table;
 import :semantic.semir.type;
 import :semantic.visibility;
+import :source.provenance;
 import :source.provenance.ids;
 import std;
 
@@ -161,11 +162,18 @@ auto callable_body_id(const CallableDeclaration& callable) noexcept -> std::opti
 auto cpp_import_form_origin(const CallableDeclaration& callable) noexcept
     -> std::optional<ProgramOriginID>;
 
+struct BlockSource final {
+    std::optional<ProgramSpellingID> label;
+    ProgramOriginID origin;
+};
+
+auto block_display_name(CompilationProvenanceView provenance, const BlockSource& source) noexcept
+    -> std::string;
+
 struct TestDeclaration final {
     bool is_const;
     ModuleID module_id;
-    ProgramSpellingID name;
-    ProgramOriginID origin;
+    BlockSource source;
     BodyID body;
 };
 

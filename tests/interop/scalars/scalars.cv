@@ -14,7 +14,6 @@ private import(cpp) fn native_isize(value: isize) -> isize;
 private import(cpp) fn native_usize(value: usize) -> usize;
 private import(cpp) fn native_f32(value: f32) -> f32;
 private import(cpp) fn native_f64(value: f64) -> f64;
-
 export(cpp) fn echo_bool(value: bool) -> bool => native_bool(value);
 export(cpp) fn echo_char(value: char) -> char => native_char(value);
 export(cpp) fn echo_i8(value: i8) -> i8 => native_i8(value);

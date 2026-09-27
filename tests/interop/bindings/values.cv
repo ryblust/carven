@@ -1,7 +1,6 @@
 import <vector> using std::vector;
 
 fn create() -> vector<i32> => vector<i32> { 1, 2, 3 };
-
 fn count(values: vector<i32>) -> usize => values.size();
 
 fn append(&values: vector<i32>, value: i32) {

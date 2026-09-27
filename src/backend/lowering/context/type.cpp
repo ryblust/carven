@@ -123,6 +123,16 @@ auto ModuleLowering::lower_parameter(
             if (builtin != nullptr) {
                 return intrinsic_type(builtin_symbol(builtin->kind), true);
             }
+            if (!semantic().type_contents(parameter.type).contains_native_value) {
+                return target().intern_type({
+                    .value =
+                        TargetIntrinsicType {
+                            .symbol = TargetSymbol::StdAddConst,
+                            .type_argument_ids = {base},
+                        },
+                    .const_qualified = false,
+                });
+            }
             return target().intern_type({
                 .value =
                     TargetIntrinsicType {

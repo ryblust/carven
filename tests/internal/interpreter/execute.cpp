@@ -76,12 +76,15 @@ TEST_CASE("Interpreter: unused native functions do not constrain executed bodies
     CHECK(output == "ready\n");
 }
 
-TEST_CASE("Interpreter: transitive admission rejects untaken unsupported calls before output") {
+TEST_CASE("Interpreter: native admission follows executed paths and preserves preceding effects") {
     const auto program = analyze_test_program(R"(
         private import(cpp) fn native();
-        fn helper() { if false { native(); } }
-        println("not executed");
-        helper();
+        fn helper(selected: bool) { if selected { native(); } }
+        println("before");
+        helper(false);
+        println("after skipped call");
+        helper(true);
+        println("after native call");
     )");
     auto output = std::string();
     const auto result = interpret(
@@ -92,7 +95,36 @@ TEST_CASE("Interpreter: transitive admission rejects untaken unsupported calls b
     );
     REQUIRE(!result.has_value());
     CHECK(result.error().code == DiagnosticCode::InterpretAdmission);
-    CHECK(output.empty());
+    CHECK(output == "before\nafter skipped call\n");
+}
+
+TEST_CASE("Interpreter: native capability is checked after operands complete") {
+    const auto program = analyze_test_program(R"(
+        import <cstdlib>;
+        struct Failure {}
+        fn operand(failing: bool) -> i32 throw Failure {
+            println("operand");
+            if failing { throw Failure {}; }
+            return 1;
+        }
+        fn attempt(failing: bool) -> i32 {
+            return try {
+                ::std::abs(operand(failing)?) as i32
+            } catch { Failure(_) => 7, };
+        }
+        println(attempt(true));
+        println(attempt(false));
+    )");
+    auto output = std::string();
+    const auto result = interpret(
+        program,
+        entry(program),
+        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
+    );
+    REQUIRE(!result.has_value());
+    CHECK(result.error().code == DiagnosticCode::InterpretAdmission);
+    CHECK(output == "operand\n7\noperand\n");
 }
 
 TEST_CASE("Interpreter: budgets cover ordinary recursive calls") {
@@ -201,7 +233,11 @@ TEST_CASE(
         REQUIRE(results.has_value());
         REQUIRE(results->size() == 3);
         CHECK(
-            program.provenance().spelling(program.tests().test((*results)[0].test).name) == "failed"
+            block_display_name(
+                program.provenance(),
+                program.tests().test((*results)[0].test).source
+            )
+            == "failed"
         );
         REQUIRE((*results)[0].diagnostics.size() == 2);
         CHECK((*results)[0].diagnostics[0].code == DiagnosticCode::InterpretExecution);
@@ -218,11 +254,13 @@ TEST_CASE(
     }
 }
 
-TEST_CASE("Interpreter: all runtime tests are admitted before any test executes") {
+TEST_CASE("Interpreter: runtime tests admit executed paths and continue after unsupported calls") {
     const auto program = analyze_test_program(R"(
         private import(cpp) fn native();
-        test "accepted" { println("must not run"); }
-        test "rejected" { if false { native(); } }
+        fn helper(selected: bool) { if selected { native(); } }
+        test "skipped" { helper(false); println("skipped"); }
+        test "reached" { helper(true); println("unreachable"); }
+        test "later" { println("later"); }
     )");
     auto output = std::string();
     const auto results = interpret_tests(
@@ -230,9 +268,13 @@ TEST_CASE("Interpreter: all runtime tests are admitted before any test executes"
         [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
         InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
     );
-    REQUIRE(!results.has_value());
-    CHECK(results.error().code == DiagnosticCode::InterpretAdmission);
-    CHECK(output.empty());
+    REQUIRE(results.has_value());
+    REQUIRE(results->size() == 3);
+    CHECK((*results)[0].diagnostics.empty());
+    REQUIRE((*results)[1].diagnostics.size() == 1);
+    CHECK((*results)[1].diagnostics[0].code == DiagnosticCode::InterpretAdmission);
+    CHECK((*results)[2].diagnostics.empty());
+    CHECK(output == "skipped\nlater\n");
 }
 
 TEST_CASE("Interpreter: each runtime test receives an independent execution budget") {

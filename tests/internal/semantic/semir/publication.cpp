@@ -161,8 +161,8 @@ TEST_CASE("SemIR publication: one closed topology owns every declaration case an
         TestDeclaration {
             .is_const = false,
             .module_id = module_id,
-            .name = builder.intern_spelling("publication topology"),
-            .origin = facts.origin,
+            .source =
+                {.label = builder.intern_spelling("publication topology"), .origin = facts.origin},
             .body = test_body_id,
         }
     );

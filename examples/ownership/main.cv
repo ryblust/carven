@@ -15,5 +15,5 @@ restock(&stock, 2);
 println("Snapshot:", snapshot.units);
 println("Dispatched:", dispatch(&&stock));
 // Take transfers the owner; stock is unavailable until assigned again.
-stock = Stock { units: 1 };
+stock = { units: 1 };
 println("Replacement stock:", stock.units);

@@ -39,9 +39,17 @@ auto print_value(std::FILE* stream, const T& value) noexcept -> void {
 
 template<typename T, typename Emit>
 auto print_value(std::FILE* stream, const StructuralDisplay<T, Emit>& value) noexcept -> void {
-    auto writer = DisplayWriter();
-    value.emit(writer, value.value);
-    detail::print_value(stream, writer.result());
+    if constexpr (std::is_same_v<T, const char*> || std::is_same_v<T, char*>) {
+        // Top-level text is verbatim and is not bounded by structural display limits.
+        detail::print_value(
+            stream,
+            std::string_view(value.value == nullptr ? "nullptr" : value.value)
+        );
+    } else {
+        auto writer = DisplayWriter();
+        value.emit(writer, value.value);
+        detail::print_value(stream, writer.result());
+    }
 }
 
 template<bool Newline, typename First, typename... Rest>

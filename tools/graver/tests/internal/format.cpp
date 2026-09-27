@@ -92,11 +92,29 @@ TEST_CASE(
 
 TEST_CASE("Graver format: empty files comments blank lines and CRLF have stable output") {
     check_format("", "");
+    check_format("\n\n\nfn f(){}\n\n\n", "\nfn f() {}\n\n");
     check_format(" \t\r\n", "\n");
     check_format(" \t// only  \r\n\r\n", "// only  \n\n");
     check_format(
         "fn f(){}\r\n\r\n\r\nfn g(){\r\nlet x=1;\r\n\r\n\r\nlet y=2;\r\n}",
-        "fn f() {}\n\n\nfn g() {\n    let x = 1;\n\n\n    let y = 2;\n}\n"
+        "fn f() {}\n\nfn g() {\n    let x = 1;\n\n    let y = 2;\n}\n"
+    );
+}
+
+TEST_CASE("Graver format: top-level spacing combines category boundaries and authored groups") {
+    check_format(
+        "const \"first\"{}\nconst \"second\"{}\nconst test{}\nconst test{}\n"
+        "test{}\ntest{}\nstruct First{}\nexport struct Second{}\nfn one(){}\nfn two(){}",
+        "const \"first\" {}\nconst \"second\" {}\n\nconst test {}\nconst test {}\n\n"
+        "test {}\ntest {}\n\nstruct First {}\nexport struct Second {}\n\nfn one() {}\nfn two() {}\n"
+    );
+    check_format(
+        "test{}\n\n\ntest{}\nprintln(1);\n\n\nprintln(2);",
+        "test {}\n\ntest {}\n\nprintln(1);\n\nprintln(2);\n"
+    );
+    check_format(
+        "test{} // previous\n\n\n// next\n\n\ntest{}",
+        "test {} // previous\n\n// next\n\ntest {}\n"
     );
 }
 

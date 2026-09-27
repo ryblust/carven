@@ -439,6 +439,9 @@ throw-clause = "throw", named-type, { "+", named-type };
 
 Function definitions are top-level items or class operations. `import(cpp)` uses the same function
 head followed by `;`; `export(cpp)` uses either function-body form.
+The optional `const` before `fn` declares compile-time call capability. Required
+constant execution can call only functions with this modifier, including through
+local callable bindings. A `const fn` may call only other `const fn` dependencies.
 `throw` introduces the callable's failure contract after the success result.
 `throws` is an ordinary identifier. Nested functions, default arguments,
 variadic parameters, and explicit generic parameter lists have no syntax.
@@ -454,13 +457,14 @@ scope. `private` and `export` may prefix the declaration through the common
 ### 3.6 Tests
 
 ```ebnf
-test-declaration = [ "const" ], "test", STRING_LITERAL, test-block;
+test-declaration = [ "const" ], "test", [ STRING_LITERAL ], test-block;
 
 test-block = "{", { statement }, "}";
 ```
 
 A test declaration is a top-level item and cannot follow `export`. It has no
-parameter or result syntax.
+parameter or result syntax. A name is optional; explicit names must be unique
+within their module. Anonymous tests are identified by source location in reports.
 
 `check`, `require`, `fail`, and the printing names are ordinary identifiers.
 Their calls use the ordinary expression grammar in tests, functions, and lambdas.
@@ -552,7 +556,7 @@ expression-statement = expression, ";";
 
 control-flow-statement = if-form | match-form | try-form;
 
-constant-block = "const", ordinary-block;
+constant-block = "const", [ STRING_LITERAL ], ordinary-block;
 ```
 
 A direct unparenthesized `if-form`, `match-form`, or `try-form` at the beginning

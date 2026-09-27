@@ -51,6 +51,20 @@ auto BodyBatchElaborator::defer_constant_block(
     });
 }
 
+auto BodyBatchElaborator::block_source(
+    ProgramModuleID module,
+    Span keyword,
+    const std::optional<ASTBlockLabel>& label
+) noexcept -> BlockSource {
+    return {
+        .label = label ? std::optional(draft->intern_spelling(label->text)) : std::nullopt,
+        .origin = draft->append_source_origin(
+            draft->module_source(module),
+            label ? label->span : keyword
+        ),
+    };
+}
+
 auto BodyBatchElaborator::build_constant_block(PendingConstantBlock source) noexcept
     -> AnalysisTask<void> {
     const auto module_id = source.module_id;
@@ -76,12 +90,11 @@ auto BodyBatchElaborator::build_constant_block(PendingConstantBlock source) noex
     if (!body) {
         co_return std::unexpected(body.error());
     }
-    auto admitted = validate_constant_body(*draft, *body);
-    if (!admitted) {
-        co_return std::unexpected(admitted.error());
-    }
     draft->add_body_draft(std::move(*body));
-    constant_roots.push_back(id);
+    constant_roots.push_back({
+        .body = id,
+        .source = block_source(module_id, source.syntax.keyword_span, source.syntax.label),
+    });
     co_return {};
 }
 
@@ -159,16 +172,14 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
             const auto& test = std::get<ASTTestDecl>(item.value);
             auto reservation = draft->reserve_body(BodyKind::Test);
             const auto body_id = reservation.id();
+            const auto source =
+                block_source(source_module.module_id, test.keyword_span, test.label);
             draft->define_test(
                 test_form->test,
                 TestDeclaration {
                     .is_const = test.is_const,
                     .module_id = source_module.declaration,
-                    .name = draft->intern_spelling(test.name),
-                    .origin = draft->append_source_origin(
-                        draft->module_source(source_module.module_id),
-                        test.name_span
-                    ),
+                    .source = source,
                     .body = body_id,
                 }
             );
@@ -189,11 +200,7 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
                 co_return std::unexpected(body.error());
             }
             if (test.is_const) {
-                constant_roots.push_back(body_id);
-                auto admitted = validate_constant_body(*draft, *body);
-                if (!admitted) {
-                    co_return admitted;
-                }
+                constant_roots.push_back({.body = body_id, .source = source});
             }
             draft->add_body_draft(std::move(*body));
         }
@@ -209,9 +216,13 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
             draft->diagnostics().warning(diagnostic);
         }
     }
+    auto contracts = validate_const_contracts(*draft, body_ids);
+    if (!contracts) {
+        co_return std::unexpected(contracts.error());
+    }
     for (auto index = 0uz; index < constant_roots.size(); ++index) {
-        const auto body = constant_roots[index];
-        static_cast<void>((co_await evaluate_constant_body(*draft, requests, body)));
+        const auto root = constant_roots[index];
+        static_cast<void>((co_await evaluate_constant_body(*draft, requests, root)));
     }
     if (const auto failure = draft->diagnostics().failure()) {
         co_return std::unexpected(*failure);
@@ -396,12 +407,6 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
     if (pending.has_value()) {
         const auto result = elaborator.inferred_result_type();
         draft->complete_function_result(declaration.callable, result);
-    }
-    if (declaration.is_const) {
-        auto admitted = validate_constant_function(*draft, id, *body);
-        if (!admitted) {
-            co_return std::unexpected(admitted.error());
-        }
     }
     draft->add_body_draft(std::move(*body));
     co_return {};

@@ -413,6 +413,11 @@ auto ASTDumper::render_top_level_item(
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_span_field(nested_prefix, false, "keyword", block.keyword_span);
+                if (block.label.has_value()) {
+                    render_span_field(nested_prefix, false, "label", block.label->span);
+                } else {
+                    append_line(nested_prefix, false, "label <absent>");
+                }
                 render_ordinary_block(block.body, nested_prefix, true, "body ");
             },
             [&](const ASTTestDecl& declaration) noexcept {
@@ -427,7 +432,11 @@ auto ASTDumper::render_top_level_item(
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_span_field(nested_prefix, false, "keyword", declaration.keyword_span);
-                render_span_field(nested_prefix, false, "name", declaration.name_span);
+                if (declaration.label.has_value()) {
+                    render_span_field(nested_prefix, false, "label", declaration.label->span);
+                } else {
+                    append_line(nested_prefix, false, "label <absent>");
+                }
                 render_ordinary_block(declaration.body, nested_prefix, true, "body ");
             },
         }

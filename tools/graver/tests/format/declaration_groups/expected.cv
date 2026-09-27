@@ -6,7 +6,6 @@ private fn two() {
     return 2;
 }
 
-
 fn three() {
     return 3;
 }

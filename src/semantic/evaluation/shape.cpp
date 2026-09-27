@@ -74,6 +74,11 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
             }
         } else if (std::holds_alternative<RangeTypeValue>(canonical.value)) {
             result.supported = true;
+        } else if (std::holds_alternative<PointerTypeValue>(canonical.value)
+                   || std::holds_alternative<SliceTypeValue>(canonical.value)) {
+            // Pointers and slices are views. Their backing storage is not contained
+            // in the value's aggregate shape.
+            result.supported = true;
         } else if (const auto* cpp = std::get_if<CppTypeValue>(&canonical.value)) {
             result.supported = std::holds_alternative<CppConstCharPointerType>(cpp->form);
         } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {

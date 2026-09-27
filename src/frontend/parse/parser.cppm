@@ -139,6 +139,7 @@ private:
     auto parse_constant(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTConstantDecl>>;
     auto parse_test(bool is_const) noexcept -> std::optional<std::pair<Span, ASTTestDecl>>;
+    auto parse_block_label() noexcept -> std::optional<ASTBlockLabel>;
     auto parse_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_named_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_sequence_type() noexcept -> std::optional<ASTTypeID>;

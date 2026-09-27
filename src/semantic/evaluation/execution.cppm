@@ -52,6 +52,8 @@ public:
     auto parameters() const noexcept -> std::span<const LocalBindingID>;
     auto binding_count() const noexcept -> std::size_t;
     auto binding_type(LocalBindingID id) const noexcept -> ConstructionTypeRef;
+    auto binding_access(LocalBindingID id) const noexcept -> AccessMode;
+    auto bindings_in(LifetimeRegionID lifetime) const noexcept -> std::vector<std::size_t>;
 
     template<typename Visitor>
     auto visit_pattern(PatternID id, Visitor&& visitor) const noexcept {
@@ -78,23 +80,16 @@ struct ExecutionTraceEvent final {
     std::size_t depth;
 };
 
-struct ExecutionCallBody final {
-    // The context keeps completed bodies stable across nested call requests.
-    ExecutionBody body;
-    std::span<const ConstructionTypeRef> parameter_types;
-};
-
 class SemanticExecutionContext {
 public:
     virtual ~SemanticExecutionContext() = default;
 
-    virtual auto arithmetic() const noexcept -> IntegerArithmetic;
     virtual auto trace(const ExecutionTraceEvent&) noexcept -> void;
     virtual auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void = 0;
     virtual auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> = 0;
     virtual auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
-        -> ContinuationTask<std::expected<ExecutionCallBody, ExecutionCallFailure>> = 0;
+        -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> = 0;
     virtual auto report(const ExecutionDiagnostic& diagnostic) noexcept -> void = 0;
 };
 
@@ -112,11 +107,12 @@ auto execute_body(
     ExecutionLimits limits = constant_execution_limits()
 ) noexcept -> ExecutionTask<void>;
 
+// Starts a typed entry function with no language arguments. Calls inside its
+// body use their SemCall operands.
 auto execute_function(
     ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     FunctionID function,
-    std::vector<ExecutionValue> arguments,
     ProgramOriginID origin,
     ExecutionLimits limits = constant_execution_limits()
 ) noexcept -> ExecutionTask<ExecutionValue>;

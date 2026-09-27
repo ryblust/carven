@@ -51,11 +51,25 @@ auto SemanticExecutor::equal(
 ) noexcept -> ExecutionResult<bool> {
     const auto result = execution_equal(values, left, right, steps, limits.steps);
     if (!result) {
-        return std::unexpected(fail(
-            origin,
-            DiagnosticCode::ConstLimit,
-            std::format("comparison exceeded {} execution steps", limits.steps)
-        ));
+        switch (result.error()) {
+            case ExecutionComparisonFailure::StepLimit:
+                return std::unexpected(fail(
+                    origin,
+                    DiagnosticCode::ConstLimit,
+                    std::format("comparison exceeded {} execution steps", limits.steps)
+                ));
+            case ExecutionComparisonFailure::ExpiredText:
+                return std::unexpected(
+                    fail(origin, DiagnosticCode::ConstEvaluation, "text backing is no longer alive")
+                );
+            case ExecutionComparisonFailure::Unsupported:
+                return std::unexpected(fail(
+                    origin,
+                    DiagnosticCode::ConstEvaluation,
+                    "comparison is not supported in execution"
+                ));
+        }
+        std::unreachable();
     }
     return *result;
 }
@@ -100,6 +114,49 @@ auto SemanticExecutor::check_aggregate_size(TypeID type, ProgramOriginID origin)
     return {};
 }
 
+auto SemanticExecutor::retained_slice(ConstantID id, ProgramOriginID origin) noexcept
+    -> ExecutionResult<ExecutionSlice> {
+    const auto& fact = values.constant(id);
+    const auto* slice = std::get_if<SliceConstant>(&fact.value);
+    if (slice == nullptr) {
+        return std::unexpected(
+            fail(origin, DiagnosticCode::ConstEvaluation, "constant is not a slice")
+        );
+    }
+    if (const auto found = retained_slice_backings.find(id);
+        found != retained_slice_backings.end()) {
+        return ExecutionSlice {
+            .type = fact.type,
+            .backing = found->second,
+            .offset = 0uz,
+            .extent = slice->elements.size()
+        };
+    }
+    if (auto checked = account_aggregate(slice->elements.size(), origin); !checked) {
+        return std::unexpected(checked.error());
+    }
+    auto elements = std::vector<ExecutionValue>();
+    elements.reserve(slice->elements.size());
+    for (const auto element : slice->elements) {
+        elements.emplace_back(element);
+    }
+    auto storage = own_storage(
+        ExecutionAggregateValue {.type = fact.type, .elements = std::move(elements)},
+        origin
+    );
+    if (!storage) {
+        return std::unexpected(storage.error());
+    }
+    auto backing = memory.create(std::move(*storage));
+    retained_slice_backings.emplace(id, backing);
+    return ExecutionSlice {
+        .type = fact.type,
+        .backing = std::move(backing),
+        .offset = 0uz,
+        .extent = slice->elements.size()
+    };
+}
+
 auto SemanticExecutor::own_storage(ExecutionValue value, ProgramOriginID origin) noexcept
     -> ExecutionResult<ExecutionValue> {
     if (std::holds_alternative<ConstantID>(value)) {
@@ -125,6 +182,14 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
                 fail(origin, DiagnosticCode::ConstLimit, "aggregate exceeds its nesting limit")
             );
         }
+        if (const auto* constant = std::get_if<ConstantID>(&value);
+            constant && std::holds_alternative<SliceConstant>(values.constant(*constant).value)) {
+            auto slice = retained_slice(*constant, origin);
+            if (!slice) {
+                return std::unexpected(slice.error());
+            }
+            return *slice;
+        }
         if (const auto compound = execution_compound_view(values, value)) {
             if (auto checked = check_aggregate_size(compound->type, origin); !checked) {
                 return std::unexpected(checked.error());
@@ -136,8 +201,8 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
                     }
                     auto elements = std::vector<ExecutionValue>();
                     elements.reserve(children.size());
-                    for (const auto& child : children) {
-                        auto copy = self(child, depth + 1uz);
+                    for (auto index = 0uz; index < children.size(); ++index) {
+                        auto copy = self(children[index], depth + 1uz);
                         if (!copy) {
                             return std::unexpected(copy.error());
                         }
@@ -159,9 +224,17 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
             return ExecutionAggregateValue {.type = compound->type, .elements = std::move(*copied)};
         }
         if (const auto* text = std::get_if<ExecutionOwnedText>(&value)) {
-            if (auto checked = account_text(text->bytes.size(), origin); !checked) {
+            const auto bytes = execution_text_bytes(*text->storage);
+            if (auto checked = account_text(bytes.size(), origin); !checked) {
                 return std::unexpected(checked.error());
             }
+            return make_owned_execution_text(std::string(bytes));
+        }
+        if (const auto* text = std::get_if<ExecutionText>(&value);
+            text && !execution_text_storage(*text)) {
+            return std::unexpected(
+                fail(origin, DiagnosticCode::ConstEvaluation, "text backing is no longer alive")
+            );
         }
         return value;
     };
@@ -230,17 +303,54 @@ auto SemanticExecutor::finish(
     ));
 }
 
+auto SemanticExecutor::bind(ExecutionFrame& frame, std::size_t slot, ExecutionValue value) noexcept
+    -> void {
+    release(frame, slot);
+    frame.slots[slot] = ExecutionOwner {.place = memory.create(std::move(value))};
+}
+
+auto SemanticExecutor::release(ExecutionFrame& frame, std::size_t slot) noexcept -> void {
+    if (const auto* owner = std::get_if<ExecutionOwner>(&frame.slots[slot])) {
+        memory.release(owner->place);
+    }
+    frame.slots[slot] = ExecutionUninitialized {};
+}
+
+auto SemanticExecutor::release_temporaries(ExecutionFrame& frame, std::size_t begin) noexcept
+    -> void {
+    while (frame.temporaries.size() > begin) {
+        memory.release(frame.temporaries.back());
+        frame.temporaries.pop_back();
+    }
+}
+
+auto SemanticExecutor::release_frame(ExecutionFrame& frame) noexcept -> void {
+    release_temporaries(frame, 0);
+    for (auto slot = frame.slots.size(); slot != 0; --slot) {
+        release(frame, slot - 1uz);
+    }
+}
+
+auto SemanticExecutor::release_region(ExecutionFrame& frame, LifetimeRegionID lifetime) noexcept
+    -> void {
+    if (frame.body) {
+        for (const auto slot : frame.body->bindings_in(lifetime)) {
+            release(frame, slot);
+        }
+    }
+}
+
 auto SemanticExecutor::slot_value(
     ExecutionFrame& frame,
     std::size_t index,
     ProgramOriginID origin
 ) noexcept -> ExecutionResult<ExecutionValue*> {
-    auto& slot = frame.slots.at(index);
-    if (auto* value = std::get_if<ExecutionValue>(&slot)) {
-        return value;
+    const auto& slot = frame.slots.at(index);
+    if (const auto* owner = std::get_if<ExecutionOwner>(&slot)) {
+        return located(owner->place, origin);
     }
     if (const auto* alias = std::get_if<ExecutionPlace>(&slot)) {
-        return located(frame, *alias, origin);
+        return located(*alias, origin);
     }
     const auto taken = std::holds_alternative<ExecutionTaken>(slot);
     return std::unexpected(fail(
@@ -251,7 +361,9 @@ auto SemanticExecutor::slot_value(
     ));
 }
 
-auto SemanticExecutor::local_place(const SemanticExpression& expression) noexcept -> bool {
+// Value projection can read a retained constant child without creating an object.
+// Bound storage instead supplies the child directly, without copying its owner.
+auto SemanticExecutor::has_bound_storage(const SemanticExpression& expression) noexcept -> bool {
     auto* current = &expression;
     while (true) {
         if (const auto* index = std::get_if<SemIndex>(&current->value)) {
@@ -259,10 +371,10 @@ auto SemanticExecutor::local_place(const SemanticExpression& expression) noexcep
         } else if (const auto* field = std::get_if<SemField>(&current->value)) {
             current = &*field->source;
         } else {
-            break;
+            return std::holds_alternative<SemBinding>(current->value)
+                || std::holds_alternative<SemDereference>(current->value);
         }
     }
-    return std::holds_alternative<SemBinding>(current->value);
 }
 
 auto SemanticExecutor::place(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
@@ -271,72 +383,248 @@ auto SemanticExecutor::place(ExecutionFrame& frame, const SemanticExpression& ex
         co_return std::unexpected(checked.error());
     }
     if (const auto* name = std::get_if<SemBinding>(&expression.value)) {
-        if (const auto* alias =
-                std::get_if<ExecutionPlace>(&frame.slots.at(name->binding.index()))) {
+        const auto& slot = frame.slots.at(name->binding.index());
+        if (const auto* alias = std::get_if<ExecutionPlace>(&slot)) {
             co_return *alias;
         }
-        co_return ExecutionPlace {.slot = name->binding.index(), .path = {}};
+        if (const auto* owner = std::get_if<ExecutionOwner>(&slot)) {
+            co_return owner->place;
+        }
+        const auto unavailable = slot_value(frame, name->binding.index(), expression.origin);
+        co_return std::unexpected(unavailable.error());
+    }
+    if (const auto* dereference = std::get_if<SemDereference>(&expression.value)) {
+        auto pointer = (co_await value(frame, *dereference->source));
+        if (!pointer) {
+            co_return std::unexpected(pointer.error());
+        }
+        const auto* address = std::get_if<ExecutionPointer>(&*pointer);
+        if (address == nullptr || !address->target) {
+            co_return std::unexpected(fail(
+                dereference->origin,
+                DiagnosticCode::ConstEvaluation,
+                "cannot dereference a null pointer"
+            ));
+        }
+        if (auto target = located(*address->target, dereference->origin); !target) {
+            co_return std::unexpected(target.error());
+        }
+        co_return *address->target;
     }
     if (const auto* field = std::get_if<SemField>(&expression.value)) {
         auto selected = (co_await place(frame, *field->source));
         if (!selected) {
             co_return std::unexpected(selected.error());
         }
-        selected->path.push_back(field->field.field_index);
-        co_return selected;
+        auto projected = memory.project(std::move(*selected), field->field.field_index);
+        if (projected) {
+            co_return std::move(*projected);
+        }
+        co_return std::unexpected(fail(
+            expression.origin,
+            DiagnosticCode::ConstEvaluation,
+            "storage projection is unavailable"
+        ));
     }
     if (const auto* index = std::get_if<SemIndex>(&expression.value)) {
-        auto selected = (co_await place(frame, *index->source));
-        if (!selected) {
-            co_return std::unexpected(selected.error());
+        auto sequence = (co_await sequence_view(frame, *index->source, expression.origin));
+        if (!sequence) {
+            co_return std::unexpected(sequence.error());
         }
         auto subscript = (co_await value(frame, *index->index));
         if (!subscript) {
             co_return std::unexpected(subscript.error());
         }
-        auto receiver = located(frame, *selected, expression.origin);
-        if (!receiver) {
-            co_return std::unexpected(receiver.error());
-        }
-        const auto* aggregate = std::get_if<ExecutionAggregateValue>(*receiver);
-        if (aggregate == nullptr) {
-            co_return std::unexpected(fail(
-                expression.origin,
-                DiagnosticCode::ConstEvaluation,
-                "indexing requires sequence storage"
-            ));
-        }
-        auto position = offset(*subscript, aggregate->elements.size(), index->index->origin);
+        auto position = offset(*subscript, sequence->extent, index->index->origin);
         if (!position) {
             co_return std::unexpected(position.error());
         }
-        selected->path.push_back(*position);
-        co_return selected;
+        co_return slice_element(*sequence, *position, expression.origin);
     }
-    co_return std::unexpected(
-        fail(expression.origin, DiagnosticCode::ConstEvaluation, "mutation requires local storage")
-    );
+    co_return std::unexpected(fail(
+        expression.origin,
+        DiagnosticCode::ConstEvaluation,
+        "operation requires addressable storage"
+    ));
 }
 
-auto SemanticExecutor::located(
+auto SemanticExecutor::sequence_view(
     ExecutionFrame& frame,
-    const ExecutionPlace& place,
+    const SemanticExpression& expression,
     ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionValue*> {
-    auto result = slot_value(frame, place.slot, origin);
-    if (!result) {
-        return result;
+) noexcept -> ExecutionTask<ExecutionSlice> {
+    const auto source_type = type(expression.type.construction(), origin);
+    if (!source_type) {
+        co_return std::unexpected(source_type.error());
     }
-    for (const auto index : place.path) {
-        auto* aggregate = std::get_if<ExecutionAggregateValue>(*result);
-        if (aggregate == nullptr || index >= aggregate->elements.size()) {
-            return std::unexpected(
-                fail(origin, DiagnosticCode::ConstEvaluation, "storage projection is unavailable")
+    auto selected = std::optional<ExecutionPlace>();
+    auto result = std::optional<ExecutionValue>();
+    if (expression.selects_storage()) {
+        auto source = (co_await place(frame, expression));
+        if (!source) {
+            co_return std::unexpected(source.error());
+        }
+        selected = std::move(*source);
+    } else {
+        auto evaluated = (co_await value(frame, expression));
+        if (!evaluated) {
+            co_return std::unexpected(evaluated.error());
+        }
+        result = std::move(*evaluated);
+    }
+    auto* storage = static_cast<ExecutionValue*>(nullptr);
+    if (selected) {
+        auto located_value = located(*selected, origin);
+        if (!located_value) {
+            co_return std::unexpected(located_value.error());
+        }
+        storage = *located_value;
+    } else {
+        storage = &*result;
+    }
+    if (const auto* slice = std::get_if<ExecutionSlice>(storage)) {
+        if (!memory.view(*slice)) {
+            co_return std::unexpected(
+                fail(origin, DiagnosticCode::ConstEvaluation, "slice backing is no longer alive")
             );
         }
-        result = &aggregate->elements[index];
+        co_return *slice;
     }
-    return result;
+    if (const auto* constant = std::get_if<ConstantID>(storage);
+        constant && std::holds_alternative<SliceConstant>(values.constant(*constant).value)) {
+        co_return retained_slice(*constant, origin);
+    }
+    const auto compound = execution_compound_view(values, *storage);
+    if (!compound) {
+        co_return std::unexpected(
+            fail(origin, DiagnosticCode::ConstEvaluation, "slice requires a sequence")
+        );
+    }
+    const auto extent = compound->size();
+    if (!selected) {
+        auto owned = own_storage(std::move(*result), origin);
+        if (!owned) {
+            co_return std::unexpected(owned.error());
+        }
+        selected = memory.create(std::move(*owned));
+        frame.temporaries.push_back(*selected);
+    }
+    co_return ExecutionSlice {
+        .type = *source_type,
+        .backing = std::move(*selected),
+        .offset = 0uz,
+        .extent = extent
+    };
+}
+
+auto SemanticExecutor::slice_element(
+    const ExecutionSlice& slice,
+    std::size_t index,
+    ProgramOriginID origin
+) noexcept -> ExecutionResult<ExecutionPlace> {
+    if (!memory.view(slice)) {
+        return std::unexpected(
+            fail(origin, DiagnosticCode::ConstEvaluation, "slice backing is no longer alive")
+        );
+    }
+    if (index >= slice.extent) {
+        return std::unexpected(
+            fail(origin, DiagnosticCode::ConstIndexBounds, "sequence index is out of bounds")
+        );
+    }
+    auto selected = memory.project(slice.backing, slice.offset + index);
+    if (!selected) {
+        return std::unexpected(
+            fail(origin, DiagnosticCode::ConstEvaluation, "slice element is unavailable")
+        );
+    }
+    return std::move(*selected);
+}
+
+auto SemanticExecutor::detach_views(
+    ExecutionValue value,
+    ProgramOriginID origin,
+    std::size_t depth
+) noexcept -> ExecutionResult<ExecutionValue> {
+    if (depth > maximum_constant_aggregate_depth) {
+        return std::unexpected(
+            fail(origin, DiagnosticCode::ConstLimit, "aggregate exceeds its nesting limit")
+        );
+    }
+    if (const auto* text = std::get_if<ExecutionText>(&value);
+        text && std::holds_alternative<std::weak_ptr<ExecutionTextStorage>>(text->storage)) {
+        const auto storage = execution_text_storage(*text);
+        if (!storage) {
+            return std::unexpected(
+                fail(origin, DiagnosticCode::ConstEvaluation, "text backing is no longer alive")
+            );
+        }
+        const auto bytes = execution_text_bytes(*storage);
+        if (auto checked = account_text(bytes.size(), origin); !checked) {
+            return std::unexpected(checked.error());
+        }
+        return ExecutionText {.storage = make_execution_text(std::string(bytes))};
+    }
+    if (const auto* constant = std::get_if<ConstantID>(&value);
+        constant && std::holds_alternative<SliceConstant>(values.constant(*constant).value)) {
+        auto slice = retained_slice(*constant, origin);
+        if (!slice) {
+            return std::unexpected(slice.error());
+        }
+        value = std::move(*slice);
+    }
+    if (const auto* slice = std::get_if<ExecutionSlice>(&value)) {
+        if (!memory.view(*slice)) {
+            return std::unexpected(
+                fail(origin, DiagnosticCode::ConstEvaluation, "slice backing is no longer alive")
+            );
+        }
+        if (auto checked = account_aggregate(slice->extent, origin); !checked) {
+            return std::unexpected(checked.error());
+        }
+        auto elements = std::vector<ExecutionValue>();
+        elements.reserve(slice->extent);
+        for (auto index = 0uz; index < slice->extent; ++index) {
+            auto selected = slice_element(*slice, index, origin);
+            if (!selected) {
+                return std::unexpected(selected.error());
+            }
+            auto* target = memory.resolve(*selected);
+            if (target == nullptr) {
+                return std::unexpected(
+                    fail(origin, DiagnosticCode::ConstEvaluation, "slice element is unavailable")
+                );
+            }
+            auto copied = copy_value(*target, origin);
+            if (!copied) {
+                return std::unexpected(copied.error());
+            }
+            auto detached = detach_views(std::move(*copied), origin, depth + 1uz);
+            if (!detached) {
+                return std::unexpected(detached.error());
+            }
+            elements.push_back(std::move(*detached));
+        }
+        return ExecutionAggregateValue {.type = slice->type, .elements = std::move(elements)};
+    }
+    for (auto& element : execution_elements(value)) {
+        auto detached = detach_views(std::move(element), origin, depth + 1uz);
+        if (!detached) {
+            return std::unexpected(detached.error());
+        }
+        element = std::move(*detached);
+    }
+    return value;
+}
+
+auto SemanticExecutor::located(const ExecutionPlace& place, ProgramOriginID origin) noexcept
+    -> ExecutionResult<ExecutionValue*> {
+    if (auto* value = memory.resolve(place)) {
+        return value;
+    }
+    return std::unexpected(
+        fail(origin, DiagnosticCode::ConstEvaluation, "pointer target is no longer alive")
+    );
 }
 
 auto SemanticExecutor::offset(
@@ -369,7 +657,7 @@ auto SemanticExecutor::read_operand(
     // The admitted non-owning types are scalar or trivially copied records.
     // Storage-bearing values use the same Read rule as ordinary lowering.
     const auto* concrete = std::get_if<TypeID>(&expression.type.construction());
-    if (concrete != nullptr && read_borrows_storage(*concrete) && local_place(expression)) {
+    if (concrete != nullptr && read_borrows_storage(*concrete) && expression.selects_storage()) {
         auto selected = (co_await place(frame, expression));
         if (!selected) {
             co_return std::unexpected(selected.error());
@@ -383,15 +671,12 @@ auto SemanticExecutor::read_operand(
     co_return std::move(*result);
 }
 
-auto SemanticExecutor::materialize(
-    ExecutionFrame& frame,
-    ExecutionOperand operand,
-    ProgramOriginID origin
-) noexcept -> ExecutionResult<ExecutionValue> {
+auto SemanticExecutor::materialize(ExecutionOperand operand, ProgramOriginID origin) noexcept
+    -> ExecutionResult<ExecutionValue> {
     if (auto* owned = std::get_if<ExecutionValue>(&operand)) {
         return std::move(*owned);
     }
-    auto source = located(frame, std::get<ExecutionPlace>(operand), origin);
+    auto source = located(std::get<ExecutionPlace>(operand), origin);
     if (!source) {
         return std::unexpected(source.error());
     }
@@ -400,7 +685,7 @@ auto SemanticExecutor::materialize(
 
 auto SemanticExecutor::invoke(
     FunctionID function,
-    std::vector<ExecutionValue> arguments,
+    std::vector<ExecutionOperand> arguments,
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionValue> {
     if (calls.size() >= maximum_constant_depth) {
@@ -428,7 +713,7 @@ auto SemanticExecutor::invoke(
             }
             co_return std::unexpected(ExecutionFailure {});
         }
-        const auto& body = target->body;
+        const auto& body = *target;
         if (arguments.size() != body.parameters().size()) {
             co_return std::unexpected(fail(
                 origin,
@@ -440,28 +725,50 @@ auto SemanticExecutor::invoke(
             .body = body,
             .slots = std::vector<ExecutionSlot>(body.binding_count()),
             .caught = {},
+            .temporaries = {},
         };
-        for (auto index = 0uz; index < arguments.size(); ++index) {
-            const auto actual = ConstructionTypeRef(execution_value_type(values, arguments[index]));
-            if (actual != target->parameter_types[index]) {
-                co_return std::unexpected(fail(
-                    origin,
-                    DiagnosticCode::TypeMismatch,
-                    "function call argument has an incompatible type"
-                ));
+        const auto execute = [&]() noexcept -> ExecutionTask<ExecutionValue> {
+            for (auto index = 0uz; index < arguments.size(); ++index) {
+                const auto binding = body.parameters()[index];
+                auto& argument = arguments[index];
+                const auto* alias = std::get_if<ExecutionPlace>(&argument);
+                auto* owned = std::get_if<ExecutionValue>(&argument);
+                const auto selected =
+                    alias ? located(*alias, origin) : ExecutionResult<ExecutionValue*>(owned);
+                if (!selected) {
+                    co_return std::unexpected(selected.error());
+                }
+                const auto access = body.binding_access(binding);
+                if (alias
+                    && (access == AccessMode::Write
+                        || (access == AccessMode::Read
+                            && read_borrows_storage(execution_value_type(values, **selected))))) {
+                    frame.slots[binding.index()] = *alias;
+                } else {
+                    if (access == AccessMode::Write) {
+                        co_return std::unexpected(fail(
+                            origin,
+                            DiagnosticCode::ConstEvaluation,
+                            "Write argument requires addressable storage"
+                        ));
+                    }
+                    auto stored = owned ? own_storage(std::move(*owned), origin)
+                                        : copy_value(**selected, origin);
+                    if (!stored) {
+                        co_return std::unexpected(stored.error());
+                    }
+                    bind(frame, binding.index(), std::move(*stored));
+                }
             }
-            auto argument = std::move(arguments[index]);
-            auto stored = own_storage(std::move(argument), origin);
-            if (!stored) {
-                co_return std::unexpected(stored.error());
+            auto result = (co_await region(frame, body.region()));
+            if (!result) {
+                co_return std::unexpected(result.error());
             }
-            frame.slots[body.parameters()[index].index()] = std::move(*stored);
-        }
-        auto result = (co_await region(frame, body.region()));
-        if (!result) {
-            co_return std::unexpected(result.error());
-        }
-        co_return std::move(result->value);
+            co_return std::move(result->value);
+        };
+        auto result = (co_await execute());
+        release_frame(frame);
+        co_return result;
     }();
     if (run) {
         context.trace(
@@ -477,11 +784,27 @@ auto SemanticExecutor::invoke(
 
 auto SemanticExecutor::evaluate_root(const SemanticExpression& source) noexcept
     -> ExecutionTask<ExecutionValue> {
-    auto frame = ExecutionFrame {.body = std::nullopt, .slots = {}, .caught = {}};
-    co_return (co_await value(frame, source));
+    auto frame =
+        ExecutionFrame {.body = std::nullopt, .slots = {}, .caught = {}, .temporaries = {}};
+    auto result = (co_await value(frame, source));
+    if (result) {
+        result = detach_views(std::move(*result), source.origin);
+    }
+    release_frame(frame);
+    co_return result;
 }
 
-auto SemanticExecutor::read_borrows_storage(TypeID type) noexcept -> bool {
+auto SemanticExecutor::detach_result(ExecutionValue value, ProgramOriginID origin) noexcept
+    -> ExecutionResult<ExecutionValue> {
+    return detach_views(std::move(value), origin);
+}
+
+auto SemanticExecutor::read_borrows_storage(ConstructionTypeRef reference) noexcept -> bool {
+    const auto* concrete = std::get_if<TypeID>(&reference);
+    if (!concrete) {
+        return false;
+    }
+    const auto type = *concrete;
     if (const auto found = storage_reads.find(type); found != storage_reads.end()) {
         return found->second;
     }
@@ -495,9 +818,11 @@ auto SemanticExecutor::evaluate_body(ExecutionBody body) noexcept -> ExecutionTa
     auto frame = ExecutionFrame {
         .body = body,
         .slots = std::vector<ExecutionSlot>(body.binding_count()),
-        .caught = {}
+        .caught = {},
+        .temporaries = {}
     };
     const auto result = (co_await region(frame, body.region()));
+    release_frame(frame);
     if (!result) {
         co_return std::unexpected(result.error());
     }

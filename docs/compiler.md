@@ -58,8 +58,11 @@ Carven establishes source types, coverage, evaluation order, ownership, and
 failure contracts. Required constants, constant blocks, static tests, and
 interpretation execute shared semantic operations with separate admission and
 completion rules.
-`const fn` uses ordinary function-body construction; admission checks the
-completed body before execution.
+Only explicit `const fn` bodies can be called in required contexts. After
+ordinary body construction, each `const fn` definition is checked for executor
+capability on its semantically reachable paths and for marked direct callees.
+The interpreter checks operation support on paths it executes. Execution and
+constant-result publication retain their own checks.
 
 The backend specializes operations using established semantic facts while
 preserving effects, storage observations, and lifetimes. C++ supplies native type
@@ -67,7 +70,9 @@ properties, template instantiation, optimization, and machine code. Runtime
 support uses standard-library numerical conversion.
 
 `SemIRProgram` owns immutable `TypeContents` computed after storage topology
-validation. Published-program consumers read these facts through an identity-checked
+validation. These facts include native C++ values contained by value, so backend
+Read realization can account for native copy and destruction behavior inside
+Carven aggregates. Published-program consumers read these facts through an identity-checked
 query. Constant execution during construction queries the draft's type facts,
 including types whose dependencies are still being completed.
 
@@ -120,14 +125,15 @@ execution when its results determine declaration types or array extents.
 | `crafts/carven/std/` | Standard-library APIs, algorithms, containers, and their native implementation support |
 
 Within `analysis/constant`, `literal` normalizes source literals, `admission`
-checks the supported const-function definition subset, and `evaluation` connects
-required evaluation to construction requests and source diagnostics.
+checks const-function capability contracts, and `evaluation` connects required
+evaluation to construction requests and source diagnostics.
 `analysis.constant.root` constructs typed initializer and extent roots and owns
 their construction state, lifetimes, admission policy, and budgets. `analysis/expr`
 shares contextual typing and typed operation construction between required roots
 and ordinary bodies. Expression sites supply source scope, admission, value
-consumption, lifetime, and failure effects. Required roots and const-function
-bodies have distinct admission rules. `analysis.expr.interpret` dispatches syntax
+consumption, lifetime, and failure effects. Required root expressions retain
+their construction admission rule, while called function bodies use their
+ordinary semantic construction. `analysis.expr.interpret` dispatches syntax
 to `scalar`, `member`, and `call` handlers, which recurse through the expression site.
 In `semantic/evaluation`, `value` owns execution representations, text and compound
 read views, and equality over execution values. `shape` caches supported compound element types,
@@ -141,8 +147,9 @@ execution and backend preparation. It accepts numeric values, bools, chars, borr
 text, and an unavailable-input alternative. Callers adapt their input storage and
 supply a byte budget. Execution translates failures into diagnostics and accounts
 for work; optional preparation uses runtime formatting on failure.
-`execution` defines the required-evaluation entry and call context; `executor` owns execution
-state, with `expr`, `control`, and `text` implementation slices. `limits`
+`execution` defines execution entries and their call context; `executor` owns
+execution state, with `expr`, `control`, and `text` implementation slices.
+`memory` owns addressable objects and resolves their projections. `limits`
 names resource bounds.
 
 Every canonical type store establishes the complete builtin type domain at
@@ -180,7 +187,7 @@ Ordinary functions and lambdas share return construction for block and expressio
 bodies. Declared or context-supplied results provide return type context. Inferred
 results check independently typed returns for invariant compatibility. Missing
 returns and result-inference cycles are checked during body and signature
-completion, before constant admission. Constant execution consumes the completed
+completion, before required execution. Constant execution consumes the completed
 contract; call arguments do not specialize the function's result type.
 
 Contextual record construction reuses the ordinary construction operation.
@@ -361,7 +368,9 @@ terms, solved failure sets, and control-flow completion name separate facts.
 ## Structured semantics
 
 Bodies retain conditionals, loops, matches, handlers, lexical scopes, and exits.
-Places describe storage identity and projection evaluation. Values describe
+Places describe storage identity and projection evaluation. During body
+construction, `PlaceExpression` carries the selected Read or Write access through
+projections to address-taking, assignment, and argument binding. Values describe
 computation. Initialization, assignment, and Take remain distinct operations.
 Operations retain operand order and access; control nodes specify conditional
 execution. Range values retain two ordered integer bounds and an upper-bound
@@ -395,7 +404,7 @@ execution budgets remain with execution.
 modes, and result type. Construction resolves contextual types from this contract;
 publication checks arity, operand/result types, and Write-place requirements.
 `Len`, `IsEmpty`, `Bytes`, and `Chars` accept `str` or `String` receivers;
-byte-slice constraints require `[u8]`. Constant admission belongs to analysis,
+byte-slice constraints require `[u8]`. Required root admission belongs to analysis,
 and execution belongs to the evaluator.
 
 Construction and mutation require evaluation even when their results are discarded.
@@ -499,34 +508,43 @@ The expression adapter owns source admission, contextual conversions, shape
 checks, and their diagnostics. Shared interpretation suppresses optional
 computed folding for these roots; the executor evaluates their operations.
 
-Each required root and its nested calls share one execution budget. Type and
-admission checks cover all source branches; bounds and other execution checks
-run on the selected paths. Queries on retained aggregate inputs do not materialize
-a complete mutable copy. Sequence queries use compound views; slicing retained
-input constructs the selected range of slots. Projection can retain child identities,
-copy from local storage, or move from temporary owners according to the operand's
-storage. Local initialization, assignment, and parameter storage materialize retained
-aggregate children into independently mutable values.
+Each required root and its nested calls share one execution budget. Ordinary
+semantic checks cover all source branches. The executor checks an operation's
+capability after its required operands complete; bounds and other dynamic checks
+run on selected paths. Queries, supported aggregate equality, and display borrow
+compound views; operand evaluation retains its ordinary copy and access rules.
+Projection can retain child identities, copy from local storage, or move from
+temporary owners according to the operand's storage. Local initialization,
+assignment, and parameter storage materialize retained aggregate children into
+independently mutable values.
 
-Execution frames hold owned values or aliases to an owner slot and a projection
-path. Reads and writes resolve that path through the same storage operations.
-Array iteration evaluates its source once, retains temporary owners until loop
+Execution frames hold owned values or aliases to an addressable object and a
+projection path. Execution memory gives each owner a stable object identity;
+local pointers retain an execution-local coordinate without retaining the
+target's lifetime. Reads and writes resolve that coordinate through the same
+storage operations.
+Array and slice iteration use the same sequence view as indexing and slice
+queries. Iteration evaluates its source once, retains temporary owners until loop
 exit, and binds elements using the source Read or Write policy. Scalar Read
 bindings snapshot each element; borrowed aggregate bindings retain its location.
 Nested loops compose projection paths. Loop exits release their bindings and
 retained temporary storage, including early returns and execution failures.
 
-`const fn` execution consumes `StructuredBodyDraft`, after ordinary contextual
-typing, name binding, operation selection and result completion.
-`analysis.constant.admission` checks
-the completed signature, bindings, patterns and entire operation tree against a
-bounded builtin and aggregate subset before the body enters the
-draft, including uncalled definitions and inactive source. These bodies also
-undergo normal semantic and ownership validation.
+Required execution consumes completed structured function bodies after ordinary
+contextual typing, name binding, operation selection and result completion.
+Ordinary functions remain runtime callable but cannot be called from required
+roots. Each `const fn` definition receives a local static capability check over
+its signature and semantically reachable body paths. Direct callees on those
+paths must also be declared `const fn`; each definition is checked separately.
+The body producer records statement, tail, and expression-operation reachability
+in `SemanticStatement`, `SemanticRegion`, and `SemanticExpression`. The validator
+consumes those facts without reconstructing control flow. All functions remain
+subject to normal type, effect, ownership, and publication validation.
 
 `evaluation.execution` executes admitted operations using body-local slots,
-structured control flow and direct callable identities. It reuses checked scalar
-constant evaluation and the builtin constant-formatting implementation. Floating
+structured control flow and direct callable identities. It reuses scalar
+constant evaluation, including wrapping integer operations, and the builtin
+constant-formatting implementation. Floating
 execution uses host native scalar operations. Optional runtime folding retains a
 separate admission boundary for floating arithmetic and ordering, so adding an
 executor operation does not authorize host precomputation of runtime expressions.
@@ -543,14 +561,29 @@ and storage transfers create no additional slots.
 Evaluator state and call stacks belong to one required root and end with that
 request. Existing `ConstantID` values borrow retained inputs. Computed `ConstantAtom`
 values remain execution-local and cannot carry compound storage; they hold scalar
-data or an immutable text identity. Immutable `ExecutionText` shares owned bytes;
-`ExecutionOwnedText` preserves String ownership across calls. Formatting,
-queries, and equality read these values without freezing them. At the initializer
-boundary, owning String becomes canonical `str` whose bytes no longer depend
-on evaluator storage.
+data or a retained text identity. `ExecutionTextStorage` holds owned bytes or a
+borrowed retained spelling. `ExecutionOwnedText` owns String storage through a
+shared pointer. `ExecutionText` either shares immutable text or weakly borrows
+String storage. `as_str` creates the weak borrow without copying bytes or charging
+text work. String copying creates fresh storage; Take and mutation replace its
+storage identity. Releasing that storage expires its weak borrowers. Formatting,
+queries, and equality read text without freezing it. At the initializer boundary,
+borrowed results detach before execution storage is released, and owning String
+becomes canonical `str`.
+
+`ExecutionMemory` registers one `TextBytes` backing per text identity on demand.
+Byte slices and their copies retain its coordinate and range. `TextBytes` weakly
+borrows the text storage; reads observe `u8` values on demand through
+`ExecutionByteView`, without constructing a complete byte array. Byte projections
+use the same backing identity; resolving a byte pointer locks the weak borrow
+and rejects expired storage.
+
 Execution slots distinguish uninitialized, available, and taken states. Whole-binding
-Take moves owned storage and marks its source unavailable; assignment may initialize
-that source again. Aggregate values own typed elements; enum values separately own
+Take moves owned storage and ends its object identity; assignment may initialize
+the source as a new object, without reviving prior pointers. Assignment to a live
+object retains its identity. Scope exit releases local objects, and compile-time
+dereference rejects a coordinate whose target is no longer alive. Aggregate
+values own typed elements; enum values separately own
 their selected case and payload. Fixed arrays and
 structs and payload enums freeze recursively into `ArrayConstant`, `StructConstant`
 and `PayloadEnumConstant` children
@@ -564,21 +597,26 @@ The selected freeze preserves each element's type. `SliceConstant` records order
 a `SliceTypeValue`; it contains no host address, allocator state, or capacity.
 Store construction checks child identity and availability; publication checks the
 slice type and exact child types. Initializer slice queries operate on retained
-inputs or execution-local contents without intermediate freezing. Slice execution inside `const fn` remains unsupported; runtime views
+inputs or execution-local contents without intermediate freezing. During required
+execution, slices borrow live backing objects; copies and chained slices keep
+their selected element identity. Only a completed constant root detaches the
+selected values into `SliceConstant` before releasing the backing. Runtime views
 retain ordinary ownership checks.
 
-Execution places identify a local slot and an already evaluated field/index path.
-This representation remains valid when element vectors are replaced. The shared type
-contents query selects delayed Read observation for array and String storage,
-including array-bearing structs. Other admitted values capture their value at
-the source position. Constant and runtime constructors share array shape rules
+Execution places identify an object and an already evaluated path through
+fixed-array elements, struct fields, or text bytes. Assignment to a live owner
+preserves its object identity; Take and scope exit end it. Text backing has its
+own lifetime, separate from the String owner slot. Read operands use the
+expression's storage-selection fact. The shared type-contents query selects delayed
+Read observation for array and String storage, including aggregate fields.
+Other admitted values capture their value at the source position. Constant and runtime constructors share array shape rules
 and struct initializer selection in `analysis.operations`.
 
 After constant execution, the bodies remain available
 for normal failure solving, complete-program type and ownership validation, and
 runtime lowering. A failure at any publication gate prevents artifact delivery.
-Ordinary runtime calls to `const fn` remain `SemCall` operations; the qualifier
-does not add a known call-result fact.
+Ordinary runtime calls remain `SemCall` operations; a function's use during
+required execution does not add a known result fact to later runtime calls.
 
 ### Failure execution
 
@@ -623,8 +661,8 @@ fact belongs to this program and has the expression's exact resolved type.
 
 Immutable Boolean locals supply normal-completion facts to conditions, guards,
 and Boolean selection before failure solving. Their initializers retain required
-execution. These facts do not change admission or checked arithmetic for source
-constant expressions; ordinary integer arithmetic retains runtime wrapping.
+execution. These facts do not change admission for source constant expressions;
+integer arithmetic wraps in both required and runtime execution.
 
 `SemSliceIntrinsic.result_extent` records a slice's length on normal completion.
 Array borrowing uses the array type's extent, including for mutable array owners.
@@ -837,6 +875,8 @@ declarations. `ExecutionValueAccess::display_names` provides owned type, field,
 and case spellings to the shared evaluator;
 execution renders compound views without recovering source syntax. Depth, sequence,
 and output limits match the runtime display contract.
+Display and formatting read the retained bytes of `CStringConstant`; its execution
+value keeps the external pointer type.
 
 Direct assertion and test calls retain the condition source and the operand
 spellings of outer comparisons and short-circuit operations in `SemReport`.
@@ -871,6 +911,13 @@ and an inferred outward failure term. Registration snapshots the visible lexical
 names. Constants retain their values; execution-frame bindings retain only their
 lookup identity and cannot be read across the boundary.
 
+`BlockSource` keeps an optional diagnostic label and source origin for both
+`TestDeclaration` and `ConstantBodyRoot`. A test's explicit name is its label;
+without one, `block_display_name` derives its file, line, and column from the origin.
+Native and interpreted test reporting use that same fallback. The constant
+analysis diagnostic adapter adds the root kind, optional label, and source
+location to execution errors. The shared executor does not own presentation.
+
 Module, local and nested constant blocks are independent roots. The body batch
 registers their syntax and lexical snapshots without building their bodies, so
 they introduce no dependency from the enclosing callable. After callable bodies
@@ -886,8 +933,11 @@ ownership analysis and publication validation. They have no callable, test
 declaration or target module item. An escaping failure diagnoses the root;
 successful execution need not have an empty static failure set.
 
-`const test` bodies use ordinary test construction and shared constant-body
-admission. Required initializers execute when declaration or body construction
+`const test` bodies use ordinary test construction and check executor capability
+on executed paths. Test names are optional; only explicit names enter the module's
+duplicate-name set. Anonymous reports use file, line, and column. Constant
+block labels are diagnostic strings rather than symbols and may repeat.
+Required initializers execute when declaration or body construction
 requests them; these outputs can precede queued roots. Later validation can still
 reject the program. Failed checks report diagnostics while allowing execution to continue;
 requirements stop the root through the executor's failure transport. Test errors
@@ -904,13 +954,13 @@ execution do. Native and interpreted test execution select runtime tests instead
 the entry and require at least one runtime test. Required constant execution and
 static tests remain part of ordinary analysis in every mode.
 
-`interpreter/` consumes a published `SemIRProgram`. It validates the interpreter
-operation subset from the entry or all selected runtime tests through direct
-callees, then invokes the shared structured executor. Runtime tests are ordered by
+`interpreter/` consumes a published `SemIRProgram`. It starts the entry or all
+selected runtime tests through the shared structured executor, which checks
+operation support on executed paths. Runtime tests are ordered by
 canonical module path and source order. Each receives a fresh executor and budget;
 its diagnostics are retained while later tests continue. Test operations are admitted
 in helpers only for test execution. Published tests use the same body execution and
-assertion control as static tests, with runtime arithmetic supplied by the context.
+assertion control as static tests, including wrapping integer arithmetic.
 Ordinary language analysis remains the authority for names, types, access, lifetimes,
 failures, and entry uniqueness; interpretation does not introduce an AST checker.
 
@@ -921,8 +971,8 @@ interning completed constants and spellings during construction and freezing.
 Published execution does not mutate semantic tables or clone operation trees.
 
 The call context supplies bodies, output, diagnostics, and optional source trace
-events. Required constant execution admits const functions and uses checked
-integer arithmetic. Interpretation admits supported ordinary functions and uses
-runtime integer arithmetic. Output and errors follow the selected stage; the
+events. Required constant execution invokes explicit `const fn` bodies and uses
+the same wrapping integer arithmetic as interpretation and generated code.
+Output and errors follow the selected stage; the
 normal compiler has no interpreter-mode branch. The driver owns command options
 and diagnostic presentation.

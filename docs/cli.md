@@ -143,40 +143,43 @@ and execution rules to supported operations and rejects unsupported capabilities
 `interpret` uses the same fixed Crafts roots, resource lookup, source sorting, and
 deduplication as native execution. Other application files remain explicit inputs.
 Required constant initializers, `const {}` blocks, and `const test` execute
-during analysis. The interpreter then checks the entry and
-its transitive direct callees against its execution subset and executes the
-published semantic operations. Program execution requires one entry: top-level
+during analysis. The interpreter executes the published semantic operations and
+checks operation support when its operands complete and execution reaches the
+operation. Program execution requires one entry: top-level
 executable statements or `main`. Declaration-only and empty files remain valid
 for `check`, but do not provide a runtime entry.
-Admission covers all branches of those bodies.
 Unused functions still receive ordinary language checks; they do not have to
-belong to the interpreter subset. No C++ artifacts or native executable are written.
+belong to the interpreter subset unless declared `const fn`, which has its own
+static capability contract. Required constant execution calls only explicit
+`const fn` functions and their `const fn` dependencies. No C++ artifacts or
+native executable are written.
 
 `interpret --tests` selects ordinary runtime tests instead of the program entry.
 It requires at least one runtime test and does not execute top-level statements or
 `main`. Static tests still execute during analysis. Runtime tests run in canonical
 module order and source order within each module, each with fresh local storage
-and an independent execution budget. All selected test bodies and their transitive
-callees pass admission before any runtime test executes. `check` failures accumulate;
+and an independent execution budget. `check` failures accumulate;
 `require` and `fail` stop the current test through helper calls and cannot be caught
 as typed failures. Later tests still run after assertion failures, execution errors,
 or exhausted budgets. The command reports failures and a pass/fail summary to stderr
-and returns 1 if any test fails. Ordinary helpers need not be `const fn`.
+and returns 1 if any test fails.
 
 The subset supports numeric, bool, char, str, and String locals; supported structs,
-enums and fixed arrays; typed failures and recovery; direct Carven calls; local
-mutation; conditional control, loops and matching; builtin printing and
-formatting. It uses the shared structured executor. Ordinary calls do not require
-`const fn`. Runtime integer operations use the language's wrapping rules; required
-constant arithmetic remains checked. A const function called at runtime also uses
-runtime arithmetic and output behavior. Floating operations use the compiler host's
-native environment. Floating printing and formatting use the host standard library,
-including dynamic width and precision within execution budgets.
+enums, fixed arrays and slices; byte views and iteration; typed failures and
+recovery; direct Carven calls and
+calls through local bindings of named Carven functions; local mutation;
+conditional control, loops and matching; builtin printing and
+formatting, local pointers, and Write parameters. It uses the shared structured
+executor. Integer arithmetic uses the same language wrapping rules during
+required constant execution and runtime interpretation. Retained C string values
+support text printing and default text formatting. Floating operations use the
+compiler host's native environment. Floating printing and formatting use the host
+standard library, including dynamic width and precision within execution budgets.
 
-The driver rejects collected `.cpp` files. Admission rejects C++ header imports
-and source fragments in any collected module, including unimported modules.
-Native calls, callable values, Write parameters, slices in executed bodies, and
-entry argument values also report `CV-INTERPRET-ADMISSION`. The entry must take
+The driver rejects collected `.cpp` files. C++ header imports are permitted;
+native source fragments are rejected in any collected module, including
+unimported modules. Reached native operations and callable values without an
+executable Carven body report `CV-INTERPRET-ADMISSION`. The entry must take
 no parameters. Arguments after `--` are ignored by such an entry, as in native
 execution.
 

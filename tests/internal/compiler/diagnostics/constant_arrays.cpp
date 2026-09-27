@@ -7,7 +7,7 @@ module carven:test.internal.compiler.diagnostics.constant_arrays;
 import :test.internal.compiler.diagnostics.fixture;
 import std;
 
-TEST_CASE("Const arrays: owning elements require execution storage and views require admission") {
+TEST_CASE("Const arrays: owning elements require execution storage") {
     const auto cases = std::to_array<CompilerErrorExpectation>({
         {.name = "owning elements do not acquire a recursively frozen source type",
          .source = R"(const fn make() -> [String; 1] => ["text"]; const value = make();)",
@@ -17,10 +17,6 @@ TEST_CASE("Const arrays: owning elements require execution storage and views req
          .source = R"(const fn make() -> [[String; 1]; 1] => [["text"]]; const value = make();)",
          .code = "CV-CONST-INITIALIZER",
          .primary_text = "make()"},
-        {.name = "array views are not const operations",
-         .source = "const fn size(values: [i32; 2]) -> usize => values.as_slice().len();",
-         .code = "CV-CONST-ADMISSION",
-         .primary_text = "values.as_slice().len()"},
     });
     check_compiler_errors(cases);
 }
@@ -31,7 +27,7 @@ TEST_CASE("Const arrays: freezing preserves ownership and ordinary backing lifet
          .source = "const fn bad() -> i32 { var values = [1, 2]; "
                    "let moved = &&values; return values[0]; } const result = bad();",
          .code = "CV-ACCESS-UNAVAILABLE",
-         .primary_text = "values[0]"},
+         .primary_text = "values"},
         {.name = "a runtime copy of a constant cannot lend storage beyond its scope",
          .source = "const values = [1, 2]; "
                    "fn bad() -> [i32] { let local = values; return local; }",
@@ -46,16 +42,16 @@ TEST_CASE("Const arrays: freezing preserves ownership and ordinary backing lifet
     check_compiler_errors(cases);
 }
 
-TEST_CASE("Const indexing: independent name errors precede contextual admission errors") {
+TEST_CASE("Const indexing preserves name and index type diagnostics") {
     const auto cases = std::to_array<CompilerErrorExpectation>({
-        {.name = "an unresolved index is diagnosed even when the receiver is not constant",
-         .source = "fn data() -> [i32; 1] => [1]; const result = data()[unknown];",
+        {.name = "an unresolved index is diagnosed before constant call execution",
+         .source = "const fn data() -> [i32; 1] => [1]; const result = data()[unknown];",
          .code = "CV-NAME-UNRESOLVED",
          .primary_text = "unknown"},
-        {.name = "index type checking requires an admitted receiver",
-         .source = R"(fn data() -> [i32; 1] => [1]; const result = data()["text"];)",
-         .code = "CV-CONST-INITIALIZER",
-         .primary_text = R"(data()["text"])"},
+        {.name = "index type checking follows a const function call",
+         .source = R"(const fn data() -> [i32; 1] => [1]; const result = data()["text"];)",
+         .code = "CV-TYPE-INDEX-INTEGER",
+         .primary_text = R"("text")"},
     });
     check_compiler_errors(cases);
 }

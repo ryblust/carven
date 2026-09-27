@@ -57,18 +57,18 @@ TEST_CASE("Constant structs: field order and nominal types survive array and sli
     CHECK(inspected);
 }
 
-TEST_CASE("Constant structs: unsupported fields are rejected even in unused definitions") {
+TEST_CASE("Constant structs: unused functions do not require executable field types") {
     const auto types = std::to_array<std::string_view>({"ptr<i32>", "[i32]"});
     for (const auto type : types) {
         CAPTURE(type);
-        const auto diagnostics = analyze_test_errors(
+        const auto program = analyze_test_program(
             std::format(
                 "struct Inner {{ value: {} }} struct Outer {{ inner: Inner }} "
-                "const fn identity(value: Outer) -> Outer => value;",
+                "fn identity(value: Outer) -> Outer => value;",
                 type
             )
         );
-        CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstAdmission));
+        CHECK(program.declarations().functions().size() == 1uz);
     }
 }
 
@@ -103,7 +103,7 @@ TEST_CASE("Constant structs: source field errors and nominal mismatches retain t
     }
 }
 
-TEST_CASE("Constant structs: ownership rejects use after Take and borrowed local text") {
+TEST_CASE("Constant structs: definitions reject use after Take and escaping borrowed fields") {
     const auto moved = analyze_test_errors(R"(
         struct Entry { value: i32 }
         const fn bad() -> i32 {
@@ -111,7 +111,6 @@ TEST_CASE("Constant structs: ownership rejects use after Take and borrowed local
             let taken = &&entry;
             return entry.value;
         }
-        const result = bad();
     )");
     CHECK(contains_diagnostic_code(moved, DiagnosticCode::AccessUnavailable));
     CHECK_FALSE(contains_diagnostic_code(moved, DiagnosticCode::ConstEvaluation));
@@ -121,12 +120,11 @@ TEST_CASE("Constant structs: ownership rejects use after Take and borrowed local
             let text: String = "owned";
             return Entry { text.as_str() };
         }
-        const result = bad();
     )");
     CHECK(contains_diagnostic_code(borrowed, DiagnosticCode::AccessBorrowConflict));
 }
 
-TEST_CASE("Constant structs: nesting limits include previously visited field types") {
+TEST_CASE("Constant structs: unused deep field types do not consume execution budget") {
     auto nested = std::string("Base");
     for (auto level = 0uz; level < 61uz; ++level) {
         nested = std::format("[{}; 1]", nested);
@@ -134,11 +132,10 @@ TEST_CASE("Constant structs: nesting limits include previously visited field typ
     const auto source = [](std::string_view field) static noexcept {
         return std::format(
             "struct Base {{ values: [i32; 2] }} struct Root {{ known: Base, deep: {} }} "
-            "const fn identity(value: Root) -> Root => value;",
+            "fn identity(value: Root) -> Root => value;",
             field
         );
     };
     static_cast<void>(analyze_test_program(source(nested)));
-    const auto diagnostics = analyze_test_errors(source(std::format("[{}; 1]", nested)));
-    CHECK(contains_diagnostic_code(diagnostics, DiagnosticCode::ConstAdmission));
+    static_cast<void>(analyze_test_program(source(std::format("[{}; 1]", nested))));
 }

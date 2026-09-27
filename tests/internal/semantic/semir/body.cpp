@@ -153,6 +153,7 @@ auto boolean_expression(PreparedFunction& prepared, const BodyFixture& body) noe
         .constant = std::nullopt,
         .failures = BodyFailures(body.failures),
         .exits_test = false,
+        .operation_reachable = true,
         .category = SemanticValueCategory::Value,
         .value = SemConstant {
             .constant = prepared.builder.intern_constant(
@@ -168,6 +169,7 @@ auto finish_body(
     std::vector<SemanticStatement> statements,
     std::optional<SemanticExpression> result
 ) noexcept -> BodyID {
+    const auto result_reachable = result.has_value();
     auto draft = std::move(body.builder)
                      .finish(
                          SemanticRegion {
@@ -175,6 +177,7 @@ auto finish_body(
                              .origin = prepared.origin,
                              .statements = std::move(statements),
                              .result = std::move(result),
+                             .result_reachable = result_reachable,
                              .failures = BodyFailures(body.failures),
                              .exits_test = false,
                          }
@@ -197,6 +200,7 @@ auto rejects_expression(std::string_view scenario, MakeExpression make_expressio
         SemanticStatement {
             .origin = prepared.origin,
             .lifetime = body.lifetime,
+            .reachable = true,
             .value = SemExpressionStatement {.expression = std::move(invalid)}
         }
     );
@@ -331,6 +335,7 @@ TEST_CASE("SemIR body: test operations carry an internal exit through ordinary f
     statements.push_back(
         {.origin = prepared.origin,
          .lifetime = body.lifetime,
+         .reachable = true,
          .value = SemExpressionStatement {std::move(operation)}}
     );
     auto result = boolean_expression(prepared, body);
@@ -371,6 +376,7 @@ TEST_CASE("SemIR body invariant: every nested fact is resolved before delivery")
         .origin = prepared.origin,
         .statements = {},
         .result = std::nullopt,
+        .result_reachable = false,
         .failures = BodyFailures(completed),
         .exits_test = false,
     };
@@ -407,6 +413,7 @@ TEST_CASE("SemIR body invariant: every nested fact is resolved before delivery")
                              .origin = prepared.origin,
                              .statements = {},
                              .result = std::move(attempt),
+                             .result_reachable = true,
                              .failures = BodyFailures(completed),
                              .exits_test = false,
                          }
@@ -497,6 +504,7 @@ TEST_CASE("SemIR body invariant: match success must follow from its subject and 
                         .origin = prepared.origin,
                         .statements = {},
                         .result = boolean_expression(prepared, body),
+                        .result_reachable = true,
                         .failures = BodyFailures(body.failures),
                         .exits_test = false,
                     },

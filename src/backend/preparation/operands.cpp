@@ -66,6 +66,17 @@ auto BodyPreparation::operands(
                     add(input, PreparedUse::AddressValue);
                 });
             },
+            [&](const SemAddressOf& value) noexcept {
+                const auto* pointer = std::get_if<PointerTypeValue>(
+                    &semantic.types().type(source.type.resolved()).value
+                );
+                if (pointer == nullptr) {
+                    invariant_violation("address-of result must be a pointer");
+                }
+                add(*value.source,
+                    pointer->access == PointerAccess::Write ? PreparedUse::WritePlace
+                                                            : PreparedUse::ConstPlace);
+            },
             [&](const SemIndex& value) noexcept {
                 add(*value.source, PreparedUse::ProjectionPlace);
                 add(*value.index, PreparedUse::OperandValue);

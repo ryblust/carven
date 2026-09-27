@@ -1,0 +1,19 @@
+test {
+    check(false, "first anonymous failure");
+}
+
+test {
+    check(false, "second anonymous failure");
+}
+
+test "" {
+    check(false, "explicit empty label");
+}
+
+const test {
+    check(true);
+}
+
+const test "compile" {
+    check(true);
+}

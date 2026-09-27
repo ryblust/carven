@@ -130,6 +130,7 @@ public:
         -> ModuleConstantDeclaration;
     auto construction_callable_contract_copy(CallableID id) const noexcept
         -> ConstructionCallableContract;
+    auto callable_signature_copy(CallableSignatureID id) const noexcept -> CallableSignature;
     auto construction_failure_term_copy(FailureTermID failures) const noexcept -> FailureTerm;
     auto module_declaration_count() const noexcept -> std::size_t;
     auto function_declaration_count() const noexcept -> std::size_t;

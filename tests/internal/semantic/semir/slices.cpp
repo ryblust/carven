@@ -78,8 +78,7 @@ TEST_CASE("SemIR publication: slice extents describe sequence results and match 
                 TestDeclaration {
                     .is_const = false,
                     .module_id = module_id,
-                    .name = builder.intern_spelling("slice"),
-                    .origin = facts.origin,
+                    .source = {.label = builder.intern_spelling("slice"), .origin = facts.origin},
                     .body = reservation.id(),
                 }
             );
@@ -127,6 +126,7 @@ TEST_CASE("SemIR publication: slice extents describe sequence results and match 
             statements.push_back({
                 .origin = facts.origin,
                 .lifetime = lifetime,
+                .reachable = true,
                 .value = SemExpressionStatement {.expression = std::move(expression)},
             });
             publish(
@@ -135,6 +135,7 @@ TEST_CASE("SemIR publication: slice extents describe sequence results and match 
                     .origin = facts.origin,
                     .statements = std::move(statements),
                     .result = std::nullopt,
+                    .result_reachable = false,
                     .failures = BodyFailures(builder.add_empty_failure_term()),
                     .exits_test = false,
                 }),
