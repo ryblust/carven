@@ -207,3 +207,45 @@ test "Evaluation: Read callable snapshots keep their target when the holder is r
     check(invoke_callable_snapshot(slot, &slot) == 2);
     check(slot() == 1);
 }
+
+private enum SnapshotValue {
+    Number(i32)
+}
+
+private fn observe_snapshots(pair: RecordedPair, tag: SnapshotValue, last: i32) -> i32 {
+    return pair.first
+        * 100
+        + (
+            match tag {
+                .Number(value) => value
+            }
+        )
+            * 10
+        + last;
+}
+
+private fn replace_pair(&pair: RecordedPair) -> i32 {
+    pair = {
+        first: 9,
+        second: 8
+    };
+    return 3;
+}
+
+test "Evaluation: temporary record and enum Read values precede later writes" {
+    var pair = RecordedPair {
+        first: 1,
+        second: 2
+    };
+    let observed = observe_snapshots(
+        {
+            first: pair.first,
+            second: 0
+        },
+        .Number(pair.second),
+        replace_pair(&pair)
+    );
+    check(observed == 123);
+    check(pair.first == 9);
+    check(pair.second == 8);
+}

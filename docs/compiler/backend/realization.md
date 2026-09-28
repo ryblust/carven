@@ -68,6 +68,11 @@ constructs directly in final storage.
 
 ## Final storage and owning snapshots
 
+Read operands whose types are value snapshots need no separate temporary backing.
+The published type-contents query excludes storage owners, closures, and native
+values from this case. Sequencing still saves earlier values before later effects;
+place projections and borrowed owners retain their storage requirements.
+
 Bindings initialize in their natural scopes. Assignment uses C++ assignment
 and requires an assignable destination. A binding initializer without outward
 failure or test exit initializes its final C++ object directly. When it requires

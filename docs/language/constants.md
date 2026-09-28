@@ -257,7 +257,7 @@ storage is assigned again. An ordinary assignment to a live object preserves
 its identity. Non-null local pointers cannot become published constant values.
 
 Native operations, calls through callable values without an executable Carven
-body, text character iteration, and unchecked text construction remain outside
+body, text character iteration, and unchecked borrowed text construction remain outside
 the constant execution subset. Ordinary type, access, ownership and lifetime
 validation applies throughout execution.
 
@@ -280,6 +280,11 @@ fall back to runtime execution. Definition violations use `CV-CONST-ADMISSION`,
 execution-specific failures use `CV-CONST-EVALUATION`, and budget failures use
 `CV-CONST-LIMIT`; type, arithmetic and dependency diagnostics remain
 applicable.
+
+`char::from_u32_unchecked` is admitted in constant initializers and `const fn`
+bodies. The executed operand must be a Unicode scalar value; surrogates and
+values above U+10FFFF produce `CV-CONST-EVALUATION`. Successful construction
+produces an ordinary `char` constant with the same publication rules as a literal.
 
 ## Frozen constant slices
 

@@ -23,7 +23,7 @@ test "Ownership: Take transfers ownership preserves order and permits var restor
         right: 2
     };
     check(sum(&&reusable) == 3);
-    reusable = Pair {
+    reusable = {
         left: 19,
         right: 23
     };
@@ -31,11 +31,11 @@ test "Ownership: Take transfers ownership preserves order and permits var restor
 
     var trace = 0;
     let combined = combine(
-        &&Pair {
+        && {
             left: record(&trace, 1),
             right: 0
         },
-        &&Pair {
+        && {
             left: record(&trace, 2),
             right: 0
         },

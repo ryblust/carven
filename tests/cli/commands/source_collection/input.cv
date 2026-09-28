@@ -1,4 +1,6 @@
-import std::utf.scalar using char_to_u32;
+import std::utf.scalar using { char_from_u32, UnicodeScalarError };
 import demo::value using answer;
 
-println(char_to_u32('A'), answer());
+fn main() throw UnicodeScalarError {
+    println(char_from_u32(65)? as u32, answer());
+}

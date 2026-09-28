@@ -97,10 +97,10 @@ auto unsupported_execution_expression(const SemanticExpression& source) noexcept
                     case TextIntrinsic::IsEmpty:
                     case TextIntrinsic::Append:
                     case TextIntrinsic::Push:
-                    case TextIntrinsic::Clear:             return std::nullopt;
+                    case TextIntrinsic::Clear:
+                    case TextIntrinsic::FromU32Unchecked: return std::nullopt;
                     case TextIntrinsic::Chars:
                     case TextIntrinsic::FromUTF8Unchecked:
-                    case TextIntrinsic::FromU32Unchecked:
                         return "text operation is not supported in execution";
                 }
             } else if constexpr (std::same_as<Operation, SemDefault>

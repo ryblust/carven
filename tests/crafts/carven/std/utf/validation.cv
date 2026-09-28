@@ -1,4 +1,6 @@
-import std::utf.validation using { UTF8Error, UTF8ErrorKind, validate_utf8, UTF8Validator };
+import std::utf.codec using decode_utf8_prefix;
+import std::utf.error using { UTF8Error, UTF8ErrorKind };
+import std::utf.validation using { validate_utf8, UTF8Validator };
 
 test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
     let bytes: [u8; 5] = [0x61, 0xf0, 0x9f, 0x98, 0x80];
@@ -8,7 +10,7 @@ test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
         try {
             state.feed(view.slice(0, split))?;
             state.feed(view.slice(split, view.len()))?;
-            state.finish()?;
+            state.check_complete()?;
             check(state.processed_bytes() == 5);
         } catch {
             UTF8Error(_) => check(false),
@@ -32,7 +34,7 @@ test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
     check(state.processed_bytes() == 2);
     rejected = false;
     try {
-        state.finish()?;
+        state.check_complete()?;
     } catch {
         UTF8Error(error) => {
             rejected = error.kind
@@ -50,181 +52,182 @@ private struct UTFCase {
     error: UTF8Error,
 }
 
+private const rejection_cases: [UTFCase] = [
+    {
+        bytes: [0x61, 0x80, 0x00, 0x00, 0x00],
+        length: 2,
+        error: {
+            kind:.InvalidLead,
+            offset: 1,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xc0, 0x80, 0x00, 0x00],
+        length: 3,
+        error: {
+            kind:.InvalidLead,
+            offset: 1,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xc1, 0xbf, 0x00, 0x00],
+        length: 3,
+        error: {
+            kind:.InvalidLead,
+            offset: 1,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xf5, 0x80, 0x80, 0x80],
+        length: 5,
+        error: {
+            kind:.InvalidLead,
+            offset: 1,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xff, 0x00, 0x00, 0x00],
+        length: 2,
+        error: {
+            kind:.InvalidLead,
+            offset: 1,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xe2, 0x28, 0xa1, 0x00],
+        length: 4,
+        error: {
+            kind:.InvalidContinuation,
+            offset: 2,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xf0, 0x9f, 0x21, 0x00],
+        length: 4,
+        error: {
+            kind:.InvalidContinuation,
+            offset: 3,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xf0, 0x9f, 0x98, 0x21],
+        length: 5,
+        error: {
+            kind:.InvalidContinuation,
+            offset: 4,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xe0, 0x9f, 0x80, 0x00],
+        length: 4,
+        error: {
+            kind:.Overlong,
+            offset: 2,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xf0, 0x8f, 0x80, 0x80],
+        length: 5,
+        error: {
+            kind:.Overlong,
+            offset: 2,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xed, 0xa0, 0x80, 0x00],
+        length: 4,
+        error: {
+            kind:.Surrogate,
+            offset: 2,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xed, 0xbf, 0xbf, 0x00],
+        length: 4,
+        error: {
+            kind:.Surrogate,
+            offset: 2,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xf4, 0x90, 0x80, 0x80],
+        length: 5,
+        error: {
+            kind:.TooLarge,
+            offset: 2,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xc2, 0x00, 0x00, 0x00],
+        length: 2,
+        error: {
+            kind:.Truncated,
+            offset: 2,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xe2, 0x00, 0x00, 0x00],
+        length: 2,
+        error: {
+            kind:.Truncated,
+            offset: 2,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xe2, 0x82, 0x00, 0x00],
+        length: 3,
+        error: {
+            kind:.Truncated,
+            offset: 3,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xf0, 0x00, 0x00, 0x00],
+        length: 2,
+        error: {
+            kind:.Truncated,
+            offset: 2,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xf0, 0x9f, 0x00, 0x00],
+        length: 3,
+        error: {
+            kind:.Truncated,
+            offset: 3,
+            sequence_start: 1
+        }
+    },
+    {
+        bytes: [0x61, 0xf0, 0x9f, 0x98, 0x00],
+        length: 4,
+        error: {
+            kind:.Truncated,
+            offset: 4,
+            sequence_start: 1
+        }
+    },
+];
+
 test "UTF8: all rejection classes and chunk partitions preserve position and progress" {
-    let cases = [
-        UTFCase {
-            bytes: [0x61, 0x80, 0x00, 0x00, 0x00],
-            length: 2,
-            error: UTF8Error {
-                kind:.InvalidLead,
-                offset: 1,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xc0, 0x80, 0x00, 0x00],
-            length: 3,
-            error: UTF8Error {
-                kind:.InvalidLead,
-                offset: 1,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xc1, 0xbf, 0x00, 0x00],
-            length: 3,
-            error: UTF8Error {
-                kind:.InvalidLead,
-                offset: 1,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xf5, 0x80, 0x80, 0x80],
-            length: 5,
-            error: UTF8Error {
-                kind:.InvalidLead,
-                offset: 1,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xff, 0x00, 0x00, 0x00],
-            length: 2,
-            error: UTF8Error {
-                kind:.InvalidLead,
-                offset: 1,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xe2, 0x28, 0xa1, 0x00],
-            length: 4,
-            error: UTF8Error {
-                kind:.InvalidContinuation,
-                offset: 2,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xf0, 0x9f, 0x21, 0x00],
-            length: 4,
-            error: UTF8Error {
-                kind:.InvalidContinuation,
-                offset: 3,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xf0, 0x9f, 0x98, 0x21],
-            length: 5,
-            error: UTF8Error {
-                kind:.InvalidContinuation,
-                offset: 4,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xe0, 0x9f, 0x80, 0x00],
-            length: 4,
-            error: UTF8Error {
-                kind:.Overlong,
-                offset: 2,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xf0, 0x8f, 0x80, 0x80],
-            length: 5,
-            error: UTF8Error {
-                kind:.Overlong,
-                offset: 2,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xed, 0xa0, 0x80, 0x00],
-            length: 4,
-            error: UTF8Error {
-                kind:.Surrogate,
-                offset: 2,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xed, 0xbf, 0xbf, 0x00],
-            length: 4,
-            error: UTF8Error {
-                kind:.Surrogate,
-                offset: 2,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xf4, 0x90, 0x80, 0x80],
-            length: 5,
-            error: UTF8Error {
-                kind:.TooLarge,
-                offset: 2,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xc2, 0x00, 0x00, 0x00],
-            length: 2,
-            error: UTF8Error {
-                kind:.Truncated,
-                offset: 2,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xe2, 0x00, 0x00, 0x00],
-            length: 2,
-            error: UTF8Error {
-                kind:.Truncated,
-                offset: 2,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xe2, 0x82, 0x00, 0x00],
-            length: 3,
-            error: UTF8Error {
-                kind:.Truncated,
-                offset: 3,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xf0, 0x00, 0x00, 0x00],
-            length: 2,
-            error: UTF8Error {
-                kind:.Truncated,
-                offset: 2,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xf0, 0x9f, 0x00, 0x00],
-            length: 3,
-            error: UTF8Error {
-                kind:.Truncated,
-                offset: 3,
-                sequence_start: 1
-            }
-        },
-        UTFCase {
-            bytes: [0x61, 0xf0, 0x9f, 0x98, 0x00],
-            length: 4,
-            error: UTF8Error {
-                kind:.Truncated,
-                offset: 4,
-                sequence_start: 1
-            }
-        },
-    ];
-    for item in cases {
+    for item in rejection_cases {
         let bytes = item.bytes.as_slice().slice(0, item.length);
         var rejected = false;
         try {
@@ -238,6 +241,19 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             },
         }
         check(rejected);
+        rejected = false;
+        try {
+            // Each fixture has one ASCII byte before the invalid sequence.
+            let _ = decode_utf8_prefix(bytes.slice(1, bytes.len()))?;
+        } catch {
+            UTF8Error(error) => {
+                rejected = error.kind
+                    == item.error.kind
+                    && error.offset == item.error.offset - 1
+                    && error.sequence_start == 0;
+            },
+        }
+        check(rejected);
         for first in 0..=bytes.len() {
             for second in first..=bytes.len() {
                 var state = UTF8Validator::create();
@@ -246,7 +262,7 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
                     state.feed(bytes.slice(0, first))?;
                     state.feed(bytes.slice(first, second))?;
                     state.feed(bytes.slice(second, bytes.len()))?;
-                    state.finish()?;
+                    state.check_complete()?;
                 } catch {
                     UTF8Error(error) => {
                         rejected = error.kind
@@ -282,5 +298,63 @@ test "UTF8: all rejection classes and chunk partitions preserve position and pro
             check(state.processed_bytes() == before.processed_bytes());
             check(state.is_complete() == before.is_complete());
         }
+    }
+}
+
+const test "UTF8: whole-buffer validation has the same compile-time error contract" {
+    try {
+        let empty: [u8; 0] = [];
+        validate_utf8(empty)?;
+        validate_utf8("a\u{0}é你😀\u{ffff}\u{10ffff}".bytes)?;
+    } catch {
+        UTF8Error(_) => fail("valid constant bytes were rejected"),
+    }
+    for item in rejection_cases {
+        var rejected = false;
+        try {
+            validate_utf8(item.bytes.as_slice().slice(0, item.length))?;
+        } catch {
+            UTF8Error(error) => {
+                rejected = error.kind
+                    == item.error.kind
+                    && error.offset == item.error.offset
+                    && error.sequence_start == item.error.sequence_start;
+            },
+        }
+        check(rejected);
+    }
+}
+
+test "UTF8: copied validators and rejected operations preserve pending constraints" {
+    var state = UTF8Validator::create();
+    try {
+        state.push(0xe0)?;
+        var copy = state;
+        var rejected = false;
+        try {
+            state.push(0x9f)?;
+        } catch {
+            UTF8Error(error) => { rejected = error.kind == .Overlong; },
+        }
+        require(rejected);
+        rejected = false;
+        try {
+            state.check_complete()?;
+        } catch {
+            UTF8Error(error) => { rejected = error.kind == .Truncated; },
+        }
+        require(rejected);
+        state.feed([0xa0, 0x80])?;
+        state.check_complete()?;
+        state.check_complete()?;
+        check(state.processed_bytes() == 3);
+        check(state.is_complete());
+        check(copy.processed_bytes() == 1);
+        check(!copy.is_complete());
+        copy.feed([0xbf, 0xbf])?;
+        copy.check_complete()?;
+        check(copy.processed_bytes() == 3);
+    } catch {
+        UTF8Error(_) => fail("a failed operation must preserve the pending sequence"),
     }
 }

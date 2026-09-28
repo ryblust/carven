@@ -1,0 +1,14 @@
+export enum UTF8ErrorKind {
+    InvalidLead,
+    InvalidContinuation,
+    Overlong,
+    Surrogate,
+    TooLarge,
+    Truncated,
+}
+
+export struct UTF8Error {
+    kind: UTF8ErrorKind,
+    offset: usize,
+    sequence_start: usize,
+}

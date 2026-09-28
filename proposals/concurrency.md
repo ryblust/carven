@@ -111,18 +111,6 @@ compiler facts, diagnostics, lowering, interoperation, tests, and documentation.
 - **Closure condition:** Specify synchronization relations, ordering, target
   lowering, and explicit C++ interoperation obligations.
 
-## Implementation
-
-A future feature must connect a concrete movement, sharing, or synchronization
-operation to semantic guarantees, diagnostics, SemIRProgram facts, target/runtime
-support, C++ boundary obligations, tests, and permanent documentation.
-
-## Validation
-
-Selected features need accepted and rejected source programs,
-diagnostics, happens-before and data-race cases, generated C++ compilation,
-linking and execution, boundary tests, and relevant resource measurements.
-
 ## Thread and synchronization operations
 
 The following slices are deferred until a concrete consumer selects the required
@@ -181,10 +169,17 @@ Define ownership transfer on send, availability on receive, bounded capacity,
 blocking, closure, and failure. Awaitable channels require explicit integration
 with async semantics.
 
-## Operation validation
+## Implementation
 
-For each selected operation, validate thread and capture lifetime on success,
-failure, and shutdown; accepted and rejected cross-thread values; synchronization
-and ordering; target fallback and C++ obligations; and ownership without orphaned
-work or implicit detach. Blocking-in-async behavior requires an explicit async
-integration contract. Validate generated C++ by compilation and execution.
+A future feature must connect a concrete movement, sharing, or synchronization
+operation to semantic guarantees, diagnostics, SemIRProgram facts, target/runtime
+support, C++ boundary obligations, tests, and permanent documentation.
+
+## Validation
+
+Validate accepted and rejected cross-thread values; thread and capture lifetime
+on success, failure, and shutdown; data races, synchronization, and ordering;
+target fallback and C++ boundary obligations; and ownership without orphaned
+work or implicit detach. Blocking operations in async contexts need an explicit
+integration contract. Check diagnostics, compile, link, and execute generated
+C++, and measure resources relevant to the selected operation.

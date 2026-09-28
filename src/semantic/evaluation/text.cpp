@@ -74,6 +74,31 @@ auto SemanticExecutor::text_intrinsic(
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionValue> {
     switch (operation.intrinsic) {
+        case TextIntrinsic::FromU32Unchecked: {
+            auto operand = (co_await value(frame, operation.operands[0].expression));
+            if (!operand) {
+                co_return std::unexpected(operand.error());
+            }
+            auto fact = read_fact(*operand, origin);
+            if (!fact) {
+                co_return std::unexpected(fact.error());
+            }
+            const auto* integer = std::get_if<IntegerConstant>(&fact->value);
+            if (integer == nullptr
+                || integer->negative()
+                || integer->magnitude() > 0x10ffffu
+                || (integer->magnitude() >= 0xd800u && integer->magnitude() <= 0xdfffu)) {
+                co_return std::unexpected(fail(
+                    origin,
+                    DiagnosticCode::ConstEvaluation,
+                    "char::from_u32_unchecked requires a Unicode scalar value"
+                ));
+            }
+            co_return ConstantAtom {
+                .type = result_type,
+                .value = CharacterConstant {.scalar = static_cast<char32_t>(integer->magnitude())},
+            };
+        }
         case TextIntrinsic::Clear:
         case TextIntrinsic::Append:
         case TextIntrinsic::Push:   {
@@ -127,7 +152,6 @@ auto SemanticExecutor::text_intrinsic(
         case TextIntrinsic::Chars:
         case TextIntrinsic::FromStr:
         case TextIntrinsic::FromUTF8Unchecked:
-        case TextIntrinsic::FromU32Unchecked:
         case TextIntrinsic::AsStr:             break;
     }
     auto operand = (co_await read_operand(frame, operation.operands[0].expression));
@@ -195,12 +219,12 @@ auto SemanticExecutor::text_intrinsic(
                 .type = result_type,
                 .value = BooleanConstant {.value = bytes->empty()},
             };
+        case TextIntrinsic::FromU32Unchecked: std::unreachable();
         case TextIntrinsic::Clear:
         case TextIntrinsic::Append:
         case TextIntrinsic::Push:
         case TextIntrinsic::Chars:
         case TextIntrinsic::FromUTF8Unchecked:
-        case TextIntrinsic::FromU32Unchecked:
             co_return std::unexpected(fail(
                 origin,
                 DiagnosticCode::ConstEvaluation,

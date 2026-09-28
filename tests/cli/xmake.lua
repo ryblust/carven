@@ -628,7 +628,7 @@ for _, selection in ipairs({
 end
 
 case_specs["commands/source_collection"] = {
-    inputs = {"input.cv", "unsupported.cv", "crafts/demo/value.cv", "explicit.cv", "external/crafts/json/parser.cv"},
+    inputs = {"input.cv", "crafts/demo/value.cv", "explicit.cv", "external/crafts/json/parser.cv"},
     steps = {
         {args = {"interpret", "explicit.cv"}, absolute_inputs = {"external/crafts/json/parser.cv"},
             stdout_contains = {"42\n"}},
@@ -638,7 +638,6 @@ case_specs["commands/source_collection"] = {
             installed_inputs = {"carven/std/utf/scalar.cv"},
             output_files = {"installed/input.cpp", "installed/crafts/carven/std/utf/scalar.cpp"}},
         {args = {"interpret", "input.cv"}, stdout_contains = {"65 7\n"}},
-        {args = {"interpret", "unsupported.cv"}, exit_code = 1, stderr_contains = {"CV-INTERPRET-ADMISSION"}},
     },
 }
 

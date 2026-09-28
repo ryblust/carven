@@ -13,8 +13,8 @@ TEST_CASE("Defaults: semantic size is independent of array extent") {
     const auto program = analyze_test_program(R"(
         struct Small { values: [i32; 1] }
         struct Large { values: [i32; 100000000] }
-        fn small() -> Small { return Small {}; }
-        fn large() -> Large { return Large {}; }
+        fn small() -> Small { return {}; }
+        fn large() -> Large { return {}; }
     )");
     auto sizes = std::vector<std::size_t>();
     for (const auto [id, body] : program.bodies().entries()) {

@@ -11,6 +11,7 @@ import std;
 TEST_CASE("Const functions prove executable bodies at their definitions") {
     const auto sources = std::to_array<std::string_view>({
         R"(const fn empty() {})",
+        R"(const fn character(value: u32) -> char => char::from_u32_unchecked(value);)",
         R"(struct Failure {} const fn fail() throw Failure { throw Failure {}; })",
         R"(struct Failure {} private const fn fail() { throw Failure {}; })",
         R"(enum Value { One, Two }

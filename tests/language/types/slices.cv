@@ -232,7 +232,7 @@ test "Slices: temporary aggregates preserve contained borrows after the call" {
     let owner: String = "hello";
     let from_array = array_text([owner.as_str()]);
     let from_field = field_text(
-        TextArray {
+        {
             values: [owner.as_str()]
         }
     );

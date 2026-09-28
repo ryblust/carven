@@ -19,6 +19,8 @@ and next decision.
 
 Explain the current behavior and constraints needed to understand the design.
 Keep the proposal understandable without following references.
+For mixed scopes, summarize the implemented foundation briefly and link to its
+permanent reference; keep delivery tasks limited to the remaining extension.
 
 ## Goals and non-goals
 

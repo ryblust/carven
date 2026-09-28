@@ -12,7 +12,7 @@ TEST_CASE("Classes: representation authority cannot be acquired through module c
     const auto prelude = std::string(R"(
         class C {
             value: i32,
-            fn create() -> C { return C { value: 1 }; }
+            fn create() -> C { return { value: 1 }; }
             private fn secret(self) -> i32 { return self.value; }
             fn read(self) -> i32 { return self.secret(); }
             fn update(&self) { self.value += 1; }
@@ -36,7 +36,7 @@ TEST_CASE("Classes: representation authority cannot be acquired through module c
 
 TEST_CASE("Classes: default construction cannot bypass a factory through containers") {
     const auto prelude =
-        std::string("class C { value: i32, fn create() -> C { return C { value: 1 }; } } ");
+        std::string("class C { value: i32, fn create() -> C { return { value: 1 }; } } ");
     const auto cases = std::array {
         "struct S { value: C } fn f() -> S { return S {}; }",
         "struct S { values: [C; 2] } fn f() -> S { return S {}; }",
@@ -56,7 +56,7 @@ TEST_CASE("Classes: receivers and member names follow their declared contracts")
     static_cast<void>(analyze_test_program(R"(
         class C {
             value: i32,
-            fn create() -> C { return C { value: 1 }; }
+            fn create() -> C { return { value: 1 }; }
             fn read(self) -> i32 { return self.value; }
             private fn update(&self) { self.value += 1; }
         }
@@ -82,7 +82,7 @@ TEST_CASE("Classes: private storage remains visible to borrow checking") {
     const auto diagnostics = analyze_test_errors(R"(
         class Label {
             text: String,
-            fn create() -> Label { return Label { text: String::from_str("first") }; }
+            fn create() -> Label { return { text: String::from_str("first") }; }
             fn view(self) -> str { return self.text.as_str(); }
             fn replace(&self) { self.text = String::from_str("second"); }
         }
@@ -100,7 +100,7 @@ TEST_CASE("Classes: Take consumes the receiver and rejects escaping owned-field 
     const auto prelude = std::string(R"(
         class C {
             text: String,
-            fn create() -> C { return C { text: String::from_str("x") }; }
+            fn create() -> C { return { text: String::from_str("x") }; }
             fn build(&&self) -> String { return (&&self).text; }
             fn view(self) -> str { return self.text.as_str(); }
         }

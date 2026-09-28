@@ -1568,3 +1568,42 @@ TEST_CASE("Generation: explicit pure owner returns permit native return construc
         CHECK_EQ(query.named_returns, scenario.returns_name ? 1uz : 0uz);
     }
 }
+
+TEST_CASE("Generation: pure Read arguments need no borrowed temporary storage in match arms") {
+    const auto compilation = PlannedCompilation::build(
+        analyze_test_program(R"(
+            struct Record { value: i32 }
+            enum Kind { Invalid }
+            struct Failure { record: Record, kind: Kind }
+            fn failure(record: Record, kind: Kind) -> Failure => { record: record, kind: kind };
+            fn probe(value: i32) throw Failure {
+                match value {
+                    0 if value >= 0 => throw failure({ value: value }, .Invalid),
+                    _ => {},
+                }
+            }
+        )"),
+        {.test_mode = TestGenerationMode::None,
+         .linkage_domain = *LinkageDomain::explicit_value("read_value_temporaries")}
+    );
+
+    struct Query final {
+        const TargetUnit& unit;
+
+        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                if (const auto* type =
+                        std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value)) {
+                    CHECK(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                }
+            }
+            return true;
+        }
+    };
+
+    for (const auto artifact : compilation.target().artifacts()) {
+        const auto unit = lower_artifact(compilation, artifact.id);
+        auto query = Query {.unit = unit};
+        REQUIRE(traverse_target_unit(unit.sections(), query));
+    }
+}

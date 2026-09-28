@@ -1,103 +1,28 @@
-export enum UTF8ErrorKind {
-    InvalidLead,
-    InvalidContinuation,
-    Overlong,
-    Surrogate,
-    TooLarge,
-    Truncated,
-}
-
-export struct UTF8Error {
-    kind: UTF8ErrorKind,
-    offset: usize,
-    sequence_start: usize,
-}
+import .error using UTF8Error;
+import .scan using { UTF8State, push_utf8, feed_utf8, check_utf8_complete };
 
 export class UTF8Validator {
-    remaining: u8,
-    lead: u8,
-    offset: usize,
-    sequence_start: usize,
+    state: UTF8State,
 
-    fn create() -> UTF8Validator {
-        return {
-            remaining: 0,
-            lead: 0,
-            offset: 0,
-            sequence_start: 0,
-        };
-    }
-
-    private fn error(self, kind: UTF8ErrorKind) -> UTF8Error {
-        return {
-            kind: kind,
-            offset: self.offset,
-            sequence_start: self.sequence_start,
-        };
-    }
+    fn create() -> UTF8Validator => {
+        state: {}
+    };
 
     // A rejected byte leaves the caller's state unchanged.
-    fn push(&self, byte: u8) throw UTF8Error {
-        var next = self;
-        if next.remaining == 0 {
-            next.sequence_start = next.offset;
-            match byte {
-                0x00..=0x7f => {
-                    next.lead = 0;
-                },
-                0xc2..=0xdf => {
-                    next.remaining = 1;
-                    next.lead = 0;
-                },
-                0xe0..=0xef => {
-                    next.remaining = 2;
-                    next.lead = byte;
-                },
-                0xf0..=0xf4 => {
-                    next.remaining = 3;
-                    next.lead = byte;
-                },
-                _ => throw next.error(.InvalidLead),
-            }
-        } else {
-            match byte {
-                ..0x80 | 0xc0.. => throw next.error(.InvalidContinuation),
-                ..0xa0 if next.lead == 0xe0 => throw next.error(.Overlong),
-                0xa0.. if next.lead == 0xed => throw next.error(.Surrogate),
-                ..0x90 if next.lead == 0xf0 => throw next.error(.Overlong),
-                0x90.. if next.lead == 0xf4 => throw next.error(.TooLarge),
-                _ => {},
-            }
-            next.lead = 0;
-            next.remaining -= 1;
-        }
-        next.offset += 1;
-        if next.remaining == 0 { next.sequence_start = next.offset; }
-        self = next;
-    }
+    fn push(&self, byte: u8) throw UTF8Error => push_utf8(&self.state, byte)?;
 
-    // A block boundary can split a scalar; only finish declares EOF.
-    fn feed(&self, bytes: [u8]) throw UTF8Error {
-        for byte in bytes {
-            self.push(byte)?;
-        }
-    }
+    // A block boundary can split a scalar; check_complete checks for a pending scalar.
+    fn feed(&self, bytes: [u8]) throw UTF8Error => feed_utf8(&self.state, bytes)?;
 
-    fn finish(self) throw UTF8Error {
-        if self.remaining != 0 { throw self.error(.Truncated); }
-    }
+    fn check_complete(self) throw UTF8Error => check_utf8_complete(self.state)?;
 
-    fn is_complete(self) -> bool {
-        return self.remaining == 0;
-    }
+    fn is_complete(self) -> bool => self.state.remaining == 0;
 
-    fn processed_bytes(self) -> usize {
-        return self.offset;
-    }
+    fn processed_bytes(self) -> usize => self.state.offset;
 }
 
-export fn validate_utf8(bytes: [u8]) throw UTF8Error {
-    var state = UTF8Validator::create();
-    state.feed(bytes)?;
-    state.finish()?;
+export const fn validate_utf8(bytes: [u8]) throw UTF8Error {
+    var state = UTF8State {};
+    feed_utf8(&state, bytes)?;
+    check_utf8_complete(state)?;
 }

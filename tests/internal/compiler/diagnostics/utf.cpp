@@ -19,7 +19,7 @@ namespace {
 class UTFCompilation final {
 public:
     explicit UTFCompilation(std::string_view application) noexcept {
-        for (const auto name : {"validation", "text"}) {
+        for (const auto name : {"error", "scan", "validation", "text"}) {
             const auto filename = std::format("crafts/carven/std/utf/{}.cv", name);
             auto input = std::ifstream(filename);
             REQUIRE(input.is_open());
@@ -81,7 +81,7 @@ TEST_CASE("UTF craft: returned text retains input storage") {
         CAPTURE(item.name);
         auto fixture = UTFCompilation(
             std::string(
-                "import std::utf.text using from_utf8; import std::utf.validation using UTF8Error; "
+                "import std::utf.text using from_utf8; import std::utf.error using UTF8Error; "
             )
             + std::string(item.source)
         );
@@ -124,4 +124,25 @@ TEST_CASE("Compiler diagnostics: unchecked text construction checks types and ba
          .primary_text = "s.clear()"},
     });
     check_compiler_errors(cases);
+}
+
+TEST_CASE("Character construction: constant execution diagnoses invalid scalar preconditions") {
+    for (const auto value : {0xd800u, 0xdfffu, 0x110000u, 0xffffffffu}) {
+        CAPTURE(value);
+        const auto call = std::format("char::from_u32_unchecked({}u32)", value);
+        check_compiler_error(
+            std::format("const invalid = {};", call),
+            "CV-CONST-EVALUATION",
+            std::string_view(call)
+        );
+        check_compiler_error(
+            std::format(
+                "const fn make(value: u32) -> char => char::from_u32_unchecked(value); "
+                "const invalid = make({}u32);",
+                value
+            ),
+            "CV-CONST-EVALUATION",
+            "char::from_u32_unchecked(value)"
+        );
+    }
 }

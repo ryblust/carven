@@ -1,47 +1,16 @@
 # Proposal Roadmap
 
-This roadmap records proposed priorities, semantic dependencies, and activation
-criteria for deferred work. Individual proposals own open design decisions;
-`docs/` describes implemented behavior.
+This roadmap records design dependencies and deferred candidates. Individual
+proposals develop the designs; `docs/` describes implemented behavior.
 The current milestone is v0.1.0; allocation of the proposed work to milestones
 remains open.
 
-## Available foundations
+## Implemented foundation
 
-Implemented foundations include:
-
-- modules, structs, Read/Write/Take value classes, payload enums, arrays, matching, constants, and range loops;
-- Read/Write/Take, closures and callable views, typed failures, pointer values,
-  and local non-null analysis;
-- owning String, tracked text borrows, interpolation, and copyable nominal
-  failures containing String or borrowed text;
-- builtin interpolation precomputation and explicit formatting/output paths;
-- constant functions, static text, struct and fixed-array execution, and frozen
-  `[T]` results with preserved nominal and field types;
-- read-only slices, storage-borrow propagation, and UTF crafts with build/test integration;
-- header imports and concrete scalar `import(cpp)`/`export(cpp)` boundaries.
-
-These provide consumers and constraints for new abstractions. Native pointers
-do not establish owning resources, and named type arguments or builtin `ptr<T>`
-do not supply user-defined generics. Generic declarations, concepts/impls,
-dynamic classes, and async remain unimplemented.
-
-## Current consolidation
-
-Ordinary classes, Read/Write/Take receivers, and owning field projection are
-implemented. `UTF8Validator` uses private representation and checked operations;
-String-backed builders exercise consuming calls and field delivery.
-
-The current engineering focus is the handoff from checked semantics to C++:
-
-- Native result queries and executed expressions preserve the same access and
-  constant-value requirements.
-- Operand storage serves source order, backing lifetimes, and cleanup obligations.
-- Direct display uses C++ type classification for native scalar results without
-  invoking user formatting protocols.
-
-Validation covers accepted and rejected operations, observable evaluation order,
-and resource lifetime.
+The [language reference](../docs/language/README.md) owns implemented source
+contracts, including ordinary classes, ownership, text, typed failures, and
+constant execution. The [compiler reference](../docs/compiler/README.md) owns
+semantic publication and C++ realization.
 
 ## Proposed capabilities
 
@@ -52,9 +21,9 @@ and resource lifetime.
 | Operator capabilities | User-defined operations for existing tokens | [Operators](operators.md) signature and result rules |
 | Multi-field consuming decomposition | Independent owners extracted from one class | [Ownership contract below](#multi-field-consuming-decomposition) |
 
-Generic implementation is deferred while the current contracts are consolidated.
-Class constant execution, generic classes, dynamic ownership, and async retain
-their own design and admission requirements.
+Generic implementation is blocked by the scope and finite-instance decisions
+below. Generic classes, constant admission for selected library operations,
+dynamic ownership, and async retain their own design requirements.
 
 ### Generic core: scope decision
 
@@ -115,22 +84,33 @@ capabilities that require their own source contracts and concrete consumers.
 
 ## Failure extension edges
 
-The current copyable nominal failure contract is implemented.
-Features that extend their boundary require the following design work:
+The [failure reference](../docs/language/failures.md) defines the implemented
+copyable nominal payload contract, including owning String and tracked borrowed
+text. [C++ interoperation](#c-interoperation-track) owns public failure mapping;
+[async](async.md) owns suspension, cancellation, and completion transport.
 
-```text
-failure-effect private Outcome --> C++ interoperation failure contract
-failure-effect semantic facts + async suspension facts --> async completion transport
-```
+### Richer failure payloads
 
-Any public C++ failure mapping must extend the C++ interoperation contract, even when
-it adapts a private generated protocol. The [async](async.md) proposal owns
-suspension, cancellation, and completion; failure effects supply only their
-existing structured semantic facts.
+- **Status:** Deferred
+- **Implementation:** Not started
+- **Reactivation condition:** A concrete API needs a payload outside the copyable
+  nominal category and its underlying ownership form has a defined contract.
 
-Copyable nominal failures can already contain owning String values and tracked
-borrowed views. [Failure value](failure-value.md) concerns extensions beyond
-that admitted category, such as move-only or managed payloads.
+Move-only values, owning references, and managed references are independent
+candidates. The open decisions are:
+
+1. **OPEN-01 — Select a payload category.** Describe an end-to-end
+   `throw` → `?` → `catch` → `rethrow` example with explicit copying, consumption,
+   borrowing, sharing, or identity.
+2. **OPEN-02 — Define handler ownership.** After `OPEN-01`, define pattern-binding
+   lifetime, continued matching after a rejected guard, handler-produced failure,
+   preservation by `rethrow`, and destruction on every exit.
+
+The extension must preserve closed typed failure sets and establish source
+ownership before changing the private carrier. Validation needs accepted and
+rejected examples for construction, propagation, matching, false guards,
+handler-produced failure, rethrow, and cleanup. Invalid transfers and expired
+borrows must be diagnosed.
 
 ## Dynamic values and concurrency
 
@@ -156,9 +136,8 @@ function boundaries admit concrete scalar signatures. Generic provider or façad
 surfaces require a concrete use case and a generic instance contract.
 
 Broader ABI stability, precompiled distribution, plugin loading, and open-world
-discovery require separate proposals. Public failure mapping is a C++
-interoperation decision; adapting a private generated protocol does not make
-that protocol stable.
+discovery require separate proposals. Public failure mapping needs explicit
+carrier, ownership, lifetime, and ABI contracts at the C++ boundary.
 
 ## Deferred infrastructure
 

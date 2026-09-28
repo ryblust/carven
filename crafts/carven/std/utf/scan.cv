@@ -1,0 +1,67 @@
+import .error using { UTF8Error, UTF8ErrorKind };
+
+// Craft-internal state. Zero initialization starts an empty stream.
+// Only push_utf8 mutates it; rejected bytes leave every field unchanged.
+struct UTF8State {
+    remaining: u8,
+    lead: u8,
+    offset: usize,
+    sequence_start: usize,
+}
+
+private const fn scan_error(state: UTF8State, kind: UTF8ErrorKind) -> UTF8Error {
+    return {
+        kind: kind,
+        offset: state.offset,
+        sequence_start: state.sequence_start
+    };
+}
+
+const fn push_utf8(&state: UTF8State, byte: u8) throw UTF8Error {
+    var next = state;
+    if next.remaining == 0 {
+        next.sequence_start = next.offset;
+        match byte {
+            0x00..=0x7f => {
+                next.lead = 0;
+            },
+            0xc2..=0xdf => {
+                next.remaining = 1;
+                next.lead = 0;
+            },
+            0xe0..=0xef => {
+                next.remaining = 2;
+                next.lead = byte;
+            },
+            0xf0..=0xf4 => {
+                next.remaining = 3;
+                next.lead = byte;
+            },
+            _ => throw scan_error(next, .InvalidLead),
+        }
+    } else {
+        match byte {
+            ..0x80 | 0xc0.. => throw scan_error(next, .InvalidContinuation),
+            ..0xa0 if next.lead == 0xe0 => throw scan_error(next, .Overlong),
+            0xa0.. if next.lead == 0xed => throw scan_error(next, .Surrogate),
+            ..0x90 if next.lead == 0xf0 => throw scan_error(next, .Overlong),
+            0x90.. if next.lead == 0xf4 => throw scan_error(next, .TooLarge),
+            _ => {},
+        }
+        next.lead = 0;
+        next.remaining -= 1;
+    }
+    next.offset += 1;
+    if next.remaining == 0 { next.sequence_start = next.offset; }
+    state = next;
+}
+
+const fn feed_utf8(&state: UTF8State, bytes: [u8]) throw UTF8Error {
+    for byte in bytes {
+        push_utf8(&state, byte)?;
+    }
+}
+
+const fn check_utf8_complete(state: UTF8State) throw UTF8Error {
+    if state.remaining != 0 { throw scan_error(state, .Truncated); }
+}

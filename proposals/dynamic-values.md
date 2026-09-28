@@ -1,6 +1,6 @@
 # Dynamic values and contracts
 
-- **Status:** Draft
+- **Status:** Exploration
 - **Implementation:** Not started
 - **Scope:** Runtime values whose concrete type is hidden behind a checked contract
 - **Depends on:** Ordinary [value and access rules](../docs/language/aggregates.md#ordinary-value-classes);

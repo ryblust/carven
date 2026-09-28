@@ -7,16 +7,21 @@
 
 ## Current foundation
 
-Complete and partial builtin interpolation precomputation, parsed integer
+Complete and partial builtin interpolation precomputation, builtin writer
 formatting, proved UTF-8 adoption, explicit formatted append, and known scalar
-output are implemented. The remaining work concerns broader reservation
-policies, composition across observation boundaries, and runtime compatibility.
+output are implemented. The writer handles admitted integer, text, bool, char,
+and floating fields with bounded destination planning, as described in the
+[builtin implementation reference](../docs/compiler/backend/builtins.md).
+The candidates below concern broader reservation policies, composition across
+observation boundaries, and runtime replacement.
 
 ## Open decisions
 
 ### OPEN-01 — Broader destination capacity planning
 
-- **Status:** Blocked on a representative workload beyond the implemented integer path
+- **Status:** Blocked
+- **Activation condition:** A representative workload needs capacity planning
+  beyond existing writer bounds.
 - **Closure condition:** Specify length arithmetic, reservation bounds, formatter
   invocation count, and resource observations; measure the complete operation.
 
@@ -28,7 +33,9 @@ Explicit operation resource constraints take precedence over growth heuristics.
 
 ### OPEN-02 — Formatting used by printing
 
-- **Status:** Blocked on a concrete consumer and an observable-behavior contract
+- **Status:** Blocked
+- **Activation condition:** A concrete consumer needs formatting/output composition
+  with an explicit observable-behavior contract.
 - **Closure condition:** Define legal composition that preserves operand completion,
   String observation, failure prefixes, and resource behavior before measuring it.
 
@@ -54,11 +61,11 @@ allocation counts alone do not define that contract. No output fusion is selecte
 - **Reactivation condition:** A concrete compatibility contract and representative
   cost evidence justify evaluating a replacement.
 
-No replacement is selected. Host formatting does not establish that a
-consumer's standard library produces identical bytes. Unicode width/precision,
-locale, floating presentation, custom formatters, and invalid dynamic widths
-need explicit treatment. Unsupported valid specifications retain the runtime
-path; folding must preserve validation and diagnostics.
+A replacement needs a byte-output and failure contract for supported target
+standard libraries, covering Unicode width/precision, locale, floating
+presentation, custom formatters, and invalid dynamic widths. Optional
+precomputation retains the runtime path for valid specifications it cannot
+evaluate, preserving validation and diagnostics.
 In particular, moving an invalid dynamic-width failure from execution to a
 compile-time diagnostic requires an explicit language decision. Extensions must
 also preserve the supported host/target data-model requirement and the current

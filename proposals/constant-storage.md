@@ -8,7 +8,8 @@
 ## Current foundation
 
 Constant functions, fixed-array and struct execution, and frozen constant slices
-are implemented. String construction can grow during execution and freeze to
+are implemented, as are integer wrapping arithmetic and text byte views and
+iteration during constant execution. String construction can grow and freeze to
 `str`; admitted arrays and records preserve their types. This proposal concerns
 admission and retained results for future library containers and class operations.
 
@@ -18,8 +19,8 @@ Public containers belong to standard or user crafts. They need generic type
 declarations, encapsulated storage, and defined access, lifetime, mutation, and
 failure behavior. [Generics](generics.md) owns parameterized declarations; ordinary
 [class encapsulation](../docs/language/aggregates.md#ordinary-value-classes) is implemented.
-Generic classes and admission of class operations to constant execution remain
-required work for a container that uses them.
+Generic classes remain unimplemented. A selected container also needs its
+construction, access, mutation, calls, and cleanup admitted to constant execution.
 
 Semantic analysis resolves an operation's contract, constant execution implements
 its admitted behavior, and lowering selects native support. Craft-specific
@@ -41,7 +42,8 @@ inside nominal containers.
 
 `Vector<T>` is a working name for a growable owning container in standard crafts.
 Its public API, growth policy, and allocation-failure behavior remain open.
-Constant execution admits its resolved operations under ordinary rules.
+The design requires constant execution of its resolved operations under ordinary
+rules.
 
 The proposed work is:
 
@@ -85,10 +87,12 @@ separate source contracts.
 
 ## Deferred operation consumers
 
-Byte/scalar traversal for escaping and UTF conversion, explicit modular
-arithmetic for hashing, and user-library constant-context diagnostics remain
-separate operation candidates. Typed memory access requires concrete conversion
-and lifetime contracts. Activate each candidate around a real algorithm; define
-ordinary and constant behavior and validate results, failures, ownership, and
-resource limits. Type/field queries and heterogeneous expansion require their
-own generic or reflection contracts.
+Constant scalar traversal through `.chars`, any additional execution admission
+needed by UTF conversion, and user-library constant-context diagnostics remain
+operation candidates. The [constant execution reference](../docs/language/constants.md)
+defines current admission and result boundaries.
+
+Typed memory access requires concrete conversion and lifetime contracts. Activate
+each candidate around a real algorithm; define ordinary and constant behavior and
+validate results, failures, ownership, and resource limits. Type/field queries and
+heterogeneous expansion require their own generic or reflection contracts.

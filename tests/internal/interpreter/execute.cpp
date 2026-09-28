@@ -330,3 +330,23 @@ TEST_CASE("Interpreter: fatal assertions retain earlier diagnostics and stop rem
     CHECK((*result)[1].diagnostics[1].message.contains("fatal"));
     CHECK(events == "before\ncheck\nafter\ncheck\nassert\n");
 }
+
+TEST_CASE("Interpreter: unchecked character construction checks the executed precondition") {
+    const auto program = analyze_test_program(R"(
+        fn character(value: u32) -> char => char::from_u32_unchecked(value);
+        println(character(0x10ffff) as u32);
+        if false { println(character(0xd800)); }
+        println(character(0xd800));
+        println("unreachable");
+    )");
+    auto output = std::string();
+    const auto result = interpret(
+        program,
+        entry(program),
+        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
+        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
+    );
+    REQUIRE(!result.has_value());
+    CHECK(result.error().code == DiagnosticCode::InterpretExecution);
+    CHECK(output == "1114111\n");
+}

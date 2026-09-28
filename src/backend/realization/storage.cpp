@@ -37,6 +37,14 @@ auto BodyRealizer::ExpressionBuilder::borrowed_owner(
     const PreparedOperation& value,
     PreparedUse use
 ) const noexcept -> bool {
+    // Read value snapshots do not borrow the temporary's storage. Sequencing
+    // barriers still materialize values before later effects when required.
+    if (use == PreparedUse::ReadBorrow
+        && owner.context.semantic()
+               .type_contents(value.operation.type.resolved())
+               .read_is_value_snapshot()) {
+        return false;
+    }
     return value.operation.category == SemanticValueCategory::Value
         && !scalar(value.operation.type.resolved())
         && !std::holds_alternative<SliceTypeValue>(

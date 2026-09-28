@@ -22,6 +22,6 @@ fn sibling_constraint_type(value: PatternEnvelope) -> i32 {
 
 test "Patterns: type patterns classify values" {
     check(classify(7) == 1);
-    check(sibling_constraint_type(.First(7, PatternModel {})) == 7);
-    check(sibling_constraint_type(.Second(8, PatternModel {})) == 0);
+    check(sibling_constraint_type(.First(7, {})) == 7);
+    check(sibling_constraint_type(.Second(8, {})) == 0);
 }

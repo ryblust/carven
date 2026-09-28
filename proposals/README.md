@@ -6,7 +6,7 @@ Current language and compiler contracts belong in `docs/`.
 ## Contents
 
 - [TEMPLATE.md](TEMPLATE.md): proposal structure and field guidance.
-- [roadmap.md](roadmap.md): priorities and dependencies across domains.
+- [roadmap.md](roadmap.md): design dependencies and deferred candidates.
 - Other Markdown files: one design domain's unfinished work, keeping related
   syntax, semantics, compiler representation, and lowering together.
 
@@ -18,16 +18,15 @@ Current language and compiler contracts belong in `docs/`.
 | [Operators](operators.md) | Mapping existing tokens to checked operations; consumes generic evidence |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
 | [Constant storage](constant-storage.md) | Library storage operations during constant execution and retained results |
-| [Failure values](failure-value.md) | Payload admission and ownership across throw, matching, and rethrow |
 | [Formatting](formatting.md) | Capacity and composition across text/output observation boundaries |
 | [Async](async.md) | Suspension, cancellation, and structured operation lifetime |
 | [Concurrency](concurrency.md) | Cross-thread values, memory ordering, threads, and synchronization |
 | [Documentation comments](doc-comments.md) | Source attachment, retained content, and its artifact consumer |
 
-Dependencies do not transfer ownership of a rule. Operator syntax does not define
-generic evidence; async suspension does not define cross-thread sharing; constant
-execution does not define a container's public API. Implemented behavior belongs
-in `docs/`; the roadmap holds candidate work that has no developed design yet.
+The roadmap holds [multi-field consuming decomposition](roadmap.md#multi-field-consuming-decomposition),
+[richer failure payloads](roadmap.md#richer-failure-payloads), and
+[deferred infrastructure](roadmap.md#deferred-infrastructure).
+Each rule stays with its owning design; dependent proposals reference that contract.
 
 ## Status
 
@@ -63,5 +62,8 @@ status with the slice.
 - Split domains when their parts can be decided and delivered independently.
 - Remove a proposal once implementation and permanent documentation are complete.
   For mixed scopes, retain a short implemented foundation and the unfinished work.
+  Consolidate candidates without a developed design into the roadmap, retaining
+  relevant constraints, activation conditions, and validation requirements.
+  Update inbound links when moving or removing material.
   Git history and external archives preserve historical material; repository
   documents must remain usable without access to those archives.

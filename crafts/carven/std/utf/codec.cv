@@ -1,21 +1,22 @@
-import .validation using { UTF8Error, UTF8Validator };
+import .error using UTF8Error;
+import .scan using { UTF8State, push_utf8, check_utf8_complete };
 
 export struct UTF8Encoded {
     bytes: [u8; 4],
     width: usize,
 }
 
-export enum UTF8Decode {
+export enum UTF8DecodeResult {
     End,
     Scalar(char, usize),
 }
 
-export fn decode_utf8(bytes: [u8]) -> UTF8Decode throw UTF8Error {
-    var state = UTF8Validator::create();
+export const fn decode_utf8_prefix(bytes: [u8]) -> UTF8DecodeResult throw UTF8Error {
+    var state = UTF8State {};
     var scalar: u32 = 0;
     for byte in bytes {
-        state.push(byte)?;
-        if state.processed_bytes() == 1 {
+        push_utf8(&state, byte)?;
+        if state.offset == 1 {
             scalar = match byte {
                 ..0x80 => byte as u32,
                 0x80..0xe0 => (byte & 31) as u32,
@@ -25,20 +26,18 @@ export fn decode_utf8(bytes: [u8]) -> UTF8Decode throw UTF8Error {
         } else {
             scalar = (scalar << 6) | ((byte & 63) as u32);
         }
-        if state.is_complete() {
-            return .Scalar(char::from_u32_unchecked(scalar), state.processed_bytes());
-        }
+        if state.remaining == 0 { return .Scalar(char::from_u32_unchecked(scalar), state.offset); }
     }
-    state.finish()?;
+    check_utf8_complete(state)?;
     return .End;
 }
 
-private fn continuation(value: u32, shift: u32) -> u8 {
+private const fn continuation(value: u32, shift: u32) -> u8 {
     let payload = (value >> shift) & 63;
     return (0x80 | payload) as u8;
 }
 
-export fn encode_utf8(character: char) -> UTF8Encoded {
+export const fn encode_utf8(character: char) -> UTF8Encoded {
     let value = character as u32;
     return match value {
         ..=0x7f => {

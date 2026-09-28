@@ -105,7 +105,7 @@ Duplicate, unknown, extra, or incompatible initializers are invalid.
 ```carven
 struct Config { attempts: i32, enabled: bool, label: String }
 let empty = Config {};                    // 0, false, empty String
-let named = Config { attempts: 3, enabled: true, label: String {} };
+let named = Config { attempts: 3, enabled: true, label: {} };
 let positional = Config { 3, true, String {} };
 ```
 

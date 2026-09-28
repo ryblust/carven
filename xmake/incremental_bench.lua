@@ -6,7 +6,7 @@ import("xmake.benchmark", {rootdir = os.projectdir()})
 local library = [[export struct Value { number: i32, }
 private fn adjust(number: i32) -> i32 { return number + 1; }
 export fn make_value(number: i32) -> Value {
-    return Value { number: adjust(number) };
+    return { number: adjust(number) };
 }
 ]]
 

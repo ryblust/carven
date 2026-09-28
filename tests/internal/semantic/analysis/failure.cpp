@@ -190,7 +190,7 @@ TEST_CASE("Semantic failures: composite expressions retain every pending invocat
         "    return (first() + second())?;\n"
         "}\n"
         "private fn aggregate() -> i32 throw FirstFailure + SecondFailure {\n"
-        "    return sum(Pair { left: first(), right: second() })?;\n"
+        "    return sum({ left: first(), right: second() })?;\n"
         "}\n"
     );
     const auto callables = test_function_callables(program);

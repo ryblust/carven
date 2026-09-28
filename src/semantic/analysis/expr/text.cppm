@@ -42,7 +42,9 @@ auto construct_text_call(
     Span span
 ) noexcept -> ExpressionTask<typename Site::Value> {
     if constexpr (Site::mode == ExpressionMode::RequiredRoot) {
-        if (intrinsic != TextIntrinsic::FromStr && intrinsic != TextIntrinsic::AsStr) {
+        if (intrinsic != TextIntrinsic::FromStr
+            && intrinsic != TextIntrinsic::AsStr
+            && intrinsic != TextIntrinsic::FromU32Unchecked) {
             co_return std::unexpected(ExpressionNotAdmitted {});
         }
     }

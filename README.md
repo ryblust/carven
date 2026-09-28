@@ -192,7 +192,7 @@ dependencies remain ordinary build configuration. See the
   [C++ Conventions](docs/development/conventions.md), with
   [Xmake support](xmake/README.md)
 - **Explore the design:** [Design Principles](docs/development/principles.md),
-  [Proposals](proposals/), and [Learning Notes](notes/)
+  [Proposals](proposals/README.md), and [Learning Notes](notes/)
 
 The [Documentation Index](docs/README.md) provides the complete guide to language,
 toolchain, and development documentation.

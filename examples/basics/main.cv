@@ -24,7 +24,7 @@ let items = [
         quantity: 2,
         discount:.None
     },
-    Item {
+    {
         name: "Pencil",
         price_cents: 120,
         quantity: 3,

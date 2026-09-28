@@ -27,9 +27,9 @@ const entry_empty: [ConstantEntry] = entry_nothing();
 const fn entry_build(seed: i32) -> [ConstantEntry; 4] {
     var entries = [
         ConstantEntry {},
-        ConstantEntry {},
-        ConstantEntry {},
-        ConstantEntry {}
+        {},
+        {},
+        {}
     ];
     for index in 0..4 {
         entries[index].key = index;

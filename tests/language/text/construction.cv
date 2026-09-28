@@ -92,3 +92,37 @@ test "Text: unchecked construction preserves valid input and borrowing" {
     storage.clear();
     check(storage.is_empty());
 }
+
+private const fn check_scalar_construction() {
+    let scalars: [u32; 7] = [0, 0x7f, 0xd7ff, 0xe000, 0xffff, 0x10000, 0x10ffff];
+    for scalar in scalars {
+        let character = char::from_u32_unchecked(scalar);
+        check(character as u32 == scalar);
+    }
+    var calls = 0;
+    let character = char::from_u32_unchecked(
+        if true {
+            calls += 1;
+            0x1f600u32
+        } else {
+            0u32
+        }
+    );
+    check(calls == 1);
+    check(character == '😀');
+    var text = String {};
+    text.push(character);
+    check(text == "😀");
+}
+
+const test "Character construction: required execution and constant publication" {
+    const character = char::from_u32_unchecked(0x10ffff);
+    check(character == '\u{10ffff}');
+    check_scalar_construction();
+}
+
+test "Character construction: native execution agrees with constants" {
+    const character = char::from_u32_unchecked(0x1f600);
+    check(character == '😀');
+    check_scalar_construction();
+}

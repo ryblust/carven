@@ -1,5 +1,5 @@
 import std::utf.text using from_utf8;
-import std::utf.validation using UTF8Error;
+import std::utf.error using UTF8Error;
 import demo::api using answer;
 
 fn main() throw UTF8Error {
