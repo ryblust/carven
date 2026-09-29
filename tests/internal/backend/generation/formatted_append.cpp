@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.backend.generation.formatted_append;
 
 import :backend.generation.linkage;
@@ -13,10 +9,13 @@ import :backend.target.name;
 import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target;
+import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
+
+namespace ct = carven::testing;
 
 struct AppendQuery final {
     struct Entry final {
@@ -42,10 +41,12 @@ auto AppendQuery::enter_expression(const TargetExpr& expression, TargetExpressio
             || name->symbol == TargetSymbol::RuntimeAppendFormatValidUTF8) {
             entries.push_back({.symbol = name->symbol, .argument_count = call->arguments.size()});
             events.push_back("format_append");
-            REQUIRE(call->arguments.size() >= 2uz);
+            if (!ct::expect(call->arguments.size() >= 2uz)) {
+                return false;
+            }
             // The writable destination precedes the normalized format and holes.
-            CHECK_FALSE(std::holds_alternative<TargetStaticCastExpr>(call->arguments[0].value));
-            CHECK(std::holds_alternative<TargetLiteralExpr>(call->arguments[1].value));
+            ct::expect(!(std::holds_alternative<TargetStaticCastExpr>(call->arguments[0].value)));
+            ct::expect(std::holds_alternative<TargetLiteralExpr>(call->arguments[1].value));
         }
         owning_formats += name->symbol == TargetSymbol::RuntimeFormat
             || name->symbol == TargetSymbol::RuntimeFormatValidUTF8;
@@ -53,7 +54,9 @@ auto AppendQuery::enter_expression(const TargetExpr& expression, TargetExpressio
     if (const auto* member = std::get_if<TargetMemberExpr>(&call->callee->value)) {
         if (const auto* name = std::get_if<TargetIdentifier>(&member->name);
             name != nullptr && name->spelling() == "append") {
-            REQUIRE(call->arguments.size() == 1uz);
+            if (!ct::expect(call->arguments.size() == 1uz)) {
+                return false;
+            }
             events.push_back(
                 std::holds_alternative<TargetLiteralExpr>(call->arguments.front().value)
                     ? "append"
@@ -79,81 +82,124 @@ auto inspect_append(std::string source) noexcept -> AppendQuery {
     auto query = AppendQuery {.entries = {}, .events = {}, .owning_formats = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
-        REQUIRE(traverse_target_unit(unit.sections(), query));
+        ct::require(traverse_target_unit(unit.sections(), query));
     }
     return query;
 }
 
 } // namespace
 
-TEST_CASE("Generation: formatted append selects its entry and passes only residual hole values") {
-    struct Scenario final {
-        std::string_view expression;
-        std::optional<TargetSymbol> entry;
-        std::size_t arguments;
-    };
+namespace {
 
-    const auto scenarios = std::to_array<Scenario>({
-        {.expression = R"(f"{number:04x}/{text}")", .entry = std::nullopt, .arguments = 0uz},
-        {.expression = R"(f"{42:04x}/{text}")", .entry = std::nullopt, .arguments = 0uz},
-        {.expression = R"(f"{number:c}")",
-         .entry = TargetSymbol::RuntimeAppendFormat,
-         .arguments = 3uz},
-        {.expression = R"(f"{42}/{number:L}")",
-         .entry = TargetSymbol::RuntimeAppendFormat,
-         .arguments = 3uz},
-        {.expression = R"(f"{42:04x}/{number:0{width}}/{text}")",
-         .entry = std::nullopt,
-         .arguments = 0uz},
-        {.expression = R"(f"{42}/{::probe::value()}")",
-         .entry = TargetSymbol::RuntimeAppendFormat,
-         .arguments = 4uz},
-    });
-    for (const auto& scenario : scenarios) {
-        CAPTURE(scenario.expression);
-        const auto query = inspect_append(
-            std::format(
-                "import \"probe.hpp\"; "
-                "fn append(&output: String, number: i32, width: i32, text: str) {{ "
-                "output.append_format({}); }}",
-                scenario.expression
-            )
-        );
-        if (!scenario.entry) {
-            CHECK(query.entries.empty());
-            CHECK(query.owning_formats == 0uz);
-            CHECK(std::ranges::find(query.events, "append_value") != query.events.end());
-            continue;
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Generation: formatted append selects its entry and passes only residual hole values",
+        [] static noexcept {
+            struct Scenario final {
+                std::string_view expression;
+                std::optional<TargetSymbol> entry;
+                std::size_t arguments;
+            };
+
+            const auto scenarios = std::to_array<Scenario>({
+                {.expression = R"(f"{number:04x}/{text}")",
+                 .entry = std::nullopt,
+                 .arguments = 0uz},
+                {.expression = R"(f"{42:04x}/{text}")", .entry = std::nullopt, .arguments = 0uz},
+                {.expression = R"(f"{number:c}")",
+                 .entry = TargetSymbol::RuntimeAppendFormat,
+                 .arguments = 3uz},
+                {.expression = R"(f"{42}/{number:L}")",
+                 .entry = TargetSymbol::RuntimeAppendFormat,
+                 .arguments = 3uz},
+                {.expression = R"(f"{42:04x}/{number:0{width}}/{text}")",
+                 .entry = std::nullopt,
+                 .arguments = 0uz},
+                {.expression = R"(f"{42}/{::probe::value()}")",
+                 .entry = TargetSymbol::RuntimeAppendFormat,
+                 .arguments = 4uz},
+            });
+            ct::each(
+                scenarios,
+                [](const Scenario& scenario) static noexcept -> std::string_view {
+                    return scenario.expression;
+                },
+                [](const Scenario& scenario) static noexcept {
+                    const auto query = inspect_append(
+                        std::format(
+                            "import \"probe.hpp\"; "
+                            "fn append(&output: String, number: i32, width: i32, text: str) {{ "
+                            "output.append_format({}); }}",
+                            scenario.expression
+                        )
+                    );
+                    if (!scenario.entry) {
+                        ct::expect(query.entries.empty())
+                            .note("scenario.expression: ", scenario.expression);
+                        ct::expect(query.owning_formats == 0uz)
+                            .note("scenario.expression: ", scenario.expression);
+                        ct::expect(
+                            std::ranges::find(query.events, "append_value") != query.events.end()
+                        )
+                            .note("scenario.expression: ", scenario.expression);
+                        return;
+                    }
+                    if (!(ct::expect(query.entries.size() == 1uz)
+                              .note("scenario.expression: ", scenario.expression))) {
+                        return;
+                    }
+                    ct::expect(query.entries.front().symbol == *scenario.entry)
+                        .note("scenario.expression: ", scenario.expression);
+                    ct::expect(query.entries.front().argument_count == scenario.arguments)
+                        .note("scenario.expression: ", scenario.expression);
+                    ct::expect(query.owning_formats == 0uz)
+                        .note("scenario.expression: ", scenario.expression);
+                }
+            );
         }
-        REQUIRE(query.entries.size() == 1uz);
-        CHECK(query.entries.front().symbol == *scenario.entry);
-        CHECK(query.entries.front().argument_count == scenario.arguments);
-        CHECK(query.owning_formats == 0uz);
-    }
-}
+    );
 
-TEST_CASE("Generation: known formatted append retains destination selection and hole effects") {
-    const auto query = inspect_append(R"(
+    ct::test(
+        "Generation: known formatted append retains destination selection and hole effects",
+        [] static noexcept {
+            const auto query = inspect_append(R"(
         fn select(&trace: i32) -> usize { trace += 1; return 0; }
         fn touch(&trace: i32) -> bool { trace += 1; return true; }
         fn append(&outputs: [String; 2], &trace: i32) {
             outputs[select(&trace)].append_format(f"{touch(&trace) && false}");
         }
     )");
-    CHECK(query.entries.empty());
-    CHECK(query.owning_formats == 0uz);
-    CHECK(query.events == std::vector<std::string> {"select", "touch", "append"});
-}
+            ct::expect(query.entries.empty());
+            ct::expect(query.owning_formats == 0uz);
+            ct::expect(query.events == std::vector<std::string> {"select", "touch", "append"});
+        }
+    );
 
-TEST_CASE("Generation: empty and fully known formatted append use static text directly") {
-    const auto scenarios = std::to_array<std::string_view>({R"(f"")", R"(f"{42:04x}/{true}")"});
-    for (const auto expression : scenarios) {
-        CAPTURE(expression);
-        const auto query = inspect_append(
-            std::format("fn append(&output: String) {{ output.append_format({}); }}", expression)
-        );
-        CHECK(query.entries.empty());
-        CHECK(query.owning_formats == 0uz);
-        CHECK(query.events == std::vector<std::string> {"append"});
-    }
-}
+    ct::test(
+        "Generation: empty and fully known formatted append use static text directly",
+        [] static noexcept {
+            const auto scenarios =
+                std::to_array<std::string_view>({R"(f"")", R"(f"{42:04x}/{true}")"});
+            ct::each(
+                scenarios,
+                [](std::string_view expression) static noexcept -> std::string_view {
+                    return expression;
+                },
+                [](std::string_view expression) static noexcept {
+                    const auto query = inspect_append(
+                        std::format(
+                            "fn append(&output: String) {{ output.append_format({}); }}",
+                            expression
+                        )
+                    );
+                    ct::expect(query.entries.empty()).note("expression: ", expression);
+                    ct::expect(query.owning_formats == 0uz).note("expression: ", expression);
+                    ct::expect(query.events == std::vector<std::string> {"append"})
+                        .note("expression: ", expression);
+                }
+            );
+        }
+    );
+});
+
+} // namespace

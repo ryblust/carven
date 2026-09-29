@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.semantic.analysis.constants;
 
 import :frontend.program.parse;
@@ -14,57 +10,83 @@ import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
+import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
-TEST_CASE("Semantic constants: declarations publish values without executable bodies") {
-    const auto program = analyze_test_program(
-        "enum Choice { Value(i32), Empty, }\n"
-        "enum State: u8 { Ready = 4, Done, }\n"
-        "const arithmetic: i64 = -2i64 + 5;\n"
-        "const raw: i32 = State::Done as i32;\n"
-        "const text_size: usize = \"abc\".len();\n"
-        "const same = Choice::Value(2) == .Value(2);\n"
-    );
-    CHECK_EQ(program.bodies().size(), 0uz);
-    auto values = std::vector<ConstantID>();
-    for (const auto [id, declaration] : program.declarations().module_constants()) {
-        static_cast<void>(id);
-        values.push_back(declaration.value);
-    }
-    REQUIRE_EQ(values.size(), 4uz);
-    const auto expected_integers = std::array {3ll, 5ll, 3ll};
-    for (auto index = 0uz; index < expected_integers.size(); ++index) {
-        const auto* integer =
-            std::get_if<IntegerConstant>(&program.constants().constant(values[index]).value);
-        REQUIRE(integer != nullptr);
-        CHECK_EQ(integer->as_signed(), expected_integers[index]);
-    }
-    const auto* equality =
-        std::get_if<BooleanConstant>(&program.constants().constant(values.back()).value);
-    REQUIRE(equality != nullptr);
-    CHECK(equality->value);
-}
+namespace {
 
-TEST_CASE("Semantic constants: const calls execute in local constant initializers") {
-    const auto program = analyze_test_program(
-        "const fn source() -> i32 { return 1; } "
-        "fn use() { const _ = (source() == 1) && false; }"
-    );
-    CHECK_EQ(program.declarations().functions().size(), 2uz);
-}
+namespace ct = carven::testing;
 
-TEST_CASE("Constant roots: arithmetic intermediates and extent results are not retained") {
-    const auto program = analyze_test_program(R"(
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Semantic constants: declarations publish values without executable bodies",
+        [] static noexcept {
+            const auto program = analyze_test_program(
+                "enum Choice { Value(i32), Empty, }\n"
+                "enum State: u8 { Ready = 4, Done, }\n"
+                "const arithmetic: i64 = -2i64 + 5;\n"
+                "const raw: i32 = State::Done as i32;\n"
+                "const text_size: usize = \"abc\".len();\n"
+                "const same = Choice::Value(2) == .Value(2);\n"
+            );
+            ct::expect_equal(program.bodies().size(), 0uz);
+            auto values = std::vector<ConstantID>();
+            for (const auto [id, declaration] : program.declarations().module_constants()) {
+                static_cast<void>(id);
+                values.push_back(declaration.value);
+            }
+            if (!ct::expect_equal(values.size(), 4uz)) {
+                return;
+            }
+            const auto expected_integers = std::array {3ll, 5ll, 3ll};
+            for (auto index = 0uz; index < expected_integers.size(); ++index) {
+                const auto* integer = std::get_if<IntegerConstant>(
+                    &program.constants().constant(values[index]).value
+                );
+                if (!ct::expect(integer != nullptr)) {
+                    return;
+                }
+                ct::expect(((integer->as_signed()) == (expected_integers[index])))
+                    .note("integer->as_signed() == expected_integers[index]");
+            }
+            const auto* equality =
+                std::get_if<BooleanConstant>(&program.constants().constant(values.back()).value);
+            if (!ct::expect(equality != nullptr)) {
+                return;
+            }
+            ct::expect(equality->value);
+        }
+    );
+
+    ct::test(
+        "Semantic constants: const calls execute in local constant initializers",
+        [] static noexcept {
+            const auto program = analyze_test_program(
+                "const fn source() -> i32 { return 1; } "
+                "fn use() { const _ = (source() == 1) && false; }"
+            );
+            ct::expect_equal(program.declarations().functions().size(), 2uz);
+        }
+    );
+
+    ct::test(
+        "Constant roots: arithmetic intermediates and extent results are not retained",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         const answer = (11 + 22) + 44;
         fn accept(value: [i32; (12 + 23) + 45]) {}
     )");
-    for (const auto [id, fact] : program.constants().entries()) {
-        static_cast<void>(id);
-        if (const auto* integer = std::get_if<IntegerConstant>(&fact.value)) {
-            CHECK(integer->as_signed() != 33);
-            CHECK(integer->as_signed() != 35);
-            CHECK(integer->as_signed() != 80);
+            for (const auto [id, fact] : program.constants().entries()) {
+                static_cast<void>(id);
+                if (const auto* integer = std::get_if<IntegerConstant>(&fact.value)) {
+                    ct::expect(integer->as_signed() != 33);
+                    ct::expect(integer->as_signed() != 35);
+                    ct::expect(integer->as_signed() != 80);
+                }
+            }
         }
-    }
-}
+    );
+});
+
+} // namespace

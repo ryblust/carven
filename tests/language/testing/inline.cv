@@ -20,7 +20,8 @@ test "Testing: inline-test conditions execute once and successful messages are s
     var trace = 0;
     check(traced_condition(&trace, 1, true), traced_message(&trace, 2, "check message"));
     require(traced_condition(&trace, 3, true), traced_message(&trace, 4, "require message"));
-    check(trace == 13);
+    assert(traced_condition(&trace, 5, true), traced_message(&trace, 6, "assert message"));
+    check(trace == 135);
 }
 
 test "Testing: test calls compose with control blocks and lambdas" {

@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.frontend.lex.literals;
 
 import :frontend.lex;
@@ -10,410 +6,486 @@ import :frontend.lex.token;
 import :frontend.literal;
 import :source.identifier;
 import :source.text;
+import :test.harness.framework;
 import :test.internal.frontend.lex.fixture;
 import std;
 
-TEST_CASE("Lexer: numeric spellings follow the grammar exactly") {
-    static constexpr auto valid = std::to_array<std::string_view>({
-        "0",     "42",         "42i8",    "42i16",         "42i32",   "42i64",     "42u8",
-        "42u16", "42u32",      "42u64",   "42isize",       "42usize", "1f32",      "1f64",
-        "3.14",  "3.14e-2f32", "1E+9f64", "0xDeadBEEFu64", "0x1f32",  "0B1010i16", "0o755usize",
-    });
-    for (const auto& spelling : valid) {
-        check_token(spelling, TokenKind::NumberLiteral);
-    }
+namespace {
 
-    static constexpr auto not_single_tokens = std::to_array<std::string_view>({
-        ".5",
-        "0.",
-    });
-    for (const auto& spelling : not_single_tokens) {
-        check_not_single_number(spelling);
-    }
+namespace ct = carven::testing;
 
-    static constexpr auto malformed = std::to_array<std::string_view>({
-        "1e",
-        "0x",
-        "0b102",
-        "0o8",
-        "1f",
-        "1ul",
-        "1.0i32",
-    });
-    for (const auto& spelling : malformed) {
-        check_lexical_error(spelling);
-    }
-}
+const ct::Suite tests([] static noexcept {
+    ct::test("Lexer: numeric spellings follow the grammar exactly", [] static noexcept {
+        static constexpr auto valid = std::to_array<std::string_view>({
+            "0",     "42",         "42i8",    "42i16",         "42i32",   "42i64",     "42u8",
+            "42u16", "42u32",      "42u64",   "42isize",       "42usize", "1f32",      "1f64",
+            "3.14",  "3.14e-2f32", "1E+9f64", "0xDeadBEEFu64", "0x1f32",  "0B1010i16", "0o755usize",
+        });
+        ct::each(valid, std::identity {}, [](const auto& spelling) static noexcept {
+            check_token(spelling, TokenKind::NumberLiteral);
+        });
 
-TEST_CASE("Lexer: strings and characters accept only shared simple escapes") {
-    static constexpr auto valid_characters = std::to_array<std::string_view>({
-        "'a'",
-        "'\\''",
-        "'\\\"'",
-        "'\\\\'",
-        "'\\n'",
-        "'\\t'",
-        "'\\r'",
-        "'\\0'",
-        "'é'",
-        "'你'",
-        "'😀'",
-        "'\\u{1F600}'",
-    });
-    static constexpr auto valid_strings = std::to_array<std::string_view>({
-        "\"\"",
-        "\"hello\"",
-        "\"quote: \\\"\"",
-        "\"slash: \\\\\"",
-        "\"\\'\\n\\t\\r\\0\"",
-        "\"你好\"",
-    });
-    for (const auto& spelling : valid_characters) {
-        check_token(spelling, TokenKind::CharLiteral);
-    }
-    for (const auto& spelling : valid_strings) {
-        check_token(spelling, TokenKind::StringLiteral);
-    }
+        static constexpr auto not_single_tokens = std::to_array<std::string_view>({
+            ".5",
+            "0.",
+        });
+        ct::each(not_single_tokens, std::identity {}, [](const auto& spelling) static noexcept {
+            check_not_single_number(spelling);
+        });
 
-    static constexpr auto invalid = std::to_array<std::string_view>({
-        "''",
-        "'ab'",
-        "'\\q'",
-        "'é'",
-        "'\\u{}'",
-        "'\\u{D800}'",
-        "'\\u{110000}'",
-        "'\\x61'",
-        "\"\\q\"",
-        "\"\\01\"",
-        "'\\07'",
-        "'a\n'",
-        "\"line\nbreak\"",
-        "\"unterminated",
+        static constexpr auto malformed = std::to_array<std::string_view>({
+            "1e",
+            "0x",
+            "0b102",
+            "0o8",
+            "1f",
+            "1ul",
+            "1.0i32",
+        });
+        ct::each(malformed, std::identity {}, [](const auto& spelling) static noexcept {
+            check_lexical_error(spelling);
+        });
     });
-    for (const auto& spelling : invalid) {
-        check_lexical_error(spelling);
-    }
-}
 
-TEST_CASE("Lexer: C++ source fragments are line-fenced opaque tokens") {
-    static constexpr auto valid = std::to_array<std::string_view>({
-        "#[cpp] ---\n---",
-        "#[cpp] ---\n{ if (ready) { call(); } }\n---",
-        R"CV(#[cpp] ---
+    ct::test("Lexer: strings and characters accept only shared simple escapes", [] static noexcept {
+        static constexpr auto valid_characters = std::to_array<std::string_view>({
+            "'a'",
+            "'\\''",
+            "'\\\"'",
+            "'\\\\'",
+            "'\\n'",
+            "'\\t'",
+            "'\\r'",
+            "'\\0'",
+            "'é'",
+            "'你'",
+            "'😀'",
+            "'\\u{1F600}'",
+        });
+        static constexpr auto valid_strings = std::to_array<std::string_view>({
+            "\"\"",
+            "\"hello\"",
+            "\"quote: \\\"\"",
+            "\"slash: \\\\\"",
+            "\"\\'\\n\\t\\r\\0\"",
+            "\"你好\"",
+        });
+        ct::each(valid_characters, std::identity {}, [](const auto& spelling) static noexcept {
+            check_token(spelling, TokenKind::CharLiteral);
+        });
+        ct::each(valid_strings, std::identity {}, [](const auto& spelling) static noexcept {
+            check_token(spelling, TokenKind::StringLiteral);
+        });
+
+        static constexpr auto invalid = std::to_array<std::string_view>({
+            "''",
+            "'ab'",
+            "'\\q'",
+            "'é'",
+            "'\\u{}'",
+            "'\\u{D800}'",
+            "'\\u{110000}'",
+            "'\\x61'",
+            "\"\\q\"",
+            "\"\\01\"",
+            "'\\07'",
+            "'a\n'",
+            "\"line\nbreak\"",
+            "\"unterminated",
+        });
+        ct::each(invalid, std::identity {}, [](const auto& spelling) static noexcept {
+            check_lexical_error(spelling);
+        });
+    });
+
+    ct::test("Lexer: C++ source fragments are line-fenced opaque tokens", [] static noexcept {
+        static constexpr auto valid = std::to_array<std::string_view>({
+            "#[cpp] ---\n---",
+            "#[cpp] ---\n{ if (ready) { call(); } }\n---",
+            R"CV(#[cpp] ---
 auto text = "}";
 auto raw = R"tag({ // not Carven })tag";
 ---)CV",
-        "#[cpp] ---\n// }\n/* { */\n#if 0\n}\n#endif\n---",
-        "#[cpp] -----\n---\n-----",
-        "#[cpp]\t---\r\nauto value = 1;\r\n\t---\t",
-    });
-    for (const auto& spelling : valid) {
-        check_token(spelling, TokenKind::CppSourceFragment);
-    }
+            "#[cpp] ---\n// }\n/* { */\n#if 0\n}\n#endif\n---",
+            "#[cpp] -----\n---\n-----",
+            "#[cpp]\t---\r\nauto value = 1;\r\n\t---\t",
+        });
+        ct::each(valid, std::identity {}, [](const auto& spelling) static noexcept {
+            check_token(spelling, TokenKind::CppSourceFragment);
+        });
 
-    static constexpr auto invalid = std::to_array<std::string_view>({
-        "#[ cpp] ---\n---",
-        "#[cpp ] ---\n---",
-        "#[cpp]",
-        "#[cpp] --\n--",
-        "#[cpp] --- trailing\n---",
-        "#[cpp] ---\nnative();",
-        "#[cpp] ----\nnative();\n---",
-    });
-    for (const auto& spelling : invalid) {
-        check_lexical_error(spelling);
-    }
+        static constexpr auto invalid = std::to_array<std::string_view>({
+            "#[ cpp] ---\n---",
+            "#[cpp ] ---\n---",
+            "#[cpp]",
+            "#[cpp] --\n--",
+            "#[cpp] --- trailing\n---",
+            "#[cpp] ---\nnative();",
+            "#[cpp] ----\nnative();\n---",
+        });
+        ct::each(invalid, std::identity {}, [](const auto& spelling) static noexcept {
+            check_lexical_error(spelling);
+        });
 
-    static constexpr auto early_close = std::string_view(
-        "#[cpp] ---\n"
-        "before();\n"
-        "---\n"
-        "after();\n"
-    );
-    const auto source = SourceView {
-        .source_id = SourceID::from_index(0),
-        .text = early_close,
-        .origin = "early-close.cv",
-    };
-    const auto lexed = lex(source);
-    REQUIRE(lexed.diagnostics.empty());
-    REQUIRE(!lexed.value.tokens().empty());
-    CHECK_EQ(lexed.value.tokens().front().kind, TokenKind::CppSourceFragment);
-    CHECK_EQ(slice(early_close, lexed.value.tokens().front().span), "#[cpp] ---\nbefore();\n---");
-}
-
-TEST_CASE("Lexer: C++ header names retain their dedicated spelling") {
-    static constexpr auto text =
-        std::string_view("import <vendor/api.hpp>; import \"native/provider.hpp\";");
-    const auto source = SourceView {
-        .source_id = SourceID::from_index(0),
-        .text = text,
-        .origin = "header-token-test.cv",
-    };
-    const auto lexed = lex(source);
-    REQUIRE(lexed.diagnostics.empty());
-    const auto tokens = lexed.value.tokens();
-    REQUIRE_EQ(tokens.size(), 6u);
-    CHECK_EQ(tokens[1].kind, TokenKind::CppAngleHeaderName);
-    CHECK_EQ(slice(text, tokens[1].span), "<vendor/api.hpp>");
-    CHECK_EQ(tokens[4].kind, TokenKind::CppQuoteHeaderName);
-    CHECK_EQ(slice(text, tokens[4].span), "\"native/provider.hpp\"");
-
-    check_lexical_error("import <>;");
-    check_lexical_error("import \"\";");
-    check_lexical_error("import <unterminated;");
-    check_lexical_error("import \"unterminated;");
-}
-
-TEST_CASE("Lexer: numeric scanner exposes typed values and error facts") {
-    const auto number = scan_numeric_literal("42u8 rest", 10u);
-    REQUIRE(number.has_value());
-    CHECK_EQ(number->consumed, 4uz);
-    const auto& integer = std::get<IntegerLiteralValue>(number->value);
-    CHECK_EQ(integer.magnitude, 42u);
-    CHECK_EQ(integer.suffix, NumericSuffix::U8);
-
-    const auto invalid_number = scan_numeric_literal("0xg", 0u);
-    REQUIRE(!invalid_number.has_value());
-    CHECK_EQ(invalid_number.error().consumed, 3uz);
-    CHECK_EQ(invalid_number.error().error_offset, 2uz);
-    CHECK(invalid_number.error().has_base_prefix);
-}
-
-TEST_CASE("Lexer: string scanner exposes typed values and error facts") {
-    const auto string = scan_string_literal("\"a\\n\" rest");
-    REQUIRE(string.has_value());
-    CHECK_EQ(string->consumed, 5uz);
-    CHECK_EQ(string->value.bytes, "a\n");
-
-    const auto invalid_string = scan_string_literal("\"\\q\"");
-    REQUIRE(!invalid_string.has_value());
-    CHECK_EQ(invalid_string.error().consumed, 4uz);
-    CHECK_EQ(invalid_string.error().error_offset, 1uz);
-}
-
-TEST_CASE("Lexer: character scanner exposes typed values and error facts") {
-    const auto character = scan_character_literal("'x' rest");
-    REQUIRE(character.has_value());
-    CHECK_EQ(character->consumed, 3uz);
-    CHECK_EQ(character->value.scalar, U'x');
-
-    const auto invalid_character = scan_character_literal("''");
-    REQUIRE(!invalid_character.has_value());
-    CHECK_EQ(invalid_character.error().consumed, 2uz);
-    CHECK_EQ(invalid_character.error().error_offset, 1uz);
-}
-
-TEST_CASE("Lexer: numeric tokens preserve integer values and floating spellings") {
-    static constexpr auto spellings = std::to_array<std::string_view>({
-        "0",
-        "42i32",
-        "255u8",
-        "1.5",
-        "1e10",
-        "1e-3f64",
-        "7f32",
-        "0xffu64",
-        "0B101i8",
-        "0o77usize",
-    });
-    for (const auto& spelling : spellings) {
+        static constexpr auto early_close = std::string_view(
+            "#[cpp] ---\n"
+            "before();\n"
+            "---\n"
+            "after();\n"
+        );
         const auto source = SourceView {
             .source_id = SourceID::from_index(0),
-            .text = spelling,
+            .text = early_close,
+            .origin = "early-close.cv",
+        };
+        const auto lexed = lex(source);
+        if (!ct::expect(lexed.diagnostics.empty())) {
+            return;
+        }
+        if (!ct::expect(!lexed.value.tokens().empty())) {
+            return;
+        }
+        ct::expect_equal(lexed.value.tokens().front().kind, TokenKind::CppSourceFragment);
+        ct::expect_equal(
+            slice(early_close, lexed.value.tokens().front().span),
+            std::string_view("#[cpp] ---\nbefore();\n---")
+        );
+    });
+
+    ct::test("Lexer: C++ header names retain their dedicated spelling", [] static noexcept {
+        static constexpr auto text =
+            std::string_view("import <vendor/api.hpp>; import \"native/provider.hpp\";");
+        const auto source = SourceView {
+            .source_id = SourceID::from_index(0),
+            .text = text,
+            .origin = "header-token-test.cv",
+        };
+        const auto lexed = lex(source);
+        if (!ct::expect(lexed.diagnostics.empty())) {
+            return;
+        }
+        const auto tokens = lexed.value.tokens();
+        if (!ct::expect_equal(tokens.size(), 6uz)) {
+            return;
+        }
+        ct::expect_equal(tokens[1].kind, TokenKind::CppAngleHeaderName);
+        ct::expect_equal(slice(text, tokens[1].span), std::string_view("<vendor/api.hpp>"));
+        ct::expect_equal(tokens[4].kind, TokenKind::CppQuoteHeaderName);
+        ct::expect_equal(slice(text, tokens[4].span), std::string_view("\"native/provider.hpp\""));
+
+        check_lexical_error("import <>;");
+        check_lexical_error("import \"\";");
+        check_lexical_error("import <unterminated;");
+        check_lexical_error("import \"unterminated;");
+    });
+
+    ct::test("Lexer: numeric scanner exposes typed values and error facts", [] static noexcept {
+        const auto number = scan_numeric_literal("42u8 rest", 10u);
+        if (!ct::expect(number.has_value())) {
+            return;
+        }
+        ct::expect_equal(number->consumed, 4uz);
+        const auto& integer = std::get<IntegerLiteralValue>(number->value);
+        ct::expect_equal(integer.magnitude, 42u);
+        ct::expect_equal(integer.suffix, NumericSuffix::U8);
+
+        const auto invalid_number = scan_numeric_literal("0xg", 0u);
+        if (!ct::expect(!invalid_number.has_value())) {
+            return;
+        }
+        ct::expect_equal(invalid_number.error().consumed, 3uz);
+        ct::expect_equal(invalid_number.error().error_offset, 2uz);
+        ct::expect(invalid_number.error().has_base_prefix);
+    });
+
+    ct::test("Lexer: string scanner exposes typed values and error facts", [] static noexcept {
+        const auto string = scan_string_literal("\"a\\n\" rest");
+        if (!ct::expect(string.has_value())) {
+            return;
+        }
+        ct::expect_equal(string->consumed, 5uz);
+        ct::expect_equal(string->value.bytes, std::string_view("a\n"));
+
+        const auto invalid_string = scan_string_literal("\"\\q\"");
+        if (!ct::expect(!invalid_string.has_value())) {
+            return;
+        }
+        ct::expect_equal(invalid_string.error().consumed, 4uz);
+        ct::expect_equal(invalid_string.error().error_offset, 1uz);
+    });
+
+    ct::test("Lexer: character scanner exposes typed values and error facts", [] static noexcept {
+        const auto character = scan_character_literal("'x' rest");
+        if (!ct::expect(character.has_value())) {
+            return;
+        }
+        ct::expect_equal(character->consumed, 3uz);
+        ct::expect(((character->value.scalar) == (U'x'))).note("character->value.scalar == U'x'");
+
+        const auto invalid_character = scan_character_literal("''");
+        if (!ct::expect(!invalid_character.has_value())) {
+            return;
+        }
+        ct::expect_equal(invalid_character.error().consumed, 2uz);
+        ct::expect_equal(invalid_character.error().error_offset, 1uz);
+    });
+
+    ct::test(
+        "Lexer: numeric tokens preserve integer values and floating spellings",
+        [] static noexcept {
+            static constexpr auto spellings = std::to_array<std::string_view>({
+                "0",
+                "42i32",
+                "255u8",
+                "1.5",
+                "1e10",
+                "1e-3f64",
+                "7f32",
+                "0xffu64",
+                "0B101i8",
+                "0o77usize",
+            });
+            ct::each(spellings, std::identity {}, [](std::string_view spelling) static noexcept {
+                const auto source = SourceView {
+                    .source_id = SourceID::from_index(0),
+                    .text = spelling,
+                    .origin = "tokenize-test.cv",
+                };
+                const auto lexed = lex(source);
+                if (!(ct::expect(lexed.diagnostics.empty()).note("spelling = ", spelling))) {
+                    return;
+                }
+                if (!(ct::expect_equal(lexed.value.tokens().size(), 1uz)
+                          .note("spelling = ", spelling))) {
+                    return;
+                }
+                const auto& token = lexed.value.tokens().front();
+                ct::expect_equal(token.kind, TokenKind::NumberLiteral)
+                    .note("spelling = ", spelling);
+                const auto& value = lexed.value.literal_value(0uz);
+                const auto* integer = std::get_if<IntegerLiteralValue>(&value);
+                const auto* floating = std::get_if<FloatingLiteralValue>(&value);
+                if (!(ct::expect((integer != nullptr || floating != nullptr))
+                          .note("spelling = ", spelling))) {
+                    return;
+                }
+                if (integer != nullptr) {
+                    ct::expect_equal(integer->conversion, NumericConversion::Exact)
+                        .note("spelling = ", spelling);
+                } else {
+                    ct::expect_equal(floating->spelling, slice(spelling, floating->value_span))
+                        .note("spelling = ", spelling);
+                }
+            });
+        }
+    );
+
+    ct::test("Lexer: quoted tokens carry decoded values", [] static noexcept {
+        const auto string_source = SourceView {
+            .source_id = SourceID::from_index(0),
+            .text = "\"a\\n\\u{4e09}\"",
+            .origin = "tokenize-test.cv",
+        };
+        const auto string = lex(string_source);
+        if (!ct::expect(string.diagnostics.empty())) {
+            return;
+        }
+        if (!ct::expect_equal(string.value.tokens().size(), 1uz)) {
+            return;
+        }
+        const auto& string_value = std::get<StringLiteralValue>(string.value.literal_value(0uz));
+        ct::expect_equal(string_value.bytes, std::string_view("a\n三"));
+
+        const auto character_source = SourceView {
+            .source_id = SourceID::from_index(0),
+            .text = "'\\u{1f600}'",
+            .origin = "tokenize-test.cv",
+        };
+        const auto character = lex(character_source);
+        if (!ct::expect(character.diagnostics.empty())) {
+            return;
+        }
+        const auto& character_value =
+            std::get<CharacterLiteralValue>(character.value.literal_value(0uz));
+        ct::expect(((character_value.scalar) == (U'😀'))).note("character_value.scalar == U'😀'");
+
+        const auto invalid_utf8_character = std::string("'\xff'", 3);
+        const auto invalid_utf8_string = std::string("\"\xff\"", 3);
+        check_lexical_error(invalid_utf8_character);
+        check_lexical_error(invalid_utf8_string);
+    });
+
+    ct::test("Lexer: stored literal value associations follow token positions", [] static noexcept {
+        static constexpr auto text = std::string_view("let value = 42; false \"text\" true 'x'");
+        const auto source = SourceView {
+            .source_id = SourceID::from_index(0),
+            .text = text,
             .origin = "tokenize-test.cv",
         };
         const auto lexed = lex(source);
-        CAPTURE(spelling);
-        REQUIRE(lexed.diagnostics.empty());
-        REQUIRE_EQ(lexed.value.tokens().size(), 1u);
-        const auto& token = lexed.value.tokens().front();
-        CHECK_EQ(token.kind, TokenKind::NumberLiteral);
-        const auto& value = lexed.value.literal_value(0uz);
-        const auto* integer = std::get_if<IntegerLiteralValue>(&value);
-        const auto* floating = std::get_if<FloatingLiteralValue>(&value);
-        REQUIRE((integer != nullptr || floating != nullptr));
-        if (integer != nullptr) {
-            CHECK_EQ(integer->conversion, NumericConversion::Exact);
-        } else {
-            CHECK_EQ(floating->spelling, slice(spelling, floating->value_span));
+        if (!ct::expect(lexed.diagnostics.empty())) {
+            return;
         }
-    }
-}
+        const auto tokens = lexed.value.tokens();
+        if (!ct::expect_equal(tokens.size(), 9uz)) {
+            return;
+        }
+        if (!ct::expect_equal(tokens[3].kind, TokenKind::NumberLiteral)) {
+            return;
+        }
+        if (!ct::expect_equal(tokens[5].kind, TokenKind::False)) {
+            return;
+        }
+        if (!ct::expect_equal(tokens[6].kind, TokenKind::StringLiteral)) {
+            return;
+        }
+        if (!ct::expect_equal(tokens[7].kind, TokenKind::True)) {
+            return;
+        }
+        if (!ct::expect_equal(tokens[8].kind, TokenKind::CharLiteral)) {
+            return;
+        }
 
-TEST_CASE("Lexer: quoted tokens carry decoded values") {
-    const auto string_source = SourceView {
-        .source_id = SourceID::from_index(0),
-        .text = "\"a\\n\\u{4e09}\"",
-        .origin = "tokenize-test.cv",
-    };
-    const auto string = lex(string_source);
-    REQUIRE(string.diagnostics.empty());
-    REQUIRE_EQ(string.value.tokens().size(), 1u);
-    const auto& string_value = std::get<StringLiteralValue>(string.value.literal_value(0uz));
-    CHECK_EQ(string_value.bytes, "a\n三");
-
-    const auto character_source = SourceView {
-        .source_id = SourceID::from_index(0),
-        .text = "'\\u{1f600}'",
-        .origin = "tokenize-test.cv",
-    };
-    const auto character = lex(character_source);
-    REQUIRE(character.diagnostics.empty());
-    const auto& character_value =
-        std::get<CharacterLiteralValue>(character.value.literal_value(0uz));
-    CHECK_EQ(character_value.scalar, U'😀');
-
-    const auto invalid_utf8_character = std::string("'\xff'", 3);
-    const auto invalid_utf8_string = std::string("\"\xff\"", 3);
-    check_lexical_error(invalid_utf8_character);
-    check_lexical_error(invalid_utf8_string);
-}
-
-TEST_CASE("Lexer: stored literal value associations follow token positions") {
-    static constexpr auto text = std::string_view("let value = 42; false \"text\" true 'x'");
-    const auto source = SourceView {
-        .source_id = SourceID::from_index(0),
-        .text = text,
-        .origin = "tokenize-test.cv",
-    };
-    const auto lexed = lex(source);
-    REQUIRE(lexed.diagnostics.empty());
-    const auto tokens = lexed.value.tokens();
-    REQUIRE_EQ(tokens.size(), 9u);
-    REQUIRE_EQ(tokens[3].kind, TokenKind::NumberLiteral);
-    REQUIRE_EQ(tokens[5].kind, TokenKind::False);
-    REQUIRE_EQ(tokens[6].kind, TokenKind::StringLiteral);
-    REQUIRE_EQ(tokens[7].kind, TokenKind::True);
-    REQUIRE_EQ(tokens[8].kind, TokenKind::CharLiteral);
-
-    const auto& number = std::get<IntegerLiteralValue>(lexed.value.literal_value(3uz));
-    const auto& string = std::get<StringLiteralValue>(lexed.value.literal_value(6uz));
-    const auto& character = std::get<CharacterLiteralValue>(lexed.value.literal_value(8uz));
-    CHECK_EQ(number.magnitude, 42u);
-    CHECK_EQ(string.bytes, "text");
-    CHECK_EQ(character.scalar, U'x');
-}
-
-TEST_CASE("Lexer: C strings share decoding and reject NUL at its source") {
-    const auto valid = std::to_array<std::string_view>({R"(c"")", R"(c"hello\n")", R"(c"你好")"});
-    for (const auto text : valid) {
-        check_token(text, TokenKind::CStringLiteral);
-    }
-    const auto zeros = std::to_array<std::string_view>({R"("a\0b")", R"("a\u{0}b")"});
-    for (const auto text : zeros) {
-        const auto result = scan_string_literal(text, StringLiteralKind::CString);
-        REQUIRE_FALSE(result.has_value());
-        CHECK_EQ(result.error().error_offset, 2uz);
-        CHECK_EQ(result.error().error_length, text.size() - 4uz);
-    }
-    const auto invalid = std::to_array<std::string_view>({R"(c"\q")", R"(c"unterminated)"});
-    for (const auto text : invalid) {
-        check_lexical_error(text);
-    }
-    const auto separated = std::array {
-        TokenCase {"c", TokenKind::Identifier},
-        TokenCase {R"("x")", TokenKind::StringLiteral}
-    };
-    check_token_sequence(R"(c "x")", separated);
-}
-
-TEST_CASE("Lexer: raw boundaries preserve literal text and UTF-8") {
-    struct Case final {
-        std::string_view source;
-        std::string_view expected;
-    };
-
-    const auto cases = std::to_array<Case>({
-        {R"CV(r"C:\tools\bin\")CV", "C:\\tools\\bin\\"},
-        {R"CV(r#"{"name": "我", "value": "\n"}"#)CV", R"({"name": "我", "value": "\n"})"},
-        {R"CV(r##"a"#b"##)CV", "a\"#b"},
-        {R"CV(r"{name} {{}} \u{0}")CV", R"({name} {{}} \u{0})"},
-        {"r\"\"", ""},
+        const auto& number = std::get<IntegerLiteralValue>(lexed.value.literal_value(3uz));
+        const auto& string = std::get<StringLiteralValue>(lexed.value.literal_value(6uz));
+        const auto& character = std::get<CharacterLiteralValue>(lexed.value.literal_value(8uz));
+        ct::expect_equal(number.magnitude, 42u);
+        ct::expect_equal(string.bytes, std::string_view("text"));
+        ct::expect(((character.scalar) == (U'x'))).note("character.scalar == U'x'");
     });
-    for (const auto& item : cases) {
-        CAPTURE(item.source);
-        const auto result = scan_string_literal(item.source);
-        REQUIRE(result.has_value());
-        CHECK(result->consumed == item.source.size());
-        CHECK(result->value.bytes == item.expected);
-        check_token(item.source, TokenKind::StringLiteral);
-    }
-    const auto separated = std::array {
-        TokenCase {"r", TokenKind::Identifier},
-        TokenCase {R"("x")", TokenKind::StringLiteral},
-    };
-    check_token_sequence(R"(r "x")", separated);
-    const auto boundary = scan_string_literal(R"CV(r#"text"##)CV");
-    REQUIRE(boundary.has_value());
-    CHECK(boundary->consumed == 9uz);
-    CHECK(boundary->value.bytes == "text");
-    const auto malformed = std::to_array<std::string_view>({
-        "r#",
-        "r#\"x\"",
-        "r##\"x\"#",
-        "r\"a\nb\"",
-        "r\"a\rb\"",
-        "r\"\xff\"",
-    });
-    for (const auto input : malformed) {
-        CAPTURE(input);
-        check_lexical_error(input);
-    }
-}
 
-TEST_CASE("Lexer: multiline layout preserves relative whitespace before decoding") {
-    struct Case final {
-        std::string_view source;
-        std::string_view expected;
-    };
+    ct::test("Lexer: C strings share decoding and reject NUL at its source", [] static noexcept {
+        const auto valid =
+            std::to_array<std::string_view>({R"(c"")", R"(c"hello\n")", R"(c"你好")"});
+        ct::each(valid, std::identity {}, [](const auto& text) static noexcept {
+            check_token(text, TokenKind::CStringLiteral);
+        });
+        const auto zeros = std::to_array<std::string_view>({R"("a\0b")", R"("a\u{0}b")"});
+        ct::each(zeros, std::identity {}, [](std::string_view text) static noexcept {
+            const auto result = scan_string_literal(text, StringLiteralKind::CString);
+            if (!ct::expect(!(result.has_value()))) {
+                return;
+            }
+            ct::expect_equal(result.error().error_offset, 2uz);
+            ct::expect(((result.error().error_length) == (text.size() - 4uz)))
+                .note("result.error().error_length == text.size() - 4uz");
+        });
+        const auto invalid = std::to_array<std::string_view>({R"(c"\q")", R"(c"unterminated)"});
+        ct::each(invalid, std::identity {}, [](const auto& text) static noexcept {
+            check_lexical_error(text);
+        });
+        const auto separated = std::array {
+            TokenCase {"c", TokenKind::Identifier},
+            TokenCase {R"("x")", TokenKind::StringLiteral}
+        };
+        check_token_sequence(R"(c "x")", separated);
+    });
 
-    const auto cases = std::to_array<Case>({
-        {"\"\"\"\n    A\n      B\n\"\"\"", "A\n  B"},
-        {"\"\"\"\n    A\n      B\n          \"\"\"", "A\n  B"},
-        {"\"\"\"\n    A  \n      \n  \n    B\n\"\"\"", "A  \n  \n\nB"},
-        {"\"\"\"\n\t A\n\t  B\n\"\"\"", "A\n B"},
-        {"\"\"\"\n \tA\n\t B\n\"\"\"", " \tA\n\t B"},
-        {"\"\"\"\n  A\n \t \n  B\n\"\"\"", "A\n\t \nB"},
-        {"\"\"\"\n  A\nB\n\"\"\"", "  A\nB"},
-        {"\"\"\"\r\n  A\r\n  B\r\n\"\"\"", "A\nB"},
-        {"\"\"\"\n  \\tA\n  \\u{20}B\n\"\"\"", "\tA\n B"},
-        {"\"\"\"\n  a\\0我\n\"\"\"", std::string_view("a\0我", 5)},
-        {"\"\"\"\n  \\n\n  B\n\"\"\"", "\n\nB"},
-        {"\"\"\"\n\n  A\n\n\"\"\"", "\nA\n"},
-        {"\"\"\"\n\"\"\"", ""},
-        {"\"\"\"\n  \t\"\"\"", ""},
-        {"\"\"\"\n  \n\"\"\"", ""},
-        {"\"\"\"\n  \n\t\n\"\"\"", "\n"},
-        {"r\"\"\"\n  \\n{name}\n\"\"\"", R"(\n{name})"},
-        {"r#\"\"\"\n  \"\"\" and \"#\n\"\"\"#", "\"\"\" and \"#"},
-        {"\"\"\"\n  \\\"\"\"\n\"\"\"", "\"\"\""},
+    ct::test("Lexer: raw boundaries preserve literal text and UTF-8", [] static noexcept {
+        struct Case final {
+            std::string_view source;
+            std::string_view expected;
+        };
+
+        const auto cases = std::to_array<Case>({
+            {R"CV(r"C:\tools\bin\")CV", "C:\\tools\\bin\\"},
+            {R"CV(r#"{"name": "我", "value": "\n"}"#)CV", R"({"name": "我", "value": "\n"})"},
+            {R"CV(r##"a"#b"##)CV", "a\"#b"},
+            {R"CV(r"{name} {{}} \u{0}")CV", R"({name} {{}} \u{0})"},
+            {"r\"\"", ""},
+        });
+        ct::each(cases, &Case::source, [](const Case& item) static noexcept {
+            const auto result = scan_string_literal(item.source);
+            if (!(ct::expect(result.has_value()).note("item.source = ", item.source))) {
+                return;
+            }
+            ct::expect(result->consumed == item.source.size()).note("item.source = ", item.source);
+            ct::expect(result->value.bytes == item.expected).note("item.source = ", item.source);
+            check_token(item.source, TokenKind::StringLiteral);
+        });
+        const auto separated = std::array {
+            TokenCase {"r", TokenKind::Identifier},
+            TokenCase {R"("x")", TokenKind::StringLiteral},
+        };
+        check_token_sequence(R"(r "x")", separated);
+        const auto boundary = scan_string_literal(R"CV(r#"text"##)CV");
+        if (!ct::expect(boundary.has_value())) {
+            return;
+        }
+        ct::expect(boundary->consumed == 9uz);
+        ct::expect(boundary->value.bytes == "text");
+        const auto malformed = std::to_array<std::string_view>({
+            "r#",
+            "r#\"x\"",
+            "r##\"x\"#",
+            "r\"a\nb\"",
+            "r\"a\rb\"",
+            "r\"\xff\"",
+        });
+        ct::each(malformed, std::identity {}, [](const auto& input) static noexcept {
+            check_lexical_error(input);
+        });
     });
-    for (const auto& item : cases) {
-        CAPTURE(item.source);
-        const auto result = scan_string_literal(item.source);
-        REQUIRE(result.has_value());
-        CHECK(result->consumed == item.source.size());
-        CHECK(result->value.bytes == item.expected);
-        check_token(item.source, TokenKind::StringLiteral);
-    }
-    const auto invalid = std::to_array<std::string_view>({
-        "\"\"\"inline\"\"\"",
-        "\"\"\" \n\"\"\"",
-        "\"\"\"\nA\"\"\"",
-        "\"\"\"\nA",
-        "\"\"\"\nA\rB\n\"\"\"",
-        "\"\"\"\r\"\"\"",
-        "\"\"\"\n\\\n\"\"\"",
-        "\"\"\"\n\\q\n\"\"\"",
-        "\"\"\"\n\xff\n\"\"\"",
-        "r#\"\"\"\nA\n\"\"\"",
-        "r\"\"\"\nA\"\"\"",
-        "c\"\"\"\nA\n\"\"\"",
-    });
-    for (const auto input : invalid) {
-        CAPTURE(input);
-        check_lexical_error(input);
-    }
-}
+
+    ct::test(
+        "Lexer: multiline layout preserves relative whitespace before decoding",
+        [] static noexcept {
+            struct Case final {
+                std::string_view source;
+                std::string_view expected;
+            };
+
+            const auto cases = std::to_array<Case>({
+                {"\"\"\"\n    A\n      B\n\"\"\"", "A\n  B"},
+                {"\"\"\"\n    A\n      B\n          \"\"\"", "A\n  B"},
+                {"\"\"\"\n    A  \n      \n  \n    B\n\"\"\"", "A  \n  \n\nB"},
+                {"\"\"\"\n\t A\n\t  B\n\"\"\"", "A\n B"},
+                {"\"\"\"\n \tA\n\t B\n\"\"\"", " \tA\n\t B"},
+                {"\"\"\"\n  A\n \t \n  B\n\"\"\"", "A\n\t \nB"},
+                {"\"\"\"\n  A\nB\n\"\"\"", "  A\nB"},
+                {"\"\"\"\r\n  A\r\n  B\r\n\"\"\"", "A\nB"},
+                {"\"\"\"\n  \\tA\n  \\u{20}B\n\"\"\"", "\tA\n B"},
+                {"\"\"\"\n  a\\0我\n\"\"\"", std::string_view("a\0我", 5)},
+                {"\"\"\"\n  \\n\n  B\n\"\"\"", "\n\nB"},
+                {"\"\"\"\n\n  A\n\n\"\"\"", "\nA\n"},
+                {"\"\"\"\n\"\"\"", ""},
+                {"\"\"\"\n  \t\"\"\"", ""},
+                {"\"\"\"\n  \n\"\"\"", ""},
+                {"\"\"\"\n  \n\t\n\"\"\"", "\n"},
+                {"r\"\"\"\n  \\n{name}\n\"\"\"", R"(\n{name})"},
+                {"r#\"\"\"\n  \"\"\" and \"#\n\"\"\"#", "\"\"\" and \"#"},
+                {"\"\"\"\n  \\\"\"\"\n\"\"\"", "\"\"\""},
+            });
+            ct::each(cases, &Case::source, [](const Case& item) static noexcept {
+                const auto result = scan_string_literal(item.source);
+                if (!(ct::expect(result.has_value()).note("item.source = ", item.source))) {
+                    return;
+                }
+                ct::expect(result->consumed == item.source.size())
+                    .note("item.source = ", item.source);
+                ct::expect(result->value.bytes == item.expected)
+                    .note("item.source = ", item.source);
+                check_token(item.source, TokenKind::StringLiteral);
+            });
+            const auto invalid = std::to_array<std::string_view>({
+                "\"\"\"inline\"\"\"",
+                "\"\"\" \n\"\"\"",
+                "\"\"\"\nA\"\"\"",
+                "\"\"\"\nA",
+                "\"\"\"\nA\rB\n\"\"\"",
+                "\"\"\"\r\"\"\"",
+                "\"\"\"\n\\\n\"\"\"",
+                "\"\"\"\n\\q\n\"\"\"",
+                "\"\"\"\n\xff\n\"\"\"",
+                "r#\"\"\"\nA\n\"\"\"",
+                "r\"\"\"\nA\"\"\"",
+                "c\"\"\"\nA\n\"\"\"",
+            });
+            ct::each(invalid, std::identity {}, [](const auto& input) static noexcept {
+                check_lexical_error(input);
+            });
+        }
+    );
+});
+
+} // namespace

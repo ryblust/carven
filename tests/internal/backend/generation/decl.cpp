@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.backend.generation.decl;
 
 import :backend.generation.linkage;
@@ -9,7 +5,6 @@ import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
 import :backend.realization.decl;
-import :backend.target;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -19,10 +14,14 @@ import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target.type;
+import :backend.target;
+import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
+
+namespace ct = carven::testing;
 
 auto name(std::string_view spelling) noexcept -> TargetIdentifier {
     return TargetIdentifier::from_spelling(spelling);
@@ -73,7 +72,7 @@ struct DeclarationFlags final {
 
 auto flags(const std::vector<TargetStmt>& statements) noexcept -> std::vector<bool> {
     auto query = DeclarationFlags();
-    CHECK(traverse_target_statements(statements, query));
+    ct::expect(traverse_target_statements(statements, query));
     return query.result;
 }
 
@@ -86,177 +85,197 @@ auto boolean_type(TargetUnitBuilder& builder) noexcept -> TargetTypeID {
 
 } // namespace
 
-TEST_CASE("Declarations: reads clear attributes while writes retain names") {
-    auto builder = TargetUnitBuilder();
-    const auto type = boolean_type(builder);
-    const auto absent = builder.add_local(name("absent"));
-    const auto parameter = builder.add_local(name("parameter"));
-    const auto unused = builder.add_local(name("unused"));
-    const auto updated = builder.add_local(name("updated"));
-    const auto written = builder.add_local(name("written"));
-    const auto returned = builder.add_local(name("returned"));
-    auto body = std::vector<TargetStmt>();
-    body.push_back(local(returned, type));
-    body.push_back(local(written, type));
-    body.push_back(local(updated, type));
-    body.push_back(local(unused, type));
-    body.push_back(assignment(written));
-    body.push_back(assignment(parameter));
-    body.push_back(target_lowering_statement(
-        TargetUpdateStmt {.op = TargetUpdateOperator::Increment, .target = reference(updated)}
-    ));
-    body.push_back(target_lowering_statement(TargetReturnStmt {.expression = reference(returned)}));
-    const auto parameters = std::array {parameter, absent};
-    CHECK(finish_body_declarations(body, parameters, {}, {}) == std::vector<bool> {true, false});
-    CHECK(flags(body) == std::vector<bool> {false, true, true, true});
-}
+namespace {
 
-TEST_CASE("Declarations: sibling declarations and lambda parameters have lexical identities") {
-    auto builder = TargetUnitBuilder();
-    const auto type = boolean_type(builder);
-    const auto outer = builder.add_local(name("outer"));
-    const auto shadowed = builder.add_local(name("shadowed"));
-    const auto parameter = builder.add_local(name("shadowed"));
-    const auto left_local = builder.add_local(name("same"));
-    const auto right_local = builder.add_local(name("same"));
-    auto body = std::vector<TargetStmt>();
-    body.push_back(local(outer, type));
-    body.push_back(local(shadowed, type));
-    auto lambda_body = std::vector<TargetStmt>();
-    lambda_body.push_back(read(outer));
-    lambda_body.push_back(read(parameter));
-    body.push_back(target_lowering_statement(
-        TargetExprStmt {
-            .expression = {
-                .value = TargetLambdaExpr {
-                    .parameters = {{.local = parameter, .type = type}},
-                    .result = type,
-                    .body = std::move(lambda_body)
-                }
-            }
-        }
-    ));
-    auto left = std::vector<TargetStmt>();
-    left.push_back(local(left_local, type));
-    left.push_back(read(left_local));
-    auto right = std::vector<TargetStmt>();
-    right.push_back(local(right_local, type));
-    auto branches = std::vector<TargetIfBranch>();
-    branches.push_back({.condition = literal(), .body = std::move(left)});
-    body.push_back(target_lowering_statement(
-        TargetIfStmt {.branches = std::move(branches), .else_body = std::move(right)}
-    ));
-    static_cast<void>(finish_body_declarations(body, {}, {}, {}));
-    CHECK(flags(body) == std::vector<bool> {false, true, false, true});
-}
+const ct::Suite tests([] static noexcept {
+    ct::test("Declarations: reads clear attributes while writes retain names", [] static noexcept {
+        auto builder = TargetUnitBuilder();
+        const auto type = boolean_type(builder);
+        const auto absent = builder.add_local(name("absent"));
+        const auto parameter = builder.add_local(name("parameter"));
+        const auto unused = builder.add_local(name("unused"));
+        const auto updated = builder.add_local(name("updated"));
+        const auto written = builder.add_local(name("written"));
+        const auto returned = builder.add_local(name("returned"));
+        auto body = std::vector<TargetStmt>();
+        body.push_back(local(returned, type));
+        body.push_back(local(written, type));
+        body.push_back(local(updated, type));
+        body.push_back(local(unused, type));
+        body.push_back(assignment(written));
+        body.push_back(assignment(parameter));
+        body.push_back(target_lowering_statement(
+            TargetUpdateStmt {.op = TargetUpdateOperator::Increment, .target = reference(updated)}
+        ));
+        body.push_back(
+            target_lowering_statement(TargetReturnStmt {.expression = reference(returned)})
+        );
+        const auto parameters = std::array {parameter, absent};
+        ct::expect(
+            finish_body_declarations(body, parameters, {}, {}) == std::vector<bool> {true, false}
+        );
+        ct::expect(flags(body) == std::vector<bool> {false, true, true, true});
+    });
 
-TEST_CASE("Declarations: loop bindings and steps use their own visibility") {
-    auto builder = TargetUnitBuilder();
-    const auto type = boolean_type(builder);
-    const auto step = builder.add_local(name("step"));
-    const auto body_step = builder.add_local(name("step"));
-    const auto index = builder.add_local(name("index"));
-    const auto range = builder.add_local(name("range"));
-    const auto element = builder.add_local(name("range"));
-    auto body = std::vector<TargetStmt>();
-    body.push_back(local(step, type));
-    auto loop_body = std::vector<TargetStmt>();
-    loop_body.push_back(local(body_step, type));
-    loop_body.push_back(read(index));
-    auto steps = std::vector<TargetForStep>();
-    steps.push_back({.value = TargetDiscardStmt {.expression = reference(step)}});
-    body.push_back(target_lowering_statement(
-        TargetForStmt {
-            .initializer =
-                TargetForInitializer {
-                    .value =
-                        TargetVariableStmt {
-                            .binding = TargetVariableBinding::MutableValue,
-                            .maybe_unused = true,
-                            .local = index,
-                            .type = type,
-                            .initializer = literal()
+    ct::test(
+        "Declarations: sibling declarations and lambda parameters have lexical identities",
+        [] static noexcept {
+            auto builder = TargetUnitBuilder();
+            const auto type = boolean_type(builder);
+            const auto outer = builder.add_local(name("outer"));
+            const auto shadowed = builder.add_local(name("shadowed"));
+            const auto parameter = builder.add_local(name("shadowed"));
+            const auto left_local = builder.add_local(name("same"));
+            const auto right_local = builder.add_local(name("same"));
+            auto body = std::vector<TargetStmt>();
+            body.push_back(local(outer, type));
+            body.push_back(local(shadowed, type));
+            auto lambda_body = std::vector<TargetStmt>();
+            lambda_body.push_back(read(outer));
+            lambda_body.push_back(read(parameter));
+            body.push_back(target_lowering_statement(
+                TargetExprStmt {
+                    .expression = {
+                        .value = TargetLambdaExpr {
+                            .parameters = {{.local = parameter, .type = type}},
+                            .result = type,
+                            .body = std::move(lambda_body)
                         }
-                },
-            .condition = literal(),
-            .steps = std::move(steps),
-            .body = std::move(loop_body)
+                    }
+                }
+            ));
+            auto left = std::vector<TargetStmt>();
+            left.push_back(local(left_local, type));
+            left.push_back(read(left_local));
+            auto right = std::vector<TargetStmt>();
+            right.push_back(local(right_local, type));
+            auto branches = std::vector<TargetIfBranch>();
+            branches.push_back({.condition = literal(), .body = std::move(left)});
+            body.push_back(target_lowering_statement(
+                TargetIfStmt {.branches = std::move(branches), .else_body = std::move(right)}
+            ));
+            static_cast<void>(finish_body_declarations(body, {}, {}, {}));
+            ct::expect(flags(body) == std::vector<bool> {false, true, false, true});
         }
-    ));
-    body.push_back(local(range, type));
-    auto iteration = std::vector<TargetStmt>();
-    iteration.push_back(read(element));
-    body.push_back(target_lowering_statement(
-        TargetRangeForStmt {
-            .binding = TargetVariableBinding::ConstReference,
-            .maybe_unused = true,
-            .local = element,
-            .type = type,
-            .range = reference(range),
-            .body = std::move(iteration)
-        }
-    ));
-    static_cast<void>(finish_body_declarations(body, {}, {}, {}));
-    CHECK(flags(body) == std::vector<bool> {false, false, true, false, false});
-}
-
-TEST_CASE("Declarations: final generated bodies own parameter and local use facts") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "fn consume(value: i32) {} "
-            "fn forward(parameter: i32) { let local = parameter; return consume(local); } "
-            "fn inactive(parameter: i32) { if false { consume(parameter); } } "
-            "fn only_write(&parameter: i32) { parameter = 2; } "
-            "fn effect() -> i32 => 2; fn unused_local() { let retained = effect(); } "
-            "struct Stop {} fn pair(&first: i32, second: i32) {} "
-            "fn terminal(&parameter: i32) throw Stop { "
-            "return pair(&parameter, if true { throw Stop {}; } else { throw Stop {}; }); } "
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("declarations")}
     );
 
-    struct Query final {
-        const TargetUnit* unit = nullptr;
-        std::size_t definitions = 0;
-        std::size_t locals = 0;
+    ct::test("Declarations: loop bindings and steps use their own visibility", [] static noexcept {
+        auto builder = TargetUnitBuilder();
+        const auto type = boolean_type(builder);
+        const auto step = builder.add_local(name("step"));
+        const auto body_step = builder.add_local(name("step"));
+        const auto index = builder.add_local(name("index"));
+        const auto range = builder.add_local(name("range"));
+        const auto element = builder.add_local(name("range"));
+        auto body = std::vector<TargetStmt>();
+        body.push_back(local(step, type));
+        auto loop_body = std::vector<TargetStmt>();
+        loop_body.push_back(local(body_step, type));
+        loop_body.push_back(read(index));
+        auto steps = std::vector<TargetForStep>();
+        steps.push_back({.value = TargetDiscardStmt {.expression = reference(step)}});
+        body.push_back(target_lowering_statement(
+            TargetForStmt {
+                .initializer =
+                    TargetForInitializer {
+                        .value =
+                            TargetVariableStmt {
+                                .binding = TargetVariableBinding::MutableValue,
+                                .maybe_unused = true,
+                                .local = index,
+                                .type = type,
+                                .initializer = literal()
+                            }
+                    },
+                .condition = literal(),
+                .steps = std::move(steps),
+                .body = std::move(loop_body)
+            }
+        ));
+        body.push_back(local(range, type));
+        auto iteration = std::vector<TargetStmt>();
+        iteration.push_back(read(element));
+        body.push_back(target_lowering_statement(
+            TargetRangeForStmt {
+                .binding = TargetVariableBinding::ConstReference,
+                .maybe_unused = true,
+                .local = element,
+                .type = type,
+                .range = reference(range),
+                .body = std::move(iteration)
+            }
+        ));
+        static_cast<void>(finish_body_declarations(body, {}, {}, {}));
+        ct::expect(flags(body) == std::vector<bool> {false, false, true, false, false});
+    });
 
-        auto enter_declaration(const TargetDecl& declaration) noexcept -> bool {
-            const auto* function = std::get_if<TargetFunctionDecl>(&declaration);
-            if (function == nullptr
-                || !std::holds_alternative<TargetFreeFunctionDefinition>(function->form)) {
-                return true;
+    ct::test(
+        "Declarations: final generated bodies own parameter and local use facts",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "fn consume(value: i32) {} "
+                    "fn forward(parameter: i32) { let local = parameter; return consume(local); } "
+                    "fn inactive(parameter: i32) { if false { consume(parameter); } } "
+                    "fn only_write(&parameter: i32) { parameter = 2; } "
+                    "fn effect() -> i32 => 2; fn unused_local() { let retained = effect(); } "
+                    "struct Stop {} fn pair(&first: i32, second: i32) {} "
+                    "fn terminal(&parameter: i32) throw Stop { "
+                    "return pair(&parameter, if true { throw Stop {}; } else { throw Stop {}; }); } "
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("declarations")}
+            );
+
+            struct Query final {
+                const TargetUnit* unit = nullptr;
+                std::size_t definitions = 0;
+                std::size_t locals = 0;
+
+                auto enter_declaration(const TargetDecl& declaration) noexcept -> bool {
+                    const auto* function = std::get_if<TargetFunctionDecl>(&declaration);
+                    if (function == nullptr
+                        || !std::holds_alternative<TargetFreeFunctionDefinition>(function->form)) {
+                        return true;
+                    }
+                    ++definitions;
+                    const auto spelling = function->name.components().back().spelling();
+                    if (spelling == "forward" || spelling == "only_write") {
+                        if (!ct::expect(function->parameters.size() == 1uz)) {
+                            return false;
+                        }
+                        ct::expect(function->parameters.front().local.has_value());
+                    } else if (spelling == "inactive" || spelling == "consume") {
+                        if (!ct::expect(function->parameters.size() == 1uz)) {
+                            return false;
+                        }
+                        ct::expect(!(function->parameters.front().local.has_value()));
+                    }
+                    return true;
+                }
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        ++locals;
+                        ct::expect(
+                            variable->maybe_unused
+                            == (unit->local_name(variable->local).spelling() != "local")
+                        );
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query();
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                query.unit = &unit;
+                ct::expect(traverse_target_unit(unit.sections(), query));
             }
-            ++definitions;
-            const auto spelling = function->name.components().back().spelling();
-            if (spelling == "forward" || spelling == "only_write") {
-                REQUIRE(function->parameters.size() == 1uz);
-                CHECK(function->parameters.front().local.has_value());
-            } else if (spelling == "inactive" || spelling == "consume") {
-                REQUIRE(function->parameters.size() == 1uz);
-                CHECK_FALSE(function->parameters.front().local.has_value());
-            }
-            return true;
+            ct::expect(query.definitions == 8uz);
+            ct::expect(query.locals == 2uz);
         }
+    );
+});
 
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                ++locals;
-                CHECK(
-                    variable->maybe_unused
-                    == (unit->local_name(variable->local).spelling() != "local")
-                );
-            }
-            return true;
-        }
-    };
-
-    auto query = Query();
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        query.unit = &unit;
-        CHECK(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.definitions == 8uz);
-    CHECK(query.locals == 2uz);
-}
+} // namespace

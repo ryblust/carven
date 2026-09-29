@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.semantic.semir.body;
 
 import :diagnostics.sink;
@@ -22,14 +18,17 @@ import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.harness.framework;
 import :test.internal.harness.death;
 import std;
 
 namespace {
 
+namespace ct = carven::testing;
+
 auto path(std::string_view value) noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value(value);
-    REQUIRE(result.has_value());
+    ct::require(result.has_value());
     return std::move(*result);
 }
 
@@ -45,7 +44,7 @@ struct PreparedFunction final {
 auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexcept
     -> PreparedFunction {
     const auto source = sources.append_virtual("semir-function-body.cv", "");
-    REQUIRE(source.has_value());
+    ct::require(source.has_value());
     const auto inputs = std::array {
         SourceModuleInput {
             .source_id = *source,
@@ -53,7 +52,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
         },
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    REQUIRE(syntax.has_value());
+    ct::require(syntax.has_value());
     auto builder = ProgramDraft::begin(std::move(*syntax), diagnostics);
     const auto provenance_module = builder.provenance_module_at(0uz);
     const auto source_id = builder.module_source(provenance_module);
@@ -214,45 +213,58 @@ auto rejects_expression(std::string_view scenario, MakeExpression make_expressio
 
 } // namespace
 
-TEST_CASE("SemIR body: publication preserves structured parameters and result") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto prepared = prepare_function(sources, diagnostics);
-    auto body = body_fixture(prepared);
-    const auto parameter = body.parameter;
-    auto result = boolean_expression(prepared, body);
-    result.category = SemanticValueCategory::Place;
-    result.value = SemBinding {.binding = parameter};
-    [[maybe_unused]] const auto resolved =
-        finish_body(prepared, std::move(body), {}, std::move(result));
-    const auto body_id = resolved;
-    auto finished = std::move(prepared.builder).finish();
-    REQUIRE(finished.has_value());
-    const auto program = std::move(*finished);
-    const auto& published = program.bodies().body(body_id);
-    CHECK_EQ(published.inputs().parameters, std::vector {parameter});
-    REQUIRE(published.region().result.has_value());
-    const auto* binding = std::get_if<SemBinding>(&published.region().result->value);
-    REQUIRE(binding != nullptr);
-    CHECK_EQ(binding->binding, parameter);
-    CHECK_EQ(program.declarations().body_for_callable(prepared.callable), body_id);
-    CHECK(diagnostics.empty());
-}
+namespace {
 
-TEST_CASE("SemIR body invariant: result agrees with callable contract") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto prepared = prepare_function(sources, diagnostics);
-    auto body = body_fixture(prepared);
-    [[maybe_unused]] const auto resolved = finish_body(prepared, std::move(body), {}, std::nullopt);
-    CHECK(expect_termination("structured-result-contract", [&] noexcept {
-        static_cast<void>(std::move(prepared.builder).finish());
-    }));
-}
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "SemIR body: publication preserves structured parameters and result",
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto prepared = prepare_function(sources, diagnostics);
+            auto body = body_fixture(prepared);
+            const auto parameter = body.parameter;
+            auto result = boolean_expression(prepared, body);
+            result.category = SemanticValueCategory::Place;
+            result.value = SemBinding {.binding = parameter};
+            [[maybe_unused]] const auto resolved =
+                finish_body(prepared, std::move(body), {}, std::move(result));
+            const auto body_id = resolved;
+            auto finished = std::move(prepared.builder).finish();
+            if (!ct::expect(finished.has_value())) {
+                return;
+            }
+            const auto program = std::move(*finished);
+            const auto& published = program.bodies().body(body_id);
+            ct::expect(published.inputs().parameters == std::vector {parameter});
+            if (!ct::expect(published.region().result.has_value())) {
+                return;
+            }
+            const auto* binding = std::get_if<SemBinding>(&published.region().result->value);
+            if (!ct::expect(binding != nullptr)) {
+                return;
+            }
+            ct::expect(((binding->binding) == (parameter))).note("binding->binding == parameter");
+            ct::expect(((program.declarations().body_for_callable(prepared.callable)) == (body_id)))
+                .note("program.declarations().body_for_callable(prepared.callable) == body_id");
+            ct::expect(diagnostics.empty());
+        }
+    );
 
-TEST_CASE("SemIR body invariant: unary binary and cast operations retain type contracts") {
-    SUBCASE("unary") {
-        CHECK(rejects_expression(
+    ct::test("SemIR body: result agrees with callable contract", [] static noexcept {
+        auto sources = SourceManager();
+        auto diagnostics = DiagnosticSink();
+        auto prepared = prepare_function(sources, diagnostics);
+        auto body = body_fixture(prepared);
+        [[maybe_unused]] const auto resolved =
+            finish_body(prepared, std::move(body), {}, std::nullopt);
+        ct::expect(expect_termination("structured-result-contract", [&] noexcept {
+            static_cast<void>(std::move(prepared.builder).finish());
+        }));
+    });
+
+    ct::test("SemIR body: unary operations reject incompatible result types", [] static noexcept {
+        ct::expect(rejects_expression(
             "structured-unary-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
                 auto operand = boolean_expression(prepared, body);
@@ -264,9 +276,10 @@ TEST_CASE("SemIR body invariant: unary binary and cast operations retain type co
                 return result;
             }
         ));
-    }
-    SUBCASE("binary") {
-        CHECK(rejects_expression(
+    });
+
+    ct::test("SemIR body: binary operations reject incompatible operand types", [] static noexcept {
+        ct::expect(rejects_expression(
             "structured-binary-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
                 auto left = boolean_expression(prepared, body);
@@ -280,9 +293,10 @@ TEST_CASE("SemIR body invariant: unary binary and cast operations retain type co
                 return result;
             }
         ));
-    }
-    SUBCASE("cast") {
-        CHECK(rejects_expression(
+    });
+
+    ct::test("SemIR body: casts reject incompatible operand types", [] static noexcept {
+        ct::expect(rejects_expression(
             "structured-cast-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
                 auto operand = boolean_expression(prepared, body);
@@ -294,231 +308,268 @@ TEST_CASE("SemIR body invariant: unary binary and cast operations retain type co
                 return result;
             }
         ));
-    }
-}
+    });
 
-TEST_CASE("SemIR body invariant: body-local references reject foreign owners") {
-    auto first_sources = SourceManager();
-    auto second_sources = SourceManager();
-    auto first_diagnostics = DiagnosticSink();
-    auto second_diagnostics = DiagnosticSink();
-    auto first = prepare_function(first_sources, first_diagnostics);
-    auto second = prepare_function(second_sources, second_diagnostics);
-    auto first_body = body_fixture(first);
-    const auto second_body = body_fixture(second);
-    auto result = boolean_expression(first, first_body);
-    result.value = SemBinding {.binding = second_body.parameter};
-    result.category = SemanticValueCategory::Place;
-    [[maybe_unused]] const auto resolved =
-        finish_body(first, std::move(first_body), {}, std::move(result));
-    CHECK(expect_termination("structured-foreign-binding", [&] noexcept {
-        static_cast<void>(std::move(first.builder).finish());
-    }));
-}
+    ct::test("SemIR body: body-local references reject foreign owners", [] static noexcept {
+        auto first_sources = SourceManager();
+        auto second_sources = SourceManager();
+        auto first_diagnostics = DiagnosticSink();
+        auto second_diagnostics = DiagnosticSink();
+        auto first = prepare_function(first_sources, first_diagnostics);
+        auto second = prepare_function(second_sources, second_diagnostics);
+        auto first_body = body_fixture(first);
+        const auto second_body = body_fixture(second);
+        auto result = boolean_expression(first, first_body);
+        result.value = SemBinding {.binding = second_body.parameter};
+        result.category = SemanticValueCategory::Place;
+        [[maybe_unused]] const auto resolved =
+            finish_body(first, std::move(first_body), {}, std::move(result));
+        ct::expect(expect_termination("structured-foreign-binding", [&] noexcept {
+            static_cast<void>(std::move(first.builder).finish());
+        }));
+    });
 
-TEST_CASE("SemIR body: test operations carry an internal exit through ordinary functions") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto prepared = prepare_function(sources, diagnostics);
-    auto body = body_fixture(prepared);
-    auto operation = boolean_expression(prepared, body);
-    operation.constant.reset();
-    operation.exits_test = true;
-    operation.value = SemReport {
-        .kind = ReportKind::Fail,
-        .condition = std::nullopt,
-        .message = std::nullopt,
-        .condition_source = std::nullopt,
-        .operand_sources = std::nullopt
-    };
-    auto statements = std::vector<SemanticStatement>();
-    statements.push_back(
-        {.origin = prepared.origin,
-         .lifetime = body.lifetime,
-         .reachable = true,
-         .value = SemExpressionStatement {std::move(operation)}}
-    );
-    auto result = boolean_expression(prepared, body);
-    [[maybe_unused]] const auto resolved =
-        finish_body(prepared, std::move(body), std::move(statements), std::move(result));
-    const auto program = std::move(prepared.builder).finish();
-    REQUIRE(program.has_value());
-    CHECK(program->may_stop_test(prepared.callable));
-}
-
-TEST_CASE("SemIR body: external calls require their declared result query") {
-    CHECK(rejects_expression(
-        "semir-cpp-call-result",
-        [](PreparedFunction& prepared, const BodyFixture& body) static noexcept {
-            auto expression = boolean_expression(prepared, body);
-            expression.value = SemCppCall {
-                .callee =
-                    CppNameReference {
-                        .context_module = prepared.module_id,
-                        .lookup = CppNameLookup::Global,
-                        .components = {"native", "value"}
-                    },
-                .arguments = {}
-            };
-            return expression;
-        }
-    ));
-}
-
-TEST_CASE("SemIR body invariant: every nested fact is resolved before delivery") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto prepared = prepare_function(sources, diagnostics);
-    auto body = body_fixture(prepared);
-    const auto completed = prepared.builder.intern_failure_set({});
-    auto region = SemanticRegion {
-        .lifetime = body.lifetime,
-        .origin = prepared.origin,
-        .statements = {},
-        .result = std::nullopt,
-        .result_reachable = false,
-        .failures = BodyFailures(completed),
-        .exits_test = false,
-    };
-    auto attempt = boolean_expression(prepared, body);
-    attempt.failures = BodyFailures(completed);
-    attempt.value = SemTry {
-        .body = OwnedSemanticRegion(std::move(region)),
-        .protected_failures = BodyFailures(completed),
-        .residual_failures = BodyFailures(completed),
-        .arms = {},
-    };
-    auto* nested = std::get_if<SemTry>(&attempt.value);
-    REQUIRE(nested != nullptr);
-    auto scenario = std::string_view();
-    SUBCASE("completed tree is accepted") {}
-    SUBCASE("nested region must be resolved") {
-        nested->body->failures = BodyFailures(body.failures);
-        scenario = "nested region";
-    }
-    SUBCASE("catch metadata must be resolved") {
-        nested->residual_failures = BodyFailures(body.failures);
-        scenario = "catch metadata";
-    }
-    SUBCASE("expression type must be resolved") {
-        attempt.type = BodyType(prepared.builder.append_construction_type(
-            {.value = ConstructionArrayTypeValue {.element = prepared.boolean_type, .extent = 1u}}
-        ));
-        scenario = "expression type";
-    }
-    auto draft = std::move(body.builder)
-                     .finish(
-                         SemanticRegion {
-                             .lifetime = body.lifetime,
-                             .origin = prepared.origin,
-                             .statements = {},
-                             .result = std::move(attempt),
-                             .result_reachable = true,
-                             .failures = BodyFailures(completed),
-                             .exits_test = false,
-                         }
-                     );
-    const auto identity = draft.lifetime_regions.owner();
-    auto deliver = [&] noexcept {
-        return SemIRBody({
-            .id = draft.id,
-            .kind = draft.kind,
-            .provenance_identity = draft.provenance_identity,
-            .inputs = {},
-            .lifetime_regions = std::move(draft.lifetime_regions),
-            .bindings = MutableBodyTable<LocalBinding, LocalBindingID>(identity).seal(),
-            .patterns = MutableBodyTable<Pattern, PatternID>(identity).seal(),
-            .region = std::move(draft.region),
-        });
-    };
-    if (!scenario.empty()) {
-        CHECK(expect_termination(scenario, [&] noexcept { static_cast<void>(deliver()); }));
-    } else {
-        const auto finalized = deliver();
-        CHECK_EQ(finalized.identity(), identity);
-    }
-}
-
-TEST_CASE("SemIR body: normal-completion facts match the expression type and program") {
-    enum class Fact { Missing, Boolean, WrongType, Foreign };
-    const auto cases = std::array {Fact::Missing, Fact::Boolean, Fact::WrongType, Fact::Foreign};
-    for (const auto scenario : cases) {
-        CAPTURE(static_cast<int>(scenario));
-        const auto publish = [&]() noexcept {
+    ct::test(
+        "SemIR body: test operations carry an internal exit through ordinary functions",
+        [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
             auto prepared = prepare_function(sources, diagnostics);
             auto body = body_fixture(prepared);
-            auto expression = boolean_expression(prepared, body);
-            auto foreign_sources = SourceManager();
-            auto foreign_diagnostics = DiagnosticSink();
-            auto foreign = prepare_function(foreign_sources, foreign_diagnostics);
-            if (scenario == Fact::Boolean) {
-                expression.constant = std::get<SemConstant>(expression.value).constant;
-            } else if (scenario == Fact::WrongType) {
-                expression.constant = prepared.builder.intern_constant(
-                    {.type = prepared.builder.builtin_type(BuiltinType::I32),
-                     .value = IntegerConstant::zero()}
-                );
-            } else if (scenario == Fact::Foreign) {
-                expression.constant = foreign.builder.intern_constant(
-                    {.type = foreign.boolean_type, .value = BooleanConstant {.value = true}}
-                );
-            }
-            static_cast<void>(finish_body(prepared, std::move(body), {}, std::move(expression)));
-            REQUIRE(std::move(prepared.builder).finish().has_value());
-        };
-        if (scenario == Fact::Missing || scenario == Fact::Boolean) {
-            publish();
-        } else {
-            CHECK(expect_termination("expression-fact-contract", publish));
-        }
-    }
-}
-
-TEST_CASE("SemIR body invariant: match success must follow from its subject and pattern") {
-    CHECK(rejects_expression(
-        "match-selection-fact",
-        [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
-            auto subject = boolean_expression(prepared, body);
-            subject.constant = std::get<SemConstant>(subject.value).constant;
-            const auto pattern = body.builder.add_pattern({
-                .type = prepared.boolean_type,
-                .value =
-                    LiteralPattern {
-                        .constant = prepared.builder.intern_constant(
-                            {.type = prepared.boolean_type,
-                             .value = BooleanConstant {.value = false}}
-                        )
-                    },
-                .origin = prepared.origin,
-            });
-            auto arms = std::vector<SemMatchArm>();
-            arms.push_back({
-                .pattern = pattern,
-                .bindings = {},
-                .guard = std::nullopt,
-                .body =
-                    SemanticRegion {
-                        .lifetime = body.lifetime,
-                        .origin = prepared.origin,
-                        .statements = {},
-                        .result = boolean_expression(prepared, body),
-                        .result_reachable = true,
-                        .failures = BodyFailures(body.failures),
-                        .exits_test = false,
-                    },
-                .reachable = true,
-                .pattern_always_matches = true,
-                .pattern_bounds = {},
-            });
-            auto result = boolean_expression(prepared, body);
-            result.value = SemMatch {
-                .subject = OwnedSemanticExpression(std::move(subject)),
-                .subject_is_place = false,
-                .arms = std::move(arms),
+            auto operation = boolean_expression(prepared, body);
+            operation.constant.reset();
+            operation.exits_test = true;
+            operation.value = SemReport {
+                .kind = ReportKind::Fail,
+                .condition = std::nullopt,
+                .message = std::nullopt,
+                .condition_source = std::nullopt,
+                .operand_sources = std::nullopt
             };
-            return result;
+            auto statements = std::vector<SemanticStatement>();
+            statements.push_back(
+                {.origin = prepared.origin,
+                 .lifetime = body.lifetime,
+                 .reachable = true,
+                 .value = SemExpressionStatement {std::move(operation)}}
+            );
+            auto result = boolean_expression(prepared, body);
+            [[maybe_unused]] const auto resolved =
+                finish_body(prepared, std::move(body), std::move(statements), std::move(result));
+            const auto program = std::move(prepared.builder).finish();
+            if (!ct::expect(program.has_value())) {
+                return;
+            }
+            ct::expect(program->may_stop_test(prepared.callable));
         }
-    ));
-}
+    );
+
+    ct::test("SemIR body: external calls require their declared result query", [] static noexcept {
+        ct::expect(rejects_expression(
+            "semir-cpp-call-result",
+            [](PreparedFunction& prepared, const BodyFixture& body) static noexcept {
+                auto expression = boolean_expression(prepared, body);
+                expression.value = SemCppCall {
+                    .callee =
+                        CppNameReference {
+                            .context_module = prepared.module_id,
+                            .lookup = CppNameLookup::Global,
+                            .components = {"native", "value"}
+                        },
+                    .arguments = {}
+                };
+                return expression;
+            }
+        ));
+    });
+
+    ct::test("SemIR body: every nested fact is resolved before delivery", [] static noexcept {
+        const auto scenarios = std::array<std::string_view, 4> {
+            "completed tree",
+            "nested region",
+            "catch metadata",
+            "expression type"
+        };
+        ct::each(scenarios, std::identity {}, [](const auto& scenario) static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto prepared = prepare_function(sources, diagnostics);
+            auto body = body_fixture(prepared);
+            const auto completed = prepared.builder.intern_failure_set({});
+            auto region = SemanticRegion {
+                .lifetime = body.lifetime,
+                .origin = prepared.origin,
+                .statements = {},
+                .result = std::nullopt,
+                .result_reachable = false,
+                .failures = BodyFailures(completed),
+                .exits_test = false,
+            };
+            auto attempt = boolean_expression(prepared, body);
+            attempt.failures = BodyFailures(completed);
+            attempt.value = SemTry {
+                .body = OwnedSemanticRegion(std::move(region)),
+                .protected_failures = BodyFailures(completed),
+                .residual_failures = BodyFailures(completed),
+                .arms = {},
+            };
+            auto* nested = std::get_if<SemTry>(&attempt.value);
+            if (!ct::expect(nested != nullptr)) {
+                return;
+            }
+            if (scenario == "nested region") {
+                nested->body->failures = BodyFailures(body.failures);
+            }
+            if (scenario == "catch metadata") {
+                nested->residual_failures = BodyFailures(body.failures);
+            }
+            if (scenario == "expression type") {
+                attempt.type = BodyType(prepared.builder.append_construction_type(
+                    {.value = ConstructionArrayTypeValue {
+                         .element = prepared.boolean_type,
+                         .extent = 1u
+                     }}
+                ));
+            }
+            auto draft = std::move(body.builder)
+                             .finish(
+                                 SemanticRegion {
+                                     .lifetime = body.lifetime,
+                                     .origin = prepared.origin,
+                                     .statements = {},
+                                     .result = std::move(attempt),
+                                     .result_reachable = true,
+                                     .failures = BodyFailures(completed),
+                                     .exits_test = false,
+                                 }
+                             );
+            const auto identity = draft.lifetime_regions.owner();
+            auto deliver = [&] noexcept {
+                return SemIRBody({
+                    .id = draft.id,
+                    .kind = draft.kind,
+                    .provenance_identity = draft.provenance_identity,
+                    .inputs = {},
+                    .lifetime_regions = std::move(draft.lifetime_regions),
+                    .bindings = MutableBodyTable<LocalBinding, LocalBindingID>(identity).seal(),
+                    .patterns = MutableBodyTable<Pattern, PatternID>(identity).seal(),
+                    .region = std::move(draft.region),
+                });
+            };
+            if (scenario != "completed tree") {
+                ct::expect(expect_termination(scenario, [&] noexcept {
+                    static_cast<void>(deliver());
+                })).note(scenario);
+            } else {
+                const auto finalized = deliver();
+                ct::expect(((finalized.identity()) == (identity)))
+                    .note("finalized.identity() == identity", scenario);
+            }
+        });
+    });
+
+    ct::test(
+        "SemIR body: normal-completion facts match the expression type and program",
+        [] static noexcept {
+            enum class Fact { Missing, Boolean, WrongType, Foreign };
+            const auto cases =
+                std::array {Fact::Missing, Fact::Boolean, Fact::WrongType, Fact::Foreign};
+            ct::each(
+                cases,
+                [](Fact fact) static noexcept {
+                    return std::format("fact {}", std::to_underlying(fact));
+                },
+                [&](const auto& scenario) noexcept {
+                    auto sources = SourceManager();
+                    auto diagnostics = DiagnosticSink();
+                    auto prepared = prepare_function(sources, diagnostics);
+                    auto body = body_fixture(prepared);
+                    auto expression = boolean_expression(prepared, body);
+                    auto foreign_sources = SourceManager();
+                    auto foreign_diagnostics = DiagnosticSink();
+                    auto foreign = prepare_function(foreign_sources, foreign_diagnostics);
+                    if (scenario == Fact::Boolean) {
+                        expression.constant = std::get<SemConstant>(expression.value).constant;
+                    } else if (scenario == Fact::WrongType) {
+                        expression.constant = prepared.builder.intern_constant(
+                            {.type = prepared.builder.builtin_type(BuiltinType::I32),
+                             .value = IntegerConstant::zero()}
+                        );
+                    } else if (scenario == Fact::Foreign) {
+                        expression.constant = foreign.builder.intern_constant(
+                            {.type = foreign.boolean_type, .value = BooleanConstant {.value = true}}
+                        );
+                    }
+                    const auto publish = [&]() noexcept {
+                        static_cast<void>(
+                            finish_body(prepared, std::move(body), {}, std::move(expression))
+                        );
+                        return std::move(prepared.builder).finish();
+                    };
+                    if (scenario == Fact::Missing || scenario == Fact::Boolean) {
+                        ct::expect(publish().has_value())
+                            .note("scenario = ", static_cast<int>(scenario));
+                    } else {
+                        const auto death_scenario = scenario == Fact::WrongType
+                            ? "expression-fact-wrong-type"
+                            : "expression-fact-foreign-program";
+                        ct::expect(expect_termination(death_scenario, publish))
+                            .note("scenario = ", static_cast<int>(scenario));
+                    }
+                }
+            );
+        }
+    );
+
+    ct::test(
+        "SemIR body: match success must follow from its subject and pattern",
+        [] static noexcept {
+            ct::expect(rejects_expression(
+                "match-selection-fact",
+                [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
+                    auto subject = boolean_expression(prepared, body);
+                    subject.constant = std::get<SemConstant>(subject.value).constant;
+                    const auto pattern = body.builder.add_pattern({
+                        .type = prepared.boolean_type,
+                        .value =
+                            LiteralPattern {
+                                .constant = prepared.builder.intern_constant(
+                                    {.type = prepared.boolean_type,
+                                     .value = BooleanConstant {.value = false}}
+                                )
+                            },
+                        .origin = prepared.origin,
+                    });
+                    auto arms = std::vector<SemMatchArm>();
+                    arms.push_back({
+                        .pattern = pattern,
+                        .bindings = {},
+                        .guard = std::nullopt,
+                        .body =
+                            SemanticRegion {
+                                .lifetime = body.lifetime,
+                                .origin = prepared.origin,
+                                .statements = {},
+                                .result = boolean_expression(prepared, body),
+                                .result_reachable = true,
+                                .failures = BodyFailures(body.failures),
+                                .exits_test = false,
+                            },
+                        .reachable = true,
+                        .pattern_always_matches = true,
+                        .pattern_bounds = {},
+                    });
+                    auto result = boolean_expression(prepared, body);
+                    result.value = SemMatch {
+                        .subject = OwnedSemanticExpression(std::move(subject)),
+                        .subject_is_place = false,
+                        .arms = std::move(arms),
+                    };
+                    return result;
+                }
+            ));
+        }
+    );
+});
+
+} // namespace

@@ -3,23 +3,23 @@ import std::utf.codec using { decode_utf8_prefix, encode_utf8 };
 import std::utf.error using UTF8Error;
 import std::utf.validation using validate_utf8;
 
-private const fn check_prefix() {
+const test "UTF8: prefix decoding stops before later bytes" {
     try {
         let empty: [u8; 0] = [];
         match decode_utf8_prefix(empty)? {
             .End => {},
-            .Scalar(_, _) => check(false),
+            .Scalar(_, _) => fail("empty input must have no scalar"),
         }
         let prefix: [u8; 2] = [0x61, 0xff];
         match decode_utf8_prefix(prefix)? {
-            .End => check(false),
+            .End => fail("nonempty input must have a scalar"),
             .Scalar(value, width) => {
                 check(value == 'a');
                 check(width == 1);
             },
         }
     } catch {
-        UTF8Error(_) => check(false),
+        UTF8Error(_) => fail("valid encoding must be accepted"),
     }
 }
 
@@ -29,7 +29,7 @@ private struct ScalarCase {
     bytes: [u8; 4],
 }
 
-private const fn check_boundaries() {
+const test "UTF8: scalar boundaries have the specified encoding and decoding" {
     let cases = [
         ScalarCase {
             scalar: 0,
@@ -97,20 +97,20 @@ private const fn check_boundaries() {
             let bytes = item.bytes.as_slice().slice(0, item.width);
             validate_utf8(bytes)?;
             match decode_utf8_prefix(bytes)? {
-                .End => check(false),
+                .End => fail("nonempty input must have a scalar"),
                 .Scalar(value, width) => {
                     check((value as u32) == item.scalar);
                     check(width == item.width);
                 },
             }
         } catch {
-            UTF8Error(_) => check(false),
-            UnicodeScalarError(_) => check(false),
+            UTF8Error(_) => fail("valid encoding must be accepted"),
+            UnicodeScalarError(_) => fail("valid scalar must be accepted"),
         }
     }
 }
 
-private const fn check_invalid_scalars() {
+const test "UTF8: surrogate and out-of-range values are rejected" {
     let invalid: [u32; 4] = [0xd800, 0xdfff, 0x110000, 0xffffffff];
     for value in invalid {
         var rejected = false;
@@ -123,7 +123,7 @@ private const fn check_invalid_scalars() {
     }
 }
 
-const test "UTF8: encoding and scalar numbers support constant publication" {
+const test "UTF8: encoded arrays freeze as constant slices" {
     const encoded = encode_utf8('😀');
     check(encoded.width == 4);
     check(encoded.bytes == [0xf0, 0x9f, 0x98, 0x80]);
@@ -133,27 +133,6 @@ const test "UTF8: encoding and scalar numbers support constant publication" {
     check(bytes[1] == 0xa9);
     check(bytes[2] == 0);
     check(bytes[3] == 0);
-    const scalar = ('\u{10ffff}' as u32);
-    check(scalar == 0x10ffff);
-    for character in [
-            '\u{0}',
-            '\u{7f}',
-            '\u{80}',
-            '\u{7ff}',
-            '\u{800}',
-            '\u{d7ff}',
-            '\u{e000}',
-            '\u{ffff}',
-            '\u{10000}',
-            '\u{10ffff}'
-        ] {
-        let value = encode_utf8(character);
-        try {
-            validate_utf8(value.bytes.as_slice().slice(0, value.width))?;
-        } catch {
-            UTF8Error(_) => fail("constant encoding must produce valid UTF-8"),
-        }
-    }
 }
 
 test "UTF8: every Unicode scalar round trips through encoding and prefix decoding" {
@@ -176,30 +155,6 @@ test "UTF8: every Unicode scalar round trips through encoding and prefix decodin
             UnicodeScalarError(_) => fail("valid Unicode scalar was rejected"),
         }
     }
-}
-
-test "UTF8: prefix decoding stops before later bytes" {
-    check_prefix();
-}
-
-const test "UTF8: constant prefix decoding stops before later bytes" {
-    check_prefix();
-}
-
-test "UTF8: scalar boundaries have the specified encoding and decoding" {
-    check_boundaries();
-}
-
-const test "UTF8: constant scalar boundaries have the specified encoding and decoding" {
-    check_boundaries();
-}
-
-test "UTF8: surrogate and out-of-range values are rejected" {
-    check_invalid_scalars();
-}
-
-const test "UTF8: constant surrogate and out-of-range values are rejected" {
-    check_invalid_scalars();
 }
 
 const test "UTF8: scalar and decoded results freeze as public constants" {

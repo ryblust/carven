@@ -1,16 +1,21 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.compiler.diagnostics.temporary_lifetimes;
 
+import :diagnostics.code;
+import :test.harness.framework;
 import :test.internal.compiler.diagnostics.fixture;
 import std;
 
-TEST_CASE("Compiler diagnostics: condition temporaries and rejected match bindings end") {
-    static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
-        {.name = "if condition array backing",
-         .source = R"(
+namespace {
+
+namespace ct = carven::testing;
+
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Compiler diagnostics: condition temporaries and rejected match bindings end",
+        [] static noexcept {
+            static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
+                {.name = "if condition array backing",
+                 .source = R"(
              const fn expose(values: [i32; 2], &out: ptr<i32>) -> bool {
                  out = addressof(values[0]);
                  return true;
@@ -22,10 +27,10 @@ TEST_CASE("Compiler diagnostics: condition temporaries and rejected match bindin
                  }
              }
          )",
-         .code = "CV-CONST-EVALUATION",
-         .primary_text = "*saved"},
-        {.name = "rejected match guard binding",
-         .source = R"(
+                 .code = DiagnosticCode::ConstEvaluation,
+                 .primary_text = "*saved"},
+                {.name = "rejected match guard binding",
+                 .source = R"(
              const fn reject(address: ptr<i32>, &out: ptr<i32>) -> bool {
                  out = address;
                  return false;
@@ -42,36 +47,39 @@ TEST_CASE("Compiler diagnostics: condition temporaries and rejected match bindin
                  check(selected == 1);
              }
          )",
-         .code = "CV-CONST-EVALUATION",
-         .primary_text = "*saved"},
-    });
-    check_compiler_errors(cases);
-}
+                 .code = DiagnosticCode::ConstEvaluation,
+                 .primary_text = "*saved"},
+            });
+            check_compiler_errors(cases);
+        }
+    );
 
-TEST_CASE("Compiler diagnostics: slice element addresses grant only Read access") {
-    static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
-        {.name = "slice index cannot grant Write pointer",
-         .source = R"(
+    ct::test(
+        "Compiler diagnostics: slice element addresses grant only Read access",
+        [] static noexcept {
+            static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
+                {.name = "slice index cannot grant Write pointer",
+                 .source = R"(
              fn invalid() {
                  var values = [1, 2];
                  var view = values.as_slice();
                  let address = addressof(&view[0]);
              }
          )",
-         .code = "CV-ACCESS-IMMUTABLE",
-         .primary_text = "&view[0]"},
-        {.name = "slice index cannot transfer backing owner",
-         .source = R"(
+                 .code = DiagnosticCode::AccessImmutable,
+                 .primary_text = "&view[0]"},
+                {.name = "slice index cannot transfer backing owner",
+                 .source = R"(
              fn invalid() {
                  var values = [1, 2];
                  let view = values.as_slice();
                  let element = &&view[0];
              }
          )",
-         .code = "CV-ACCESS-TAKE-OPERAND",
-         .primary_text = "&&"},
-        {.name = "slice element fields stay read-only",
-         .source = R"(
+                 .code = DiagnosticCode::AccessTakeOperand,
+                 .primary_text = "&&"},
+                {.name = "slice element fields stay read-only",
+                 .source = R"(
              struct Item { number: i32 }
              fn invalid() {
                  var values = [Item { number: 1 }];
@@ -79,10 +87,10 @@ TEST_CASE("Compiler diagnostics: slice element addresses grant only Read access"
                  view[0].number = 2;
              }
          )",
-         .code = "CV-ACCESS-IMMUTABLE",
-         .primary_text = "view[0].number"},
-        {.name = "native slice element member cannot grant Write pointer",
-         .source = R"(
+                 .code = DiagnosticCode::AccessImmutable,
+                 .primary_text = "view[0].number"},
+                {.name = "native slice element member cannot grant Write pointer",
+                 .source = R"(
              import <utility>;
              fn invalid() {
                  var values = [::std::pair<i32, i32> { 1, 2 }];
@@ -90,10 +98,10 @@ TEST_CASE("Compiler diagnostics: slice element addresses grant only Read access"
                  let address = addressof(&view[0].first);
              }
          )",
-         .code = "CV-ACCESS-IMMUTABLE",
-         .primary_text = "&view[0].first"},
-        {.name = "native slice element index cannot grant Write pointer",
-         .source = R"(
+                 .code = DiagnosticCode::AccessImmutable,
+                 .primary_text = "&view[0].first"},
+                {.name = "native slice element index cannot grant Write pointer",
+                 .source = R"(
              import <vector>;
              fn invalid() {
                  var values = [::std::vector<i32> { 1, 2 }];
@@ -101,8 +109,12 @@ TEST_CASE("Compiler diagnostics: slice element addresses grant only Read access"
                  let address = addressof(&view[0][0]);
              }
          )",
-         .code = "CV-ACCESS-IMMUTABLE",
-         .primary_text = "&view[0][0]"},
-    });
-    check_compiler_errors(cases);
-}
+                 .code = DiagnosticCode::AccessImmutable,
+                 .primary_text = "&view[0][0]"},
+            });
+            check_compiler_errors(cases);
+        }
+    );
+});
+
+} // namespace

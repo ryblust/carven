@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.backend.generation.definitions;
 
 import :backend.generation.linkage;
@@ -13,10 +9,13 @@ import :backend.target.traversal;
 import :backend.target;
 import :semantic.semir.decl;
 import :semantic.semir.program;
+import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
+
+namespace ct = carven::testing;
 
 struct Definitions final {
     std::flat_set<std::string> functions;
@@ -35,12 +34,17 @@ auto Definitions::enter_declaration(const TargetDecl& declaration) noexcept -> b
 
 } // namespace
 
-TEST_CASE("Generation: native definitions follow residual references and selected test roots") {
-    const auto modes = std::array {TestGenerationMode::None, TestGenerationMode::RunnerHeader};
-    for (const auto mode : modes) {
-        CAPTURE(static_cast<int>(mode));
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(R"(
+namespace {
+
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Generation: native definitions follow residual references and selected test roots",
+        [] static noexcept {
+            const auto modes =
+                std::array {TestGenerationMode::None, TestGenerationMode::RunnerHeader};
+            for (const auto mode : modes) {
+                const auto compilation = PlannedCompilation::build(
+                    analyze_test_program(R"(
                 private const fn compile_only(value: i32) -> i32 => value + 1;
                 const answer = compile_only(40);
                 private fn dead_left(value: i32) -> i32 {
@@ -72,30 +76,46 @@ TEST_CASE("Generation: native definitions follow residual references and selecte
                 test "selected root" { check(test_leaf() == 5); }
                 const test "analysis root" { check(compile_only(1) == 2); }
             )"),
-            {.test_mode = mode,
-             .linkage_domain = *LinkageDomain::explicit_value("definition_selection")}
-        );
-        auto definitions = Definitions();
-        for (const auto artifact : compilation.target().artifacts()) {
-            const auto unit = lower_artifact(compilation, artifact.id);
-            REQUIRE(traverse_target_unit(unit.sections(), definitions));
+                    {.test_mode = mode,
+                     .linkage_domain = *LinkageDomain::explicit_value("definition_selection")}
+                );
+                auto definitions = Definitions();
+                for (const auto artifact : compilation.target().artifacts()) {
+                    const auto unit = lower_artifact(compilation, artifact.id);
+                    if (!(ct::expect(traverse_target_unit(unit.sections(), definitions))
+                              .note("static_cast<int>(mode): ", static_cast<int>(mode)))) {
+                        return;
+                    }
+                }
+                const auto absent = std::array<std::string_view, 6> {
+                    "compile_only",
+                    "dead_left",
+                    "dead_right",
+                    "inactive",
+                    "dead_closure_leaf",
+                    "dead_factory"
+                };
+                for (const auto entry : compilation.semantic().declarations().functions()) {
+                    const auto source =
+                        compilation.semantic().provenance().spelling(entry.value.name);
+                    const auto name =
+                        compilation.target().names().function_identifier(entry.id).spelling();
+                    const auto expected = source == "test_leaf"
+                        ? mode != TestGenerationMode::None
+                        : !std::ranges::contains(absent, source);
+                    ct::expect(definitions.functions.contains(std::string(name)) == expected)
+                        .note(
+                            "static_cast<int>(mode): ",
+                            static_cast<int>(mode),
+                            "source: ",
+                            source
+                        );
+                }
+                ct::expect(definitions.closures == 1uz)
+                    .note("static_cast<int>(mode): ", static_cast<int>(mode));
+            }
         }
-        const auto absent = std::array<std::string_view, 6> {
-            "compile_only",
-            "dead_left",
-            "dead_right",
-            "inactive",
-            "dead_closure_leaf",
-            "dead_factory"
-        };
-        for (const auto entry : compilation.semantic().declarations().functions()) {
-            const auto source = compilation.semantic().provenance().spelling(entry.value.name);
-            const auto name = compilation.target().names().function_identifier(entry.id).spelling();
-            CAPTURE(source);
-            const auto expected = source == "test_leaf" ? mode != TestGenerationMode::None
-                                                        : !std::ranges::contains(absent, source);
-            CHECK(definitions.functions.contains(std::string(name)) == expected);
-        }
-        CHECK(definitions.closures == 1uz);
-    }
-}
+    );
+});
+
+} // namespace

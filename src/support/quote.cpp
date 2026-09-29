@@ -1,13 +1,13 @@
-module carven:support.dump.impl;
+module carven:support.quote.impl;
 
-import :support.dump;
+import :support.quote;
 import :support.utf8;
 import std;
 
-auto escape_dump_value(std::string_view value) noexcept -> std::string {
+auto quote_text(std::string_view value) noexcept -> std::string {
     static constexpr auto digits = std::string_view("0123456789abcdef");
-    auto result = std::string();
-    result.reserve(value.size());
+    auto result = std::string("\"");
+    result.reserve(value.size() + 2);
 
     const auto append_hex_escape = [&](unsigned char byte) noexcept {
         result += "\\x";
@@ -45,9 +45,6 @@ auto escape_dump_value(std::string_view value) noexcept -> std::string {
         }
         ++offset;
     }
+    result += '"';
     return result;
-}
-
-auto quote_dump_value(std::string_view value) noexcept -> std::string {
-    return std::format("\"{}\"", escape_dump_value(value));
 }

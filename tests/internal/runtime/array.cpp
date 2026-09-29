@@ -1,22 +1,14 @@
 module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
 #include <carven/runtime/array.hpp>
 
 module carven:test.internal.runtime.array;
 
+import :test.harness.framework;
 import std;
 
-TEST_CASE("Runtime: checked array indexing preserves references") {
-    using namespace carven::runtime;
-    auto values = std::array<std::int32_t, 3> {1, 2, 3};
-    checked_array_index(values, std::int32_t {0}) = 4;
-    checked_array_index(values, std::size_t {2}) = 6;
-    CHECK_EQ(values[0], 4);
-    CHECK_EQ(values[2], 6);
-}
-
 namespace {
+
+namespace ct = carven::testing;
 
 struct ArrayElement final {
     int value;
@@ -47,14 +39,30 @@ AdoptedArrayElement::~AdoptedArrayElement() noexcept {
 
 } // namespace
 
-TEST_CASE("Runtime: array adoption directly constructs ordered elements") {
-    auto trace = std::vector<int>();
-    {
-        const auto source = std::array {ArrayElement {1, &trace}, ArrayElement {2, &trace}};
-        const auto adopted =
-            carven::runtime::adopt_array<std::array<AdoptedArrayElement, 2>, false>(source);
-        CHECK_EQ(adopted.size(), 2);
-        CHECK(trace == std::vector<int> {1, 2});
-    }
-    CHECK(trace == std::vector<int> {1, 2, -2, -1});
-}
+namespace {
+
+const ct::Suite tests([] static noexcept {
+    ct::test("Runtime: checked array indexing preserves references", [] static noexcept {
+        using namespace carven::runtime;
+        auto values = std::array<std::int32_t, 3> {1, 2, 3};
+        checked_array_index(values, std::int32_t {0}) = 4;
+        checked_array_index(values, std::size_t {2}) = 6;
+        ct::expect_equal(values[0], 4);
+        ct::expect_equal(values[2], 6);
+    });
+
+
+    ct::test("Runtime: array adoption directly constructs ordered elements", [] static noexcept {
+        auto trace = std::vector<int>();
+        {
+            const auto source = std::array {ArrayElement {1, &trace}, ArrayElement {2, &trace}};
+            const auto adopted =
+                carven::runtime::adopt_array<std::array<AdoptedArrayElement, 2>, false>(source);
+            ct::expect_equal(adopted.size(), 2uz);
+            ct::expect(trace == std::vector<int> {1, 2});
+        }
+        ct::expect(trace == std::vector<int> {1, 2, -2, -1});
+    });
+});
+
+} // namespace

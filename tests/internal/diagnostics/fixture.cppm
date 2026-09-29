@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.diagnostics.fixture;
 
 import :diagnostics.code;
@@ -9,6 +5,7 @@ import :diagnostics.diagnostic;
 import :diagnostics.report;
 import :source.manager;
 import :source.text;
+import :test.harness.framework;
 import std;
 
 auto localized(Diagnostic diagnostic, SourceID source_id) noexcept -> Diagnostic {

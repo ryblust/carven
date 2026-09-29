@@ -1,70 +1,60 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.support.file;
 
 import :support.file;
+import :test.harness.directory;
+import :test.harness.framework;
 import std;
 
 namespace {
 
-class TemporaryPath final {
-public:
-    TemporaryPath() noexcept {
-        auto error = std::error_code();
-        const auto temporary_directory = std::filesystem::temp_directory_path(error);
-        if (error) {
+namespace ct = carven::testing;
+
+const ct::Suite tests([] static noexcept {
+    ct::test("Support file: writes and reads exact bytes", [] static noexcept {
+        const auto temporary = ct::TempDirectory("carven-support-file");
+        const auto path = temporary.path("bytes");
+        const auto expected = std::string("alpha\0beta\n", 11);
+
+        const auto written = write_file(path, expected);
+        if (!ct::expect(written.has_value())) {
             return;
         }
-
-        static auto sequence = std::atomic<std::uint64_t>();
-        value = temporary_directory
-            / std::format(
-                    "carven-support-test-{}-{}",
-                    std::chrono::steady_clock::now().time_since_epoch().count(),
-                    sequence.fetch_add(1, std::memory_order_relaxed)
-            );
-    }
-
-    TemporaryPath(const TemporaryPath&) = delete;
-    auto operator=(const TemporaryPath&) -> TemporaryPath& = delete;
-
-    ~TemporaryPath() noexcept {
-        auto error = std::error_code();
-        if (!value.empty()) {
-            std::filesystem::remove(value, error);
+        auto input = std::ifstream(path, std::ios::binary);
+        if (!ct::expect(input.is_open())) {
+            return;
         }
-    }
+        const auto actual =
+            std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        ct::expect(!input.bad());
+        ct::expect_equal(actual, expected);
 
-    auto path() const noexcept -> const std::filesystem::path& { return value; }
+        const auto read_path = temporary.path("read-input");
+        auto output = std::ofstream(read_path, std::ios::binary | std::ios::trunc);
+        if (!ct::expect(output.is_open())) {
+            return;
+        }
+        output.write(expected.data(), static_cast<std::streamsize>(expected.size()));
+        output.close();
+        if (!ct::expect(output.good())) {
+            return;
+        }
+        const auto read = read_file(read_path, expected.size());
+        if (!ct::expect(read.has_value())) {
+            return;
+        }
+        ct::expect_equal(*read, expected);
+    });
 
-    auto ready() const noexcept -> bool { return !value.empty(); }
+    ct::test("Support file: missing paths report the failed operation", [] static noexcept {
+        const auto temporary = ct::TempDirectory("carven-support-file");
 
-private:
-    std::filesystem::path value;
-};
+        const auto read = read_file(temporary.path("missing"), 1024);
+        if (!ct::expect(!read.has_value())) {
+            return;
+        }
+        ct::expect_equal(read.error().operation, FileOperation::Inspect);
+        ct::expect(read.error().code);
+    });
+});
 
 } // namespace
-
-TEST_CASE("Support file: writes and reads exact bytes") {
-    const auto temporary = TemporaryPath();
-    REQUIRE(temporary.ready());
-    const auto expected = std::string("alpha\0beta\n", 11);
-
-    const auto written = write_file(temporary.path(), expected);
-    REQUIRE(written.has_value());
-    const auto read = read_file(temporary.path(), expected.size());
-    REQUIRE(read.has_value());
-    CHECK_EQ(*read, expected);
-}
-
-TEST_CASE("Support file: missing paths report the failed operation") {
-    const auto temporary = TemporaryPath();
-    REQUIRE(temporary.ready());
-
-    const auto read = read_file(temporary.path(), 1024);
-    REQUIRE(!read.has_value());
-    CHECK_EQ(read.error().operation, FileOperation::Inspect);
-    CHECK(read.error().code);
-}

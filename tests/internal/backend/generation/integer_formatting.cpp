@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.backend.generation.integer_formatting;
 
 import :backend.generation.linkage;
@@ -13,10 +9,13 @@ import :backend.target.name;
 import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target;
+import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
+
+namespace ct = carven::testing;
 
 struct IntegerFormatQuery final {
     std::vector<std::vector<TargetTemplateArgument>> policies;
@@ -47,7 +46,7 @@ auto IntegerFormatQuery::enter_expression(
         if (name != nullptr
             && (name->spelling() == "integer" || name->spelling() == "integer_dynamic_width")) {
             policies.push_back(call->template_arguments);
-            CHECK(call->arguments.size() == 2uz);
+            ct::expect(call->arguments.size() == 2uz);
         }
     }
     return true;
@@ -62,39 +61,55 @@ auto inspect(std::string source) noexcept -> IntegerFormatQuery {
     auto query = IntegerFormatQuery {.policies = {}, .generic_calls = 0uz, .lambdas = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
-        REQUIRE(traverse_target_unit(unit.sections(), query));
+        ct::require(traverse_target_unit(unit.sections(), query));
     }
     return query;
 }
 
 } // namespace
 
-TEST_CASE("Generation: parsed integer formats select direct writes with scalar template policies") {
-    const auto query = inspect(R"(
+namespace {
+
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Generation: parsed integer formats select direct writes with scalar template policies",
+        [] static noexcept {
+            const auto query = inspect(R"(
         fn format(value: u64) -> String => f"value={value:016X};";
         fn append(&output: String, first: i32, second: i32) {
             output.append_format(f"{first:011d}/{second:011d}");
         }
         fn wide(value: i32) -> String => f"{value:65537}";
     )");
-    CHECK(query.generic_calls == 0uz);
-    REQUIRE(query.policies.size() == 4uz);
-    const auto bases = std::array {16u, 10u, 10u, 10u};
-    for (const auto& [index, policy] : std::views::enumerate(query.policies)) {
-        REQUIRE(policy.size() == 3uz);
-        REQUIRE(std::holds_alternative<TargetIntegerLiteral>(policy[0]));
-        CHECK(std::get<TargetIntegerLiteral>(policy[0]).magnitude == bases[index]);
-        REQUIRE(std::holds_alternative<bool>(policy[1]));
-        CHECK(std::get<bool>(policy[1]) == (index == 0uz));
-        REQUIRE(std::holds_alternative<bool>(policy[2]));
-        CHECK(std::get<bool>(policy[2]) == (index != 3uz));
-    }
-}
+            ct::expect(query.generic_calls == 0uz);
+            if (!ct::expect(query.policies.size() == 4uz)) {
+                return;
+            }
+            const auto bases = std::array {16u, 10u, 10u, 10u};
+            for (const auto& [index, policy] : std::views::enumerate(query.policies)) {
+                if (!ct::expect(policy.size() == 3uz)) {
+                    return;
+                }
+                if (!ct::expect(std::holds_alternative<TargetIntegerLiteral>(policy[0]))) {
+                    return;
+                }
+                ct::expect(std::get<TargetIntegerLiteral>(policy[0]).magnitude == bases[index]);
+                if (!ct::expect(std::holds_alternative<bool>(policy[1]))) {
+                    return;
+                }
+                ct::expect(std::get<bool>(policy[1]) == (index == 0uz));
+                if (!ct::expect(std::holds_alternative<bool>(policy[2]))) {
+                    return;
+                }
+                ct::expect(std::get<bool>(policy[2]) == (index != 3uz));
+            }
+        }
+    );
 
-TEST_CASE(
-    "Generation: unsupported integer specifications and native protocols retain complete formatting"
-) {
-    const auto query = inspect(R"(
+    ct::test(
+        "Generation: unsupported integer specifications and native protocols retain complete formatting",
+        [] static noexcept {
+            const auto query = inspect(R"(
         import "probe.hpp";
         fn native(value: i32) -> String => f"{value:08x}/{::probe::value()}";
         fn dynamic(value: i32, width: i32) -> String => f"{value:>{width}d}";
@@ -104,27 +119,34 @@ TEST_CASE(
         fn large(value: i32) -> String => f"{value:2147483648}";
         fn text(value: i32, text: str) -> String => f"{value:08x}/{text:>8}";
     )");
-    CHECK(query.policies.empty());
-    CHECK(query.generic_calls == 7uz);
-}
+            ct::expect(query.policies.empty());
+            ct::expect(query.generic_calls == 7uz);
+        }
+    );
 
-TEST_CASE("Generation: known dynamic width selects integer writes") {
-    const auto query = inspect(R"(
+    ct::test("Generation: known dynamic width selects integer writes", [] static noexcept {
+        const auto query = inspect(R"(
         const width = 16;
         fn format(value: u64) -> String => f"{value:0{width}X}";
         fn zero(value: i32) -> String => f"{value:0{0}}";
         fn discarded(value: i32) { f"{value:0{4}}"; }
     )");
-    CHECK(query.generic_calls == 0uz);
-    REQUIRE(query.policies.size() == 3uz);
-    for (const auto& policy : query.policies) {
-        REQUIRE(policy.size() == 3uz);
-        CHECK(std::get<bool>(policy[2]));
-    }
-}
+        ct::expect(query.generic_calls == 0uz);
+        if (!ct::expect(query.policies.size() == 3uz)) {
+            return;
+        }
+        for (const auto& policy : query.policies) {
+            if (!ct::expect(policy.size() == 3uz)) {
+                return;
+            }
+            ct::expect(std::get<bool>(policy[2]));
+        }
+    });
 
-TEST_CASE("Generation: mixed builtin formatting and append use direct writes") {
-    const auto query = inspect(R"(
+    ct::test(
+        "Generation: mixed builtin formatting and append use direct writes",
+        [] static noexcept {
+            const auto query = inspect(R"(
         fn format(value: u64, text: str, owned: String, flag: bool, scalar: char) -> String {
             return f"{text}/{owned}/{value:016X}/{flag}/{scalar}";
         }
@@ -132,22 +154,28 @@ TEST_CASE("Generation: mixed builtin formatting and append use direct writes") {
             output.append_format(f"{text}/{value:04}/{flag}");
         }
     )");
-    CHECK(query.generic_calls == 0uz);
-    CHECK(query.policies.size() == 2uz);
-    CHECK(query.lambdas == 0uz);
-}
+            ct::expect(query.generic_calls == 0uz);
+            ct::expect(query.policies.size() == 2uz);
+            ct::expect(query.lambdas == 0uz);
+        }
+    );
 
-TEST_CASE("Generation: nested owning formatting retains its expression construction boundary") {
-    const auto query = inspect(R"(
+    ct::test(
+        "Generation: nested owning formatting retains its expression construction boundary",
+        [] static noexcept {
+            const auto query = inspect(R"(
         fn length(value: i32, text: String) -> usize => f"{value}/{text}".len();
     )");
-    CHECK(query.generic_calls == 0uz);
-    CHECK(query.policies.size() == 1uz);
-    CHECK(query.lambdas > 0uz);
-}
+            ct::expect(query.generic_calls == 0uz);
+            ct::expect(query.policies.size() == 1uz);
+            ct::expect(query.lambdas > 0uz);
+        }
+    );
 
-TEST_CASE("Generation: dynamic integer widths retain policies across delivery forms") {
-    const auto query = inspect(R"(
+    ct::test(
+        "Generation: dynamic integer widths retain policies across delivery forms",
+        [] static noexcept {
+            const auto query = inspect(R"(
         fn direct(value: i32, width: i32, text: str) -> String => f"{42:04}/{value:0{width}x}/{text}/{value:d}";
         fn nested(value: i32, width: u16) -> usize => f"{value:{width}B}".len();
         fn append(&out: String, value: i32, width: i16) {
@@ -155,21 +183,27 @@ TEST_CASE("Generation: dynamic integer widths retain policies across delivery fo
         }
         fn discarded(value: i32, width: i8) { f"{value:{width}}"; }
     )");
-    CHECK(query.generic_calls == 0uz);
-    REQUIRE(query.policies.size() == 6uz);
-    const auto bases = std::array {16u, 10u, 2u, 16u, 8u, 10u};
-    for (const auto& [index, policy] : std::views::enumerate(query.policies)) {
-        CHECK(
-            policy
-            == std::vector<TargetTemplateArgument> {
-                TargetIntegerLiteral {
-                    .negative = false,
-                    .magnitude = bases[index],
-                    .suffix = TargetIntegerSuffix::None
-                },
-                index == 2uz || index == 3uz,
-                index == 0uz || index == 3uz
+            ct::expect(query.generic_calls == 0uz);
+            if (!ct::expect(query.policies.size() == 6uz)) {
+                return;
             }
-        );
-    }
-}
+            const auto bases = std::array {16u, 10u, 2u, 16u, 8u, 10u};
+            for (const auto& [index, policy] : std::views::enumerate(query.policies)) {
+                ct::expect(
+                    policy
+                    == std::vector<TargetTemplateArgument> {
+                        TargetIntegerLiteral {
+                            .negative = false,
+                            .magnitude = bases[index],
+                            .suffix = TargetIntegerSuffix::None
+                        },
+                        index == 2uz || index == 3uz,
+                        index == 0uz || index == 3uz
+                    }
+                );
+            }
+        }
+    );
+});
+
+} // namespace

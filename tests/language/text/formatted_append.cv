@@ -92,6 +92,13 @@ test "Formatted append: literal known and grouped interpolation extend existing 
     check(owned == saved);
 }
 
+test "Formatted append: C strings contribute text including empty and Unicode values" {
+    let value = c"123";
+    var text: String = "prefix:";
+    text.append_format(f"<{value}>/{c""}/{c"我😀"}");
+    check(text == "prefix:<123>//我😀");
+}
+
 test "Formatted append: scalar snapshots and String reads preserve hole evaluation order" {
     var result: String = "prefix:";
     var counter = 2;

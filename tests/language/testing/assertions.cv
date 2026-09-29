@@ -46,7 +46,7 @@ fn stop_message() -> str {
     fail("message must not execute");
 }
 
-test "runtime messages are conditional" {
+test "Assertions: known successful conditions skip messages" {
     check(true, stop_message());
     require(true, stop_message());
     assert(true, stop_message());
@@ -71,8 +71,5 @@ test "runtime messages are conditional" {
         }
     );
     assert(calls == 0);
-    println("tested");
 }
 
-verify();
-println("passed");

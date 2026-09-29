@@ -171,8 +171,12 @@ source-layout and style rules apply to handwritten code.
 
 ## Tests
 
-Name C++ test cases `"Area: behavior"`. Use `REQUIRE` for premises and `CHECK`
-for conclusions. Name table data before iterating it.
+Name C++ test cases `"Area: behavior"`, with a stable owning component and a
+concise description of the observed behavior. Name table data before iterating
+it and preserve each input's identity in assertion context. Use comparison
+assertions for printable values and guard premises before dereferencing or
+indexing. [Testing](testing.md#assertions) defines shared runner integration,
+assertion reporting, and failure control flow.
 
 ## Comments
 

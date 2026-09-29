@@ -102,6 +102,11 @@ Examples contain `input.cv` and `expected.cv`; C++ tests discover them and call
 the formatter directly in one process to check exact output and idempotence.
 Repository `.cv` inputs exercise parsing, idempotence, and horizontal-whitespace
 normalization. Invalid-input tests check lexical and syntax errors.
+The ordinary C++ cases and repository corpus are separately registered Xmake
+tests. They use the C++ framework under `tests/harness/`; the shared runner
+selects them with `--exclude "Graver corpus:*"`
+and `--filter "Graver corpus:*"`, respectively; `--test "Area: behavior"` selects
+one exact C++ case when running the binary directly.
 
 Each CLI scenario is registered separately with Xmake. The harness checks exit
 status, both streams, and file changes in an isolated temporary directory.

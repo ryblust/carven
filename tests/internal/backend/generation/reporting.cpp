@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.backend.generation.reporting;
 
 import :backend.generation.linkage;
@@ -13,10 +9,13 @@ import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target.type;
 import :backend.target;
+import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
+
+namespace ct = carven::testing;
 
 struct ReportQuery final {
     const TargetUnit& unit;
@@ -52,37 +51,48 @@ auto ReportQuery::enter_statement(const TargetStmt& statement) noexcept -> bool 
 
 } // namespace
 
-TEST_CASE("Generation: known reports preserve effects and omit unnecessary report work") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+namespace {
+
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Generation: known reports preserve effects and omit unnecessary report work",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             fn touch() -> bool { return false; }
             fn successful() { assert(touch() || true, "skipped"); assert(1 == 1); }
             fn fatal() { assert(false); touch(); }
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("reporting")}
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("reporting")}
+            );
+            auto branches = 0uz;
+            auto writers = 0uz;
+            auto assertions = 0uz;
+            auto calls = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = ReportQuery {
+                    .unit = unit,
+                    .branches = 0uz,
+                    .writers = 0uz,
+                    .assertions = 0uz,
+                    .calls = 0uz
+                };
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+                branches += query.branches;
+                writers += query.writers;
+                assertions += query.assertions;
+                calls += query.calls;
+            }
+            ct::expect(branches == 0uz);
+            ct::expect(writers == 0uz);
+            ct::expect(assertions == 1uz);
+            ct::expect(calls == 1uz);
+        }
     );
-    auto branches = 0uz;
-    auto writers = 0uz;
-    auto assertions = 0uz;
-    auto calls = 0uz;
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = ReportQuery {
-            .unit = unit,
-            .branches = 0uz,
-            .writers = 0uz,
-            .assertions = 0uz,
-            .calls = 0uz
-        };
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-        branches += query.branches;
-        writers += query.writers;
-        assertions += query.assertions;
-        calls += query.calls;
-    }
-    CHECK(branches == 0uz);
-    CHECK(writers == 0uz);
-    CHECK(assertions == 1uz);
-    CHECK(calls == 1uz);
-}
+});
+
+} // namespace

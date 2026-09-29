@@ -65,9 +65,13 @@ target("carven-test-interop")
     end
     on_test(function (target, opt)
         local name = opt.name:match("([^/]+)$")
-        local arguments = name == "behavior" and {} or {name}
-        import("harness.process", {rootdir = interop_dir})(target, arguments,
-            name == "behavior" and 0 or 73, name)
+        if name == "behavior" then
+            import("generated", {
+                rootdir = path.join(os.projectdir(), "tests", "harness"),
+            }).main(target, "interop behavior")
+        else
+            import("harness.process", {rootdir = interop_dir})(target, {name}, 73, name)
+        end
         return true
     end)
 target_end()

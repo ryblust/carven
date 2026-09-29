@@ -1,15 +1,16 @@
 module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
 #include <carven/runtime/numeric.hpp>
 #include <concepts>
 #include <limits>
 
 module carven:test.internal.runtime.numeric;
 
+import :test.harness.framework;
 import :test.internal.harness.death;
 
 namespace {
+
+namespace ct = carven::testing;
 
 template<typename Integer>
 constexpr auto ordinary_integer_contract() noexcept -> bool {
@@ -88,31 +89,37 @@ static_assert(
 
 } // namespace
 
-TEST_CASE("Runtime: integer helpers cover every fixed width") {
-    static_assert(ordinary_integer_contract<std::int8_t>());
-    static_assert(ordinary_integer_contract<std::int16_t>());
-    static_assert(ordinary_integer_contract<std::int32_t>());
-    static_assert(ordinary_integer_contract<std::int64_t>());
-    static_assert(ordinary_integer_contract<std::uint8_t>());
-    static_assert(ordinary_integer_contract<std::uint16_t>());
-    static_assert(ordinary_integer_contract<std::uint32_t>());
-    static_assert(ordinary_integer_contract<std::uint64_t>());
-    CHECK(ordinary_integer_contract<std::ptrdiff_t>());
-    CHECK(ordinary_integer_contract<std::size_t>());
-}
+namespace {
 
-TEST_CASE("Runtime: invalid arithmetic always terminates") {
-    using namespace carven::runtime;
-    CHECK(expect_termination("runtime-integer-divide-zero", []() static noexcept {
-        static_cast<void>(integer_divide(std::int32_t {1}, std::int32_t {0}));
-    }));
-    CHECK(expect_termination("runtime-integer-remainder-zero", []() static noexcept {
-        static_cast<void>(integer_remainder(std::int32_t {1}, std::int32_t {0}));
-    }));
-    CHECK(expect_termination("runtime-left-shift-negative", []() static noexcept {
-        static_cast<void>(integer_left_shift(std::int32_t {1}, std::int32_t {-1}));
-    }));
-    CHECK(expect_termination("runtime-right-shift-width", []() static noexcept {
-        static_cast<void>(integer_right_shift(std::int32_t {1}, std::int32_t {32}));
-    }));
-}
+const ct::Suite tests([] static noexcept {
+    ct::test("Runtime: integer helpers cover every fixed width", [] static noexcept {
+        static_assert(ordinary_integer_contract<std::int8_t>());
+        static_assert(ordinary_integer_contract<std::int16_t>());
+        static_assert(ordinary_integer_contract<std::int32_t>());
+        static_assert(ordinary_integer_contract<std::int64_t>());
+        static_assert(ordinary_integer_contract<std::uint8_t>());
+        static_assert(ordinary_integer_contract<std::uint16_t>());
+        static_assert(ordinary_integer_contract<std::uint32_t>());
+        static_assert(ordinary_integer_contract<std::uint64_t>());
+        ct::expect(ordinary_integer_contract<std::ptrdiff_t>());
+        ct::expect(ordinary_integer_contract<std::size_t>());
+    });
+
+    ct::test("Runtime: invalid arithmetic always terminates", [] static noexcept {
+        using namespace carven::runtime;
+        ct::expect(expect_termination("runtime-integer-divide-zero", []() static noexcept {
+            static_cast<void>(integer_divide(std::int32_t {1}, std::int32_t {0}));
+        }));
+        ct::expect(expect_termination("runtime-integer-remainder-zero", []() static noexcept {
+            static_cast<void>(integer_remainder(std::int32_t {1}, std::int32_t {0}));
+        }));
+        ct::expect(expect_termination("runtime-left-shift-negative", []() static noexcept {
+            static_cast<void>(integer_left_shift(std::int32_t {1}, std::int32_t {-1}));
+        }));
+        ct::expect(expect_termination("runtime-right-shift-width", []() static noexcept {
+            static_cast<void>(integer_right_shift(std::int32_t {1}, std::int32_t {32}));
+        }));
+    });
+});
+
+} // namespace

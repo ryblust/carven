@@ -98,8 +98,9 @@ scale-dependent contracts such as stack depth or retained-storage growth.
 Language tests use local Carven state for counters and execution traces.
 A language fixture may use a same-stem C++ provider header for observations that
 Carven cannot express. Tests whose subject is that C++ boundary belong in
-`interop`. Internal tests use doctest; generated programs use Carven's testing
-support. `const test` checks execute during Carven compilation and do not generate
+`interop`. Internal C++ tests use the framework under `tests/harness/`;
+generated programs use Carven's testing support. `const test` checks execute
+during Carven compilation and do not generate
 runtime test functions. Test names may be omitted; an anonymous failure reports
 its file, line, and column. Explicit names retain module-local uniqueness.
 Constant block labels are optional diagnostic strings and may repeat.
@@ -115,8 +116,12 @@ Assertion tests cover conditional messages, fatal termination, and
 independence from `NDEBUG`. Generation tests check that known conditions retain
 required effects without redundant report branches or storage.
 
-Use static tests for compiler-executed behavior; retain runtime
-cases for C++ generation, runtime support, and native integration.
+Use `const test` for standard-library algorithm boundaries and error contracts
+that support constant execution. Keep representative generated-program cases
+for native execution: compiler evaluation and generated C++ are separate
+execution boundaries. Runtime cases also cover native storage and lifetimes,
+streaming state, and exhaustive domains beyond constant-execution budgets.
+Avoid repeating a full input table when it adds no distinct execution evidence.
 
 User-facing programs live under `examples/`. Their output checks belong to the
 `examples` group; diagnostic and termination cases belong to the test suites.
@@ -129,11 +134,45 @@ package rule.
 
 ## Assertions
 
+The shared C++ runner lives under `tests/harness/` and is linked only into test
+binaries through `carven-test-support`. Tests import the framework and fixture
+partitions they use. Its API belongs to `carven::testing`, locally aliased as
+`ct`. A file-local `Suite` registers noncapturing `noexcept` case bodies during
+collection. Duplicate names, empty selections, and cases with no assertions fail.
+
+Use `ct::each` for independent table inputs and `ct::scenario` for other scoped
+input contexts. An input's name accompanies its failures; returning from an
+`each` callback permits the next input to run. Empty tables fail. Scenarios are
+contexts within a case, not separately selected or counted tests. Ordinary loops
+serve traversal, ordering, and accumulation.
+
+Comparison assertions report actual and expected values. Text operands compare
+contents, including string literals and C strings; null C strings are distinct
+from empty text. Use an explicit-length string view for bytes containing NUL.
+Text and range equality reports include lengths and the first differing byte or
+element. Use `ct::expect` for predicates and opaque values, and `.note(...)` for
+input details or the meaning of a condition. A `noexcept` note callback computes
+expensive context only on failure.
+
+Guard premises before indexing, dereferencing, or reading an error. Assertion
+results convert to Boolean so a failed premise can return from the case or its
+current input. `ct::require` terminates the process; reserve it for fixture
+construction that cannot produce a valid value or other unrecoverable failures.
+The framework's process tests check execution, reporting, and rejected runs.
+
+Diagnostic assertions compare typed codes and report actual findings.
+`ct::find_diagnostic` borrows from the diagnostic collection; source-aware output
+uses the compiler's diagnostic renderer. `ct::TempDirectory` exclusively creates
+its directory and attempts removal at destruction. File-operation tests prepare
+and observe bytes through independent standard file I/O. Domain fixtures own
+their setup and observations.
+
 Every registered test target must build successfully. Do not use
 `build_should_fail` or `should_fail`. A test driver returns success when its
 assertions pass. Compile-only targets verify compilation and linking.
 Diagnostic and termination tests assert the expected diagnostic or termination
-contract.
+contract. Aggregate generated-test targets require a positive passing-case
+summary, so an empty runner cannot pass solely by exiting successfully.
 
 Cases cover acceptance, rejection, results, effects, and lifecycle boundaries.
 Distinct source entry points need additional cases when they exercise different
@@ -171,6 +210,9 @@ their subject. Assert structured violations directly where the validator exposes
 them. Use the internal death-test harness to check SIGABRT at terminating
 boundaries. Give each input, including loop iterations and subcases, a distinct
 scenario name within its test case.
+Prepare and validate fixtures before entering the death-test action. The action
+contains only the production operations whose termination is under test; a test
+assertion inside it can itself abort and falsely satisfy the contract.
 
 For implementation selection, identify the source fact, work removed, and
 obligations preserved. Test semantic and generated-structure contracts at their
@@ -194,7 +236,9 @@ under `functions`. Interop `bindings` covers C++ declaration lookup and use;
 `lifetimes` covers native construction, transfer, and cleanup. The internal harness owns process-based invariant termination.
 Process harnesses bound execution time. The CLI harness records stdout and
 stderr for each step, preserves failed fixtures, and removes successful temporary
-directories.
+directories. CLI scenario tables reject unknown fields, ignored top-level step
+fields, and workflows with no executable steps; failure reports identify the
+step and command.
 
 Fixtures whose exact source bytes are part of the assertion use `.cv.fixture`
 and the CLI `fixtures` mapping to copy them to a `.cv` input. This keeps source
@@ -247,6 +291,10 @@ formatting, batch results, and file replacement. Formatting fixtures check exact
 output, idempotence, and output stability after horizontal-whitespace changes.
 Invalid inputs check lexical and syntax errors. The separately registered corpus
 test checks formatting, output parsing, and idempotence for repository programs.
+Both registrations use the shared internal runner: the ordinary run excludes
+`Graver corpus:*`, and the corpus run selects that pattern. The runner also
+supports `--test "Area: behavior"` for one exact case and `--list-tests` for
+inspection. Empty selections fail.
 
 Xmake registers each CLI scenario separately for selection and reporting. The
 CLI harness checks exit codes, stdout, stderr, and filesystem changes. Formatting

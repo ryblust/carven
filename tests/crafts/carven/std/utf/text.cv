@@ -1,13 +1,9 @@
 import std::utf.text using { from_utf8, to_string };
-import std::utf.codec using decode_utf8_prefix;
 import std::utf.error using UTF8Error;
-import std::utf.validation using validate_utf8;
 
 test "UTF8: byte slices construct borrowed and owning text" {
     let bytes: [u8; 7] = [0x61, 0, 0xc3, 0xa9, 0xe4, 0xbd, 0xa0];
-    var accepted = false;
     try {
-        validate_utf8(bytes)?;
         let text = from_utf8(bytes)?;
         check(text == "a\u{0}é你");
         check(text.bytes[1] == 0);
@@ -18,11 +14,9 @@ test "UTF8: byte slices construct borrowed and owning text" {
             count += 1;
         }
         check(count == 4);
-        accepted = true;
     } catch {
-        UTF8Error(_) => {},
+        UTF8Error(_) => fail("valid bytes must construct text"),
     }
-    check(accepted);
 
     var original: [u8; 1] = [0x61];
     try {
@@ -30,11 +24,11 @@ test "UTF8: byte slices construct borrowed and owning text" {
         original[0] = 0x62;
         check(copy == "a");
     } catch {
-        UTF8Error(_) => check(false),
+        UTF8Error(_) => fail("valid bytes must construct an independent copy"),
     }
 }
 
-test "UTF8: text construction and prefix decoding reject invalid bytes" {
+test "UTF8: borrowed and owning text construction report invalid bytes" {
     let input: [u8; 2] = [0xe2, 0x28];
     let bytes = input.as_slice();
     let expected = UTF8Error {
@@ -57,18 +51,6 @@ test "UTF8: text construction and prefix decoding reject invalid bytes" {
     rejected = false;
     try {
         let _ = to_string(bytes)?;
-    } catch {
-        UTF8Error(error) => {
-            rejected = error.kind
-                == expected.kind
-                && error.offset == expected.offset
-                && error.sequence_start == expected.sequence_start;
-        },
-    }
-    check(rejected);
-    rejected = false;
-    try {
-        let _ = decode_utf8_prefix(bytes)?;
     } catch {
         UTF8Error(error) => {
             rejected = error.kind

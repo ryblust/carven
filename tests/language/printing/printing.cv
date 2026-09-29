@@ -2,6 +2,16 @@ struct PrintedMoney {
     cents: i64
 }
 
+struct PrintedPair {
+    first: PrintedMoney,
+    second: PrintedMoney
+}
+
+fn make_money(value: i64) -> PrintedMoney {
+    println(value);
+    return PrintedMoney { value };
+}
+
 struct PrintedOrder {
     price: PrintedMoney,
     names: [str; 2]
@@ -13,6 +23,11 @@ class PrintedBox {
     value: i32,
 
     fn create(value: i32) -> PrintedBox => { value: value };
+}
+
+class PrintedEmptyBox {
+
+    fn create() -> PrintedEmptyBox => {};
 }
 
 struct PrintedEnvelope {
@@ -56,6 +71,8 @@ fn record_output_flag(&counter: i32) -> bool {
     counter += 10;
     return true;
 }
+
+const cstring_formatted = f"constant={c"123"}";
 
 fn main() {
     print("text: ");
@@ -110,4 +127,19 @@ fn main() {
     println(PrintedBox::create(1), PrintedEnvelope { box: PrintedBox::create(2) });
     let cstring = c"我\n";
     println(cstring, c"");
+    println(cstring_formatted);
+    println([c"a\n", c"\"\\", c""]);
+    println(f"text={c"123"}; empty={c""}; unicode={c"我😀"}");
+    eprintln(c"error");
+    println([',', '我']);
+    println(
+        [
+            PrintedMoney { 7 }
+        ]
+    );
+    let empty: [i32; 0] = [];
+    println(empty);
+    println(PrintedEmptyBox::create());
+    println([PrintedBox::create(1), PrintedBox::create(2)]);
+    println(PrintedPair { make_money(1), make_money(2) });
 }

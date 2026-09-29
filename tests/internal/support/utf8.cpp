@@ -1,27 +1,38 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.support.utf8;
 
 import :support.utf8;
+import :test.harness.framework;
 import std;
 
-TEST_CASE("Support UTF8 decoder: checks sequences and advances invalid bytes") {
-    const auto text = std::string("a目录");
-    const auto ascii = UTF8Decoder::decode(text, 0);
-    const auto first = UTF8Decoder::decode(text, 1);
+namespace {
 
-    CHECK(ascii.valid);
-    CHECK_EQ(ascii.width, 1u);
-    CHECK(first.valid);
-    CHECK_EQ(first.width, 3u);
-    CHECK_EQ(first.scalar, U'目');
-    CHECK(UTF8Decoder::is_valid(text));
+namespace ct = carven::testing;
 
-    const auto invalid = std::string("bad\xfftail");
-    const auto sequence = UTF8Decoder::decode(invalid, 3);
-    CHECK(!sequence.valid);
-    CHECK_EQ(sequence.width, 1u);
-    CHECK(!UTF8Decoder::is_valid(invalid));
-}
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Support UTF8 decoder: checks sequences and advances invalid bytes",
+        [] static noexcept {
+            const auto text = std::string("a目录");
+            const auto ascii = UTF8Decoder::decode(text, 0);
+            const auto first = UTF8Decoder::decode(text, 1);
+
+            ct::expect(ascii.valid);
+            ct::expect_equal(ascii.width, 1u);
+            ct::expect(first.valid);
+            ct::expect_equal(first.width, 3u);
+            ct::expect_equal(
+                static_cast<std::uint32_t>(first.scalar),
+                static_cast<std::uint32_t>(U'目')
+            );
+            ct::expect(UTF8Decoder::is_valid(text));
+
+            const auto invalid = std::string("bad\xfftail");
+            const auto sequence = UTF8Decoder::decode(invalid, 3);
+            ct::expect(!sequence.valid);
+            ct::expect_equal(sequence.width, 1u);
+            ct::expect(!UTF8Decoder::is_valid(invalid));
+        }
+    );
+});
+
+} // namespace

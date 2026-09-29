@@ -1,49 +1,46 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.compiler.diagnostics.fixture;
 
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
+import :diagnostics.code;
 import :diagnostics.diagnostic;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.harness.diagnostics;
+import :test.harness.framework;
 import std;
 
-auto find_compiler_diagnostic(
-    std::span<const Diagnostic> diagnostics,
-    std::string_view code
-) noexcept -> const Diagnostic* {
-    const auto found =
-        std::ranges::find_if(diagnostics, [&](const Diagnostic& diagnostic) noexcept {
-            return diagnostic.finding.code == code;
-        });
-    return found == diagnostics.end() ? nullptr : &*found;
-}
+namespace {
+
+namespace ct = carven::testing;
+
+} // namespace
 
 struct NonemptyPrimarySpan final {};
 
 struct CompilerErrorExpectation final {
     std::string_view name;
     std::string_view source;
-    std::string_view code;
+    DiagnosticCode code;
     std::variant<std::string_view, NonemptyPrimarySpan> primary_text;
 };
 
 auto check_compiler_error(
     std::string_view source,
-    std::string_view code,
+    DiagnosticCode code,
     std::variant<std::string_view, NonemptyPrimarySpan> primary_text
 ) noexcept -> void {
     auto sources = SourceManager();
-    const auto source_id = *sources.append_virtual("diagnostic.cv", std::string(source));
+    const auto source_id = sources.append_virtual("diagnostic.cv", std::string(source));
+    ct::require(source_id.has_value());
+    const auto module_path = CanonicalModulePath::from_value("diagnostic");
+    ct::require(module_path.has_value());
     const auto input = SourceModuleInput {
-        .source_id = source_id,
-        .module_path = *CanonicalModulePath::from_value("diagnostic"),
+        .source_id = *source_id,
+        .module_path = *module_path,
     };
 
     const auto result = compile(
@@ -55,30 +52,28 @@ auto check_compiler_error(
         }
     );
 
-    CHECK(!result.has_value());
-    if (result.has_value()) {
+    if (!ct::expect(!result.has_value())) {
         return;
     }
-    const auto* diagnostic = find_compiler_diagnostic(result.error(), code);
-    CHECK(diagnostic != nullptr);
+    const auto* diagnostic = ct::find_diagnostic(result.error(), code);
+    ct::expect_diagnostic(result.error(), code);
     if (diagnostic == nullptr) {
         return;
     }
-    CHECK_EQ(diagnostic->finding.severity, DiagnosticSeverity::Error);
-    CHECK(diagnostic->attachment.primary.has_value());
+    ct::expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
+    ct::expect(diagnostic->attachment.primary.has_value());
     if (!diagnostic->attachment.primary.has_value()) {
         return;
     }
     if (const auto* text = std::get_if<std::string_view>(&primary_text)) {
-        CHECK_EQ(sources.slice(diagnostic->attachment.primary->span), *text);
+        ct::expect_equal(sources.slice(diagnostic->attachment.primary->span), *text);
     } else {
-        CHECK(!diagnostic->attachment.primary->span.span.empty());
+        ct::expect(!diagnostic->attachment.primary->span.span.empty());
     }
 }
 
 auto check_compiler_errors(std::span<const CompilerErrorExpectation> cases) noexcept -> void {
-    for (const auto& expectation : cases) {
-        CAPTURE(expectation.name);
+    ct::each(cases, &CompilerErrorExpectation::name, [](const auto& expectation) static noexcept {
         check_compiler_error(expectation.source, expectation.code, expectation.primary_text);
-    }
+    });
 }

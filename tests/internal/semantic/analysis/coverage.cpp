@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.semantic.analysis.coverage;
 
 import :diagnostics.sink;
@@ -19,13 +15,16 @@ import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.harness.framework;
 import std;
 
 namespace {
 
+namespace ct = carven::testing;
+
 auto path(std::string_view value) noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value(value);
-    REQUIRE(result.has_value());
+    ct::require(result.has_value());
     return std::move(*result);
 }
 
@@ -43,7 +42,7 @@ struct CoverageFixture final {
 auto fixture(SourceManager& sources, DiagnosticSink& diagnostics, std::size_t width = 2uz) noexcept
     -> CoverageFixture {
     const auto source = sources.append_virtual("coverage-fixture.cv", "");
-    REQUIRE(source.has_value());
+    ct::require(source.has_value());
     const auto inputs = std::array {
         SourceModuleInput {
             .source_id = *source,
@@ -51,7 +50,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics, std::size_t wi
         },
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    REQUIRE(syntax.has_value());
+    ct::require(syntax.has_value());
     auto compilation = ProgramDraft::begin(std::move(*syntax), diagnostics);
     const auto provenance_module = compilation.provenance_module_at(0uz);
     const auto source_id = compilation.module_source(provenance_module);
@@ -212,286 +211,431 @@ auto enum_case(
 
 } // namespace
 
-TEST_CASE("Pattern coverage: enum payload overlap and guarded exhaustiveness stay exact") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto source = fixture(sources, diagnostics);
-    auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-    const auto true_pattern = boolean_literal(source, body, true);
-    const auto first_pair = enum_case(
-        source,
-        body,
-        source.pair_case,
-        {true_pattern, wildcard(body, source.boolean, source.origin)}
-    );
-    const auto second_pair = enum_case(
-        source,
-        body,
-        source.pair_case,
-        {wildcard(body, source.boolean, source.origin), true_pattern}
-    );
-    const auto every_pair = enum_case(
-        source,
-        body,
-        source.pair_case,
-        {
-            wildcard(body, source.boolean, source.origin),
-            wildcard(body, source.boolean, source.origin),
+namespace {
+
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Pattern coverage: enum payload overlap and guarded exhaustiveness stay exact",
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto source = fixture(sources, diagnostics);
+            auto body = BodyBuilder(std::move(source.reservation), source.compilation);
+            const auto true_pattern = boolean_literal(source, body, true);
+            const auto first_pair = enum_case(
+                source,
+                body,
+                source.pair_case,
+                {true_pattern, wildcard(body, source.boolean, source.origin)}
+            );
+            const auto second_pair = enum_case(
+                source,
+                body,
+                source.pair_case,
+                {wildcard(body, source.boolean, source.origin), true_pattern}
+            );
+            const auto every_pair = enum_case(
+                source,
+                body,
+                source.pair_case,
+                {
+                    wildcard(body, source.boolean, source.origin),
+                    wildcard(body, source.boolean, source.origin),
+                }
+            );
+            const auto empty = enum_case(source, body, source.empty_case, {});
+            const auto arms = std::array {
+                PatternCoverageArm {
+                    .alternatives = {first_pair, second_pair},
+                    .guarded = false,
+                },
+                PatternCoverageArm {.alternatives = {every_pair}, .guarded = false},
+                PatternCoverageArm {.alternatives = {empty}, .guarded = true},
+                PatternCoverageArm {.alternatives = {empty}, .guarded = false},
+                PatternCoverageArm {.alternatives = {std::nullopt}, .guarded = false},
+            };
+            auto coverage = compute_pattern_coverage(
+                source.compilation,
+                body.pattern_table(),
+                source.pair_enum,
+                arms
+            );
+            if (!ct::expect(coverage.has_value())) {
+                return;
+            }
+            ct::expect(
+                (coverage->arm_usefulness == std::vector<bool> {true, true, true, true, false})
+            );
+            ct::expect(
+                (coverage->exhaustive_after_arm
+                 == std::vector<bool> {false, false, false, true, true})
+            );
+            ct::expect(coverage->exhaustive);
+            ct::expect(coverage->redundant_alternatives.empty());
+            ct::expect(diagnostics.empty());
         }
     );
-    const auto empty = enum_case(source, body, source.empty_case, {});
-    const auto arms = std::array {
-        PatternCoverageArm {
-            .alternatives = {first_pair, second_pair},
-            .guarded = false,
-        },
-        PatternCoverageArm {.alternatives = {every_pair}, .guarded = false},
-        PatternCoverageArm {.alternatives = {empty}, .guarded = true},
-        PatternCoverageArm {.alternatives = {empty}, .guarded = false},
-        PatternCoverageArm {.alternatives = {std::nullopt}, .guarded = false},
-    };
-    auto coverage =
-        compute_pattern_coverage(source.compilation, body.pattern_table(), source.pair_enum, arms);
-    REQUIRE(coverage.has_value());
-    CHECK((coverage->arm_usefulness == std::vector<bool> {true, true, true, true, false}));
-    CHECK((coverage->exhaustive_after_arm == std::vector<bool> {false, false, false, true, true}));
-    CHECK(coverage->exhaustive);
-    CHECK(coverage->redundant_alternatives.empty());
-    CHECK(diagnostics.empty());
-}
 
-TEST_CASE("Pattern coverage: redundant alternatives and finite witnesses are reported") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto source = fixture(sources, diagnostics);
-    auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-    const auto true_pattern = boolean_literal(source, body, true);
-    const auto arms = std::array {
-        PatternCoverageArm {
-            .alternatives = {true_pattern, true_pattern},
-            .guarded = true,
-        },
-    };
-    auto coverage =
-        compute_pattern_coverage(source.compilation, body.pattern_table(), source.boolean, arms);
-    REQUIRE(coverage.has_value());
-    CHECK_FALSE(coverage->exhaustive);
-    CHECK_EQ(coverage->missing_witness, "false");
-    REQUIRE_EQ(coverage->redundant_alternatives.size(), 1uz);
-    CHECK_EQ(coverage->redundant_alternatives.front().arm, 0uz);
-    CHECK_EQ(coverage->redundant_alternatives.front().alternative, 1uz);
-    CHECK(diagnostics.empty());
-}
-
-TEST_CASE("Pattern coverage: an alternative covered by a union is redundant") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto source = fixture(sources, diagnostics);
-    auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-    const auto true_pattern = boolean_literal(source, body, true);
-    const auto false_pattern = boolean_literal(source, body, false);
-    const auto row = enum_case(
-        source,
-        body,
-        source.pair_case,
-        {true_pattern, wildcard(body, source.boolean, source.origin)}
+    ct::test(
+        "Pattern coverage: redundant alternatives and finite witnesses are reported",
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto source = fixture(sources, diagnostics);
+            auto body = BodyBuilder(std::move(source.reservation), source.compilation);
+            const auto true_pattern = boolean_literal(source, body, true);
+            const auto arms = std::array {
+                PatternCoverageArm {
+                    .alternatives = {true_pattern, true_pattern},
+                    .guarded = true,
+                },
+            };
+            auto coverage = compute_pattern_coverage(
+                source.compilation,
+                body.pattern_table(),
+                source.boolean,
+                arms
+            );
+            if (!ct::expect(coverage.has_value())) {
+                return;
+            }
+            ct::expect(!(coverage->exhaustive));
+            ct::expect_equal(coverage->missing_witness, std::string_view("false"));
+            if (!ct::expect_equal(coverage->redundant_alternatives.size(), 1uz)) {
+                return;
+            }
+            ct::expect_equal(coverage->redundant_alternatives.front().arm, 0uz);
+            ct::expect_equal(coverage->redundant_alternatives.front().alternative, 1uz);
+            ct::expect(diagnostics.empty());
+        }
     );
-    const auto true_column = enum_case(
-        source,
-        body,
-        source.pair_case,
-        {wildcard(body, source.boolean, source.origin), true_pattern}
+
+    ct::test(
+        "Pattern coverage: an alternative covered by a union is redundant",
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto source = fixture(sources, diagnostics);
+            auto body = BodyBuilder(std::move(source.reservation), source.compilation);
+            const auto true_pattern = boolean_literal(source, body, true);
+            const auto false_pattern = boolean_literal(source, body, false);
+            const auto row = enum_case(
+                source,
+                body,
+                source.pair_case,
+                {true_pattern, wildcard(body, source.boolean, source.origin)}
+            );
+            const auto true_column = enum_case(
+                source,
+                body,
+                source.pair_case,
+                {wildcard(body, source.boolean, source.origin), true_pattern}
+            );
+            const auto false_column = enum_case(
+                source,
+                body,
+                source.pair_case,
+                {wildcard(body, source.boolean, source.origin), false_pattern}
+            );
+            const auto arms = std::array {
+                PatternCoverageArm {
+                    .alternatives = {row, true_column, false_column},
+                    .guarded = false,
+                },
+            };
+            auto coverage = compute_pattern_coverage(
+                source.compilation,
+                body.pattern_table(),
+                source.pair_enum,
+                arms
+            );
+            if (!ct::expect(coverage.has_value())) {
+                return;
+            }
+            if (!ct::expect_equal(coverage->redundant_alternatives.size(), 1uz)) {
+                return;
+            }
+            ct::expect_equal(coverage->redundant_alternatives.front().arm, 0uz);
+            ct::expect_equal(coverage->redundant_alternatives.front().alternative, 0uz);
+            ct::expect(!(coverage->alternative_usefulness.front().front()));
+            ct::expect(diagnostics.empty());
+        }
     );
-    const auto false_column = enum_case(
-        source,
-        body,
-        source.pair_case,
-        {wildcard(body, source.boolean, source.origin), false_pattern}
+
+    ct::test(
+        "Pattern coverage: witnesses retain missing nested payload constructors",
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto source = fixture(sources, diagnostics);
+            auto body = BodyBuilder(std::move(source.reservation), source.compilation);
+            const auto true_pattern = boolean_literal(source, body, true);
+            const auto first_row = enum_case(
+                source,
+                body,
+                source.pair_case,
+                {true_pattern, wildcard(body, source.boolean, source.origin)}
+            );
+            const auto empty = enum_case(source, body, source.empty_case, {});
+            const auto arms = std::array {
+                PatternCoverageArm {.alternatives = {first_row}, .guarded = false},
+                PatternCoverageArm {.alternatives = {empty}, .guarded = false},
+            };
+            auto coverage = compute_pattern_coverage(
+                source.compilation,
+                body.pattern_table(),
+                source.pair_enum,
+                arms
+            );
+            if (!ct::expect(coverage.has_value())) {
+                return;
+            }
+            ct::expect(!(coverage->exhaustive));
+            ct::expect_equal(coverage->missing_witness, std::string_view(".Pair(false, false)"));
+            ct::expect(diagnostics.empty());
+        }
     );
-    const auto arms = std::array {
-        PatternCoverageArm {
-            .alternatives = {row, true_column, false_column},
-            .guarded = false,
-        },
-    };
-    auto coverage =
-        compute_pattern_coverage(source.compilation, body.pattern_table(), source.pair_enum, arms);
-    REQUIRE(coverage.has_value());
-    REQUIRE_EQ(coverage->redundant_alternatives.size(), 1uz);
-    CHECK_EQ(coverage->redundant_alternatives.front().arm, 0uz);
-    CHECK_EQ(coverage->redundant_alternatives.front().alternative, 0uz);
-    CHECK_FALSE(coverage->alternative_usefulness.front().front());
-    CHECK(diagnostics.empty());
-}
 
-TEST_CASE("Pattern coverage: witnesses retain missing nested payload constructors") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto source = fixture(sources, diagnostics);
-    auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-    const auto true_pattern = boolean_literal(source, body, true);
-    const auto first_row = enum_case(
-        source,
-        body,
-        source.pair_case,
-        {true_pattern, wildcard(body, source.boolean, source.origin)}
+    ct::test("Pattern coverage: an enum with no constructors is exhaustive", [] static noexcept {
+        auto sources = SourceManager();
+        auto diagnostics = DiagnosticSink();
+        auto source = fixture(sources, diagnostics);
+        const auto body = BodyBuilder(std::move(source.reservation), source.compilation);
+        const auto arms = std::array<PatternCoverageArm, 0> {};
+        auto coverage = compute_pattern_coverage(
+            source.compilation,
+            body.pattern_table(),
+            source.empty_enum,
+            arms
+        );
+        if (!ct::expect(coverage.has_value())) {
+            return;
+        }
+        ct::expect(coverage->exhaustive);
+        ct::expect(coverage->arm_usefulness.empty());
+        ct::expect(diagnostics.empty());
+    });
+
+    ct::test(
+        "Pattern coverage: wide payloads retain missing and covered value classes",
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            constexpr auto width = 32uz;
+            auto source = fixture(sources, diagnostics, width);
+            auto body = BodyBuilder(std::move(source.reservation), source.compilation);
+            const auto selected = enum_case(
+                source,
+                body,
+                source.pair_case,
+                std::vector<PatternID>(width, boolean_literal(source, body, true))
+            );
+            auto arms = std::vector<PatternCoverageArm> {
+                {.alternatives = {selected}, .guarded = false},
+            };
+            auto coverage = compute_pattern_coverage(
+                source.compilation,
+                body.pattern_table(),
+                source.pair_enum,
+                arms
+            );
+            if (!ct::expect(coverage.has_value())) {
+                return;
+            }
+            ct::expect(!(coverage->exhaustive));
+            ct::expect(coverage->arm_usefulness.front());
+            arms.push_back({.alternatives = {std::nullopt}, .guarded = false});
+            coverage = compute_pattern_coverage(
+                source.compilation,
+                body.pattern_table(),
+                source.pair_enum,
+                arms
+            );
+            if (!ct::expect(coverage.has_value())) {
+                return;
+            }
+            ct::expect(coverage->exhaustive);
+            ct::expect(coverage->arm_usefulness == std::vector<bool> {true, true});
+        }
     );
-    const auto empty = enum_case(source, body, source.empty_case, {});
-    const auto arms = std::array {
-        PatternCoverageArm {.alternatives = {first_row}, .guarded = false},
-        PatternCoverageArm {.alternatives = {empty}, .guarded = false},
-    };
-    auto coverage =
-        compute_pattern_coverage(source.compilation, body.pattern_table(), source.pair_enum, arms);
-    REQUIRE(coverage.has_value());
-    CHECK_FALSE(coverage->exhaustive);
-    CHECK_EQ(coverage->missing_witness, ".Pair(false, false)");
-    CHECK(diagnostics.empty());
-}
 
-TEST_CASE("Pattern coverage: an enum with no constructors is exhaustive") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto source = fixture(sources, diagnostics);
-    const auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-    const auto arms = std::array<PatternCoverageArm, 0> {};
-    auto coverage =
-        compute_pattern_coverage(source.compilation, body.pattern_table(), source.empty_enum, arms);
-    REQUIRE(coverage.has_value());
-    CHECK(coverage->exhaustive);
-    CHECK(coverage->arm_usefulness.empty());
-    CHECK(diagnostics.empty());
-}
-
-TEST_CASE("Pattern coverage: wide payloads retain missing and covered value classes") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    constexpr auto width = 32uz;
-    auto source = fixture(sources, diagnostics, width);
-    auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-    const auto selected = enum_case(
-        source,
-        body,
-        source.pair_case,
-        std::vector<PatternID>(width, boolean_literal(source, body, true))
+    ct::test(
+        "Pattern coverage: uninhabited cases do not hide missing inhabited cases",
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto source = fixture(sources, diagnostics);
+            auto body = BodyBuilder(std::move(source.reservation), source.compilation);
+            const auto empty = enum_case(source, body, source.empty_case, {});
+            const auto arms = std::array {
+                PatternCoverageArm {.alternatives = {empty}, .guarded = false},
+            };
+            const auto coverage = compute_pattern_coverage(
+                source.compilation,
+                body.pattern_table(),
+                source.pair_enum,
+                arms
+            );
+            if (!ct::expect(coverage.has_value())) {
+                return;
+            }
+            ct::expect(!(coverage->exhaustive));
+            ct::expect_equal(coverage->missing_witness, std::string_view(".Pair(false, false)"));
+        }
     );
-    auto arms = std::vector<PatternCoverageArm> {
-        {.alternatives = {selected}, .guarded = false},
-    };
-    auto coverage =
-        compute_pattern_coverage(source.compilation, body.pattern_table(), source.pair_enum, arms);
-    REQUIRE(coverage.has_value());
-    CHECK_FALSE(coverage->exhaustive);
-    CHECK(coverage->arm_usefulness.front());
-    arms.push_back({.alternatives = {std::nullopt}, .guarded = false});
-    coverage =
-        compute_pattern_coverage(source.compilation, body.pattern_table(), source.pair_enum, arms);
-    REQUIRE(coverage.has_value());
-    CHECK(coverage->exhaustive);
-    CHECK_EQ(coverage->arm_usefulness, std::vector<bool> {true, true});
-}
 
-TEST_CASE("Pattern coverage: uninhabited cases do not hide missing inhabited cases") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto source = fixture(sources, diagnostics);
-    auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-    const auto empty = enum_case(source, body, source.empty_case, {});
-    const auto arms = std::array {
-        PatternCoverageArm {.alternatives = {empty}, .guarded = false},
-    };
-    const auto coverage =
-        compute_pattern_coverage(source.compilation, body.pattern_table(), source.pair_enum, arms);
-    REQUIRE(coverage.has_value());
-    CHECK_FALSE(coverage->exhaustive);
-    CHECK_EQ(coverage->missing_witness, ".Pair(false, false)");
-}
+    ct::test(
+        "Pattern coverage: a covered product makes independent constraints unreachable",
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            constexpr auto width = 32uz;
+            auto source = fixture(sources, diagnostics, width);
+            auto body = BodyBuilder(std::move(source.reservation), source.compilation);
+            const auto any = wildcard(body, source.boolean, source.origin);
+            const auto selected = boolean_literal(source, body, false);
+            auto arms = std::vector<PatternCoverageArm> {
+                {.alternatives = {std::nullopt}, .guarded = false},
+            };
+            for (auto index = 0uz; index < width; ++index) {
+                auto payload = std::vector<PatternID>(width, any);
+                payload[index] = selected;
+                arms.push_back({
+                    .alternatives = {enum_case(source, body, source.pair_case, std::move(payload))},
+                    .guarded = false,
+                });
+            }
+            const auto coverage = compute_pattern_coverage(
+                source.compilation,
+                body.pattern_table(),
+                source.pair_enum,
+                arms
+            );
+            if (!ct::expect(coverage.has_value())) {
+                return;
+            }
+            ct::expect(coverage->exhaustive);
+            ct::expect(coverage->arm_usefulness.front());
+            ct::expect_equal(std::ranges::count(coverage->arm_usefulness, true), 1);
+            ct::expect(std::ranges::all_of(coverage->exhaustive_after_arm, std::identity {}));
+        }
+    );
 
-TEST_CASE("Pattern coverage: a covered product makes independent constraints unreachable") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    constexpr auto width = 32uz;
-    auto source = fixture(sources, diagnostics, width);
-    auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-    const auto any = wildcard(body, source.boolean, source.origin);
-    const auto selected = boolean_literal(source, body, false);
-    auto arms = std::vector<PatternCoverageArm> {
-        {.alternatives = {std::nullopt}, .guarded = false},
-    };
-    for (auto index = 0uz; index < width; ++index) {
-        auto payload = std::vector<PatternID>(width, any);
-        payload[index] = selected;
-        arms.push_back({
-            .alternatives = {enum_case(source, body, source.pair_case, std::move(payload))},
-            .guarded = false,
-        });
-    }
-    const auto coverage =
-        compute_pattern_coverage(source.compilation, body.pattern_table(), source.pair_enum, arms);
-    REQUIRE(coverage.has_value());
-    CHECK(coverage->exhaustive);
-    CHECK(coverage->arm_usefulness.front());
-    CHECK_EQ(std::ranges::count(coverage->arm_usefulness, true), 1);
-    CHECK(std::ranges::all_of(coverage->exhaustive_after_arm, std::identity {}));
-}
+    ct::test(
+        "Pattern coverage: boolean products obey set difference and guarded coverage",
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto source = fixture(sources, diagnostics);
+            auto body = BodyBuilder(std::move(source.reservation), source.compilation);
+            const auto fields = std::array {
+                boolean_literal(source, body, false),
+                boolean_literal(source, body, true),
+                wildcard(body, source.boolean, source.origin),
+            };
 
-TEST_CASE("Pattern coverage: boolean products obey set difference and guarded coverage") {
-    auto sources = SourceManager();
-    auto diagnostics = DiagnosticSink();
-    auto source = fixture(sources, diagnostics);
-    auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-    const auto fields = std::array {
-        boolean_literal(source, body, false),
-        boolean_literal(source, body, true),
-        wildcard(body, source.boolean, source.origin),
-    };
+            struct Selection final {
+                PatternID pattern;
+                unsigned values;
+            };
 
-    struct Selection final {
-        PatternID pattern;
-        unsigned values;
-    };
-
-    auto selections = std::vector<Selection>();
-    for (auto left = 0uz; left < fields.size(); ++left) {
-        for (auto right = 0uz; right < fields.size(); ++right) {
-            auto values = 0u;
-            for (auto value = 0u; value < 4u; ++value) {
-                if ((left == 2uz || left == (value / 2u))
-                    && (right == 2uz || right == (value % 2u))) {
-                    values |= 1u << value;
+            auto selections = std::vector<Selection>();
+            for (auto left = 0uz; left < fields.size(); ++left) {
+                for (auto right = 0uz; right < fields.size(); ++right) {
+                    auto values = 0u;
+                    for (auto value = 0u; value < 4u; ++value) {
+                        if ((left == 2uz || left == (value / 2u))
+                            && (right == 2uz || right == (value % 2u))) {
+                            values |= 1u << value;
+                        }
+                    }
+                    selections.push_back({
+                        .pattern = enum_case(
+                            source,
+                            body,
+                            source.pair_case,
+                            {fields[left], fields[right]}
+                        ),
+                        .values = values,
+                    });
                 }
             }
-            selections.push_back({
-                .pattern = enum_case(source, body, source.pair_case, {fields[left], fields[right]}),
-                .values = values,
-            });
-        }
-    }
-    const auto empty = enum_case(source, body, source.empty_case, {});
-    for (const auto& first : selections) {
-        for (const auto& second : selections) {
-            for (const auto guarded : {false, true}) {
-                CAPTURE(first.values);
-                CAPTURE(second.values);
-                CAPTURE(guarded);
-                const auto arms = std::array {
-                    PatternCoverageArm {.alternatives = {empty}, .guarded = false},
-                    PatternCoverageArm {.alternatives = {first.pattern}, .guarded = guarded},
-                    PatternCoverageArm {.alternatives = {second.pattern}, .guarded = false},
-                };
-                const auto coverage = compute_pattern_coverage(
-                    source.compilation,
-                    body.pattern_table(),
-                    source.pair_enum,
-                    arms
-                );
-                REQUIRE(coverage.has_value());
-                const auto covered = guarded ? 0u : first.values;
-                CHECK_EQ(coverage->arm_usefulness[2], (second.values & ~covered) != 0u);
-                CHECK_EQ(coverage->exhaustive_after_arm[1], covered == 15u);
-                CHECK_EQ(coverage->exhaustive, (covered | second.values) == 15u);
-                CHECK_EQ(coverage->exhaustive_after_arm[2], coverage->exhaustive);
+            const auto empty = enum_case(source, body, source.empty_case, {});
+            for (const auto& first : selections) {
+                for (const auto& second : selections) {
+                    for (const auto guarded : {false, true}) {
+                        const auto arms = std::array {
+                            PatternCoverageArm {.alternatives = {empty}, .guarded = false},
+                            PatternCoverageArm {
+                                .alternatives = {first.pattern},
+                                .guarded = guarded
+                            },
+                            PatternCoverageArm {.alternatives = {second.pattern}, .guarded = false},
+                        };
+                        const auto coverage = compute_pattern_coverage(
+                            source.compilation,
+                            body.pattern_table(),
+                            source.pair_enum,
+                            arms
+                        );
+                        if (!(ct::expect(coverage.has_value())
+                                  .note(
+                                      "first.values = ",
+                                      first.values,
+                                      "second.values = ",
+                                      second.values,
+                                      "guarded = ",
+                                      guarded
+                                  ))) {
+                            return;
+                        }
+                        const auto covered = guarded ? 0u : first.values;
+                        ct::expect(((coverage->arm_usefulness[2])
+                                    == ((second.values & ~covered) != 0u)))
+                            .note(
+                                "coverage->arm_usefulness[2] == (second.values & ~covered) != 0u",
+                                "first.values = ",
+                                first.values,
+                                "second.values = ",
+                                second.values,
+                                "guarded = ",
+                                guarded
+                            );
+                        ct::expect(((coverage->exhaustive_after_arm[1]) == (covered == 15u)))
+                            .note(
+                                "coverage->exhaustive_after_arm[1] == covered == 15u",
+                                "first.values = ",
+                                first.values,
+                                "second.values = ",
+                                second.values,
+                                "guarded = ",
+                                guarded
+                            );
+                        ct::expect(((coverage->exhaustive) == ((covered | second.values) == 15u)))
+                            .note(
+                                "coverage->exhaustive == (covered | second.values) == 15u",
+                                "first.values = ",
+                                first.values,
+                                "second.values = ",
+                                second.values,
+                                "guarded = ",
+                                guarded
+                            );
+                        ct::expect(((coverage->exhaustive_after_arm[2]) == (coverage->exhaustive)))
+                            .note(
+                                "coverage->exhaustive_after_arm[2] == coverage->exhaustive",
+                                "first.values = ",
+                                first.values,
+                                "second.values = ",
+                                second.values,
+                                "guarded = ",
+                                guarded
+                            );
+                    }
+                }
             }
         }
-    }
-}
+    );
+});
+
+} // namespace

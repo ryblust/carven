@@ -16,6 +16,7 @@ import :frontend.dump.text;
 import :frontend.lex.token;
 import :source.manager;
 import :source.text;
+import :support.quote;
 import :support.visit;
 import std;
 
@@ -61,7 +62,7 @@ auto ASTDumper::render() noexcept -> std::string {
     output = std::format(
         "SourceModule {} {}\n",
         format_dump_span(ast_module.span),
-        quote_dump_text(source_origin)
+        quote_text(source_origin)
     );
     using Import = std::variant<ASTModuleImportID, const ASTCppHeaderImport*>;
     auto imports = std::vector<Import>();

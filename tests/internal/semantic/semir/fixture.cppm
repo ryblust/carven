@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.semantic.semir.fixture;
 
 import :diagnostics.sink;
@@ -17,13 +13,20 @@ import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.harness.framework;
 import std;
+
+namespace {
+
+namespace ct = carven::testing;
+
+} // namespace
 
 namespace semir_test {
 
 auto path(std::string_view value) noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value(value);
-    REQUIRE(result.has_value());
+    ct::require(result.has_value());
     return std::move(*result);
 }
 
@@ -37,7 +40,7 @@ auto begin_compilation_batch(
     for (auto index = 0uz; index < module_names.size(); ++index) {
         const auto source =
             sources.append_virtual(std::format("semir-publication-{}.cv", index), "");
-        REQUIRE(source.has_value());
+        ct::require(source.has_value());
         inputs.push_back(
             SourceModuleInput {
                 .source_id = *source,
@@ -46,7 +49,7 @@ auto begin_compilation_batch(
         );
     }
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    REQUIRE(syntax.has_value());
+    ct::require(syntax.has_value());
     return ProgramDraft::begin(std::move(*syntax), diagnostics);
 }
 

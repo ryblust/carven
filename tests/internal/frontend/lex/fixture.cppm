@@ -1,13 +1,16 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.frontend.lex.fixture;
 
 import :frontend.lex;
 import :frontend.lex.token;
 import :source.text;
+import :test.harness.framework;
 import std;
+
+namespace {
+
+namespace ct = carven::testing;
+
+} // namespace
 
 struct TokenCase final {
     std::string_view spelling;
@@ -21,19 +24,24 @@ auto check_token(std::string_view spelling, TokenKind kind) noexcept -> void {
         .origin = "tokenize-test.cv",
     };
     const auto result = lex(source);
-    CAPTURE(spelling);
-    REQUIRE(result.diagnostics.empty());
+    if (!(ct::expect(result.diagnostics.empty()).note("spelling = ", spelling))) {
+        return;
+    }
     const auto tokens = result.value.tokens();
-    REQUIRE_EQ(tokens.size(), 1u);
-    CHECK_EQ(tokens[0].kind, kind);
-    CHECK_EQ(tokens[0].span.start(), 0u);
-    CHECK_EQ(tokens[0].span.end(), spelling.size());
+    if (!(ct::expect_equal(tokens.size(), 1uz).note("spelling = ", spelling))) {
+        return;
+    }
+    ct::expect_equal(tokens[0].kind, kind).note("spelling = ", spelling);
+    ct::expect_equal(tokens[0].span.start(), 0u).note("spelling = ", spelling);
+    ct::expect_equal(tokens[0].span.end(), spelling.size()).note("spelling = ", spelling);
 }
 
 auto check_tokens(std::span<const TokenCase> cases) noexcept -> void {
-    for (const auto& test : cases) {
-        check_token(test.spelling, test.kind);
-    }
+    ct::each(
+        cases,
+        [](const TokenCase& test) static noexcept -> std::string_view { return test.spelling; },
+        [](const TokenCase& test) static noexcept { check_token(test.spelling, test.kind); }
+    );
 }
 
 auto check_token_sequence(std::string_view text, std::span<const TokenCase> expected) noexcept
@@ -44,13 +52,16 @@ auto check_token_sequence(std::string_view text, std::span<const TokenCase> expe
         .origin = "tokenize-test.cv",
     };
     const auto result = lex(source);
-    CAPTURE(text);
-    REQUIRE(result.diagnostics.empty());
+    if (!(ct::expect(result.diagnostics.empty()).note("text = ", text))) {
+        return;
+    }
     const auto tokens = result.value.tokens();
-    REQUIRE_EQ(tokens.size(), expected.size());
+    if (!(ct::expect_equal(tokens.size(), expected.size()).note("text = ", text))) {
+        return;
+    }
     for (const auto& [token, expected_token] : std::views::zip(tokens, expected)) {
-        CHECK_EQ(token.kind, expected_token.kind);
-        CHECK_EQ(slice(text, token.span), expected_token.spelling);
+        ct::expect_equal(token.kind, expected_token.kind).note("text = ", text);
+        ct::expect_equal(slice(text, token.span), expected_token.spelling).note("text = ", text);
     }
 }
 
@@ -61,11 +72,10 @@ auto check_lexical_error(std::string_view text) noexcept -> void {
         .origin = "tokenize-test.cv",
     };
     const auto result = lex(source);
-    CAPTURE(text);
-    CHECK(!result.diagnostics.empty());
-    CHECK(std::ranges::any_of(result.value.tokens(), [](const Token& token) static noexcept {
+    ct::expect(!result.diagnostics.empty()).note("text = ", text);
+    ct::expect(std::ranges::any_of(result.value.tokens(), [](const Token& token) static noexcept {
         return token.kind == TokenKind::Invalid;
-    }));
+    })).note("text = ", text);
 }
 
 auto check_not_single_number(std::string_view text) noexcept -> void {
@@ -75,11 +85,9 @@ auto check_not_single_number(std::string_view text) noexcept -> void {
         .origin = "tokenize-test.cv",
     };
     const auto result = lex(source);
-    CAPTURE(text);
     const auto tokens = result.value.tokens();
-    CHECK(
-        !(result.diagnostics.empty()
-          && tokens.size() == 1
-          && tokens[0].kind == TokenKind::NumberLiteral)
-    );
+    ct::expect(!(result.diagnostics.empty()
+                 && tokens.size() == 1
+                 && tokens[0].kind == TokenKind::NumberLiteral))
+        .note("text = ", text);
 }

@@ -1,38 +1,26 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.compiler.generation.artifact_contracts;
 
 import :artifacts;
 import :backend.generation.request;
 import :compiler.compile;
-import :diagnostics.code;
+import :diagnostics.report;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.harness.framework;
 import std;
 
 namespace {
 
+namespace ct = carven::testing;
+
 template<typename Result>
-auto checked_artifacts(Result result) noexcept -> GeneratedArtifactSet {
-    auto diagnostic_report = std::string();
-    if (!result.has_value()) {
-        for (const auto& diagnostic : result.error()) {
-            diagnostic_report += std::format(
-                "{}: {}\n",
-                diagnostic_code_info(diagnostic.finding.code).name,
-                diagnostic.finding.message
-            );
-        }
-    }
-    INFO(diagnostic_report);
-    REQUIRE(result.has_value());
-    if (!result.has_value()) {
-        return GeneratedArtifactSet(std::vector<GeneratedArtifact> {});
-    }
+auto checked_artifacts(Result result, const SourceManager& sources) noexcept
+    -> GeneratedArtifactSet {
+    ct::require(result.has_value()).note([&] noexcept {
+        return render_diagnostics(result.error(), sources);
+    });
     return std::move(result->value);
 }
 
@@ -58,9 +46,9 @@ fn fail_value() -> i32 throw Failure {
 }
 )"
     );
-    REQUIRE(source.has_value());
+    ct::require(source.has_value());
     const auto path = CanonicalModulePath::from_value("dependencies");
-    REQUIRE(path.has_value());
+    ct::require(path.has_value());
     const auto input = SourceModuleInput {.source_id = *source, .module_path = *path};
     auto result = compile(
         sources,
@@ -70,7 +58,7 @@ fn fail_value() -> i32 throw Failure {
             .linkage_domain = LinkageDomain::explicit_value("test:artifacts").value(),
         }
     );
-    return checked_artifacts(std::move(result));
+    return checked_artifacts(std::move(result), sources);
 }
 
 auto compile_opaque_raw_fixture() noexcept -> GeneratedArtifactSet {
@@ -86,9 +74,9 @@ auto compile_opaque_raw_fixture() noexcept -> GeneratedArtifactSet {
         "inline constexpr auto cv_raw_generated = R\"(#line CARVEN_GENERATED_LINE \\\"raw.cpp\\\")\";\n"
         "-----\n"
     );
-    REQUIRE(source.has_value());
+    ct::require(source.has_value());
     const auto path = CanonicalModulePath::from_value("opaque");
-    REQUIRE(path.has_value());
+    ct::require(path.has_value());
     const auto input = SourceModuleInput {.source_id = *source, .module_path = *path};
     auto result = compile(
         sources,
@@ -98,17 +86,14 @@ auto compile_opaque_raw_fixture() noexcept -> GeneratedArtifactSet {
             .linkage_domain = LinkageDomain::explicit_value("test:artifacts").value(),
         }
     );
-    return checked_artifacts(std::move(result));
+    return checked_artifacts(std::move(result), sources);
 }
 
 auto artifact_content(const GeneratedArtifactSet& artifacts, std::string_view path) noexcept
     -> std::string_view {
     const auto found =
         std::ranges::find(artifacts.entries(), path, &GeneratedArtifact::logical_path);
-    REQUIRE(found != artifacts.entries().end());
-    if (found == artifacts.entries().end()) {
-        return {};
-    }
+    ct::require(found != artifacts.entries().end()).note("artifact:", path);
     return found->content;
 }
 
@@ -123,27 +108,43 @@ auto occurrence_count(std::string_view text, std::string_view needle) noexcept -
 
 } // namespace
 
-TEST_CASE("Generated artifacts: artifacts retain source attribution and exact dependencies") {
-    const auto artifacts = compile_dependency_fixture();
-    const auto implementation = artifact_content(artifacts, "dependencies.cpp");
+namespace {
 
-    CHECK(implementation.contains("\"dependencies.cv\""));
-    CHECK_FALSE(implementation.contains("#include <carven/runtime/runtime.hpp>"));
-    CHECK(implementation.contains("#include <carven/runtime/array.hpp>"));
-    CHECK(implementation.contains("#include <carven/runtime/callable.hpp>"));
-    CHECK(implementation.contains("#include <carven/runtime/numeric.hpp>"));
-    CHECK(implementation.contains("#include <carven/runtime/outcome.hpp>"));
-    CHECK_FALSE(implementation.contains("#include <carven/runtime/entry.hpp>"));
-    CHECK_FALSE(implementation.contains("#include <carven/runtime/text.hpp>"));
-    CHECK(implementation.contains("#include \"dependency_provider.hpp\""));
-}
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Generated artifacts: artifacts retain source attribution and exact dependencies",
+        [] static noexcept {
+            const auto artifacts = compile_dependency_fixture();
+            const auto implementation = artifact_content(artifacts, "dependencies.cpp");
 
-TEST_CASE("Generated artifacts: raw fragments preserve line-marker-shaped bytes") {
-    const auto artifacts = compile_opaque_raw_fixture();
-    const auto implementation = artifact_content(artifacts, "opaque.cpp");
+            ct::expect(implementation.contains("\"dependencies.cv\""));
+            ct::expect(!(implementation.contains("#include <carven/runtime/runtime.hpp>")));
+            ct::expect(implementation.contains("#include <carven/runtime/array.hpp>"));
+            ct::expect(implementation.contains("#include <carven/runtime/callable.hpp>"));
+            ct::expect(implementation.contains("#include <carven/runtime/numeric.hpp>"));
+            ct::expect(implementation.contains("#include <carven/runtime/outcome.hpp>"));
+            ct::expect(!(implementation.contains("#include <carven/runtime/entry.hpp>")));
+            ct::expect(!(implementation.contains("#include <carven/runtime/text.hpp>")));
+            ct::expect(implementation.contains("#include \"dependency_provider.hpp\""));
+        }
+    );
 
-    CHECK(implementation.contains("R\"(#line CARVEN_SOURCE_LINE 7 \\\"raw.cv\\\")\""));
-    CHECK(implementation.contains("R\"(#line CARVEN_GENERATED_LINE \\\"raw.cpp\\\")\""));
-    CHECK(implementation.find("cv_raw_source") < implementation.find("cv_raw_generated"));
-    CHECK_GE(occurrence_count(implementation, "\"opaque.cv\""), 2u);
-}
+    ct::test(
+        "Generated artifacts: raw fragments preserve line-marker-shaped bytes",
+        [] static noexcept {
+            const auto artifacts = compile_opaque_raw_fixture();
+            const auto implementation = artifact_content(artifacts, "opaque.cpp");
+
+            ct::expect(implementation.contains("R\"(#line CARVEN_SOURCE_LINE 7 \\\"raw.cv\\\")\""));
+            ct::expect(
+                implementation.contains("R\"(#line CARVEN_GENERATED_LINE \\\"raw.cpp\\\")\"")
+            );
+            ct::expect(
+                implementation.find("cv_raw_source") < implementation.find("cv_raw_generated")
+            );
+            ct::expect_greater_equal(occurrence_count(implementation, "\"opaque.cv\""), 2u);
+        }
+    );
+});
+
+} // namespace

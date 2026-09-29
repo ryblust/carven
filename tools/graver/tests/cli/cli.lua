@@ -1,3 +1,5 @@
+local report = import("report", {rootdir = path.join(os.projectdir(), "tests", "harness")})
+
 -- Every scenario owns its filesystem. Only explicit workflow steps share state.
 local function read_bytes(filename)
     return assert(io.readfile(filename, {encoding = "binary"}), "cannot read " .. filename)
@@ -5,17 +7,38 @@ end
 
 local function equal_bytes(actual, expected, label)
     if actual == expected then return end
-    local offset, line = 1, 1
-    while offset <= math.min(#actual, #expected) and actual:byte(offset) == expected:byte(offset) do
-        if expected:byte(offset) == 10 then line = line + 1 end
-        offset = offset + 1
+    assert(false, label .. ": " .. report.format_text_difference(actual, expected))
+end
+
+local step_fields = {
+    args = true, stdin = true, code = true, stdout = true,
+    contains = true, diagnostic = true, changed = true,
+}
+local case_fields = {name = true, files = true, steps = true}
+for field in pairs(step_fields) do case_fields[field] = true end
+
+local function check_fields(value, allowed, label)
+    for field in pairs(value) do
+        assert(allowed[field], label .. " has unknown field: " .. tostring(field))
     end
-    assert(false, label .. " at line " .. line .. ", byte " .. offset
-        .. "\n- expected: " .. string.format("%q", expected:sub(math.max(1, offset - 40), offset + 120))
-        .. "\n+ actual:   " .. string.format("%q", actual:sub(math.max(1, offset - 40), offset + 120)))
 end
 
 local function run_case(target, case)
+    check_fields(case, case_fields, "Graver CLI case " .. case.name)
+    if case.steps then
+        for field in pairs(step_fields) do
+            assert(case[field] == nil,
+                "Graver CLI case " .. case.name .. " ignores top-level step field: " .. field)
+        end
+    end
+    local steps = case.steps or {case}
+    assert(#steps > 0, "Graver CLI scenario has no execution steps: " .. case.name)
+    for index, step in ipairs(steps) do
+        local label = case.name .. " step " .. index
+        if case.steps then check_fields(step, step_fields, label) end
+        assert(type(step.args) == "table" and type(step.code) == "number",
+            label .. " requires arguments and an expected exit code")
+    end
     local program = path.absolute(target:dep("graver"):targetfile(), os.projectdir())
     local work = os.tmpfile() .. ".graver"
     local tree = path.join(work, "files")
@@ -27,16 +50,19 @@ local function run_case(target, case)
         io.writefile(filename, bytes, {encoding = "binary"})
         state[name] = bytes
     end
-    for index, step in ipairs(case.steps or {case}) do
-        local label = case.name .. " step " .. index .. " (retained on failure: " .. work .. ")"
+    for index, step in ipairs(steps) do
+        local label = case.name .. " step " .. index .. " (" .. report.format_command(program, step.args)
+            .. "; retained on failure: " .. work .. ")"
         local prefix = path.join(work, tostring(index))
         io.writefile(prefix .. ".stdin", step.stdin or "", {encoding = "binary"})
-        local code = os.execv(program, step.args, {
+        local code, run_error = os.execv(program, step.args, {
             try = true, timeout = 10000, curdir = tree,
             stdin = prefix .. ".stdin", stdout = prefix .. ".stdout", stderr = prefix .. ".stderr",
         })
         local stdout, stderr = read_bytes(prefix .. ".stdout"), read_bytes(prefix .. ".stderr")
-        assert(code == step.code, label .. ": expected exit " .. step.code .. ", got " .. tostring(code) .. "\n" .. stderr)
+        local context = run_error and (" (" .. tostring(run_error) .. ")") or ""
+        assert(code == step.code, label .. ": expected exit " .. step.code .. ", got " .. tostring(code)
+            .. context .. "\n" .. stderr)
         if step.contains then
             assert(stdout:find(step.contains, 1, true), label .. ": missing stdout fragment " .. step.contains)
         else

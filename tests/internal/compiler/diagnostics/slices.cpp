@@ -1,185 +1,196 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.compiler.diagnostics.slices;
 
+import :diagnostics.code;
+import :test.harness.framework;
 import :test.internal.compiler.diagnostics.fixture;
 import std;
 
-TEST_CASE("Compiler diagnostics: slices retain storage and nested borrows") {
-    const auto cases = std::to_array<CompilerErrorExpectation>({
-        {.name = "array mutation",
-         .source = "fn bad() { var a = [1, 2]; let v: [i32] = a; a[1] = 3; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a[1] = 3"},
-        {.name = "array replacement",
-         .source = "fn bad() { var a = [1, 2]; let v: [i32] = a; a = [3, 4]; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a = [3, 4]"},
-        {.name = "array take",
-         .source = "fn bad() { let a = [1, 2]; let v: [i32] = a; let moved = &&a; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "&&"},
-        {.name = "copy retains storage",
-         .source =
-             "fn bad() { var a = [1]; let b = [2]; var v = a.as_slice(); let copy = v; v = b; a[0] = 3; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a[0] = 3"},
-        {.name = "local return",
-         .source = "fn bad() -> [i32] { let a = [1, 2]; return a; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a"},
-        {.name = "take parameter return",
-         .source = "fn bad(&&a: [i32; 2]) -> [i32] => a;",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a"},
-        {.name = "temporary array holder",
-         .source = "fn bad() { let v: [i32] = [1, 2]; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "let v: [i32] = [1, 2]"},
-        {.name = "aggregate storage",
-         .source =
-             "struct V { bytes: [i32] } fn bad() { var a = [1]; let v = V { bytes: a }; a[0] = 2; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a[0] = 2"},
-        {.name = "closure storage",
-         .source =
-             "fn make(v: [i32]) => [v]() => v[0]; fn bad() { var a = [1]; let c = make(a); a[0] = 2; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a[0] = 2"},
-        {.name = "failure storage",
-         .source =
-             "struct E { bytes: [i32] } fn bad() throw E { let a = [1]; throw E { bytes: a }; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a"},
-        {.name = "catch storage",
-         .source =
-             "struct E { bytes: [i32] } fn bad() { var a = [1]; try { throw E { bytes: a }; } catch { E(_) => { a[0] = 2; }, } }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a[0] = 2"},
-        {.name = "callee array mutation",
-         .source =
-             "fn mutate(&a: [i32; 2]) { a[0] = 1; } fn bad() { var a = [1, 2]; let v: [i32] = a; mutate(&a); }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a[0] = 1"},
-        {.name = "byte slice storage",
-         .source = "fn bad() { var s = String {}; let v: [u8] = s.bytes; s.clear(); }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.clear()"},
-        {.name = "subslice element storage",
-         .source =
-             "fn bad() { var s = String {}; let a = [\"\", s.as_str()]; let v = a.as_slice().slice(1, 2); let text = v[0]; s.clear(); }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.clear()"},
-        {.name = "nested slice storage",
-         .source =
-             "fn first(a: [[i32]]) -> [i32] => a[0]; fn bad() { var a = [1]; let v = first([a]); a[0] = 2; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a[0] = 2"},
-        {.name = "loop storage",
-         .source = "fn bad() { var a = [1]; for v in a.as_slice() { a[0] = 2; } }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a[0] = 2"},
-        {.name = "nested temporary storage",
-         .source = "fn bad() { let v = [[1].as_slice()]; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "let v = [[1].as_slice()]"},
-        {.name = "readonly index",
-         .source = "fn bad(v: [i32]) { v[0] = 1; }",
-         .code = "CV-ACCESS-IMMUTABLE",
-         .primary_text = "v[0]"},
-        {.name = "array elements are invariant",
-         .source = "fn take(v: [u8]) {} fn bad(a: [i32; 2]) { take(a); }",
-         .code = "CV-TYPE-MISMATCH",
-         .primary_text = "a"},
-        {.name = "Write slice parameter requires a slice slot",
-         .source = "fn replace(&v: [i32]) {} fn bad() { var a = [1]; replace(&a); }",
-         .code = "CV-TYPE-MISMATCH",
-         .primary_text = "&a"},
-        {.name = "returned implicit view cannot escape temporary backing",
-         .source = "fn view(a: [i32]) -> [i32] => a; fn bad() { let v = view([1]); }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "let v = view([1])"},
-        {.name = "no comparison",
-         .source = "fn bad(a: [i32], b: [i32]) -> bool => a == b;",
-         .code = "CV-TYPE-EQUALITY-UNSUPPORTED",
-         .primary_text = "=="},
-        {.name = "returned loop view retains caller storage",
-         .source =
-             "fn first(a: [[i32; 1]; 1]) -> [i32] { for row in a { return row; } return a[0]; } fn bad() { var a = [[1]]; let v = first(a); a[0][0] = 2; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a[0][0] = 2"},
-        {.name = "temporary row borrow cannot escape",
-         .source = "fn first(a: [[i32; 1]]) -> [i32] => a[0]; fn bad() { let v = first([[1]]); }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "let v = first([[1]])"},
-        {.name = "local loop owner cannot escape",
-         .source = "fn bad() -> [i32] { let a = [[1]]; for row in a { return row; } return a[0]; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "row"},
-        {.name = "joined Read sources protect every possible owner",
-         .source =
-             "fn first(a: [[i32; 1]]) -> [i32] { for row in a { return row; } return a[0]; } fn bad(flag: bool) { var a = [[1]]; let b = [[2]]; let rows = if flag { a.as_slice() } else { b.as_slice() }; let v = first(rows); a[0][0] = 3; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a[0][0] = 3"},
-        {.name = "temporary array retains escaping text",
-         .source =
-             "fn first(a: [str; 1]) -> str => a[0]; fn bad() -> str { let s: String = \"hello\"; return first([s.as_str()]); }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.as_str()"},
-        {.name = "temporary aggregate field retains escaping text",
-         .source =
-             "struct A { values: [str; 1] } fn first(a: A) -> str => a.values[0]; fn bad() -> str { let s: String = \"hello\"; return first(A { values: [s.as_str()] }); }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.as_str()"},
-        {.name = "returned temporary array element protects its owner",
-         .source =
-             "fn first(a: [str; 1]) -> str => a[0]; fn bad() { var s: String = \"hello\"; let text = first([s.as_str()]); s.clear(); }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "s.clear()"},
-        {.name = "temporary array retains escaping slice",
-         .source =
-             "fn first(a: [[i32]; 1]) -> [i32] => a[0]; fn bad() -> [i32] { let a = [1]; return first([a]); }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "a"},
-        {.name = "callable slice element protects closure storage",
-         .source =
-             "fn bad() { let n = 42; let closure = [n]() => n; let owners = [closure]; let view: fn() -> i32 = owners.as_slice()[0]; let moved = &&owners; }",
-         .code = "CV-ACCESS-BORROW-CONFLICT",
-         .primary_text = "&&"},
-        {.name = "temporary callable slice element cannot be saved",
-         .source =
-             "fn bad() { let n = 42; let closure = [n]() => n; let view: fn() -> i32 = [closure].as_slice()[0]; }",
-         .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
-         .primary_text = "[closure].as_slice()[0]"},
-        {.name = "temporary callable array selected through a slice cannot be saved",
-         .source =
-             "fn bad() { let n = 42; let closure = [n]() => n; let views: [fn() -> i32; 1] = [[closure]].as_slice()[0]; }",
-         .code = "CV-TYPE-CALLABLE-VIEW-ESCAPE",
-         .primary_text = "[[closure]].as_slice()[0]"},
-    });
-    check_compiler_errors(cases);
-}
+namespace {
 
-TEST_CASE("Compiler diagnostics: slice methods enforce their operand contracts") {
-    const auto cases = std::to_array<CompilerErrorExpectation>({
-        {.name = "array borrowing takes no arguments",
-         .source = "fn bad(a: [i32; 1]) { a.as_slice(0usize); }",
-         .code = "CV-TYPE-METHOD-CALL-ARITY",
-         .primary_text = "a.as_slice(0usize)"},
-        {.name = "slice length takes no arguments",
-         .source = "fn bad(a: [i32]) { a.len(0usize); }",
-         .code = "CV-TYPE-METHOD-CALL-ARITY",
-         .primary_text = "a.len(0usize)"},
-        {.name = "slice requires both bounds",
-         .source = "fn bad(a: [i32]) { a.slice(0usize); }",
-         .code = "CV-TYPE-METHOD-CALL-ARITY",
-         .primary_text = "a.slice(0usize)"},
-        {.name = "slice bounds require usize",
-         .source = "fn bad(a: [i32]) { a.slice(false, 1usize); }",
-         .code = "CV-TYPE-MISMATCH",
-         .primary_text = "false"},
+namespace ct = carven::testing;
+
+const ct::Suite tests([] static noexcept {
+    ct::test("Compiler diagnostics: slices retain storage and nested borrows", [] static noexcept {
+        const auto cases = std::to_array<CompilerErrorExpectation>({
+            {.name = "array mutation",
+             .source = "fn bad() { var a = [1, 2]; let v: [i32] = a; a[1] = 3; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[1] = 3"},
+            {.name = "array replacement",
+             .source = "fn bad() { var a = [1, 2]; let v: [i32] = a; a = [3, 4]; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a = [3, 4]"},
+            {.name = "array take",
+             .source = "fn bad() { let a = [1, 2]; let v: [i32] = a; let moved = &&a; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "&&"},
+            {.name = "copy retains storage",
+             .source =
+                 "fn bad() { var a = [1]; let b = [2]; var v = a.as_slice(); let copy = v; v = b; a[0] = 3; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[0] = 3"},
+            {.name = "local return",
+             .source = "fn bad() -> [i32] { let a = [1, 2]; return a; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a"},
+            {.name = "take parameter return",
+             .source = "fn bad(&&a: [i32; 2]) -> [i32] => a;",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a"},
+            {.name = "temporary array holder",
+             .source = "fn bad() { let v: [i32] = [1, 2]; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "let v: [i32] = [1, 2]"},
+            {.name = "aggregate storage",
+             .source =
+                 "struct V { bytes: [i32] } fn bad() { var a = [1]; let v = V { bytes: a }; a[0] = 2; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[0] = 2"},
+            {.name = "closure storage",
+             .source =
+                 "fn make(v: [i32]) => [v]() => v[0]; fn bad() { var a = [1]; let c = make(a); a[0] = 2; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[0] = 2"},
+            {.name = "failure storage",
+             .source =
+                 "struct E { bytes: [i32] } fn bad() throw E { let a = [1]; throw E { bytes: a }; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a"},
+            {.name = "catch storage",
+             .source =
+                 "struct E { bytes: [i32] } fn bad() { var a = [1]; try { throw E { bytes: a }; } catch { E(_) => { a[0] = 2; }, } }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[0] = 2"},
+            {.name = "callee array mutation",
+             .source =
+                 "fn mutate(&a: [i32; 2]) { a[0] = 1; } fn bad() { var a = [1, 2]; let v: [i32] = a; mutate(&a); }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[0] = 1"},
+            {.name = "byte slice storage",
+             .source = "fn bad() { var s = String {}; let v: [u8] = s.bytes; s.clear(); }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "s.clear()"},
+            {.name = "subslice element storage",
+             .source =
+                 "fn bad() { var s = String {}; let a = [\"\", s.as_str()]; let v = a.as_slice().slice(1, 2); let text = v[0]; s.clear(); }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "s.clear()"},
+            {.name = "nested slice storage",
+             .source =
+                 "fn first(a: [[i32]]) -> [i32] => a[0]; fn bad() { var a = [1]; let v = first([a]); a[0] = 2; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[0] = 2"},
+            {.name = "loop storage",
+             .source = "fn bad() { var a = [1]; for v in a.as_slice() { a[0] = 2; } }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[0] = 2"},
+            {.name = "nested temporary storage",
+             .source = "fn bad() { let v = [[1].as_slice()]; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "let v = [[1].as_slice()]"},
+            {.name = "readonly index",
+             .source = "fn bad(v: [i32]) { v[0] = 1; }",
+             .code = DiagnosticCode::AccessImmutable,
+             .primary_text = "v[0]"},
+            {.name = "array elements are invariant",
+             .source = "fn take(v: [u8]) {} fn bad(a: [i32; 2]) { take(a); }",
+             .code = DiagnosticCode::TypeMismatch,
+             .primary_text = "a"},
+            {.name = "Write slice parameter requires a slice slot",
+             .source = "fn replace(&v: [i32]) {} fn bad() { var a = [1]; replace(&a); }",
+             .code = DiagnosticCode::TypeMismatch,
+             .primary_text = "&a"},
+            {.name = "returned implicit view cannot escape temporary backing",
+             .source = "fn view(a: [i32]) -> [i32] => a; fn bad() { let v = view([1]); }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "let v = view([1])"},
+            {.name = "no comparison",
+             .source = "fn bad(a: [i32], b: [i32]) -> bool => a == b;",
+             .code = DiagnosticCode::TypeEqualityUnsupported,
+             .primary_text = "=="},
+            {.name = "returned loop view retains caller storage",
+             .source =
+                 "fn first(a: [[i32; 1]; 1]) -> [i32] { for row in a { return row; } return a[0]; } fn bad() { var a = [[1]]; let v = first(a); a[0][0] = 2; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[0][0] = 2"},
+            {.name = "temporary row borrow cannot escape",
+             .source =
+                 "fn first(a: [[i32; 1]]) -> [i32] => a[0]; fn bad() { let v = first([[1]]); }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "let v = first([[1]])"},
+            {.name = "local loop owner cannot escape",
+             .source =
+                 "fn bad() -> [i32] { let a = [[1]]; for row in a { return row; } return a[0]; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "row"},
+            {.name = "joined Read sources protect every possible owner",
+             .source =
+                 "fn first(a: [[i32; 1]]) -> [i32] { for row in a { return row; } return a[0]; } fn bad(flag: bool) { var a = [[1]]; let b = [[2]]; let rows = if flag { a.as_slice() } else { b.as_slice() }; let v = first(rows); a[0][0] = 3; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a[0][0] = 3"},
+            {.name = "temporary array retains escaping text",
+             .source =
+                 "fn first(a: [str; 1]) -> str => a[0]; fn bad() -> str { let s: String = \"hello\"; return first([s.as_str()]); }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "s.as_str()"},
+            {.name = "temporary aggregate field retains escaping text",
+             .source =
+                 "struct A { values: [str; 1] } fn first(a: A) -> str => a.values[0]; fn bad() -> str { let s: String = \"hello\"; return first(A { values: [s.as_str()] }); }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "s.as_str()"},
+            {.name = "returned temporary array element protects its owner",
+             .source =
+                 "fn first(a: [str; 1]) -> str => a[0]; fn bad() { var s: String = \"hello\"; let text = first([s.as_str()]); s.clear(); }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "s.clear()"},
+            {.name = "temporary array retains escaping slice",
+             .source =
+                 "fn first(a: [[i32]; 1]) -> [i32] => a[0]; fn bad() -> [i32] { let a = [1]; return first([a]); }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "a"},
+            {.name = "callable slice element protects closure storage",
+             .source =
+                 "fn bad() { let n = 42; let closure = [n]() => n; let owners = [closure]; let view: fn() -> i32 = owners.as_slice()[0]; let moved = &&owners; }",
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "&&"},
+            {.name = "temporary callable slice element cannot be saved",
+             .source =
+                 "fn bad() { let n = 42; let closure = [n]() => n; let view: fn() -> i32 = [closure].as_slice()[0]; }",
+             .code = DiagnosticCode::TypeCallableViewEscape,
+             .primary_text = "[closure].as_slice()[0]"},
+            {.name = "temporary callable array selected through a slice cannot be saved",
+             .source =
+                 "fn bad() { let n = 42; let closure = [n]() => n; let views: [fn() -> i32; 1] = [[closure]].as_slice()[0]; }",
+             .code = DiagnosticCode::TypeCallableViewEscape,
+             .primary_text = "[[closure]].as_slice()[0]"},
+        });
+        check_compiler_errors(cases);
     });
-    check_compiler_errors(cases);
-}
+
+    ct::test(
+        "Compiler diagnostics: slice methods enforce their operand contracts",
+        [] static noexcept {
+            const auto cases = std::to_array<CompilerErrorExpectation>({
+                {.name = "array borrowing takes no arguments",
+                 .source = "fn bad(a: [i32; 1]) { a.as_slice(0usize); }",
+                 .code = DiagnosticCode::TypeMethodCallArity,
+                 .primary_text = "a.as_slice(0usize)"},
+                {.name = "slice length takes no arguments",
+                 .source = "fn bad(a: [i32]) { a.len(0usize); }",
+                 .code = DiagnosticCode::TypeMethodCallArity,
+                 .primary_text = "a.len(0usize)"},
+                {.name = "slice requires both bounds",
+                 .source = "fn bad(a: [i32]) { a.slice(0usize); }",
+                 .code = DiagnosticCode::TypeMethodCallArity,
+                 .primary_text = "a.slice(0usize)"},
+                {.name = "slice bounds require usize",
+                 .source = "fn bad(a: [i32]) { a.slice(false, 1usize); }",
+                 .code = DiagnosticCode::TypeMismatch,
+                 .primary_text = "false"},
+            });
+            check_compiler_errors(cases);
+        }
+    );
+});
+
+} // namespace

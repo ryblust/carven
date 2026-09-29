@@ -1,19 +1,19 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.interpreter.execute;
 
+import :diagnostics.code;
 import :interpreter.execute;
 import :semantic.evaluation.execution;
 import :semantic.semir.constant_access;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
+import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
+
+namespace ct = carven::testing;
 
 auto entry(const SemIRProgram& program) noexcept -> FunctionID {
     auto selected = std::optional<FunctionID>();
@@ -22,14 +22,19 @@ auto entry(const SemIRProgram& program) noexcept -> FunctionID {
             selected = row.id;
         }
     }
-    REQUIRE(selected.has_value());
+    ct::require(selected.has_value());
     return *selected;
 }
 
 } // namespace
 
-TEST_CASE("Interpreter: argument observation follows shared storage and evaluation rules") {
-    const auto program = analyze_test_program(R"(
+namespace {
+
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Interpreter: argument observation follows shared storage and evaluation rules",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         fn observe(value: i32) { print("argument;"); return value; }
         var number = 1;
         var text: String = "a";
@@ -39,45 +44,65 @@ TEST_CASE("Interpreter: argument observation follows shared storage and evaluati
             observe(number)
         } else { 0 });
     )");
-    auto output = std::string();
-    const auto constants = program.constants().size();
-    const auto types = program.types().size();
-    const auto spellings = program.provenance().spellings().size();
-    const auto result = interpret(
-        program,
-        entry(program),
-        [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
-            CHECK(stream == ExecutionOutputStream::Standard);
-            output.append(bytes);
-        },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
+            auto output = std::string();
+            const auto constants = program.constants().size();
+            const auto types = program.types().size();
+            const auto spellings = program.provenance().spellings().size();
+            const auto result = interpret(
+                program,
+                entry(program),
+                [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
+                    ct::expect(stream == ExecutionOutputStream::Standard);
+                    output.append(bytes);
+                },
+                InterpreterOptions {
+                    .limits = constant_execution_limits(),
+                    .trace = {},
+                    .report = {}
+                }
+            );
+            if (!ct::expect(result.has_value())) {
+                return;
+            }
+            ct::expect(output == "argument;1 ab 2\n");
+            ct::expect(program.constants().size() == constants);
+            ct::expect(program.types().size() == types);
+            ct::expect(program.provenance().spellings().size() == spellings);
+        }
     );
-    REQUIRE(result.has_value());
-    CHECK(output == "argument;1 ab 2\n");
-    CHECK(program.constants().size() == constants);
-    CHECK(program.types().size() == types);
-    CHECK(program.provenance().spellings().size() == spellings);
-}
 
-TEST_CASE("Interpreter: unused native functions do not constrain executed bodies") {
-    const auto program = analyze_test_program(R"(
+    ct::test(
+        "Interpreter: unused native functions do not constrain executed bodies",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         private import(cpp) fn native();
         fn unused() { native(); }
         println("ready");
     )");
-    auto output = std::string();
-    const auto result = interpret(
-        program,
-        entry(program),
-        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
+            auto output = std::string();
+            const auto result = interpret(
+                program,
+                entry(program),
+                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                    output.append(bytes);
+                },
+                InterpreterOptions {
+                    .limits = constant_execution_limits(),
+                    .trace = {},
+                    .report = {}
+                }
+            );
+            if (!ct::expect(result.has_value())) {
+                return;
+            }
+            ct::expect(output == "ready\n");
+        }
     );
-    REQUIRE(result.has_value());
-    CHECK(output == "ready\n");
-}
 
-TEST_CASE("Interpreter: native admission follows executed paths and preserves preceding effects") {
-    const auto program = analyze_test_program(R"(
+    ct::test(
+        "Interpreter: native admission follows executed paths and preserves preceding effects",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         private import(cpp) fn native();
         fn helper(selected: bool) { if selected { native(); } }
         println("before");
@@ -86,20 +111,31 @@ TEST_CASE("Interpreter: native admission follows executed paths and preserves pr
         helper(true);
         println("after native call");
     )");
-    auto output = std::string();
-    const auto result = interpret(
-        program,
-        entry(program),
-        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
+            auto output = std::string();
+            const auto result = interpret(
+                program,
+                entry(program),
+                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                    output.append(bytes);
+                },
+                InterpreterOptions {
+                    .limits = constant_execution_limits(),
+                    .trace = {},
+                    .report = {}
+                }
+            );
+            if (!ct::expect(!result.has_value())) {
+                return;
+            }
+            ct::expect(result.error().code == DiagnosticCode::InterpretAdmission);
+            ct::expect(output == "before\nafter skipped call\n");
+        }
     );
-    REQUIRE(!result.has_value());
-    CHECK(result.error().code == DiagnosticCode::InterpretAdmission);
-    CHECK(output == "before\nafter skipped call\n");
-}
 
-TEST_CASE("Interpreter: native capability is checked after operands complete") {
-    const auto program = analyze_test_program(R"(
+    ct::test(
+        "Interpreter: native capability is checked after operands complete",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         import <cstdlib>;
         struct Failure {}
         fn operand(failing: bool) -> i32 throw Failure {
@@ -115,55 +151,79 @@ TEST_CASE("Interpreter: native capability is checked after operands complete") {
         println(attempt(true));
         println(attempt(false));
     )");
-    auto output = std::string();
-    const auto result = interpret(
-        program,
-        entry(program),
-        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
+            auto output = std::string();
+            const auto result = interpret(
+                program,
+                entry(program),
+                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                    output.append(bytes);
+                },
+                InterpreterOptions {
+                    .limits = constant_execution_limits(),
+                    .trace = {},
+                    .report = {}
+                }
+            );
+            if (!ct::expect(!result.has_value())) {
+                return;
+            }
+            ct::expect(result.error().code == DiagnosticCode::InterpretAdmission);
+            ct::expect(output == "operand\n7\noperand\n");
+        }
     );
-    REQUIRE(!result.has_value());
-    CHECK(result.error().code == DiagnosticCode::InterpretAdmission);
-    CHECK(output == "operand\n7\noperand\n");
-}
 
-TEST_CASE("Interpreter: budgets cover ordinary recursive calls") {
-    const auto program = analyze_test_program(R"(
+    ct::test("Interpreter: budgets cover ordinary recursive calls", [] static noexcept {
+        const auto program = analyze_test_program(R"(
         fn recurse(value: i32) -> i32 { return recurse(value); }
         recurse(1);
     )");
-    const auto result = interpret(
-        program,
-        entry(program),
-        {},
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
-    );
-    REQUIRE(!result.has_value());
-    CHECK(result.error().code == DiagnosticCode::InterpretLimit);
-    CHECK(!result.error().calls.empty());
-}
+        const auto result = interpret(
+            program,
+            entry(program),
+            {},
+            InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
+        );
+        if (!ct::expect(!result.has_value())) {
+            return;
+        }
+        ct::expect(result.error().code == DiagnosticCode::InterpretLimit);
+        ct::expect(!result.error().calls.empty());
+    });
 
-TEST_CASE("Interpreter: native source initialization cannot be silently omitted") {
-    const auto program = analyze_test_program(R"(
+    ct::test(
+        "Interpreter: native source initialization cannot be silently omitted",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         #[cpp] ---
         inline int native_state = [] { return 42; }();
         ---
         println("not executed");
     )");
-    auto output = std::string();
-    const auto result = interpret(
-        program,
-        entry(program),
-        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
+            auto output = std::string();
+            const auto result = interpret(
+                program,
+                entry(program),
+                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                    output.append(bytes);
+                },
+                InterpreterOptions {
+                    .limits = constant_execution_limits(),
+                    .trace = {},
+                    .report = {}
+                }
+            );
+            if (!ct::expect(!result.has_value())) {
+                return;
+            }
+            ct::expect(result.error().code == DiagnosticCode::InterpretAdmission);
+            ct::expect(output.empty());
+        }
     );
-    REQUIRE(!result.has_value());
-    CHECK(result.error().code == DiagnosticCode::InterpretAdmission);
-    CHECK(output.empty());
-}
 
-TEST_CASE("Interpreter: static and dynamic ranges select the matching branch") {
-    const auto program = analyze_test_program(R"(
+    ct::test(
+        "Interpreter: static and dynamic ranges select the matching branch",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         fn classify(score: i32) -> str {
             return match score {
                 ..0 => "invalid",
@@ -181,31 +241,40 @@ TEST_CASE("Interpreter: static and dynamic ranges select the matching branch") {
         println(classify(-1), classify(59), classify(60), classify(100), classify(101));
         println(within(3, 3, 3), within(3, 4, 2));
     )");
-    const auto types = program.types().size();
-    const auto constants = program.constants().size();
-    const auto values = PublishedConstantValues(program);
-    for (const auto kind : builtin_types) {
-        CHECK(values.builtin_type(kind) == program.types().builtin_type(kind));
-    }
-    for (auto attempt = 0; attempt < 2; ++attempt) {
-        auto output = std::string();
-        const auto result = interpret(
-            program,
-            entry(program),
-            [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-            InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
-        );
-        REQUIRE(result.has_value());
-        CHECK(output == "invalid retry pass pass invalid\ninside outside\n");
-        CHECK(program.types().size() == types);
-        CHECK(program.constants().size() == constants);
-    }
-}
+            const auto types = program.types().size();
+            const auto constants = program.constants().size();
+            const auto values = PublishedConstantValues(program);
+            for (const auto kind : builtin_types) {
+                ct::expect(values.builtin_type(kind) == program.types().builtin_type(kind));
+            }
+            for (auto attempt = 0; attempt < 2; ++attempt) {
+                auto output = std::string();
+                const auto result = interpret(
+                    program,
+                    entry(program),
+                    [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                        output.append(bytes);
+                    },
+                    InterpreterOptions {
+                        .limits = constant_execution_limits(),
+                        .trace = {},
+                        .report = {}
+                    }
+                );
+                if (!ct::expect(result.has_value())) {
+                    return;
+                }
+                ct::expect(output == "invalid retry pass pass invalid\ninside outside\n");
+                ct::expect(program.types().size() == types);
+                ct::expect(program.constants().size() == constants);
+            }
+        }
+    );
 
-TEST_CASE(
-    "Interpreter: runtime tests execute published bodies without admitting the program entry"
-) {
-    const auto program = analyze_test_program(R"(
+    ct::test(
+        "Interpreter: runtime tests execute published bodies without admitting the program entry",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         private import(cpp) fn native();
         fn main() { native(); }
         const test "static" { check(true); }
@@ -221,132 +290,201 @@ TEST_CASE(
         test "explicit" { stop(); println("unreachable"); }
         test "next" { println("next"); }
     )");
-    const auto constants = program.constants().size();
-    const auto types = program.types().size();
-    for (auto attempt = 0; attempt < 2; ++attempt) {
-        auto output = std::string();
-        const auto results = interpret_tests(
-            program,
-            [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-            InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
-        );
-        REQUIRE(results.has_value());
-        REQUIRE(results->size() == 3);
-        CHECK(
-            block_display_name(
-                program.provenance(),
-                program.tests().test((*results)[0].test).source
-            )
-            == "failed"
-        );
-        REQUIRE((*results)[0].diagnostics.size() == 2);
-        CHECK((*results)[0].diagnostics[0].code == DiagnosticCode::InterpretExecution);
-        CHECK((*results)[0].diagnostics[0].message.contains("first"));
-        CHECK((*results)[0].diagnostics[1].message.contains("stop"));
-        CHECK(!(*results)[0].diagnostics[1].calls.empty());
-        REQUIRE((*results)[1].diagnostics.size() == 1);
-        CHECK((*results)[1].diagnostics[0].code == DiagnosticCode::InterpretExecution);
-        CHECK((*results)[1].diagnostics[0].message.contains("explicit failure"));
-        CHECK((*results)[2].diagnostics.empty());
-        CHECK(output == "next\n");
-        CHECK(program.constants().size() == constants);
-        CHECK(program.types().size() == types);
-    }
-}
+            const auto constants = program.constants().size();
+            const auto types = program.types().size();
+            for (auto attempt = 0; attempt < 2; ++attempt) {
+                auto output = std::string();
+                const auto results = interpret_tests(
+                    program,
+                    [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                        output.append(bytes);
+                    },
+                    InterpreterOptions {
+                        .limits = constant_execution_limits(),
+                        .trace = {},
+                        .report = {}
+                    }
+                );
+                if (!ct::expect(results.has_value())) {
+                    return;
+                }
+                if (!ct::expect(results->size() == 3)) {
+                    return;
+                }
+                ct::expect(
+                    block_display_name(
+                        program.provenance(),
+                        program.tests().test((*results)[0].test).source
+                    )
+                    == "failed"
+                );
+                if (!ct::expect((*results)[0].diagnostics.size() == 2)) {
+                    return;
+                }
+                ct::expect((*results)[0].diagnostics[0].code == DiagnosticCode::InterpretExecution);
+                ct::expect((*results)[0].diagnostics[0].message.contains("first"));
+                ct::expect((*results)[0].diagnostics[1].message.contains("stop"));
+                ct::expect(!(*results)[0].diagnostics[1].calls.empty());
+                if (!ct::expect((*results)[1].diagnostics.size() == 1)) {
+                    return;
+                }
+                ct::expect((*results)[1].diagnostics[0].code == DiagnosticCode::InterpretExecution);
+                ct::expect((*results)[1].diagnostics[0].message.contains("explicit failure"));
+                ct::expect((*results)[2].diagnostics.empty());
+                ct::expect(output == "next\n");
+                ct::expect(program.constants().size() == constants);
+                ct::expect(program.types().size() == types);
+            }
+        }
+    );
 
-TEST_CASE("Interpreter: runtime tests admit executed paths and continue after unsupported calls") {
-    const auto program = analyze_test_program(R"(
+    ct::test(
+        "Interpreter: runtime tests admit executed paths and continue after unsupported calls",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         private import(cpp) fn native();
         fn helper(selected: bool) { if selected { native(); } }
         test "skipped" { helper(false); println("skipped"); }
         test "reached" { helper(true); println("unreachable"); }
         test "later" { println("later"); }
     )");
-    auto output = std::string();
-    const auto results = interpret_tests(
-        program,
-        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
+            auto output = std::string();
+            const auto results = interpret_tests(
+                program,
+                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                    output.append(bytes);
+                },
+                InterpreterOptions {
+                    .limits = constant_execution_limits(),
+                    .trace = {},
+                    .report = {}
+                }
+            );
+            if (!ct::expect(results.has_value())) {
+                return;
+            }
+            if (!ct::expect(results->size() == 3)) {
+                return;
+            }
+            ct::expect((*results)[0].diagnostics.empty());
+            if (!ct::expect((*results)[1].diagnostics.size() == 1)) {
+                return;
+            }
+            ct::expect((*results)[1].diagnostics[0].code == DiagnosticCode::InterpretAdmission);
+            ct::expect((*results)[2].diagnostics.empty());
+            ct::expect(output == "skipped\nlater\n");
+        }
     );
-    REQUIRE(results.has_value());
-    REQUIRE(results->size() == 3);
-    CHECK((*results)[0].diagnostics.empty());
-    REQUIRE((*results)[1].diagnostics.size() == 1);
-    CHECK((*results)[1].diagnostics[0].code == DiagnosticCode::InterpretAdmission);
-    CHECK((*results)[2].diagnostics.empty());
-    CHECK(output == "skipped\nlater\n");
-}
 
-TEST_CASE("Interpreter: each runtime test receives an independent execution budget") {
-    const auto program = analyze_test_program(R"(
+    ct::test(
+        "Interpreter: each runtime test receives an independent execution budget",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         test "limited" { while true {} }
         test "fresh" { check(true); println("fresh"); }
     )");
-    auto limits = constant_execution_limits();
-    limits.steps = 20uz;
-    auto output = std::string();
-    const auto results = interpret_tests(
-        program,
-        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = limits, .trace = {}, .report = {}}
+            auto limits = constant_execution_limits();
+            limits.steps = 20uz;
+            auto output = std::string();
+            const auto results = interpret_tests(
+                program,
+                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                    output.append(bytes);
+                },
+                InterpreterOptions {.limits = limits, .trace = {}, .report = {}}
+            );
+            if (!ct::expect(results.has_value())) {
+                return;
+            }
+            if (!ct::expect(results->size() == 2)) {
+                return;
+            }
+            if (!ct::expect((*results)[0].diagnostics.size() == 1)) {
+                return;
+            }
+            ct::expect((*results)[0].diagnostics[0].code == DiagnosticCode::InterpretLimit);
+            ct::expect((*results)[1].diagnostics.empty());
+            ct::expect(output == "fresh\n");
+        }
     );
-    REQUIRE(results.has_value());
-    REQUIRE(results->size() == 2);
-    REQUIRE((*results)[0].diagnostics.size() == 1);
-    CHECK((*results)[0].diagnostics[0].code == DiagnosticCode::InterpretLimit);
-    CHECK((*results)[1].diagnostics.empty());
-    CHECK(output == "fresh\n");
-}
 
-TEST_CASE("Interpreter: fatal assertions retain earlier diagnostics and stop remaining tests") {
-    const auto program = analyze_test_program(R"(
+    ct::test(
+        "Interpreter: fatal assertions retain earlier diagnostics and stop remaining tests",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         test "earlier" { println("before"); check(false, "first"); println("after"); }
         test "fatal" { check(false, "second"); assert(false, "fatal"); }
         test "later" { println("unreachable"); }
     )");
-    auto events = std::string();
-    const auto result = interpret_tests(
-        program,
-        [&](ExecutionOutputStream, std::string_view bytes) noexcept { events += bytes; },
-        InterpreterOptions {
-            .limits = constant_execution_limits(),
-            .trace = {},
-            .report = [&](std::optional<TestID> test,
-                          const ExecutionDiagnostic& diagnostic) noexcept {
-                CHECK(test.has_value());
-                REQUIRE(diagnostic.report_kind.has_value());
-                events += *diagnostic.report_kind == ReportKind::Assert ? "assert\n" : "check\n";
+            auto events = std::string();
+            const auto result = interpret_tests(
+                program,
+                [&](ExecutionOutputStream, std::string_view bytes) noexcept { events += bytes; },
+                InterpreterOptions {
+                    .limits = constant_execution_limits(),
+                    .trace = {},
+                    .report = [&](std::optional<TestID> test,
+                                  const ExecutionDiagnostic& diagnostic) noexcept {
+                        ct::expect(test.has_value());
+                        if (!ct::expect(diagnostic.report_kind.has_value())) {
+                            return;
+                        }
+                        events +=
+                            *diagnostic.report_kind == ReportKind::Assert ? "assert\n" : "check\n";
+                    }
+                }
+            );
+            if (!ct::expect(result.has_value())) {
+                return;
             }
+            if (!ct::expect(result->size() == 2)) {
+                return;
+            }
+            ct::expect(!(*result)[0].aborted());
+            if (!ct::expect((*result)[0].diagnostics.size() == 1)) {
+                return;
+            }
+            ct::expect((*result)[0].diagnostics[0].message.contains("first"));
+            ct::expect((*result)[1].aborted());
+            if (!ct::expect((*result)[1].diagnostics.size() == 2)) {
+                return;
+            }
+            ct::expect((*result)[1].diagnostics[0].message.contains("second"));
+            ct::expect((*result)[1].diagnostics[1].message.contains("fatal"));
+            ct::expect(events == "before\ncheck\nafter\ncheck\nassert\n");
         }
     );
-    REQUIRE(result.has_value());
-    REQUIRE(result->size() == 2);
-    CHECK(!(*result)[0].aborted());
-    REQUIRE((*result)[0].diagnostics.size() == 1);
-    CHECK((*result)[0].diagnostics[0].message.contains("first"));
-    CHECK((*result)[1].aborted());
-    REQUIRE((*result)[1].diagnostics.size() == 2);
-    CHECK((*result)[1].diagnostics[0].message.contains("second"));
-    CHECK((*result)[1].diagnostics[1].message.contains("fatal"));
-    CHECK(events == "before\ncheck\nafter\ncheck\nassert\n");
-}
 
-TEST_CASE("Interpreter: unchecked character construction checks the executed precondition") {
-    const auto program = analyze_test_program(R"(
+    ct::test(
+        "Interpreter: unchecked character construction checks the executed precondition",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
         fn character(value: u32) -> char => char::from_u32_unchecked(value);
         println(character(0x10ffff) as u32);
         if false { println(character(0xd800)); }
         println(character(0xd800));
         println("unreachable");
     )");
-    auto output = std::string();
-    const auto result = interpret(
-        program,
-        entry(program),
-        [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
-        InterpreterOptions {.limits = constant_execution_limits(), .trace = {}, .report = {}}
+            auto output = std::string();
+            const auto result = interpret(
+                program,
+                entry(program),
+                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                    output.append(bytes);
+                },
+                InterpreterOptions {
+                    .limits = constant_execution_limits(),
+                    .trace = {},
+                    .report = {}
+                }
+            );
+            if (!ct::expect(!result.has_value())) {
+                return;
+            }
+            ct::expect(result.error().code == DiagnosticCode::InterpretExecution);
+            ct::expect(output == "1114111\n");
+        }
     );
-    REQUIRE(!result.has_value());
-    CHECK(result.error().code == DiagnosticCode::InterpretExecution);
-    CHECK(output == "1114111\n");
-}
+});
+
+} // namespace

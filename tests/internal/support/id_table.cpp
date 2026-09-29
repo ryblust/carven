@@ -1,14 +1,13 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.support.id_table;
 
 import :support.id_table;
 import :support.typed_id;
+import :test.harness.framework;
 import std;
 
 namespace {
+
+namespace ct = carven::testing;
 
 struct TestIDTag final {};
 
@@ -57,34 +56,46 @@ static_assert(!HasRvalueValues<const TestTable>);
 
 } // namespace
 
-TEST_CASE("Support IDTable: typed IDs, views and rewind") {
-    auto table = TestTable();
-    const auto first = table.add("first");
-    const auto checkpoint = table.checkpoint();
-    const auto second = table.add("second");
+namespace {
 
-    CHECK_EQ(first.index(), 0u);
-    CHECK_EQ(second.index(), 1u);
-    CHECK(table.contains(second));
-    CHECK_EQ(table.get(first), "first");
-    CHECK_EQ(table.values().size(), 2u);
+const ct::Suite tests([] static noexcept {
+    ct::test("Support IDTable: typed IDs, views and rewind", [] static noexcept {
+        auto table = TestTable();
+        const auto first = table.add("first");
+        const auto checkpoint = table.checkpoint();
+        const auto second = table.add("second");
 
-    table.rewind(checkpoint);
-    CHECK(!table.contains(second));
-    CHECK_EQ(table.values().size(), 1u);
-}
+        ct::expect_equal(first.index(), 0u);
+        ct::expect_equal(second.index(), 1u);
+        ct::expect(table.contains(second));
+        ct::expect_equal(table.get(first), std::string_view("first"));
+        ct::expect_equal(table.values().size(), 2u);
 
-TEST_CASE("Support ReservedTable: reservations preserve identity when sealed") {
-    auto reservations = TestReservedTable();
-    const auto first = reservations.reserve();
-    const auto second = reservations.reserve();
+        table.rewind(checkpoint);
+        ct::expect(!table.contains(second));
+        ct::expect_equal(table.values().size(), 1u);
+    });
 
-    reservations.define(second, "second");
-    reservations.define(first, "first");
-    CHECK_EQ(reservations.get_defined(first), "first");
-    CHECK_EQ(std::as_const(reservations).get_defined(second), "second");
+    ct::test(
+        "Support ReservedTable: reservations preserve identity when sealed",
+        [] static noexcept {
+            auto reservations = TestReservedTable();
+            const auto first = reservations.reserve();
+            const auto second = reservations.reserve();
 
-    const auto table = std::move(reservations).seal();
-    CHECK_EQ(table.get(first), "first");
-    CHECK_EQ(table.get(second), "second");
-}
+            reservations.define(second, "second");
+            reservations.define(first, "first");
+            ct::expect_equal(reservations.get_defined(first), std::string_view("first"));
+            ct::expect_equal(
+                std::as_const(reservations).get_defined(second),
+                std::string_view("second")
+            );
+
+            const auto table = std::move(reservations).seal();
+            ct::expect_equal(table.get(first), std::string_view("first"));
+            ct::expect_equal(table.get(second), std::string_view("second"));
+        }
+    );
+});
+
+} // namespace

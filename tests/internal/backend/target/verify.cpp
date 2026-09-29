@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.backend.target.verify;
 
 import :backend.target.builder;
@@ -18,11 +14,14 @@ import :backend.target.unit;
 import :backend.target.verify;
 import :backend.target;
 import :support.unique_indirect;
+import :test.harness.framework;
 import :test.internal.backend.target.fixture;
 import :test.internal.harness.death;
 import std;
 
 namespace {
+
+namespace ct = carven::testing;
 
 auto identifier(std::string_view spelling) noexcept -> TargetIdentifier {
     return TargetIdentifier::from_spelling(spelling);
@@ -89,8 +88,10 @@ auto require_violation(
 ) noexcept -> void {
     const auto result =
         TargetTestingFixture::validate_unit(identity, types, unit_sections, local_count);
-    REQUIRE_FALSE(result.has_value());
-    CHECK_EQ(result.error().kind, kind);
+    if (!ct::expect(!(result.has_value()))) {
+        return;
+    }
+    ct::expect_equal(result.error().kind, kind);
 }
 
 static_assert(!std::copy_constructible<TargetExpr>);
@@ -105,311 +106,328 @@ static_assert(std::ranges::range<TargetPlanTableEntries<int, TargetArtifactID>>)
 
 } // namespace
 
-TEST_CASE("Target type construction: children already belong to the unit") {
-    auto builder = TargetUnitBuilder();
-    const auto foreign = TargetTestingFixture::unit_identity();
-    const auto invalid = std::array {
-        TargetTestingFixture::type_id(foreign, 0),
-        TargetTestingFixture::type_id(builder.identity(), 0),
-        TargetTestingFixture::type_id(builder.identity(), 7),
-    };
-    for (const auto [index, child] : invalid | std::views::enumerate) {
-        CHECK(expect_termination(std::format("target-type-child-{}", index), [&] noexcept {
+namespace {
+
+const ct::Suite tests([] static noexcept {
+    ct::test("Target type construction: children already belong to the unit", [] static noexcept {
+        auto builder = TargetUnitBuilder();
+        const auto foreign = TargetTestingFixture::unit_identity();
+        const auto invalid = std::array {
+            TargetTestingFixture::type_id(foreign, 0),
+            TargetTestingFixture::type_id(builder.identity(), 0),
+            TargetTestingFixture::type_id(builder.identity(), 7),
+        };
+        for (const auto [index, child] : invalid | std::views::enumerate) {
+            ct::expect(expect_termination(std::format("target-type-child-{}", index), [&] noexcept {
+                static_cast<void>(builder.intern_type(
+                    TargetType {
+                        .value =
+                            TargetArrayType {
+                                .element_type_id = child,
+                                .extent = TargetArrayExtent {.magnitude = 2}
+                            },
+                        .const_qualified = false,
+                    }
+                ));
+            }));
+        }
+        const auto element = builder.intern_type(bool_type());
+        [[maybe_unused]] const auto array = builder.intern_type(
+            TargetType {
+                .value =
+                    TargetArrayType {
+                        .element_type_id = element,
+                        .extent = TargetArrayExtent {.magnitude = 2}
+                    },
+                .const_qualified = false,
+            }
+        );
+    });
+
+    ct::test("Target jump verifier: entering an empty nested scope is legal", [] static noexcept {
+        const auto owner = TargetTestingFixture::unit_identity();
+        const auto type = TargetTestingFixture::type_id(owner, 0);
+        auto body = std::vector<TargetStmt>();
+        body.push_back({
+            .value =
+                TargetGotoStmt {
+                    .label = identifier("inside"),
+                    .role = TargetJumpRole::RegionExit,
+                },
+            .attribution = attribution(),
+        });
+        body.push_back({
+            .value =
+                TargetBlockStmt {
+                    .statements = one_statement(
+                        TargetStmt {
+                            .value =
+                                TargetLabelStmt {
+                                    .label = identifier("inside"),
+                                    .role = TargetJumpRole::RegionExit,
+                                },
+                            .attribution = attribution(),
+                        }
+                    ),
+                },
+            .attribution = attribution(),
+        });
+        const auto types = std::array {bool_type()};
+        ct::expect(
+            TargetTestingFixture::validate_unit(
+                owner,
+                types,
+                sections(one_item(function(type, std::move(body))))
+            )
+                .has_value()
+        );
+    });
+
+    ct::test("Target jump verifier: region exit cannot jump backward", [] static noexcept {
+        const auto owner = TargetTestingFixture::unit_identity();
+        const auto type = TargetTestingFixture::type_id(owner, 0);
+        auto body = std::vector<TargetStmt>();
+        body.push_back({
+            .value =
+                TargetLabelStmt {
+                    .label = identifier("loop"),
+                    .role = TargetJumpRole::RegionExit,
+                },
+            .attribution = attribution(),
+        });
+        body.push_back({
+            .value =
+                TargetGotoStmt {
+                    .label = identifier("loop"),
+                    .role = TargetJumpRole::RegionExit,
+                },
+            .attribution = attribution(),
+        });
+        const auto types = std::array {bool_type()};
+        ct::expect(!(TargetTestingFixture::validate_unit(
+                         owner,
+                         types,
+                         sections(one_item(function(type, std::move(body))))
+        )
+                         .has_value()));
+    });
+
+    ct::test("Target jump verifier: entering past initialization is rejected", [] static noexcept {
+        const auto owner = TargetTestingFixture::unit_identity();
+        const auto type = TargetTestingFixture::type_id(owner, 0);
+        auto nested = std::vector<TargetStmt>();
+        nested.push_back({
+            .value =
+                TargetVariableStmt {
+                    .binding = TargetVariableBinding::ConstValue,
+                    .maybe_unused = false,
+                    .local = TargetTestingFixture::local_id(owner, 0),
+                    .type = type,
+                    .initializer = literal(),
+                },
+            .attribution = attribution(),
+        });
+        nested.push_back({
+            .value =
+                TargetLabelStmt {
+                    .label = identifier("inside"),
+                    .role = TargetJumpRole::RegionExit,
+                },
+            .attribution = attribution(),
+        });
+        auto body = std::vector<TargetStmt>();
+        body.push_back({
+            .value =
+                TargetGotoStmt {
+                    .label = identifier("inside"),
+                    .role = TargetJumpRole::RegionExit,
+                },
+            .attribution = attribution(),
+        });
+        body.push_back({
+            .value =
+                TargetBlockStmt {
+                    .statements = std::move(nested),
+                },
+            .attribution = attribution(),
+        });
+        const auto types = std::array {bool_type()};
+        require_violation(
+            owner,
+            types,
+            sections(one_item(function(type, std::move(body)))),
+            TargetSealViolationKind::InvalidControl,
+            1
+        );
+    });
+
+    ct::test(
+        "Target builder: interning is unit-owned and unused types add no dependency",
+        [] static noexcept {
+            auto builder = TargetTestingFixture::unit_builder();
             static_cast<void>(builder.intern_type(
                 TargetType {
                     .value =
-                        TargetArrayType {
-                            .element_type_id = child,
-                            .extent = TargetArrayExtent {.magnitude = 2}
+                        TargetIntrinsicType {
+                            .symbol = TargetSymbol::RuntimeFunctionRef,
+                            .type_argument_ids = {},
                         },
                     .const_qualified = false,
                 }
             ));
-        }));
-    }
-    const auto element = builder.intern_type(bool_type());
-    [[maybe_unused]] const auto array = builder.intern_type(
-        TargetType {
-            .value =
-                TargetArrayType {
-                    .element_type_id = element,
-                    .extent = TargetArrayExtent {.magnitude = 2}
-                },
-            .const_qualified = false,
+            const auto first = builder.intern_type(bool_type());
+            const auto second = builder.intern_type(bool_type());
+            const auto unit = std::move(builder).finish(sections(one_item(function(first, {}))));
+
+            ct::expect((first == second));
+            ct::expect_equal(unit.type_count(), 2uz);
+            ct::expect(unit.directive_groups().empty());
         }
     );
-}
 
-TEST_CASE("Target jump verifier: entering an empty nested scope is legal") {
-    const auto owner = TargetTestingFixture::unit_identity();
-    const auto type = TargetTestingFixture::type_id(owner, 0);
-    auto body = std::vector<TargetStmt>();
-    body.push_back({
-        .value =
-            TargetGotoStmt {
-                .label = identifier("inside"),
-                .role = TargetJumpRole::RegionExit,
-            },
-        .attribution = attribution(),
-    });
-    body.push_back({
-        .value =
-            TargetBlockStmt {
-                .statements = one_statement(
-                    TargetStmt {
-                        .value =
-                            TargetLabelStmt {
-                                .label = identifier("inside"),
-                                .role = TargetJumpRole::RegionExit,
-                            },
-                        .attribution = attribution(),
-                    }
-                ),
-            },
-        .attribution = attribution(),
-    });
-    const auto types = std::array {bool_type()};
-    CHECK(
-        TargetTestingFixture::validate_unit(
-            owner,
-            types,
-            sections(one_item(function(type, std::move(body))))
-        )
-            .has_value()
-    );
-}
-
-TEST_CASE("Target jump verifier: region exit cannot jump backward") {
-    const auto owner = TargetTestingFixture::unit_identity();
-    const auto type = TargetTestingFixture::type_id(owner, 0);
-    auto body = std::vector<TargetStmt>();
-    body.push_back({
-        .value =
-            TargetLabelStmt {
-                .label = identifier("loop"),
-                .role = TargetJumpRole::RegionExit,
-            },
-        .attribution = attribution(),
-    });
-    body.push_back({
-        .value =
-            TargetGotoStmt {
-                .label = identifier("loop"),
-                .role = TargetJumpRole::RegionExit,
-            },
-        .attribution = attribution(),
-    });
-    const auto types = std::array {bool_type()};
-    CHECK_FALSE(
-        TargetTestingFixture::validate_unit(
-            owner,
-            types,
-            sections(one_item(function(type, std::move(body))))
-        )
-            .has_value()
-    );
-}
-
-TEST_CASE("Target jump verifier: entering past initialization is rejected") {
-    const auto owner = TargetTestingFixture::unit_identity();
-    const auto type = TargetTestingFixture::type_id(owner, 0);
-    auto nested = std::vector<TargetStmt>();
-    nested.push_back({
-        .value =
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::ConstValue,
-                .maybe_unused = false,
-                .local = TargetTestingFixture::local_id(owner, 0),
-                .type = type,
-                .initializer = literal(),
-            },
-        .attribution = attribution(),
-    });
-    nested.push_back({
-        .value =
-            TargetLabelStmt {
-                .label = identifier("inside"),
-                .role = TargetJumpRole::RegionExit,
-            },
-        .attribution = attribution(),
-    });
-    auto body = std::vector<TargetStmt>();
-    body.push_back({
-        .value =
-            TargetGotoStmt {
-                .label = identifier("inside"),
-                .role = TargetJumpRole::RegionExit,
-            },
-        .attribution = attribution(),
-    });
-    body.push_back({
-        .value =
-            TargetBlockStmt {
-                .statements = std::move(nested),
-            },
-        .attribution = attribution(),
-    });
-    const auto types = std::array {bool_type()};
-    require_violation(
-        owner,
-        types,
-        sections(one_item(function(type, std::move(body)))),
-        TargetSealViolationKind::InvalidControl,
-        1
-    );
-}
-
-TEST_CASE("Target builder: interning is unit-owned and unused types add no dependency") {
-    auto builder = TargetTestingFixture::unit_builder();
-    static_cast<void>(builder.intern_type(
-        TargetType {
-            .value =
-                TargetIntrinsicType {
-                    .symbol = TargetSymbol::RuntimeFunctionRef,
-                    .type_argument_ids = {},
-                },
-            .const_qualified = false,
-        }
-    ));
-    const auto first = builder.intern_type(bool_type());
-    const auto second = builder.intern_type(bool_type());
-    const auto unit = std::move(builder).finish(sections(one_item(function(first, {}))));
-
-    CHECK_EQ(first, second);
-    CHECK_EQ(unit.type_count(), 2);
-    CHECK(unit.directive_groups().empty());
-}
-
-TEST_CASE("Target builder: type queries retain call structure across table growth") {
-    auto builder = TargetTestingFixture::unit_builder();
-    const auto query = [](bool grouped) static noexcept -> TargetType {
-        const auto name = [](std::string_view text) static noexcept -> TargetExpr {
-            return {.value = TargetNameExpr {.name = TargetName(identifier(text))}};
-        };
-        auto arguments = std::vector<TargetExpr>();
-        arguments.push_back(name("a"));
-        if (grouped) {
-            arguments.push_back(name("b"));
-        }
-        auto nested = TargetExpr {
-            .value = TargetCallExpr {
-                .callee = UniqueIndirect(name("g")),
-                .template_arguments = {},
-                .arguments = std::move(arguments),
-            }
-        };
-        auto outer = std::vector<TargetExpr>();
-        outer.push_back(std::move(nested));
-        if (!grouped) {
-            outer.push_back(name("b"));
-        }
-        return {
-            .value = TargetDecltypeType(
-                TargetExpr {
-                    .value =
-                        TargetCallExpr {
-                            .callee = UniqueIndirect(name("f")),
-                            .template_arguments = {},
-                            .arguments = std::move(outer),
-                        }
+    ct::test(
+        "Target builder: type queries retain call structure across table growth",
+        [] static noexcept {
+            auto builder = TargetTestingFixture::unit_builder();
+            const auto query = [](bool grouped) static noexcept -> TargetType {
+                const auto name = [](std::string_view text) static noexcept -> TargetExpr {
+                    return {.value = TargetNameExpr {.name = TargetName(identifier(text))}};
+                };
+                auto arguments = std::vector<TargetExpr>();
+                arguments.push_back(name("a"));
+                if (grouped) {
+                    arguments.push_back(name("b"));
                 }
-            ),
-            .const_qualified = false,
-        };
-    };
-    const auto separate = builder.intern_type(query(false));
-    const auto grouped = builder.intern_type(query(true));
-    CHECK_NE(separate, grouped);
-    for (auto index = 0uz; index < 128uz; ++index) {
-        static_cast<void>(builder.intern_type(
-            TargetType {
-                .value =
-                    TargetNamedType {
-                        .name = TargetName(identifier(std::format("T{}", index))),
-                        .type_argument_ids = {},
-                        .nested = {},
-                    },
-                .const_qualified = false,
-            }
-        ));
-    }
-    CHECK_EQ(builder.intern_type(query(false)), separate);
-    CHECK_EQ(builder.intern_type(query(true)), grouped);
-    const auto unit = std::move(builder).finish(sections());
-    CHECK_EQ(unit.type_count(), 130uz);
-}
-
-TEST_CASE("Target locals: references require a unique visible declaration in their unit") {
-    enum class Reference { Visible, Foreign, OutOfRange, Duplicate, Escaped, Undeclared };
-
-    struct Scenario final {
-        std::string_view name;
-        Reference reference;
-    };
-
-    const auto scenarios = std::array {
-        Scenario {.name = "visible local", .reference = Reference::Visible},
-        Scenario {.name = "foreign unit", .reference = Reference::Foreign},
-        Scenario {.name = "out of range", .reference = Reference::OutOfRange},
-        Scenario {.name = "duplicate declaration", .reference = Reference::Duplicate},
-        Scenario {.name = "escaped scope", .reference = Reference::Escaped},
-        Scenario {.name = "undeclared local", .reference = Reference::Undeclared},
-    };
-    for (const auto& scenario : scenarios) {
-        CAPTURE(scenario.name);
-        const auto owner = TargetTestingFixture::unit_identity();
-        const auto type = TargetTestingFixture::type_id(owner, 0);
-        const auto types = std::array {bool_type()};
-        const auto id = TargetTestingFixture::local_id(owner, 0);
-        auto selected = id;
-        if (scenario.reference == Reference::Foreign) {
-            selected = TargetTestingFixture::local_id(TargetTestingFixture::unit_identity(), 0);
-        } else if (scenario.reference == Reference::OutOfRange) {
-            selected = TargetTestingFixture::local_id(owner, 1);
-        }
-        auto body = std::vector<TargetStmt>();
-        const auto declaration = [&]() noexcept -> TargetStmt {
-            return {
-                .value =
-                    TargetVariableStmt {
-                        .binding = TargetVariableBinding::ConstValue,
-                        .maybe_unused = false,
-                        .local = id,
-                        .type = type,
-                        .initializer = literal()
-                    },
-                .attribution = attribution()
+                auto nested = TargetExpr {
+                    .value = TargetCallExpr {
+                        .callee = UniqueIndirect(name("g")),
+                        .template_arguments = {},
+                        .arguments = std::move(arguments),
+                    }
+                };
+                auto outer = std::vector<TargetExpr>();
+                outer.push_back(std::move(nested));
+                if (!grouped) {
+                    outer.push_back(name("b"));
+                }
+                return {
+                    .value = TargetDecltypeType(
+                        TargetExpr {
+                            .value =
+                                TargetCallExpr {
+                                    .callee = UniqueIndirect(name("f")),
+                                    .template_arguments = {},
+                                    .arguments = std::move(outer),
+                                }
+                        }
+                    ),
+                    .const_qualified = false,
+                };
             };
-        };
-        if (scenario.reference == Reference::Escaped) {
-            body.push_back(
-                {.value = TargetBlockStmt {.statements = one_statement(declaration())},
-                 .attribution = attribution()}
-            );
-        } else if (scenario.reference != Reference::Undeclared) {
-            body.push_back(declaration());
+            const auto separate = builder.intern_type(query(false));
+            const auto grouped = builder.intern_type(query(true));
+            ct::expect((separate != grouped));
+            for (auto index = 0uz; index < 128uz; ++index) {
+                static_cast<void>(builder.intern_type(
+                    TargetType {
+                        .value =
+                            TargetNamedType {
+                                .name = TargetName(identifier(std::format("T{}", index))),
+                                .type_argument_ids = {},
+                                .nested = {},
+                            },
+                        .const_qualified = false,
+                    }
+                ));
+            }
+            ct::expect((builder.intern_type(query(false)) == separate));
+            ct::expect((builder.intern_type(query(true)) == grouped));
+            const auto unit = std::move(builder).finish(sections());
+            ct::expect_equal(unit.type_count(), 130uz);
         }
-        if (scenario.reference == Reference::Duplicate) {
-            body.push_back(declaration());
+    );
+
+    ct::test(
+        "Target locals: references require a unique visible declaration in their unit",
+        [] static noexcept {
+            enum class Reference { Visible, Foreign, OutOfRange, Duplicate, Escaped, Undeclared };
+
+            struct Scenario final {
+                std::string_view name;
+                Reference reference;
+            };
+
+            const auto scenarios = std::array {
+                Scenario {.name = "visible local", .reference = Reference::Visible},
+                Scenario {.name = "foreign unit", .reference = Reference::Foreign},
+                Scenario {.name = "out of range", .reference = Reference::OutOfRange},
+                Scenario {.name = "duplicate declaration", .reference = Reference::Duplicate},
+                Scenario {.name = "escaped scope", .reference = Reference::Escaped},
+                Scenario {.name = "undeclared local", .reference = Reference::Undeclared},
+            };
+            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                const auto owner = TargetTestingFixture::unit_identity();
+                const auto type = TargetTestingFixture::type_id(owner, 0);
+                const auto types = std::array {bool_type()};
+                const auto id = TargetTestingFixture::local_id(owner, 0);
+                auto selected = id;
+                if (scenario.reference == Reference::Foreign) {
+                    selected =
+                        TargetTestingFixture::local_id(TargetTestingFixture::unit_identity(), 0);
+                } else if (scenario.reference == Reference::OutOfRange) {
+                    selected = TargetTestingFixture::local_id(owner, 1);
+                }
+                auto body = std::vector<TargetStmt>();
+                const auto declaration = [&]() noexcept -> TargetStmt {
+                    return {
+                        .value =
+                            TargetVariableStmt {
+                                .binding = TargetVariableBinding::ConstValue,
+                                .maybe_unused = false,
+                                .local = id,
+                                .type = type,
+                                .initializer = literal()
+                            },
+                        .attribution = attribution()
+                    };
+                };
+                if (scenario.reference == Reference::Escaped) {
+                    body.push_back(
+                        {.value = TargetBlockStmt {.statements = one_statement(declaration())},
+                         .attribution = attribution()}
+                    );
+                } else if (scenario.reference != Reference::Undeclared) {
+                    body.push_back(declaration());
+                }
+                if (scenario.reference == Reference::Duplicate) {
+                    body.push_back(declaration());
+                }
+                body.push_back(
+                    {.value =
+                         TargetReturnStmt {
+                             .expression = TargetExpr {.value = TargetLocalExpr {.local = selected}}
+                         },
+                     .attribution = attribution()}
+                );
+                const auto result = TargetTestingFixture::validate_unit(
+                    owner,
+                    types,
+                    sections(one_item(function(type, std::move(body)))),
+                    1uz
+                );
+                if (scenario.reference == Reference::Visible) {
+                    ct::expect(result.has_value());
+                } else {
+                    if (!(ct::expect(!(result.has_value())))) {
+                        return;
+                    }
+                    ct::expect(
+                        result.error().kind == TargetSealViolationKind::InvalidLocalReference
+                    );
+                }
+            });
         }
-        body.push_back(
-            {.value =
-                 TargetReturnStmt {
-                     .expression = TargetExpr {.value = TargetLocalExpr {.local = selected}}
-                 },
-             .attribution = attribution()}
-        );
-        const auto result = TargetTestingFixture::validate_unit(
-            owner,
-            types,
-            sections(one_item(function(type, std::move(body)))),
-            1uz
-        );
-        if (scenario.reference == Reference::Visible) {
-            CHECK(result.has_value());
-        } else {
-            REQUIRE_FALSE(result.has_value());
-            CHECK(result.error().kind == TargetSealViolationKind::InvalidLocalReference);
-        }
-    }
-}
+    );
+});
+
+} // namespace

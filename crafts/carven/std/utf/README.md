@@ -123,9 +123,9 @@ validated preconditions. Native construction adds no content checks; constant
 and interpreted character construction check the scalar precondition. The
 compiler tracks borrowed text backing.
 
-`tests/crafts/carven/std/utf/` checks public results, every valid Unicode scalar,
-invalid byte classes, chunk boundaries, copied streaming state, and compile-time
-encoding and validation. Static cases exercise frozen slices and typed failure
-recovery; runtime cases also check generated C++ behavior. Run it with
+`tests/crafts/carven/std/utf/` uses static tests for exact encodings, scalar
+boundaries, invalid byte classes, error positions, and constant publication.
+Runtime tests cover the full Unicode scalar domain, incremental class state,
+and borrowed and owning text storage. Run it with
 `./xmakew test -g crafts`; one C++20 binary uses the generated default test entry.
 Compiler diagnostic tests check returned text borrows at the public API.

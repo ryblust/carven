@@ -1,60 +1,79 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.support.graph;
 
 import :support.graph;
+import :test.harness.framework;
 import std;
 
-TEST_CASE("Support graph: strong components are dependency-first and deterministic") {
-    auto adjacency = std::vector<std::vector<std::uint32_t>> {
-        {1, 1},
-        {0},
-        {0},
-        {2},
-        {},
-    };
-    const auto result = strongly_connected_components(std::move(adjacency));
-    CHECK_EQ(
-        result.dependency_first,
-        std::vector<std::vector<std::uint32_t>> {{0, 1}, {2}, {3}, {4}}
+namespace {
+
+namespace ct = carven::testing;
+
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Support graph: strong components are dependency-first and deterministic",
+        [] static noexcept {
+            auto adjacency = std::vector<std::vector<std::uint32_t>> {
+                {1, 1},
+                {0},
+                {0},
+                {2},
+                {},
+            };
+            const auto result = strongly_connected_components(std::move(adjacency));
+            ct::expect(
+                (result.dependency_first
+                 == std::vector<std::vector<std::uint32_t>> {{0, 1}, {2}, {3}, {4}})
+            );
+            ct::expect((result.component_of == std::vector<std::uint32_t> {0, 0, 1, 2, 3}));
+        }
     );
-    CHECK_EQ(result.component_of, std::vector<std::uint32_t> {0, 0, 1, 2, 3});
-}
 
-TEST_CASE("Support graph: long dependency chains use the explicit DFS stack") {
-    constexpr auto node_count = 65'536u;
-    auto adjacency = std::vector<std::vector<std::uint32_t>>(node_count);
-    for (auto node = 0u; node + 1 < node_count; ++node) {
-        adjacency[node].push_back(node + 1);
-    }
+    ct::test(
+        "Support graph: long dependency chains use the explicit DFS stack",
+        [] static noexcept {
+            constexpr auto node_count = 65'536u;
+            auto adjacency = std::vector<std::vector<std::uint32_t>>(node_count);
+            for (auto node = 0u; node + 1 < node_count; ++node) {
+                adjacency[node].push_back(node + 1);
+            }
 
-    const auto result = strongly_connected_components(std::move(adjacency));
-    REQUIRE_EQ(result.dependency_first.size(), node_count);
-    CHECK_EQ(result.dependency_first.front(), std::vector<std::uint32_t> {node_count - 1});
-    CHECK_EQ(result.dependency_first.back(), std::vector<std::uint32_t> {0});
-    CHECK_EQ(result.component_of.front(), node_count - 1);
-    CHECK_EQ(result.component_of.back(), 0u);
-}
+            const auto result = strongly_connected_components(std::move(adjacency));
+            if (!ct::expect_equal(result.dependency_first.size(), node_count)) {
+                return;
+            }
+            ct::expect(
+                (result.dependency_first.front() == std::vector<std::uint32_t> {node_count - 1})
+            );
+            ct::expect((result.dependency_first.back() == std::vector<std::uint32_t> {0}));
+            ct::expect_equal(result.component_of.front(), node_count - 1);
+            ct::expect_equal(result.component_of.back(), 0u);
+        }
+    );
 
-TEST_CASE("Support graph: chains, isolated nodes, and self edges retain canonical order") {
-    SUBCASE("dependency chain") {
+    ct::test("Support graph: dependency chains place dependencies first", [] static noexcept {
         const auto result =
             strongly_connected_components(std::vector<std::vector<std::uint32_t>> {{1}, {2}, {}});
-        CHECK_EQ(result.dependency_first, std::vector<std::vector<std::uint32_t>> {{2}, {1}, {0}});
-        CHECK_EQ(result.component_of, std::vector<std::uint32_t> {2, 1, 0});
-    }
-    SUBCASE("isolated nodes") {
+        ct::expect(
+            (result.dependency_first == std::vector<std::vector<std::uint32_t>> {{2}, {1}, {0}})
+        );
+        ct::expect((result.component_of == std::vector<std::uint32_t> {2, 1, 0}));
+    });
+
+    ct::test("Support graph: isolated nodes preserve source order", [] static noexcept {
         const auto result =
             strongly_connected_components(std::vector<std::vector<std::uint32_t>> {{}, {}, {}});
-        CHECK_EQ(result.dependency_first, std::vector<std::vector<std::uint32_t>> {{0}, {1}, {2}});
-        CHECK_EQ(result.component_of, std::vector<std::uint32_t> {0, 1, 2});
-    }
-    SUBCASE("self edge") {
+        ct::expect(
+            (result.dependency_first == std::vector<std::vector<std::uint32_t>> {{0}, {1}, {2}})
+        );
+        ct::expect((result.component_of == std::vector<std::uint32_t> {0, 1, 2}));
+    });
+
+    ct::test("Support graph: self edges form one component", [] static noexcept {
         const auto result =
             strongly_connected_components(std::vector<std::vector<std::uint32_t>> {{0}});
-        CHECK_EQ(result.dependency_first, std::vector<std::vector<std::uint32_t>> {{0}});
-        CHECK_EQ(result.component_of, std::vector<std::uint32_t> {0});
-    }
-}
+        ct::expect((result.dependency_first == std::vector<std::vector<std::uint32_t>> {{0}}));
+        ct::expect((result.component_of == std::vector<std::uint32_t> {0}));
+    });
+});
+
+} // namespace

@@ -6,6 +6,7 @@ using DeathTestAction = void (*)(void*) noexcept;
 
 // Each input in a test case, including subcases, needs a distinct scenario for child replay.
 // Only SIGABRT satisfies the termination contract.
+// Validate fixtures before calling; the action contains production operations, not test assertions.
 auto run_death_test(
     std::string_view scenario,
     DeathTestAction action,

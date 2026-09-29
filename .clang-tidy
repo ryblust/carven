@@ -63,11 +63,10 @@ ImplementationFileExtensions:
   - 'cppm'
   - 'cxx'
 HeaderFilterRegex: '.*[/\\](src|tests|crafts)[/\\].*|.*[/\\]build[/\\]\.gens[/\\].*'
-ExcludeHeaderFilterRegex: '.*[/\\]tests[/\\]internal[/\\]thirdparty[/\\].*'
+ExcludeHeaderFilterRegex: '.*[/\\]thirdparty[/\\].*'
 FormatStyle: none
 SystemHeaders: false
 CheckOptions:
-  misc-const-correctness.AllowedTypes: 'doctest::detail::ContextScope'
   misc-const-correctness.AnalyzeAutoVariables: true
   misc-const-correctness.AnalyzeLambdas: true
   misc-const-correctness.AnalyzeParameters: true

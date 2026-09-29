@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.frontend.parse.fixture;
 
 import :diagnostics.diagnostic;
@@ -15,49 +11,59 @@ import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :frontend.ast.type;
-import :frontend.lex.token;
 import :frontend.lex;
+import :frontend.lex.token;
 import :frontend.parse;
 import :source.manager;
 import :source.text;
+import :test.harness.framework;
 import std;
+
+namespace {
+
+namespace ct = carven::testing;
+
+} // namespace
 
 auto parse_source(std::string_view text) noexcept -> std::expected<SyntaxTree, Diagnostics> {
     auto sources = SourceManager();
     const auto source = *sources.append_virtual("parser-test.cv", std::string(text));
     const auto lexical = lex(sources.view(source));
-    CAPTURE(text);
-    REQUIRE(lexical.diagnostics.empty());
+    ct::require(lexical.diagnostics.empty()).note("text = ", text);
     return parse(sources, lexical.value);
 }
 
 auto parse_valid(std::string_view text) noexcept -> SyntaxTree {
     auto result = parse_source(text);
-    CAPTURE(text);
-    REQUIRE(result.has_value());
+    ct::require(result.has_value()).note("text = ", text);
     return std::move(*result);
 }
 
 auto check_invalid(std::string_view text) noexcept -> void {
     const auto result = parse_source(text);
-    CAPTURE(text);
-    REQUIRE(!result.has_value());
-    REQUIRE_EQ(result.error().size(), 1u);
+    if (!(ct::expect(!result.has_value()).note("text = ", text))) {
+        return;
+    }
+    ct::expect_equal(result.error().size(), 1uz).note("text = ", text);
 }
 
 auto check_invalid(std::string_view text, std::string_view message) noexcept -> void {
     const auto result = parse_source(text);
-    CAPTURE(text);
-    REQUIRE(!result.has_value());
-    REQUIRE_EQ(result.error().size(), 1u);
-    CHECK_EQ(result.error()[0].finding.message, message);
+    if (!(ct::expect(!result.has_value()).note("text = ", text))) {
+        return;
+    }
+    if (!(ct::expect_equal(result.error().size(), 1uz).note("text = ", text))) {
+        return;
+    }
+    ct::expect_equal(result.error()[0].finding.message, message).note("text = ", text);
 }
 
 auto check_rejected(std::string_view text) noexcept -> void {
     const auto result = parse_source(text);
-    CAPTURE(text);
-    REQUIRE(!result.has_value());
-    REQUIRE(!result.error().empty());
+    if (!(ct::expect(!result.has_value()).note("text = ", text))) {
+        return;
+    }
+    ct::expect(!result.error().empty()).note("text = ", text);
 }
 
 template<typename Alternative, typename Family>

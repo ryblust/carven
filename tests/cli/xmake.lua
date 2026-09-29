@@ -18,16 +18,12 @@ local case_specs = {
     },
     ["commands/cstring_text"] = {
         inputs = {"input.cv"},
-        steps = {
-            {args = {"interpret", "input.cv"}, stdout = "stdout.txt", stderr = "stderr.txt"},
-            {args = {"input.cv"}, stdout = "stdout.txt", stderr = "stderr.txt"},
-        },
+        args = {"interpret", "input.cv"}, stdout = "stdout.txt", stderr = "stderr.txt",
     },
     ["commands/structural_display"] = {
         inputs = {"input.cv", "failure.cv"},
         steps = {
             {args = {"interpret", "input.cv"}, stdout = "stdout.txt"},
-            {args = {"input.cv"}, stdout = "stdout.txt"},
             {args = {"check", "failure.cv"}, exit_code = 1,
                 stderr_contains = {'actual: [\n        12,\n    ]', 'expected: [\n        15,\n    ]',
                     'true: <not evaluated>', '1: 1', '2: 2'}},
@@ -132,10 +128,7 @@ local case_specs = {
     },
     ["commands/default_initialization"] = {
         inputs = {"input.cv"},
-        steps = {
-            {args = {"check", "input.cv"}, stdout = "compile.txt", stderr = "../check/passed.txt"},
-            {args = {"interpret", "input.cv"}, stdout = "run.txt"},
-        },
+        args = {"interpret", "input.cv"}, stdout = "run.txt",
     },
     ["commands/constant_blocks"] = {
         inputs = {"input.cv", "helper.cv"},
@@ -554,13 +547,10 @@ case_specs["commands/anonymous_tests"] = {
 }
 
 case_specs["commands/assertions"] = {
-    inputs = {"input.cv", "failure.cv", "abort.cv", "static_failure.cv", "fatal_test.cv"},
+    inputs = {"failure.cv", "abort.cv", "static_failure.cv", "fatal_test.cv"},
+    fixtures = {["../../../language/testing/assertions.cv"] = "input.cv"},
     steps = {
-        {args = {"input.cv"}, stdout_contains = {"passed\n"}},
-        {args = {"interpret", "input.cv"}, stdout_contains = {"passed\n"}},
-        {args = {"--tests", "input.cv"}, stdout_contains = {"tested\n"},
-            stderr_contains = {"tests: 1 passed; 0 failed"}},
-        {args = {"interpret", "--tests", "input.cv"}, stdout_contains = {"tested\n"},
+        {args = {"interpret", "--tests", "input.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
         {args = {"failure.cv", "abort.cv"}, exit_code = 86,
             stderr_contains = {"message evaluated", "assertion failed", "actual == expected",

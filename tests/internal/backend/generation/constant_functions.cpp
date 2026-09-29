@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.backend.generation.constant_functions;
 
 import :backend.generation.linkage;
@@ -15,10 +11,13 @@ import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target.type;
 import :backend.target;
+import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
+
+namespace ct = carven::testing;
 
 struct FunctionFacts final {
     std::size_t label_calls = 0uz;
@@ -74,32 +73,41 @@ auto FunctionQuery::enter_declaration(const TargetDecl& declaration) noexcept ->
         return true;
     }
     const auto* result = std::get_if<TargetIntrinsicType>(&unit.type(function->result).value);
-    REQUIRE(result != nullptr);
+    if (!ct::expect(result != nullptr)) {
+        return false;
+    }
     auto facts = FunctionFacts();
-    REQUIRE(traverse_target_statements(definition->body, facts));
+    if (!ct::expect(traverse_target_statements(definition->body, facts))) {
+        return false;
+    }
     if (name == "ordinary") {
-        CHECK(result->symbol == TargetSymbol::RuntimeString);
-        CHECK(facts.label_calls == 1uz);
-        CHECK(facts.literals.empty());
+        ct::expect_equal(result->symbol, TargetSymbol::RuntimeString);
+        ct::expect(facts.label_calls == 1uz);
+        ct::expect(facts.literals.empty());
         ++ordinary_definitions;
         return true;
     }
-    CHECK(result->symbol == TargetSymbol::StdStringView);
-    CHECK(facts.all_calls == 0uz);
-    REQUIRE(facts.literals.size() == 1uz);
-    CHECK(facts.literals.front().kind == TargetStringLiteralKind::StringView);
-    CHECK(facts.literals.front().bytes == std::string_view("我\0😀", 8uz));
+    ct::expect_equal(result->symbol, TargetSymbol::StdStringView);
+    ct::expect(facts.all_calls == 0uz);
+    if (!ct::expect(facts.literals.size() == 1uz)) {
+        return false;
+    }
+    ct::expect_equal(facts.literals.front().kind, TargetStringLiteralKind::StringView);
+    ct::expect(facts.literals.front().bytes == std::string_view("我\0😀", 8uz));
     ++frozen_definitions;
     return true;
 }
 
 } // namespace
 
-TEST_CASE(
-    "Generation: const function initializers emit static bytes and ordinary calls return owning String"
-) {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+namespace {
+
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Generation: const function initializers emit static bytes and ordinary calls return owning String",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             const frozen = label();
             const fn label() -> String {
                 var result = String {};
@@ -112,21 +120,25 @@ TEST_CASE(
             fn frozen_direct() -> str { const result = f"{'我'}\0{'😀'}"; return result; }
             fn ordinary() -> String => label();
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("constant_functions")}
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("constant_functions")}
+            );
+            auto frozen_definitions = 0uz;
+            auto ordinary_definitions = 0uz;
+            auto label_definitions = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = FunctionQuery {.unit = unit};
+                ct::expect(traverse_target_unit(unit.sections(), query));
+                frozen_definitions += query.frozen_definitions;
+                ordinary_definitions += query.ordinary_definitions;
+                label_definitions += query.label_definitions;
+            }
+            ct::expect(frozen_definitions == 3uz);
+            ct::expect(ordinary_definitions == 1uz);
+            ct::expect(label_definitions == 1uz);
+        }
     );
-    auto frozen_definitions = 0uz;
-    auto ordinary_definitions = 0uz;
-    auto label_definitions = 0uz;
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = FunctionQuery {.unit = unit};
-        CHECK(traverse_target_unit(unit.sections(), query));
-        frozen_definitions += query.frozen_definitions;
-        ordinary_definitions += query.ordinary_definitions;
-        label_definitions += query.label_definitions;
-    }
-    CHECK(frozen_definitions == 3uz);
-    CHECK(ordinary_definitions == 1uz);
-    CHECK(label_definitions == 1uz);
-}
+});
+
+} // namespace

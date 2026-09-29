@@ -17,13 +17,13 @@ target_end()
 target("graver-test-internal")
     set_default(false)
     set_kind("binary")
-    add_deps("graver-modules")
-    add_includedirs(path.join(os.projectdir(), "tests", "internal", "thirdparty"))
+    add_deps("graver-modules", "carven-test-support")
     add_files(path.join(os.scriptdir(), "tests", "internal", "*.cpp"))
+    add_files(path.join(os.projectdir(), "tests", "harness", "main.cpp"))
     add_tests("graver", {group = "graver", run_timeout = 60000,
-        runargs = {"--test-case-exclude=Graver corpus:*"}})
+        runargs = {"--exclude", "Graver corpus:*"}})
     add_tests("corpus", {group = "graver", run_timeout = 60000,
-        runargs = {"--test-case=Graver corpus:*"}})
+        runargs = {"--filter", "Graver corpus:*"}})
 target_end()
 
 target("graver-test-cli")

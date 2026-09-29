@@ -1,12 +1,30 @@
+local report = import("report", {rootdir = path.join(os.projectdir(), "tests", "harness")})
+
 local function normalize_newlines(value)
     return value:gsub("\r\n", "\n")
 end
 
+local step_fields = {
+    args = true, exit_code = true, installed_toolchain = true,
+    installed_inputs = true, absolute_inputs = true,
+    stdout = true, stdout_contains = true, stdout_ordered = true,
+    stdout_unordered = true, stdout_not_contains = true,
+    stderr = true, stderr_contains = true, stderr_ordered = true,
+    stderr_not_contains = true, output_files = true, absent_files = true,
+    file_contains = true, file_not_contains = true,
+}
+local case_fields = {inputs = true, fixtures = true, project = true, steps = true}
+for field in pairs(step_fields) do case_fields[field] = true end
+
+local function check_fields(value, allowed, label)
+    for field in pairs(value) do
+        assert(allowed[field], label .. " has unknown field: " .. tostring(field))
+    end
+end
+
 local function compare_output(failures, label, actual, expected)
     if actual ~= expected then
-        table.insert(failures, string.format("%s mismatch\nexpected:\n%s\nactual:\n%s",
-            label, expected == "" and "<empty>" or expected,
-            actual == "" and "<empty>" or actual))
+        table.insert(failures, label .. " mismatch: " .. report.format_text_difference(actual, expected))
     end
 end
 
@@ -61,6 +79,26 @@ function main(target, opt, case_specs)
     local case_name = opt.name:match("^[^/]+/(.+)$") or opt.name
     local case_spec = case_specs[case_name]
     assert(case_spec, "unknown CLI test case: " .. case_name)
+    check_fields(case_spec, case_fields, "CLI case " .. case_name)
+    assert(not case_spec.project or (not case_spec.inputs and not case_spec.fixtures),
+        "CLI case project overrides its inputs or fixtures: " .. case_name)
+    if case_spec.steps then
+        for field in pairs(step_fields) do
+            assert(case_spec[field] == nil,
+                "CLI case " .. case_name .. " ignores top-level step field: " .. field)
+        end
+    end
+    local steps = case_spec.steps or {case_spec}
+    assert(#steps > 0, "CLI test has no execution steps: " .. case_name)
+    for index, step in ipairs(steps) do
+        local label = case_name .. " step " .. index
+        if case_spec.steps then check_fields(step, step_fields, label) end
+        assert(type(step.args) == "table", label .. " has no argument list")
+        assert(not step.stdout_unordered or step.stdout,
+            label .. " requests unordered output without an exact stdout fixture")
+        assert(not step.installed_inputs or step.installed_toolchain,
+            label .. " ignores installed inputs without an installed toolchain")
+    end
     local case_dir = path.join(os.projectdir(), "tests", "cli", case_name)
     local work_dir = os.tmpfile() .. ".dir"
     local function case_path(relative)
@@ -86,7 +124,7 @@ function main(target, opt, case_specs)
     local failures = {}
     local streams = {stdout = {}, stderr = {}}
     local program = path.absolute(target:dep("carven"):targetfile(), os.projectdir())
-    for index, step in ipairs(case_spec.steps or {case_spec}) do
+    for index, step in ipairs(steps) do
         local stdout_file = path.join(work_dir, ".stdout-" .. index)
         local stderr_file = path.join(work_dir, ".stderr-" .. index)
         local step_program = program
@@ -110,7 +148,7 @@ function main(target, opt, case_specs)
         })
         local stdout = normalize_newlines(os.isfile(stdout_file) and io.readfile(stdout_file) or "")
         local stderr = normalize_newlines(os.isfile(stderr_file) and io.readfile(stderr_file) or "")
-        local prefix = #(case_spec.steps or {}) > 0 and ("step " .. index .. ": ") or ""
+        local prefix = "step " .. index .. " (" .. report.format_command(step_program, args) .. "): "
         for stream, value in pairs({stdout = stdout, stderr = stderr}) do
             if value ~= "" then
                 table.insert(streams[stream], prefix .. value)

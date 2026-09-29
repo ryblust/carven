@@ -16,6 +16,7 @@ for _, feature_dir in ipairs(language_feature_dirs) do
 end
 table.insert(language_sources, path.join(language_dir, "modules", "**.cv"))
 table.insert(language_sources, path.join(language_dir, "testing", "inline.cv"))
+table.insert(language_sources, path.join(language_dir, "testing", "assertions.cv"))
 
 local entry_point_source = path.join(language_dir, "entry", "entry_point.cv")
 local reporting_source = path.join(language_dir, "testing", "reporting.cv")
@@ -29,6 +30,11 @@ target("carven-test-language")
     add_files(table.unpack(language_sources))
 
     add_tests("language", {group = "language", run_timeout = 30000})
+    on_test(function (target)
+        return import("generated", {
+            rootdir = path.join(os.projectdir(), "tests", "harness"),
+        }).main(target, "language")
+    end)
 target_end()
 
 target("carven-test-language-entry-point")
@@ -144,9 +150,42 @@ for _, mode in ipairs({
                 .. 'PrintedEmpty {} [\n    1,\n    2,\n    3,\n]\n[\n    4,\n    5,\n]\n'
                 .. 'PrintedOrder {\n    price: PrintedMoney {\n        cents: 99,\n    },\n    names: [\n        "a",\n        "b\\n",\n    ],\n} 1\n'
                 .. 'PrintedOrder {\n    price: PrintedMoney {\n        cents: 99,\n    },\n    names: [\n        "a",\n        "b\\n",\n    ],\n}\n1..=3\nPrintedBox PrintedEnvelope {\n    box: PrintedBox,\n}\n'
-                .. '我\n \n',
+                .. '我\n \n'
+                .. [=[constant=123
+[
+    "a\n",
+    "\"\\",
+    "",
+]
+text=123; empty=; unicode=我😀
+[
+    ',',
+    '我',
+]
+[
+    PrintedMoney {
+        cents: 7,
+    },
+]
+[]
+PrintedEmptyBox
+[
+    PrintedBox,
+    PrintedBox,
+]
+1
+2
+PrintedPair {
+    first: PrintedMoney {
+        cents: 1,
+    },
+    second: PrintedMoney {
+        cents: 2,
+    },
+}
+]=],
                 "unexpected stdout: " .. stdout)
-            assert(stderr == "error: -3\n\nerror: -4status: false\n", "unexpected stderr: " .. stderr)
+            assert(stderr == "error: -3\n\nerror: -4status: false\nerror\n", "unexpected stderr: " .. stderr)
             return true
         end)
     target_end()

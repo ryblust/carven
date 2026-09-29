@@ -1,7 +1,3 @@
-module;
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
-
 module carven:test.internal.backend.generation.evaluation;
 
 import :backend.generation.linkage;
@@ -23,684 +19,754 @@ import :semantic.semir.structured;
 import :semantic.semir.table;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
+import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
-TEST_CASE("Generation: precomputed formatting retains effects and owning construction") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "fn touch() -> bool { return true; }\n"
-            "fn known() -> String { let version = 42; return f\"build-{version:04}\"; }\n"
-            "fn effects() { f\"{touch() && false}\"; }\n"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("precomputed_format")}
-    );
+namespace {
 
-    struct Query final {
-        const TargetUnit& unit;
-        std::size_t formats;
-        std::size_t constructions;
-        std::size_t effects;
+namespace ct = carven::testing;
 
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            if (const auto* name = std::get_if<TargetIntrinsicNameExpr>(&expression.value)) {
-                formats += name->symbol == TargetSymbol::RuntimeFormat
-                    || name->symbol == TargetSymbol::RuntimeFormatValidUTF8;
-            }
-            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
-                    effects += name->name.components().back().spelling() == "touch";
-                }
-                if (const auto* member =
-                        std::get_if<TargetStaticMemberExpr>(&call->callee->value)) {
-                    if (const auto* type =
-                            std::get_if<TargetIntrinsicType>(&unit.type(member->owner).value)) {
-                        constructions += type->symbol == TargetSymbol::RuntimeString;
-                    }
-                }
-            }
-            return true;
-        }
-    };
-
-    auto formats = 0uz;
-    auto constructions = 0uz;
-    auto effects = 0uz;
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit, .formats = 0uz, .constructions = 0uz, .effects = 0uz};
-        CHECK(traverse_target_unit(unit.sections(), query));
-        formats += query.formats;
-        constructions += query.constructions;
-        effects += query.effects;
-    }
-    CHECK(formats == 0uz);
-    CHECK(constructions == 2uz);
-    CHECK(effects == 1uz);
-}
-
-TEST_CASE("Generation: mixed formatting passes only residual values after required effects") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "fn touch() -> bool { return true; } "
-            "fn format(value: f64, width: i32, precision: i32) -> String { "
-            "return f\"{42:04}/{touch() && false}/{value:{width}.{precision}f}/{7}\"; }"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("mixed_format")}
-    );
-
-    struct Query final {
-        std::size_t formats;
-        std::size_t effects;
-
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            const auto* call = std::get_if<TargetCallExpr>(&expression.value);
-            if (call == nullptr) {
-                return true;
-            }
-            if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
-                effects += name->name.components().back().spelling() == "touch";
-            }
-            if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value);
-                intrinsic != nullptr && intrinsic->symbol == TargetSymbol::RuntimeFormat) {
-                ++formats;
-                // One format literal, one dynamic value, width, and precision.
-                CHECK(call->arguments.size() == 4uz);
-            }
-            return true;
-        }
-    };
-
-    auto query = Query {.formats = 0uz, .effects = 0uz};
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        CHECK(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.formats == 1uz);
-    CHECK(query.effects == 1uz);
-}
-
-TEST_CASE("Evaluation: known results retain source operations and execution obligations") {
-    const auto semantic = analyze_test_program(
-        "fn touch(&n: i32) -> bool { n += 1; return true; }\n"
-        "fn probe(&n: i32) {\n"
-        "  let _ = 1 < 2;\n"
-        "  let _ = false && touch(&n);\n"
-        "  let _ = touch(&n) && false;\n"
-        "  let _ = 1 / n;\n"
-        "}\n"
-        "fn floats(a: f32) { let _ = a + 1.0f32; let _ = 1 as f32; }\n"
-    );
-    auto logic_count = 0uz;
-    auto comparison_count = 0uz;
-    auto checked_count = 0uz;
-    auto floating_count = 0uz;
-    for (const auto entry : semantic.bodies().entries()) {
-        visit_semantic_nodes(
-            entry.value.region(),
-            [&](const SemanticExpression& expression) noexcept {
-                if (const auto* binary = std::get_if<SemBinary>(&expression.value)) {
-                    if (binary->operation == BinaryOperator::Less) {
-                        ++comparison_count;
-                        CHECK(known_boolean(semantic, expression) == true);
-                        CHECK(
-                            evaluation_rule(semantic, expression).action
-                            == EvaluationAction::Operands
-                        );
-                    }
-                    if (binary->operation == BinaryOperator::Divide) {
-                        ++checked_count;
-                        CHECK(
-                            evaluation_rule(semantic, expression).action
-                            == EvaluationAction::Required
-                        );
-                    }
-                    if (const auto* builtin = std::get_if<BuiltinTypeValue>(
-                            &semantic.types().type(expression.type.resolved()).value
-                        );
-                        builtin != nullptr && builtin->kind == BuiltinType::F32) {
-                        ++floating_count;
-                        CHECK(
-                            evaluation_rule(semantic, expression).action
-                            == EvaluationAction::Required
-                        );
-                    }
-                }
-                if (const auto* cast = std::get_if<SemCast>(&expression.value);
-                    cast != nullptr && cast->kind == CastKind::IntegerToFloating) {
-                    ++floating_count;
-                    CHECK(
-                        evaluation_rule(semantic, expression).action == EvaluationAction::Required
-                    );
-                }
-                if (const auto* logic = std::get_if<SemShortCircuit>(&expression.value)) {
-                    ++logic_count;
-                    CHECK(known_boolean(semantic, expression) == false);
-                    const auto skipped = known_boolean(semantic, *logic->left) == false;
-                    CHECK(
-                        (evaluation_rule(semantic, expression).operands[1] == nullptr) == skipped
-                    );
-                }
-            }
-        );
-    }
-    CHECK(comparison_count == 1uz);
-    CHECK(logic_count == 2uz);
-    CHECK(checked_count == 1uz);
-    CHECK(floating_count == 2uz);
-}
-
-TEST_CASE("Generation: proven scalar results require no computation or discard scaffolding") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "enum Error { E1, E2, }\n"
-            "fn foo(a: i32) -> i32 throw Error {\n"
-            "  if 1 < 2 { return 3 + a; } else { throw Error::E1; }\n"
-            "}\n"
-            "fn folded() -> i32 { return 1 + 2; }\n"
-            "fn skipped() -> i32 { if false && (folded() == 3) { return 0; } return 2; }\n"
-            "struct Value { field: i32, }\n"
-            "fn skipped_object() -> bool { return false && (Value { field: 1 }.field == 1); }\n"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("evaluation")}
-    );
-
-    struct Query final {
-        std::size_t calls;
-
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetStaticCastExpr>(expression.value));
-            CHECK_FALSE(std::holds_alternative<TargetBinaryExpr>(expression.value));
-            CHECK_FALSE(std::holds_alternative<TargetConstructionExpr>(expression.value));
-            calls += std::holds_alternative<TargetCallExpr>(expression.value);
-            return true;
-        }
-
-        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetBlockStmt>(statement.value));
-            CHECK_FALSE(std::holds_alternative<TargetDiscardStmt>(statement.value));
-            CHECK_FALSE(std::holds_alternative<TargetIfStmt>(statement.value));
-            CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
-            return true;
-        }
-    };
-
-    auto query = Query {.calls = 0uz};
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        CHECK(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.calls == 2uz);
-}
-
-TEST_CASE("Generation: native branches and calls need no enclosing artificial block") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "fn identity(n: i32) -> i32 { return n; }\n"
-            "fn branch(flag: bool, n: i32) -> i32 {\n"
-            "  if flag { return identity(n); } else { return 0; }\n"
-            "}\n"
-            "fn effect() {}\n"
-            "fn invoke() { effect(); }\n"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("native_structure")}
-    );
-
-    struct Query final {
-        std::size_t branches;
-        std::size_t calls;
-
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetBlockStmt>(statement.value));
-            CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
-            branches += std::holds_alternative<TargetIfStmt>(statement.value);
-            return true;
-        }
-
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
-            calls += std::holds_alternative<TargetCallExpr>(expression.value);
-            return true;
-        }
-    };
-
-    auto query = Query {.branches = 0uz, .calls = 0uz};
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        CHECK(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.branches == 1uz);
-    CHECK(query.calls == 2uz);
-}
-
-TEST_CASE("Generation: discarded failing calls check success without projecting a payload") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "enum Error { Failed, }\n"
-            "fn produce(flag: bool) -> i32 throw Error {\n"
-            "  if flag { return 7; } else { throw Error::Failed; }\n"
-            "}\n"
-            "fn discard(flag: bool) throw Error { produce(flag)?; }\n"
-            "fn discard_wrapped(flag: bool) throw Error { (produce(flag)? as i32) == 0; }\n"
-            "fn discard_selected(flag: bool) throw Error { flag && (produce(flag)? == 0); }\n"
-            "fn deliver(flag: bool) -> i32 throw Error { return produce(flag)? + 1; }\n"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("result_consumption")}
-    );
-
-    struct Query final {
-        std::size_t payloads;
-        std::size_t success_checks;
-        std::size_t saved_successes;
-
-        static auto is_success(const TargetExpr& expression) noexcept -> bool {
-            const auto* call = std::get_if<TargetCallExpr>(&expression.value);
-            if (call == nullptr) {
-                return false;
-            }
-            const auto* member = std::get_if<TargetMemberExpr>(&call->callee->value);
-            if (member == nullptr) {
-                return false;
-            }
-            const auto* name = std::get_if<TargetIdentifier>(&member->name);
-            return name != nullptr && name->spelling() == "success_if";
-        }
-
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            success_checks += is_success(expression);
-            if (const auto* member = std::get_if<TargetMemberExpr>(&expression.value)) {
-                const auto* name = std::get_if<TargetIdentifier>(&member->name);
-                payloads += name != nullptr && name->spelling() == "value";
-            }
-            return true;
-        }
-
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetDiscardStmt>(statement.value));
-            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                saved_successes += is_success(variable->initializer);
-            }
-            return true;
-        }
-    };
-
-    auto query = Query {.payloads = 0uz, .success_checks = 0uz, .saved_successes = 0uz};
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        CHECK(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.success_checks == 4uz);
-    CHECK(query.saved_successes == 1uz);
-    CHECK(query.payloads == 1uz);
-}
-
-TEST_CASE("Generation: independent root calls initialize Outcomes without deferred storage") {
-    constexpr auto bodies = std::array<std::string_view, 2uz> {
-        "produce(flag)?;",
-        "let value = produce(flag)?; observe(value);"
-    };
-    for (const auto body : bodies) {
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(
-                std::format(
-                    "enum Error {{ Failed, }} "
-                    "fn produce(flag: bool) -> i32 throw Error {{ if flag {{ return 7; }} throw Error::Failed; }} "
-                    "fn observe(value: i32) {{}} "
-                    "fn probe(flag: bool) throw Error {{ {} }}",
-                    body
-                )
-            ),
-            {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("root_outcome")}
-        );
-
-        struct Query final {
-            const TargetUnit& unit;
-            std::size_t direct;
-            std::size_t deferred;
-
-            auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
-                if (variable == nullptr) {
-                    return true;
-                }
-                const auto* type =
-                    std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value);
-                if (type == nullptr) {
-                    return true;
-                }
-                if (type->symbol == TargetSymbol::RuntimeOutcome) {
-                    ++direct;
-                    CHECK(std::holds_alternative<TargetCallExpr>(variable->initializer.value));
-                }
-                if (type->symbol == TargetSymbol::RuntimeDeferredResult) {
-                    REQUIRE(type->type_argument_ids.size() == 1uz);
-                    const auto* result = std::get_if<TargetIntrinsicType>(
-                        &unit.type(type->type_argument_ids.front()).value
-                    );
-                    deferred += result != nullptr && result->symbol == TargetSymbol::RuntimeOutcome;
-                }
-                return true;
-            }
-        };
-
-        auto direct = 0uz;
-        auto deferred = 0uz;
-        for (const auto artifact : compilation.target().artifacts()) {
-            const auto unit = lower_artifact(compilation, artifact.id);
-            auto query = Query {.unit = unit, .direct = 0uz, .deferred = 0uz};
-            CHECK(traverse_target_unit(unit.sections(), query));
-            direct += query.direct;
-            deferred += query.deferred;
-        }
-        CAPTURE(body);
-        CHECK(direct == 1uz);
-        CHECK(deferred == 0uz);
-    }
-}
-
-TEST_CASE("Generation: scalar predecessors in a full expression need no deferred storage") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "fn first() -> i32 { return 1; } "
-            "fn second() -> i32 { return 2; } "
-            "fn pair(a: i32, b: i32) -> i32 { return a * 10 + b; } "
-            "fn probe() -> i32 { return pair(first(), second()); }"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("scalar_predecessors")}
-    );
-
-    struct Query final {
-        const TargetUnit& unit;
-
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                if (const auto* type =
-                        std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value)) {
-                    CHECK(type->symbol != TargetSymbol::RuntimeDeferredResult);
-                }
-            }
-            return true;
-        }
-    };
-
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit};
-        CHECK(traverse_target_unit(unit.sections(), query));
-    }
-}
-
-TEST_CASE("Generation: independent value branches compose without duplicating successors") {
-    for (const auto suffix : {false, true}) {
-        auto single_nodes = 0uz;
-        for (const auto count : {1uz, 2uz, 4uz, 8uz}) {
-            auto parameters = std::string();
-            auto flags = std::string();
-            auto arguments = std::string();
-            auto initializers = std::string();
-            for (auto index = 0uz; index < count; ++index) {
-                if (index != 0uz) {
-                    parameters += ", ";
-                    flags += ", ";
-                    arguments += ", ";
-                }
-                parameters += std::format("a{}: i32", index);
-                flags += std::format("x{}: bool, y{}: bool", index, index);
-                const auto choice = suffix
-                    ? std::format(
-                          "if (x{0}) {{ 1 }} else if (y{0}) {{ 2 }} else {{ throw Failure::Stop; }}",
-                          index
-                      )
-                    : std::format("if (x{}) {{ 1 }} else {{ 2 }}", index);
-                initializers += std::format("let a{}: i32 = {};", index, choice);
-                arguments += suffix ? std::format("a{}", index) : choice;
-            }
-            const auto source = std::format(
-                "enum Failure {{ Stop, }} fn sum({}) -> i32 {{ return a0; }} "
-                "fn choose({}) -> i32 throw Failure {{ {} return sum({}); }}",
-                parameters,
-                flags,
-                suffix ? initializers : "",
-                arguments
-            );
+const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Generation: precomputed formatting retains effects and owning construction",
+        [] static noexcept {
             const auto compilation = PlannedCompilation::build(
-                analyze_test_program(source),
+                analyze_test_program(
+                    "fn touch() -> bool { return true; }\n"
+                    "fn known() -> String { let version = 42; return f\"build-{version:04}\"; }\n"
+                    "fn effects() { f\"{touch() && false}\"; }\n"
+                ),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("linear_composition")}
+                 .linkage_domain = *LinkageDomain::explicit_value("precomputed_format")}
             );
 
             struct Query final {
-                std::size_t nodes;
-                std::size_t branches;
+                const TargetUnit& unit;
+                std::size_t formats;
+                std::size_t constructions;
+                std::size_t effects;
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    if (const auto* name =
+                            std::get_if<TargetIntrinsicNameExpr>(&expression.value)) {
+                        formats += name->symbol == TargetSymbol::RuntimeFormat
+                            || name->symbol == TargetSymbol::RuntimeFormatValidUTF8;
+                    }
+                    if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                        if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                            effects += name->name.components().back().spelling() == "touch";
+                        }
+                        if (const auto* member =
+                                std::get_if<TargetStaticMemberExpr>(&call->callee->value)) {
+                            if (const auto* type = std::get_if<TargetIntrinsicType>(
+                                    &unit.type(member->owner).value
+                                )) {
+                                constructions += type->symbol == TargetSymbol::RuntimeString;
+                            }
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            auto formats = 0uz;
+            auto constructions = 0uz;
+            auto effects = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query =
+                    Query {.unit = unit, .formats = 0uz, .constructions = 0uz, .effects = 0uz};
+                ct::expect(traverse_target_unit(unit.sections(), query));
+                formats += query.formats;
+                constructions += query.constructions;
+                effects += query.effects;
+            }
+            ct::expect(formats == 0uz);
+            ct::expect(constructions == 2uz);
+            ct::expect(effects == 1uz);
+        }
+    );
+
+    ct::test(
+        "Generation: mixed formatting passes only residual values after required effects",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "fn touch() -> bool { return true; } "
+                    "fn format(value: f64, width: i32, precision: i32) -> String { "
+                    "return f\"{42:04}/{touch() && false}/{value:{width}.{precision}f}/{7}\"; }"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("mixed_format")}
+            );
+
+            struct Query final {
+                std::size_t formats;
+                std::size_t effects;
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    const auto* call = std::get_if<TargetCallExpr>(&expression.value);
+                    if (call == nullptr) {
+                        return true;
+                    }
+                    if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                        effects += name->name.components().back().spelling() == "touch";
+                    }
+                    if (const auto* intrinsic =
+                            std::get_if<TargetIntrinsicNameExpr>(&call->callee->value);
+                        intrinsic != nullptr && intrinsic->symbol == TargetSymbol::RuntimeFormat) {
+                        ++formats;
+                        // One format literal, one dynamic value, width, and precision.
+                        ct::expect(call->arguments.size() == 4uz);
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query {.formats = 0uz, .effects = 0uz};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                ct::expect(traverse_target_unit(unit.sections(), query));
+            }
+            ct::expect(query.formats == 1uz);
+            ct::expect(query.effects == 1uz);
+        }
+    );
+
+    ct::test(
+        "Evaluation: known results retain source operations and execution obligations",
+        [] static noexcept {
+            const auto semantic = analyze_test_program(
+                "fn touch(&n: i32) -> bool { n += 1; return true; }\n"
+                "fn probe(&n: i32) {\n"
+                "  let _ = 1 < 2;\n"
+                "  let _ = false && touch(&n);\n"
+                "  let _ = touch(&n) && false;\n"
+                "  let _ = 1 / n;\n"
+                "}\n"
+                "fn floats(a: f32) { let _ = a + 1.0f32; let _ = 1 as f32; }\n"
+            );
+            auto logic_count = 0uz;
+            auto comparison_count = 0uz;
+            auto checked_count = 0uz;
+            auto floating_count = 0uz;
+            for (const auto entry : semantic.bodies().entries()) {
+                visit_semantic_nodes(
+                    entry.value.region(),
+                    [&](const SemanticExpression& expression) noexcept {
+                        if (const auto* binary = std::get_if<SemBinary>(&expression.value)) {
+                            if (binary->operation == BinaryOperator::Less) {
+                                ++comparison_count;
+                                ct::expect(known_boolean(semantic, expression) == true);
+                                ct::expect(
+                                    evaluation_rule(semantic, expression).action
+                                    == EvaluationAction::Operands
+                                );
+                            }
+                            if (binary->operation == BinaryOperator::Divide) {
+                                ++checked_count;
+                                ct::expect(
+                                    evaluation_rule(semantic, expression).action
+                                    == EvaluationAction::Required
+                                );
+                            }
+                            if (const auto* builtin = std::get_if<BuiltinTypeValue>(
+                                    &semantic.types().type(expression.type.resolved()).value
+                                );
+                                builtin != nullptr && builtin->kind == BuiltinType::F32) {
+                                ++floating_count;
+                                ct::expect(
+                                    evaluation_rule(semantic, expression).action
+                                    == EvaluationAction::Required
+                                );
+                            }
+                        }
+                        if (const auto* cast = std::get_if<SemCast>(&expression.value);
+                            cast != nullptr && cast->kind == CastKind::IntegerToFloating) {
+                            ++floating_count;
+                            ct::expect(
+                                evaluation_rule(semantic, expression).action
+                                == EvaluationAction::Required
+                            );
+                        }
+                        if (const auto* logic = std::get_if<SemShortCircuit>(&expression.value)) {
+                            ++logic_count;
+                            ct::expect(known_boolean(semantic, expression) == false);
+                            const auto skipped = known_boolean(semantic, *logic->left) == false;
+                            ct::expect(
+                                (evaluation_rule(semantic, expression).operands[1] == nullptr)
+                                == skipped
+                            );
+                        }
+                    }
+                );
+            }
+            ct::expect(comparison_count == 1uz);
+            ct::expect(logic_count == 2uz);
+            ct::expect(checked_count == 1uz);
+            ct::expect(floating_count == 2uz);
+        }
+    );
+
+    ct::test(
+        "Generation: proven scalar results require no computation or discard scaffolding",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "enum Error { E1, E2, }\n"
+                    "fn foo(a: i32) -> i32 throw Error {\n"
+                    "  if 1 < 2 { return 3 + a; } else { throw Error::E1; }\n"
+                    "}\n"
+                    "fn folded() -> i32 { return 1 + 2; }\n"
+                    "fn skipped() -> i32 { if false && (folded() == 3) { return 0; } return 2; }\n"
+                    "struct Value { field: i32, }\n"
+                    "fn skipped_object() -> bool { return false && (Value { field: 1 }.field == 1); }\n"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("evaluation")}
+            );
+
+            struct Query final {
                 std::size_t calls;
 
                 auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
                     -> bool {
-                    ++nodes;
-                    if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                        if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
-                            calls += name->name.components().back().spelling() == "sum";
-                        }
+                    ct::expect(!(std::holds_alternative<TargetStaticCastExpr>(expression.value)));
+                    ct::expect(!(std::holds_alternative<TargetBinaryExpr>(expression.value)));
+                    ct::expect(!(std::holds_alternative<TargetConstructionExpr>(expression.value)));
+                    calls += std::holds_alternative<TargetCallExpr>(expression.value);
+                    return true;
+                }
+
+                auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+                    ct::expect(!(std::holds_alternative<TargetBlockStmt>(statement.value)));
+                    ct::expect(!(std::holds_alternative<TargetDiscardStmt>(statement.value)));
+                    ct::expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
+                    ct::expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
+                    return true;
+                }
+            };
+
+            auto query = Query {.calls = 0uz};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                ct::expect(traverse_target_unit(unit.sections(), query));
+            }
+            ct::expect(query.calls == 2uz);
+        }
+    );
+
+    ct::test(
+        "Generation: native branches and calls need no enclosing artificial block",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "fn identity(n: i32) -> i32 { return n; }\n"
+                    "fn branch(flag: bool, n: i32) -> i32 {\n"
+                    "  if flag { return identity(n); } else { return 0; }\n"
+                    "}\n"
+                    "fn effect() {}\n"
+                    "fn invoke() { effect(); }\n"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("native_structure")}
+            );
+
+            struct Query final {
+                std::size_t branches;
+                std::size_t calls;
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    ct::expect(!(std::holds_alternative<TargetBlockStmt>(statement.value)));
+                    ct::expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
+                    branches += std::holds_alternative<TargetIfStmt>(statement.value);
+                    return true;
+                }
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    ct::expect(!(std::holds_alternative<TargetLambdaExpr>(expression.value)));
+                    calls += std::holds_alternative<TargetCallExpr>(expression.value);
+                    return true;
+                }
+            };
+
+            auto query = Query {.branches = 0uz, .calls = 0uz};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                ct::expect(traverse_target_unit(unit.sections(), query));
+            }
+            ct::expect(query.branches == 1uz);
+            ct::expect(query.calls == 2uz);
+        }
+    );
+
+    ct::test(
+        "Generation: discarded failing calls check success without projecting a payload",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "enum Error { Failed, }\n"
+                    "fn produce(flag: bool) -> i32 throw Error {\n"
+                    "  if flag { return 7; } else { throw Error::Failed; }\n"
+                    "}\n"
+                    "fn discard(flag: bool) throw Error { produce(flag)?; }\n"
+                    "fn discard_wrapped(flag: bool) throw Error { (produce(flag)? as i32) == 0; }\n"
+                    "fn discard_selected(flag: bool) throw Error { flag && (produce(flag)? == 0); }\n"
+                    "fn deliver(flag: bool) -> i32 throw Error { return produce(flag)? + 1; }\n"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("result_consumption")}
+            );
+
+            struct Query final {
+                std::size_t payloads;
+                std::size_t success_checks;
+                std::size_t saved_successes;
+
+                static auto is_success(const TargetExpr& expression) noexcept -> bool {
+                    const auto* call = std::get_if<TargetCallExpr>(&expression.value);
+                    if (call == nullptr) {
+                        return false;
+                    }
+                    const auto* member = std::get_if<TargetMemberExpr>(&call->callee->value);
+                    if (member == nullptr) {
+                        return false;
+                    }
+                    const auto* name = std::get_if<TargetIdentifier>(&member->name);
+                    return name != nullptr && name->spelling() == "success_if";
+                }
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    success_checks += is_success(expression);
+                    if (const auto* member = std::get_if<TargetMemberExpr>(&expression.value)) {
+                        const auto* name = std::get_if<TargetIdentifier>(&member->name);
+                        payloads += name != nullptr && name->spelling() == "value";
                     }
                     return true;
                 }
 
                 auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                    ++nodes;
-                    branches += std::holds_alternative<TargetIfStmt>(statement.value);
+                    ct::expect(!(std::holds_alternative<TargetDiscardStmt>(statement.value)));
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        saved_successes += is_success(variable->initializer);
+                    }
                     return true;
                 }
             };
 
-            auto query = Query {.nodes = 0uz, .branches = 0uz, .calls = 0uz};
+            auto query = Query {.payloads = 0uz, .success_checks = 0uz, .saved_successes = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                CHECK(traverse_target_unit(unit.sections(), query));
+                ct::expect(traverse_target_unit(unit.sections(), query));
             }
-            CHECK(query.calls == 1uz);
-            CHECK(query.branches == count * (suffix ? 2uz : 1uz));
-            if (count == 1uz) {
-                single_nodes = query.nodes;
-            }
-            CAPTURE(query.nodes);
-            CHECK(query.nodes <= count * single_nodes);
+            ct::expect(query.success_checks == 4uz);
+            ct::expect(query.saved_successes == 1uz);
+            ct::expect(query.payloads == 1uz);
         }
-    }
-}
-
-TEST_CASE("Generation: void calls remain return expressions") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "fn action() {}\n"
-            "fn forward() { return action(); }\n"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("void_expression_delivery")}
     );
 
-    struct Query final {
-        std::size_t returned_calls;
+    ct::test(
+        "Generation: independent root calls initialize Outcomes without deferred storage",
+        [] static noexcept {
+            constexpr auto bodies = std::array<std::string_view, 2uz> {
+                "produce(flag)?;",
+                "let value = produce(flag)?; observe(value);"
+            };
+            for (const auto body : bodies) {
+                const auto compilation = PlannedCompilation::build(
+                    analyze_test_program(
+                        std::format(
+                            "enum Error {{ Failed, }} "
+                            "fn produce(flag: bool) -> i32 throw Error {{ if flag {{ return 7; }} throw Error::Failed; }} "
+                            "fn observe(value: i32) {{}} "
+                            "fn probe(flag: bool) throw Error {{ {} }}",
+                            body
+                        )
+                    ),
+                    {.test_mode = TestGenerationMode::None,
+                     .linkage_domain = *LinkageDomain::explicit_value("root_outcome")}
+                );
 
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            if (const auto* returned = std::get_if<TargetReturnStmt>(&statement.value);
-                returned != nullptr && returned->expression) {
-                returned_calls +=
-                    std::holds_alternative<TargetCallExpr>(returned->expression->value);
+                struct Query final {
+                    const TargetUnit& unit;
+                    std::size_t direct;
+                    std::size_t deferred;
+
+                    auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                        const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+                        if (variable == nullptr) {
+                            return true;
+                        }
+                        const auto* type =
+                            std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value);
+                        if (type == nullptr) {
+                            return true;
+                        }
+                        if (type->symbol == TargetSymbol::RuntimeOutcome) {
+                            ++direct;
+                            ct::expect(
+                                std::holds_alternative<TargetCallExpr>(variable->initializer.value)
+                            );
+                        }
+                        if (type->symbol == TargetSymbol::RuntimeDeferredResult) {
+                            if (!ct::expect(type->type_argument_ids.size() == 1uz)) {
+                                return false;
+                            }
+                            const auto* result = std::get_if<TargetIntrinsicType>(
+                                &unit.type(type->type_argument_ids.front()).value
+                            );
+                            deferred +=
+                                result != nullptr && result->symbol == TargetSymbol::RuntimeOutcome;
+                        }
+                        return true;
+                    }
+                };
+
+                auto direct = 0uz;
+                auto deferred = 0uz;
+                for (const auto artifact : compilation.target().artifacts()) {
+                    const auto unit = lower_artifact(compilation, artifact.id);
+                    auto query = Query {.unit = unit, .direct = 0uz, .deferred = 0uz};
+                    ct::expect(traverse_target_unit(unit.sections(), query));
+                    direct += query.direct;
+                    deferred += query.deferred;
+                }
+                ct::expect(direct == 1uz).note("body: ", body);
+                ct::expect(deferred == 0uz).note("body: ", body);
             }
-            return true;
         }
-
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) const noexcept
-            -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
-            return true;
-        }
-    };
-
-    auto query = Query {.returned_calls = 0uz};
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        CHECK(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.returned_calls == 1uz);
-}
-
-TEST_CASE("Generation: builtin pointer observations need no temporary storage") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "fn present(p: ptr<i32>) -> bool { return p != nullptr; }\n"
-            "fn read(p: ptr<i32>) -> i32 {\n"
-            "  if p == nullptr { return 0; }\n"
-            "  return *p;\n"
-            "}\n"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("pointer_observation")}
     );
 
-    struct Query final {
-        std::size_t comparisons;
-        std::size_t dereferences;
+    ct::test(
+        "Generation: scalar predecessors in a full expression need no deferred storage",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "fn first() -> i32 { return 1; } "
+                    "fn second() -> i32 { return 2; } "
+                    "fn pair(a: i32, b: i32) -> i32 { return a * 10 + b; } "
+                    "fn probe() -> i32 { return pair(first(), second()); }"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("scalar_predecessors")}
+            );
 
-        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
-            return true;
-        }
+            struct Query final {
+                const TargetUnit& unit;
 
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetLambdaExpr>(expression.value));
-            if (const auto* binary = std::get_if<TargetBinaryExpr>(&expression.value)) {
-                comparisons += binary->op == TargetBinaryOperator::Equal
-                    || binary->op == TargetBinaryOperator::NotEqual;
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        if (const auto* type = std::get_if<TargetIntrinsicType>(
+                                &unit.type(variable->type).value
+                            )) {
+                            ct::expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                ct::expect(traverse_target_unit(unit.sections(), query));
             }
-            if (const auto* prefix = std::get_if<TargetPrefixExpr>(&expression.value)) {
-                dereferences += prefix->op == TargetPrefixOperator::Dereference;
-            }
-            return true;
         }
-    };
-
-    auto query = Query {.comparisons = 0uz, .dereferences = 0uz};
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        CHECK(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.comparisons == 2uz);
-    CHECK(query.dereferences == 1uz);
-}
-
-TEST_CASE("Generation: explicit writable source pointers retain their access contract") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "fn writable(p: ptr<&i32>) -> ptr<i32> { let saved = p; return saved; }\n"
-            "fn readonly(p: ptr<i32>) -> ptr<i32> { let saved = p; return saved; }\n"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("source_pointer_access")}
     );
 
-    struct Query final {
-        const TargetUnit& unit;
-        std::size_t writable;
-        std::size_t readonly;
+    ct::test(
+        "Generation: independent value branches compose without duplicating successors",
+        [] static noexcept {
+            for (const auto suffix : {false, true}) {
+                auto single_nodes = 0uz;
+                for (const auto count : {1uz, 2uz, 4uz, 8uz}) {
+                    auto parameters = std::string();
+                    auto flags = std::string();
+                    auto arguments = std::string();
+                    auto initializers = std::string();
+                    for (auto index = 0uz; index < count; ++index) {
+                        if (index != 0uz) {
+                            parameters += ", ";
+                            flags += ", ";
+                            arguments += ", ";
+                        }
+                        parameters += std::format("a{}: i32", index);
+                        flags += std::format("x{}: bool, y{}: bool", index, index);
+                        const auto choice = suffix
+                            ? std::format(
+                                  "if (x{0}) {{ 1 }} else if (y{0}) {{ 2 }} else {{ throw Failure::Stop; }}",
+                                  index
+                              )
+                            : std::format("if (x{}) {{ 1 }} else {{ 2 }}", index);
+                        initializers += std::format("let a{}: i32 = {};", index, choice);
+                        arguments += suffix ? std::format("a{}", index) : choice;
+                    }
+                    const auto source = std::format(
+                        "enum Failure {{ Stop, }} fn sum({}) -> i32 {{ return a0; }} "
+                        "fn choose({}) -> i32 throw Failure {{ {} return sum({}); }}",
+                        parameters,
+                        flags,
+                        suffix ? initializers : "",
+                        arguments
+                    );
+                    const auto compilation = PlannedCompilation::build(
+                        analyze_test_program(source),
+                        {.test_mode = TestGenerationMode::None,
+                         .linkage_domain = *LinkageDomain::explicit_value("linear_composition")}
+                    );
 
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                const auto* pointer =
-                    std::get_if<TargetPointerType>(&unit.type(variable->type).value);
-                REQUIRE(pointer != nullptr);
-                const auto& pointee = unit.type(pointer->pointee);
-                const auto* intrinsic = std::get_if<TargetIntrinsicType>(&pointee.value);
-                const auto constant = pointee.const_qualified
-                    || (intrinsic != nullptr && intrinsic->symbol == TargetSymbol::StdAddConst);
-                writable += !constant;
-                readonly += constant;
-                CHECK(variable->binding == TargetVariableBinding::ConstValue);
+                    struct Query final {
+                        std::size_t nodes;
+                        std::size_t branches;
+                        std::size_t calls;
+
+                        auto enter_expression(
+                            const TargetExpr& expression,
+                            TargetExpressionRole
+                        ) noexcept -> bool {
+                            ++nodes;
+                            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                                if (const auto* name =
+                                        std::get_if<TargetNameExpr>(&call->callee->value)) {
+                                    calls += name->name.components().back().spelling() == "sum";
+                                }
+                            }
+                            return true;
+                        }
+
+                        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                            ++nodes;
+                            branches += std::holds_alternative<TargetIfStmt>(statement.value);
+                            return true;
+                        }
+                    };
+
+                    auto query = Query {.nodes = 0uz, .branches = 0uz, .calls = 0uz};
+                    for (const auto artifact : compilation.target().artifacts()) {
+                        const auto unit = lower_artifact(compilation, artifact.id);
+                        ct::expect(traverse_target_unit(unit.sections(), query));
+                    }
+                    ct::expect(query.calls == 1uz);
+                    ct::expect(query.branches == count * (suffix ? 2uz : 1uz));
+                    if (count == 1uz) {
+                        single_nodes = query.nodes;
+                    }
+                    ct::expect(query.nodes <= count * single_nodes)
+                        .note("query.nodes: ", query.nodes);
+                }
             }
-            return true;
         }
-    };
+    );
 
-    auto writable = 0uz;
-    auto readonly = 0uz;
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit, .writable = 0uz, .readonly = 0uz};
-        CHECK(traverse_target_unit(unit.sections(), query));
-        writable += query.writable;
-        readonly += query.readonly;
-    }
-    CHECK(writable == 1uz);
-    CHECK(readonly == 1uz);
-}
-
-TEST_CASE("Generation: independent nested pattern alternatives keep target size proportional") {
-    auto counts = std::vector<std::size_t>();
-    for (const auto width : {2uz, 4uz, 8uz}) {
-        auto fields = std::string();
-        auto patterns = std::string();
-        for (auto index = 0uz; index < width; ++index) {
-            if (index != 0uz) {
-                fields += ", ";
-                patterns += ", ";
-            }
-            fields += "i32";
-            patterns += "0 | 1";
-        }
+    ct::test("Generation: void calls remain return expressions", [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_test_program(
-                std::format(
-                    "enum Choices {{ Fields({}), }} "
-                    "fn select(value: Choices) -> i32 {{ return match value {{ "
-                    ".Fields({}) => 1, _ => 0, }}; }}",
-                    fields,
-                    patterns
-                )
+                "fn action() {}\n"
+                "fn forward() { return action(); }\n"
             ),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("pattern_size")}
+             .linkage_domain = *LinkageDomain::explicit_value("void_expression_delivery")}
         );
 
         struct Query final {
-            std::size_t nodes;
+            std::size_t returned_calls;
 
-            auto enter_expression(const TargetExpr&, TargetExpressionRole) noexcept -> bool {
-                ++nodes;
+            auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                if (const auto* returned = std::get_if<TargetReturnStmt>(&statement.value);
+                    returned != nullptr && returned->expression) {
+                    returned_calls +=
+                        std::holds_alternative<TargetCallExpr>(returned->expression->value);
+                }
                 return true;
             }
 
-            auto enter_statement(const TargetStmt&) noexcept -> bool {
-                ++nodes;
+            auto enter_expression(const TargetExpr& expression, TargetExpressionRole) const noexcept
+                -> bool {
+                ct::expect(!(std::holds_alternative<TargetLambdaExpr>(expression.value)));
                 return true;
             }
         };
 
-        auto query = Query {.nodes = 0uz};
+        auto query = Query {.returned_calls = 0uz};
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
-            CHECK(traverse_target_unit(unit.sections(), query));
+            ct::expect(traverse_target_unit(unit.sections(), query));
         }
-        counts.push_back(query.nodes);
-    }
-    REQUIRE(counts.front() > 0uz);
-    for (auto index = 1uz; index < counts.size(); ++index) {
-        CHECK(counts[index] > counts[index - 1uz]);
-        // Doubling independent choices must not expand their Cartesian product.
-        // Leave room for target scaffolding without fixing names or exact counts.
-        CHECK(counts[index] <= 3uz * counts[index - 1uz]);
-    }
-}
+        ct::expect(query.returned_calls == 1uz);
+    });
 
-TEST_CASE("Generation: builtin Read snapshots use unqualified value factory results") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+    ct::test(
+        "Generation: builtin pointer observations need no temporary storage",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "fn present(p: ptr<i32>) -> bool { return p != nullptr; }\n"
+                    "fn read(p: ptr<i32>) -> i32 {\n"
+                    "  if p == nullptr { return 0; }\n"
+                    "  return *p;\n"
+                    "}\n"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("pointer_observation")}
+            );
+
+            struct Query final {
+                std::size_t comparisons;
+                std::size_t dereferences;
+
+                auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+                    ct::expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
+                    return true;
+                }
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    ct::expect(!(std::holds_alternative<TargetLambdaExpr>(expression.value)));
+                    if (const auto* binary = std::get_if<TargetBinaryExpr>(&expression.value)) {
+                        comparisons += binary->op == TargetBinaryOperator::Equal
+                            || binary->op == TargetBinaryOperator::NotEqual;
+                    }
+                    if (const auto* prefix = std::get_if<TargetPrefixExpr>(&expression.value)) {
+                        dereferences += prefix->op == TargetPrefixOperator::Dereference;
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query {.comparisons = 0uz, .dereferences = 0uz};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                ct::expect(traverse_target_unit(unit.sections(), query));
+            }
+            ct::expect(query.comparisons == 2uz);
+            ct::expect(query.dereferences == 1uz);
+        }
+    );
+
+    ct::test(
+        "Generation: explicit writable source pointers retain their access contract",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "fn writable(p: ptr<&i32>) -> ptr<i32> { let saved = p; return saved; }\n"
+                    "fn readonly(p: ptr<i32>) -> ptr<i32> { let saved = p; return saved; }\n"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("source_pointer_access")}
+            );
+
+            struct Query final {
+                const TargetUnit& unit;
+                std::size_t writable;
+                std::size_t readonly;
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        const auto* pointer =
+                            std::get_if<TargetPointerType>(&unit.type(variable->type).value);
+                        if (!ct::expect(pointer != nullptr)) {
+                            return false;
+                        }
+                        const auto& pointee = unit.type(pointer->pointee);
+                        const auto* intrinsic = std::get_if<TargetIntrinsicType>(&pointee.value);
+                        const auto constant = pointee.const_qualified
+                            || (intrinsic != nullptr
+                                && intrinsic->symbol == TargetSymbol::StdAddConst);
+                        writable += !constant;
+                        readonly += constant;
+                        ct::expect(variable->binding == TargetVariableBinding::ConstValue);
+                    }
+                    return true;
+                }
+            };
+
+            auto writable = 0uz;
+            auto readonly = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit, .writable = 0uz, .readonly = 0uz};
+                ct::expect(traverse_target_unit(unit.sections(), query));
+                writable += query.writable;
+                readonly += query.readonly;
+            }
+            ct::expect(writable == 1uz);
+            ct::expect(readonly == 1uz);
+        }
+    );
+
+    ct::test(
+        "Generation: independent nested pattern alternatives keep target size proportional",
+        [] static noexcept {
+            auto counts = std::vector<std::size_t>();
+            for (const auto width : {2uz, 4uz, 8uz}) {
+                auto fields = std::string();
+                auto patterns = std::string();
+                for (auto index = 0uz; index < width; ++index) {
+                    if (index != 0uz) {
+                        fields += ", ";
+                        patterns += ", ";
+                    }
+                    fields += "i32";
+                    patterns += "0 | 1";
+                }
+                const auto compilation = PlannedCompilation::build(
+                    analyze_test_program(
+                        std::format(
+                            "enum Choices {{ Fields({}), }} "
+                            "fn select(value: Choices) -> i32 {{ return match value {{ "
+                            ".Fields({}) => 1, _ => 0, }}; }}",
+                            fields,
+                            patterns
+                        )
+                    ),
+                    {.test_mode = TestGenerationMode::None,
+                     .linkage_domain = *LinkageDomain::explicit_value("pattern_size")}
+                );
+
+                struct Query final {
+                    std::size_t nodes;
+
+                    auto enter_expression(const TargetExpr&, TargetExpressionRole) noexcept
+                        -> bool {
+                        ++nodes;
+                        return true;
+                    }
+
+                    auto enter_statement(const TargetStmt&) noexcept -> bool {
+                        ++nodes;
+                        return true;
+                    }
+                };
+
+                auto query = Query {.nodes = 0uz};
+                for (const auto artifact : compilation.target().artifacts()) {
+                    const auto unit = lower_artifact(compilation, artifact.id);
+                    ct::expect(traverse_target_unit(unit.sections(), query));
+                }
+                counts.push_back(query.nodes);
+            }
+            if (!ct::expect(counts.front() > 0uz)) {
+                return;
+            }
+            for (auto index = 1uz; index < counts.size(); ++index) {
+                ct::expect(counts[index] > counts[index - 1uz]);
+                // Doubling independent choices must not expand their Cartesian product.
+                // Leave room for target scaffolding without fixing names or exact counts.
+                ct::expect(counts[index] <= 3uz * counts[index - 1uz]);
+            }
+        }
+    );
+
+    ct::test(
+        "Generation: builtin Read snapshots use unqualified value factory results",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             fn advance(&value: i32) -> i32 { value += 1; return value; }
             fn format(&value: i32) -> String {
                 var output = String {};
@@ -710,155 +776,173 @@ TEST_CASE("Generation: builtin Read snapshots use unqualified value factory resu
                 } else { 0 }}";
             }
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("read_snapshot")}
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("read_snapshot")}
+            );
+
+            struct Query final {
+                const TargetUnit& unit;
+                std::size_t scalar_factories;
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    const auto* lambda = std::get_if<TargetLambdaExpr>(&expression.value);
+                    if (lambda != nullptr) {
+                        const auto& result = unit.type(lambda->result);
+                        const auto* type = std::get_if<TargetIntrinsicType>(&result.value);
+                        if (type != nullptr && type->symbol == TargetSymbol::StdInt32) {
+                            ++scalar_factories;
+                            ct::expect(!(result.const_qualified));
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            auto scalar_factories = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit, .scalar_factories = 0uz};
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+                scalar_factories += query.scalar_factories;
+            }
+            ct::expect(scalar_factories > 0uz);
+        }
     );
 
-    struct Query final {
-        const TargetUnit& unit;
-        std::size_t scalar_factories;
+    ct::test(
+        "Generation: local storage follows retained access rather than source write permission",
+        [] static noexcept {
+            struct Case final {
+                std::string_view name;
+                std::string_view source;
+                TargetVariableBinding expected;
+            };
 
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            const auto* lambda = std::get_if<TargetLambdaExpr>(&expression.value);
-            if (lambda != nullptr) {
-                const auto& result = unit.type(lambda->result);
-                const auto* type = std::get_if<TargetIntrinsicType>(&result.value);
-                if (type != nullptr && type->symbol == TargetSymbol::StdInt32) {
-                    ++scalar_factories;
-                    CHECK_FALSE(result.const_qualified);
+            const auto cases = std::array {
+                Case {
+                    .name = "read-only var",
+                    .source =
+                        "fn probe(value: i32) -> i32 { var storage = value; return storage; }",
+                    .expected = TargetVariableBinding::ConstValue
+                },
+                Case {
+                    .name = "assignment",
+                    .source =
+                        "fn probe(value: i32) -> i32 { var storage = value; storage += 1; return storage; }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "Write argument",
+                    .source = "fn write(&value: i32) { value = 2; } "
+                              "fn probe(value: i32) { var storage = value; write(&storage); }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "Write capture",
+                    .source =
+                        "fn probe(value: i32) -> i32 { var storage = value; "
+                        "let read = [&storage]() -> i32 { return storage; }; return read(); }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "let transfer",
+                    .source =
+                        "fn probe(value: String) -> String { let storage = value; return &&storage; }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "read field",
+                    .source =
+                        "struct Box { value: i32 } "
+                        "fn probe(value: i32) -> i32 { var storage = Box { value }; return storage.value; }",
+                    .expected = TargetVariableBinding::ConstValue
+                },
+                Case {
+                    .name = "write field",
+                    .source =
+                        "struct Box { value: i32 } "
+                        "fn probe(value: i32) { var storage = Box { value }; storage.value = 2; }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "read element",
+                    .source =
+                        "fn probe(value: i32) -> i32 { var storage = [value]; return storage[0]; }",
+                    .expected = TargetVariableBinding::ConstValue
+                },
+                Case {
+                    .name = "write element",
+                    .source = "fn probe(value: i32) { var storage = [value]; storage[0] = 2; }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "write iteration",
+                    .source =
+                        "fn probe(value: i32) { var storage = [value]; for &element in storage { element += 1; } }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "write pointee",
+                    .source =
+                        "fn probe(pointer: ptr<&i32>) { var storage = pointer; if storage != nullptr { *storage = 2; } }",
+                    .expected = TargetVariableBinding::ConstValue
+                },
+                Case {
+                    .name = "unreachable write does not require mutable storage",
+                    .source =
+                        "fn probe(value: i32) -> i32 { var storage = value; if false { storage = 2; } return storage; }",
+                    .expected = TargetVariableBinding::ConstValue
+                },
+            };
+            ct::each(cases, &Case::name, [](const Case& scenario) static noexcept {
+                const auto compilation = PlannedCompilation::build(
+                    analyze_test_program(std::string(scenario.source)),
+                    {.test_mode = TestGenerationMode::None,
+                     .linkage_domain = *LinkageDomain::explicit_value("local_storage")}
+                );
+
+                struct Query final {
+                    const TargetUnit& unit;
+                    TargetVariableBinding expected;
+                    std::size_t owners;
+
+                    auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                        const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+                        if (variable != nullptr
+                            && unit.local_name(variable->local).spelling() == "storage") {
+                            ++owners;
+                            ct::expect(variable->binding == expected);
+                        }
+                        return true;
+                    }
+                };
+
+                auto owners = 0uz;
+                for (const auto artifact : compilation.target().artifacts()) {
+                    const auto unit = lower_artifact(compilation, artifact.id);
+                    auto query = Query {
+                        .unit = unit,
+                        .expected = scenario.expected,
+                        .owners = 0uz,
+                    };
+                    if (!(ct::expect(traverse_target_unit(unit.sections(), query)))) {
+                        return;
+                    }
+                    owners += query.owners;
                 }
-            }
-            return true;
+                ct::expect(owners == 1uz);
+            });
         }
-    };
+    );
 
-    auto scalar_factories = 0uz;
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit, .scalar_factories = 0uz};
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-        scalar_factories += query.scalar_factories;
-    }
-    CHECK(scalar_factories > 0uz);
-}
-
-TEST_CASE("Generation: local storage follows retained access rather than source write permission") {
-    struct Case final {
-        std::string_view name;
-        std::string_view source;
-        TargetVariableBinding expected;
-    };
-
-    const auto cases = std::array {
-        Case {
-            .name = "read-only var",
-            .source = "fn probe(value: i32) -> i32 { var storage = value; return storage; }",
-            .expected = TargetVariableBinding::ConstValue
-        },
-        Case {
-            .name = "assignment",
-            .source =
-                "fn probe(value: i32) -> i32 { var storage = value; storage += 1; return storage; }",
-            .expected = TargetVariableBinding::MutableValue
-        },
-        Case {
-            .name = "Write argument",
-            .source = "fn write(&value: i32) { value = 2; } "
-                      "fn probe(value: i32) { var storage = value; write(&storage); }",
-            .expected = TargetVariableBinding::MutableValue
-        },
-        Case {
-            .name = "Write capture",
-            .source = "fn probe(value: i32) -> i32 { var storage = value; "
-                      "let read = [&storage]() -> i32 { return storage; }; return read(); }",
-            .expected = TargetVariableBinding::MutableValue
-        },
-        Case {
-            .name = "let transfer",
-            .source =
-                "fn probe(value: String) -> String { let storage = value; return &&storage; }",
-            .expected = TargetVariableBinding::MutableValue
-        },
-        Case {
-            .name = "read field",
-            .source =
-                "struct Box { value: i32 } "
-                "fn probe(value: i32) -> i32 { var storage = Box { value }; return storage.value; }",
-            .expected = TargetVariableBinding::ConstValue
-        },
-        Case {
-            .name = "write field",
-            .source = "struct Box { value: i32 } "
-                      "fn probe(value: i32) { var storage = Box { value }; storage.value = 2; }",
-            .expected = TargetVariableBinding::MutableValue
-        },
-        Case {
-            .name = "read element",
-            .source = "fn probe(value: i32) -> i32 { var storage = [value]; return storage[0]; }",
-            .expected = TargetVariableBinding::ConstValue
-        },
-        Case {
-            .name = "write element",
-            .source = "fn probe(value: i32) { var storage = [value]; storage[0] = 2; }",
-            .expected = TargetVariableBinding::MutableValue
-        },
-        Case {
-            .name = "write iteration",
-            .source =
-                "fn probe(value: i32) { var storage = [value]; for &element in storage { element += 1; } }",
-            .expected = TargetVariableBinding::MutableValue
-        },
-        Case {
-            .name = "write pointee",
-            .source =
-                "fn probe(pointer: ptr<&i32>) { var storage = pointer; if storage != nullptr { *storage = 2; } }",
-            .expected = TargetVariableBinding::ConstValue
-        },
-        Case {
-            .name = "unreachable write does not require mutable storage",
-            .source =
-                "fn probe(value: i32) -> i32 { var storage = value; if false { storage = 2; } return storage; }",
-            .expected = TargetVariableBinding::ConstValue
-        },
-    };
-    for (const auto& scenario : cases) {
-        CAPTURE(scenario.name);
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(std::string(scenario.source)),
-            {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("local_storage")}
-        );
-
-        struct Query final {
-            const TargetUnit& unit;
-            TargetVariableBinding expected;
-            std::size_t owners;
-
-            auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
-                if (variable != nullptr
-                    && unit.local_name(variable->local).spelling() == "storage") {
-                    ++owners;
-                    CHECK(variable->binding == expected);
-                }
-                return true;
-            }
-        };
-
-        auto owners = 0uz;
-        for (const auto artifact : compilation.target().artifacts()) {
-            const auto unit = lower_artifact(compilation, artifact.id);
-            auto query = Query {.unit = unit, .expected = scenario.expected, .owners = 0uz};
-            REQUIRE(traverse_target_unit(unit.sections(), query));
-            owners += query.owners;
-        }
-        CHECK(owners == 1uz);
-    }
-}
-
-TEST_CASE("Generation: discarded operations use their native result contract") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+    ct::test(
+        "Generation: discarded operations use their native result contract",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             struct Record { value: i32, }
             enum Tag { First, Second, }
             fn scalar() -> i32 => 1;
@@ -875,244 +959,282 @@ TEST_CASE("Generation: discarded operations use their native result contract") {
                 if false && effect() { scalar(); }
             }
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("discarded_operations")}
-    );
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("discarded_operations")}
+            );
 
-    struct Query final {
-        std::flat_map<std::string, std::size_t> calls;
-        std::size_t checked_divisions;
-        std::size_t explicit_discards;
-        std::size_t branches;
+            struct Query final {
+                std::flat_map<std::string, std::size_t> calls;
+                std::size_t checked_divisions;
+                std::size_t explicit_discards;
+                std::size_t branches;
 
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            branches += std::holds_alternative<TargetIfStmt>(statement.value);
-            if (const auto* discard = std::get_if<TargetDiscardStmt>(&statement.value)) {
-                ++explicit_discards;
-                CHECK(std::holds_alternative<TargetBinaryExpr>(discard->expression.value));
-            }
-            if (const auto* expression = std::get_if<TargetExprStmt>(&statement.value)) {
-                const auto* call = std::get_if<TargetCallExpr>(&expression->expression.value);
-                REQUIRE(call != nullptr);
-                if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
-                    ++calls[std::string(name->name.components().back().spelling())];
-                } else if (const auto* intrinsic =
-                               std::get_if<TargetIntrinsicNameExpr>(&call->callee->value)) {
-                    checked_divisions += intrinsic->symbol == TargetSymbol::RuntimeIntegerDivide;
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    branches += std::holds_alternative<TargetIfStmt>(statement.value);
+                    if (const auto* discard = std::get_if<TargetDiscardStmt>(&statement.value)) {
+                        ++explicit_discards;
+                        ct::expect(
+                            std::holds_alternative<TargetBinaryExpr>(discard->expression.value)
+                        );
+                    }
+                    if (const auto* expression = std::get_if<TargetExprStmt>(&statement.value)) {
+                        const auto* call =
+                            std::get_if<TargetCallExpr>(&expression->expression.value);
+                        if (!ct::expect(call != nullptr)) {
+                            return false;
+                        }
+                        if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                            ++calls[std::string(name->name.components().back().spelling())];
+                        } else if (const auto* intrinsic =
+                                       std::get_if<TargetIntrinsicNameExpr>(&call->callee->value)) {
+                            checked_divisions +=
+                                intrinsic->symbol == TargetSymbol::RuntimeIntegerDivide;
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query {
+                .calls = {},
+                .checked_divisions = 0uz,
+                .explicit_discards = 0uz,
+                .branches = 0uz
+            };
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
                 }
             }
-            return true;
-        }
-    };
-
-    auto query =
-        Query {.calls = {}, .checked_divisions = 0uz, .explicit_discards = 0uz, .branches = 0uz};
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(
-        query.calls
-        == std::flat_map<std::string, std::size_t> {
-            {"scalar", 1uz},
-            {"record", 1uz},
-            {"tag", 1uz},
-            {"effect", 1uz}
+            ct::expect(
+                query.calls
+                == std::flat_map<std::string, std::size_t> {
+                    {"scalar", 1uz},
+                    {"record", 1uz},
+                    {"tag", 1uz},
+                    {"effect", 1uz}
+                }
+            );
+            ct::expect(query.checked_divisions == 1uz);
+            ct::expect(query.explicit_discards == 1uz);
+            ct::expect(query.branches == 0uz);
         }
     );
-    CHECK(query.checked_divisions == 1uz);
-    CHECK(query.explicit_discards == 1uz);
-    CHECK(query.branches == 0uz);
-}
 
-TEST_CASE("Generation: boolean expressions use native short circuit without result storage") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+    ct::test(
+        "Generation: boolean expressions use native short circuit without result storage",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             fn both(left: bool, right: bool) -> bool => left && right;
             fn either(left: bool, right: bool) -> bool => left || right;
             fn nested(a: bool, b: bool, c: bool) -> bool => a && (b || c);
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("native_short_circuit")}
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("native_short_circuit")}
+            );
+
+            struct Query final {
+                std::size_t logical;
+
+                auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+                    ct::expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
+                    ct::expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
+                    return true;
+                }
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    if (const auto* binary = std::get_if<TargetBinaryExpr>(&expression.value)) {
+                        logical += binary->op == TargetBinaryOperator::LogicalAnd
+                            || binary->op == TargetBinaryOperator::LogicalOr;
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query {.logical = 0uz};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+            }
+            ct::expect(query.logical == 4uz);
+        }
     );
 
-    struct Query final {
-        std::size_t logical;
-
-        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
-            CHECK_FALSE(std::holds_alternative<TargetIfStmt>(statement.value));
-            return true;
-        }
-
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            if (const auto* binary = std::get_if<TargetBinaryExpr>(&expression.value)) {
-                logical += binary->op == TargetBinaryOperator::LogicalAnd
-                    || binary->op == TargetBinaryOperator::LogicalOr;
-            }
-            return true;
-        }
-    };
-
-    auto query = Query {.logical = 0uz};
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.logical == 4uz);
-}
-
-TEST_CASE("Generation: loop conditions use native expressions after required sequencing") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+    ct::test(
+        "Generation: loop conditions use native expressions after required sequencing",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             fn direct(&remaining: i32) { while remaining > 0 { remaining -= 1; } }
             struct Failure {}
             fn predicate() -> bool throw Failure { return false; }
             fn ordered() throw Failure { while predicate()? {} }
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("loop_conditions")}
-    );
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("loop_conditions")}
+            );
 
-    struct Query final {
-        std::size_t direct;
-        std::size_t sequenced;
+            struct Query final {
+                std::size_t direct;
+                std::size_t sequenced;
 
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            if (const auto* loop = std::get_if<TargetWhileStmt>(&statement.value)) {
-                const auto* literal = std::get_if<TargetLiteralExpr>(&loop->condition.value);
-                if (literal != nullptr) {
-                    ++sequenced;
-                    CHECK_FALSE(loop->body.empty());
-                } else {
-                    ++direct;
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    if (const auto* loop = std::get_if<TargetWhileStmt>(&statement.value)) {
+                        const auto* literal =
+                            std::get_if<TargetLiteralExpr>(&loop->condition.value);
+                        if (literal != nullptr) {
+                            ++sequenced;
+                            ct::expect(!(loop->body.empty()));
+                        } else {
+                            ++direct;
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query {.direct = 0uz, .sequenced = 0uz};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
                 }
             }
-            return true;
-        }
-    };
-
-    auto query = Query {.direct = 0uz, .sequenced = 0uz};
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.direct == 1uz);
-    CHECK(query.sequenced == 1uz);
-}
-
-TEST_CASE("Generation: shared native query types have bounded expanded target syntax") {
-    constexpr auto depth = 12uz;
-    auto source =
-        std::string("import <probe.hpp> using probe::{seed};\nfn grow() { let x0 = seed();\n");
-    for (auto index = 1uz; index <= depth; ++index) {
-        source += std::format("let x{} = x{} + x{};\n", index, index - 1, index - 1);
-    }
-    source += std::format("return x{}; }}\n", depth);
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(std::move(source)),
-        {
-            .test_mode = TestGenerationMode::None,
-            .linkage_domain = *LinkageDomain::explicit_value("query_graph"),
+            ct::expect(query.direct == 1uz);
+            ct::expect(query.sequenced == 1uz);
         }
     );
 
-    struct Query final {
-        const TargetUnit& unit;
-        std::size_t expanded_types;
-
-        auto visit_type(TargetTypeID id) noexcept -> bool {
-            ++expanded_types;
-            return visit_target_type_children(unit.type(id).value, *this);
-        }
-    };
-
-    auto expanded_types = 0uz;
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit, .expanded_types = 0uz};
-        CHECK(traverse_target_unit(unit.sections(), query));
-        expanded_types += query.expanded_types;
-    }
-    CHECK_LT(expanded_types, 128uz * (depth + 1uz));
-}
-
-TEST_CASE("Generation: a long expression retains each runtime operand once") {
-    constexpr auto count = 4096uz;
-    auto source =
-        std::string("fn operand(n: i32) -> i32 { return n; } fn chain(n: i32) -> i32 { return ");
-    for (auto index = 0uz; index < count; ++index) {
-        if (index != 0uz) {
-            source += '+';
-        }
-        source += "operand(n)";
-    }
-    source += "; }";
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(std::move(source)),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("long_expression")}
-    );
-
-    struct Query final {
-        std::size_t calls;
-
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
-                    calls += name->name.components().back().spelling() == "operand";
-                }
+    ct::test(
+        "Generation: shared native query types have bounded expanded target syntax",
+        [] static noexcept {
+            constexpr auto depth = 12uz;
+            auto source = std::string(
+                "import <probe.hpp> using probe::{seed};\nfn grow() { let x0 = seed();\n"
+            );
+            for (auto index = 1uz; index <= depth; ++index) {
+                source += std::format("let x{} = x{} + x{};\n", index, index - 1, index - 1);
             }
-            return true;
+            source += std::format("return x{}; }}\n", depth);
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(std::move(source)),
+                {
+                    .test_mode = TestGenerationMode::None,
+                    .linkage_domain = *LinkageDomain::explicit_value("query_graph"),
+                }
+            );
+
+            struct Query final {
+                const TargetUnit& unit;
+                std::size_t expanded_types;
+
+                auto visit_type(TargetTypeID id) noexcept -> bool {
+                    ++expanded_types;
+                    return visit_target_type_children(unit.type(id).value, *this);
+                }
+            };
+
+            auto expanded_types = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit, .expanded_types = 0uz};
+                ct::expect(traverse_target_unit(unit.sections(), query));
+                expanded_types += query.expanded_types;
+            }
+            ct::expect_less(expanded_types, 128uz * (depth + 1uz));
         }
-    };
+    );
 
-    auto query = Query {.calls = 0uz};
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        CHECK(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.calls == count);
-}
-
-TEST_CASE("Generation: stable scalar parameters need no snapshot before later effects") {
-    const auto parameter_access = std::array {false, true};
-    for (const auto writable : parameter_access) {
-        CAPTURE(writable);
+    ct::test("Generation: nested expressions retain each runtime operand once", [] static noexcept {
+        constexpr auto count = 128uz;
+        auto source = std::string(
+            "fn operand(n: i32) -> i32 { return n; } fn chain(n: i32) -> i32 { return "
+        );
+        for (auto index = 0uz; index < count; ++index) {
+            if (index != 0uz) {
+                source += '+';
+            }
+            source += "operand(n)";
+        }
+        source += "; }";
         const auto compilation = PlannedCompilation::build(
-            analyze_test_program(
-                std::string(
-                    "fn effect() -> i32 { println(2); return 2; } "
-                    "fn consume(first: i32, second: i32) -> i32 => first + second; "
-                    "fn probe("
-                )
-                + (writable ? "&" : "") + "first: i32) -> i32 => consume(first, effect());"
-            ),
+            analyze_test_program(std::move(source)),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("stable_scalar")}
+             .linkage_domain = *LinkageDomain::explicit_value("long_expression")}
         );
 
         struct Query final {
-            std::size_t locals;
+            std::size_t calls;
 
-            auto visit_variable(const TargetVariableStmt&) noexcept -> bool {
-                ++locals;
+            auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                -> bool {
+                if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                    if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                        calls += name->name.components().back().spelling() == "operand";
+                    }
+                }
                 return true;
             }
         };
 
-        auto query = Query {.locals = 0uz};
+        auto query = Query {.calls = 0uz};
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
-            REQUIRE(traverse_target_unit(unit.sections(), query));
+            ct::expect(traverse_target_unit(unit.sections(), query));
         }
-        CHECK(query.locals == (writable ? 1uz : 0uz));
-    }
-}
+        ct::expect(query.calls == count);
+    });
 
-TEST_CASE("Generation: simple patterns use predicates without mutable match state") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+    ct::test(
+        "Generation: stable scalar parameters need no snapshot before later effects",
+        [] static noexcept {
+            const auto parameter_access = std::array {false, true};
+            for (const auto writable : parameter_access) {
+                const auto compilation = PlannedCompilation::build(
+                    analyze_test_program(
+                        std::string(
+                            "fn effect() -> i32 { println(2); return 2; } "
+                            "fn consume(first: i32, second: i32) -> i32 => first + second; "
+                            "fn probe("
+                        )
+                        + (writable ? "&" : "") + "first: i32) -> i32 => consume(first, effect());"
+                    ),
+                    {.test_mode = TestGenerationMode::None,
+                     .linkage_domain = *LinkageDomain::explicit_value("stable_scalar")}
+                );
+
+                struct Query final {
+                    std::size_t locals;
+
+                    auto visit_variable(const TargetVariableStmt&) noexcept -> bool {
+                        ++locals;
+                        return true;
+                    }
+                };
+
+                auto query = Query {.locals = 0uz};
+                for (const auto artifact : compilation.target().artifacts()) {
+                    const auto unit = lower_artifact(compilation, artifact.id);
+                    if (!(ct::expect(traverse_target_unit(unit.sections(), query))
+                              .note("writable: ", writable))) {
+                        return;
+                    }
+                }
+                ct::expect(query.locals == (writable ? 1uz : 0uz)).note("writable: ", writable);
+            }
+        }
+    );
+
+    ct::test(
+        "Generation: simple patterns use predicates without mutable match state",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             fn classify(value: i32) -> i32 => match value {
                 0 | 1 => 3,
                 2..=4 => 5,
@@ -1122,106 +1244,119 @@ TEST_CASE("Generation: simple patterns use predicates without mutable match stat
             fn failing() -> i32 throw Failure { throw Failure {}; }
             fn recover() -> i32 => try { failing()? } catch { _ => 7, };
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("pattern_predicates")}
-    );
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("pattern_predicates")}
+            );
 
-    struct Query final {
-        const TargetUnit& unit;
-        std::size_t mutable_booleans;
+            struct Query final {
+                const TargetUnit& unit;
+                std::size_t mutable_booleans;
 
-        auto visit_variable(const TargetVariableStmt& variable) noexcept -> bool {
-            if (const auto* type =
-                    std::get_if<TargetIntrinsicType>(&unit.type(variable.type).value);
-                type != nullptr
-                && type->symbol == TargetSymbol::Bool
-                && variable.binding == TargetVariableBinding::MutableValue) {
-                ++mutable_booleans;
-            }
-            return true;
-        }
-    };
-
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit, .mutable_booleans = 0uz};
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-        CHECK(query.mutable_booleans == 0uz);
-    }
-}
-
-TEST_CASE("Generation: linear native printing uses automatic operand storage") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "import <vector> using std::vector; "
-            "fn show() { let v = vector {1, 2, 3}; println(v[0]); }"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("linear_native_print")}
-    );
-
-    struct Query final {
-        const TargetUnit& unit;
-        std::size_t variables = 0;
-
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                ++variables;
-                if (const auto* type =
-                        std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value)) {
-                    CHECK(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                auto visit_variable(const TargetVariableStmt& variable) noexcept -> bool {
+                    if (const auto* type =
+                            std::get_if<TargetIntrinsicType>(&unit.type(variable.type).value);
+                        type != nullptr
+                        && type->symbol == TargetSymbol::Bool
+                        && variable.binding == TargetVariableBinding::MutableValue) {
+                        ++mutable_booleans;
+                    }
+                    return true;
                 }
+            };
+
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit, .mutable_booleans = 0uz};
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+                ct::expect(query.mutable_booleans == 0uz);
             }
-            return true;
         }
-    };
-
-    auto variables = 0uz;
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit};
-        CHECK(traverse_target_unit(unit.sections(), query));
-        variables += query.variables;
-    }
-    CHECK(variables > 0);
-}
-
-TEST_CASE("Generation: a folded short circuit does not defer later argument storage") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "import <string> using std::string; "
-            "fn probe() -> bool { return true; } "
-            "fn show() { println(false && probe(), "
-            "string { c\"first\" }, string { c\"second\" }); }"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("folded_short_circuit")}
     );
 
-    struct Query final {
-        const TargetUnit& unit;
+    ct::test(
+        "Generation: linear native printing uses automatic operand storage",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "import <vector> using std::vector; "
+                    "fn show() { let v = vector {1, 2, 3}; println(v[0]); }"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("linear_native_print")}
+            );
 
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                if (const auto* type =
-                        std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value)) {
-                    CHECK(type->symbol != TargetSymbol::RuntimeDeferredResult);
+            struct Query final {
+                const TargetUnit& unit;
+                std::size_t variables = 0;
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        ++variables;
+                        if (const auto* type = std::get_if<TargetIntrinsicType>(
+                                &unit.type(variable->type).value
+                            )) {
+                            ct::expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                        }
+                    }
+                    return true;
                 }
+            };
+
+            auto variables = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                ct::expect(traverse_target_unit(unit.sections(), query));
+                variables += query.variables;
             }
-            return true;
+            ct::expect(variables > 0);
         }
-    };
+    );
 
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit};
-        CHECK(traverse_target_unit(unit.sections(), query));
-    }
-}
+    ct::test(
+        "Generation: a folded short circuit does not defer later argument storage",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "import <string> using std::string; "
+                    "fn probe() -> bool { return true; } "
+                    "fn show() { println(false && probe(), "
+                    "string { c\"first\" }, string { c\"second\" }); }"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("folded_short_circuit")}
+            );
 
-TEST_CASE("Generation: integer facts select direct operations and preserve required operands") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+            struct Query final {
+                const TargetUnit& unit;
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        if (const auto* type = std::get_if<TargetIntrinsicType>(
+                                &unit.type(variable->type).value
+                            )) {
+                            ct::expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                ct::expect(traverse_target_unit(unit.sections(), query));
+            }
+        }
+    );
+
+    ct::test(
+        "Generation: integer facts select direct operations and preserve required operands",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             fn effect() -> i32 => 8;
             fn quotient(value: i32) -> i32 => value / 2;
             fn remainder(value: u8) -> u8 => value % 3;
@@ -1229,38 +1364,46 @@ TEST_CASE("Generation: integer facts select direct operations and preserve requi
             fn wrap(value: u32) -> u32 => value * 3 + 1;
             fn discard() { effect() / 2; effect() / -1; effect() >> 2; }
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("integer_facts")}
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("integer_facts")}
+            );
+
+            struct Query final {
+                std::size_t operations = 0;
+                std::size_t effects = 0;
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    operations += std::holds_alternative<TargetBinaryExpr>(expression.value);
+                    if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                        const auto* name = std::get_if<TargetNameExpr>(&call->callee->value);
+                        if (!ct::expect(name != nullptr)) {
+                            return false;
+                        }
+                        ct::expect(name->name.components().back().spelling() == "effect");
+                        ++effects;
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query();
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+            }
+            ct::expect(query.operations == 5uz);
+            ct::expect(query.effects == 3uz);
+        }
     );
 
-    struct Query final {
-        std::size_t operations = 0;
-        std::size_t effects = 0;
-
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            operations += std::holds_alternative<TargetBinaryExpr>(expression.value);
-            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                const auto* name = std::get_if<TargetNameExpr>(&call->callee->value);
-                REQUIRE(name != nullptr);
-                CHECK(name->name.components().back().spelling() == "effect");
-                ++effects;
-            }
-            return true;
-        }
-    };
-
-    auto query = Query();
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.operations == 5uz);
-    CHECK(query.effects == 3uz);
-}
-
-TEST_CASE("Generation: immutable conditions and known callees need no selection or view storage") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+    ct::test(
+        "Generation: immutable conditions and known callees need no selection or view storage",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             struct Failure {}
             fn increment(value: i32) -> i32 => value + 1;
             fn choose(value: i32) -> i32 {
@@ -1272,113 +1415,134 @@ TEST_CASE("Generation: immutable conditions and known callees need no selection 
                 return copy(value);
             }
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("known_selection")}
-    );
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("known_selection")}
+            );
 
-    struct Query final {
-        std::size_t calls = 0;
+            struct Query final {
+                std::size_t calls = 0;
 
-        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetIfStmt>(statement.value));
-            CHECK_FALSE(std::holds_alternative<TargetVariableStmt>(statement.value));
-            return true;
-        }
+                auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+                    ct::expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
+                    ct::expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
+                    return true;
+                }
 
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
-                    CHECK(name->name.components().back().spelling() == "increment");
-                    ++calls;
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                        if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                            ct::expect(name->name.components().back().spelling() == "increment");
+                            ++calls;
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query();
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
                 }
             }
-            return true;
+            ct::expect(query.calls == 1uz);
         }
-    };
-
-    auto query = Query();
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.calls == 1uz);
-}
-
-TEST_CASE("Generation: explicit native construction targets need no deduction query") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(
-            "import <vector> using std::vector; "
-            "fn count() { let values = vector<i32> { 1, 2 }; return values.size(); }"
-        ),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("explicit_construction")}
     );
 
-    struct Query final {
-        const TargetUnit& unit;
-        std::size_t constructions = 0;
+    ct::test(
+        "Generation: explicit native construction targets need no deduction query",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "import <vector> using std::vector; "
+                    "fn count() { let values = vector<i32> { 1, 2 }; return values.size(); }"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("explicit_construction")}
+            );
 
-        auto visit_type(TargetTypeID id) noexcept -> bool {
-            const auto& type = unit.type(id);
-            if (const auto* deduced = std::get_if<TargetDecltypeType>(&type.value)) {
-                CHECK_FALSE(
-                    std::holds_alternative<TargetConstructionExpr>(deduced->expression().value)
-                );
+            struct Query final {
+                const TargetUnit& unit;
+                std::size_t constructions = 0;
+
+                auto visit_type(TargetTypeID id) noexcept -> bool {
+                    const auto& type = unit.type(id);
+                    if (const auto* deduced = std::get_if<TargetDecltypeType>(&type.value)) {
+                        ct::expect(!(std::holds_alternative<TargetConstructionExpr>(
+                            deduced->expression().value
+                        )));
+                    }
+                    return visit_target_type_children(type.value, *this);
+                }
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    if (const auto* construction =
+                            std::get_if<TargetConstructionExpr>(&expression.value)) {
+                        constructions += std::holds_alternative<TargetNamedType>(
+                            unit.type(construction->type).value
+                        );
+                    }
+                    return true;
+                }
+            };
+
+            auto constructions = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+                constructions += query.constructions;
             }
-            return visit_target_type_children(type.value, *this);
+            ct::expect(constructions == 1uz);
         }
-
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            if (const auto* construction = std::get_if<TargetConstructionExpr>(&expression.value)) {
-                constructions +=
-                    std::holds_alternative<TargetNamedType>(unit.type(construction->type).value);
-            }
-            return true;
-        }
-    };
-
-    auto constructions = 0uz;
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit};
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-        constructions += query.constructions;
-    }
-    CHECK(constructions == 1uz);
-}
-
-TEST_CASE("Generation: unconditional pattern binding uses direct value initialization") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program("fn copy(value: i32) -> i32 => match value { bound => bound, };"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("direct_pattern_binding")}
     );
 
-    struct Query final {
-        const TargetUnit& unit;
+    ct::test(
+        "Generation: unconditional pattern binding uses direct value initialization",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "fn copy(value: i32) -> i32 => match value { bound => bound, };"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("direct_pattern_binding")}
+            );
 
-        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetAssignmentStmt>(statement.value));
-            CHECK_FALSE(std::holds_alternative<TargetIfStmt>(statement.value));
-            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                CHECK_FALSE(
-                    std::holds_alternative<TargetPointerType>(unit.type(variable->type).value)
-                );
+            struct Query final {
+                const TargetUnit& unit;
+
+                auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+                    ct::expect(!(std::holds_alternative<TargetAssignmentStmt>(statement.value)));
+                    ct::expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        ct::expect(!(std::holds_alternative<TargetPointerType>(
+                            unit.type(variable->type).value
+                        )));
+                    }
+                    return true;
+                }
+            };
+
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                const auto query = Query {.unit = unit};
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
             }
-            return true;
         }
-    };
+    );
 
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        const auto query = Query {.unit = unit};
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-    }
-}
-
-TEST_CASE("Generation: independent expression and region results use automatic outcome storage") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+    ct::test(
+        "Generation: independent expression and region results use automatic outcome storage",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             struct Failure {}
             fn source(flag: bool) -> i32 throw Failure {
                 if flag { throw Failure {}; }
@@ -1393,43 +1557,51 @@ TEST_CASE("Generation: independent expression and region results use automatic o
                 (try { source(flag)? } catch { Failure(_) => 0, })
             } else { 0 };
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("nested_full_expression")}
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("nested_full_expression")}
+            );
+
+            struct Query final {
+                const TargetUnit& unit;
+                std::size_t outcomes = 0;
+
+                auto visit_variable(const TargetVariableStmt& variable) noexcept -> bool {
+                    const auto* type =
+                        std::get_if<TargetIntrinsicType>(&unit.type(variable.type).value);
+                    if (type != nullptr && type->symbol == TargetSymbol::RuntimeOutcome) {
+                        ++outcomes;
+                    }
+                    if (type != nullptr && type->symbol == TargetSymbol::RuntimeDeferredResult) {
+                        const auto* contained = std::get_if<TargetIntrinsicType>(
+                            &unit.type(type->type_argument_ids.front()).value
+                        );
+                        if (!ct::expect(contained != nullptr)) {
+                            return false;
+                        }
+                        ct::expect(contained->symbol != TargetSymbol::RuntimeOutcome);
+                    }
+                    return true;
+                }
+            };
+
+            auto outcomes = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+                outcomes += query.outcomes;
+            }
+            ct::expect(outcomes == 3uz);
+        }
     );
 
-    struct Query final {
-        const TargetUnit& unit;
-        std::size_t outcomes = 0;
-
-        auto visit_variable(const TargetVariableStmt& variable) noexcept -> bool {
-            const auto* type = std::get_if<TargetIntrinsicType>(&unit.type(variable.type).value);
-            if (type != nullptr && type->symbol == TargetSymbol::RuntimeOutcome) {
-                ++outcomes;
-            }
-            if (type != nullptr && type->symbol == TargetSymbol::RuntimeDeferredResult) {
-                const auto* contained = std::get_if<TargetIntrinsicType>(
-                    &unit.type(type->type_argument_ids.front()).value
-                );
-                REQUIRE(contained != nullptr);
-                CHECK(contained->symbol != TargetSymbol::RuntimeOutcome);
-            }
-            return true;
-        }
-    };
-
-    auto outcomes = 0uz;
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit};
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-        outcomes += query.outcomes;
-    }
-    CHECK(outcomes == 3uz);
-}
-
-TEST_CASE("Generation: known match predicates disappear while required calls remain") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+    ct::test(
+        "Generation: known match predicates disappear while required calls remain",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             fn effect() -> bool => true;
             fn choose() -> i32 => match effect() && false {
                 true => 0,
@@ -1437,141 +1609,159 @@ TEST_CASE("Generation: known match predicates disappear while required calls rem
                 false => 2,
             };
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("known_match")}
-    );
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("known_match")}
+            );
 
-    struct Query final {
-        std::size_t effects = 0;
+            struct Query final {
+                std::size_t effects = 0;
 
-        auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-            CHECK_FALSE(std::holds_alternative<TargetIfStmt>(statement.value));
-            return true;
-        }
+                auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+                    ct::expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
+                    return true;
+                }
 
-        auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
-            if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
-                    CHECK(name->name.components().back().spelling() == "effect");
-                    ++effects;
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                        if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                            ct::expect(name->name.components().back().spelling() == "effect");
+                            ++effects;
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query();
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
                 }
             }
-            return true;
+            ct::expect(query.effects == 2uz);
         }
-    };
+    );
 
-    auto query = Query();
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-    }
-    CHECK(query.effects == 2uz);
-}
-
-TEST_CASE("Generation: a sole failure needs no type selection in its handler or dispatch") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+    ct::test(
+        "Generation: a sole failure needs no type selection in its handler or dispatch",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             struct Failure {}
             fn source() -> i32 throw Failure { throw Failure {}; }
             fn recover() -> i32 => try { source()? } catch { Failure(_) => 7, };
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("sole_failure")}
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("sole_failure")}
+            );
+
+            struct Query final {
+                const TargetUnit& unit;
+                std::size_t branches = 0;
+
+                auto visit_type(TargetTypeID id) const noexcept -> bool {
+                    if (const auto* type = std::get_if<TargetIntrinsicType>(&unit.type(id).value)) {
+                        ct::expect(type->symbol != TargetSymbol::StdVariant);
+                    }
+                    return visit_target_type_children(unit.type(id).value, *this);
+                }
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    branches += std::holds_alternative<TargetIfStmt>(statement.value);
+                    return true;
+                }
+            };
+
+            auto branches = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+                branches += query.branches;
+            }
+            ct::expect(branches == 1uz); // The call's success/failure distinction remains.
+        }
     );
 
-    struct Query final {
-        const TargetUnit& unit;
-        std::size_t branches = 0;
+    ct::test(
+        "Generation: explicit pure owner returns permit native return construction",
+        [] static noexcept {
+            struct Scenario final {
+                const char* name;
+                const char* source;
+                bool returns_name;
+            };
 
-        auto visit_type(TargetTypeID id) const noexcept -> bool {
-            if (const auto* type = std::get_if<TargetIntrinsicType>(&unit.type(id).value)) {
-                CHECK(type->symbol != TargetSymbol::StdVariant);
-            }
-            return visit_target_type_children(unit.type(id).value, *this);
-        }
+            const auto scenarios = std::array {
+                Scenario {
+                    .name = "local Take",
+                    .source = R"(fn f() -> String { let value: String = "text"; return &&value; })",
+                    .returns_name = true
+                },
+                Scenario {
+                    .name = "parameter Take",
+                    .source = "fn f(&&value: String) -> String => &&value;",
+                    .returns_name = true
+                },
+                Scenario {
+                    .name = "local copy",
+                    .source = R"(fn f() -> String { let value: String = "text"; return value; })",
+                    .returns_name = false
+                },
+                Scenario {
+                    .name = "native Take",
+                    .source =
+                        "import <string> using std::string; fn f(&&value: string) -> string => &&value;",
+                    .returns_name = false
+                },
+            };
+            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                const auto compilation = PlannedCompilation::build(
+                    analyze_test_program(scenario.source),
+                    {.test_mode = TestGenerationMode::None,
+                     .linkage_domain = *LinkageDomain::explicit_value("return_construction")}
+                );
 
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            branches += std::holds_alternative<TargetIfStmt>(statement.value);
-            return true;
-        }
-    };
+                struct Query final {
+                    std::size_t returns;
+                    std::size_t named_returns;
 
-    auto branches = 0uz;
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit};
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-        branches += query.branches;
-    }
-    CHECK(branches == 1uz); // The call's success/failure distinction remains.
-}
+                    auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                        if (const auto* returned = std::get_if<TargetReturnStmt>(&statement.value);
+                            returned != nullptr && returned->expression) {
+                            ++returns;
+                            named_returns += std::holds_alternative<TargetLocalExpr>(
+                                returned->expression->value
+                            );
+                        }
+                        return true;
+                    }
+                };
 
-TEST_CASE("Generation: explicit pure owner returns permit native return construction") {
-    struct Scenario final {
-        const char* name;
-        const char* source;
-        bool returns_name;
-    };
-
-    const auto scenarios = std::array {
-        Scenario {
-            .name = "local Take",
-            .source = R"(fn f() -> String { let value: String = "text"; return &&value; })",
-            .returns_name = true
-        },
-        Scenario {
-            .name = "parameter Take",
-            .source = "fn f(&&value: String) -> String => &&value;",
-            .returns_name = true
-        },
-        Scenario {
-            .name = "local copy",
-            .source = R"(fn f() -> String { let value: String = "text"; return value; })",
-            .returns_name = false
-        },
-        Scenario {
-            .name = "native Take",
-            .source =
-                "import <string> using std::string; fn f(&&value: string) -> string => &&value;",
-            .returns_name = false
-        },
-    };
-    for (const auto& scenario : scenarios) {
-        CAPTURE(scenario.name);
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(scenario.source),
-            {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("return_construction")}
-        );
-
-        struct Query final {
-            std::size_t returns;
-            std::size_t named_returns;
-
-            auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                if (const auto* returned = std::get_if<TargetReturnStmt>(&statement.value);
-                    returned != nullptr && returned->expression) {
-                    ++returns;
-                    named_returns +=
-                        std::holds_alternative<TargetLocalExpr>(returned->expression->value);
+                auto query = Query {.returns = 0uz, .named_returns = 0uz};
+                for (const auto artifact : compilation.target().artifacts()) {
+                    const auto unit = lower_artifact(compilation, artifact.id);
+                    if (!(ct::expect(traverse_target_unit(unit.sections(), query)))) {
+                        return;
+                    }
                 }
-                return true;
-            }
-        };
-
-        auto query = Query {.returns = 0uz, .named_returns = 0uz};
-        for (const auto artifact : compilation.target().artifacts()) {
-            const auto unit = lower_artifact(compilation, artifact.id);
-            REQUIRE(traverse_target_unit(unit.sections(), query));
+                if (!(ct::expect_equal(query.returns, 1uz))) {
+                    return;
+                }
+                ct::expect_equal(query.named_returns, scenario.returns_name ? 1uz : 0uz);
+            });
         }
-        REQUIRE_EQ(query.returns, 1uz);
-        CHECK_EQ(query.named_returns, scenario.returns_name ? 1uz : 0uz);
-    }
-}
+    );
 
-TEST_CASE("Generation: pure Read arguments need no borrowed temporary storage in match arms") {
-    const auto compilation = PlannedCompilation::build(
-        analyze_test_program(R"(
+    ct::test(
+        "Generation: pure Read arguments need no borrowed temporary storage in match arms",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
             struct Record { value: i32 }
             enum Kind { Invalid }
             struct Failure { record: Record, kind: Kind }
@@ -1583,27 +1773,34 @@ TEST_CASE("Generation: pure Read arguments need no borrowed temporary storage in
                 }
             }
         )"),
-        {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("read_value_temporaries")}
-    );
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("read_value_temporaries")}
+            );
 
-    struct Query final {
-        const TargetUnit& unit;
+            struct Query final {
+                const TargetUnit& unit;
 
-        auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-            if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                if (const auto* type =
-                        std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value)) {
-                    CHECK(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        if (const auto* type = std::get_if<TargetIntrinsicType>(
+                                &unit.type(variable->type).value
+                            )) {
+                            ct::expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
                 }
             }
-            return true;
         }
-    };
+    );
+});
 
-    for (const auto artifact : compilation.target().artifacts()) {
-        const auto unit = lower_artifact(compilation, artifact.id);
-        auto query = Query {.unit = unit};
-        REQUIRE(traverse_target_unit(unit.sections(), query));
-    }
-}
+} // namespace

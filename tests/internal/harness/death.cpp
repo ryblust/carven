@@ -3,8 +3,6 @@ module;
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #endif
-#define DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS
-#include <doctest/doctest.h>
 #include <csignal>
 #include <cstdio>
 #if defined(_WIN32)
@@ -18,10 +16,13 @@ module;
 
 module carven:test.internal.harness.death.impl;
 
+import :test.harness.framework;
 import :test.internal.harness.death;
 import std;
 
 namespace {
+
+namespace ct = carven::testing;
 
 #if defined(_WIN32)
 
@@ -151,11 +152,11 @@ auto append_windows_argument(std::wstring& command, std::wstring_view argument) 
 }
 
 auto current_test_case_name() noexcept -> std::optional<std::string_view> {
-    const auto* context = doctest::getContextOptions();
-    if (context == nullptr || context->currentTest == nullptr) {
+    const auto name = ct::current_test_name();
+    if (name.empty()) {
         return std::nullopt;
     }
-    return context->currentTest->m_name;
+    return name;
 }
 
 auto run_child(std::string_view test_case, std::chrono::milliseconds timeout) noexcept -> bool {
@@ -167,10 +168,8 @@ auto run_child(std::string_view test_case, std::chrono::milliseconds timeout) no
 
     auto command = std::wstring();
     append_windows_argument(command, *executable);
-    append_windows_argument(command, std::wstring(L"--test-case=") + *wide_test_case);
-    append_windows_argument(command, L"--no-intro=true");
-    append_windows_argument(command, L"--no-version=true");
-    append_windows_argument(command, L"--no-colors=true");
+    append_windows_argument(command, L"--test");
+    append_windows_argument(command, *wide_test_case);
 
     auto startup = STARTUPINFOW {};
     startup.cb = static_cast<DWORD>(sizeof(STARTUPINFOW));
@@ -213,6 +212,12 @@ auto expect_windows_termination(
     const auto* selected_scenario = std::getenv(scenario_environment);
     const auto* event_text = std::getenv(event_environment);
     if (selected_scenario != nullptr && event_text != nullptr) {
+        // Replayed negative assertions about earlier scenarios are not observations
+        // of this child action. Only the parent reports the selected action result.
+        if (std::freopen("NUL", "w", stdout) == nullptr
+            || std::freopen("NUL", "w", stderr) == nullptr) {
+            std::_Exit(125);
+        }
         if (scenario != selected_scenario) {
             // The filtered child replays earlier assertions before reaching its scenario.
             return true;
@@ -269,7 +274,7 @@ auto expect_posix_termination(
     std::fflush(nullptr);
     const auto child = fork();
     if (child == 0) {
-        // The forked action must not run the parent's doctest crash handler.
+        // Observe the action's signal independently of handlers in the parent.
         for (const auto signal : {SIGABRT, SIGTERM, SIGSEGV, SIGILL, SIGFPE, SIGINT}) {
             if (std::signal(signal, SIG_DFL) == SIG_ERR) {
                 _exit(125);
@@ -316,6 +321,13 @@ auto run_death_test(
     if (scenario.empty()
         || timeout.count() <= 0
         || timeout.count() >= std::numeric_limits<std::uint32_t>::max()) {
+        return false;
+    }
+    // Windows replays a selected case from its beginning. A repeated scenario
+    // would otherwise observe the first action again instead of the requested one.
+    static auto scenarios = std::unordered_map<std::string, std::unordered_set<std::string>>();
+    const auto test_name = ct::current_test_name();
+    if (test_name.empty() || !scenarios[std::string(test_name)].emplace(scenario).second) {
         return false;
     }
 #if defined(_WIN32)

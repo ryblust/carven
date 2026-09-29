@@ -66,6 +66,7 @@ target("carven")
 target_end()
 
 includes("examples")
+includes("tests/harness")
 includes("tests/internal")
 includes("tests/language")
 includes("tests/crafts")
