@@ -10,10 +10,11 @@ public:
     explicit constexpr UniqueIndirect(Value&& value) noexcept
         : pointer(std::make_unique<T>(std::forward<Value>(value))) {}
 
-    constexpr UniqueIndirect(const UniqueIndirect&) = delete;
+    UniqueIndirect(const UniqueIndirect&) = delete;
     constexpr UniqueIndirect(UniqueIndirect&&) = default;
     constexpr ~UniqueIndirect() = default;
-    constexpr auto operator=(const UniqueIndirect&) -> UniqueIndirect& = delete;
+    auto operator=(const UniqueIndirect&) -> UniqueIndirect& = delete;
+
     constexpr auto operator=(UniqueIndirect&&) -> UniqueIndirect& = default;
 
     constexpr auto operator*() & noexcept -> T& {

@@ -56,10 +56,19 @@ auto OwnershipBodyAnalyzer::diagnose(
     DiagnosticCode code,
     std::string message,
     ProgramOriginID origin,
-    std::optional<ProgramOriginID> related
+    std::optional<ProgramOriginID> related,
+    std::string related_label,
+    std::string help
 ) noexcept -> void {
     if (diagnosing) {
-        analysis.diagnose(code, std::move(message), origin, related);
+        analysis.diagnose(
+            code,
+            std::move(message),
+            origin,
+            related,
+            std::move(related_label),
+            std::move(help)
+        );
     }
 }
 
@@ -386,11 +395,6 @@ auto OwnershipBodyAnalyzer::require_available(
             state.objects[target.object].taken
         );
     }
-}
-
-auto OwnershipBodyAnalyzer::constant_truth(const SemanticExpression& source) const noexcept
-    -> std::optional<bool> {
-    return known_boolean(program, source);
 }
 
 auto OwnershipBodyAnalyzer::constant_index(const SemanticExpression& source) const noexcept

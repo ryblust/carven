@@ -3,6 +3,7 @@ module carven:backend.preparation.impl;
 import :backend.preparation;
 import :semantic.format.builtin;
 import :semantic.semir.constant_access;
+import :semantic.semir.simd;
 import :support.invariant;
 import std;
 
@@ -20,6 +21,29 @@ auto prepare_operation(const SemIRProgram& program, const SemanticExpression& so
             source.type.resolved(),
             binary->right->constant
         ));
+    }
+    if (const auto* intrinsic = std::get_if<SemIntrinsic>(&source.value)) {
+        const auto* simd = std::get_if<SIMDIntrinsic>(&intrinsic->operation);
+        if (simd != nullptr && (*simd == SIMDIntrinsic::Lane || *simd == SIMDIntrinsic::WithLane)) {
+            const auto known = intrinsic->operands[1].expression.constant;
+            const auto* control = known
+                ? std::get_if<IntegerConstant>(&program.constants().constant(*known).value)
+                : nullptr;
+            const auto owner = simd_owner(
+                *simd,
+                source.type.resolved(),
+                intrinsic->operands.front().expression.type.resolved(),
+                [&](TypeID type) noexcept -> const CanonicalType& {
+                    return program.types().type(type);
+                }
+            );
+            const auto limit = simd_layout(owner)->width;
+            if (control != nullptr && !control->negative() && control->magnitude() < limit) {
+                return std::make_unique<OperationPreparation>(
+                    PreparedSIMDLane {.index = control->magnitude()}
+                );
+            }
+        }
     }
     if (const auto* native = std::get_if<SemCpp>(&source.value)) {
         if (std::holds_alternative<CppConstructOperation>(native->operation)) {

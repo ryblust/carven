@@ -52,7 +52,7 @@ fn example() -> String throw UTF8Error {
 ## Compile-time use
 
 `char_from_u32`, `encode_utf8`, `decode_utf8_prefix`, and `validate_utf8` are
-`const fn`: the same implementation runs in required constant contexts and
+`const fn`: the same implementation runs in static roots and
 ordinary runtime calls.
 Encoded arrays can also become frozen constant slices:
 
@@ -71,8 +71,8 @@ constructing a byte view, since zero padding would otherwise encode extra NULs.
 
 `from_utf8` and `to_string` currently require runtime execution: the executor
 does not admit unchecked borrowed text construction. `UTF8Validator` also requires
-runtime execution because class values are outside the constant-execution subset.
-Whole-buffer validation uses internal struct state. Constant execution
+runtime execution because class values are outside the static-execution subset.
+Whole-buffer validation uses internal struct state. Static execution
 is subject to the language's ordinary resource budgets.
 
 ## Error and streaming contract
@@ -106,6 +106,10 @@ input is still permitted.
 
 The modules in this directory own the public types and UTF algorithms.
 `error` owns shared failure types without depending on any algorithm.
+The C++ runtime separately checks UTF-8 at native ingress and traps on invalid
+text. That check returns no streaming state or library error and does not depend
+on the Craft. Both layers use the runtime's selected SIMD backend for native
+block operations.
 `scan` owns craft-internal state and constant-capable byte transitions: its bare
 declarations are available within `carven`, not exported to consumers. The
 `validation` and `codec` modules share `scan`; `text` composes the public
@@ -127,5 +131,26 @@ compiler tracks borrowed text backing.
 boundaries, invalid byte classes, error positions, and constant publication.
 Runtime tests cover the full Unicode scalar domain, incremental class state,
 and borrowed and owning text storage. Run it with
-`./xmakew test -g crafts`; one C++20 binary uses the generated default test entry.
+`./xmakew test -g crafts`; native and portable SIMD binaries use the generated default test entry.
 Compiler diagnostic tests check returned text borrows at the public API.
+
+Validation scans full 32-byte UTF-8 blocks through the SIMD craft, including
+mixed ASCII and multibyte text. Ordinary `const fn` constructs the nibble
+classification tables; cross-block byte alignment and table lookup check adjacent
+bytes and continuation lengths. A block skips classification when it and the
+previous block are ASCII. The scalar fallback uses `ascii_prefix`, which checks
+64-byte ASCII groups, then a 32-byte block and a scalar tail. Pending state from
+an earlier feed is resolved before block scanning, without retaining or rereading
+that feed's input.
+
+Only validated blocks advance the state. A failed block returns to bytewise
+transitions from the last validated position to preserve exact diagnostics and
+recovery behavior. A validated unfinished suffix reconstructs the pending state;
+short tails use the same byte transition, and only `check_complete` treats the end
+as EOF. Forbidden lead bytes are rejected immediately, including the last byte of
+a feed. No load crosses the supplied slice.
+
+Static execution and native calls use the same Carven algorithm.
+Native validation uses the selected SIMD backend: NEON, AVX2 when enabled, or the
+portable fallback. Performance depends on that backend, input size, distribution,
+and native optimization across generated modules.

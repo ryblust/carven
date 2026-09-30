@@ -27,6 +27,21 @@ namespace {
 namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
+    ct::test("Semantic ownership: a condition retains both ownership paths", [] static noexcept {
+        for (const auto keyword : {"let", "const"}) {
+            ct::expect_diagnostic(
+                analyze_test_errors(
+                    std::format(
+                        "fn probe() {{ let x = 1; {} flag = false; "
+                        "if flag {{ let moved = &&x; }} let read = x; }}",
+                        keyword
+                    )
+                ),
+                DiagnosticCode::AccessUnavailable
+            );
+        }
+    });
+
     ct::test("Semantic availability: a loop backedge observes the second Take", [] static noexcept {
         const auto diagnostics = analyze_test_errors(
             std::string(semantic_test_payload_prelude)

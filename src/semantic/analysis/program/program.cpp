@@ -8,6 +8,7 @@ import :semantic.analysis.failure;
 import :semantic.analysis.program;
 import :semantic.semir.contents;
 import :semantic.semir.program;
+import :semantic.semir.stage;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
@@ -280,6 +281,21 @@ auto ProgramDraft::function_for_callable(CallableID id) const noexcept
                                                         : std::optional(found->second);
 }
 
+auto ProgramDraft::body_for_callable(CallableID id) const noexcept -> std::optional<BodyID> {
+    if (id.owner() != program_identity) {
+        invariant_violation("body lookup used a foreign callable");
+    }
+    const auto implementation =
+        storage.declarations.construction_view().callable_implementation(id);
+    if (const auto* function = std::get_if<FunctionBodyImplementation>(&implementation)) {
+        return function->body;
+    }
+    if (const auto* closure = std::get_if<ClosureBodyImplementation>(&implementation)) {
+        return closure->body;
+    }
+    return std::nullopt;
+}
+
 auto ProgramDraft::construction_struct_declaration_copy(StructID id) const noexcept
     -> ConstructionStructDeclaration {
     return storage.declarations.construction_view().structure(id);
@@ -420,6 +436,14 @@ auto ProgramDraft::add_intersection_failure_term(
 
 auto ProgramDraft::add_failure_member(FailureTermID destination, TypeID member) noexcept -> void {
     storage.failure_constraints.add_member(destination, member);
+}
+
+auto ProgramDraft::add_thrown_failure_member(
+    FailureTermID destination,
+    TypeID member,
+    ProgramOriginID origin
+) noexcept -> void {
+    storage.failure_constraints.add_thrown_member(destination, member, origin);
 }
 
 auto ProgramDraft::add_failure_contribution(
@@ -622,6 +646,169 @@ auto ProgramDraft::body_draft(BodyID id) const noexcept -> const StructuredBodyD
     return *storage.bodies[id.index()].definition;
 }
 
+auto ProgramDraft::completed_body_ids() const noexcept -> std::vector<BodyID> {
+    auto result = std::vector<BodyID>();
+    for (auto index = 0uz; index < storage.bodies.size(); ++index) {
+        if (storage.bodies[index].definition) {
+            result.push_back(BodyID(program_identity, static_cast<std::uint32_t>(index)));
+        }
+    }
+    return result;
+}
+
+auto ProgramDraft::set_residual(BodyID body, StructuredRegionDraft residual) noexcept -> void {
+    const auto& definition = body_draft(body);
+    if (definition.residual
+        || definition.specialized
+        || residual.lifetime_regions.owner() != definition.lifetime_regions.owner()
+        || residual.bindings.owner() != definition.bindings.owner()
+        || residual.patterns.owner() != definition.patterns.owner()
+        || !residual.lifetime_regions.contains(residual.region.lifetime)
+        || residual.lifetime_regions.entries().size() < definition.lifetime_regions.entries().size()
+        || residual.bindings.size() < definition.bindings.size()
+        || residual.patterns.size() < definition.patterns.size()) {
+        invariant_violation("a body receives its executable region once");
+    }
+    auto& source = *storage.bodies[body.index()].definition;
+    auto completed = StructuredBodyDraft {
+        .id = source.id,
+        .kind = source.kind,
+        .provenance_identity = source.provenance_identity,
+        .inputs = std::move(source.inputs),
+        .lifetime_regions = std::move(residual.lifetime_regions),
+        .bindings = std::move(residual.bindings),
+        .patterns = std::move(residual.patterns),
+        .region = std::move(source.region),
+        .residual = std::move(residual.region),
+        .specialized = std::nullopt,
+    };
+    storage.bodies[body.index()].definition =
+        std::make_unique<StructuredBodyDraft>(std::move(completed));
+}
+
+auto ProgramDraft::staged_function(FunctionID function) const noexcept -> bool {
+    const auto declaration = function_declaration_copy(function);
+    const auto pending = pending_function_contract_copy(declaration.callable);
+    const auto parameters = pending
+        ? pending->parameters
+        : construction_callable_contract_copy(declaration.callable).parameters;
+    return std::ranges::any_of(parameters, [](const auto& parameter) static noexcept {
+        return parameter.stage == ParameterStage::Static;
+    });
+}
+
+auto ProgramDraft::find_static_instance(
+    FunctionID function,
+    std::span<const ConstantID> arguments
+) const noexcept -> std::optional<CallableID> {
+    const auto found = storage.static_instance_index.find(
+        std::pair(function, std::vector<ConstantID>(arguments.begin(), arguments.end()))
+    );
+    return found == storage.static_instance_index.end() ? std::nullopt
+                                                        : std::optional(found->second);
+}
+
+auto ProgramDraft::reserve_static_instance(
+    FunctionID function,
+    std::vector<ConstantID> arguments
+) noexcept -> std::pair<CallableID, BodyID> {
+    const auto source =
+        construction_callable_contract_copy(function_declaration_copy(function).callable);
+    auto contract = ConstructionCallableContract {
+        .parameters = {},
+        .result = source.result,
+        .failures = source.failures,
+        .policy = source.policy,
+    };
+    for (const auto& parameter : source.parameters) {
+        if (parameter.stage == ParameterStage::Runtime) {
+            contract.parameters.push_back(parameter);
+        }
+    }
+    const auto callable = append_body_callable(std::move(contract));
+    const auto body = reserve_body(BodyKind::Function).id();
+    if (!storage.static_instance_index.emplace(std::pair(function, arguments), callable).second
+        || !storage.instance_callables.emplace(callable, storage.static_instances.size()).second) {
+        invariant_violation("static instance was reserved twice");
+    }
+    storage.static_instances.push_back({
+        .instance = {.function = function, .arguments = std::move(arguments), .callable = callable},
+        .body = body,
+        .state = ConstructionStorage::StaticInstanceSlot::Progress::Pending,
+    });
+    return {callable, body};
+}
+
+auto ProgramDraft::complete_static_instance(CallableID callable, StructuredBodyDraft body) noexcept
+    -> void {
+    const auto found = storage.instance_callables.find(callable);
+    const auto* progress = found == storage.instance_callables.end()
+        ? nullptr
+        : std::get_if<ConstructionStorage::StaticInstanceSlot::Progress>(
+              &storage.static_instances[found->second].state
+          );
+    if (!progress
+        || *progress != ConstructionStorage::StaticInstanceSlot::Progress::Pending
+        || storage.static_instances[found->second].body != body.id
+        || !body.specialized) {
+        invariant_violation("static instance completion used an invalid reservation");
+    }
+    const auto id = body.id;
+    add_body_draft(std::move(body));
+    // An instance body is already in its executable form.
+    complete_callable(callable, FunctionBodyImplementation {.body = id});
+    storage.static_instances[found->second].state =
+        ConstructionStorage::StaticInstanceSlot::Progress::Complete;
+}
+
+auto ProgramDraft::fail_static_instance(CallableID callable, AnalysisFailure failure) noexcept
+    -> void {
+    const auto found = storage.instance_callables.find(callable);
+    if (found == storage.instance_callables.end()) {
+        invariant_violation("static instance failure used an invalid reservation");
+    }
+    auto& slot = storage.static_instances[found->second];
+    const auto* progress =
+        std::get_if<ConstructionStorage::StaticInstanceSlot::Progress>(&slot.state);
+    if (!progress || *progress != ConstructionStorage::StaticInstanceSlot::Progress::Pending) {
+        invariant_violation("only a pending static instance can fail");
+    }
+    slot.state = failure;
+}
+
+auto ProgramDraft::static_instance(CallableID callable) const noexcept
+    -> std::optional<StaticInstance> {
+    const auto found = storage.instance_callables.find(callable);
+    return found == storage.instance_callables.end()
+        ? std::nullopt
+        : std::optional(storage.static_instances[found->second].instance);
+}
+
+auto ProgramDraft::static_instance_body(CallableID callable) const noexcept
+    -> AnalysisResult<std::optional<BodyID>> {
+    const auto found = storage.instance_callables.find(callable);
+    if (found == storage.instance_callables.end()) {
+        invariant_violation("static instance body query used a callable that is not an instance");
+    }
+    const auto& slot = storage.static_instances[found->second];
+    if (const auto* failure = std::get_if<AnalysisFailure>(&slot.state)) {
+        return std::unexpected(*failure);
+    }
+    return std::get<ConstructionStorage::StaticInstanceSlot::Progress>(slot.state)
+            == ConstructionStorage::StaticInstanceSlot::Progress::Complete
+        ? std::optional(slot.body)
+        : std::nullopt;
+}
+
+auto ProgramDraft::source_module(ProgramSourceID source) const noexcept -> ProgramModuleID {
+    for (auto index = 0uz; index < module_count(); ++index) {
+        if (module_source(provenance_module_at(index)) == source) {
+            return provenance_module_at(index);
+        }
+    }
+    invariant_violation("source has no program module");
+}
+
 auto ProgramDraft::reserve_test() noexcept -> TestID {
     require_state(State::Declarations, "reserve test declaration");
     return storage.test_slots.reserve();
@@ -630,21 +817,22 @@ auto ProgramDraft::reserve_test() noexcept -> TestID {
 auto ProgramDraft::define_test(TestID id, TestDeclaration test) noexcept -> void {
     require_state(State::Bodies, "define test");
     if (test.module_id.owner() != program_identity
-        || test.body.owner() != program_identity
+        || !test.body
+        || test.body->owner() != program_identity
         || (test.source.label
             && test.source.label->owner() != provenance_appender.reader().identity())
         || test.source.origin.owner() != provenance_appender.reader().identity()) {
         invariant_violation("test declaration mixed semantic or provenance owners");
     }
     static_cast<void>(storage.declarations.construction_view().module_decl(test.module_id));
-    if (test.body.index() >= storage.bodies.size()
-        || storage.bodies[test.body.index()].kind != BodyKind::Test) {
+    if (test.body->index() >= storage.bodies.size()
+        || storage.bodies[test.body->index()].kind != BodyKind::Test) {
         invariant_violation("test declaration used a non-test body reservation");
     }
     if (!storage.test_slots.contains(id) || storage.test_slots.is_defined(id)) {
         invariant_violation("test declaration used an invalid or defined reservation");
     }
-    auto& assigned_test = storage.bodies[test.body.index()].test;
+    auto& assigned_test = storage.bodies[test.body->index()].test;
     if (assigned_test.has_value()) {
         invariant_violation("test body was assigned more than one test declaration");
     }

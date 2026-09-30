@@ -12,7 +12,7 @@ const test "static execution" {
 }
 
 const {
-    println("constant block");
+    println("const block");
 }
 
 test "unselected test entry" {

@@ -37,3 +37,7 @@ auto ConstructionRequests::ensure_type(
 ) noexcept -> AnalysisTask<void> {
     return owner.declarations.prepare_type(type, requester, span);
 }
+
+auto ConstructionRequests::stage() noexcept -> StaticStage& {
+    return owner.static_stage;
+}

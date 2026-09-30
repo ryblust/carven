@@ -97,9 +97,7 @@ test "Tail outcomes: borrowed argument temporaries outlive result transfer" {
 }
 
 private fn rejected_result(guard: Guard, value: i32) -> i32 throw PayloadFailure {
-    throw PayloadFailure {
-        payload: Tracked { value }
-    };
+    throw PayloadFailure { payload: Tracked { value } };
 }
 
 private fn forward_rejected() -> i32 throw PayloadFailure {

@@ -7,6 +7,7 @@ import :semantic.analysis.body.expr_site;
 import :semantic.analysis.expr.conversion;
 import :semantic.analysis.expr.interpret;
 import :semantic.analysis.operations;
+import :semantic.analysis.types.display;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
@@ -186,7 +187,8 @@ auto BodyElaborator::require_invariant_type(
                 return false;
             }
             for (auto index = 0uz; index < left_view->parameters.size(); ++index) {
-                if (left_view->parameters[index].access != right_view->parameters[index].access
+                if (left_view->parameters[index].stage != right_view->parameters[index].stage
+                    || left_view->parameters[index].access != right_view->parameters[index].access
                     || !self(
                         left_view->parameters[index].type,
                         right_view->parameters[index].type
@@ -204,9 +206,25 @@ auto BodyElaborator::require_invariant_type(
             && draft().type_copy(*left_type) == draft().type_copy(*right_type);
     };
     if (!invariant(source, target)) {
-        return std::unexpected(fail(span, DiagnosticCode::TypeMismatch, "types must match"));
+        return std::unexpected(type_mismatch(source, target, span));
     }
     return {};
+}
+
+auto BodyElaborator::type_mismatch(
+    ConstructionTypeRef actual,
+    ConstructionTypeRef expected,
+    Span span
+) noexcept -> AnalysisFailure {
+    return fail(
+        span,
+        DiagnosticCode::TypeMismatch,
+        std::format(
+            "expected type '{}', found '{}'",
+            type_display_name(draft(), expected),
+            type_display_name(draft(), actual)
+        )
+    );
 }
 
 auto BodyElaborator::require_adaptation(
@@ -240,10 +258,17 @@ auto BodyElaborator::require_adaptation(
     if (!contract) {
         return std::unexpected(contract.error());
     }
+    if (contract->parameters.size() != view->parameters.size()) {
+        return std::unexpected(type_mismatch(source, target, span));
+    }
     if (auto checked = require_invariant_type(contract->result, view->result, span); !checked) {
         return checked;
     }
     for (auto index = 0uz; index < view->parameters.size(); ++index) {
+        if (contract->parameters[index].stage != view->parameters[index].stage
+            || contract->parameters[index].access != view->parameters[index].access) {
+            return std::unexpected(type_mismatch(source, target, span));
+        }
         if (auto checked = require_invariant_type(
                 contract->parameters[index].type,
                 view->parameters[index].type,
@@ -268,6 +293,21 @@ auto BodyElaborator::coerce_to(
     Span span
 ) noexcept -> AnalysisResult<void> {
     auto& built = expression;
+    // Static parameters are bound at a direct call; a callable value has none.
+    if (built.is_function_reference()) {
+        const auto contract = callable_contract(built.type(), span);
+        if (contract
+            && std::ranges::any_of(contract->parameters, [](const auto& parameter) static noexcept {
+                   return parameter.stage == ParameterStage::Static;
+               })) {
+            return std::unexpected(fail(
+                span,
+                DiagnosticCode::ConstAdmission,
+                "function with const parameters requires a direct call; "
+                "unbound static inputs cannot form a runtime callable value"
+            ));
+        }
+    }
     auto site = BodyExprSite(*this);
     const auto converted =
         require_body_expression(convert_intrinsic_argument(site, built, target, span));
@@ -300,9 +340,7 @@ auto BodyElaborator::coerce_to(
         return {};
     }
     if (!compatible(built.type(), target)) {
-        return std::unexpected(
-            fail(span, DiagnosticCode::TypeMismatch, "expression has an incompatible type")
-        );
+        return std::unexpected(type_mismatch(built.type(), target, span));
     }
 
     if (auto checked = require_adaptation(built.type(), target, span); !checked) {
@@ -384,9 +422,5 @@ auto BodyElaborator::require_bool(BuiltExpression& value, Span span) noexcept
     if (!checked.has_value()) {
         return std::unexpected(checked.error());
     }
-    auto result = consume_value(value, span, AccessMode::Read);
-    if (result) {
-        result->constant = active_builder().known_constant(*result);
-    }
-    return result;
+    return consume_value(value, span, AccessMode::Read);
 }

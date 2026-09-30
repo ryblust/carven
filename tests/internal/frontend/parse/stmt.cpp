@@ -105,7 +105,6 @@ const ct::Suite tests([] static noexcept {
             const auto& c_style_loop = get<ASTForStmt>(statement_at(result, 5));
             const auto& c_style = get<ASTCStyleForHeader>(c_style_loop.header);
             ct::expect(is<ASTVariableDecl>(c_style.initializer));
-            ct::expect(c_style.condition.has_value());
             if (!ct::expect_equal(c_style.steps.size(), 3uz)) {
                 return;
             }
@@ -160,43 +159,47 @@ const ct::Suite tests([] static noexcept {
         [] static noexcept {
             const auto result = parse_valid(
                 "fn conditions() { while ready {} while (Flag {}) {} "
-                "while (fn() -> bool { predicate }) {} }"
+                "while (fn() -> bool { predicate }) {} while { break; } }"
             );
             const auto ast = result.view();
             const auto& plain = get<ASTWhileStmt>(statement_at(result, 0));
-            ct::expect(is<ASTNameExpr>(ast.expression(plain.condition)));
+            ct::expect(is<ASTNameExpr>(ast.expression(*plain.condition)));
             ct::expect(ast.block(plain.body).statements.empty());
 
             const auto& named = get<ASTWhileStmt>(statement_at(result, 1));
-            const auto& named_group = get<ASTGroupExpr>(ast.expression(named.condition));
+            const auto& named_group = get<ASTGroupExpr>(ast.expression(*named.condition));
             ct::expect(is<ASTConstructionExpr>(ast.expression(named_group.expression)));
 
             const auto& typed = get<ASTWhileStmt>(statement_at(result, 2));
-            const auto& typed_group = get<ASTGroupExpr>(ast.expression(typed.condition));
+            const auto& typed_group = get<ASTGroupExpr>(ast.expression(*typed.condition));
             const auto& construction =
                 get<ASTConstructionExpr>(ast.expression(typed_group.expression));
             ct::expect(is<ASTFunctionType>(*construction.type));
+
+            const auto& unconditional = get<ASTWhileStmt>(statement_at(result, 3));
+            ct::expect(!unconditional.condition.has_value());
+            ct::expect_equal(ast.block(unconditional.body).statements.size(), 1uz);
 
             check_invalid("fn f() { while Flag {} {} }");
         }
     );
 
     ct::test(
-        "Parser statement: c_style for alternatives preserve absence and action kind",
+        "Parser statement: c_style for requires a condition and preserves action kind",
         [] static noexcept {
             const auto result = parse_valid(
-                "fn loops() { for ; ; {} for index = 0; ready; {} "
+                "fn loops() { for ; ready; {} for index = 0; ready; {} "
                 "for begin(); ready; tick() {} }"
             );
             const auto header_at = [&](std::size_t index) noexcept -> const ASTCStyleForHeader& {
                 return get<ASTCStyleForHeader>(get<ASTForStmt>(statement_at(result, index)).header);
             };
             ct::expect(is<std::monostate>(header_at(0).initializer));
-            ct::expect(!header_at(0).condition.has_value());
             ct::expect(is<ASTAssignment>(header_at(1).initializer));
-            ct::expect(header_at(1).condition.has_value());
             ct::expect(is<ASTExprID>(header_at(2).initializer));
             ct::expect(is<ASTExprID>(header_at(2).steps[0]));
+            check_invalid("fn loops() { for ; ; {} }");
+            check_invalid("fn loops() { for index = 0; ; ++index {} }");
         }
     );
 
@@ -335,7 +338,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Parser: constant blocks compose with constants functions tests and nested statements",
+        "Parser: const blocks compose with constants functions tests and nested statements",
         [] static noexcept {
             static constexpr auto text = std::string_view(R"(
         const "module" { const "nested" { println("nested"); } }
@@ -349,7 +352,7 @@ const ct::Suite tests([] static noexcept {
             if (!ct::expect(root(tree).items.size() == 5uz)) {
                 return;
             }
-            const auto& block = get<ASTConstantBlock>(item(tree, 0));
+            const auto& block = get<ASTConstBlock>(item(tree, 0));
             if (!ct::expect(block.label.has_value())) {
                 return;
             }
@@ -359,7 +362,7 @@ const ct::Suite tests([] static noexcept {
                 return;
             }
             const auto& nested =
-                get<ASTConstantBlock>(ast.statement(ast.block(block.body).statements.front()));
+                get<ASTConstBlock>(ast.statement(ast.block(block.body).statements.front()));
             if (!ct::expect(nested.label.has_value())) {
                 return;
             }
@@ -367,7 +370,7 @@ const ct::Suite tests([] static noexcept {
             ct::expect(is<ASTConstantDecl>(item(tree, 1)));
             ct::expect(get<ASTFunctionDecl>(item(tree, 2)).const_span.has_value());
             ct::expect(get<ASTTestDecl>(item(tree, 3)).is_const);
-            ct::expect(!(get<ASTConstantBlock>(item(tree, 4)).label.has_value()));
+            ct::expect(!(get<ASTConstBlock>(item(tree, 4)).label.has_value()));
 
             check_invalid("const \"label\";", "expected '{'");
             check_invalid("fn f() { const \"label\"; }", "expected '{'");

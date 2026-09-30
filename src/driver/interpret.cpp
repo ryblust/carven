@@ -8,6 +8,7 @@ import :driver.interpret;
 import :driver.sources;
 import :driver.timings;
 import :interpreter.execute;
+import :semantic.evaluation.display;
 import :semantic.evaluation.execution;
 import :semantic.semir.decl;
 import :semantic.semir.program;
@@ -43,7 +44,7 @@ auto restore_sources(const SemIRProgram& program) noexcept -> RestoredSources {
 
 auto report_execution_error(
     const SemIRProgram& program,
-    const ExecutionDiagnostic& error,
+    const ExecutionEvent& error,
     std::optional<RestoredSources>& restored,
     bool entry,
     std::optional<TestID> test_id
@@ -63,45 +64,31 @@ auto report_execution_error(
     auto context = std::string();
     if (test_id) {
         const auto& test = program.tests().test(*test_id);
-        const auto& module = program.declarations().module_decl(test.module_id);
+        const auto& declaration = program.declarations().module_decl(test.module_id);
         context = "\n  test:";
-        const auto field = [&](std::string_view label, std::string_view text) noexcept {
-            context += std::format("\n    {}:", label);
-            if (text.empty()) {
-                context += " \"\"";
-            } else if (text.find('\n') == std::string_view::npos) {
-                context += ' ';
-                context += text;
-            } else {
-                while (!text.empty()) {
-                    const auto newline = text.find('\n');
-                    context += "\n      ";
-                    context += text.substr(0, newline);
-                    if (newline == std::string_view::npos) {
-                        break;
-                    }
-                    text.remove_prefix(newline + 1);
-                }
-            }
-        };
-        field("module", provenance.module_record(module.provenance_module).path.value());
-        field("name", block_display_name(provenance, test.source));
+        append_report_field(
+            context,
+            "module:",
+            provenance.module_record(declaration.provenance_module).path.value(),
+            "    "
+        );
+        append_report_field(context, "name:", block_display_name(provenance, test.source), "    ");
     }
-    if (error.report_kind) {
+    if (error.report_kind() || error.termination() == ExecutionTermination::Abort) {
         const auto source = provenance.source_origin(error.origin);
-        const auto message = std::string_view(error.message);
-        const auto fields = message.find('\n');
         std::print(
             std::cerr,
             "{}:{}: {} {}",
             provenance.source_snapshot(source.source_id).display_origin(),
             provenance.location(error.origin),
             styler.bold_red("error:"),
-            message.substr(0, fields)
+            error.message()
         );
         std::print(std::cerr, "{}", context);
-        if (fields != std::string_view::npos) {
-            std::print(std::cerr, "{}", message.substr(fields));
+        for (const auto& field : error.fields) {
+            auto text = std::string();
+            append_report_field(text, field.label, field.text);
+            std::print(std::cerr, "{}", text);
         }
         std::println(std::cerr);
         for (const auto origin : calls | std::views::reverse | std::views::take(8)) {
@@ -115,10 +102,9 @@ auto report_execution_error(
                 );
             }
         }
-        if (*error.report_kind == ReportKind::Assert) {
+        if (error.termination() == ExecutionTermination::Abort) {
             std::println(std::cerr, "  {} execution aborted", styler.bold_cyan("note:"));
-        } else if (*error.report_kind == ReportKind::Require
-                   || *error.report_kind == ReportKind::Fail) {
+        } else if (error.termination() == ExecutionTermination::StopRoot) {
             std::println(std::cerr, "  {} test stopped", styler.bold_cyan("note:"));
         }
         std::println(std::cerr);
@@ -127,7 +113,10 @@ auto report_execution_error(
     if (!restored) {
         restored.emplace(restore_sources(program));
     }
-    auto diagnostic = DiagnosticBuilder(error.code, error.message + context);
+    auto diagnostic = DiagnosticBuilder(
+        interpreter_diagnostic_code(error.reason()),
+        execution_message(error) + context
+    );
     diagnostic.primary(span(error.origin));
     for (const auto origin : calls | std::views::reverse | std::views::take(8)) {
         if (origin != error.origin) {
@@ -171,7 +160,7 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
     auto trace = false;
     auto tests = false;
     auto show_timings = false;
-    auto limits = constant_execution_limits();
+    auto limits = static_execution_limits();
     auto seen_steps = false;
     for (auto index = 0uz; index < args.size(); ++index) {
         const auto arg = std::string_view(args[index]);
@@ -274,8 +263,8 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
             );
         };
     }
-    options.report = [&](std::optional<TestID> id, const ExecutionDiagnostic& diagnostic) noexcept {
-        report_execution_error(*program, diagnostic, diagnostic_sources, !tests, id);
+    options.report = [&](std::optional<TestID> id, const ExecutionEvent& event) noexcept {
+        report_execution_error(*program, event, diagnostic_sources, !tests, id);
     };
     auto execution = TimingScope(timings.recorder(), TimingStage::Execution);
     if (tests) {
@@ -288,7 +277,7 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
             return emit_driver_error("running tests requires at least one runtime test");
         }
         const auto failed = std::ranges::count_if(*results, [](const auto& result) static noexcept {
-            return !result.diagnostics.empty();
+            return !result.reports.empty();
         });
         if (results->back().aborted()) {
             timings.set_outcome("aborted");
@@ -306,6 +295,9 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
     const auto result = interpret(*program, *entry, output, options);
     execution.stop();
     if (!result) {
+        if (result.error().event.termination() == ExecutionTermination::Abort) {
+            timings.set_outcome("aborted");
+        }
         return 1;
     }
     timings.set_outcome("finished");

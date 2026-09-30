@@ -90,9 +90,7 @@ test "Failure transport: raw carriers widen consistently across callable forms" 
     let widened_stored_view: fn(i32) -> i32 throw ZFailure + AFailure = exact_function;
     let narrow_array: [fn(i32) -> i32 throw ZFailure; 2] = [narrow, narrow];
     let wide_array: [fn(i32) -> i32 throw ZFailure + AFailure; 2] = narrow_array;
-    let nested_narrow: [[fn(i32) -> i32 throw ZFailure; 1]; 1] = [
-        [narrow]
-    ];
+    let nested_narrow: [[fn(i32) -> i32 throw ZFailure; 1]; 1] = [[narrow]];
     let nested_wide: [[fn(i32) -> i32 throw ZFailure + AFailure; 1]; 1] = nested_narrow;
     let empty_narrow: [fn(i32) -> i32 throw ZFailure; 0] = [];
     let empty_wide: [fn(i32) -> i32 throw ZFailure + AFailure; 0] = empty_narrow;

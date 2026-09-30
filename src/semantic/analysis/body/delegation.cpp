@@ -4,9 +4,11 @@ import :diagnostics.code;
 import :frontend.ast.expr;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
+import :semantic.analysis.constant.fold;
 import :semantic.analysis.expr.operand;
 import :semantic.analysis.names;
 import :semantic.semir.structured;
+import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
@@ -245,6 +247,24 @@ auto BodyElaborator::cpp_construct(
             auto built = (co_await build_cpp_argument(value));
             if (!built) {
                 co_return std::unexpected(built.error());
+            }
+            if (built->argument.access == AccessMode::Read) {
+                auto resolved = co_await resolve_static_references(built->argument.expression);
+                if (!resolved) {
+                    co_return std::unexpected(resolved.error());
+                }
+                // C++ deduction needs scalar witnesses after type-time static
+                // reads. Preserve operand effects in the original tree.
+                auto expressions = std::vector<SemanticExpression*>();
+                visit_semantic_nodes(
+                    built->argument.expression,
+                    [&](SemanticExpression& value) noexcept { expressions.push_back(&value); }
+                );
+                for (auto* expression : expressions | std::views::reverse) {
+                    if (auto folded = fold_constant_expression(draft(), *expression); !folded) {
+                        co_return std::unexpected(folded.error());
+                    }
+                }
             }
             completes &= built->completes;
             operands.push_back(std::move(built->argument));

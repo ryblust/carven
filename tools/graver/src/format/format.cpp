@@ -14,11 +14,11 @@ import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :frontend.ast.type;
-import :frontend.lex.token;
 import :frontend.lex;
+import :frontend.lex.token;
 import :frontend.parse;
-import :graver.format.alignment;
 import :graver.format;
+import :graver.format.alignment;
 import :graver.layout.document;
 import :graver.source;
 import :source.manager;
@@ -78,6 +78,7 @@ private:
     Document document;
     const ASTBlock* top_level_body = nullptr;
     auto render() noexcept -> std::string;
+    auto delimiter_boundary(std::size_t index) const noexcept -> bool;
     auto block_open(Span span) const noexcept -> std::size_t;
     auto consider_compact(Span span, std::size_t header) noexcept -> void;
     auto select_compact_blocks() noexcept -> void;
@@ -96,7 +97,11 @@ private:
             auto branches = std::vector<BranchLayout>();
             for (const auto& branch : form.branches) {
                 const auto open = block_open(syntax.branch_block(branch.body).span);
-                header_starts[open] = token_at(branch.keyword_span.start());
+                // A const chain's first header begins at its const keyword.
+                const auto header = &branch == &form.branches.front() && form.const_span
+                    ? *form.const_span
+                    : branch.keyword_span;
+                header_starts[open] = token_at(header.start());
                 branches.push_back(
                     BranchLayout {
                         .first = *header_starts[open],
@@ -341,6 +346,12 @@ auto SyntaxFormatter::block_open(Span span) const noexcept -> std::size_t {
     return opening_indices[token_covering(span.end() - 1u)];
 }
 
+auto SyntaxFormatter::delimiter_boundary(std::size_t index) const noexcept -> bool {
+    return index != 0uz
+        && (closing_indices[index - 1uz] != 0uz
+            || (index < tokens.size() && closing_indices[opening_indices[index]] == index));
+}
+
 auto SyntaxFormatter::consider_compact(Span span, std::size_t header) noexcept -> void {
     const auto open = block_open(span);
     const auto close = closing_indices[open];
@@ -358,7 +369,8 @@ auto SyntaxFormatter::consider_compact(Span span, std::size_t header) noexcept -
             }
             endings += trivia.kind == TriviaKind::LineEnding ? 1uz : 0uz;
         }
-        if (endings > 1uz || (i < close && block_layouts[i] != BlockLayout::None)) {
+        if ((endings > 1uz && !delimiter_boundary(i))
+            || (i < close && block_layouts[i] != BlockLayout::None)) {
             return;
         }
     }
@@ -605,7 +617,8 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                     }
                 }
             } else if constexpr (std::same_as<T, ASTArrayExpr>) {
-                if (std::ranges::any_of(value.element_ids, structured)) {
+                if (value.element_ids.size() > 1uz
+                    && std::ranges::any_of(value.element_ids, structured)) {
                     block_layouts[token_at(expression.span.start())] = BlockLayout::Expanded;
                     for (const auto id : value.element_ids) {
                         separation_before[token_at(syntax.expression(id).span.start())] =
@@ -629,7 +642,8 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                             }
                         }();
                         const auto expanded = [&]() noexcept {
-                            const auto nested = std::ranges::any_of(values, structured);
+                            const auto nested = std::ranges::size(values) > 1uz
+                                && std::ranges::any_of(values, structured);
                             if constexpr (std::same_as<U, ASTFieldInitializerList>) {
                                 return nested || initializer.fields.size() > 1uz;
                             } else {
@@ -835,6 +849,9 @@ auto SyntaxFormatter::gap(std::size_t index, Separation desired, bool closing) n
         }
     }
     if (comment_count == 0uz) {
+        if (delimiter_boundary(index)) {
+            endings = std::min(endings, 1uz);
+        }
         if ((desired == Separation::None || desired == Separation::SoftEmpty)
             && needs_separator(index)) {
             desired = desired == Separation::None ? Separation::Space : Separation::SoftSpace;

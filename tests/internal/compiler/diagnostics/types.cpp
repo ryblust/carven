@@ -438,11 +438,11 @@ const ct::Suite tests([] static noexcept {
              .source = "struct Empty {} fn compare(a: Empty, b: Empty) -> bool => a == b;",
              .code = DiagnosticCode::TypeEqualityUnsupported,
              .primary_text = "=="},
-            {.name = "required constant equality",
+            {.name = "static root equality",
              .source = "struct Record { value: i32 } const equal = Record { 1 } == Record { 1 };",
              .code = DiagnosticCode::TypeEqualityUnsupported,
              .primary_text = "=="},
-            {.name = "constant block inequality",
+            {.name = "const block inequality",
              .source =
                  "struct Record { value: i32 } const { let equal = Record { 1 } != Record { 1 }; }",
              .code = DiagnosticCode::TypeEqualityUnsupported,

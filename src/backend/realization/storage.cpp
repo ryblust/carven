@@ -25,6 +25,15 @@ import :support.invariant;
 import :support.visit;
 import std;
 
+auto BodyRealizer::ExpressionBuilder::storage_form(ConstructionPosition position) const noexcept
+    -> StorageForm {
+    // The final owner is constructed after every retained operand. Its ordinary
+    // declaration therefore destroys it before all hoisted operand storage.
+    // Earlier ordinary owners could instead outlive a later hoisted owner.
+    return independent_scope && position == ConstructionPosition::Final ? StorageForm::Automatic
+                                                                        : operand_storage;
+}
+
 auto BodyRealizer::ExpressionBuilder::take_statements(bool shared) noexcept -> LoweringStmtBuilder {
     if (shared) {
         return std::move(statements);
@@ -52,6 +61,20 @@ auto BodyRealizer::ExpressionBuilder::borrowed_owner(
         )
         && use != PreparedUse::Consume
         && use != PreparedUse::NativeTake;
+}
+
+// Every Read parameter form (const T&, const T, ReadArg<T>) names a const lvalue.
+auto BodyRealizer::ExpressionBuilder::const_parameter(const Fragment& fragment) const noexcept
+    -> bool {
+    const auto* binding = std::get_if<LocalBindingID>(&fragment.completion);
+    if (binding == nullptr
+        || owner.capture_names.contains(*binding)
+        || owner.delayed_bindings.contains(*binding)) {
+        return false;
+    }
+    const auto* parameter =
+        std::get_if<ParameterBindingStorage>(&owner.metadata.binding(*binding).storage);
+    return parameter != nullptr && parameter->access == AccessMode::Read;
 }
 
 auto BodyRealizer::ExpressionBuilder::retain_input(Fragment& fragment, PreparedUse use) noexcept
@@ -153,6 +176,10 @@ auto BodyRealizer::ExpressionBuilder::emit(
             target_expressions(std::move(result))
         );
     }
+    if ((use == PreparedUse::ReadBorrow || use == PreparedUse::ConstPlace)
+        && const_parameter(fragment)) {
+        return result;
+    }
     if (use == PreparedUse::ReadBorrow
         || use == PreparedUse::ConstPlace
         || use == PreparedUse::AddressValue) {
@@ -208,7 +235,8 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         && value.operation.lifetime != cleanup) {
         invariant_violation("owner anchoring requires its source cleanup frame");
     }
-    if (stable_place_binding(value.operation)
+    if (std::holds_alternative<SemBinding>(value.operation.value)
+        && stable_place(value.operation)
         && (use == PreparedUse::WritePlace || use == PreparedUse::ConstPlace)) {
         return;
     }
@@ -220,15 +248,16 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         && std::holds_alternative<BuiltinTypeValue>(
             owner.context.semantic().types().type(value.operation.type.resolved()).value
         )) {
-        fragment.statements.emit(generated_statement(
+        fragment.statements.declare(
             TargetVariableStmt {
                 .binding = value_binding(use),
                 .maybe_unused = false,
                 .local = name,
                 .type = owner.context.lower_type(value.operation.type.resolved()),
                 .initializer = raw(fragment)
-            }
-        ));
+            },
+            false
+        );
         complete(fragment, Saved {.local = name, .kind = SavedKind::Value});
         return;
     }
@@ -257,9 +286,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                                       || value.operation.category != SemanticValueCategory::Place
                               )
         : read && !read_value
-        ? owner.context.lower_parameter(
-              {.access = AccessMode::Read, .type = value.operation.type.resolved()}
-          )
+        ? owner.context.lower_parameter(AccessMode::Read, value.operation.type.resolved())
         : owner.context.lower_type(value.operation.type.resolved());
     auto storage_type = type;
     const auto exact_call = std::holds_alternative<SemCppCall>(value.operation.value)
@@ -273,8 +300,12 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         if (query == nullptr) {
             invariant_violation("native call has no result query");
         }
-        storage_type = owner.context.lower_cpp_query(*query);
+        storage_type = owner.context.lower_cpp_query(value.operation.type.resolved());
     }
+    // Exact native result queries may own a value; their category and cleanup
+    // remain delegated. Other retained places and Read bindings borrow storage.
+    const auto needs_cleanup =
+        owner.needs_cleanup(value.operation.type.resolved()) && (exact_call || (!place && !read));
     auto initializer = !exact_call
             && (use == PreparedUse::Consume
                 || use == PreparedUse::OperandValue
@@ -282,11 +313,11 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                 || use == PreparedUse::NativeTake)
         ? emit(fragment, use)
         : raw(fragment);
-    if (automatic_storage) {
+    if (storage_form(fragment.position) == StorageForm::Automatic) {
         // References and ReadArg already carry access in their type. Owned
         // snapshots instead derive their qualification from the consumer.
         const auto access_in_type = place || (read && !read_value);
-        fragment.statements.emit(generated_statement(
+        fragment.statements.declare(
             TargetVariableStmt {
                 .binding =
                     access_in_type ? TargetVariableBinding::MutableValue : value_binding(use),
@@ -294,8 +325,9 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                 .local = name,
                 .type = storage_type,
                 .initializer = std::move(initializer)
-            }
-        ));
+            },
+            needs_cleanup
+        );
         complete(
             fragment,
             Saved {.local = name, .kind = place ? SavedKind::Place : SavedKind::Value}
@@ -303,7 +335,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         return;
     }
     const auto storage = LoweringDeferredStorage {.local = name, .value_type = storage_type};
-    owner.declare_deferred(storage, false, fragment.declarations);
+    owner.declare_deferred(storage, false, fragment.declarations, needs_cleanup);
     owner.initialize_deferred(
         storage,
         std::move(initializer),

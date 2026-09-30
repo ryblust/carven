@@ -50,6 +50,14 @@ auto BodyRealizer::deliver_result(
         emit_return(remaining_expression(std::move(value)), destination, result);
     } else if (const auto* initialize = std::get_if<LoweringInitializeResult>(&result)) {
         initialize_deferred(initialize->storage, require_expression(std::move(value)), destination);
+    } else if (const auto* assign = std::get_if<LoweringAssignResult>(&result)) {
+        destination.emit(generated_statement(
+            TargetAssignmentStmt {
+                .target = name_expression(assign->local),
+                .op = TargetAssignmentOperator::Assign,
+                .value = require_expression(std::move(value))
+            }
+        ));
     } else if (!std::holds_alternative<LoweringCompleted>(value)) {
         invariant_violation("discarded results must complete through expression evaluation");
     }

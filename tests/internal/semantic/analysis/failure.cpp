@@ -23,31 +23,44 @@ namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
     ct::test(
-        "Semantic effects: constant-dead paths do not contribute outward failures",
+        "Semantic effects: every branch contributes its failures whatever its condition",
         [] static noexcept {
-            const auto program = analyze_test_program(
-                "struct DeadFailure {}\n"
-                "private fn fail() -> bool throw DeadFailure { throw DeadFailure {}; }\n"
-                "private fn valid() -> bool {\n"
-                "    let short = false && fail()?;\n"
-                "    if false { fail()?; }\n"
-                "    while false { fail()?; }\n"
-                "    return if true { short } else { fail()? };\n"
-                "}\n"
-            );
+            const auto program = analyze_test_program(R"(
+            struct Failure {}
+            private fn fail() -> bool throw Failure { throw Failure {}; }
+            private fn runtime_if() { let flag = false; if flag { fail()?; } }
+            private fn runtime_logic() -> bool { let flag = false; return flag && fail()?; }
+            private fn runtime_match() -> bool {
+                let subject = true; return match subject { true => true, false => fail()?, };
+            }
+            private fn named_if() { const flag = false; if flag { fail()?; } }
+            private fn named_logic() -> bool { const flag = false; return flag && fail()?; }
+            private fn named_match() -> bool {
+                const subject = true; return match subject { true => true, false => fail()?, };
+            }
+            private fn literal_if() { if false { fail()?; } }
+            private fn literal_logic() -> bool => false && fail()?;
+            private fn literal_while() { while false { fail()?; } }
+            private fn literal_value() -> bool => if true { true } else { fail()? };
+            private fn literal_match() -> bool => match true { true => true, false => fail()?, };
+            private fn static_if() { const if false { fail()?; } }
+        )");
             const auto callables = test_function_callables(program);
-            if (!ct::expect_equal(callables.size(), 2uz)) {
+            if (!ct::expect_equal(callables.size(), 13uz)) {
                 return;
             }
-            ct::expect(!(test_callable_failures(program, callables[0]).members.empty()));
-            ct::expect(test_callable_failures(program, callables[1]).members.empty());
-
-            const auto diagnostics = analyze_test_errors(
-                "private fn invalid() {\n"
-                "    if false { let value: bool = 1; }\n"
-                "}\n"
+            for (auto index = 0uz; index < callables.size(); ++index) {
+                ct::scenario(std::format("function {}", index), [&]() noexcept {
+                    ct::expect_equal(
+                        test_callable_failures(program, callables[index]).members.size(),
+                        1uz
+                    );
+                });
+            }
+            ct::expect_diagnostic(
+                analyze_test_errors("private fn invalid() { if false { let value: bool = 1; } }"),
+                DiagnosticCode::TypeMismatch
             );
-            ct::expect_diagnostic(diagnostics, DiagnosticCode::TypeMismatch);
         }
     );
 
@@ -71,29 +84,22 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Semantic effects: known match selection excludes only unexecuted failures",
+        "Semantic effects: match bounds and coverage follow patterns, not the subject value",
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         struct Failure {}
         fn fail() -> i32 throw Failure { throw Failure {}; }
-        private fn selected() -> i32 {
-            let subject = 2;
-            return match subject { 1 => fail()?, 2 => 7, _ => throw Failure {}, };
-        }
-        fn invoke() -> i32 => selected();
         private fn bounded() -> i32 {
             return match 2 { 3..fail()? => 1, _ => 7, };
         }
         fn declared() -> i32 throw Failure => match true { true => 7, false => 0, };
     )");
             const auto callables = test_function_callables(program);
-            if (!ct::expect(callables.size() == 5uz)) {
+            if (!ct::expect(callables.size() == 3uz)) {
                 return;
             }
-            ct::expect(test_callable_failures(program, callables[1]).members.empty());
-            ct::expect(test_callable_failures(program, callables[2]).members.empty());
-            ct::expect(test_callable_failures(program, callables[3]).members.size() == 1uz);
-            ct::expect(test_callable_failures(program, callables[4]).members.size() == 1uz);
+            ct::expect(test_callable_failures(program, callables[1]).members.size() == 1uz);
+            ct::expect(test_callable_failures(program, callables[2]).members.size() == 1uz);
             ct::expect_diagnostic(
                 analyze_test_errors("fn invalid() -> i32 => match true { true => 7, };"),
                 DiagnosticCode::MatchNonExhaustive

@@ -21,6 +21,7 @@ for _, domain in ipairs({
     end
 end
 table.insert(interop_sources, path.join(interop_dir, "harness", "runner.cpp"))
+table.insert(interop_sources, path.join(interop_dir, "printing", "structural.cv"))
 
 local rejection_cases = {
     ["construction/deduction"] = {"no viable constructor or deduction guide", "vector"},
@@ -31,17 +32,17 @@ local rejection_cases = {
     ["contracts/access"] = {"drops 'const' qualifier", "contract_replace"},
     ["pointers/const_conversion"] = {"cannot initialize", "pointer_probe::readonly_fixed"},
     ["pointers/noncopyable_target"] = {"deleted constructor", "Fixed"},
-    ["pointers/native_double_output"] = {"cannot initialize a parameter", "pointer_probe::output"},
+    ["pointers/double_output"] = {"cannot initialize a parameter", "pointer_probe::output"},
     ["interpolation/invalid_specification"] = {"format", "format"},
-    ["interpolation/mixed_invalid_specification"] = {"format", "format"},
-    ["interpolation/append_invalid_specification"] = {"format", "format"},
+    ["interpolation/mixed_specifier"] = {"format", "format"},
+    ["interpolation/append_specifier"] = {"format", "format"},
     ["interpolation/wrong_type"] = {"format", "format"},
-    ["interpolation/cstring_pointer_specification"] = {"format", "format"},
-    ["interpolation/unicode_char_is_text"] = {"format", "format"},
+    ["interpolation/cstring_specifier"] = {"format", "format"},
+    ["interpolation/char_specifier"] = {"format", "format"},
     ["interpolation/missing_formatter"] = {
         "format", "formatter", note = "std::basic_format_string",
     },
-    ["interpolation/append_missing_formatter"] = {
+    ["interpolation/append_formatter"] = {
         "format", "formatter", note = "std::basic_format_string",
     },
 }
@@ -55,6 +56,7 @@ target("carven-test-interop")
     add_files(table.unpack(interop_sources))
 
     add_tests("behavior", {group = "interop"})
+    add_tests("structural-output", {group = "interop"})
     for _, operation in ipairs({
         "divide", "remainder", "shift", "width", "index",
         "slice-index", "slice-negative", "slice-range", "slice-reversed",
@@ -69,12 +71,55 @@ target("carven-test-interop")
             import("generated", {
                 rootdir = path.join(os.projectdir(), "tests", "harness"),
             }).main(target, "interop behavior")
+        elseif name == "structural-output" then
+            local output, errors = os.iorunv(target:targetfile(), {name}, {timeout = 30000})
+            assert(output:gsub("\r\n", "\n") == "<opaque>\ncustom\nEnvelope {\n    value: <opaque>,\n}\n1\ntrue 1.5 65\n<opaque>\nnullptr\n"
+                .. 'native\ntext mutable\n[\n    "native\\ntext",\n    nullptr,\n]\n'
+                .. string.rep("x", 17000) .. "\n" and errors == "",
+                "structural display invoked a custom formatter or changed output: " .. output .. errors)
         else
             import("harness.process", {rootdir = interop_dir})(target, {name}, 73, name)
         end
         return true
     end)
 target_end()
+
+for _, variant in ipairs({
+    {name = "carven-test-interop-simd"},
+    {name = "carven-test-interop-simd-scalar", scalar = true},
+}) do
+    target(variant.name)
+        set_default(false)
+        add_rules("@carven/carven", {tests = "external"})
+        set_languages("c++20")
+        add_includedirs(interop_dir)
+        if variant.scalar then
+            add_defines("CARVEN_SIMD_FORCE_SCALAR")
+        else
+            add_vectorexts("avx2")
+        end
+        add_files(path.join(interop_dir, "simd", "**.cv"))
+        add_files(path.join(interop_dir, "simd", "runner.cpp"))
+        add_files(path.join(interop_dir, "simd", "utf.cpp"))
+        add_tests("behavior", {group = "interop", run_timeout = 30000})
+        for _, operation in ipairs({
+            "wide-short-load", "wide-prefix", "short-load", "partial-offset", "lane", "mask-prefix",
+            "float-short-load", "float-partial-offset", "float-lane", "float-update", "float-prefix",
+        }) do
+            add_tests(operation, {group = "interop", run_timeout = 30000})
+        end
+        on_test(function (target, opt)
+            local operation = opt.name:match("([^/]+)$")
+            if operation == "behavior" then
+                return import("generated", {
+                    rootdir = path.join(os.projectdir(), "tests", "harness"),
+                }).main(target, "SIMD consumer")
+            end
+            import("harness.process", {rootdir = interop_dir})(target, {operation}, 73, operation)
+            return true
+        end)
+    target_end()
+end
 
 target("carven-test-interop-rejections")
     set_default(false)
@@ -146,23 +191,6 @@ target("carven-test-interop-print")
         assert(output:gsub("\r\n", "\n") == "Literal\nValue: {123}\n"
             and errors:gsub("\r\n", "\n") == "carven: tests: 1 passed; 0 failed\n",
             "C++23 interop produced unexpected output:\n%s\n%s", output, errors)
-        return true
-    end)
-target_end()
-
-target("carven-test-interop-structural")
-    set_default(false)
-    add_rules("@carven/carven")
-    set_languages("c++20")
-    add_includedirs(interop_dir)
-    add_files(path.join(interop_dir, "printing", "structural.cv"))
-    add_tests("output", {group = "interop"})
-    on_test(function (target)
-        local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-        assert(output:gsub("\r\n", "\n") == "<opaque>\ncustom\nEnvelope {\n    value: <opaque>,\n}\n1\ntrue 1.5 65\n<opaque>\nnullptr\n"
-            .. 'native\ntext mutable\n[\n    "native\\ntext",\n    nullptr,\n]\n'
-            .. string.rep("x", 17000) .. "\n" and errors == "",
-            "structural display invoked a custom formatter or changed output: " .. output .. errors)
         return true
     end)
 target_end()

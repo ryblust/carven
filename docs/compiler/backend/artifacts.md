@@ -7,11 +7,18 @@ construction owns syntax, dependencies, verification, and emission; the
 ## Names and interfaces
 
 `TargetNamePlan` owns linkage-domain namespaces, module names, nominal names,
-closure names, enum payload names, and generated test names. A callable-local
-allocator reserves source names and allocates temporaries and labels. The plan
-owns the immutable module reservations borrowed by these local allocators. It
-owns encoded public namespace and function names shared by API headers and
-export façades. Artifact paths retain canonical source names.
+callable and closure names, enum payload names, generated test names, query aliases,
+constant backing names, and nominal display helper names. Function references
+use their declaration's `CallableID`. `generation.names` owns identifier encoding
+and naming roles; `TargetNameAllocator` reserves callable-local names and allocates
+locals, temporaries, and labels. The plan owns the immutable module reservations
+borrowed by these local allocators. `ModuleLowering::field_identifier` derives
+nominal member names from their semantic identity and planned enclosing name.
+Source encoding is injective: reserved C++ names and source spellings in its escape
+domain are encoded. The plan also owns encoded public namespace and function names
+shared by API headers and export façades. Artifact paths retain canonical source names. Closure types are
+numbered by their discovery order within the owner module, so other modules
+cannot renumber them.
 
 Semantic visibility and C++ definition requirements determine interface
 artifacts. Declaration-only dependencies use forward declarations. Complete
@@ -29,11 +36,43 @@ functions, process and C++ export entries, interface closures, and enabled runti
 tests. Realizing native function references and closure types requests their local
 definitions through `ModuleLowering`. Each callable is lowered once; its references
 can request further definitions. Unrequested private functions and closures have
-no native declarations or definitions. Constant execution retains its SemIR bodies
+no native declarations or definitions. Static execution retains its SemIR bodies
 independently of this native selection.
 
 Lowering also records providers of emitted names and types. These transient
 provider sets are consumed into include directives.
+
+### Staged bodies
+
+A function with static parameters contributes its possible runtime dependencies
+to its owner's surface. Semantic publication records the body's types and
+callables; artifact planning reads these facts with the signature. Types and
+closures follow the ordinary nominal and closure rules, and each same-module
+function reached joins the surface. A reached private function keeps external
+linkage and is declared in its owner's interface; a reached staged function
+contributes its published surface facts. Semantic collection covers every runtime
+arm and excludes static conditions, ranges, initializers, and arguments.
+Everything else private stays internal to its implementation. The selection
+depends only on the owner's source, never on its callers; the backend does not
+traverse source templates.
+
+Each artifact collects requested definitions through one work queue. Every module
+has one artifact-owned lowering context, including the artifact's own module.
+An instance is an `inline` function in its owner's module namespace. Definitions
+follow emitted call edges in callee-first order; recursion cycles introduce the
+necessary forward declarations. Ordinary private callables remain in an anonymous
+namespace unless the interface surface requires external linkage.
+
+Instance names append readable scalar static values, or a digest of typed
+canonical content for composite or long values. Name planning compares complete
+content and assigns distinct spellings when preferred names coincide; digests do
+not identify cached semantic values. Content keys encode a local node graph with
+bounded-stack traversal; repeated dependencies reuse their node definitions.
+Slice backing arrays are
+module-owned `inline constexpr` objects named by content. Their initializers use
+the same module context as their references. Structural display uses runtime
+scalar, sequence, and range emitters, plus a content-named helper per nominal
+type. Display depth belongs to the runtime writer.
 
 Each runtime test becomes a function. Static tests have already executed during
 analysis and receive no target function name or runner entry. Module runners call
@@ -59,14 +98,14 @@ artifacts; dependencies are not inferred by matching symbols to headers.
 
 ## External query aliases
 
-Lowering registers external queries for artifact-local type aliases.
-Finishing collects occupied names across the complete unit, merging reopened and
-qualified namespace paths, then allocates aliases in their destination namespace.
-Aliases precede their first use in dependency order, after preceding nominal
-definitions. References use qualified alias names; exact
-references and cv-qualification remain in the alias definition. Generic local
-`decltype` expressions retain their local scope. This preserves shared query
-dependencies in the generated C++.
+The name plan names external query aliases by complete semantic content. Each
+module context caches their emitted target types by canonical query TypeID. Alias
+definitions use globally qualified type references and precede their dependent declarations,
+after required nominal definitions. Implementation support is placed in the same
+module namespace before callable definitions. References retain the module's
+qualified alias name across translation units; exact references and
+cv-qualification remain in the alias definition. Local `decltype` expressions
+retain their local scope.
 
 The [external result type contract](representation.md#external-result-types)
 defines the exact query type and normalization before alias placement.
@@ -86,9 +125,8 @@ order. Target type IDs belong to one unit. Source attribution and function forms
 use exact variants.
 
 Type construction accepts only children already present in the same unit;
-append-only insertion establishes acyclicity. Finishing names registered
-namespace-visible query types before their first declaration use, then validates
-occurrence type references and local control transfers.
+append-only insertion establishes acyclicity. Finishing validates occurrence type
+references and local control transfers.
 Target verification does not recheck Carven evaluation order, object lifetime
 semantics, or C++ overload and constructor feasibility. Realization preserves
 those input contracts through operand use, frame ownership, result destinations
@@ -108,8 +146,9 @@ whitespace. Layout alternatives inspect pending commands up to the next line
 boundary; command links and explicit choice frames share the remaining work. Binary rendering
 preserves the expression tree using C++ precedence and associativity. Nested
 comparisons on either side receive explicit parentheses to make their grouping
-visible. Semantic inference and target syntax construction finish before
-rendering. Artifact collection checks logical paths, uniqueness, and prefix
+visible. An `else` body that contains only a generated conditional renders as
+`else if`; realization composes two-way conditionals. Semantic inference and target syntax construction finish
+before rendering. Artifact collection checks logical paths, uniqueness, and prefix
 safety.
 
 Continuation indentation is bounded by half the configured line width, keeping

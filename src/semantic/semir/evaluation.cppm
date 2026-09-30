@@ -11,7 +11,7 @@ enum class EvaluationAction { None, Operands, ShortCircuit, Required };
 // children, not a second operation tree.
 struct EvaluationRule final {
     EvaluationAction action;
-    std::array<const SemanticExpression*, 2> operands;
+    std::array<const SemanticExpression*, 3> operands;
 };
 
 auto known_boolean(const ConstantStore& constants, const SemanticExpression& expression) noexcept

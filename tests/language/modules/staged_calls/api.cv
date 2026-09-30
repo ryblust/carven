@@ -1,0 +1,72 @@
+import <vector> using std::vector;
+
+export const fn adjust(value: i32, const delta: i32) -> i32 {
+    const amount = delta + 2;
+    return value + amount;
+}
+
+export const fn relay(value: i32, const delta: i32) -> i32 => adjust(value, delta);
+
+export fn runtime_relay(value: i32, const delta: i32) -> i32 => relay(value, delta);
+
+#[cpp] ---
+auto staged_native_bias(std::int32_t value) noexcept -> std::int32_t {
+    return value + 100;
+}
+---
+
+private import(cpp) fn staged_native_bias(value: i32) -> i32;
+
+private struct Lane {
+    index: i32,
+    weight: i32,
+}
+
+private fn weigh(lane: Lane) -> i32 => lane.index * lane.weight;
+
+private fn unused_helper() -> i32 => 0;
+
+private fn step(value: i32, const lane: i32) -> i32 {
+    let scale = [](input: i32) => input * 2;
+    return scale(value)
+        + weigh(
+            Lane {
+                index: lane,
+                weight: 10
+            }
+        );
+}
+
+// Callers realize these instances; the private helpers they reach stay
+// defined once by this module.
+export fn unrolled(value: i32, const lanes: i32) -> i32 {
+    var total = 0;
+    const for lane in 0..lanes {
+        total += step(value, lane);
+    }
+    return total;
+}
+
+export fn biased(value: i32, const offset: i32) -> i32 => staged_native_bias(value) + offset;
+
+export fn untouched() -> i32 => unused_helper();
+
+private struct DisplayNode {
+    children: [DisplayNode],
+}
+
+// Shared instances exercise storage, nominal display and native result queries.
+export fn inspect_native(value: i32, const offset: i32) -> i32 {
+    const weights: [i32] = [2, 3];
+    let values = vector<i32> { value, weights[0] };
+    println(
+        Lane {
+            index: offset,
+            weight: values.size() as i32
+        }
+    );
+    println(DisplayNode { children: [] });
+    return (values[0] as i32) + weights[1] + offset;
+}
+
+export fn dormant(value: i32, const enabled: bool) -> bool => enabled && (relay(value, 3) == 0);

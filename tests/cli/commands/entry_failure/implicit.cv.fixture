@@ -1,0 +1,5 @@
+struct Missing {}
+
+fn load() throw Missing { throw Missing {}; }
+
+load()?;

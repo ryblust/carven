@@ -1,6 +1,8 @@
 module carven:semantic.analysis.nullability.control.impl;
 
+import :semantic.analysis.coverage;
 import :semantic.analysis.nullability.context;
+import :semantic.analysis.pattern.control;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -80,6 +82,19 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
                 (co_await evaluate(value.expression));
                 co_return {};
             },
+            [&](const SemStaticBinding& value) noexcept -> ContinuationTask<std::monostate> {
+                if (value.initializer->constant) {
+                    (co_await evaluate(*value.initializer));
+                    if (flow.normal) {
+                        store(
+                            flow.normal->state,
+                            {.root = value.binding, .path = {}},
+                            flow.normal->value
+                        );
+                    }
+                }
+                co_return {};
+            },
             [&](const SemInitialize& value) noexcept -> ContinuationTask<std::monostate> {
                 (co_await evaluate(value.initializer));
                 if (flow.normal) {
@@ -108,6 +123,14 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
             },
             [&](const SemRangeLoop& value) noexcept -> ContinuationTask<std::monostate> {
                 flow = (co_await range(value, std::move(flow.normal->state)));
+                co_return {};
+            },
+            [](const SemExpandedLoop&) static noexcept -> ContinuationTask<std::monostate> {
+                invariant_violation("expanded loop reached generic body analysis");
+                co_return {};
+            },
+            [&](const SemConstBlock& value) noexcept -> ContinuationTask<std::monostate> {
+                flow = (co_await region(*value.region, std::move(flow.normal->state)));
                 co_return {};
             },
             [&](const OwnedSemanticRegion& value) noexcept -> ContinuationTask<std::monostate> {
@@ -175,81 +198,31 @@ auto NullabilityBodyAnalyzer::bind_pattern(
     );
 }
 
-auto NullabilityBodyAnalyzer::irrefutable(PatternID id) const noexcept -> bool {
-    return body.pattern(id).value.visit(
-        Overloaded {
-            [](const WildcardPattern&) static noexcept { return true; },
-            [](const BindingPattern&) static noexcept { return true; },
-            [](const TypeConstraintPattern&) static noexcept { return true; },
-            [&](const OrPattern& pattern) noexcept {
-                return std::ranges::any_of(pattern.alternatives, [&](PatternID child) noexcept {
-                    return irrefutable(child);
-                });
-            },
-            [](const auto&) static noexcept { return false; },
-        }
-    );
-}
-
 auto NullabilityBodyAnalyzer::pattern_condition(
     PatternID id,
     std::span<const SemPatternBounds> bounds,
     NullState state
 ) noexcept -> ContinuationTask<NullCondition> {
-    auto result = NullCondition {
-        .yes = NullNormal {.state = std::move(state), .value = {}},
-        .no = {},
-        .exits = {}
+    const auto initial = [](NullState input) static noexcept {
+        return NullCondition {
+            .yes = NullNormal {.state = std::move(input), .value = {}},
+            .no = {},
+            .exits = {}
+        };
     };
-    const auto& pattern = body.pattern(id).value;
-    const auto sequence = [&](PatternID child) noexcept -> ContinuationTask<std::monostate> {
-        if (!result.yes) {
-            co_return {};
-        }
-        auto next = (co_await pattern_condition(child, bounds, std::move(result.yes->state)));
-        result.yes = std::move(next.yes);
-        join_null_normal(result.no, next.no);
-        append_null_exits(result.exits, std::move(next.exits));
-        co_return {};
+    const auto evaluate = [&](const SemanticExpression& bound, NullState input) noexcept {
+        return expression(bound, std::move(input));
     };
-    if (const auto* alternatives = std::get_if<OrPattern>(&pattern)) {
-        result.no = std::move(result.yes);
-        result.yes.reset();
-        for (const auto child : alternatives->alternatives) {
-            if (!result.no) {
-                break;
-            }
-            auto next = (co_await pattern_condition(child, bounds, std::move(result.no->state)));
-            join_null_normal(result.yes, next.yes);
-            result.no = std::move(next.no);
-            append_null_exits(result.exits, std::move(next.exits));
-        }
-    } else if (const auto* enumeration = std::get_if<EnumCasePattern>(&pattern)) {
-        const auto owner = program.declarations().enum_case(enumeration->enum_case).owner;
-        if (program.declarations().enumeration(owner).cases.size() > 1uz) {
-            result.no = result.yes;
-        }
-        for (const auto child : enumeration->payload) {
-            (co_await sequence(child));
-        }
-    } else {
-        const auto found = std::ranges::find(bounds, id, &SemPatternBounds::pattern);
-        if (found != bounds.end()) {
-            for (const auto* bound : {&found->begin, &found->end}) {
-                if (!*bound || !result.yes) {
-                    continue;
-                }
-                auto next = (co_await expression(**bound, std::move(result.yes->state)));
-                result.yes = std::move(next.normal);
-                append_null_exits(result.exits, std::move(next.exits));
-            }
-        }
-        result.no = result.yes;
-    }
-    if (irrefutable(id)) {
-        result.no.reset();
-    }
-    co_return result;
+    co_return (co_await analyze_pattern_condition(
+        program,
+        body,
+        id,
+        bounds,
+        std::move(state),
+        initial,
+        evaluate,
+        join_null_normal
+    ));
 }
 
 auto NullabilityBodyAnalyzer::match(const SemMatch& source, NullState state) noexcept
@@ -318,19 +291,26 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
                 continue;
             }
             auto accepted = std::optional(NullNormal {.state = failure.state, .value = {}});
-            auto exhaustive = false;
+            auto alternatives = std::vector<std::optional<PatternID>>();
             for (const auto& alternative : arm.alternatives) {
                 if (!alternative.reachable) {
                     continue;
                 }
                 if (std::holds_alternative<CatchAllPattern>(alternative.pattern)) {
-                    exhaustive = true;
+                    alternatives.push_back(std::nullopt);
                 } else if (const auto* typed =
                                std::get_if<SemTypedCatchPattern>(&alternative.pattern);
                            typed->type.resolved() == *type) {
-                    exhaustive |= irrefutable(typed->inner);
+                    alternatives.push_back(typed->inner);
                     bind_pattern(accepted->state, typed->inner, {});
                 }
+            }
+            const auto arms = std::array {
+                PatternCoverageArm {.alternatives = std::move(alternatives), .guarded = false},
+            };
+            const auto exhaustive = patterns_exhaustive(program, body.pattern_table(), *type, arms);
+            if (!exhaustive) {
+                invariant_violation(exhaustive.error());
             }
             auto remaining = std::optional<NullNormal>();
             const auto previous = caught;
@@ -359,7 +339,7 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
                 remaining = std::move(checked.no);
                 append_null_exits(result.exits, std::move(checked.exits));
             }
-            if (exhaustive) {
+            if (*exhaustive) {
                 remaining.reset();
             }
             if (accepted && arm.guard) {

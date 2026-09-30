@@ -1,0 +1,3 @@
+helper.cv:2:5: error: test operation requires an active test
+  note: execution aborted
+

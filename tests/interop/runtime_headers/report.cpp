@@ -4,9 +4,7 @@
 
 static_assert(std::is_nothrow_invocable_v<
               decltype(&carven::runtime::assertion_failed),
-              std::string_view,
-              std::uint32_t,
-              std::uint32_t,
+              carven::runtime::SourceSite,
               std::string_view,
               std::optional<std::string_view>,
               std::optional<std::string_view>,

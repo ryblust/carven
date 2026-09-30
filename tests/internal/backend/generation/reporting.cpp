@@ -4,11 +4,11 @@ import :backend.generation.linkage;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
+import :backend.target;
 import :backend.target.name;
 import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target.type;
-import :backend.target;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
@@ -55,7 +55,7 @@ namespace {
 
 const ct::Suite tests([] static noexcept {
     ct::test(
-        "Generation: known reports preserve effects and omit unnecessary report work",
+        "Generation: static reports disappear while runtime conditions retain report work",
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -87,9 +87,9 @@ const ct::Suite tests([] static noexcept {
                 assertions += query.assertions;
                 calls += query.calls;
             }
-            ct::expect(branches == 0uz);
-            ct::expect(writers == 0uz);
-            ct::expect(assertions == 1uz);
+            ct::expect(branches == 1uz);
+            ct::expect(writers == 1uz);
+            ct::expect(assertions == 2uz);
             ct::expect(calls == 1uz);
         }
     );

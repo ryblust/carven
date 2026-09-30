@@ -101,11 +101,24 @@ const ct::Suite tests([] static noexcept {
             );
 
             const auto function_callable = compilation.reserve_callable_declaration();
+            const auto staged_callable = compilation.reserve_callable_declaration();
             const auto first_closure_callable = compilation.reserve_callable_declaration();
             const auto second_closure_callable = compilation.reserve_callable_declaration();
             compilation.define_callable_contract(
                 function_callable,
                 callable_contract(integer, empty_failures)
+            );
+            compilation.define_callable_contract(
+                staged_callable,
+                ConstructionCallableContract {
+                    .parameters =
+                        {{.stage = ParameterStage::Static,
+                          .access = AccessMode::Read,
+                          .type = integer}},
+                    .result = integer,
+                    .failures = empty_failures,
+                    .policy = FailureContractPolicy::Inferred,
+                }
             );
             compilation.define_callable_contract(
                 first_closure_callable,
@@ -140,6 +153,23 @@ const ct::Suite tests([] static noexcept {
             const auto function = compilation.intern_type(
                 CanonicalType {
                     .value = FunctionTypeValue {.callable = function_callable},
+                }
+            );
+            const auto staged_function = compilation.intern_type(
+                CanonicalType {
+                    .value = FunctionTypeValue {.callable = staged_callable},
+                }
+            );
+            const auto ordinary_parameter_view = compilation.append_construction_type(
+                ConstructionType {
+                    .value = ConstructionCallableViewTypeValue {
+                        .parameters =
+                            {{.stage = ParameterStage::Runtime,
+                              .access = AccessMode::Read,
+                              .type = integer}},
+                        .result = integer,
+                        .failures = empty_failures,
+                    },
                 }
             );
             const auto first_closure = compilation.intern_type(
@@ -196,6 +226,9 @@ const ct::Suite tests([] static noexcept {
             ct::expect(!(type_shapes_compatible(compilation, boolean, integer)));
             ct::expect(type_shapes_compatible(compilation, view, widened_view));
             ct::expect(type_shapes_compatible(compilation, function, view));
+            ct::expect(
+                !type_shapes_compatible(compilation, staged_function, ordinary_parameter_view)
+            );
             ct::expect(type_shapes_compatible(compilation, first_closure, view));
             ct::expect(!(type_shapes_compatible(compilation, first_closure, second_closure)));
             ct::expect(type_shapes_compatible(compilation, nested_view, nested_widened_view));

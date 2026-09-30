@@ -28,6 +28,4 @@ const "" {}
 test "comment" { // retained
 }
 
-const "blank" {
-
-}
+const "blank" {}

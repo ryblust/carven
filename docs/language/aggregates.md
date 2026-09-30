@@ -62,7 +62,7 @@ Structural display prints the class name without expanding its fields. Generated
 C++ represents checked operations as ordinary functions. External C++
 implementations follow their explicit interoperation contracts.
 
-Required constant evaluation rejects class values and operations. Class
+Static execution rejects class values and operations. Class
 representation patterns, nested class declarations, and C++ import/export
 methods are invalid.
 
@@ -74,7 +74,7 @@ as construction of that record. Named fields and empty initialization are
 supported; positional construction retains its explicit type. Empty initialization
 follows the [default-initialization rules](#structures-and-arrays), including
 in-class construction of an empty class. Contextual construction checks class
-representation access, fields, ownership, borrowing, and constant-execution admission.
+representation access, fields, ownership, borrowing, and static-execution admission.
 
 Expected types flow from declared function and callable results, annotated
 bindings, assignment destinations, resolved Carven parameters, record fields,
@@ -139,7 +139,7 @@ retain their separate forms. Every completed structure construction still
 initializes every field exactly once. Local binding declarations continue to
 require an initializer, and array literals retain their exact element-count rules.
 
-The same defaults apply during runtime, interpretation and required constant
+The same defaults apply during runtime, interpretation and static
 execution, within each execution mode's admitted type and operation subset.
 Default construction does not extend borrowed lifetimes or relax access rules.
 Constant results follow the freezing rules; default owning text remains

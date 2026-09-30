@@ -1,0 +1,126 @@
+// Explicit 32-byte operations; no automatic vectorization or runtime dispatch.
+export struct ByteBlock {
+    value: u8x32,
+    active: mask32,
+    offset: usize,
+    len: usize,
+}
+
+export const fn block_count(bytes: [u8]) -> usize {
+    let full = bytes.len() / 32;
+    if bytes.len() % 32 == 0 { return full; }
+    return full + 1;
+}
+
+// offset may equal len: the returned block is empty and has no active lanes.
+export const fn load_block(bytes: [u8], offset: usize) -> ByteBlock {
+    assert(offset <= bytes.len());
+    var count = bytes.len() - offset;
+    if count > 32 { count = 32; }
+    return {
+        value: u8x32::load_partial(bytes, offset, 0),
+        active: mask32::prefix(count),
+        offset: offset,
+        len: count
+    };
+}
+
+export const fn count_byte(bytes: [u8], needle: u8) -> usize {
+    var count: usize = 0;
+    for index in 0..block_count(bytes) {
+        let block = load_block(bytes, index * 32);
+        count += ((block.value == needle) & block.active).count();
+    }
+    return count;
+}
+
+export const fn first_or(mask: mask32, fallback: usize) -> usize => mask.first_or(fallback);
+
+export const fn find_byte(bytes: [u8], needle: u8) -> usize {
+    for index in 0..block_count(bytes) {
+        let block = load_block(bytes, index * 32);
+        let matched = (block.value == needle) & block.active;
+        if matched.any() { return block.offset + first_or(matched, 32); }
+    }
+    return bytes.len();
+}
+
+export const fn ascii_digit(bytes: u8x32) -> mask32 => (bytes >= 0x30) & (bytes <= 0x39);
+
+export const fn ascii_whitespace(bytes: u8x32) -> mask32 => (bytes == 0x20)
+    | (bytes == 0x09)
+    | (bytes == 0x0a)
+    | (bytes == 0x0d);
+
+export const fn ascii_lower(bytes: u8x32) -> u8x32 => ((bytes >= 0x41) & (bytes <= 0x5a)).select(
+    bytes + 0x20,
+    bytes
+);
+
+// The static contract is ordinary Carven syntax and is retained by wrappers.
+export const fn extract(left: u8x32, right: u8x32, const offset: usize) -> u8x32 {
+    return left.extract(right, offset);
+}
+
+export const fn shift_in(previous: u8x32, current: u8x32, const count: usize) -> u8x32 {
+    return extract(previous, current, 32 - count);
+}
+
+// Logical lane-wise shifts: zero fill, discard shifted-out bits, accept 0..7.
+export const fn shift_left(value: u8x32, const count: usize) -> u8x32 {
+    return value.shift_left(count);
+}
+
+export const fn shift_right(value: u8x32, const count: usize) -> u8x32 {
+    return value.shift_right(count);
+}
+
+private const fn checked_pattern(indices: [u8; 32]) -> [u8; 32] {
+    for index in indices {
+        assert(index < 32);
+    }
+    return indices;
+}
+
+export const fn swizzle(value: u8x32, const indices: [u8; 32]) -> u8x32 {
+    const checked = checked_pattern(indices);
+    return value.lookup(u8x32::from_array(checked));
+}
+
+// Writable fixed arrays are explicit. Read-only slices never grant write access.
+export const fn store(value: u8x32, &destination: [u8; 32]) {
+    destination = value.to_array();
+}
+
+export const fn store_partial(value: u8x32, &destination: [u8; 32], count: usize) {
+    assert(count <= 32);
+    let lanes = value.to_array();
+    for index in 0..count {
+        destination[index] = lanes[index];
+    }
+}
+
+// Return the length of the leading ASCII run. Short tails use ordinary scalar reads.
+export const fn ascii_prefix(bytes: [u8]) -> usize {
+    var offset: usize = 0;
+    while bytes.len() - offset >= 64 {
+        let first = u8x32::load(bytes, offset);
+        let second = u8x32::load(bytes, offset + 32);
+        if ((first | second) >= 0x80).any() {
+            let first_non_ascii = first >= 0x80;
+            if first_non_ascii.any() { return offset + first_or(first_non_ascii, 32); }
+            return offset + 32 + first_or(second >= 0x80, 32);
+        }
+        offset += 64;
+    }
+    while bytes.len() - offset >= 32 {
+        let non_ascii = u8x32::load(bytes, offset) >= 0x80;
+        if non_ascii.any() { return offset + first_or(non_ascii, 32); }
+        offset += 32;
+    }
+    while offset < bytes.len() {
+        if bytes[offset] >= 0x80 { return offset; }
+        offset += 1;
+    }
+    return offset;
+}

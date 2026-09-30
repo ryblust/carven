@@ -112,14 +112,11 @@ auto BodyElaborator::append_statement(
 ) noexcept -> void {
     auto& destination = regions.back();
     const auto statement_failures = draft().add_empty_failure_term();
-    auto statement_exits_test = false;
     const auto add = [&](const SemanticExpression& child) noexcept {
         draft().add_failure_contribution(statement_failures, child.failures.term());
-        statement_exits_test |= child.exits_test;
     };
     const auto add_region = [&](const SemanticRegion& child) noexcept {
         draft().add_failure_contribution(statement_failures, child.failures.term());
-        statement_exits_test |= child.exits_test;
         if (child.result.has_value()) {
             add(*child.result);
         }
@@ -141,10 +138,16 @@ auto BodyElaborator::append_statement(
             },
             [&](const SemThrow& node) noexcept {
                 add(node.value);
-                draft().add_failure_member(statement_failures, node.failure_type);
+                draft().add_thrown_failure_member(
+                    statement_failures,
+                    node.failure_type,
+                    statement_origin
+                );
             },
             [&](const SemExpressionStatement& node) noexcept { add(node.expression); },
             [&](const SemInitialize& node) noexcept { add(node.initializer); },
+            [](const SemStaticBinding&) static noexcept {},
+            [](const SemConstBlock&) static noexcept {},
             [&](const SemAssign& node) noexcept {
                 add(node.target);
                 add(node.value);
@@ -153,10 +156,6 @@ auto BodyElaborator::append_statement(
                 add_region(*node.initializer);
                 if (node.condition.has_value()) {
                     add(*node.condition);
-                    const auto known = known_boolean_constant(draft(), node.condition->constant);
-                    if (known.has_value() && !*known) {
-                        return;
-                    }
                 }
                 add_region(*node.body);
                 add_region(*node.steps);
@@ -165,13 +164,15 @@ auto BodyElaborator::append_statement(
                 add(node.source);
                 add_region(*node.body);
             },
+            [](const SemExpandedLoop&) static noexcept {
+                invariant_violation("expanded loop reached generic body construction");
+            },
             [&](const OwnedSemanticRegion& node) noexcept { add_region(*node); },
         }
     );
     destination.failures = BodyFailures(
         draft().add_union_failure_term({destination.failures.term(), statement_failures})
     );
-    destination.exits_test |= statement_exits_test;
     destination.statements.push_back(
         {.origin = statement_origin,
          .lifetime = active_full_expression.value_or(frames.back().lifetime),

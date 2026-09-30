@@ -1,13 +1,9 @@
-struct String {
-    ignored: i32,
-}
-
 fn make(String: i32) -> String {
     let _ = String;
     return (String::from_str)("builtin");
 }
 
-test "String: builtin type and factory lookup precede nominal declarations" {
+test "String: builtin factory lookup is independent of local value names" {
     let text: String = make(42);
     check(text == "builtin");
 }

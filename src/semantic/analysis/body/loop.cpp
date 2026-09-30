@@ -61,34 +61,25 @@ auto BodyElaborator::c_style_for_statement(
     }
     auto initializer = std::move(regions.back());
     regions.pop_back();
-    auto condition = std::optional<SemanticExpression>();
-    auto known = std::optional<bool>(true);
-    if (header.condition.has_value()) {
-        const auto id = *header.condition;
-        begin_full_expression(ast.expression(id).span);
-        auto value = (co_await expression(id, draft().builtin_type(BuiltinType::Bool)));
-        if (!value.has_value()) {
-            co_return std::unexpected(value.error());
-        }
-        known =
-            known_boolean_constant(draft(), active_builder().known_constant(value->expression()));
-        auto checked = require_bool(*value, ast.expression(id).span);
-        if (!checked.has_value()) {
-            co_return std::unexpected(checked.error());
-        }
-        condition = std::move(*checked);
-        end_full_expression(ast.expression(id).span);
+    const auto condition_span = ast.expression(header.condition).span;
+    begin_full_expression(condition_span);
+    auto value = (co_await expression(header.condition, draft().builtin_type(BuiltinType::Bool)));
+    if (!value.has_value()) {
+        co_return std::unexpected(value.error());
     }
+    auto condition = require_bool(*value, condition_span);
+    if (!condition.has_value()) {
+        co_return std::unexpected(condition.error());
+    }
+    end_full_expression(condition_span);
     const auto condition_reachable = reachable;
     push_frame(((ast.block(source.body))).span);
     regions.push_back(empty_region(((ast.block(source.body))).span));
     loops.push_back({.has_break = false, .has_continue = false});
     reachable = true;
     auto body_result = co_await [&]() noexcept -> AnalysisTask<void> {
-        [[maybe_unused]] const auto path = BodyReferencePathGuard(
-            reference_path_reachable,
-            condition_reachable && (!known.has_value() || *known)
-        );
+        [[maybe_unused]] const auto path =
+            BodyReferencePathGuard(reference_path_reachable, condition_reachable);
         co_return (co_await block(source.body));
     }();
     if (!body_result.has_value()) {
@@ -97,7 +88,6 @@ auto BodyElaborator::c_style_for_statement(
     const auto step_reachable = reachable || loops.back().has_continue;
     auto body = std::move(regions.back());
     regions.pop_back();
-    const auto has_break = loops.back().has_break;
     loops.pop_back();
     pop_frame();
     reachable = true;
@@ -105,7 +95,7 @@ auto BodyElaborator::c_style_for_statement(
     for (const auto& step : header.steps) {
         [[maybe_unused]] const auto path = BodyReferencePathGuard(
             reference_path_reachable,
-            condition_reachable && step_reachable && reachable && (!known.has_value() || *known)
+            condition_reachable && step_reachable && reachable
         );
         begin_full_expression(step.span);
         auto result = (co_await step.value.visit(
@@ -134,11 +124,11 @@ auto BodyElaborator::c_style_for_statement(
     auto steps = std::move(regions.back());
     regions.pop_back();
     pop_frame();
-    reachable = condition_reachable && (known != true || has_break);
+    reachable = condition_reachable;
     append_statement(
         SemLoop {
             UniqueIndirect(std::move(initializer)),
-            std::move(condition),
+            std::move(*condition),
             UniqueIndirect(std::move(body)),
             UniqueIndirect(std::move(steps))
         },
@@ -181,11 +171,13 @@ auto BodyElaborator::range_for_statement(
                 }
             }
         }
-        auto value = (co_await expression(id, expected));
+        auto value = source.const_span ? co_await static_expression(id, expected)
+                                       : co_await expression(id, expected);
         if (!value) {
             co_return std::unexpected(value.error());
         }
         auto read_only = false;
+        auto integer_range = false;
         if (const auto* type = std::get_if<TypeID>(&value->type())) {
             const auto canonical = draft().type_copy(*type);
             if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
@@ -193,6 +185,7 @@ auto BodyElaborator::range_for_statement(
             } else if (const auto* range = std::get_if<RangeTypeValue>(&canonical.value)) {
                 element_type = range->element;
                 read_only = true;
+                integer_range = true;
             } else if (const auto* slice = std::get_if<SliceTypeValue>(&canonical.value)) {
                 element_type = slice->element;
                 read_only = true;
@@ -232,11 +225,9 @@ auto BodyElaborator::range_for_statement(
             for (const auto& frame : frames) {
                 for (const auto& [name, local] : frame.names) {
                     static_cast<void>(name);
-                    if (const auto* bound = std::get_if<BoundStorage>(&local.storage)) {
-                        stable |= place != nullptr
-                            && bound->binding == place->root
-                            && std::holds_alternative<SemBinding>(place->expression.value);
-                    }
+                    stable |= place != nullptr
+                        && local.storage.binding == place->root
+                        && std::holds_alternative<SemBinding>(place->expression.value);
                 }
             }
             if (!stable) {
@@ -255,6 +246,15 @@ auto BodyElaborator::range_for_statement(
         }
         if (header.write_marker.has_value()) {
             iterable = take_built(*value, ast.expression(id).span);
+        }
+        if (source.const_span) {
+            if (!integer_range || header.write_marker.has_value()) {
+                co_return std::unexpected(fail(
+                    *source.const_span,
+                    DiagnosticCode::ConstAdmission,
+                    "const for requires a Read integer range"
+                ));
+            }
         }
     }
     if (declared.has_value() && !compatible(*declared, *element_type)) {
@@ -286,6 +286,7 @@ auto BodyElaborator::range_for_statement(
                 .type = type,
                 .used = false,
                 .takeable = false,
+                .static_source = source.const_span.has_value(),
                 .role = header.write_marker.has_value() ? BodyLocalRole::Local
                                                         : BodyLocalRole::RangeRead,
                 .unused_candidate = std::nullopt
@@ -319,7 +320,8 @@ auto BodyElaborator::range_for_statement(
             header.write_marker.has_value() ? AccessMode::Write : AccessMode::Read,
             binding,
             std::move(*iterable),
-            UniqueIndirect(std::move(body))
+            UniqueIndirect(std::move(body)),
+            source.const_span.has_value() && !static_stage()
         },
         origin(span)
     );
@@ -330,8 +332,8 @@ auto BodyElaborator::for_statement(const ASTForStmt& source, Span span) noexcept
     -> AnalysisTask<void> {
     co_return co_await source.header.value.visit(
         Overloaded {
-            [&](const ASTCStyleForHeader& header) noexcept {
-                return c_style_for_statement(source, header, span);
+            [&](const ASTCStyleForHeader& header) noexcept -> AnalysisTask<void> {
+                co_return (co_await c_style_for_statement(source, header, span));
             },
             [&](const ASTRangeForHeader& header) noexcept {
                 return range_for_statement(source, header, span);
@@ -344,13 +346,12 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisTask<void> {
     const auto& source = ast.statement(id);
     const auto was_reachable = reachable;
     const auto previous_failures = regions.back().failures;
-    const auto previous_test_exit = regions.back().exits_test;
     ensure_reachable_diagnostics(source.span);
     [[maybe_unused]] const auto reference_path =
         BodyReferencePathGuard(reference_path_reachable, reachable);
     const auto owns_full_expression = source.value.visit(
         Overloaded {
-            [](const ASTConstantBlock&) static noexcept { return false; },
+            [](const ASTConstBlock&) static noexcept { return false; },
             [](const ASTVariableDecl&) static noexcept { return true; },
             [](const ASTAssignment&) static noexcept { return true; },
             [](const ASTUpdate&) static noexcept { return true; },
@@ -368,9 +369,8 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisTask<void> {
     }
     auto result = (co_await source.value.visit(
         Overloaded {
-            [&](const ASTConstantBlock& value) noexcept -> AnalysisTask<void> {
-                batch->defer_constant_block(source_module_id, value, visible_locals());
-                co_return {};
+            [&](const ASTConstBlock& value) noexcept {
+                return const_block_statement(value, source.span);
             },
             [&](const ASTVariableDecl& value) noexcept { return variable_statement(value); },
             [&](const ASTAssignment& value) noexcept { return assignment_statement(value); },
@@ -410,7 +410,6 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisTask<void> {
     }
     if (!was_reachable) {
         regions.back().failures = previous_failures;
-        regions.back().exits_test = previous_test_exit;
         reachable = false;
     }
     co_return result;

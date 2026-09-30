@@ -1,0 +1,3 @@
+import .index using run_index;
+
+run_index();

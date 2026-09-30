@@ -107,11 +107,11 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Target type naming: placement rejects foreign and out-of-range references",
+        "Target type aliases: sealing rejects foreign and out-of-range references",
         [] static noexcept {
             const auto cases = std::array {
-                std::pair("namespace-type-foreign", true),
-                std::pair("namespace-type-out-of-range", false),
+                std::pair("alias-type-foreign", true),
+                std::pair("alias-type-out-of-range", false),
             };
             ct::each(
                 cases,
@@ -120,15 +120,14 @@ const ct::Suite tests([] static noexcept {
                     const auto& [scenario, foreign] = item;
                     ct::expect(expect_termination(scenario, [&] noexcept {
                         auto builder = TargetUnitBuilder();
-                        const auto type = builder.intern_type({
+                        static_cast<void>(builder.intern_type({
                             .value =
                                 TargetIntrinsicType {
                                     .symbol = TargetSymbol::Bool,
                                     .type_argument_ids = {}
                                 },
                             .const_qualified = false,
-                        });
-                        builder.name_namespace_type(type, TargetIdentifier::from_spelling("Named"));
+                        }));
                         const auto invalid = TargetTestingFixture::type_id(
                             foreign ? TargetTestingFixture::unit_identity() : builder.identity(),
                             foreign ? 0u : 99u
@@ -148,74 +147,6 @@ const ct::Suite tests([] static noexcept {
                     }));
                 }
             );
-        }
-    );
-
-    ct::test(
-        "Target type naming: reopened qualified namespaces share occupied names",
-        [] static noexcept {
-            const auto identifier = [](std::string_view name) static noexcept {
-                return TargetIdentifier::from_spelling(name);
-            };
-            auto builder = TargetUnitBuilder();
-            const auto type = builder.intern_type({
-                .value =
-                    TargetIntrinsicType {.symbol = TargetSymbol::Bool, .type_argument_ids = {}},
-                .const_qualified = false,
-            });
-            builder.name_namespace_type(type, identifier("Query"));
-            auto first = std::vector<TargetItem>();
-            first.push_back(target_lowering_item(
-                TargetDecl {TargetTypeAlias {
-                    .name = identifier("Use"),
-                    .type = type,
-                }}
-            ));
-            auto second = std::vector<TargetItem>();
-            second.push_back(target_lowering_item(
-                TargetDecl {TargetStructForwardDecl {
-                    .name = identifier("Query"),
-                }}
-            ));
-            auto nested = std::vector<TargetItem>();
-            nested.push_back(target_lowering_item(
-                TargetNamespace {
-                    .name = TargetName(identifier("inner")),
-                    .items = std::move(second),
-                    .closing_comment = false,
-                }
-            ));
-            auto body = std::vector<TargetItem>();
-            body.push_back(target_lowering_item(
-                TargetNamespace {
-                    .name =
-                        TargetName::globally_qualified({identifier("outer"), identifier("inner")}),
-                    .items = std::move(first),
-                    .closing_comment = false,
-                }
-            ));
-            body.push_back(target_lowering_item(
-                TargetNamespace {
-                    .name = TargetName(identifier("outer")),
-                    .items = std::move(nested),
-                    .closing_comment = false,
-                }
-            ));
-            const auto unit = std::move(builder).finish(
-                {.preamble = {}, .body = std::move(body), .epilogue = {}}
-            );
-            const auto* named = std::get_if<TargetNamedType>(&unit.type(type).value);
-            if (!ct::expect(named != nullptr)) {
-                return;
-            }
-            ct::expect(named->name.is_globally_qualified());
-            const auto parts = named->name.components();
-            if (!ct::expect(parts.size() == 3uz)) {
-                return;
-            }
-            ct::expect(parts[0].spelling() == "outer");
-            ct::expect(parts[1].spelling() == "inner");
-            ct::expect(parts[2].spelling() != "Query");
         }
     );
 });

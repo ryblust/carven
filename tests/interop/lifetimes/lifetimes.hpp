@@ -59,6 +59,16 @@ inline auto event(std::int32_t value) noexcept -> std::int32_t {
     return value;
 }
 
+inline auto snapshot_after_write(
+    const std::int32_t& selected,
+    std::int32_t& first,
+    std::int32_t& second
+) noexcept -> std::int32_t {
+    first += 100;
+    second += 200;
+    return selected;
+}
+
 struct FixedOwner final {
     std::int32_t id;
 

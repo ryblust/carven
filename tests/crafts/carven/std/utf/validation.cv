@@ -353,3 +353,135 @@ test "UTF8: copied validators and rejected operations preserve pending constrain
         UTF8Error(_) => fail("a failed operation must preserve the pending sequence"),
     }
 }
+
+private const fn verify_simd_rejections(prefixes: [usize]) -> bool {
+    for prefix in prefixes {
+        for item in rejection_cases {
+            var data: [u8; 72] = {};
+            for index in 0..prefix {
+                data[index] = 0x61;
+            }
+            for index in 0..item.length {
+                data[prefix + index] = item.bytes[index];
+            }
+            var rejected = false;
+            try {
+                validate_utf8(data.as_slice().slice(0, prefix + item.length))?;
+            } catch {
+                UTF8Error(error) => {
+                    rejected = error.kind
+                        == item.error.kind
+                        && error.offset == prefix + item.error.offset
+                        && error.sequence_start == prefix + item.error.sequence_start;
+                },
+            }
+            assert(rejected);
+        }
+    }
+    return true;
+}
+
+const test "UTF8: constant errors preserve offsets before the narrow block boundary" {
+    check(verify_simd_rejections([0, 15]));
+}
+
+const test "UTF8: constant errors preserve offsets across the narrow block boundary" {
+    check(verify_simd_rejections([16, 17]));
+}
+
+const test "UTF8: constant errors preserve offsets across the wide block boundary" {
+    check(verify_simd_rejections([31, 32]));
+}
+
+const test "UTF8: constant errors preserve offsets after the wide block boundary" {
+    check(verify_simd_rejections([33]));
+}
+
+const test "UTF8: wide block validation accepts valid constant text" {
+    try {
+        validate_utf8("0123456789abcdef0123456789abcdef你好😀\u{0}abcdefghijklmnop".bytes)?;
+    } catch {
+        UTF8Error(_) => fail("valid SIMD constant input rejected"),
+    }
+}
+
+test "UTF8: SIMD and byte pushes agree across block boundaries and recovery" {
+    check(verify_simd_rejections([0, 15, 16, 17, 31, 32, 33, 63, 64, 65]));
+    for prefix in 0usize..=33 {
+        for item in rejection_cases {
+            var data: [u8; 40] = {};
+            for index in 0..prefix {
+                data[index] = 0x61;
+            }
+            for index in 0..item.length {
+                data[prefix + index] = item.bytes[index];
+            }
+            let bytes = data.as_slice().slice(0, prefix + item.length);
+            for split in 0..=bytes.len() {
+                var vector = UTF8Validator::create();
+                var scalar = UTF8Validator::create();
+                var vector_rejected = false;
+                var scalar_rejected = false;
+                var vector_error = item.error;
+                var scalar_error = item.error;
+                try {
+                    vector.feed(bytes.slice(0, split))?;
+                    vector.feed(bytes.slice(split, bytes.len()))?;
+                    vector.check_complete()?;
+                } catch {
+                    UTF8Error(error) => {
+                        vector_rejected = true;
+                        vector_error = error;
+                    },
+                }
+                try {
+                    for byte in bytes {
+                        scalar.push(byte)?;
+                    }
+                    scalar.check_complete()?;
+                } catch {
+                    UTF8Error(error) => {
+                        scalar_rejected = true;
+                        scalar_error = error;
+                    },
+                }
+                check(vector_rejected && scalar_rejected);
+                check(vector_error.kind == scalar_error.kind);
+                check(vector_error.offset == scalar_error.offset);
+                check(vector_error.sequence_start == scalar_error.sequence_start);
+                check(vector.processed_bytes() == scalar.processed_bytes());
+                check(vector.is_complete() == scalar.is_complete());
+                // Resume both states with identical bytes, including failures.
+                for byte in [0xa0u8, 0x80, 0x80, 0x61] {
+                    var vector_failed = false;
+                    var scalar_failed = false;
+                    try {
+                        vector.push(byte)?;
+                    } catch {
+                        UTF8Error(_) => { vector_failed = true; },
+                    }
+                    try {
+                        scalar.push(byte)?;
+                    } catch {
+                        UTF8Error(_) => { scalar_failed = true; },
+                    }
+                    check(vector_failed == scalar_failed);
+                    check(vector.processed_bytes() == scalar.processed_bytes());
+                    check(vector.is_complete() == scalar.is_complete());
+                }
+            }
+        }
+    }
+    let valid = "0123456789abcde😀0123456789abcdef你abcdefghijklmnop\u{0}abcdefghijklmnop".bytes;
+    for split in 0..=valid.len() {
+        var validator = UTF8Validator::create();
+        try {
+            validator.feed(valid.slice(0, split))?;
+            validator.feed(valid.slice(split, valid.len()))?;
+            validator.check_complete()?;
+            check(validator.processed_bytes() == valid.len());
+        } catch {
+            UTF8Error(_) => fail("valid split stream rejected"),
+        }
+    }
+}

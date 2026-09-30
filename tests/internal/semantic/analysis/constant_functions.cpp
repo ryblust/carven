@@ -77,10 +77,8 @@ auto require_text(
 namespace {
 
 const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Constant functions: execute for required constants and array extents",
-        [] static noexcept {
-            const auto program = analyze_test_program(R"(
+    ct::test("Constant functions: execute for constants and array extents", [] static noexcept {
+        const auto program = analyze_test_program(R"(
         const answer = increment(41);
         const repeated = increment(8);
         const fn increment(value: i32) -> i32 => value + 1;
@@ -91,41 +89,40 @@ const ct::Suite tests([] static noexcept {
             return values[2];
         }
     )");
-            require_integer(module_constant(program, "answer"), 42);
-            require_integer(module_constant(program, "repeated"), 9);
-            auto local_constants = 0uz;
-            visit_semantic_nodes(
-                function_body(program, "local").region(),
-                [&](const SemanticExpression& value) noexcept {
-                    ct::expect(!(std::holds_alternative<SemCall>(value.value)));
-                    if (const auto* constant = std::get_if<SemConstant>(&value.value)) {
-                        require_integer(program.constants().constant(constant->constant), 5);
-                        ++local_constants;
-                    }
+        require_integer(module_constant(program, "answer"), 42);
+        require_integer(module_constant(program, "repeated"), 9);
+        auto local_constants = 0uz;
+        visit_semantic_nodes(
+            function_body(program, "local").realized_region(),
+            [&](const SemanticExpression& value) noexcept {
+                ct::expect(!(std::holds_alternative<SemCall>(value.value)));
+                if (const auto* constant = std::get_if<SemConstant>(&value.value)) {
+                    require_integer(program.constants().constant(constant->constant), 5);
+                    ++local_constants;
                 }
-            );
-            ct::expect(local_constants == 1uz);
-            auto arrays = 0uz;
-            visit_semantic_nodes(
-                function_body(program, "array").region(),
-                [&](const SemanticExpression& value) noexcept {
-                    ct::expect(!(std::holds_alternative<SemCall>(value.value)));
-                    if (std::holds_alternative<SemArray>(value.value)) {
-                        const auto* type = std::get_if<ArrayTypeValue>(
-                            &program.types().type(value.type.resolved()).value
-                        );
-                        if (!ct::expect(type != nullptr)) {
-                            return;
-                        }
-                        ct::expect(type->extent == 3u);
-                        ++arrays;
+            }
+        );
+        ct::expect(local_constants == 1uz);
+        auto arrays = 0uz;
+        visit_semantic_nodes(
+            function_body(program, "array").region(),
+            [&](const SemanticExpression& value) noexcept {
+                ct::expect(!(std::holds_alternative<SemCall>(value.value)));
+                if (std::holds_alternative<SemArray>(value.value)) {
+                    const auto* type = std::get_if<ArrayTypeValue>(
+                        &program.types().type(value.type.resolved()).value
+                    );
+                    if (!ct::expect(type != nullptr)) {
+                        return;
                     }
+                    ct::expect(type->extent == 3u);
+                    ++arrays;
                 }
-            );
-            ct::expect(arrays == 1uz);
-            ct::expect(program.bodies().size() == 4uz);
-        }
-    );
+            }
+        );
+        ct::expect(arrays == 1uz);
+        ct::expect(program.bodies().size() == 4uz);
+    });
 
     ct::test(
         "Constant functions: repeated recursive evaluation owns one typed body per function",
@@ -208,7 +205,7 @@ const ct::Suite tests([] static noexcept {
             ct::expect(calls == 2uz);
             auto frozen_reads = 0uz;
             visit_semantic_nodes(
-                function_body(program, "local_text").region(),
+                function_body(program, "local_text").realized_region(),
                 [&](const SemanticExpression& value) noexcept {
                     ct::expect(!(std::holds_alternative<SemCall>(value.value)));
                     if (const auto* constant = std::get_if<SemConstant>(&value.value)) {

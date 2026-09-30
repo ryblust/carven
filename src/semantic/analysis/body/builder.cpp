@@ -1,9 +1,11 @@
 module carven:semantic.analysis.body.builder.impl;
 
 import :semantic.analysis.body.builder;
+import :semantic.analysis.constant.fold;
 import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.children;
+import :semantic.semir.completion;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
@@ -24,6 +26,20 @@ BodyBuilder::BodyBuilder(BodyReservation reservation, ProgramDraft& draft) noexc
       bindings(body_identity),
       patterns(body_identity) {}
 
+auto BodyBuilder::completion_patterns() const noexcept -> CompletionPatterns {
+    return {
+        .read =
+            [this](PatternID id) noexcept -> std::variant<PatternValue, ElaboratedPatternValue> {
+            return pattern_copy(id).value;
+        },
+        .single_case =
+            [this](EnumCaseID id) noexcept {
+                const auto owner = draft.construction_enum_case_declaration_copy(id).owner;
+                return draft.enum_cases(owner).size() == 1uz;
+            },
+    };
+}
+
 auto BodyBuilder::make_expression(
     ConstructionTypeRef type,
     LifetimeRegionID lifetime,
@@ -34,30 +50,28 @@ auto BodyBuilder::make_expression(
     if (const auto* known = std::get_if<SemConstant>(&value)) {
         constant = known->constant;
     }
+    // Aggregate values are static only when every initializer is static.
+    if (!constant) {
+        if (const auto* concrete = std::get_if<TypeID>(&type)) {
+            if (const auto* array = std::get_if<SemArray>(&value)) {
+                constant = array_constant(draft, *concrete, *array);
+            } else if (const auto* structure = std::get_if<SemStruct>(&value)) {
+                constant = struct_constant(draft, *concrete, *structure);
+            }
+        }
+    }
     auto failures = draft.add_empty_failure_term();
-    auto exits_test = false;
     const auto add = [&](const SemanticExpression& child) noexcept {
         draft.add_failure_contribution(failures, child.failures.term());
-        exits_test |= child.exits_test;
     };
     const auto add_region = [&](const SemanticRegion& region) noexcept {
         draft.add_failure_contribution(failures, region.failures.term());
-        exits_test |= region.exits_test;
         if (region.result.has_value()) {
             add(*region.result);
         }
     };
-    const auto truth = [&](const SemanticExpression& expression) noexcept -> std::optional<bool> {
-        if (expression.constant.has_value()) {
-            const auto& fact = draft.constant(*expression.constant);
-            if (const auto* boolean = std::get_if<BooleanConstant>(&fact.value)) {
-                return boolean->value;
-            }
-        }
-        return std::nullopt;
-    };
     const auto add_selected = [&](const auto& node) noexcept {
-        visit_evaluation_children(node, truth, [&](const auto& child) noexcept {
+        visit_evaluation_children(node, [&](const auto& child) noexcept {
             if constexpr (std::same_as<std::remove_cvref_t<decltype(child)>, SemanticRegion>) {
                 add_region(child);
             } else {
@@ -73,6 +87,7 @@ auto BodyBuilder::make_expression(
             [&]<typename Operation>(const Operation& node) noexcept
                 requires std::same_as<Operation, SemDefault>
                              || std::same_as<Operation, SemConstant>
+                             || std::same_as<Operation, SemUnreachable>
                              || std::same_as<Operation, SemBinding>
                              || std::same_as<Operation, SemCallable>
                              || std::same_as<Operation, SemEnumConstructor>
@@ -92,8 +107,7 @@ auto BodyBuilder::make_expression(
                              || std::same_as<Operation, SemIndex>
                              || std::same_as<Operation, SemPrint>
                              || std::same_as<Operation, SemFormat>
-                             || std::same_as<Operation, SemSliceIntrinsic>
-                             || std::same_as<Operation, SemTextIntrinsic>
+                             || std::same_as<Operation, SemIntrinsic>
                              || std::same_as<Operation, SemClosure>
                              || std::same_as<Operation, SemBorrowCallable>
                              || std::same_as<Operation, SemTake>
@@ -103,46 +117,25 @@ auto BodyBuilder::make_expression(
                 visit_semantic_children(node, add);
                 draft.add_failure_contribution(failures, node.callee_failures.term());
             },
-            [&](const SemReport& node) noexcept {
-                add_selected(node);
-                exits_test |= (node.kind == ReportKind::Require || node.kind == ReportKind::Fail)
-                    && (!node.condition || truth(**node.condition) != true);
-            },
+            [&](const SemReport& node) noexcept { add_selected(node); },
             [&](const SemTry& node) noexcept {
                 draft.add_failure_contribution(failures, node.residual_failures.term());
-                exits_test |= node.body->exits_test;
-                if (node.body->result.has_value()) {
-                    exits_test |= node.body->result->exits_test;
-                }
                 for (const auto& arm : node.arms) {
                     const auto handler = draft.add_empty_failure_term();
-                    auto executes_body = true;
                     for (const auto& range : arm.pattern_bounds) {
                         if (range.begin) {
                             draft.add_failure_contribution(handler, range.begin->failures.term());
-                            exits_test |= range.begin->exits_test;
                         }
                         if (range.end) {
                             draft.add_failure_contribution(handler, range.end->failures.term());
-                            exits_test |= range.end->exits_test;
                         }
                     }
                     if (arm.guard.has_value()) {
                         draft.add_failure_contribution(handler, arm.guard->failures.term());
-                        exits_test |= arm.guard->exits_test;
-                        const auto known = truth(*arm.guard);
-                        executes_body = !known.has_value() || *known;
                     }
-                    if (executes_body) {
-                        draft.add_failure_contribution(handler, arm.body.failures.term());
-                        exits_test |= arm.body.exits_test;
-                        if (arm.body.result.has_value()) {
-                            draft.add_failure_contribution(
-                                handler,
-                                arm.body.result->failures.term()
-                            );
-                            exits_test |= arm.body.result->exits_test;
-                        }
+                    draft.add_failure_contribution(handler, arm.body.failures.term());
+                    if (arm.body.result.has_value()) {
+                        draft.add_failure_contribution(handler, arm.body.result->failures.term());
                     }
                     draft.add_guarded_failure_contribution(
                         failures,
@@ -159,7 +152,7 @@ auto BodyBuilder::make_expression(
         .origin = origin,
         .constant = constant,
         .failures = BodyFailures(failures),
-        .exits_test = exits_test,
+        .exits_test = false,
         .operation_reachable = true,
         .category = SemanticValueCategory::Value,
         .value = std::move(value)
@@ -200,23 +193,6 @@ auto BodyBuilder::remember_initializer(
     if (const auto extent = known_sequence_extent(initializer)) {
         local_sequence_extents.emplace(id, *extent);
     }
-    const auto constant = known_constant(initializer);
-    if (!constant) {
-        return;
-    }
-    const auto& fact = draft.constant(*constant);
-    const auto type = draft.type_copy(fact.type);
-    const auto* builtin = std::get_if<BuiltinTypeValue>(&type.value);
-    if (std::holds_alternative<RangeTypeValue>(type.value)) {
-        local_constants.emplace(id, *constant);
-    }
-    if (builtin != nullptr
-        && (builtin_is_integer(builtin->kind)
-            || builtin->kind == BuiltinType::Bool
-            || builtin->kind == BuiltinType::Char
-            || builtin->kind == BuiltinType::Str)) {
-        local_constants.emplace(id, *constant);
-    }
 }
 
 auto BodyBuilder::known_callable(const SemanticExpression& expression) const noexcept
@@ -236,56 +212,9 @@ auto BodyBuilder::known_callable(const SemanticExpression& expression) const noe
     return std::nullopt;
 }
 
-auto BodyBuilder::known_constant(const SemanticExpression& expression) const noexcept
-    -> std::optional<ConstantID> {
-    if (expression.constant) {
-        return expression.constant;
-    }
-    if (const auto* binding = std::get_if<SemBinding>(&expression.value)) {
-        const auto found = local_constants.find(binding->binding);
-        if (found != local_constants.end()) {
-            return found->second;
-        }
-    }
-    // Operand facts are attached after source constant folding. Derive Boolean
-    // selection here so local facts never enter checked numeric folding.
-    const auto boolean = [&](const SemanticExpression& operand) noexcept -> std::optional<bool> {
-        if (operand.constant) {
-            if (const auto* value =
-                    std::get_if<BooleanConstant>(&draft.constant(*operand.constant).value)) {
-                return value->value;
-            }
-        }
-        return std::nullopt;
-    };
-    auto value = std::optional<bool>();
-    if (const auto* unary = std::get_if<SemUnary>(&expression.value);
-        unary != nullptr && unary->operation == UnaryOperator::LogicalNot) {
-        if (const auto operand = boolean(*unary->operand)) {
-            value = !*operand;
-        }
-    } else if (const auto* logic = std::get_if<SemShortCircuit>(&expression.value)) {
-        const auto conjunction = logic->operation == ShortCircuitOperator::And;
-        const auto left = boolean(*logic->left);
-        const auto right = boolean(*logic->right);
-        if (left) {
-            value = *left == conjunction ? right : left;
-        } else if (right && *right != conjunction) {
-            value = right;
-        }
-    }
-    if (value) {
-        return draft.intern_constant(
-            {.type = draft.builtin_type(BuiltinType::Bool),
-             .value = BooleanConstant {.value = *value}}
-        );
-    }
-    return std::nullopt;
-}
-
 auto BodyBuilder::known_sequence_extent(const SemanticExpression& expression) const noexcept
     -> std::optional<std::uint64_t> {
-    if (const auto constant = known_constant(expression)) {
+    if (const auto constant = expression.constant) {
         const auto& fact = draft.constant(*constant);
         if (const auto* slice = std::get_if<SliceConstant>(&fact.value)) {
             return slice->elements.size();
@@ -303,8 +232,10 @@ auto BodyBuilder::known_sequence_extent(const SemanticExpression& expression) co
             return array->extent;
         }
     }
-    if (const auto* slice = std::get_if<SemSliceIntrinsic>(&expression.value)) {
-        return slice->result_extent;
+    if (const auto* intrinsic = std::get_if<SemIntrinsic>(&expression.value)) {
+        if (const auto* slice = std::get_if<SliceIntrinsicOperation>(&intrinsic->operation)) {
+            return slice->result_extent;
+        }
     }
     if (const auto* binding = std::get_if<SemBinding>(&expression.value)) {
         const auto found = local_sequence_extents.find(binding->binding);
@@ -346,7 +277,9 @@ auto BodyBuilder::finish(SemanticRegion region) && noexcept -> StructuredBodyDra
         .lifetime_regions = LifetimeRegionTree(std::move(lifetime_regions).seal()),
         .bindings = std::move(bindings).seal(),
         .patterns = std::move(patterns).seal(),
-        .region = std::move(region)
+        .region = std::move(region),
+        .residual = std::nullopt,
+        .specialized = std::nullopt,
     };
 }
 

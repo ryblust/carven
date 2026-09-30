@@ -102,7 +102,7 @@ const ct::Suite tests([] static noexcept {
                       fn bad() { var text = String {}; var input = String {}; text.append_format(f"{input.as_str()}/{change(&input)}"); })",
                  .code = DiagnosticCode::AccessBorrowConflict,
                  .primary_text = "text.clear()"},
-                {.name = "constant execution does not bypass alias checks",
+                {.name = "static execution does not bypass alias checks",
                  .source =
                      R"(const fn make() -> String { var text: String = "value"; text.append_format(f"{text}"); return text; } const result = make();)",
                  .code = DiagnosticCode::AccessBorrowConflict,

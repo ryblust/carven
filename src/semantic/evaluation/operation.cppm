@@ -6,6 +6,7 @@ import :semantic.semir.constant;
 import :semantic.semir.constant_access;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
+import :semantic.semir.simd;
 import :semantic.semir.type;
 import std;
 
@@ -22,6 +23,7 @@ enum class ConstantEvaluationFailure {
     FloatingLiteralOutOfRange,
     IntegerLiteralNotRepresentable,
     SliceOutOfBounds,
+    SIMDOutOfBounds,
 };
 
 struct ConstantEvaluationDiagnostic final {
@@ -173,3 +175,18 @@ auto known_pattern_match(
         }
     });
 }
+
+auto evaluate_simd_constant_value(
+    const ExecutionValueAccess& values,
+    SIMDIntrinsic intrinsic,
+    BuiltinType owner,
+    std::span<const ConstantFact> inputs,
+    TypeID result
+) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+auto fold_simd_constant(
+    const ExecutionValueAccess& values,
+    SIMDIntrinsic intrinsic,
+    BuiltinType owner,
+    std::span<const std::optional<ConstantID>> operands,
+    TypeID result
+) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;

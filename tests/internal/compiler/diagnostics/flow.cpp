@@ -26,21 +26,21 @@ const ct::Suite tests([] static noexcept {
                 {
                     .name = "value if return",
                     .source = "fn invalid() { let value = if true { return; 0 } else { 1 }; }",
-                    .code = DiagnosticCode::FlowTransferValueBranch,
+                    .code = DiagnosticCode::FlowTransferBoundary,
                     .primary_text = "return",
                 },
                 {
                     .name = "value match break",
                     .source = "fn invalid() { while true { "
                               "let value = match 0 { _ => { break; 0 }, }; break; } }",
-                    .code = DiagnosticCode::FlowTransferValueBranch,
+                    .code = DiagnosticCode::FlowTransferBoundary,
                     .primary_text = "break",
                 },
                 {
                     .name = "value try continue",
                     .source = "fn invalid() { while true { "
                               "let value = try { continue; 0 } catch { _ => 0, }; break; } }",
-                    .code = DiagnosticCode::FlowTransferValueBranch,
+                    .code = DiagnosticCode::FlowTransferBoundary,
                     .primary_text = "continue",
                 },
                 {

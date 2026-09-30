@@ -24,11 +24,11 @@ As with interpolation, scalar Read values are saved and String Read values alias
 their owners. Text views retain their backing throughout argument evaluation
 and printing.
 
-Direct printing is admitted in functions executed at compile time, `const` blocks and `const test` for
-the types supported by constant execution. Required constant execution delivers
+Direct printing is admitted in functions executed in the static stage, `const` blocks and `const test` for
+the types supported by static execution. Static execution delivers
 output synchronously to the compiler host; runtime calls use the runtime streams. Declaring a function
 does not itself execute it. Optional precomputation does not produce
-compile-time output or remove required runtime printing. Printing follows the
+static-stage output or remove required runtime printing. Printing follows the
 same argument, separator, newline, and text rules in both stages. Output bytes
 consume the root's cumulative text-work budget. Completed output remains observable
 if later execution fails.
@@ -125,10 +125,11 @@ outward failures must declare an explicit `throw` contract, including a
 
 Normal completion produces process status zero; a declared Carven result, if
 present, is not a process exit status. A typed failure that escapes either entry
-produces the host C++ `EXIT_FAILURE` status. The entry wrapper neither prints
-failure payload nor converts it to a C++ exception. Locals, returned values, and
-failure payloads follow their ordinary cleanup rules before process completion.
-Catching a failure and completing normally still produces status zero.
+produces the host C++ `EXIT_FAILURE` status and one report on stderr containing
+its type and structural payload. The entry call completes ordinary local cleanup
+before the wrapper reports the failure. The wrapper retains the failure payload
+through reporting and destroys it before process completion. Catching a failure
+and completing normally produces status zero and no failure report.
 
 ```carven
 struct ConfigError {}
@@ -136,7 +137,18 @@ fn load_config() throw ConfigError { throw ConfigError {}; }
 fn main() throw ConfigError { load_config()?; }
 ```
 
-This program completes with a failure process status and no automatic output.
+This program completes with a failure process status and reports:
+
+```text
+main.cv:3:1: error: failure 'main.ConfigError' escaped the program entry
+  failure: ConfigError {}
+  note: program exited with a failure status
+```
+
+Native execution locates the report at the entry declaration, since a failure
+value carries no source position. The interpreter reports the same payload under
+`CV-INTERPRET-EXECUTION` and locates it at the `throw` statement with its call
+path.
 
 The command-line parameter is an opaque entry-only value. Its C++
 runtime representation is not a Carven sequence contract and does not make the
@@ -147,10 +159,10 @@ must be unique within its module and cannot be `main`. Tests participate in
 parsing and semantic analysis regardless of whether the compiler is asked to
 emit test artifacts. A test must handle every failure.
 
-`const test "name" { ... }` explicitly selects compile-time execution. The
+`const test "name" { ... }` explicitly selects static execution. The
 string is optional for both `test` and `const test`; anonymous failures report
 the test's file, line, and column. Explicit names must be unique within a module.
-Its body uses the constant-execution operation and type subset, including direct
+Its body uses the static-execution operation and type subset, including direct
 `const fn` calls, calls through local bindings of named `const fn`, printing, and
 test operations. Unsupported operations are diagnosed when executed. Each static test executes once
 after body construction during semantic analysis, regardless of test artifact
@@ -163,7 +175,7 @@ Ordinary `test` bodies retain runtime execution.
 Static `check` failures are compilation errors and execution continues. Failed
 `require` and `fail` stop the current test, including nested Carven calls; the
 next static test still executes. Execution errors and resource exhaustion also
-stop the current test. Test operations in a required constant initializer have
+stop the current test. Test operations in a `const` initializer have
 no active test and are rejected when executed. Static execution validates the
 executed semantic operations; generated C++ and native behavior require runtime
 tests.
@@ -197,7 +209,9 @@ signature, for example `let stop: fn() -> void = fail;`. It then follows ordinar
 callable-view borrowing and failure-widening rules. No testing context argument
 is exposed to source code. The runner supplies the current test context for
 `check`, `require`, and `fail` along the synchronous Carven call chain. Using these
-operations without an active test violates the runtime contract.
+operations without an active test violates the runtime contract. Native execution
+reports the operation's source position and aborts; interpreted execution
+diagnoses the same position.
 
 Direct `assert`, `check`, and `require` calls evaluate their condition exactly
 once. Only a false condition evaluates the optional message, once and after
@@ -209,7 +223,7 @@ the callee receives already evaluated values.
 `assert` requires no test context and is always enabled, independently of native
 build configuration and `NDEBUG`. Native failure reports to stderr and aborts the
 process, without ordinary stack cleanup. Interpreted failure stops the whole
-execution, including any remaining tests. Compile-time failure emits `CV-ASSERT`
+execution, including any remaining tests. A failure in the static stage emits `CV-ASSERT`
 and stops the current evaluation. Assertions are not typed failures and cannot
 be recovered by `try`. When a native assertion fails in a test, the report
 includes its module and either its explicit test name or its source location.
@@ -242,15 +256,26 @@ Reports are emitted when the operation fails. Each failure starts with
 `operands`, and `message` when
 present. Each failure carries its own test context. Multi-line fields use an
 indented block; an explicitly empty message appears as `message: ""`.
-Compile-time diagnostics retain their error codes and source excerpts and use
+Static-stage diagnostics retain their error codes and source excerpts and use
 the same condition, operand, and message layout.
 A final note identifies a stopped test or aborted execution. An aborted run has
 no completion summary.
 
+A runtime trap uses the same layout. Division or remainder by zero, an
+out-of-width shift, an out-of-bounds index, and an invalid scalar conversion
+report `file:line:column: error: description`, the active `test` context, and
+`note: execution aborted`. An index trap adds `index` and `length` fields. A
+direct native support call uses the C++ position supplied by its runtime API.
+Generated checks and interpreted checks use the Carven operation's position.
+A trap ends the interpreted run, including remaining tests, without a completion
+summary.
+
 An outer comparison in a direct `assert`, `check`, or `require` condition reports
 both operand spellings and structural values on failure. An outer `&&` or `||`
 reports the two Boolean subexpressions;
-the skipped operand is marked `<not evaluated>`. Parentheses preserve this
+the skipped operand is marked `<not evaluated>`. An operand whose displayed value
+repeats its source spelling, such as a literal, is omitted; a condition with no
+remaining operand has no `operands` field. Parentheses preserve this
 behavior. Nested operations are evaluated normally; explanations do not recursively
 trace their internals or search for a first differing field. Indirect builtin
 calls and other condition forms retain their condition/message reporting.
@@ -269,11 +294,11 @@ The following table lists selected semantic diagnostics in the current compiler:
 
 | Code | Severity | Condition |
 | --- | --- | --- |
-| `CV-CONST-CYCLE` | Error | Required constant facts form a dependency cycle |
+| `CV-CONST-CYCLE` | Error | Constants or static stages form a dependency cycle |
 | `CV-CONST-EXPORTED-TYPE` | Error | An exported module constant omits its explicit type |
 | `CV-CONST-ADMISSION` | Error | A required expression or a `const fn` capability proof encounters an unsupported operation |
-| `CV-CONST-EVALUATION` | Error | Required execution cannot produce a supported result |
-| `CV-CONST-LIMIT` | Error | Constant execution exceeds a resource budget |
+| `CV-CONST-EVALUATION` | Error | Static execution cannot produce a supported result |
+| `CV-CONST-LIMIT` | Error | Static execution exceeds a resource budget |
 | `CV-CONST-TEST` | Error | A static test reports failure, or a test operation executes without an active static test |
 | `CV-CPP-IDENTIFIER` | Error | A C++ API path or global provider name cannot be represented by generated C++ |
 | `CV-CPP-API-PATH-COLLISION` | Error | A function and namespace require the same prefix in the public C++ API tree |
@@ -282,7 +307,7 @@ The following table lists selected semantic diagnostics in the current compiler:
 | `CV-EFFECT-CATCH-NON-EXHAUSTIVE` | Error | A catch leaves a protected failure unhandled |
 | `CV-EFFECT-THROW-PUBLISHED` | Error | An explicit entry or published callable has failures without a `throw` contract |
 | `CV-FLOW-MISSING-RETURN` | Error | A reachable path of a value-returning callable omits its result |
-| `CV-FLOW-TRANSFER-VALUE-BRANCH` | Error | `return`, `break`, or `continue` crosses a value-control boundary |
+| `CV-FLOW-TRANSFER-BOUNDARY` | Error | `return`, `break`, or `continue` crosses a value-control branch or a `const` block |
 | `CV-FLOW-UNREACHABLE-MATCH-ARM` | Warning | A match arm pattern is fully covered by preceding unguarded arms; the primary location is that pattern span |
 | `CV-LAMBDA-CAPTURE-UNUSED` | Warning | An explicit lambda capture is unused |
 | `CV-LINT-UNUSED-IMPORT` | Warning | An import selects no uniquely referenced binding |

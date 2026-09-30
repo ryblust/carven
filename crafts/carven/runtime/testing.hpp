@@ -57,21 +57,10 @@ auto native_test_result(Outcome<Result, TestStopped, Failures...>&& outcome) noe
     }
 }
 
-namespace detail {
-
-[[noreturn]] inline auto testing_contract_error() noexcept -> void {
-    std::fputs("carven testing contract error\n", stderr);
-    std::abort();
-}
-
-} // namespace detail
-
 struct TestFailure final {
     std::string_view module_name;
     std::string_view case_name;
-    std::string_view file;
-    std::uint32_t line;
-    std::uint32_t column;
+    SourceSite site;
     std::string_view operation;
     std::optional<std::string_view> condition;
     std::optional<std::string_view> message;
@@ -84,9 +73,7 @@ namespace detail {
 
 inline auto default_reporter(const TestFailure& failure) noexcept -> void {
     write_failure(
-        failure.file,
-        failure.line,
-        failure.column,
+        failure.site,
         failure.operation,
         failure.condition,
         failure.message,
@@ -110,7 +97,7 @@ public:
 
     auto begin_case(std::string_view module_name, std::string_view case_name) noexcept -> void {
         if (active.has_value()) {
-            detail::testing_contract_error();
+            trap("test case began before the previous case ended", SourceSite::native());
         }
         case_failed = false;
         previous_context = detail::active_test_context;
@@ -121,7 +108,7 @@ public:
 
     auto end_case() noexcept -> void {
         if (!active.has_value()) {
-            detail::testing_contract_error();
+            trap("test case ended without beginning", SourceSite::native());
         }
         detail::active_test_context = previous_context;
         active_test_report = previous_context != nullptr ? &*previous_context->active : nullptr;
@@ -132,24 +119,20 @@ public:
     }
 
     auto report_failure(
-        std::string_view file,
-        std::uint32_t line,
-        std::uint32_t column,
+        SourceSite site,
         std::string_view operation,
         std::optional<std::string_view> condition,
         std::optional<std::string_view> message,
         std::string_view explanation
     ) noexcept -> void {
         if (!active.has_value()) {
-            detail::testing_contract_error();
+            trap("test operation requires an active test", site);
         }
         case_failed = true;
         reporter({
             .module_name = active->module_name,
             .case_name = active->case_name,
-            .file = file,
-            .line = line,
-            .column = column,
+            .site = site,
             .operation = operation,
             .condition = condition,
             .message = message,
@@ -159,7 +142,7 @@ public:
 
     auto result() const noexcept -> int {
         if (active.has_value()) {
-            detail::testing_contract_error();
+            trap("test result requested during an active case", SourceSite::native());
         }
         return failures != 0 ? 1 : 0;
     }
@@ -186,11 +169,23 @@ private:
     std::optional<TestReportContext> active;
 };
 
-inline auto current_test() noexcept -> TestContext& {
+// A test operation outside a test traps at its own source position.
+inline auto current_test(SourceSite site) noexcept -> TestContext& {
     if (detail::active_test_context == nullptr) {
-        detail::testing_contract_error();
+        trap("test operation requires an active test", site);
     }
     return *detail::active_test_context;
+}
+
+// check, require, and fail report to the runner of the active test.
+inline auto report_test_failure(
+    SourceSite site,
+    std::string_view operation,
+    std::optional<std::string_view> condition,
+    std::optional<std::string_view> message,
+    std::string_view explanation
+) noexcept -> void {
+    current_test(site).report_failure(site, operation, condition, message, explanation);
 }
 
 } // namespace carven::runtime

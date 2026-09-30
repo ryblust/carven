@@ -13,10 +13,11 @@ import :semantic.semir.body;
 import :semantic.semir.decl;
 import :semantic.semir.ids;
 import :semantic.semir.program;
+import :semantic.semir.stage;
 import :semantic.semir.structured;
 import :semantic.semir.type;
-import :source.provenance.ids;
 import :source.provenance;
+import :source.provenance.ids;
 import :support.invariant;
 import :support.task;
 import :support.visit;
@@ -38,9 +39,17 @@ auto BodyRealizer::emit_return(
             if (!context.plan().failure_abi().members(signature.failures).empty()
                 || context.semantic().may_stop_test(callable->callable_id)) {
                 auto arguments = std::vector<TargetExpr>();
+                const auto& type = context.semantic().types().type(signature.result).value;
+                const auto* builtin = std::get_if<BuiltinTypeValue>(&type);
+                // Scalar results pass by value; others construct in place.
+                const auto direct = context.is_void(signature.result)
+                    || (builtin != nullptr && builtin->kind != BuiltinType::String)
+                    || std::holds_alternative<PointerTypeValue>(type);
                 if (value.has_value()) {
                     if (context.is_void(signature.result)) {
                         destination.emit(statement_expression(std::move(*value)));
+                    } else if (direct) {
+                        arguments.push_back(std::move(*value));
                     } else {
                         auto body = std::vector<TargetStmt>();
                         body.push_back(
@@ -60,9 +69,7 @@ auto BodyRealizer::emit_return(
                 value = call_expression(
                     static_member_expression(
                         context.callable_result(callable->callable_id),
-                        TargetIdentifier::from_spelling(
-                            context.is_void(signature.result) ? "success" : "success_from"
-                        )
+                        TargetIdentifier::from_spelling(direct ? "success" : "success_from")
                     ),
                     std::move(arguments)
                 );
@@ -322,24 +329,41 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                 if (!current_loop) {
                     invariant_violation("loop transfer has no target");
                 }
-                const auto& loop = *current_loop;
+                auto& loop = *current_loop;
                 if constexpr (std::same_as<Transfer, SemBreak>) {
-                    destination.terminate(
-                        generated_statement(TargetBreakStmt {}),
-                        loop.break_target
-                    );
-                } else if (loop.step) {
-                    destination.terminate(
-                        generated_statement(
-                            TargetGotoStmt {
-                                .label = *loop.step,
-                                .role = TargetJumpRole::ForLoopContinue
-                            }
-                        ),
-                        loop.target
-                    );
+                    if (loop.expanded && !loop.break_label) {
+                        loop.break_label = names.fresh(TargetTemporaryNameKind::Break);
+                    }
+                    if (loop.break_label) {
+                        destination.terminate(
+                            generated_statement(
+                                TargetGotoStmt {.label = *loop.break_label, .role = loop.jump_role}
+                            ),
+                            loop.break_target
+                        );
+                    } else {
+                        destination.terminate(
+                            generated_statement(TargetBreakStmt {}),
+                            loop.break_target
+                        );
+                    }
                 } else {
-                    destination.terminate(generated_statement(TargetContinueStmt {}), loop.target);
+                    if (loop.expanded && !loop.step) {
+                        loop.step = names.fresh(TargetTemporaryNameKind::Continue);
+                    }
+                    if (loop.step) {
+                        destination.terminate(
+                            generated_statement(
+                                TargetGotoStmt {.label = *loop.step, .role = loop.jump_role}
+                            ),
+                            loop.target
+                        );
+                    } else {
+                        destination.terminate(
+                            generated_statement(TargetContinueStmt {}),
+                            loop.target
+                        );
+                    }
                 }
                 co_return {};
             },
@@ -368,6 +392,12 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                 (co_await initialize_binding(value, destination));
                 co_return {};
             },
+            [](const SemStaticBinding&) static noexcept -> ContinuationTask<std::monostate> {
+                invariant_violation("static binding reached body realization");
+            },
+            [](const SemConstBlock&) static noexcept -> ContinuationTask<std::monostate> {
+                invariant_violation("const block reached body realization");
+            },
             [&](const SemAssign& value) noexcept -> ContinuationTask<std::monostate> {
                 (co_await assign(value, destination));
                 co_return {};
@@ -382,6 +412,10 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
             },
             [&](const SemRangeLoop& value) noexcept -> ContinuationTask<std::monostate> {
                 (co_await lower_range(value, destination));
+                co_return {};
+            },
+            [&](const SemExpandedLoop& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await lower_expanded_loop(value, destination));
                 co_return {};
             },
             }

@@ -370,6 +370,9 @@ auto ASTDumper::render_if_form(
 ) noexcept -> void {
     append_line(prefix, is_last, std::format("{}IfForm {}", field, format_dump_span(form.span)));
     const auto nested = child_prefix(prefix, is_last);
+    if (form.const_span) {
+        render_span_field(nested, false, "const", *form.const_span);
+    }
     for (auto index = 0uz; index < form.branches.size(); ++index) {
         const auto& branch = form.branches[index];
         if (index == 0) {

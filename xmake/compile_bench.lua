@@ -36,9 +36,9 @@ function workloads()
     for _, count in ipairs({16, 64, 256}) do
         local independent, chain, reversed = {}, {}, {}
         for index = 0, count - 1 do
-            table.insert(independent, string.format("fn f%d(x: i32) -> i32 { return x; }", index))
-            table.insert(chain, string.format("fn f%d(x: i32) -> i32 { return %s; }", index,
-                index + 1 < count and string.format("f%d(x)", index + 1) or "x"))
+            table.insert(independent, string.format("fn func%d(x: i32) -> i32 { return x; }", index))
+            table.insert(chain, string.format("fn func%d(x: i32) -> i32 { return %s; }", index,
+                index + 1 < count and string.format("func%d(x)", index + 1) or "x"))
         end
         for index = #chain, 1, -1 do
             table.insert(reversed, chain[index])
@@ -47,7 +47,7 @@ function workloads()
             {"caller_first", "Caller declared first", chain},
             {"callee_first", "Callee declared first", reversed}}) do
             table.insert(cases, {name = form[1] .. "_" .. count, label = form[2], size = count .. " functions",
-                source = table.concat(form[3], "\n") .. "\nfn main() { let _ = f0(1); }\n"})
+                source = table.concat(form[3], "\n") .. "\nfn main() { let _ = func0(1); }\n"})
         end
     end
     do
@@ -119,12 +119,12 @@ function workloads()
         for _, distinct in ipairs({false, true}) do
             local functions = {}
             for index = 0, count - 1 do
-                table.insert(functions, string.format("fn f%d() -> i32 { return %d; }",
+                table.insert(functions, string.format("fn func%d() -> i32 { return %d; }",
                     index, distinct and index or 1))
             end
             table.insert(cases, {name = (distinct and "distinct_constants_" or "repeated_constants_") .. count,
                 label = distinct and "Distinct constants" or "Repeated constants", size = count .. " functions",
-                source = table.concat(functions, "\n") .. "\nfn main() { let _ = f0(); }\n"})
+                source = table.concat(functions, "\n") .. "\nfn main() { let _ = func0(); }\n"})
         end
     end
     cases = {}
@@ -207,7 +207,7 @@ function main()
                 io.writefile(path.join(root, filename), case.source)
                 local results = benchmark.measure(samples, warmups, function ()
                     local status = os.execv(compiler, {"compile", "--stdout", "--linkage-domain=benchmark:compile", filename}, {
-                        curdir = root, stdout = os.nuldev(), stderr = errors, timeout = 60000,
+                        curdir = root, stdout = os.nuldev(), stderr = errors, timeout = 60000, try = true,
                     })
                     if status ~= 0 then
                         raise("%s: %s", case.name, io.readfile(errors) or "compiler failed")

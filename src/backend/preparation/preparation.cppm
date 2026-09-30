@@ -24,13 +24,20 @@ struct PreparedNativeConstruction final {
     std::vector<PreparedNativeArgument> arguments;
 };
 
+// A known, in-range lane index selects a template overload with a static bound.
+// Operand evaluation still precedes the operation in source order.
+struct PreparedSIMDLane final {
+    std::uint64_t index;
+};
+
 using OperationPreparation = std::variant<
     PreparedFormat,
     PreparedPrint,
     PreparedCallableAdaptation,
     PreparedUnary,
     PreparedBinary,
-    PreparedNativeConstruction>;
+    PreparedNativeConstruction,
+    PreparedSIMDLane>;
 
 // Plans own generated data and borrow semantic arguments from the program,
 // which must outlive preparation and realization.

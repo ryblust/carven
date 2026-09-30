@@ -4,11 +4,11 @@ import :backend.generation.linkage;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
+import :backend.target;
 import :backend.target.expr;
 import :backend.target.name;
 import :backend.target.symbol;
 import :backend.target.traversal;
-import :backend.target;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
@@ -26,6 +26,7 @@ struct AppendQuery final {
     std::vector<Entry> entries;
     std::vector<std::string> events;
     std::size_t owning_formats;
+    std::size_t boolean_writes;
 
     auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
 };
@@ -52,6 +53,9 @@ auto AppendQuery::enter_expression(const TargetExpr& expression, TargetExpressio
             || name->symbol == TargetSymbol::RuntimeFormatValidUTF8;
     }
     if (const auto* member = std::get_if<TargetMemberExpr>(&call->callee->value)) {
+        if (const auto* name = std::get_if<TargetIdentifier>(&member->name)) {
+            boolean_writes += name->spelling() == "boolean";
+        }
         if (const auto* name = std::get_if<TargetIdentifier>(&member->name);
             name != nullptr && name->spelling() == "append") {
             if (!ct::expect(call->arguments.size() == 1uz)) {
@@ -79,7 +83,8 @@ auto inspect_append(std::string source) noexcept -> AppendQuery {
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("formatted_append")}
     );
-    auto query = AppendQuery {.entries = {}, .events = {}, .owning_formats = 0uz};
+    auto query =
+        AppendQuery {.entries = {}, .events = {}, .owning_formats = 0uz, .boolean_writes = 0uz};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         ct::require(traverse_target_unit(unit.sections(), query));
@@ -160,7 +165,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Generation: known formatted append retains destination selection and hole effects",
+        "Generation: runtime formatted append retains destination selection and hole effects",
         [] static noexcept {
             const auto query = inspect_append(R"(
         fn select(&trace: i32) -> usize { trace += 1; return 0; }
@@ -171,7 +176,8 @@ const ct::Suite tests([] static noexcept {
     )");
             ct::expect(query.entries.empty());
             ct::expect(query.owning_formats == 0uz);
-            ct::expect(query.events == std::vector<std::string> {"select", "touch", "append"});
+            ct::expect_equal(query.boolean_writes, 1uz);
+            ct::expect(query.events == std::vector<std::string> {"select", "touch"});
         }
     );
 

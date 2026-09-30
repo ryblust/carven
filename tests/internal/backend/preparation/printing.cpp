@@ -12,23 +12,24 @@ namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
     ct::test(
-        "Print preparation: known scalar text retains the complete source operands",
+        "Print preparation: static scalar text preserves ordinary locals and runtime operands",
         [] static noexcept {
             const auto program = analyze_test_program(
                 "fn touch() -> bool { return true; } "
-                "fn output(dynamic: i32) { let known = 42; var changed = 3; "
-                "println(known, true, '我', touch() && false, \"raw\", f\"{7}\", 1.25, dynamic, changed); }"
+                "fn output(dynamic: i32) { let known = 42; const folded = 42; var changed = 3; "
+                "println(known, true, '我', touch() && false, \"raw\", f\"{7}\", 1.25, dynamic, changed, folded); }"
             );
-            const auto expected = std::array<std::optional<std::string_view>, 9uz> {
-                "42",
+            const auto expected = std::array<std::optional<std::string_view>, 10uz> {
+                std::nullopt,
                 "true",
                 "我",
-                "false",
+                std::nullopt,
                 std::nullopt,
                 std::nullopt,
                 "1.25",
                 std::nullopt,
                 std::nullopt,
+                "42",
             };
             auto count = 0uz;
             for (const auto entry : program.bodies().entries()) {

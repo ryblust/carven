@@ -26,7 +26,7 @@ auto construct_text_value(
     operands.push_back({.access = AccessMode::Read, .expression = std::move(*operand)});
     return site.finish_constructed(
         type,
-        SemTextIntrinsic {.intrinsic = intrinsic, .operands = std::move(operands)},
+        SemIntrinsic {.operation = intrinsic, .operands = std::move(operands)},
         std::move(state),
         span,
         known
@@ -41,7 +41,7 @@ auto construct_text_call(
     std::span<const ASTCallArgument> arguments,
     Span span
 ) noexcept -> ExpressionTask<typename Site::Value> {
-    if constexpr (Site::mode == ExpressionMode::RequiredRoot) {
+    if constexpr (Site::mode == ExpressionMode::StaticRoot) {
         if (intrinsic != TextIntrinsic::FromStr
             && intrinsic != TextIntrinsic::AsStr
             && intrinsic != TextIntrinsic::FromU32Unchecked) {
@@ -89,7 +89,7 @@ auto construct_text_call(
     }
     co_return site.finish_constructed(
         resolve_text_intrinsic_type(site.draft(), contract.result),
-        SemTextIntrinsic {.intrinsic = intrinsic, .operands = std::move(operands)},
+        SemIntrinsic {.operation = intrinsic, .operands = std::move(operands)},
         std::move(state),
         span
     );

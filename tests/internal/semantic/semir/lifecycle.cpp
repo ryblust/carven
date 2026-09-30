@@ -125,6 +125,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         .parameters =
             {
                 ConstructionCallableParameter {
+                    .stage = ParameterStage::Runtime,
                     .access = AccessMode::Read,
                     .type = boolean,
                 },

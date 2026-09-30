@@ -129,7 +129,7 @@ fn joined(p: ptr<i32>, flag: bool) -> i32 {
 }
 
 fn break_proof(p: ptr<i32>) -> i32 {
-    while true {
+    while {
         if p == nullptr { return 0; }
         break;
     }

@@ -19,7 +19,7 @@ spelling and parsing. Topic references define the rules for each language featur
 | Declare or call functions, create closures, or use callable views | [Functions and callable values](functions.md) |
 | Determine evaluation order, loop behavior, or match selection | [Evaluation and control flow](control-flow.md) |
 | Declare, propagate, catch, or rethrow a typed failure | [Failure contracts](failures.md) |
-| Evaluate constants, execute `const fn` or constant blocks, or freeze a result | [Values and constants](constants.md) |
+| Evaluate constants, execute `const fn` or `const` blocks, or freeze a result | [Values and constants](constants.md) |
 | Construct, borrow, mutate, or format Unicode text | [Text and interpolation](text.md) |
 | Use native names and types, C strings, source fragments, or C++ function boundaries | [C++ interoperation](interop.md) |
 | Print values, define an entry or test, or interpret an assertion or diagnostic | [Printing, entry points, and tests](execution.md) |
@@ -34,13 +34,13 @@ local validity, evaluation, and lifetime rules. For shared concepts, consult
 
 Some tasks cross a specific boundary:
 
-- For `const fn`, read [constant execution](constants.md#compile-time-function-execution)
+- For `const fn`, read [static execution](constants.md#static-execution-of-functions)
   alongside the ordinary [call rules](functions.md#functions-and-calls).
   For `const test`, the same executor subset applies, while
   [test ordering and assertions](execution.md#entry-points-and-tests) define the test behavior.
 - For slices, [runtime views](types.md#read-only-slices) borrow live backing;
   [frozen constant slices](constants.md#frozen-constant-slices) define publication
-  with static backing.
+  with program-lifetime backing.
 - For pointers, read the [local non-null checks](pointers.md#local-non-null-checks)
   and [native responsibility](pointers.md#native-representation-and-responsibility)
   together. Pointer target access does not establish general target liveness.

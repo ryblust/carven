@@ -2,6 +2,7 @@ module carven:semantic.analysis.decl.resolve.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
+import :diagnostics.suggestion;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.interop;
@@ -197,7 +198,7 @@ auto DeclResolver::publish_modules() noexcept -> void {
         }
         declaration.items.reserve(module_record.items.size());
         for (const auto& item : module_record.items) {
-            if (std::holds_alternative<CatalogConstantBlockForm>(item.form)) {
+            if (std::holds_alternative<CatalogConstBlockForm>(item.form)) {
                 continue;
             }
             declaration.items.push_back(item.form.visit(
@@ -206,8 +207,8 @@ auto DeclResolver::publish_modules() noexcept -> void {
                     [](StructID id) static noexcept -> ModuleItem { return id; },
                     [](EnumID id) static noexcept -> ModuleItem { return id; },
                     [](ModuleConstantID id) static noexcept -> ModuleItem { return id; },
-                    [](const CatalogConstantBlockForm&) static noexcept -> ModuleItem {
-                        invariant_violation("constant block has no runtime module item");
+                    [](const CatalogConstBlockForm&) static noexcept -> ModuleItem {
+                        invariant_violation("const block has no runtime module item");
                     },
                     [](const CatalogTestForm& test) static noexcept -> ModuleItem {
                         return test.test;
@@ -317,7 +318,7 @@ auto DeclResolver::run() noexcept -> AnalysisTask<void> {
         }
         static_cast<void>(validate_enum_codes(symbol));
     }
-    if (std::ranges::any_of(states, [](const State& state) noexcept {
+    if (std::ranges::any_of(states, [](const State& state) static noexcept {
             return std::holds_alternative<Unvisited>(state)
                 || std::holds_alternative<Resolving>(state);
         })) {
@@ -456,7 +457,11 @@ auto DeclResolver::select_symbol(
             module_id,
             origin,
             DiagnosticCode::NameUnresolved,
-            std::format("unresolved name '{}'", name)
+            std::format(
+                "unresolved name '{}'{}",
+                name,
+                spelling_suggestion(name, catalog.visible_names(module_id))
+            )
         ));
     }
     if (candidates.size() != 1uz) {
@@ -523,9 +528,9 @@ auto DeclResolver::ConstantScope::construction_requests() noexcept -> Constructi
     return resolver.requests;
 }
 
-auto DeclResolver::ConstantScope::resolve_nominal_qualifier(ASTExprID expression) noexcept
+auto DeclResolver::ConstantScope::resolve_type_qualifier(ASTExprID expression) noexcept
     -> AnalysisTask<std::optional<TypeID>> {
-    co_return (co_await resolver.resolve_nominal_qualifier(module_id, syntax, expression));
+    co_return (co_await resolver.resolve_type_qualifier(module_id, syntax, expression));
 }
 
 auto DeclResolver::ConstantScope::resolve_enum_case(

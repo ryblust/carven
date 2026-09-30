@@ -33,9 +33,7 @@ struct ExecutionFrame final {
     std::vector<ExecutionPlace> temporaries;
 };
 
-using ExecutionOperand = std::variant<ExecutionValue, ExecutionPlace>;
-
-class SemanticExecutor final {
+class SemanticExecutor final : private ExecutionArgumentAccess {
 public:
     SemanticExecutor(
         const ExecutionValueAccess& values,
@@ -51,25 +49,46 @@ public:
     auto evaluate_root(const SemanticExpression& source) noexcept -> ExecutionTask<ExecutionValue>;
     auto detach_result(ExecutionValue value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
+    // Reports a typed failure that left a root no handler encloses.
+    auto escaped(ExecutionFailure failure) noexcept -> ExecutionFailure;
     auto invoke(
-        FunctionID function,
+        CallableID callable,
         std::vector<ExecutionOperand> arguments,
         ProgramOriginID origin
     ) noexcept -> ExecutionTask<ExecutionValue>;
 
 private:
+    auto detach_argument(ExecutionOperand operand, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ExecutionValue> override;
     auto bind(ExecutionFrame& frame, std::size_t slot, ExecutionValue value) noexcept -> void;
     auto release(ExecutionFrame& frame, std::size_t slot) noexcept -> void;
     auto release_frame(ExecutionFrame& frame) noexcept -> void;
     auto release_temporaries(ExecutionFrame& frame, std::size_t begin) noexcept -> void;
     auto release_region(ExecutionFrame& frame, LifetimeRegionID lifetime) noexcept -> void;
+    auto simd(
+        ExecutionFrame& frame,
+        const SemIntrinsic& operation,
+        const SemanticExpression& source
+    ) noexcept -> ExecutionTask<ExecutionValue>;
     auto default_value(TypeID type, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
     auto fail(
         ProgramOriginID origin,
-        DiagnosticCode code,
+        ExecutionReason reason,
         std::string message,
-        std::optional<ReportKind> report_kind = std::nullopt
+        std::vector<ExecutionReportField> fields = {}
+    ) noexcept -> ExecutionFailure;
+    auto halt(ExecutionEvent event) noexcept -> ExecutionFailure;
+    auto trap(
+        ProgramOriginID origin,
+        ExecutionReason reason,
+        std::string message,
+        std::vector<ExecutionReportField> fields = {}
+    ) noexcept -> ExecutionFailure;
+    auto operation_failure(
+        ConstantEvaluationFailure failure,
+        ProgramOriginID origin,
+        std::string_view fallback
     ) noexcept -> ExecutionFailure;
     auto step(ProgramOriginID origin) noexcept -> ExecutionResult<void>;
     auto account_text(std::size_t bytes, ProgramOriginID origin) noexcept -> ExecutionResult<void>;
@@ -130,6 +149,9 @@ private:
         -> ExecutionTask<ExecutionOperand>;
     auto materialize(ExecutionOperand operand, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
+    // Detaches a value from execution storage and freezes it into a constant.
+    auto freeze(ExecutionValue value, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ConstantID>;
     auto expression(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
         -> ExecutionTask<ExecutionCompletion>;
     auto statement(ExecutionFrame& frame, const SemanticStatement& statement) noexcept
@@ -166,7 +188,7 @@ private:
     ) noexcept -> ExecutionResult<ExecutionValue>;
     auto text_intrinsic(
         ExecutionFrame& frame,
-        const SemTextIntrinsic& operation,
+        const SemIntrinsic& operation,
         TypeID result_type,
         ProgramOriginID origin
     ) noexcept -> ExecutionTask<ExecutionValue>;
@@ -194,7 +216,6 @@ private:
     std::map<ProgramSpellingID, ExecutionText> retained_text;
     std::vector<ProgramOriginID> calls;
     bool testing = false;
-    bool test_failed = false;
     std::size_t steps = 0;
     std::size_t text_work = 0;
     std::size_t aggregate_work = 0;

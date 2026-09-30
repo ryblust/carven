@@ -1,0 +1,58 @@
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{
+    Owner,
+    FixedOwner,
+    event,
+    mark,
+    reset,
+    matches,
+};
+
+enum StepFailure {
+    Stop,
+}
+
+fn advance_step(&index: i32) {
+    mark(7);
+    index += 1;
+}
+
+test "Lifetimes: closed loop steps finish each temporary before the next step" {
+    reset();
+    for var index = 0;
+        index < 3;
+        (FixedOwner { 2 }.probe(event(4), event(5))),
+        (Owner { 3 }.probe()),
+        advance_step(&index) {
+        let body = Owner { 1 };
+        if index == 0 { continue; }
+        if index == 2 { break; }
+        mark(8);
+    }
+    mark(6);
+    check(matches("1 -1 2 4 5 9 -2 3 13 -3 7 1 8 -1 2 4 5 9 -2 3 13 -3 7 1 -1 6 "));
+}
+
+fn fallible_step(&index: i32) throw StepFailure {
+    mark(7);
+    if index == 1 { throw StepFailure::Stop; }
+    index += 1;
+}
+
+fn steps_with_failure() throw StepFailure {
+    let outer = Owner { 4 };
+    for var index = 0; index < 3; (Owner { 2 }.probe()), fallible_step(&index)?, mark(8) {
+        let body = Owner { 1 };
+        continue;
+    }
+    mark(9);
+}
+
+test "Lifetimes: loop step failure leaves the enclosing function and skips later steps" {
+    reset();
+    try {
+        steps_with_failure()?;
+    } catch {
+        StepFailure(_) => mark(6),
+    }
+    check(matches("4 1 -1 2 12 -2 7 8 1 -1 2 12 -2 7 -4 6 "));
+}

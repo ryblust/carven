@@ -98,8 +98,10 @@ const ct::Suite tests([] static noexcept {
                 for (const auto entry : compilation.semantic().declarations().functions()) {
                     const auto source =
                         compilation.semantic().provenance().spelling(entry.value.name);
-                    const auto name =
-                        compilation.target().names().function_identifier(entry.id).spelling();
+                    const auto name = compilation.target()
+                                          .names()
+                                          .callable_identifier(entry.value.callable)
+                                          .spelling();
                     const auto expected = source == "test_leaf"
                         ? mode != TestGenerationMode::None
                         : !std::ranges::contains(absent, source);

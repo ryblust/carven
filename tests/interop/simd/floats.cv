@@ -1,0 +1,131 @@
+import std::simd.floats using { block_count, load_block, extract, swizzle, store, store_partial };
+
+const frozen = f32x8::from_array([1.0, -2.0, 0.5, 4.0, 1.0, -2.0, 0.5, 4.0]);
+const frozen_mask = frozen < 1.0;
+const frozen_zero = -f32x8::splat(0.0);
+const frozen_nan = f32x8::splat(0.0) / f32x8::splat(0.0);
+
+const fn stamped(&trace: i32, digit: i32) -> f32x8 {
+    trace = trace * 10 + digit;
+    return f32x8::splat(digit as f32);
+}
+
+fn control_effect(&trace: i32, digit: i32) -> bool {
+    trace = trace * 10 + digit;
+    return true;
+}
+
+test "SIMD: proven controls preserve operand effects and lane values" {
+    var trace = 0;
+    let value = stamped(&trace, 1).with_lane(
+        ((control_effect(&trace, 2) && false) as usize),
+        stamped(&trace, 3).lane(7)
+    );
+    check(trace == 123);
+    check(value.lane(0) == 3.0 && value.lane(7) == 1.0);
+    check(value.lane((control_effect(&trace, 4) && false) as usize) == 3.0);
+    check(trace == 1234);
+}
+
+const fn verify_floats() -> bool {
+    let v = frozen;
+    let empty: f32x8 = {};
+    let inactive: mask8 = {};
+    assert((empty == 0.0).all() && inactive.any() == false);
+    assert((f32x8::splat(16777216.0) + 1.0 == 16777216.0).all());
+    assert((frozen_nan != frozen_nan).all());
+    assert((1.0 / frozen_zero < -100.0).all());
+    assert(frozen_mask.bits() == 0x66);
+    assert((v == f32x8::from_array([1.0, -2.0, 0.5, 4.0, 1.0, -2.0, 0.5, 4.0])).all());
+    assert((v + 2.0 == 2.0 + v).all());
+    assert((2.0 - v == -(v - 2.0)).all());
+    assert((v * 2.0 / 2.0 == v).all());
+    assert((2.0 / v).to_array() == [2.0, -1.0, 4.0, 0.5, 2.0, -1.0, 4.0, 0.5]);
+    assert((v < 0.0).bits() == 0x22);
+    assert((v <= 0.5).bits() == 0x66);
+    assert((0.5 >= v).bits() == 0x66);
+    assert((v != 4.0).bits() == 0x77);
+    assert((v > 0.5).bits() == 0x99);
+    assert((v >= 0.5).bits() == 0xdd);
+    assert(((v < 0.0).select(-v, v) >= 0.0).all());
+    var changed = v;
+    changed += 1.0;
+    changed -= f32x8::splat(1.0);
+    changed *= 2.0;
+    changed /= 2.0;
+    assert((changed == v).all());
+    var mask = mask8::prefix(2);
+    mask |= mask8::from_bits(8);
+    mask &= ~mask8::prefix(1);
+    mask ^= mask8::from_bits(4);
+    assert(mask.bits() == 14 && mask.count() == 3);
+    assert(mask8::from_bits(0xff).all());
+    for count in 0usize..=8 {
+        let active = mask8::prefix(count);
+        assert(active.count() == count);
+        assert(active.all() == (count == 8));
+        assert(active.any() == (count != 0));
+    }
+    assert(v.with_lane(3, 7.0).lane(3) == 7.0 && v.lane(3) == 4.0);
+    assert(
+        swizzle(v, [7, 6, 5, 4, 3, 2, 1, 0]).to_array()
+            == [4.0, 0.5, -2.0, 1.0, 4.0, 0.5, -2.0, 1.0]
+    );
+    assert((swizzle(v, [1, 1, 1, 1, 1, 1, 1, 1]) == -2.0).all());
+    let ordered = f32x8::from_array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+    const for offset in 0usize..=8 {
+        let mixed = extract(ordered, ordered + 8.0, offset);
+        assert(mixed.lane(0) == (offset as f32));
+        assert(mixed.lane(7) == ((offset + 7) as f32));
+    }
+    var output: [f32; 8] = {};
+    store(v, &output);
+    store_partial(v + 1.0, &output, 2);
+    assert(output == [2.0, -1.0, 0.5, 4.0, 1.0, -2.0, 0.5, 4.0]);
+    store_partial(v, &output, 0);
+    assert(output[0] == 2.0);
+    let data: [f32; 9] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    for size in 0usize..=9 {
+        let view = data.as_slice().slice(0, size);
+        var visited: usize = 0;
+        for index in 0..block_count(view) {
+            let block = load_block(view, index * 8);
+            visited += block.active.count();
+            assert(block.len == block.active.count());
+        }
+        assert(visited == size);
+        assert(load_block(view, size).active.any() == false);
+    }
+    assert(f32x8::load(data, 1).to_array() == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+    assert(
+        f32x8::load_partial(data, 8, -1.0).to_array()
+            == [8.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+    );
+    var trace = 0;
+    let result = stamped(&trace, 1) + stamped(&trace, 2);
+    assert(trace == 12 && (result == 3.0).all());
+    let selected = mask8::prefix(0).select(stamped(&trace, 3), stamped(&trace, 4));
+    assert(trace == 1234 && (selected == 4.0).all());
+    // IEEE comparisons: zero signs compare equal and NaN is unordered.
+    let zero = f32x8::splat(0.0);
+    let negative_zero = -zero;
+    assert((zero == negative_zero).all());
+    let nan = zero / zero;
+    assert((nan == nan).any() == false);
+    assert((nan != nan).all());
+    assert((nan < zero).any() == false);
+    assert((nan <= zero).any() == false);
+    assert((nan > zero).any() == false);
+    assert((nan >= zero).any() == false);
+    assert((f32x8::splat(1.0) / zero > 100.0).all());
+    assert((f32x8::splat(1.0) / negative_zero < -100.0).all());
+    return true;
+}
+
+const test "SIMD: floating lanes and masks execute in the static stage" {
+    check(verify_floats());
+}
+
+test "SIMD: floating lanes and masks execute natively" {
+    check(verify_floats());
+}

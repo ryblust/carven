@@ -20,8 +20,14 @@ namespace ct = carven::testing;
 class UTFCompilation final {
 public:
     explicit UTFCompilation(std::string_view application) noexcept {
-        for (const auto name : {"error", "scan", "validation", "text"}) {
-            const auto filename = std::format("crafts/carven/std/utf/{}.cv", name);
+        for (const auto& [directory, name] :
+             {std::pair {"utf", "error"},
+              std::pair {"utf", "scan"},
+              std::pair {"utf", "block"},
+              std::pair {"utf", "validation"},
+              std::pair {"utf", "text"},
+              std::pair {"simd", "bytes"}}) {
+            const auto filename = std::format("crafts/carven/std/{}/{}.cv", directory, name);
             auto input = std::ifstream(filename);
             ct::require(input.is_open());
             auto text = std::string(std::istreambuf_iterator<char>(input), {});
@@ -30,7 +36,7 @@ public:
             inputs.push_back(
                 {.source_id = *source,
                  .module_path = *CanonicalModulePath::from_value(
-                     std::format("crafts.carven.std.utf.{}", name)
+                     std::format("crafts.carven.std.{}.{}", directory, name)
                  )}
             );
         }
@@ -99,13 +105,9 @@ const ct::Suite tests([] static noexcept {
             if (!(ct::expect(diagnostic->attachment.primary.has_value()))) {
                 return;
             }
-            const auto* expected = std::get_if<std::string_view>(&item.primary_text);
-            if (!(ct::expect(expected != nullptr))) {
-                return;
-            }
             ct::expect_equal(
                 fixture.sources.slice(diagnostic->attachment.primary->span),
-                *expected
+                item.primary_text
             );
         });
     });
@@ -142,7 +144,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Character construction: constant execution diagnoses invalid scalar preconditions",
+        "Character construction: static execution diagnoses invalid scalar preconditions",
         [] static noexcept {
             static constexpr auto cases = std::array {0xd800u, 0xdfffu, 0x110000u, 0xffffffffu};
             ct::each(

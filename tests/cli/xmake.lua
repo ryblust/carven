@@ -24,9 +24,11 @@ local case_specs = {
         inputs = {"input.cv", "failure.cv"},
         steps = {
             {args = {"interpret", "input.cv"}, stdout = "stdout.txt"},
+            {args = {"input.cv"}, stdout = "stdout.txt"},
             {args = {"check", "failure.cv"}, exit_code = 1,
                 stderr_contains = {'actual: [\n        12,\n    ]', 'expected: [\n        15,\n    ]',
-                    'true: <not evaluated>', '1: 1', '2: 2'}},
+                    'true: <not evaluated>', 'condition: 1 > 2'},
+                stderr_not_contains = {'1: 1', '2: 2', 'false: false'}},
         },
     },
     ["commands/check"] = {
@@ -130,13 +132,13 @@ local case_specs = {
         inputs = {"input.cv"},
         args = {"interpret", "input.cv"}, stdout = "run.txt",
     },
-    ["commands/constant_blocks"] = {
+    ["commands/const_blocks"] = {
         inputs = {"input.cv", "helper.cv"},
         steps = {
             {args = {"check", "input.cv", "helper.cv"}, stderr = "../check/passed.txt", stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
             {args = {"compile", "input.cv", "helper.cv", "-o", "emit"}, stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
             {args = {"interpret", "input.cv", "helper.cv"}, stdout = "run.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n", "runtime\nruntime\n"}},
-            {args = {"dump", "ast", "input.cv"}, stdout_contains = {"ConstantBlock", "ConstTestDeclaration", "label ["}},
+            {args = {"dump", "ast", "input.cv"}, stdout_contains = {"ConstBlock", "ConstTestDeclaration", "label ["}},
         },
     },
     ["commands/static_execution"] = {
@@ -415,7 +417,7 @@ case_specs["commands/native_execution"] = {
 case_specs["commands/interpretation"] = {
     fixtures = {
         ["../../../language/functions/interpreted_runtime.cv"] = "shared.cv",
-        ["../../../language/types/pointer_local_graph.cv"] = "local_graph.cv",
+        ["../../../language/types/pointer_graph.cv"] = "local_graph.cv",
         ["../../../language/text/backing_identity.cv"] = "text_backing.cv",
     },
     inputs = {
@@ -487,7 +489,11 @@ case_specs["commands/interpretation"] = {
         {
             args = {"interpret", "failure.cv"}, exit_code = 1,
             stdout = "failure.txt",
-            stderr_contains = {"CV-INTERPRET-EXECUTION", "failure.cv:1:", "while interpreting this function call"},
+            stderr_ordered = {
+                "failure.cv:1:28: error: division by zero in expression",
+                "  called from: failure.cv:4:9",
+                "  note: execution aborted",
+            },
         },
         {
             args = {"interpret", "--max-steps", "20", "limit.cv"}, exit_code = 1,
@@ -547,17 +553,12 @@ case_specs["commands/anonymous_tests"] = {
 }
 
 case_specs["commands/assertions"] = {
-    inputs = {"failure.cv", "abort.cv", "static_failure.cv", "fatal_test.cv"},
+    inputs = {"failure.cv", "failure_entry.cv", "static_failure.cv", "fatal_test.cv", "loop_step_stop.cv"},
     fixtures = {["../../../language/testing/assertions.cv"] = "input.cv"},
     steps = {
         {args = {"interpret", "--tests", "input.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
-        {args = {"failure.cv", "abort.cv"}, exit_code = 86,
-            stderr_contains = {"message evaluated", "assertion failed", "actual == expected",
-                "actual: [\n        1,\n        11,\n    ]", "expected: [\n        2,\n        22,\n    ]",
-                "array mismatch", "failure.cv:", "note: execution aborted"},
-            stderr_not_contains = {"\n        99,", "unreachable"}},
-        {args = {"interpret", "failure.cv"}, exit_code = 1,
+        {args = {"interpret", "failure_entry.cv", "failure.cv"}, exit_code = 1,
             stderr_contains = {"message evaluated", "assertion failed", "actual == expected",
                 "actual: [\n        1,\n        11,\n    ]", "expected: [\n        2,\n        22,\n    ]",
                 "array mismatch", "failure.cv:",
@@ -565,14 +566,61 @@ case_specs["commands/assertions"] = {
             stderr_not_contains = {"\n        99,", "unreachable"}},
         {args = {"check", "static_failure.cv"}, exit_code = 1,
             stderr_contains = {"CV-ASSERT", "1 == 2", "static mismatch"}},
-        {args = {"--tests", "fatal_test.cv", "abort.cv"}, exit_code = 86,
-            stderr_contains = {"module: fatal_test\n    name: fatal assertion", "assertion failed", "stop the run",
-                "earlier failure retained", "earlier check retained", "note: execution aborted"},
-            stderr_not_contains = {"unreachable", "carven: tests:"}},
+        {args = {"interpret", "--tests", "loop_step_stop.cv"}, exit_code = 1,
+            stdout_contains = {"body\nlater test\n"},
+            stdout_not_contains = {"unreachable"},
+            stderr_contains = {"step stopped", "tests: 1 passed; 1 failed"}},
         {args = {"interpret", "--tests", "fatal_test.cv"}, exit_code = 1,
             stderr_contains = {"module: fatal_test\n    name: fatal assertion", "assertion failed", "stop the run",
                 "earlier failure retained", "earlier check retained", "note: execution aborted"},
             stderr_not_contains = {"unreachable", "carven: tests:"}},
+    },
+}
+
+case_specs["commands/entry_failure"] = {
+    fixtures = {
+        ["explicit.cv.fixture"] = "explicit.cv",
+        ["implicit.cv.fixture"] = "implicit.cv",
+    },
+    steps = {
+        {args = {"explicit.cv"}, exit_code = 1,
+            stdout_contains = {"before"}, stderr = "explicit.txt"},
+        {args = {"interpret", "explicit.cv"}, exit_code = 1,
+            stdout_contains = {"before"}, stderr = "explicit.interpret.txt"},
+        {args = {"interpret", "implicit.cv"}, exit_code = 1,
+            stderr = "implicit.interpret.txt"},
+    },
+}
+
+case_specs["commands/runtime_traps"] = {
+    inputs = {"divide_entry.cv", "index_entry.cv", "helper_entry.cv", "range_entry.cv", "lane_entry.cv"},
+    fixtures = {
+        ["divide.cv.fixture"] = "divide.cv",
+        ["index.cv.fixture"] = "index.cv",
+        ["slice.cv.fixture"] = "slice.cv",
+        ["helper.cv.fixture"] = "helper.cv",
+        ["range.cv.fixture"] = "range.cv",
+        ["lane.cv.fixture"] = "lane.cv",
+        ["../assertions/abort.cv"] = "abort.cv",
+    },
+    steps = {
+        -- Keep one native CLI trap to verify subprocess termination is forwarded.
+        {args = {"divide_entry.cv", "divide.cv", "abort.cv"}, exit_code = 86,
+            stderr = "divide.txt"},
+        {args = {"interpret", "divide_entry.cv", "divide.cv"}, exit_code = 1,
+            stderr_contains = {"division by zero", "divide.cv:2:17"}},
+        {args = {"interpret", "index_entry.cv", "index.cv"}, exit_code = 1,
+            stderr_contains = {"sequence index is out of bounds", "index.cv:2:16"}},
+        {args = {"interpret", "--tests", "slice.cv"}, exit_code = 1,
+            stderr_contains = {"sequence index is out of bounds", "slice.cv:2:12",
+                "module: slice\n    name: slice bounds", "note: execution aborted"},
+            stdout_not_contains = {"unreachable"}, stderr_not_contains = {"carven: tests:"}},
+        {args = {"interpret", "helper_entry.cv", "helper.cv"}, exit_code = 1,
+            stderr_contains = {"test operation requires an active test", "helper.cv:2:5"}},
+        {args = {"interpret", "range_entry.cv", "range.cv"}, exit_code = 1,
+            stderr_contains = {"slice range is out of bounds", "range.cv:2:12"}},
+        {args = {"interpret", "lane_entry.cv", "lane.cv"}, exit_code = 1,
+            stderr_contains = {"SIMD index or memory range is out of bounds", "lane.cv:2:12"}},
     },
 }
 
@@ -632,6 +680,122 @@ case_specs["commands/source_collection"] = {
 }
 
 local xmake_rule_dir = path.join(os.projectdir(), "tests", "cli", "xmake_rule")
+local cli_dir = path.join(os.projectdir(), "tests", "cli")
+
+local native_specs = {
+    {
+        name = "runtime",
+        case_dir = "commands/runtime_traps",
+        sources = {
+            ["commands/runtime_traps/main.cv"] = "main.cv",
+            ["commands/runtime_traps/divide.cv.fixture"] = "divide.cv",
+            ["commands/runtime_traps/index.cv.fixture"] = "index.cv",
+            ["commands/runtime_traps/helper.cv.fixture"] = "helper.cv",
+            ["commands/runtime_traps/range.cv.fixture"] = "range.cv",
+            ["commands/runtime_traps/lane.cv.fixture"] = "lane.cv",
+            ["commands/assertions/failure.cv"] = "failure.cv",
+        },
+        scenarios = {
+            divide = {args = {"divide"}, exit_code = 86, stderr = "divide.txt"},
+            index = {args = {"index"}, exit_code = 86, stderr = "index.txt"},
+            helper = {args = {"helper"}, exit_code = 86, stderr = "helper.txt"},
+            range = {args = {"range"}, exit_code = 86, stderr = "range.txt"},
+            lane = {args = {"lane"}, exit_code = 86, stderr = "lane.txt"},
+            failure = {args = {"failure"}, exit_code = 86,
+                stderr_contains = {"message evaluated", "assertion failed", "actual == expected",
+                    "actual: [\n        1,\n        11,\n    ]", "expected: [\n        2,\n        22,\n    ]",
+                    "array mismatch", "failure.cv:", "note: execution aborted"},
+                stderr_not_contains = {"\n        99,", "unreachable"}},
+        },
+    },
+    {
+        name = "stops",
+        tests = "default",
+        case_dir = "commands/assertions",
+        sources = {
+            ["commands/assertions/loop_step_stop.cv"] = "loop_step_stop.cv",
+            ["commands/assertions/evaluation_stop.cv"] = "evaluation_stop.cv",
+        },
+        scenarios = {
+            stops = {args = {}, exit_code = 1,
+                stdout_contains = {"later test\nbody\nlater test\n"},
+                stdout_not_contains = {"unreachable"},
+                stderr_contains = {"step stopped", "evaluation stopped", "tests: 2 passed; 4 failed",
+                    "module: loop_step_stop", "module: evaluation_stop"}},
+        },
+    },
+    {
+        name = "slice",
+        tests = "default",
+        case_dir = "commands/runtime_traps",
+        sources = {
+            ["commands/runtime_traps/slice.cv.fixture"] = "slice.cv",
+            ["commands/assertions/abort.cv"] = "abort.cv",
+        },
+        scenarios = {
+            slice = {args = {}, exit_code = 86, stderr = "slice.txt"},
+        },
+    },
+    {
+        name = "fatal",
+        tests = "default",
+        case_dir = "commands/assertions",
+        sources = {
+            ["commands/assertions/fatal_test.cv"] = "fatal_test.cv",
+            ["commands/assertions/abort.cv"] = "abort.cv",
+        },
+        scenarios = {
+            fatal = {args = {}, exit_code = 86,
+                stderr_contains = {"module: fatal_test\n    name: fatal assertion", "assertion failed", "stop the run",
+                    "earlier failure retained", "earlier check retained", "note: execution aborted"},
+                stderr_not_contains = {"unreachable", "carven: tests:"}},
+        },
+    },
+    {
+        name = "implicit",
+        case_dir = "commands/entry_failure",
+        sources = {["commands/entry_failure/implicit.cv.fixture"] = "implicit.cv"},
+        scenarios = {
+            implicit = {args = {}, exit_code = 1, stderr = "implicit.txt"},
+        },
+    },
+}
+
+for _, spec in ipairs(native_specs) do
+    -- This fixed source root gives fixtures valid, stable Carven module identities.
+    -- The package rule still places generated C++ and objects in the configured builddir.
+    local source_prefix = "build/cli_fixtures/" .. spec.name .. "/"
+    local source_root = path.join(os.projectdir(), source_prefix)
+    target("carven-test-cli-" .. spec.name)
+        set_default(false)
+        set_kind("binary")
+        add_rules("@carven/carven", {tests = spec.tests})
+        set_languages("c++20")
+        add_includedirs(path.join(cli_dir, "commands", "runtime_traps"))
+        if spec.name == "runtime" or spec.name == "fatal" then
+            add_defines("NDEBUG")
+        end
+        on_load(function (target)
+            for source, destination in table.orderpairs(spec.sources) do
+                local prepared_source = path.join(source_root, destination)
+                os.mkdir(path.directory(prepared_source))
+                os.cp(path.join(cli_dir, source), prepared_source, {copy_if_different = true})
+                target:add("files", prepared_source)
+            end
+        end)
+        for _, name in ipairs(table.orderkeys(spec.scenarios)) do
+            add_tests(name, {group = "cli", run_timeout = 30000})
+        end
+        on_test(function (target, opt)
+            local harness = import("harness", {rootdir = cli_dir, anonymous = true})
+            return harness(target, opt, spec.scenarios, {
+                case_dir = path.join(cli_dir, spec.case_dir),
+                source_prefix = source_prefix,
+                module_prefix = source_prefix:gsub("/", "."),
+            })
+        end)
+    target_end()
+end
 
 target("carven-test-cli")
     set_default(false)
@@ -649,6 +813,7 @@ target("carven-test-cli")
         })
         return harness(target, opt, case_specs)
     end)
+target_end()
 
 for _, domain in ipairs({"a", "b"}) do
     target("carven-test-cli-default-domain-" .. domain)

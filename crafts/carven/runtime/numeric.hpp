@@ -1,8 +1,9 @@
 #pragma once
 
+#include "trap.hpp"
+
 #include <bit>
 #include <concepts>
-#include <cstdlib>
 #include <limits>
 #include <type_traits>
 
@@ -99,9 +100,9 @@ constexpr auto integer_multiply(Type left, Type right) noexcept -> Type {
 }
 
 template<Integer Type>
-constexpr auto integer_divide(Type left, Type right) noexcept -> Type {
+constexpr auto integer_divide(Type left, Type right, SourceSite site) noexcept -> Type {
     if (right == 0) {
-        std::abort();
+        trap("division by zero", site);
     }
     if constexpr (std::signed_integral<Type>) {
         if (left == std::numeric_limits<Type>::min() && right == Type {-1}) {
@@ -112,9 +113,9 @@ constexpr auto integer_divide(Type left, Type right) noexcept -> Type {
 }
 
 template<Integer Type>
-constexpr auto integer_remainder(Type left, Type right) noexcept -> Type {
+constexpr auto integer_remainder(Type left, Type right, SourceSite site) noexcept -> Type {
     if (right == 0) {
-        std::abort();
+        trap("division by zero", site);
     }
     if constexpr (std::signed_integral<Type>) {
         if (left == std::numeric_limits<Type>::min() && right == Type {-1}) {
@@ -125,17 +126,17 @@ constexpr auto integer_remainder(Type left, Type right) noexcept -> Type {
 }
 
 template<Integer Type, Integer Count>
-constexpr auto integer_left_shift(Type left, Count count) noexcept -> Type {
+constexpr auto integer_left_shift(Type left, Count count, SourceSite site) noexcept -> Type {
     using Unsigned = detail::UnsignedInteger<Type>;
     constexpr auto width = std::numeric_limits<Unsigned>::digits;
     if constexpr (std::signed_integral<Count>) {
         if (count < 0) {
-            std::abort();
+            trap("shift count is outside the integer type width", site);
         }
     }
     const auto unsigned_count = static_cast<std::make_unsigned_t<Count>>(count);
     if (unsigned_count >= width) {
-        std::abort();
+        trap("shift count is outside the integer type width", site);
     }
     using Calculation = detail::UnsignedCalculation<Type>;
     return detail::integer_from_bits<Type>(static_cast<Unsigned>(
@@ -144,17 +145,17 @@ constexpr auto integer_left_shift(Type left, Count count) noexcept -> Type {
 }
 
 template<Integer Type, Integer Count>
-constexpr auto integer_right_shift(Type left, Count count) noexcept -> Type {
+constexpr auto integer_right_shift(Type left, Count count, SourceSite site) noexcept -> Type {
     using Unsigned = detail::UnsignedInteger<Type>;
     constexpr auto width = std::numeric_limits<Unsigned>::digits;
     if constexpr (std::signed_integral<Count>) {
         if (count < 0) {
-            std::abort();
+            trap("shift count is outside the integer type width", site);
         }
     }
     const auto unsigned_count = static_cast<std::make_unsigned_t<Count>>(count);
     if (unsigned_count >= width) {
-        std::abort();
+        trap("shift count is outside the integer type width", site);
     }
     const auto bits = detail::integer_bits(left);
     if constexpr (std::unsigned_integral<Type>) {

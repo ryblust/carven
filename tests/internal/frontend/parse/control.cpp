@@ -52,6 +52,56 @@ const ct::Suite tests([] static noexcept {
         }
     );
 
+    ct::test("Parser control: const marks static if chains and range loops", [] static noexcept {
+        static constexpr auto text = std::string_view(
+            "fn unroll(const count: usize) {\n"
+            " const for index in 0..count { const if index == 0 { continue; } else if index > 2 {} }\n"
+            " for index in 0..count {}\n"
+            " let value = const if count == 0 { 1 } else { 2 };\n"
+            " const limit = count;\n"
+            "}\n"
+        );
+        const auto result = parse_valid(text);
+        const auto ast = result.view();
+        const auto& body = function_body(result);
+        if (!ct::expect_equal(body.statements.size(), 4uz)) {
+            return;
+        }
+
+        const auto& unrolled = get<ASTForStmt>(ast.statement(body.statements[0]));
+        if (!ct::expect(unrolled.const_span.has_value())) {
+            return;
+        }
+        ct::expect_equal(slice(text, *unrolled.const_span), std::string_view("const"));
+        ct::expect_equal(
+            slice(text, ast.statement(body.statements[0]).span).substr(0, 9),
+            std::string_view("const for")
+        );
+        const auto& inner = ast.block(unrolled.body);
+        const auto& selected = get<ASTIfForm>(ast.statement(inner.statements[0]));
+        ct::expect(selected.const_span.has_value());
+        ct::expect_equal(selected.branches.size(), 2uz);
+        ct::expect_equal(slice(text, selected.span).substr(0, 8), std::string_view("const if"));
+
+        const auto& runtime = get<ASTForStmt>(ast.statement(body.statements[1]));
+        ct::expect(!runtime.const_span.has_value());
+
+        const auto& declaration = get<ASTVariableDecl>(ast.statement(body.statements[2]));
+        const auto& value_if = get<ASTIfForm>(ast.expression(*declaration.initializer));
+        ct::expect(value_if.const_span.has_value());
+
+        ct::expect_equal(
+            get<ASTVariableDecl>(ast.statement(body.statements[3])).kind,
+            ASTBindingKind::Const
+        );
+
+        check_invalid(
+            "fn f() { const for var i = 0; i < 2; i += 1 {} }",
+            "'const for' requires a range header"
+        );
+        check_invalid("fn f() { const for ; true; {} }", "'const for' requires a range header");
+    });
+
     ct::test(
         "Parser control: patterns own inline type children and typed match-arm bodies",
         [] static noexcept {

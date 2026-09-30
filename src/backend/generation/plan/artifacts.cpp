@@ -1,8 +1,8 @@
 module carven:backend.generation.plan.artifacts.impl;
 
 import :artifacts;
-import :backend.generation.plan.references;
 import :backend.generation.plan;
+import :backend.generation.plan.references;
 import :backend.generation.request;
 import :semantic.visibility;
 import :support.graph;
@@ -161,7 +161,7 @@ auto plan_artifacts(
             .module_id = module_record.id,
             .private_nominal_order = {},
             .closure_definitions = {},
-            .interface_closures = {},
+            .interface_callables = {},
             .emitted_tests = {},
             .emit_program_entry = request.test_mode != TestGenerationMode::RunnerEntryPoint,
         };
@@ -222,6 +222,9 @@ auto plan_artifacts(
     auto references = collect_target_references(semantic, surface_declarations);
     // A class may hide a private representation in its source surface, but its
     // C++ definition still needs the complete layout of each by-value field.
+    // Likewise, a caller instantiates a staged body, so the private functions
+    // that body reaches join the surface with their signatures.
+    auto interface_callables = std::flat_set<CallableID>();
     for (;;) {
         auto added = false;
         for (const auto& requirements : references.surface_requirements) {
@@ -232,6 +235,24 @@ auto plan_artifacts(
                 }
                 const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
                 surface_declarations[owner.index()].push_back(target_declaration_ref(nominal));
+                added = true;
+            }
+        }
+        for (const auto& callables : references.surface_callables) {
+            for (const auto callable : callables) {
+                interface_callables.insert(callable);
+                const auto function = declarations.function_for_callable(callable);
+                if (!function) {
+                    continue;
+                }
+                const auto& declaration = declarations.function(*function);
+                auto& surface = surface_declarations[declaration.module_id.index()];
+                if (declaration.visibility != DeclarationVisibility::Module
+                    || semantic.definition_placement(callable) == DefinitionPlacement::None
+                    || std::ranges::contains(surface, DeclarationRef {*function})) {
+                    continue;
+                }
+                surface.push_back(*function);
                 added = true;
             }
         }
@@ -248,13 +269,24 @@ auto plan_artifacts(
         schedules[owner.index()]->private_nominal_order.push_back(nominal);
     }
     auto exposed_closures = std::flat_set<CallableID>();
-    for (const auto& requirements : references.surface_closures) {
-        exposed_closures.insert(requirements.begin(), requirements.end());
+    for (const auto callable : interface_callables) {
+        if (std::holds_alternative<ClosureBodyImplementation>(
+                declarations.callable(callable).implementation
+            )) {
+            exposed_closures.insert(callable);
+        }
     }
     for (auto& schedule : schedules) {
         for (const auto closure : schedule->closure_definitions) {
-            if (exposed_closures.contains(closure)) {
-                schedule->interface_closures.push_back(closure);
+            if (interface_callables.contains(closure)) {
+                schedule->interface_callables.push_back(closure);
+            }
+        }
+        for (const auto item : declarations.module_decl(schedule->module_id).items) {
+            const auto* function = std::get_if<FunctionID>(&item);
+            if (function != nullptr
+                && interface_callables.contains(declarations.function(*function).callable)) {
+                schedule->interface_callables.push_back(declarations.function(*function).callable);
             }
         }
     }
@@ -264,8 +296,10 @@ auto plan_artifacts(
             invariant_violation("semantic module table contains a missing row");
         }
         const auto module_id = *module_by_index[index];
-        for (const auto closure : references.surface_closures[index]) {
-            const auto owner = closures.owner(closure);
+        for (const auto callable : references.surface_callables[index]) {
+            const auto function = declarations.function_for_callable(callable);
+            const auto owner =
+                function ? declarations.function(*function).module_id : closures.owner(callable);
             if (owner != module_id) {
                 complete_dependencies[index].insert(owner);
             }
@@ -422,8 +456,14 @@ auto plan_artifacts(
                 item.visit(
                     Overloaded {
                         [&](FunctionID id) noexcept {
-                            if (declarations.function(id).visibility
-                                != DeclarationVisibility::Module) {
+                            // Only owner definitions need a shared interface declaration.
+                            if (semantic.definition_placement(declarations.function(id).callable)
+                                    == DefinitionPlacement::Owner
+                                && (declarations.function(id).visibility
+                                        != DeclarationVisibility::Module
+                                    || interface_callables.contains(
+                                        declarations.function(id).callable
+                                    ))) {
                                 interface_declarations.push_back({
                                     .module_id = member,
                                     .declaration = id,

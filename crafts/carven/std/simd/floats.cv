@@ -1,0 +1,64 @@
+// Eight f32 lanes use the same load, mask and ordinary operator contracts as bytes.
+export struct FloatBlock {
+    value: f32x8,
+    active: mask8,
+    offset: usize,
+    len: usize,
+}
+
+export const fn block_count(values: [f32]) -> usize {
+    let full = values.len() / 8;
+    if values.len() % 8 == 0 { return full; }
+    return full + 1;
+}
+
+export const fn load_block(values: [f32], offset: usize) -> FloatBlock {
+    assert(offset <= values.len());
+    var count = values.len() - offset;
+    if count > 8 { count = 8; }
+    return {
+        value: f32x8::load_partial(values, offset, 0.0),
+        active: mask8::prefix(count),
+        offset: offset,
+        len: count
+    };
+}
+
+export const fn extract(left: f32x8, right: f32x8, const offset: usize) -> f32x8 {
+    return left.extract(right, offset);
+}
+
+private const fn checked_pattern(indices: [u8; 8]) -> [u8; 8] {
+    for index in indices {
+        assert(index < 8);
+    }
+    return indices;
+}
+
+export const fn swizzle(value: f32x8, const indices: [u8; 8]) -> f32x8 {
+    const checked = checked_pattern(indices);
+    return f32x8::from_array(
+        [
+            value.lane(checked[0] as usize),
+            value.lane(checked[1] as usize),
+            value.lane(checked[2] as usize),
+            value.lane(checked[3] as usize),
+            value.lane(checked[4] as usize),
+            value.lane(checked[5] as usize),
+            value.lane(checked[6] as usize),
+            value.lane(checked[7] as usize)
+        ]
+    );
+}
+
+export const fn store(value: f32x8, &destination: [f32; 8]) {
+    destination = value.to_array();
+}
+
+export const fn store_partial(value: f32x8, &destination: [f32; 8], count: usize) {
+    assert(count <= 8);
+    let lanes = value.to_array();
+    for index in 0..count {
+        destination[index] = lanes[index];
+    }
+}

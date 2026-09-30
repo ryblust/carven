@@ -88,13 +88,7 @@ auto BodyRealizer::lower_report(
         }
     }
     auto report = LoweringStmtBuilder();
-    const auto source = target_source_origin(context.semantic().provenance(), origin);
-    auto arguments = std::vector<TargetExpr>();
-    arguments.push_back(string_expression(source.display_origin, TargetStringLiteralKind::String));
-    arguments.push_back(integer_expression(source.line));
-    arguments.push_back(
-        integer_expression(context.semantic().provenance().location(origin).column)
-    );
+    auto arguments = target_expressions(source_site_expression(context, origin));
     const auto* operation = value.kind == ReportKind::Assert ? "assert"
         : value.kind == ReportKind::Check                    ? "check"
         : value.kind == ReportKind::Require                  ? "require"
@@ -152,9 +146,8 @@ auto BodyRealizer::lower_report(
             {.kind = LoweringExitKind::Unreachable, .identity = 0}
         );
     } else {
-        report.emit(statement_expression(call_member(
-            call_expression(intrinsic_expression(TargetSymbol::RuntimeCurrentTest), {}),
-            "report_failure",
+        report.emit(statement_expression(call_expression(
+            intrinsic_expression(TargetSymbol::RuntimeReportTestFailure),
             std::move(arguments)
         )));
     }
@@ -217,7 +210,8 @@ auto realize_observed_comparison(
                     context.semantic().types().builtin_type(BuiltinType::Bool)
                 ),
                 name_expression(left),
-                name_expression(right)
+                name_expression(right),
+                operation.left->origin
             )
         }
     ));

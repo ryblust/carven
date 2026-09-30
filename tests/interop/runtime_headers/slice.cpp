@@ -2,13 +2,17 @@
 
 #include <cstdint>
 
+namespace {
+constexpr auto site = carven::runtime::SourceSite::native();
+} // namespace
+
 static_assert([]() noexcept {
     const auto values = std::array {10, 20, 30};
     const auto view = carven::runtime::as_slice(values);
     return view.size() == 3
         && view[1] == 20
-        && view.slice(1, 3)[0] == 20
-        && view.slice(3, 3).empty();
+        && view.slice(1, 3, site)[0] == 20
+        && view.slice(3, 3, site).empty();
 }());
 
 static_assert([]() noexcept {
@@ -18,5 +22,5 @@ static_assert([]() noexcept {
     for (const auto byte : view) {
         sum += byte;
     }
-    return view[0] == 0 && view[2] == 255 && sum == 383 && view.slice(3, 3).empty();
+    return view[0] == 0 && view[2] == 255 && sum == 383 && view.slice(3, 3, site).empty();
 }());

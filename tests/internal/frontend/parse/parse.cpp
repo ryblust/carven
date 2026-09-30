@@ -198,7 +198,7 @@ const ct::Suite tests([] static noexcept {
         "Parser: a failed C-style for step restores construction boundaries",
         [] static noexcept {
             static constexpr auto source = std::string_view(
-                "fn broken() { for ;; value = { } }\n"
+                "fn broken() { for ; ready; value = { } }\n"
                 "fn recovered() { let value = Model { field: 1 }; }\n"
             );
             static constexpr auto invalid_step = source.find("value =");

@@ -4,9 +4,7 @@ struct Pair {
 
 fn scale(value: f32) -> f64 => (value as f64) * 2.0;
 
-var pair = Pair {
-    values: [scale(1.5f32), 0.0]
-};
+var pair = Pair { values: [scale(1.5f32), 0.0] };
 
 pair.values[1] = -pair.values[0] / 2.0;
 let infinity = 1.0 / 0.0;

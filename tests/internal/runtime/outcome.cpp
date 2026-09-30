@@ -76,6 +76,12 @@ constexpr auto outcome_constant_evaluation() noexcept -> bool {
         return false;
     }
 
+    const auto direct = ConstexprNarrow::success(43);
+    const auto* direct_value = direct.success_if();
+    if (direct_value == nullptr || direct_value->value != 43) {
+        return false;
+    }
+
     auto failure = ConstexprWide(ConstexprNarrow::failure(ParseFailure {.offset = 7}));
     const auto* failure_value = failure.failure_if<ParseFailure>();
     if (failure_value == nullptr || failure_value->offset != 7) {
@@ -87,6 +93,13 @@ constexpr auto outcome_constant_evaluation() noexcept -> bool {
     return destination_failure != nullptr && destination_failure->offset == 7;
 }
 
+template<typename Result, typename Value>
+concept DirectSuccess = requires (Value value) { Result::success(std::move(value)); };
+
+// Only trivially copied results bypass the in-place factory.
+static_assert(DirectSuccess<carven::runtime::Outcome<int, ParseFailure>, int>);
+static_assert(!DirectSuccess<Narrow, std::string>);
+static_assert(!DirectSuccess<VoidNarrow, int>);
 static_assert(carven::runtime::OutcomeTraits<Narrow>::is_outcome);
 static_assert(std::same_as<carven::runtime::OutcomeTraits<Narrow>::Result, std::string>);
 static_assert(std::same_as<carven::runtime::OutcomeTraits<VoidNarrow>::Result, void>);
@@ -126,7 +139,7 @@ const ct::Suite tests([] static noexcept {
     ct::test("Runtime Outcome: value and void successes stay flat", [] static noexcept {
         using ValueOutcome = carven::runtime::Outcome<int, int>;
         auto value = ValueOutcome::success_from([]() static noexcept { return 42; });
-        auto* value_success = value.success_if();
+        const auto* value_success = value.success_if();
         if (!ct::expect(value_success != nullptr)) {
             return;
         }
@@ -179,7 +192,7 @@ const ct::Suite tests([] static noexcept {
             using SameTypeOutcome = carven::runtime::Outcome<int, int>;
             auto failed = SameTypeOutcome::failure<int>(7);
             ct::expect(failed.success_if() == nullptr);
-            auto* failure = failed.failure_if<int>();
+            const auto* failure = failed.failure_if<int>();
             if (!ct::expect(failure != nullptr)) {
                 return;
             }
@@ -190,15 +203,15 @@ const ct::Suite tests([] static noexcept {
     ct::test("Runtime Outcome: widening preserves success and failure states", [] static noexcept {
         auto narrow = Narrow::failure<ParseFailure>(ParseFailure {.offset = 5});
         auto widened = Wide(std::move(narrow));
-        auto* widened_failure = widened.failure_if<ParseFailure>();
+        const auto* widened_failure = widened.failure_if<ParseFailure>();
         if (!ct::expect(widened_failure != nullptr)) {
             return;
         }
-        ct::expect_equal(std::move(*widened_failure).offset, 5);
+        ct::expect_equal(widened_failure->offset, 5);
 
         auto success = Narrow::success_from([]() static noexcept { return std::string("ready"); });
         auto widened_success = Wide(std::move(success));
-        auto* success_value = widened_success.success_if();
+        const auto* success_value = widened_success.success_if();
         if (!ct::expect(success_value != nullptr)) {
             return;
         }
@@ -219,11 +232,11 @@ const ct::Suite tests([] static noexcept {
 
         auto void_failure = VoidNarrow::failure<ParseFailure>(ParseFailure {.offset = 9});
         auto widened_void_failure = VoidWide(std::move(void_failure));
-        auto* void_failure_value = widened_void_failure.failure_if<ParseFailure>();
+        const auto* void_failure_value = widened_void_failure.failure_if<ParseFailure>();
         if (!ct::expect(void_failure_value != nullptr)) {
             return;
         }
-        ct::expect_equal(std::move(*void_failure_value).offset, 9);
+        ct::expect_equal(void_failure_value->offset, 9);
     });
 
     ct::test(

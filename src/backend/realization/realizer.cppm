@@ -108,13 +108,12 @@ private:
         RegionExit& done
     ) noexcept -> ContinuationTask<LoweringStmtBuilder>;
     auto lower_arm(
-        const PatternBindings& pattern,
-        LoweringPredicate predicate,
+        const PatternSelection& pattern,
         std::span<const LocalBindingID> bindings,
         const SemanticRegion& source,
         const std::optional<SemanticExpression>& guard,
         const LoweringResultDestination& result,
-        RegionExit& done
+        RegionExit* done
     ) noexcept -> ContinuationTask<LoweringStmtBuilder>;
     auto lower_if(
         const SemIf& value,
@@ -135,6 +134,10 @@ private:
         -> ContinuationTask<std::monostate>;
     auto lower_range(const SemRangeLoop& value, LoweringStmtBuilder& destination) noexcept
         -> ContinuationTask<std::monostate>;
+    auto lower_expanded_loop(
+        const SemExpandedLoop& value,
+        LoweringStmtBuilder& destination
+    ) noexcept -> ContinuationTask<std::monostate>;
     auto lower_report(
         const SemReport& value,
         ProgramOriginID origin,
@@ -172,6 +175,7 @@ private:
     ) noexcept -> void;
     auto fresh_local(TargetTemporaryNameKind kind) noexcept -> TargetLocalID;
     auto binding_expression(LocalBindingID id) noexcept -> TargetExpr;
+    auto needs_cleanup(TypeID type) const noexcept -> bool;
     auto declare_binding(
         LocalBindingID id,
         TargetExpr initializer,
@@ -180,14 +184,8 @@ private:
     auto declare_deferred(
         const LoweringDeferredStorage& storage,
         bool maybe_unused,
-        LoweringStmtBuilder& destination
-    ) noexcept -> void;
-    auto pattern_bindings(std::span<const LocalBindingID> bindings) const noexcept
-        -> std::vector<PatternBindingType>;
-    auto pattern_branch(
-        TargetExpr condition,
-        LoweringStmtBuilder selected,
-        LoweringStmtBuilder& destination
+        LoweringStmtBuilder& destination,
+        bool needs_cleanup
     ) noexcept -> void;
 
     struct ConditionObservation final {
@@ -226,6 +224,9 @@ private:
 
     struct LoopContinuation final {
         std::optional<TargetIdentifier> step;
+        std::optional<TargetIdentifier> break_label;
+        TargetJumpRole jump_role;
+        bool expanded;
         LoweringExitTarget target;
         LoweringExitTarget break_target;
     };

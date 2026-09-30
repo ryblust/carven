@@ -14,5 +14,6 @@
 #include "string.hpp"
 #include "testing.hpp"
 #include "text.hpp"
+#include "trap.hpp"
 #include "unreachable.hpp"
 #include "utf.hpp"

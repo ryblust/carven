@@ -2,15 +2,84 @@ module carven:semantic.evaluation.execution.impl;
 
 import :semantic.evaluation.execution;
 import :semantic.evaluation.executor;
+import :support.invariant;
 import std;
+
+auto ExecutionEvent::reason() const noexcept -> ExecutionReason {
+    if (const auto* issue = std::get_if<ExecutionIssue>(&cause)) {
+        return issue->reason;
+    }
+    return report_kind() == ReportKind::Assert ? ExecutionReason::Assertion : ExecutionReason::Test;
+}
+
+auto ExecutionEvent::message() const noexcept -> std::string_view {
+    if (const auto* issue = std::get_if<ExecutionIssue>(&cause)) {
+        return issue->message;
+    }
+    switch (*report_kind()) {
+        case ReportKind::Assert:  return "assertion failed";
+        case ReportKind::Check:   return "check failed";
+        case ReportKind::Require: return "requirement failed";
+        case ReportKind::Fail:    return "explicit failure";
+    }
+    std::unreachable();
+}
+
+auto ExecutionEvent::report_kind() const noexcept -> std::optional<ReportKind> {
+    if (const auto* report = std::get_if<ReportKind>(&cause)) {
+        return *report;
+    }
+    return std::nullopt;
+}
+
+auto ExecutionEvent::termination() const noexcept -> ExecutionTermination {
+    if (const auto* issue = std::get_if<ExecutionIssue>(&cause)) {
+        if (issue->termination == ExecutionTermination::Continue) {
+            invariant_violation("an execution issue cannot continue");
+        }
+        return issue->termination;
+    }
+    switch (*report_kind()) {
+        case ReportKind::Check:   return ExecutionTermination::Continue;
+        case ReportKind::Assert:  return ExecutionTermination::Abort;
+        case ReportKind::Require:
+        case ReportKind::Fail:    return ExecutionTermination::StopRoot;
+    }
+    std::unreachable();
+}
 
 auto SemanticExecutionContext::trace(const ExecutionTraceEvent&) noexcept -> void {}
 
+auto SemanticExecutionContext::enter_block(BlockSource) noexcept -> void {}
+
+auto SemanticExecutionContext::leave_block() noexcept -> void {}
+
+auto SemanticExecutionContext::bind_call(
+    CallableID callable,
+    std::vector<ExecutionOperand>&,
+    ExecutionArgumentAccess&,
+    ProgramOriginID
+) noexcept -> ContinuationTask<std::expected<CallableID, ExecutionCallFailure>> {
+    co_return callable;
+}
+
+auto SemanticExecutionContext::freeze(ExecutionValue) noexcept -> std::optional<ConstantID> {
+    invariant_violation("this execution context has no static stage");
+}
+
 ExecutionBody::ExecutionBody(const StructuredBodyDraft& body) noexcept
-    : body(&body) {}
+    : ExecutionBody(body, body.residual ? *body.residual : body.region) {}
 
 ExecutionBody::ExecutionBody(const SemIRBody& body) noexcept
-    : body(&body) {}
+    : ExecutionBody(body, body.region()) {}
+
+ExecutionBody::ExecutionBody(const StructuredBodyDraft& body, const SemanticRegion& region) noexcept
+    : body(&body),
+      selected_region(&region) {}
+
+ExecutionBody::ExecutionBody(const SemIRBody& body, const SemanticRegion& region) noexcept
+    : body(&body),
+      selected_region(&region) {}
 
 auto ExecutionBody::kind() const noexcept -> BodyKind {
     if (const auto* draft = std::get_if<const StructuredBodyDraft*>(&body)) {
@@ -20,10 +89,7 @@ auto ExecutionBody::kind() const noexcept -> BodyKind {
 }
 
 auto ExecutionBody::region() const noexcept -> const SemanticRegion& {
-    if (const auto* draft = std::get_if<const StructuredBodyDraft*>(&body)) {
-        return (*draft)->region;
-    }
-    return std::get<const SemIRBody*>(body)->region();
+    return *selected_region;
 }
 
 auto ExecutionBody::parameters() const noexcept -> std::span<const LocalBindingID> {
@@ -86,35 +152,24 @@ auto ExecutionBody::bindings_in(LifetimeRegionID lifetime) const noexcept
 namespace {
 
 template<typename Value>
-auto finish_execution(SemanticExecutionContext& context, ExecutionResult<Value> result) noexcept
+auto finish_execution(SemanticExecutor& executor, ExecutionResult<Value> result) noexcept
     -> ExecutionResult<Value> {
     if (!result) {
-        if (const auto* failure = std::get_if<ExecutionSourceFailure>(&result.error())) {
-            context.report(
-                ExecutionDiagnostic {
-                    .origin = failure->origin,
-                    .code = DiagnosticCode::ConstEvaluation,
-                    .message = "typed failure escaped execution without recovery",
-                    .calls = failure->calls,
-                    .report_kind = std::nullopt,
-                }
-            );
-            return std::unexpected(ExecutionFailure {});
-        }
+        return std::unexpected(executor.escaped(std::move(result.error())));
     }
     return result;
 }
 
 } // namespace
 
-auto execute_constant_root(
+auto execute_static_root(
     const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
     const SemanticExpression& expression,
     ExecutionLimits limits
 ) noexcept -> ExecutionTask<ExecutionValue> {
     auto executor = SemanticExecutor(values, context, limits);
-    co_return finish_execution(context, (co_await executor.evaluate_root(expression)));
+    co_return finish_execution(executor, (co_await executor.evaluate_root(expression)));
 }
 
 auto execute_body(
@@ -124,20 +179,20 @@ auto execute_body(
     ExecutionLimits limits
 ) noexcept -> ExecutionTask<void> {
     auto executor = SemanticExecutor(values, context, limits);
-    co_return finish_execution(context, (co_await executor.evaluate_body(body)));
+    co_return finish_execution(executor, (co_await executor.evaluate_body(body)));
 }
 
 auto execute_function(
     const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
-    FunctionID function,
+    CallableID callable,
     ProgramOriginID origin,
     ExecutionLimits limits
 ) noexcept -> ExecutionTask<ExecutionValue> {
     auto executor = SemanticExecutor(values, context, limits);
-    auto result = (co_await executor.invoke(function, {}, origin));
+    auto result = (co_await executor.invoke(callable, {}, origin));
     if (result) {
         result = executor.detach_result(std::move(*result), origin);
     }
-    co_return finish_execution(context, std::move(result));
+    co_return finish_execution(executor, std::move(result));
 }

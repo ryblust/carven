@@ -4,9 +4,7 @@ import .scan using { UTF8State, push_utf8, feed_utf8, check_utf8_complete };
 export class UTF8Validator {
     state: UTF8State,
 
-    fn create() -> UTF8Validator => {
-        state: {}
-    };
+    fn create() -> UTF8Validator => { state: {} };
 
     // A rejected byte leaves the caller's state unchanged.
     fn push(&self, byte: u8) throw UTF8Error => push_utf8(&self.state, byte)?;

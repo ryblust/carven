@@ -9,6 +9,7 @@ import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.decl;
+import :semantic.semir.simd;
 import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
@@ -227,7 +228,8 @@ auto shapes_compatible(
             left_callable->parameters,
             right_callable->parameters,
             [&](const auto& left_parameter, const auto& right_parameter) noexcept {
-                return left_parameter.access == right_parameter.access
+                return left_parameter.stage == right_parameter.stage
+                    && left_parameter.access == right_parameter.access
                     && shapes_compatible(draft, left_parameter.type, right_parameter.type, visited);
             }
         );
@@ -323,10 +325,16 @@ auto binary_operand_plan(const ASTView& ast, const ASTBinaryExpr& expression) no
     return numeric_operand_plan(ast, expression.left, expression.right);
 }
 
-auto operator_result_builtin(OperatorResult result) noexcept -> std::optional<BuiltinType> {
+auto operator_result_builtin(OperatorResult result, std::optional<BuiltinType> operand) noexcept
+    -> std::optional<BuiltinType> {
     switch (result) {
-        case OperatorResult::Operand: return std::nullopt;
+        case OperatorResult::Operand: return operand;
         case OperatorResult::Boolean: return BuiltinType::Bool;
+        case OperatorResult::Mask:
+            if (const auto layout = operand ? simd_layout(*operand) : std::nullopt) {
+                return layout->mask;
+            }
+            invariant_violation("mask result requires a SIMD operand");
     }
     std::unreachable();
 }
@@ -374,6 +382,14 @@ auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool {
         case BuiltinType::F64:
         case BuiltinType::String:
         case BuiltinType::Str:          return true;
+        case BuiltinType::U8x32:
+        case BuiltinType::F32x8:
+        case BuiltinType::Mask8:
+        case BuiltinType::Mask32:
+        case BuiltinType::U8x16:
+        case BuiltinType::F32x4:
+        case BuiltinType::Mask4:
+        case BuiltinType::Mask16:
         case BuiltinType::StrCharsView:
         case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return false;
@@ -438,7 +454,7 @@ auto supports_equality(
 ) noexcept -> bool {
     return canonical.value.visit(
         Overloaded {
-            [](const BuiltinTypeValue& value) noexcept {
+            [](const BuiltinTypeValue& value) static noexcept {
                 return builtin_type_supports_equality(value.kind);
             },
             [](const StructTypeValue&) static noexcept { return false; },
@@ -485,6 +501,19 @@ auto type_supports_equality(
 
 auto decide_unary_builtin(UnaryOperator op, std::optional<BuiltinType> builtin) noexcept
     -> OperatorDecision {
+    if (builtin) {
+        if (const auto shape = simd_layout(*builtin)) {
+            if ((shape->mask == *builtin || shape->element == BuiltinType::U8)
+                && op == UnaryOperator::BitwiseNot) {
+                return OperatorResult::Operand;
+            }
+            if (shape->vector == *builtin
+                && shape->element == BuiltinType::F32
+                && op == UnaryOperator::Negate) {
+                return OperatorResult::Operand;
+            }
+        }
+    }
     switch (op) {
         case UnaryOperator::LogicalNot:
             if (builtin != BuiltinType::Bool) {
@@ -521,6 +550,45 @@ auto decide_binary_builtins(
     bool operands_compatible,
     bool equality_capable
 ) noexcept -> OperatorDecision {
+    const auto bitwise = op == BinaryOperator::BitwiseOr
+        || op == BinaryOperator::BitwiseAnd
+        || op == BinaryOperator::BitwiseXor;
+    const auto left_shape = left_builtin ? simd_layout(*left_builtin) : std::nullopt;
+    const auto right_shape = right_builtin ? simd_layout(*right_builtin) : std::nullopt;
+    const auto shape = left_shape ? left_shape : right_shape;
+    if (shape) {
+        const auto floating = shape->element == BuiltinType::F32;
+        if (left_builtin == shape->mask && right_builtin == shape->mask) {
+            if (bitwise) {
+                return OperatorResult::Operand;
+            }
+            return operation_error(
+                "masks support bitwise composition; use any/all for scalar predicates",
+                DiagnosticCode::TypeBinary
+            );
+        }
+        const auto vector_operands =
+            (left_builtin == shape->vector
+             && (right_builtin == shape->vector || right_builtin == shape->element))
+            || (right_builtin == shape->vector && left_builtin == shape->element);
+        if (vector_operands) {
+            if (op == BinaryOperator::Add
+                || op == BinaryOperator::Subtract
+                || (floating && (op == BinaryOperator::Multiply || op == BinaryOperator::Divide))
+                || (!floating && bitwise)) {
+                return OperatorResult::Operand;
+            }
+            if (op == BinaryOperator::Equal
+                || op == BinaryOperator::NotEqual
+                || op == BinaryOperator::Less
+                || op == BinaryOperator::LessEqual
+                || op == BinaryOperator::Greater
+                || op == BinaryOperator::GreaterEqual) {
+                return OperatorResult::Mask;
+            }
+            return operation_error("unsupported SIMD operator", DiagnosticCode::TypeBinary);
+        }
+    }
     if (!operands_compatible) {
         return operation_error(
             "binary operands have incompatible types",

@@ -31,8 +31,11 @@ public:
     }
 
     // Native producers cross the UTF-8 boundary before transferring their storage.
-    static constexpr auto from_utf8(std::string bytes) noexcept -> String {
-        checked_utf8(bytes);
+    static constexpr auto from_utf8(
+        std::string bytes,
+        SourceSite site = SourceSite::native()
+    ) noexcept -> String {
+        checked_utf8(bytes, site);
         return String(std::move(bytes));
     }
 

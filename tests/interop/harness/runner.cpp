@@ -1,4 +1,5 @@
 #include <carven/api/tests/interop/discarded_results/operations.hpp>
+#include <carven/api/tests/interop/printing/structural.hpp>
 #include <carven/api/tests/interop/scalars/export_argument.hpp>
 #include <carven/api/tests/interop/providers/contracts.hpp>
 
@@ -27,7 +28,10 @@ auto main(int argc, char** argv) noexcept -> int {
     std::signal(SIGABRT, terminated);
     namespace api = carven::api::tests::interop::discarded_results::operations;
     const auto operation = std::string_view(argv[1]);
-    if (operation == "contract-stop") {
+    if (operation == "structural-output") {
+        carven::api::tests::interop::printing::structural::structural_output();
+        return 0;
+    } else if (operation == "contract-stop") {
         auto context =
             carven::runtime::TestContext(+[](const carven::runtime::TestFailure&) noexcept {});
         context.begin_case("contracts", "native test stop");

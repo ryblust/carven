@@ -125,9 +125,7 @@ private fn observe_payload(value: ArrayPayload, &target: ArrayPayload) -> i32 {
 
 test "Slices: Read parameters preserve array backing through aggregates" {
     let values: [i32; 2] = [10, 20];
-    let field = ArrayStorage {
-        values: [30, 40]
-    };
+    let field = ArrayStorage { values: [30, 40] };
     var payload = ArrayPayload::Values([50, 60]);
     check(::slice_observation::same_backing(values, borrow_array(values)));
     check(sum(borrow_array(values)) == 30);
@@ -191,16 +189,7 @@ test "Slices: Read selection preserves backing through parameters, projections a
     check(!::slice_observation::same_backing(rows[0], copied.as_slice()));
     rows[0][0] = 99;
     check(copied[0] == 10);
-    check(
-        sum(
-                borrow_slice_loop(
-                    [
-                        [1, 2]
-                    ]
-                )
-            )
-            == 3
-    );
+    check(sum(borrow_slice_loop([[1, 2]])) == 3);
 }
 
 private fn choose_row(flag: bool, a: [[i32; 2]], b: [[i32; 2]]) -> [i32] {
@@ -209,12 +198,8 @@ private fn choose_row(flag: bool, a: [[i32; 2]], b: [[i32; 2]]) -> [i32] {
 }
 
 test "Slices: joined views retain the selected owner through a Read binding" {
-    let first: [[i32; 2]; 1] = [
-        [1, 2]
-    ];
-    let second: [[i32; 2]; 1] = [
-        [3, 4]
-    ];
+    let first: [[i32; 2]; 1] = [[1, 2]];
+    let second: [[i32; 2]; 1] = [[3, 4]];
     check(::slice_observation::same_backing(first[0], choose_row(true, first, second)));
     check(::slice_observation::same_backing(second[0], choose_row(false, first, second)));
 }
@@ -231,11 +216,7 @@ private fn array_slice(values: [[i32]; 1]) -> [i32] => values[0];
 test "Slices: temporary aggregates preserve contained borrows after the call" {
     let owner: String = "hello";
     let from_array = array_text([owner.as_str()]);
-    let from_field = field_text(
-        {
-            values: [owner.as_str()]
-        }
-    );
+    let from_field = field_text({ values: [owner.as_str()] });
     check(from_array == "hello");
     check(from_field == "hello");
     let numbers: [i32; 2] = [10, 20];
@@ -256,9 +237,7 @@ test "Slices: callable views borrow named closure elements" {
         let selected: fn() -> i32 = element;
         check(selected() == 42);
     }
-    let rows = [
-        [closure]
-    ];
+    let rows = [[closure]];
     let callbacks: [fn() -> i32; 1] = rows.as_slice()[0];
     check(callbacks[0]() == 42);
     check(invoke([closure].as_slice()[0]) == 42);

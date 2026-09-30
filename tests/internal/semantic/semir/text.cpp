@@ -142,8 +142,8 @@ const ct::Suite tests([] static noexcept {
                             result_type,
                             lifetime,
                             facts.origin,
-                            SemTextIntrinsic {
-                                .intrinsic = scenario.intrinsic,
+                            SemIntrinsic {
+                                .operation = scenario.intrinsic,
                                 .operands = std::move(operands),
                             }
                         )

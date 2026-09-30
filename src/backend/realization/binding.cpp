@@ -10,12 +10,21 @@ import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
 import :semantic.semir.body;
+import :semantic.semir.contents;
 import :semantic.semir.ids;
+import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
 import std;
+
+auto BodyRealizer::needs_cleanup(TypeID type) const noexcept -> bool {
+    const auto contents = context.semantic().type_contents(type);
+    return contents.contains_native_value
+        || contents.contains_storage_owner
+        || contents.contains_closure_owner;
+}
 
 auto BodyRealizer::binding_expression(LocalBindingID id) noexcept -> TargetExpr {
     auto result = capture_names.contains(id) ? name_expression(capture_names.at(id))
@@ -44,21 +53,23 @@ auto BodyRealizer::declare_binding(
     const auto type = std::holds_alternative<TargetArrayExpr>(initializer.value) || deduced_native
         ? context.intrinsic_type(TargetSymbol::Auto)
         : context.lower_type(binding.type);
-    destination.emit(generated_statement(
+    destination.declare(
         TargetVariableStmt {
             .binding = TargetVariableBinding::ConstValue,
             .maybe_unused = true,
             .local = binding_locals.at(id),
             .type = type,
             .initializer = std::move(initializer),
-        }
-    ));
+        },
+        needs_cleanup(binding.type)
+    );
 }
 
 auto BodyRealizer::declare_deferred(
     const LoweringDeferredStorage& storage,
     bool maybe_unused,
-    LoweringStmtBuilder& destination
+    LoweringStmtBuilder& destination,
+    bool needs_cleanup
 ) noexcept -> void {
     const auto type = context.target().intern_type(
         {.value =
@@ -68,16 +79,21 @@ auto BodyRealizer::declare_deferred(
              },
          .const_qualified = false}
     );
-    destination.emit(generated_statement(
+    destination.declare(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
             .maybe_unused = maybe_unused,
             .local = storage.local,
             .type = type,
-            .initializer = TargetExpr {
-                .value =
-                    TargetConstructionExpr {.type = type, .initializer = std::vector<TargetExpr>()}
-            }
-        }
-    ));
+            .initializer =
+                TargetExpr {
+                    .value =
+                        TargetConstructionExpr {
+                            .type = type,
+                            .initializer = std::vector<TargetExpr>()
+                        }
+                }
+        },
+        needs_cleanup
+    );
 }

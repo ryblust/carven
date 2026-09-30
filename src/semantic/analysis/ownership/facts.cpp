@@ -19,7 +19,6 @@ auto prepare_ownership_body_facts(const SemIRBody& body, const SemIRProgram& pro
         }
         add(binding.type, binding.origin, binding.lifetime);
     }
-    auto prepared_patterns = std::flat_set<PatternID>();
     visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
         const auto contents = program.type_contents(expression.type.resolved());
         if (!expression.selects_storage()
@@ -30,28 +29,6 @@ auto prepare_ownership_body_facts(const SemIRBody& body, const SemIRProgram& pro
                 std::addressof(expression),
                 add(expression.type.resolved(), expression.origin, expression.lifetime)
             );
-        }
-        if (const auto* match = std::get_if<SemMatch>(&expression.value)) {
-            for (const auto& arm : match->arms) {
-                if (!prepared_patterns.insert(arm.pattern).second) {
-                    continue;
-                }
-                const auto arms = std::array {
-                    PatternCoverageArm {.alternatives = {arm.pattern}, .guarded = false}
-                };
-                auto complete = patterns_exhaustive(
-                    program,
-                    body.pattern_table(),
-                    body.pattern(arm.pattern).type,
-                    arms
-                );
-                if (!complete) {
-                    invariant_violation(complete.error());
-                }
-                if (*complete) {
-                    facts.irrefutable_patterns.insert(arm.pattern);
-                }
-            }
         }
         const auto* attempt = std::get_if<SemTry>(&expression.value);
         if (attempt == nullptr) {

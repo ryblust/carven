@@ -292,7 +292,7 @@ fn band(value: i32) -> i32 => match value {
 ```
 
 Bounds can also be runtime expressions; then include a fallback unless the
-remaining static patterns already cover the domain. Favor `match` for classifying
+remaining constant patterns already cover the domain. Favor `match` for classifying
 one value and `if` for deciding actions from computed conditions.
 
 A range loop can also traverse an array, `text.bytes`, or `text.chars`. `break` exits a loop and `continue` advances to
@@ -517,7 +517,7 @@ carven interpret --tests tests.cv
 ```
 
 Both commands select runtime tests and leave the program entry unexecuted.
-`compile --tests` generates the corresponding C++ test sources. Constant blocks
+`compile --tests` generates the corresponding C++ test sources. `const` blocks
 and `const test` execute during analysis in all these modes, and with `check`.
 
 ## Compile-time execution
@@ -533,19 +533,22 @@ const {
 }
 ```
 
-Constant blocks also work inside function bodies and can read visible constants.
-They execute during semantic analysis even if the function is never called;
-calling the function does not repeat the block. They cannot read enclosing
-parameters or runtime locals, and their own locals stay inside the block.
-Separate blocks have no guaranteed execution order; keep ordered operations in
-one block. Their locals and control flow follow the same supported execution
+`const` blocks also work inside function bodies, where they read the body's
+constants, `const` parameters, and `const for` indices and execute with them:
+once for each instance and each `const for` iteration. A function without
+`const` parameters has one instance whether or not it is called; a function
+with them has one instance for each distinct list of static arguments it is
+called with. Calling the function does not repeat the block. They cannot use
+runtime parameters or locals, and their own locals stay inside the block.
+Blocks in one body execute in source order; blocks in different bodies and at
+module scope have no guaranteed order. Their locals and control flow follow the same supported execution
 rules as `const fn` calls. Add a string before `{` when a block needs a label in
 diagnostics: `const "prepare table" { ... }`. Labels need not be unique.
 
 Use `const test` to execute a test during compilation. Both `test` and
 `const test` may omit the name; an anonymous failure reports its source location.
 Explicit names remain unique within a module. It shares the ordinary
-`check`, `require`, `fail`, and print operations, within the supported constant
+`check`, `require`, `fail`, and print operations, within the supported compile-time
 execution subset:
 
 ```cv
@@ -572,7 +575,7 @@ generated C++ when run natively, or the runtime semantics when run with
 and callees support compile-time execution; those callees must also be `const fn`.
 Each invocation still checks execution limits and dynamic errors. The same
 function has the same arithmetic and output behavior at runtime.
-Use `carven check source.cv` to evaluate the constant blocks, initializers, and
+Use `carven check source.cv` to evaluate the `const` blocks, initializers, and
 static tests without running the program or ordinary tests.
 
 ## Structural printing and assertion explanations

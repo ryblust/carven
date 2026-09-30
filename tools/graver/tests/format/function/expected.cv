@@ -1,3 +1,14 @@
 fn add(a: i32, b: i32) -> i32 {
     return a + b;
 }
+
+fn pick(value: i32, const index: usize) -> i32 => value;
+
+fn unrolled(const count: usize) -> usize {
+    var total: usize = 0;
+    const for index in 0..count {
+        const if index == 0 { continue; } else if index > 2 { break; }
+        total += index;
+    }
+    return total;
+}

@@ -20,7 +20,8 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
             std::invoke(visitor, value);
         };
         if constexpr (std::same_as<std::remove_const_t<Operation>, SemDefault>
-                      || std::same_as<std::remove_const_t<Operation>, SemConstant>) {
+                      || std::same_as<std::remove_const_t<Operation>, SemConstant>
+                      || std::same_as<std::remove_const_t<Operation>, SemUnreachable>) {
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemBinding>) {
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemCallable>) {
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemEnumConstructor>) {
@@ -114,14 +115,8 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
             for (auto& operand : value.operands) {
                 child(operand.expression);
             }
-        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemSliceIntrinsic>) {
-            auto& value = operation;
-            for (auto& operand : value.operands) {
-                child(operand.expression);
-            }
-        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemTextIntrinsic>) {
-            auto& value = operation;
-            for (auto& operand : value.operands) {
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemIntrinsic>) {
+            for (auto& operand : operation.operands) {
                 child(operand.expression);
             }
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemCall>) {
@@ -207,6 +202,10 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
             child(operation.expression);
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemInitialize>) {
             child(operation.initializer);
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemStaticBinding>) {
+            child(operation.initializer);
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemConstBlock>) {
+            child(operation.region);
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemAssign>) {
             child(operation.target);
             child(operation.value);
@@ -220,6 +219,10 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemRangeLoop>) {
             child(operation.source);
             child(operation.body);
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemExpandedLoop>) {
+            for (auto& iteration : operation.iterations) {
+                child(iteration);
+            }
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, OwnedSemanticRegion>) {
             child(operation);
         } else {
@@ -242,55 +245,19 @@ auto visit_semantic_children(Operation& operation, Visitor visitor) noexcept -> 
     });
 }
 
-// Selects possible child execution from local Boolean and coverage facts.
-// Unknown branches remain included; stored traversal still visits all source.
-template<typename Operation, typename Truth, typename Visitor>
-auto visit_evaluation_children(Operation& operation, Truth truth, Visitor visitor) noexcept
-    -> void {
+// Visits the children that runtime evaluation may execute: every operand and
+// branch except static-stage statements and match arms that coverage excludes.
+template<typename Operation, typename Visitor>
+auto visit_evaluation_children(Operation& operation, Visitor visitor) noexcept -> void {
     using Value = std::remove_const_t<Operation>;
     if constexpr (std::same_as<Value, SemanticExpressionValue>
                   || std::same_as<Value, SemanticStatementValue>) {
-        operation.visit([&](auto& value) noexcept {
-            visit_evaluation_children(value, truth, visitor);
-        });
-    } else if constexpr (std::same_as<Value, SemReport>) {
-        if (operation.condition) {
-            visitor(**operation.condition);
-        }
-        if (operation.message && (!operation.condition || truth(**operation.condition) != true)) {
-            visitor(**operation.message);
-        }
-    } else if constexpr (std::same_as<Value, SemShortCircuit>) {
-        visitor(*operation.left);
-        const auto known = truth(*operation.left);
-        if (!known || *known == (operation.operation == ShortCircuitOperator::And)) {
-            visitor(*operation.right);
-        }
-    } else if constexpr (std::same_as<Value, SemIf>) {
-        for (auto& branch : operation.branches) {
-            visitor(branch.condition);
-            const auto known = truth(branch.condition);
-            if (known != false) {
-                visitor(branch.body);
-            }
-            if (known == true) {
-                return;
-            }
-        }
-        if (operation.otherwise) {
-            visitor(**operation.otherwise);
-        }
-    } else if constexpr (std::same_as<Value, SemMatch> || std::same_as<Value, SemTry>) {
-        if constexpr (std::same_as<Value, SemMatch>) {
-            visitor(*operation.subject);
-        } else {
-            visitor(*operation.body);
-        }
+        operation.visit([&](auto& value) noexcept { visit_evaluation_children(value, visitor); });
+    } else if constexpr (std::same_as<Value, SemMatch>) {
+        visitor(*operation.subject);
         for (auto& arm : operation.arms) {
-            if constexpr (std::same_as<Value, SemMatch>) {
-                if (!arm.reachable) {
-                    continue;
-                }
+            if (!arm.reachable) {
+                continue;
             }
             for (auto& bounds : arm.pattern_bounds) {
                 if (bounds.begin) {
@@ -302,22 +269,12 @@ auto visit_evaluation_children(Operation& operation, Truth truth, Visitor visito
             }
             if (arm.guard) {
                 visitor(*arm.guard);
-                if (truth(*arm.guard) == false) {
-                    continue;
-                }
             }
             visitor(arm.body);
         }
-    } else if constexpr (std::same_as<Value, SemLoop>) {
-        visitor(*operation.initializer);
-        if (operation.condition) {
-            visitor(*operation.condition);
-            if (truth(*operation.condition) == false) {
-                return;
-            }
-        }
-        visitor(*operation.body);
-        visitor(*operation.steps);
+    } else if constexpr (std::same_as<Value, SemStaticBinding>
+                         || std::same_as<Value, SemConstBlock>) {
+        // The static stage is construction work, outside runtime evaluation.
     } else {
         visit_semantic_children(operation, visitor);
     }

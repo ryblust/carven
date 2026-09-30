@@ -1,12 +1,14 @@
 module carven:semantic.analysis.expr.projection;
 
 import :diagnostics.code;
+import :diagnostics.suggestion;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
 import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.analysis.types.display;
 import :semantic.semir.structured;
 import std;
 
@@ -105,10 +107,19 @@ auto construct_member_expression(
                 return site.draft().spelling(field.name) == name;
             });
         if (field == declaration.fields.end()) {
+            auto fields = std::vector<std::string>();
+            for (const auto& declared : declaration.fields) {
+                fields.push_back(site.draft().spelling_copy(declared.name));
+            }
             return std::unexpected(site.fail(
                 source.name_span,
                 DiagnosticCode::TypeMemberUnresolved,
-                std::format("structure has no field named '{}'", name)
+                std::format(
+                    "structure '{}' has no field named '{}'{}",
+                    site.draft().spelling(declaration.name),
+                    name,
+                    spelling_suggestion(name, fields)
+                )
             ));
         }
         const auto index = static_cast<std::uint32_t>(field - declaration.fields.begin());
@@ -122,6 +133,10 @@ auto construct_member_expression(
     return std::unexpected(site.fail(
         source.name_span,
         DiagnosticCode::TypeMemberUnresolved,
-        std::format("type has no member named '{}'", name)
+        std::format(
+            "type '{}' has no member named '{}'",
+            type_display_name(site.draft(), type),
+            name
+        )
     ));
 }

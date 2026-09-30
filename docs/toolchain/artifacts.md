@@ -65,7 +65,11 @@ carven/generated/carven-test-main.cpp
 An interface component contains declarations connected by complete-definition
 requirements. Its anchor is its first canonical module path. Modules without a
 published semantic surface have no component of their own. Implementations use
-canonical module paths.
+canonical module paths. An implementation also realizes the static instances its
+module calls, as `inline` functions in the provider's module namespace. Imported
+staged function bodies contribute to the calling module's generated implementation.
+Calling a function with new static values changes the caller's implementation;
+the provider's generated artifacts remain independent of its callers.
 
 The `carven/api` header contains explicit `export(cpp)` declarations in
 `carven::api`, followed by nested namespaces for the encoded module path
@@ -151,6 +155,7 @@ Generated files include the self-contained support leaves they use:
 
 ```text
 carven/runtime/passing.hpp
+carven/runtime/trap.hpp
 carven/runtime/numeric.hpp
 carven/runtime/array.hpp
 carven/runtime/range.hpp
@@ -161,7 +166,7 @@ carven/runtime/string.hpp
 carven/runtime/format.hpp
 carven/runtime/writer.hpp
 carven/runtime/print.hpp
-carven/runtime/display.hpp
+carven/runtime/display/display.hpp
 carven/runtime/entry.hpp
 carven/runtime/deferred.hpp
 carven/runtime/outcome.hpp
@@ -176,7 +181,8 @@ names, helper selections, and representation layouts are implementation details.
 Use support headers matching the compiler that generated the artifacts.
 
 `passing.hpp` supplies native parameter and transfer support; `entry.hpp`
-supplies process-argument ingress. `testing.hpp` supplies inline-test execution
+supplies process-argument ingress. `trap.hpp` supplies source-positioned
+termination for violated runtime checks. `testing.hpp` supplies inline-test execution
 contexts, failure records, and reporting in `carven::runtime`.
 
 `utf.hpp` supplies UTF validation, scalar encoding and decoding, and native
@@ -184,7 +190,7 @@ representation conversions. `text.hpp` supplies text views; `string.hpp` supplie
 String. General interpolation uses `format.hpp` and requires C++20 `<format>`
 support. Supported builtin formatting uses `writer.hpp`, including mixed integer,
 floating, bool, char, and text fields; precomputed text uses direct String
-construction or append. Structural printing uses `display.hpp`. The consumer
+construction or append. Structural printing uses `display/display.hpp`. The consumer
 compiler checks delegated format strings and native formatter availability.
 `print.hpp` supplies stdout
 and stderr printing, selecting the C++20 implementation or available C++23 library
@@ -193,5 +199,5 @@ print support without changing the consumer's selected standard.
 For direct C++ calls, `String::from_str` and `append` require valid UTF-8, and
 `push` requires a Unicode scalar. `String::from_utf8` validates incoming byte
 storage and terminates on invalid UTF-8. Runtime String operations support C++20
-constant evaluation. In Carven constant execution, temporary String values keep
+constant evaluation. In Carven compile-time execution, temporary String values keep
 ownership until initializer completion freezes a text result to `str`.

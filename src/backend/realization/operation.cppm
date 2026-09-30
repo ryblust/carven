@@ -3,10 +3,12 @@ module carven:backend.realization.operation;
 import :backend.lowering.context;
 import :backend.preparation;
 import :backend.target.expr;
+import :backend.target.name;
 import :backend.target.stmt;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.structured;
+import :source.provenance.ids;
 import std;
 
 // Prepared operands preserve their use contract's native type and value category.
@@ -29,12 +31,16 @@ auto realize_unary(
     TargetExpr operand
 ) noexcept -> TargetExpr;
 
+// A trapping runtime operation reports origin.
 auto realize_binary(
     ModuleLowering& context,
     const PreparedBinary& preparation,
     TargetExpr left,
-    TargetExpr right
+    TargetExpr right,
+    ProgramOriginID origin
 ) noexcept -> TargetExpr;
+
+auto source_site_expression(ModuleLowering& context, ProgramOriginID origin) noexcept -> TargetExpr;
 
 // Scalar and array adaptation share the source callable policy. Array inputs
 // must already be stabilized by the body realizer.

@@ -752,6 +752,53 @@ const ct::Suite tests([] static noexcept {
             );
         }
     );
+    ct::test(
+        "Parser: named function parameters retain const qualifiers and spans",
+        [] static noexcept {
+            static constexpr auto text = std::string_view(
+                "fn pick(value: i32, const self: usize) -> i32 => value;\n"
+                "class Picker { fn get(self, const lane: usize) -> usize => lane; }\n"
+            );
+            const auto result = parse_valid(text);
+            const auto ast = result.view();
+            const auto& pick = function(result, 0);
+            if (!ct::expect_equal(pick.parameters.size(), 2u)) {
+                return;
+            }
+            ct::expect(!(pick.parameters[0].const_span.has_value()));
+            const auto& static_parameter = pick.parameters[1];
+            if (!ct::expect(static_parameter.const_span.has_value())) {
+                return;
+            }
+            ct::expect_equal(slice(text, *static_parameter.const_span), "const");
+            ct::expect_equal(slice(text, static_parameter.span), "const self: usize");
+            ct::expect_equal(static_parameter.access.mode, ASTAccessMode::Read);
+
+            const auto& record = get<ASTRecordDecl>(item(result, 1));
+            if (!ct::expect_equal(record.operations.size(), 1u)) {
+                return;
+            }
+            const auto& method = get<ASTFunctionDecl>(ast.item(record.operations[0]));
+            if (!ct::expect_equal(method.parameters.size(), 2u)) {
+                return;
+            }
+            if (!ct::expect(method.parameters[1].const_span.has_value())) {
+                return;
+            }
+            ct::expect_equal(slice(text, *method.parameters[1].const_span), "const");
+            ct::expect_equal(slice(text, method.parameters[1].span), "const lane: usize");
+
+            check_invalid("fn outer() { let callable = [](const index: usize) => index; }");
+            check_invalid(
+                "fn update(const &index: i32) {}",
+                "const parameter cannot have an access marker"
+            );
+            check_invalid(
+                "fn take(const &&index: i32) {}",
+                "const parameter cannot have an access marker"
+            );
+        }
+    );
 });
 
 } // namespace

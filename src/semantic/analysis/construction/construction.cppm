@@ -6,6 +6,7 @@ import :semantic.analysis.construction.requests;
 import :semantic.analysis.decl.resolver;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
+import :semantic.analysis.stage.session;
 
 class ProgramConstruction final {
 public:
@@ -27,6 +28,7 @@ private:
     ProgramDraft& draft;
     AnalysisCatalogView catalog;
     ConstructionRequests requests;
+    StaticStage static_stage;
     DeclResolver declarations;
     BodyBatchElaborator bodies;
 

@@ -73,20 +73,23 @@ const ct::Suite tests([] static noexcept {
         }
     )"));
             static_cast<void>(analyze_test_program("class C { fn consume(&&self) {} }"));
-            static_cast<void>(
-                analyze_test_program("fn identity(self: i32) -> i32 { return self; }")
-            );
+            static_cast<void>(analyze_test_program(
+                "fn identity(self: i32) -> i32 { return self; }"
+                "fn static_identity(const self: i32) -> i32 { return self; }"
+            ));
             const auto unnamed = analyze_test_errors("class C { fn read(value) {} }");
             ct::expect_diagnostic(unnamed, DiagnosticCode::TypeParameterAnnotation);
             const auto explicit_receiver = analyze_test_errors("class C { fn read(self: C) {} }");
             ct::expect_diagnostic(explicit_receiver, DiagnosticCode::TypeParameterAnnotation);
+            const auto static_receiver = analyze_test_errors("class C { fn read(const self) {} }");
+            ct::expect_diagnostic(static_receiver, DiagnosticCode::ConstAdmission);
             const auto duplicate = analyze_test_errors("class C { value: i32, fn value(self) {} }");
             ct::expect_diagnostic(duplicate, DiagnosticCode::Catalog);
         }
     );
 
     ct::test(
-        "Semantic classes: ordinary function definitions have no constant execution gate",
+        "Semantic classes: ordinary function definitions have no static execution gate",
         [] static noexcept {
             static_cast<void>(
                 analyze_test_program("class C {} fn copy(value: C) -> C { return value; }")

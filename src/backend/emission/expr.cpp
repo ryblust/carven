@@ -193,9 +193,14 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                 const auto own_precedence = precedence(binary.op);
                 const auto comparison = own_precedence == TargetPrecedence::Equality
                     || own_precedence == TargetPrecedence::Relational;
+                // Comparisons within bitwise expressions retain explicit grouping.
+                const auto bitwise = binary.op == TargetBinaryOperator::BitwiseAnd
+                    || binary.op == TargetBinaryOperator::BitwiseOr
+                    || binary.op == TargetBinaryOperator::BitwiseXor;
                 // Nested comparisons, shift operands with addition, and mixed logical
                 // operators display their grouping.
-                const auto grouped = comparison                 ? TargetPrecedence::Shift
+                const auto grouped = bitwise                    ? TargetPrecedence::Shift
+                    : comparison                                ? TargetPrecedence::Shift
                     : own_precedence == TargetPrecedence::Shift ? TargetPrecedence::Multiplicative
                     : binary.op == TargetBinaryOperator::LogicalOr ? TargetPrecedence::BitwiseOr
                                                                    : own_precedence;

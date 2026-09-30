@@ -11,9 +11,12 @@ enum class TargetTypeCompleteness {
     CompleteDefinition,
 };
 
+// A function with static parameters is instantiated by the modules that call it,
+// so its body belongs to its owner's surface: the facts include every type,
+// closure and same-module function that body reaches.
 struct TargetReferenceFacts final {
     std::vector<std::flat_map<NominalDeclarationRef, TargetTypeCompleteness>> surface_requirements;
-    std::vector<std::flat_set<CallableID>> surface_closures;
+    std::vector<std::flat_set<CallableID>> surface_callables;
 };
 
 auto target_visibility(const SemIRProgram& semantic, DeclarationRef declaration) noexcept

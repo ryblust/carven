@@ -1,0 +1,5 @@
+index.cv:2:16: error: sequence index is out of bounds
+  index: 7
+  length: 3
+  note: execution aborted
+

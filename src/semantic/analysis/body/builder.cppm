@@ -2,6 +2,7 @@ module carven:semantic.analysis.body.builder;
 
 import :semantic.analysis.program;
 import :semantic.semir.body;
+import :semantic.semir.completion;
 import :semantic.semir.program;
 import :semantic.semir.structured;
 import :semantic.semir.table;
@@ -54,11 +55,11 @@ public:
     ) noexcept -> BoundStorage;
     auto add_pattern(ElaboratedPattern) noexcept -> PatternID;
     auto pattern_copy(PatternID) const noexcept -> ElaboratedPattern;
+    auto completion_patterns() const noexcept -> CompletionPatterns;
     auto pattern_table() const noexcept -> const MutableBodyTable<ElaboratedPattern, PatternID>&;
     auto binding_expression(LocalBindingID) noexcept -> PlaceExpression;
     auto remember_initializer(LocalBindingID, const SemanticExpression&) noexcept -> void;
     auto known_callable(const SemanticExpression&) const noexcept -> std::optional<CallableID>;
-    auto known_constant(const SemanticExpression&) const noexcept -> std::optional<ConstantID>;
     auto known_sequence_extent(const SemanticExpression&) const noexcept
         -> std::optional<std::uint64_t>;
     auto make_place(
@@ -102,7 +103,6 @@ private:
     MutableBodyTable<LifetimeRegion, LifetimeRegionID> lifetime_regions;
     MutableBodyTable<ElaboratedLocalBinding, LocalBindingID> bindings;
     MutableBodyTable<ElaboratedPattern, PatternID> patterns;
-    std::map<LocalBindingID, ConstantID> local_constants;
     std::map<LocalBindingID, CallableID> local_callables;
     std::map<LocalBindingID, std::uint64_t> local_sequence_extents;
     std::optional<LifetimeRegionID> active_lifetime;

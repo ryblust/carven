@@ -232,7 +232,7 @@ const ct::Suite tests([] static noexcept {
         [] static noexcept {
             const auto function = WideFunctionRef(&narrow_result);
             auto success = function(7);
-            auto* success_value = success.success_if();
+            const auto* success_value = success.success_if();
             if (!ct::expect(success_value != nullptr)) {
                 return;
             }
@@ -243,17 +243,17 @@ const ct::Suite tests([] static noexcept {
             };
             const auto object_reference = WideFunctionRef(object);
             auto object_failure = object_reference(11);
-            auto* object_failure_value = object_failure.failure_if<ParseFailure>();
+            const auto* object_failure_value = object_failure.failure_if<ParseFailure>();
             if (!ct::expect(object_failure_value != nullptr)) {
                 return;
             }
-            ct::expect_equal(std::move(*object_failure_value).offset, 11);
+            ct::expect_equal(object_failure_value->offset, 11);
 
             const auto temporary = WideFunctionRef([](int value) static noexcept -> NarrowOutcome {
                 return NarrowOutcome::success_from([value]() noexcept { return value * 2; });
             });
             auto temporary_success = temporary(6);
-            auto* temporary_value = temporary_success.success_if();
+            const auto* temporary_value = temporary_success.success_if();
             if (!ct::expect(temporary_value != nullptr)) {
                 return;
             }
@@ -266,7 +266,7 @@ const ct::Suite tests([] static noexcept {
         [] static noexcept {
             const auto value_function = WideFunctionRef(&increment);
             auto value_success = value_function(4);
-            auto* function_value = value_success.success_if();
+            const auto* function_value = value_success.success_if();
             if (!ct::expect(function_value != nullptr)) {
                 return;
             }
@@ -277,7 +277,7 @@ const ct::Suite tests([] static noexcept {
             };
             const auto value_reference = WideFunctionRef(value_object);
             auto object_success = value_reference(3);
-            auto* object_value = object_success.success_if();
+            const auto* object_value = object_success.success_if();
             if (!ct::expect(object_value != nullptr)) {
                 return;
             }

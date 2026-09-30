@@ -6,6 +6,7 @@ import std;
 
 // Execution atoms contain no aggregate storage; compounds have explicit owners below.
 using ConstantAtomValue = std::variant<
+    SIMDConstant,
     IntegerConstant,
     RangeConstant,
     F32Constant,

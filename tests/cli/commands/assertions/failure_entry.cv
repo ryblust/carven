@@ -1,0 +1,3 @@
+import .failure using run_failure;
+
+run_failure();

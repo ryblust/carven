@@ -80,11 +80,7 @@ auto ASTDumper::render_for_header(
                         },
                     }
                 );
-                if (!c_style.condition.has_value()) {
-                    append_line(nested_prefix, false, "condition <absent>");
-                } else {
-                    render_expression(*c_style.condition, nested_prefix, false, "condition ");
-                }
+                render_expression(c_style.condition, nested_prefix, false, "condition ");
                 render_list(
                     nested_prefix,
                     true,
@@ -136,11 +132,11 @@ auto ASTDumper::render_statement_node(
     const auto& statement = ast.statement(statement_id);
     statement.value.visit(
         Overloaded {
-            [&](const ASTConstantBlock& block) noexcept {
+            [&](const ASTConstBlock& block) noexcept {
                 append_line(
                     prefix,
                     is_last,
-                    std::format("ConstantBlock {}", format_dump_span(statement.span))
+                    std::format("ConstBlock {}", format_dump_span(statement.span))
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_span_field(nested_prefix, false, "keyword", block.keyword_span);
@@ -184,7 +180,11 @@ auto ASTDumper::render_statement_node(
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_span_field(nested_prefix, false, "while", loop.keyword_span);
-                render_expression(loop.condition, nested_prefix, false, "condition ");
+                if (loop.condition) {
+                    render_expression(*loop.condition, nested_prefix, false, "condition ");
+                } else {
+                    append_line(nested_prefix, false, "condition <absent>");
+                }
                 render_ordinary_block(loop.body, nested_prefix, true, "body ");
             },
             [&](const ASTForStmt& loop) noexcept {
@@ -194,6 +194,9 @@ auto ASTDumper::render_statement_node(
                     std::format("ForStatement {}", format_dump_span(statement.span))
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
+                if (loop.const_span) {
+                    render_span_field(nested_prefix, false, "const", *loop.const_span);
+                }
                 render_span_field(nested_prefix, false, "for", loop.keyword_span);
                 render_for_header(loop.header, nested_prefix, false);
                 render_ordinary_block(loop.body, nested_prefix, true, "body ");

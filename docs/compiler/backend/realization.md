@@ -5,6 +5,11 @@ statements, storage, and control exits. [Representation](representation.md)
 defines native types and ABI; [preparation](preparation.md) supplies operation
 plans and operand demands.
 
+Body lowering queries one published semantic body by BodyID. Preparation
+summarizes its executable region; realization uses its binding, parameter,
+capture, and lifetime identities. Static-instance bodies retain only runtime
+parameter mappings. Calls identify their instance directly in SemIR.
+
 ## Evaluation and values
 
 Function-body lowering composes `Lowered<T>` results containing target statements,
@@ -16,6 +21,9 @@ Result destinations are function return, local lambda yield, final-storage
 initialization, and discard. Discard preserves required execution without
 extracting an unused success payload. Operand realization determines storage
 identity and observation or transfer behavior before composing the result.
+An expression with a proved absent execution entry retains its type as
+`SemUnreachable`. Realization emits a semantic-proof unreachable statement and
+produces no normal value.
 
 Discarded results pass through expression evaluation. Known conditions request
 execution without a value and retain their full-expression cleanup boundary. An
@@ -47,6 +55,12 @@ Initialization stays at its execution point, including conditional paths. Native
 bodies provide scopes; independent regions with declarations require a block.
 Statement composition and source attribution do not create scopes.
 
+Statement fragments separately retain declarations and outstanding cleanup.
+Concatenation combines both facts; an enclosing block ends its children's cleanup
+before the next statement. Declarations remain initialization barriers even when
+they require no cleanup. Unclassified declarations conservatively retain cleanup;
+storage producers can establish its absence from the selected representation.
+
 Realization records mutable owner access required by emitted Write operands and
 transfers. Function-body completion uses these retained demands to select const or
 mutable storage for directly initialized local owners. Deferred initialization
@@ -74,9 +88,18 @@ values from this case. Sequencing still saves earlier values before later effect
 place projections and borrowed owners retain their storage requirements.
 
 Bindings initialize in their natural scopes. Assignment uses C++ assignment
-and requires an assignable destination. A binding initializer without outward
+and requires an assignable destination. When the realized initializer prefix has
+no outstanding cleanup, its statements precede an ordinary final declaration,
+including when they propagate failures or test stops. This applies independently
+of the final object's constructor capabilities. Source lifetime and borrowing
+rules remain unchanged; only cleanup-free implementation storage may live longer.
+The proof considers all retained owners and every Outcome alternative. Native
+values, owned storage, and closure owners conservatively require cleanup;
+retained references borrow their backing, whose own obligation remains separate.
+
+A binding initializer without outward
 failure or test exit initializes its final C++ object directly. When it requires
-statements or local backing, a typed factory contains the complete initializer
+local cleanup, a typed factory contains the complete initializer
 and constructs the result before that backing is destroyed. Escaping structured
 initializers deliver directly into their final deferred destination. Delayed
 construction uses
@@ -129,9 +152,13 @@ repeating it on both the local declaration and the initializer.
 Builtin compound assignment snapshots the prior value when its right operand
 requires execution. An execution-free right operand uses the selected place
 directly; effectful operands retain the source snapshot and evaluation order.
+A binding, or a field path over one, names the same object wherever it is
+evaluated, so assignment spells it again instead of holding a place reference.
 
-Carven call operands for builtin value parameters use value delivery. Native C++
-calls retain their const-reference operand contract for overload resolution.
+Carven call and intrinsic operands for builtin Read values use value delivery.
+Carven parameter types are exact and member access selects no overload, so their
+other Read operands need no const cast; Read parameters are already const. Native
+C++ calls retain their const-reference operand contract for overload resolution.
 Named input storage already has a source lifetime; sequencing creates snapshots
 when later evaluation requires them. Scalar value consumers can use direct local
 storage within an expression frame.
@@ -209,9 +236,10 @@ cleanup ID matches the region. Realization encloses tail evaluation and result
 delivery in one block, so all payload and backing uses precede its cleanup.
 The destination of a result that survives the block retains its own storage.
 Preparation summarizes conditional evaluation through nested operands, including
-report messages. Shared and conditional frames conservatively separate storage
-declarations from initialization, reserving temporary storage in source order at
-the enclosing expression boundary and initializing only on the selected path.
+report messages. Shared evaluation and intermediate owners in conditional frames
+conservatively separate storage declarations from initialization, reserving
+temporary storage in source order at the enclosing expression boundary and
+initializing only on the selected path.
 Reverse destruction order includes those objects and any retained Outcome owners.
 Known or discarded results retain required execution.
 Fallible calls check success before continuing with its value. Result demand controls whether
@@ -231,11 +259,15 @@ For `values.slice(0, 2).len()`, realization executes the checked slice and retur
 `2`; the slice result needs no storage or size query. Failure still prevents
 result delivery.
 
-The frame selects storage uniformly for retained operands and Outcome owners.
-This keeps declaration order aligned with construction order; selecting automatic
-and hoisted deferred owners independently could reverse their cleanup order.
-Both representations use the selected result demand and preserve reverse
-destruction order among all retained owners.
+The frame selects one storage form for intermediate owners, including retained
+operands and their Outcomes. Selecting ordinary and hoisted deferred storage
+independently could reverse their cleanup order. A fragment at the final
+construction position of an independent frame may use an ordinary local: all
+retained operands have been constructed before it, so it is destroyed before
+them. Shared evaluation and recursive operands retain the frame's intermediate
+storage policy. Both owner anchoring and call completion query this policy.
+The build request carries the result demand and construction position separately;
+neither changes the source lifetime or payload delivery contract.
 
 ### Owning field projection
 
@@ -283,35 +315,99 @@ the existing operand storage contract.
 Conditionals, returns, and scopes lower directly. Boolean short-circuit values
 use C++ `&&` and `||` when the selected operand needs no preceding statements;
 otherwise a branch contains that operand's evaluation and result delivery.
-Loops use native while conditions when condition evaluation needs no preceding
-statements. Otherwise the iteration body sequences the condition before its exit
-test. Step loops retain a local continue target.
+An independent condition with outstanding cleanup delivers its Boolean into an
+outer local and closes the evaluation scope before branch execution. A prefix
+without that obligation uses its predicate directly, preserving its preceding
+execution and exits without an additional Boolean local.
+Loops use native conditions when condition evaluation needs no preceding
+statements. Region realization consumes semantic entry reachability before
+implementing statements or tail results. With a direct condition, a single step
+expressible in a C++ for header uses that syntax. A normally completing step region
+whose exits stay local uses an immediately invoked void lambda in the header;
+statements retain their full-expression and cleanup scopes. Native `continue` runs
+these steps after body cleanup. Steps with outward exits use the enclosing control
+receivers and a local continue target in the while form.
+A condition with preceding statements executes inside the iteration before its
+exit test.
 Known consumers receive results directly, including returns from selected branches.
-An unconditional binding pattern initializes its local directly from the subject;
-partial pattern selection retains address slots until the arm is selected.
-Expression-position value branches with no outward failure or test exit use local
-value lambdas; branches with those exits use deferred initialization. Function
-return applies the failure ABI independently of lambda yield. A retained void
-expression can be returned directly; an Outcome return executes it before
-constructing success without a payload. Non-void success uses `Outcome::success_from(factory)`:
-the factory is invoked immediately and exactly once to construct the payload directly. Callable
+Pattern bindings initialize directly from their selected subject or projection.
+Alternatives retain address slots when their sources must cross a selection scope
+or differ between successful paths.
+
+Structured values take the most direct C++ form their destination admits:
+
+1. A scalar value region whose realization is one returned expression, or one
+   two-way conditional of returned expressions, is that expression or `?:`.
+   A result copied into typed storage or a by-value operand is the expression
+   itself; a returned integer literal states the region's result type. A result
+   its consumer may bind by reference is cast to the result type, so a selected
+   expression that names storage still delivers a value. The check reads only
+   the statements the region itself produced.
+2. Otherwise each arm delivers to the destination: a return, an assignment to a
+   named local, deferred initialization, or a discard.
+3. Region exit labels remain only where C++ has no structured form: failure
+   transfer, expanded-loop exits, and match arms that must fall through.
+4. An expression-position value region with statements and no outward failure or
+   test exit becomes a local value lambda, which also keeps a `let` initializer
+   const. Regions with those exits use deferred initialization.
+
+Function return applies the failure ABI independently of lambda yield. A retained
+void expression can be returned directly; an Outcome return executes it before
+constructing success without a payload. Scalar success uses `Outcome::success(value)`.
+Other non-void success uses `Outcome::success_from(factory)`: the factory is
+invoked immediately and exactly once to construct the payload directly. Callable
 adaptation uses the same construction. A factory may return an immovable prvalue.
 Owner transfer, payload extraction, and Outcome widening require the constructors
 used by those operations. Void and discarded regions need no result storage.
 Loops and handlers receive only exits belonging to their own construct. Loops
 without steps and range loops use native `continue`.
 
+Expanded loops realize their ordered iteration regions. Semantic specialization
+publishes distinct binding, pattern, and lifetime identities for each iteration;
+realization uses the ordinary binding map and preserves shared outer storage.
+Regions with storage retain a C++ block for cleanup.
+Continue exits one iteration and break exits the expansion. Their labels exist
+only when a retained transfer needs them. A jump that immediately precedes its
+label is removed. When a label has a single jump and that jump ends an earlier
+conditional in the same statement list, the skipped statements become the
+conditional's alternative, or its negated body when the jump was the whole
+branch. This restructuring stops at declarations in the same statement list.
+Skipped storage stays inside its existing C++ blocks, preserving its scope and
+destruction order.
+
 ### Patterns and matches
 
-Match locates its subject once and keeps it alive and stable through selection.
+Match locates its subject once and keeps its storage alive through selection.
+A named local place subject is matched in place.
 `PatternRealizer` traverses the published SemIR patterns in source order without
-expanding combinations of alternatives. Matching produces a known Boolean or a
-residual predicate with an ordered statement prefix. Literal and range patterns
-use direct comparisons; wildcard and type constraints are known successes.
-Compound patterns use native short-circuit expressions when their operands need
-no statement prefix, and conditional statements otherwise. Partial matches record
-binding addresses; the successful arm constructs its bindings and evaluates its
-guard once. Catch arms use the same predicate composition.
+expanding combinations of alternatives. A selection retains ordered tests, their
+statement prefixes, and binding sources. Each successful test encloses the next
+test and the selected arm, keeping its projections in scope. Literal and range
+patterns use direct comparisons; wildcard and type constraints are known
+successes. Prefix-free tests compose as native short-circuit expressions.
+
+A binding records its source until the whole pattern accepts. The arm then
+constructs its bindings and evaluates its guard once. Alternatives share the
+same arm; differing sources and sources local to an alternative join through
+address slots. A common source already visible outside the alternatives needs
+no slot. Match and catch use the same selection operations.
+
+Enum payload projections are pure borrowed pointers. Realization records them as
+removable locals; body completion retains only projections referenced by tag
+tests, payload reads, or binding construction. Removing an unused projection can
+also release its enclosing projection. Subject evaluation and owner cleanup stay
+in place.
+
+Pattern completion supplies accepted and rejected successors. Realization keeps
+the predicate's required prefix and uses those facts to enter later payloads,
+alternatives, guards, and bodies. A stopped operand needs only a conditional
+branch; its surviving normal path has a known Boolean result. A sole enum case
+needs no tag test.
+
+A guard-free arm whose test needs no statements selects between its body and the
+remaining arms, so consecutive such arms form one `if`/`else if` chain. An arm
+with a guard or a test prefix falls through to its successor when it does not
+apply and leaves through the match exit label when selected.
 
 ### Failure dispatch and transport
 
@@ -361,11 +457,15 @@ The transfer policy also preserves native copy and move effects.
 The process entry wrapper calls the Carven entry exactly once. An infallible
 entry's ordinary result is discarded and the wrapper returns zero. For a
 nonempty declared failure contract, the wrapper owns the returned `Outcome`,
-checks `success_if()`, and returns zero or `EXIT_FAILURE` from `<cstdlib>`.
+passes each failure alternative's `failure_if` projection to
+`report_entry_failure` with the failure's module-qualified name, its structural
+display emitter, and the entry's `SourceSite`, then returns zero or `EXIT_FAILURE`
+from `<cstdlib>`. The report call ignores a null projection, so the wrapper
+needs no branches.
 The wrapper's result storage undergoes ordinary scope cleanup.
 
 A local label realizes an exit for which C++ has no suitable structured form.
 Labels carry a control purpose and must respect initialization barriers. The
 label remains local to the source control construct it implements. Region exits
 record use when emitting a jump. Only their owning construct can restore an
-entry; lowering never recovers continuation by scanning generated statements.
+entry.

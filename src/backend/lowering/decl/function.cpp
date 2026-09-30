@@ -4,8 +4,9 @@ import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
 import :backend.lowering.context;
-import :backend.lowering.decl.lowerer;
 import :backend.lowering.decl;
+import :backend.lowering.decl.lowerer;
+import :backend.realization.operation;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -76,7 +77,10 @@ auto lower_cpp_import(
         }
         parameters.push_back(
             {.local = name,
-             .type = context.lower_parameter(semantic_signature.parameters[index]),
+             .type = context.lower_parameter(
+                 semantic_signature.parameters[index].access,
+                 semantic_signature.parameters[index].type
+             ),
              .default_value = std::nullopt}
         );
     }
@@ -106,13 +110,16 @@ auto lower_cpp_import(
             && is_char_type(context.semantic(), semantic_signature.result)) {
             call = call_expression(
                 intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
-                target_expressions(std::move(call))
+                target_expressions(
+                    std::move(call),
+                    source_site_expression(context, function.origin)
+                )
             );
         }
         body.push_back(generated_statement(TargetReturnStmt {.expression = std::move(call)}));
     }
     return TargetFunctionDecl {
-        .name = TargetName {context.names().function_identifier(function_id)},
+        .name = TargetName {context.names().callable_identifier(function.callable)},
         .parameters = std::move(parameters),
         .result = context.callable_result(function.callable),
         .form = declaration_only ? TargetFreeFunctionForm {TargetFreeFunctionDeclaration {}}
@@ -125,14 +132,15 @@ auto lower_cpp_import(
     };
 }
 
+} // namespace
+
 auto lower_carven_function(
     ModuleLowering& context,
-    FunctionID function_id,
+    CallableID callable_id,
     bool declaration_only
 ) noexcept -> TargetDecl {
     const auto& declarations = context.semantic().declarations();
-    const auto& function = declarations.function(function_id);
-    const auto& callable = declarations.callable(function.callable);
+    const auto& callable = declarations.callable(callable_id);
     const auto body_id = callable_body_id(callable);
     if (!body_id.has_value()) {
         invariant_violation("Carven function lowering requires a body implementation");
@@ -147,7 +155,7 @@ auto lower_carven_function(
     auto inputs = BodyLoweringInputs {
         .parameters = {},
         .captures = {},
-        .exit = CallableBodyExit {.callable_id = function.callable},
+        .exit = CallableBodyExit {.callable_id = callable_id},
     };
     auto names = context.make_callable_name_allocator();
     for (auto index = 0uz; index < signature.parameters.size(); ++index) {
@@ -156,14 +164,17 @@ auto lower_carven_function(
             : std::optional<TargetLocalID> {
                   parameter_local(context, names, body, body.inputs().parameters[index])
               };
-        if (name.has_value()) {
-            inputs.parameters.push_back(*name);
+        if (name) {
+            inputs.parameters.emplace_back(body.inputs().parameters[index], *name);
         }
-        parameters.push_back(
-            {.local = name,
-             .type = context.lower_parameter(signature.parameters[index]),
-             .default_value = std::nullopt}
-        );
+        parameters.push_back({
+            .local = name,
+            .type = context.lower_parameter(
+                signature.parameters[index].access,
+                signature.parameters[index].type
+            ),
+            .default_value = std::nullopt,
+        });
     }
     auto statements = std::vector<TargetStmt>();
     if (!declaration_only) {
@@ -179,27 +190,25 @@ auto lower_carven_function(
         statements = std::move(lowered.statements);
     }
     return TargetFunctionDecl {
-        .name = TargetName {context.names().function_identifier(function_id)},
+        .name = TargetName {context.names().callable_identifier(callable_id)},
         .parameters = std::move(parameters),
-        .result = context.callable_result(function.callable),
+        .result = context.callable_result(callable_id),
         .form = declaration_only ? TargetFreeFunctionForm {TargetFreeFunctionDeclaration {}}
                                  : TargetFreeFunctionForm {TargetFreeFunctionDefinition {
                                        .body = std::move(statements),
                                    }},
         .constexpr_specifier = false,
         .static_specifier = false,
-        .inline_specifier = false,
+        .inline_specifier =
+            context.semantic().definition_placement(callable_id) == DefinitionPlacement::Use,
     };
 }
 
-} // namespace
-
 auto lower_function(ModuleLowering& context, FunctionID function, bool declaration_only) noexcept
     -> TargetDecl {
-    const auto& callable = context.semantic().declarations().callable(
-        context.semantic().declarations().function(function).callable
-    );
+    const auto callable_id = context.semantic().declarations().function(function).callable;
+    const auto& callable = context.semantic().declarations().callable(callable_id);
     return cpp_import_form_origin(callable).has_value()
         ? lower_cpp_import(context, function, declaration_only)
-        : lower_carven_function(context, function, declaration_only);
+        : lower_carven_function(context, callable_id, declaration_only);
 }

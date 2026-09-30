@@ -1,15 +1,32 @@
 module carven:backend.realization.composition.impl;
 
 import :backend.realization.composition;
+import :backend.target;
+import :backend.target.builder;
 import :backend.target.expr;
 import :backend.target.ids;
 import :backend.target.name;
 import :backend.target.origin;
 import :backend.target.stmt;
-import :backend.target;
 import :support.invariant;
 import :support.unique_indirect;
 import std;
+
+namespace {
+
+auto require_value_region(const LoweringStmtBuilder& region, LoweringExitTarget yield) noexcept
+    -> void {
+    if (region.continues()) {
+        invariant_violation("value region has an undelivered normal result");
+    }
+    for (const auto target : region.exits().targets) {
+        if (target != yield && target.kind != LoweringExitKind::Unreachable) {
+            invariant_violation("value region contains an external control exit");
+        }
+    }
+}
+
+} // namespace
 
 LoweringStatements::LoweringStatements(LoweringStatements&& source) noexcept
     : chunks(std::move(source.chunks)),
@@ -80,11 +97,25 @@ auto LoweringStmtBuilder::emit(TargetStmt statement, bool continues) noexcept ->
     if (!this->continues()) {
         return;
     }
-    lowered.has_declarations |= std::holds_alternative<TargetVariableStmt>(statement.value);
+    const auto declaration = std::holds_alternative<TargetVariableStmt>(statement.value);
+    lowered.has_declarations |= declaration;
+    // Unclassified declarations retain their cleanup boundary. Producers with
+    // a representation proof use declare to state the actual obligation.
+    lowered.needs_cleanup |= declaration;
     lowered.statements.push_back(std::move(statement));
     if (!continues) {
         lowered.normal.reset();
     }
+}
+
+auto LoweringStmtBuilder::declare(TargetVariableStmt variable, bool needs_cleanup) noexcept
+    -> void {
+    if (!continues()) {
+        return;
+    }
+    lowered.has_declarations = true;
+    lowered.needs_cleanup |= needs_cleanup;
+    lowered.statements.push_back(target_lowering_statement(std::move(variable)));
 }
 
 auto LoweringStmtBuilder::terminate(TargetStmt statement, LoweringExitTarget target) noexcept
@@ -104,6 +135,7 @@ auto LoweringStmtBuilder::append(LoweringStmtBuilder source) noexcept -> void {
     lowered.normal = source.lowered.normal;
     lowered.exits.merge(source.lowered.exits);
     lowered.has_declarations |= source.lowered.has_declarations;
+    lowered.needs_cleanup |= source.lowered.needs_cleanup;
 }
 
 auto LoweringStmtBuilder::attribute(const TargetAttribution& attribution) noexcept -> void {
@@ -156,14 +188,7 @@ auto LoweringStmtBuilder::resume(
 
 auto LoweringStmtBuilder::result_factory(TargetTypeID type, LoweringExitTarget yield) && noexcept
     -> TargetExpr {
-    if (continues()) {
-        invariant_violation("value region has an undelivered normal result");
-    }
-    for (const auto target : exits().targets) {
-        if (target != yield && target.kind != LoweringExitKind::Unreachable) {
-            invariant_violation("value region contains an external control exit");
-        }
-    }
+    require_value_region(*this, yield);
     return TargetExpr {
         .value = TargetLambdaExpr {
             .parameters = {},
@@ -173,8 +198,71 @@ auto LoweringStmtBuilder::result_factory(TargetTypeID type, LoweringExitTarget y
     };
 }
 
-auto LoweringStmtBuilder::result_region(TargetTypeID type, LoweringExitTarget yield) && noexcept
-    -> TargetExpr {
+auto LoweringStmtBuilder::result_region(
+    TargetTypeID type,
+    LoweringExitTarget yield,
+    LoweringRegionDelivery delivery
+) && noexcept -> TargetExpr {
+    require_value_region(*this, yield);
+    const auto returned = [](std::vector<TargetStmt>& body) static noexcept -> TargetExpr* {
+        auto* value =
+            body.size() == 1uz ? std::get_if<TargetReturnStmt>(&body.front().value) : nullptr;
+        return value != nullptr && value->expression ? &*value->expression : nullptr;
+    };
+    const auto bound = delivery == LoweringRegionDelivery::Bound;
+    // An integer literal has no type of its own; a copied arm states it.
+    const auto arm = [&](TargetExpr& value) noexcept -> TargetExpr {
+        const auto* literal = std::get_if<TargetLiteralExpr>(&value.value);
+        if (bound
+            || literal == nullptr
+            || !std::holds_alternative<TargetIntegerLiteral>(literal->value)) {
+            return std::move(value);
+        }
+        auto initializer = std::vector<TargetExpr>();
+        initializer.push_back(std::move(value));
+        return {
+            .value = TargetConstructionExpr {.type = type, .initializer = std::move(initializer)}
+        };
+    };
+    const auto deliver = [&](TargetExpr value) noexcept -> TargetExpr {
+        if (!bound) {
+            return value;
+        }
+        return {
+            .value =
+                TargetStaticCastExpr {.type = type, .operand = UniqueIndirect(std::move(value))}
+        };
+    };
+    if (delivery != LoweringRegionDelivery::Factory && !lowered.has_declarations) {
+        auto statements = std::move(lowered.statements).finish();
+        if (auto* value = returned(statements)) {
+            return deliver(arm(*value));
+        }
+        auto* conditional = statements.size() == 1uz
+            ? std::get_if<TargetIfStmt>(&statements.front().value)
+            : nullptr;
+        if (conditional != nullptr
+            && conditional->branches.size() == 1uz
+            && conditional->else_body) {
+            auto* selected = returned(conditional->branches.front().body);
+            auto* alternative = returned(*conditional->else_body);
+            if (selected != nullptr && alternative != nullptr) {
+                return deliver(
+                    TargetExpr {
+                        .value = TargetConditionalExpr {
+                            .condition =
+                                UniqueIndirect(std::move(conditional->branches.front().condition)),
+                            .true_value = UniqueIndirect(arm(*selected)),
+                            .false_value = UniqueIndirect(arm(*alternative)),
+                        }
+                    }
+                );
+            }
+        }
+        for (auto& statement : statements) {
+            lowered.statements.push_back(std::move(statement));
+        }
+    }
     return TargetExpr {
         .value = TargetCallExpr {
             .callee = UniqueIndirect(std::move(*this).result_factory(type, yield)),
@@ -209,7 +297,8 @@ LoweringStmtBuilder::LoweringStmtBuilder() noexcept
           .statements = {},
           .normal = LoweringCompleted {},
           .exits = {},
-          .has_declarations = false
+          .has_declarations = false,
+          .needs_cleanup = false
       } {}
 
 auto LoweringStmtBuilder::continues() const noexcept -> bool {
@@ -222,6 +311,10 @@ auto LoweringStmtBuilder::empty() const noexcept -> bool {
 
 auto LoweringStmtBuilder::owns_storage() const noexcept -> bool {
     return lowered.has_declarations;
+}
+
+auto LoweringStmtBuilder::needs_cleanup() const noexcept -> bool {
+    return lowered.needs_cleanup;
 }
 
 auto LoweringStmtBuilder::exits() const noexcept -> const LoweringExitSummary& {

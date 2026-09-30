@@ -2,6 +2,7 @@ module carven:semantic.analysis.body.expr_site.impl;
 
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.expr_site;
+import :semantic.analysis.constant.fold;
 import :semantic.analysis.construction.requests;
 import :semantic.analysis.expr.aggregate;
 import :semantic.analysis.expr.interpolation;
@@ -52,11 +53,6 @@ auto BodyExprSite::type(const Value& value) const noexcept -> ConstructionTypeRe
 
 auto BodyExprSite::known(const Value& value) const noexcept -> std::optional<ConstantID> {
     return value.constant();
-}
-
-auto BodyExprSite::condition_constant(const Value& value) const noexcept
-    -> std::optional<ConstantID> {
-    return body.active_builder().known_constant(value.expression());
 }
 
 auto BodyExprSite::external(ConstructionTypeRef type) const noexcept -> bool {
@@ -112,8 +108,7 @@ auto BodyExprSite::finish_short_circuit(
 ) noexcept -> ExpressionResult<Value> {
     auto pending = take_pending_failures(left);
     append_pending_failures(pending, take_pending_failures(right));
-    const auto truth = known_boolean_constant(draft(), condition_constant(left));
-    const auto completes = left.completes && (truth == !conjunction || right.completes);
+    const auto completes = left.completes;
     auto first = body.consume_value(left, span, AccessMode::Read);
     if (!first.has_value()) {
         return std::unexpected(first.error());
@@ -122,8 +117,6 @@ auto BodyExprSite::finish_short_circuit(
     if (!second.has_value()) {
         return std::unexpected(second.error());
     }
-    first->constant = body.active_builder().known_constant(*first);
-    second->constant = body.active_builder().known_constant(*second);
     return finish(
         draft().builtin_type(BuiltinType::Bool),
         SemShortCircuit {
@@ -286,14 +279,42 @@ auto BodyExprSite::extension(
     co_return (co_await this->body.try_expression(value, span, expected, allow_pointer_narrowing));
 }
 
+auto BodyExprSite::static_expression_lifetime() const noexcept -> LifetimeRegionID {
+    return body.active_builder().lifetime();
+}
+
+auto BodyExprSite::resolve_static_references(SemanticExpression& expression) noexcept
+    -> AnalysisTask<bool> {
+    co_return co_await body.resolve_static_references(expression);
+}
+
+auto BodyExprSite::resolve_static_name(std::string_view name, Span span) noexcept
+    -> ExpressionTask<std::optional<SemanticExpression>> {
+    const auto* local = body.use_local(name);
+    if (!local) {
+        co_return std::nullopt;
+    }
+    if (!local->static_source) {
+        co_return std::unexpected(ExpressionNotAdmitted {});
+    }
+    auto value = co_await body.read_local(*local, span);
+    if (!value) {
+        co_return std::unexpected(value.error());
+    }
+    if (!*value) {
+        co_return std::unexpected(ExpressionNotAdmitted {});
+    }
+    co_return std::move(**value);
+}
+
 auto BodyExprSite::resolve_name(std::string_view name, Span span) noexcept
     -> ExpressionTask<std::optional<ConstantID>> {
     co_return (co_await body.resolve_constant_name(name, span));
 }
 
-auto BodyExprSite::resolve_nominal_qualifier(ASTExprID id) noexcept
+auto BodyExprSite::resolve_type_qualifier(ASTExprID id) noexcept
     -> ExpressionTask<std::optional<TypeID>> {
-    co_return (co_await body.resolve_nominal_qualifier(id));
+    co_return (co_await body.resolve_type_qualifier(id));
 }
 
 auto BodyExprSite::resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
@@ -313,12 +334,10 @@ auto BodyExprSite::spelling(Span span) const noexcept -> std::string {
     return body.spelling(span);
 }
 
-auto BodyExprSite::invalid_nominal_qualifier(Span span) noexcept -> ExpressionResult<Value> {
-    return std::unexpected(fail(
-        span,
-        DiagnosticCode::TypeMismatch,
-        "scope qualifier does not name an enum or class type"
-    ));
+auto BodyExprSite::invalid_type_qualifier(Span span) noexcept -> ExpressionResult<Value> {
+    return std::unexpected(
+        fail(span, DiagnosticCode::TypeMismatch, "scope qualifier does not name a type")
+    );
 }
 
 auto BodyExprSite::convert_argument(Value& value, ConstructionTypeRef type, Span span) noexcept
@@ -339,6 +358,7 @@ auto BodyExprSite::enum_constructor(
     for (const auto type : selected.payload_types) {
         parameters.push_back(
             ConstructionCallableParameter {
+                .stage = ParameterStage::Runtime,
                 .access = AccessMode::Read,
                 .type = type,
             }
@@ -416,9 +436,19 @@ auto BodyExprSite::finish(
     Span span,
     BodyPendingFailureTerms pending,
     bool completes
-) noexcept -> Value {
+) noexcept -> ExpressionResult<Value> {
     auto result = body.make_built(type, std::move(value), span, std::move(pending), known);
     result.completes = completes;
+    if (!body.static_stage()) {
+        auto* expression = std::get_if<SemanticExpression>(&result.storage);
+        if (!expression) {
+            invariant_violation("constructed expression is not a value");
+        }
+        auto folded = fold_constant_expression(draft(), *expression);
+        if (!folded) {
+            return std::unexpected(folded.error());
+        }
+    }
     return result;
 }
 
@@ -472,14 +502,36 @@ auto BodyExprSite::read_argument(
     co_return (co_await read_value_argument(*this, expression, expected));
 }
 
+auto BodyExprSite::read_static_argument(
+    ASTExprID expression,
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> ExpressionTask<Value> {
+    const auto selected = call_argument_operand(syntax(), expression);
+    const auto span = syntax().expression(expression).span;
+    if (selected.access != AccessMode::Read) {
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::AccessCallMismatch,
+            "argument access marker differs from the parameter"
+        ));
+    }
+    auto built = co_await body.static_expression(selected.expression, expected);
+    if (!built) {
+        co_return std::unexpected(built.error());
+    }
+    if (built->type() == ConstructionTypeRef(draft().builtin_type(BuiltinType::Void))) {
+        co_return std::unexpected(
+            fail(span, DiagnosticCode::TypeValueRequired, "expression does not produce a value")
+        );
+    }
+    co_return std::move(*built);
+}
+
 auto BodyExprSite::consume_read(OperandState& state, Value value, Span span) noexcept
     -> ExpressionResult<SemanticExpression> {
     state.completes &= value.completes;
     append_pending_failures(state.pending, take_pending_failures(value));
     auto result = body.consume_value(value, span, AccessMode::Read);
-    if (result) {
-        result->constant = body.active_builder().known_constant(*result);
-    }
     return result;
 }
 
@@ -489,7 +541,7 @@ auto BodyExprSite::finish_constructed(
     OperandState state,
     Span span,
     std::optional<ConstantID> known
-) noexcept -> Value {
+) noexcept -> ExpressionResult<Value> {
     return finish(type, std::move(value), known, span, std::move(state.pending), state.completes);
 }
 

@@ -2,7 +2,7 @@
 
 Graver formats Carven source using the compiler lexer and parser. Formatting
 requires valid syntax; it does not resolve imports, type-check programs, or
-execute compile-time functions and tests.
+execute `const fn` calls or tests.
 
 ## Build and use
 
@@ -49,10 +49,12 @@ not lock the file. Unchanged files are not rewritten.
 Graver uses one fixed style: four-space indentation and a target line width of 100.
 
 - Lists prefer one line when they fit and break at separators otherwise. Arrays
-  containing constructions or nested arrays place each element on its own line.
+  with multiple elements containing constructions or nested arrays place each
+  element on its own line. Singleton arrays follow the width rule.
 - Named constructions with multiple fields expand one field per line.
-  Constructions containing a nested construction or array also expand.
-  Single-field and positional leaf constructions may remain on one line.
+  Positional constructions with multiple values expand when they contain a
+  nested construction or array. Single-field and single-value constructions
+  follow the width rule, including when nested.
 - Import selections attach braces to `::` and use one space inside single-line
   braces, as in `std::{ vector, allocator }` and `using { from_utf8, to_string }`. Long
   selections put one name per line. Single-line selections omit the trailing
@@ -70,14 +72,15 @@ Graver uses one fixed style: four-space indentation and a target line width of 1
   one line. A complex body, comment, authored blank line, or multiline branch
   expands all nonempty block bodies in that group. Expression-only arms keep
   their syntax. Loop bodies and match/catch lists stay expanded. Empty test and
-  constant blocks use `{}` unless they contain comments or authored blank lines;
+  const blocks use `{}` unless they contain comments;
   nonempty bodies expand.
 - Adjacent single-line top-level items of the same category need no blank line.
   Different categories or a multiline item require one separating blank line.
   Constant and runtime tests form separate categories; visibility modifiers do
   not change the category.
-- Author-written blank lines are preserved up to one consecutive blank line,
-  including inside blocks and around comments. Spaces on blank lines are removed.
+- Author-written blank lines between entries and around comments are preserved
+  up to one consecutive blank line. Unannotated blank lines immediately inside
+  delimiters are removed. Spaces on blank lines are removed.
   Item-leading comments stay with the item, after any added separator.
 
 Ordinary line endings become LF. Nonempty output ends in a newline. Token and

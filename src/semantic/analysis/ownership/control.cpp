@@ -1,7 +1,7 @@
 module carven:semantic.analysis.ownership.control.impl;
 
-import :semantic.analysis.coverage;
 import :semantic.analysis.ownership.context;
+import :semantic.analysis.pattern.control;
 import std;
 
 auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state) noexcept
@@ -19,16 +19,10 @@ auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state
         if (!remaining.has_value()) {
             break;
         }
-        const auto known = constant_truth(branch.condition);
-        if (known != false) {
-            auto selected = (co_await region(branch.body, remaining->state));
-            join_normal_ownership(result.normal, selected.normal);
+        auto selected = (co_await region(branch.body, remaining->state));
+        join_normal_ownership(result.normal, selected.normal);
 
-            append_ownership_exits(result, selected);
-        }
-        if (known == true) {
-            remaining.reset();
-        }
+        append_ownership_exits(result, selected);
     }
     if (remaining.has_value()) {
         if (value.otherwise.has_value()) {
@@ -77,69 +71,31 @@ auto OwnershipBodyAnalyzer::bind_pattern(
     );
 }
 
-auto OwnershipBodyAnalyzer::irrefutable(PatternID pattern) const noexcept -> bool {
-    return facts.irrefutable_patterns.contains(pattern);
-}
-
 auto OwnershipBodyAnalyzer::pattern_condition(
     PatternID id,
     std::span<const SemPatternBounds> bounds,
     OwnershipState state
 ) noexcept -> ContinuationTask<OwnershipCondition> {
-    auto result = OwnershipCondition {
-        .yes = OwnershipNormal {.state = std::move(state), .value = {}, .storage = {}},
-        .no = {},
-        .exits = {}
+    const auto initial = [](OwnershipState input) static noexcept {
+        return OwnershipCondition {
+            .yes = OwnershipNormal {.state = std::move(input), .value = {}, .storage = {}},
+            .no = {},
+            .exits = {}
+        };
     };
-    const auto& pattern = body.pattern(id).value;
-    const auto sequence = [&](PatternID child) noexcept -> ContinuationTask<std::monostate> {
-        if (!result.yes) {
-            co_return {};
-        }
-        auto next = (co_await pattern_condition(child, bounds, std::move(result.yes->state)));
-        result.yes = std::move(next.yes);
-        join_normal_ownership(result.no, next.no);
-        result.exits.append_range(std::views::as_rvalue(next.exits));
-        co_return {};
+    const auto evaluate = [&](const SemanticExpression& bound, OwnershipState input) noexcept {
+        return complete_expression(bound, std::move(input));
     };
-    if (const auto* alternatives = std::get_if<OrPattern>(&pattern)) {
-        result.no = std::move(result.yes);
-        result.yes.reset();
-        for (const auto child : alternatives->alternatives) {
-            if (!result.no) {
-                break;
-            }
-            auto next = (co_await pattern_condition(child, bounds, std::move(result.no->state)));
-            join_normal_ownership(result.yes, next.yes);
-            result.no = std::move(next.no);
-            result.exits.append_range(std::views::as_rvalue(next.exits));
-        }
-    } else if (const auto* enumeration = std::get_if<EnumCasePattern>(&pattern)) {
-        const auto owner = program.declarations().enum_case(enumeration->enum_case).owner;
-        if (program.declarations().enumeration(owner).cases.size() > 1uz) {
-            result.no = result.yes;
-        }
-        for (const auto child : enumeration->payload) {
-            (co_await sequence(child));
-        }
-    } else {
-        const auto found = std::ranges::find(bounds, id, &SemPatternBounds::pattern);
-        if (found != bounds.end()) {
-            for (const auto* bound : {&found->begin, &found->end}) {
-                if (!*bound || !result.yes) {
-                    continue;
-                }
-                auto next = (co_await complete_expression(**bound, std::move(result.yes->state)));
-                result.yes = std::move(next.normal);
-                result.exits.append_range(std::views::as_rvalue(next.exits));
-            }
-        }
-        result.no = result.yes;
-    }
-    if (irrefutable(id)) {
-        result.no.reset();
-    }
-    co_return result;
+    co_return (co_await analyze_pattern_condition(
+        program,
+        body,
+        id,
+        bounds,
+        std::move(state),
+        initial,
+        evaluate,
+        join_normal_ownership
+    ));
 }
 
 auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) noexcept
@@ -185,12 +141,7 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
             accesses.resize(previous);
             accepted = std::move(guard.normal);
             append_ownership_exits(result, guard);
-            if (constant_truth(*arm.guard) != true) {
-                join_normal_ownership(remaining, accepted);
-            }
-            if (constant_truth(*arm.guard) == false) {
-                accepted.reset();
-            }
+            join_normal_ownership(remaining, accepted);
         }
         if (accepted.has_value()) {
             auto branch = (co_await region(arm.body, std::move(accepted->state)));
@@ -277,12 +228,7 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
                 auto guard = (co_await complete_expression(*arm.guard, std::move(accepted->state)));
                 accepted = std::move(guard.normal);
                 append_ownership_exits(result, guard);
-                if (constant_truth(*arm.guard) != true) {
-                    join_normal_ownership(remaining, accepted);
-                }
-                if (constant_truth(*arm.guard) == false) {
-                    accepted.reset();
-                }
+                join_normal_ownership(remaining, accepted);
             }
             if (accepted.has_value()) {
                 auto handled = (co_await region(arm.body, std::move(accepted->state)));
@@ -331,13 +277,8 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
         if (!pass.normal.has_value()) {
             co_return iteration;
         }
-        const auto known =
-            value.condition.has_value() ? constant_truth(*value.condition) : std::optional(true);
-        if (known != true) {
+        if (value.condition.has_value()) {
             iteration.exits.push_back({OwnershipBreak {}, pass.normal->state});
-        }
-        if (known == false) {
-            co_return iteration;
         }
         auto child = (co_await region(*value.body, std::move(pass.normal->state)));
         auto steps = std::move(child.normal);

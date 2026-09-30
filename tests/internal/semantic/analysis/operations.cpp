@@ -429,7 +429,22 @@ const ct::Suite tests([] static noexcept {
             const auto callable = compilation.append_construction_type(
                 ConstructionType {
                     .value = ConstructionCallableViewTypeValue {
-                        .parameters = {{.access = AccessMode::Read, .type = i32}},
+                        .parameters =
+                            {{.stage = ParameterStage::Runtime,
+                              .access = AccessMode::Read,
+                              .type = i32}},
+                        .result = i32,
+                        .failures = failure,
+                    },
+                }
+            );
+            const auto staged_callable = compilation.append_construction_type(
+                ConstructionType {
+                    .value = ConstructionCallableViewTypeValue {
+                        .parameters =
+                            {{.stage = ParameterStage::Static,
+                              .access = AccessMode::Read,
+                              .type = i32}},
                         .result = i32,
                         .failures = failure,
                     },
@@ -451,6 +466,7 @@ const ct::Suite tests([] static noexcept {
             ));
             ct::expect(type_supports_equality(compilation, ConstructionTypeRef {first_array}));
             ct::expect(!(type_supports_equality(compilation, ConstructionTypeRef {callable})));
+            ct::expect(!type_shapes_compatible(compilation, callable, staged_callable));
             ct::expect(type_contains_callable_view(compilation, ConstructionTypeRef {callable}));
             ct::expect(
                 type_contains_callable_view(compilation, ConstructionTypeRef {callable_array})

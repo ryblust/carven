@@ -61,21 +61,31 @@ fn evaluation_fail(&n: i32) -> bool throw EvaluationFailure {
     throw EvaluationFailure {};
 }
 
-fn known_and(&n: i32) -> bool => (evaluation_touch(&n) && false) && evaluation_fail(&n)?;
-fn known_or(&n: i32) -> bool => (evaluation_touch(&n) || true) || evaluation_fail(&n)?;
+fn runtime_and(&n: i32) -> bool throw EvaluationFailure => (evaluation_touch(&n) && false)
+    && evaluation_fail(&n)?;
 
-test "Evaluation: known short circuit selection preserves execution and excludes failures" {
+fn runtime_or(&n: i32) -> bool throw EvaluationFailure => (evaluation_touch(&n) || true)
+    || evaluation_fail(&n)?;
+
+test "Evaluation: runtime short circuits preserve effects and skip failing calls" {
     var n = 0;
-    check(!known_and(&n));
-    check(known_or(&n));
-    check(n == 2);
-    (evaluation_touch(&n) && false) && evaluation_fail(&n)?;
-    (evaluation_touch(&n) || true) || evaluation_fail(&n)?;
+    try {
+        check(!runtime_and(&n)?);
+        check(runtime_or(&n)?);
+        check(n == 2);
+        (evaluation_touch(&n) && false) && evaluation_fail(&n)?;
+        (evaluation_touch(&n) || true) || evaluation_fail(&n)?;
+    } catch {
+        EvaluationFailure(_) => { fail("short circuit evaluated an inactive failing call"); },
+    }
     check(n == 4);
     let selected = try {
         (evaluation_touch(&n) && false) && evaluation_fail(&n)?
     } catch {
-        EvaluationFailure(_) => true,
+        EvaluationFailure(_) => {
+            fail("short circuit evaluated an inactive failing call");
+            true
+        },
     };
     check(!selected);
     check(n == 5);
@@ -84,7 +94,7 @@ test "Evaluation: known short circuit selection preserves execution and excludes
     check(n == 9);
 }
 
-test "Evaluation: known results preserve executed operands" {
+test "Evaluation: Boolean expressions preserve executed operands" {
     var n = 0;
     if false && evaluation_touch(&n) { check(false); }
     check(n == 0);
@@ -121,7 +131,7 @@ fn local_runtime_overflow() -> i32 {
     return maximum + 1;
 }
 
-test "Numeric types: known operands preserve runtime width and wrapping" {
+test "Numeric types: runtime operations preserve width and wrapping" {
     check(divided_by_two(-7) == -3);
     check(divided_by_negative_one(-2147483648) == -2147483648);
     check(remainder_by_negative_one(-2147483648) == 0);
@@ -132,7 +142,7 @@ test "Numeric types: known operands preserve runtime width and wrapping" {
     check(local_runtime_overflow() == -2147483648);
 }
 
-fn immutable_selection(&trace: i32) -> i32 {
+fn immutable_selection(&trace: i32) -> i32 throw EvaluationFailure {
     let disabled = evaluation_touch(&trace) && false;
     if disabled { throw EvaluationFailure {}; }
     if disabled && evaluation_fail(&trace)? { return 0; }
@@ -140,9 +150,13 @@ fn immutable_selection(&trace: i32) -> i32 {
     return 0;
 }
 
-test "Evaluation: immutable conditions retain initializer effects and exclude dead failures" {
+test "Evaluation: immutable runtime conditions retain initializer effects" {
     var trace = 0;
-    check(immutable_selection(&trace) == 1);
+    try {
+        check(immutable_selection(&trace)? == 1);
+    } catch {
+        EvaluationFailure(_) => { fail("runtime selection executed an inactive failure"); },
+    }
     check(trace == 1);
 }
 
@@ -156,7 +170,7 @@ fn selection_runtime_overflow() -> i32 {
     return 2147483647 + ((enabled && true) as i32);
 }
 
-test "Numeric types: local Boolean facts preserve runtime arithmetic through casts" {
+test "Numeric types: runtime Boolean locals preserve arithmetic through casts" {
     check(boolean_runtime_overflow() == -2147483648);
     check(selection_runtime_overflow() == -2147483648);
 }

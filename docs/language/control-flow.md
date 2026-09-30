@@ -38,10 +38,9 @@ Short-circuiting operators and control expressions evaluate only the selected
 operands or branches.
 
 Every source operand and branch receives operation, result-compatibility, and
-failure-consumption checks, including after a terminal statement or when a
-constant proves it cannot execute. A proven inactive path contributes
-no runtime evaluation, outward failure, ownership transition, or reachable-use
-evidence. A nonreturning expression can occupy a position whose type is already
+failure-consumption checks, including after a terminal statement. Source that
+follows a terminal statement contributes no runtime evaluation, outward
+failure, ownership transition, or reachable-use evidence. A nonreturning expression can occupy a position whose type is already
 known. If its type cannot be determined, the enclosing operation is rejected;
 for example, a call still needs a callable type and match still needs a subject
 type. Nonreturning control does not exempt later source from type checking.
@@ -52,17 +51,26 @@ Conditions and guards require `bool`. Value-form `if` requires an `else` and
 all result branches must be compatible. Statement-form conditionals do not
 produce a value.
 
-`while` evaluates its condition before each iteration. A C-style `for`
-creates one loop scope, evaluates its initializer once, tests its condition
-before each iteration, executes the body, then evaluates step clauses in source
-order. An omitted condition is true. `continue` in a C-style `for` proceeds
+The value of a condition does not change analysis. Reachability, failure
+contracts, ownership, pointer proofs, and return analysis consider every branch
+of `if`, `&&`, `||`, `match`, and a loop with a condition, whether the condition
+is a runtime value, a literal, or a `const`: `if false { ... }` and
+`while true { ... }` retain both paths. A loop is known not to end by itself
+only when it has no condition, written `while { ... }`; it then ends through
+`break`. [`const if`](functions.md#static-control) selects the arm that executes
+and is generated; its arms follow the same analysis.
+
+`while` evaluates its condition before each iteration; without a condition it
+repeats until `break`. A C-style `for` creates one loop scope, evaluates its
+initializer once, tests its required condition before each iteration, executes
+the body, then evaluates step clauses in source order. `continue` in a C-style `for` proceeds
 to its step clauses; `break` exits the loop.
 
 An integer range value has type `range<T>` for a builtin integer `T`. Expressions
 `begin..end` and `begin..=end` evaluate both bounds once, left to right, and own
 snapshots of one compatible integer type. The former excludes the upper bound;
 the latter includes it. Ranges support ordinary storage, copying, parameters,
-returns, and constant execution. They do not own element storage or borrow their
+returns, and static execution. They do not own element storage or borrow their
 bound expressions. Omitted bounds are supported only in patterns.
 
 An integer-range loop snapshots its source once. Changing the source range or
@@ -86,8 +94,9 @@ cursor is within the range. The terminating check does not access an element.
 current function or lambda. A value-form `if`, `match`, or `try` is a control
 boundary: its result branches cannot return from an enclosing callable or
 break/continue an enclosing loop, though a transfer may target a loop nested
-within that branch. An invalid crossing uses
-`CV-FLOW-TRANSFER-VALUE-BRANCH`.
+within that branch. A `const` block is the same kind of boundary. An invalid
+crossing uses
+`CV-FLOW-TRANSFER-BOUNDARY`.
 
 ## Patterns and matches
 
@@ -109,8 +118,8 @@ skip later bound evaluation. Reversed and empty intervals never match. Bound
 failures propagate outward; bounds cannot obtain Write or Take access to the
 match subject, and cannot reference bindings introduced by the same pattern.
 
-Directly known, execution-free bounds contribute to static coverage. Dynamic
-bounds provide no coverage proof; use a fallback when static patterns are
+Directly known, execution-free bounds contribute to coverage. Runtime
+bounds provide no coverage proof; use a fallback when constant patterns are
 insufficient. Effectful bounds retain their evaluation even when their result is
 known.
 

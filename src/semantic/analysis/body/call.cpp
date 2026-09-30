@@ -19,6 +19,7 @@ import :semantic.analysis.expr.interpret;
 import :semantic.analysis.expr.operand;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
+import :semantic.analysis.types.display;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
@@ -78,7 +79,8 @@ auto BodyElaborator::build_call_argument(
     ASTExprID source_id,
     AccessMode access_mode,
     std::optional<ConstructionTypeRef> expected,
-    std::optional<DiagnosticCode> mismatch_code
+    std::optional<DiagnosticCode> mismatch_code,
+    ParameterStage stage
 ) noexcept -> AnalysisTask<BuiltCallArgument> {
     const auto& source = ast.expression(source_id);
     const auto selected = call_argument_operand(ast, source_id);
@@ -92,7 +94,9 @@ auto BodyElaborator::build_call_argument(
                 : "argument access marker differs from the parameter"
         ));
     }
-    auto built = (co_await expression(selected.expression, expected));
+    auto built = stage == ParameterStage::Static
+        ? co_await static_expression(selected.expression, expected)
+        : co_await expression(selected.expression, expected);
     if (!built.has_value()) {
         co_return std::unexpected(built.error());
     }
@@ -114,9 +118,15 @@ auto BodyElaborator::bind_call_argument(
 ) noexcept -> AnalysisResult<BuiltCallArgument> {
     const auto type = expected ? *expected : built.type();
     if (mismatch_code && !is_cpp_type(built.type()) && !compatible(built.type(), type)) {
-        return std::unexpected(
-            fail(span, *mismatch_code, "argument does not match the required parameter type")
-        );
+        return std::unexpected(fail(
+            span,
+            *mismatch_code,
+            std::format(
+                "argument of type '{}' does not match parameter type '{}'",
+                type_display_name(draft(), built.type()),
+                type_display_name(draft(), type)
+            )
+        ));
     }
     auto pending_failures = take_pending_failures(built);
     if (access_mode == AccessMode::Write) {
@@ -290,7 +300,6 @@ auto BodyElaborator::call_expression(
         auto pending = BodyPendingFailureTerms();
         auto completes = true;
         auto report_condition_completes = true;
-        auto known = std::optional<bool>();
         const auto conditional_report = builtin->function == BuiltinFunction::Assert
             || builtin->function == BuiltinFunction::Check
             || builtin->function == BuiltinFunction::Require;
@@ -338,14 +347,15 @@ auto BodyElaborator::call_expression(
                 co_return std::unexpected(built.error());
             }
             parameters.push_back(
-                {AccessMode::Read, built->argument.expression.type.construction()}
+                {.stage = ParameterStage::Runtime,
+                 .access = AccessMode::Read,
+                 .type = built->argument.expression.type.construction()}
             );
             append_pending_failures(pending, built->pending_failures);
             if (condition) {
-                known = known_boolean_constant(draft(), built->argument.expression.constant);
                 report_condition_completes = built->completes;
             }
-            if (!conditional_report || condition || known == false) {
+            if (!conditional_report || condition) {
                 completes &= built->completes;
             }
             arguments.push_back(std::move(built->argument));
@@ -362,11 +372,7 @@ auto BodyElaborator::call_expression(
             .storage = std::move(operation),
             .pending_failures = std::move(pending),
             .takeable = true,
-            .completes = completes
-                && builtin->function != BuiltinFunction::Fail
-                && !(known == false
-                     && (builtin->function == BuiltinFunction::Assert
-                         || builtin->function == BuiltinFunction::Require))
+            .completes = completes && builtin->function != BuiltinFunction::Fail
         };
     }
     if (std::holds_alternative<CppSelection>(*selected_callee)
@@ -375,9 +381,7 @@ auto BodyElaborator::call_expression(
     }
     auto callee =
         std::optional<BuiltExpression>(std::move(std::get<BuiltExpression>(*selected_callee)));
-    const auto target = callee->is_function_reference()
-        ? std::nullopt
-        : active_builder().known_callable(callee->expression());
+    const auto target = active_builder().known_callable(callee->expression());
     auto pending_failures = take_pending_failures(*callee);
     auto contract = callable_contract(callee->type(), ast.expression(source.callee).span);
     if (!contract.has_value()) {
@@ -385,15 +389,28 @@ auto BodyElaborator::call_expression(
     }
     const auto offset = receiver.has_value() ? 1uz : 0uz;
     if (source.arguments.size() + offset != contract->parameters.size()) {
-        co_return std::unexpected(fail(
-            span,
+        const auto expected = contract->parameters.size() - offset;
+        auto diagnostic = DiagnosticBuilder(
             DiagnosticCode::TypeCallArity,
             std::format(
-                "call expects {} arguments but received {}",
-                contract->parameters.size() - offset,
+                "call expects {} argument{} but received {}",
+                expected,
+                expected == 1uz ? "" : "s",
                 source.arguments.size()
             )
-        ));
+        );
+        diagnostic.primary(locate(ast.source_id(), span));
+        if (const auto function = target ? draft().function_for_callable(*target) : std::nullopt) {
+            const auto* symbol = catalog().symbol(catalog().function_symbol(*function));
+            diagnostic.related(
+                locate(
+                    draft().syntax_tree(symbol->module_id).view().source_id(),
+                    symbol->declaration_span
+                ),
+                std::format("'{}' is declared here", symbol->name)
+            );
+        }
+        co_return std::unexpected(draft().diagnostics().error(diagnostic.build()));
     }
     auto callee_operand = std::optional<SemanticExpression>();
     if (callee->is_function_reference()) {
@@ -427,7 +444,9 @@ auto BodyElaborator::call_expression(
         auto argument = (co_await build_call_argument(
             source.arguments[index].expression,
             contract->parameters[index + offset].access,
-            contract->parameters[index + offset].type
+            contract->parameters[index + offset].type,
+            std::nullopt,
+            contract->parameters[index + offset].stage
         ));
         if (!argument.has_value()) {
             co_return std::unexpected(argument.error());
@@ -435,6 +454,19 @@ auto BodyElaborator::call_expression(
         append_pending_failures(pending_failures, argument->pending_failures);
         completes &= argument->completes;
         arguments.push_back(std::move(argument->argument));
+    }
+    if (std::ranges::any_of(
+            contract->parameters,
+            [](const auto& parameter) static noexcept {
+                return parameter.stage == ParameterStage::Static;
+            }
+        )
+        && (!target || !draft().function_for_callable(*target))) {
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::ConstAdmission,
+            "const-parameter call requires a directly identified Carven function"
+        ));
     }
     const auto failures =
         target ? draft().construction_callable_contract_copy(*target).failures : contract->failures;

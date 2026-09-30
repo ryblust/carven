@@ -130,9 +130,19 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                     ));
                 }
                 if (value.else_body.has_value()) {
-                    result.push_back(
-                        concat({text("else "), render_statement_block(*value.else_body)})
-                    );
+                    // A generated alternative holding only a conditional is spelled
+                    // `else if`, which C++ defines as that same block.
+                    const auto& alternative = *value.else_body;
+                    const auto chained = alternative.size() == 1uz
+                        && std::holds_alternative<TargetIfStmt>(alternative.front().value)
+                        && std::holds_alternative<TargetGeneratedExpansionAttribution>(
+                                             alternative.front().attribution
+                        );
+                    result.push_back(concat(
+                        {text("else "),
+                         chained ? render_statement(alternative.front())
+                                 : render_statement_block(alternative)}
+                    ));
                 }
                 return builder.join(result, text(" "));
             },

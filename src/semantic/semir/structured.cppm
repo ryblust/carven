@@ -3,6 +3,7 @@ module carven:semantic.semir.structured;
 import :semantic.semir.body;
 import :semantic.semir.format;
 import :semantic.semir.ids;
+import :semantic.semir.simd;
 import :semantic.semir.type;
 import :support.invariant;
 import :support.tree_value;
@@ -51,6 +52,9 @@ struct SemDefault final {};
 struct SemConstant final {
     ConstantID constant;
 };
+
+// Executable projection of an edge proved to have no entry in this stage.
+struct SemUnreachable final {};
 
 struct SemBinding final {
     LocalBindingID binding;
@@ -155,15 +159,16 @@ struct SemFormat final {
     std::optional<OwnedSemanticExpression> receiver;
 };
 
-struct SemSliceIntrinsic final {
+struct SliceIntrinsicOperation final {
     SliceIntrinsic intrinsic;
-    std::vector<SemCallArgument> operands;
     // Length on normal completion does not prove that checked slicing succeeds.
     std::optional<std::uint64_t> result_extent;
 };
 
-struct SemTextIntrinsic final {
-    TextIntrinsic intrinsic;
+using IntrinsicOperation = std::variant<SliceIntrinsicOperation, TextIntrinsic, SIMDIntrinsic>;
+
+struct SemIntrinsic final {
+    IntrinsicOperation operation;
     std::vector<SemCallArgument> operands;
 };
 
@@ -210,6 +215,8 @@ struct SemPropagate final {
 struct SemIf final {
     std::vector<SemConditionalBranch> branches;
     std::optional<OwnedSemanticRegion> otherwise;
+    // A const if selects one arm per static instance; every arm is still checked.
+    bool is_static;
 };
 
 struct SemMatch final {
@@ -245,6 +252,7 @@ using SemanticExpressionValue = TreeValue<
     SemanticExpressionCleanup,
     SemDefault,
     SemConstant,
+    SemUnreachable,
     SemBinding,
     SemCallable,
     SemEnumConstructor,
@@ -263,8 +271,7 @@ using SemanticExpressionValue = TreeValue<
     SemDereference,
     SemAddressOf,
     SemIndex,
-    SemTextIntrinsic,
-    SemSliceIntrinsic,
+    SemIntrinsic,
     SemPrint,
     SemReport,
     SemFormat,
@@ -278,6 +285,8 @@ using SemanticExpressionValue = TreeValue<
     SemTry>;
 
 struct SemanticExpressionCleanup final {
+    static constexpr auto copyable = true;
+    static auto copy(const SemanticExpressionValue& value) noexcept -> SemanticExpressionValue;
     static auto clear(SemanticExpressionValue& value) noexcept -> void;
 };
 
@@ -343,6 +352,7 @@ struct SemMatchArm final {
     std::optional<SemanticExpression> guard;
     SemanticRegion body;
     bool reachable;
+    // The pattern accepts every value of the subject type.
     bool pattern_always_matches;
     std::vector<SemPatternBounds> pattern_bounds;
 };
@@ -381,6 +391,23 @@ struct SemInitialize final {
     SemanticExpression initializer;
 };
 
+// A local static root in the checked source body. The binding has the
+// published frozen type; the initializer retains its execution result type.
+// Specialization consumes this operation before residual publication.
+struct SemStaticBinding final {
+    LocalBindingID binding;
+    OwnedSemanticExpression initializer;
+};
+
+// A block of the body's static stage. Specialization rewrites and executes it
+// once per occurrence, then removes it from the residual region.
+struct SemConstBlock final {
+    std::optional<ProgramSpellingID> label;
+    // The label, or the keyword of an unlabeled block.
+    ProgramOriginID source;
+    OwnedSemanticRegion region;
+};
+
 struct SemAssign final {
     SemanticExpression target;
     std::optional<BinaryOperator> compound;
@@ -400,6 +427,14 @@ struct SemRangeLoop final {
     std::optional<LocalBindingID> binding;
     SemanticExpression source;
     OwnedSemanticRegion body;
+    // A const for expands a static integer range; its index is a static binding.
+    bool is_static;
+};
+
+// A const for in a realized body: one specialized region per index. Continue
+// leaves the current iteration and break leaves the expansion.
+struct SemExpandedLoop final {
+    std::vector<SemanticRegion> iterations;
 };
 
 struct SemanticStatementCleanup;
@@ -412,12 +447,17 @@ using SemanticStatementValue = TreeValue<
     SemThrow,
     SemExpressionStatement,
     SemInitialize,
+    SemStaticBinding,
+    SemConstBlock,
     SemAssign,
     SemLoop,
     SemRangeLoop,
+    SemExpandedLoop,
     OwnedSemanticRegion>;
 
 struct SemanticStatementCleanup final {
+    static constexpr auto copyable = true;
+    static auto copy(const SemanticStatementValue& value) noexcept -> SemanticStatementValue;
     static auto clear(SemanticStatementValue& value) noexcept -> void;
 };
 
@@ -513,6 +553,11 @@ struct SemIRBodyData final {
     ImmutableBodyTable<LocalBinding, LocalBindingID> bindings;
     ImmutableBodyTable<Pattern, PatternID> patterns;
     SemanticRegion region;
+    // The region with the static stage applied, when that differs from `region`.
+    std::optional<SemanticRegion> residual;
+    // Analysis-only source-body provenance. An instance keeps the copied local
+    // identities; publication clears this link along with source bodies.
+    std::optional<BodyID> specialized;
 };
 
 class SemIRBody final {
@@ -529,10 +574,27 @@ public:
     auto pattern_table() const noexcept -> const ImmutableBodyTable<Pattern, PatternID>&;
     auto binding(LocalBindingID id) const noexcept -> const LocalBinding&;
     auto pattern(PatternID id) const noexcept -> const Pattern&;
+    // During analysis this is the checked source region. Final publication
+    // replaces it with the executable region and discards source alternatives.
     auto region() const noexcept -> const SemanticRegion&;
+    // Analysis selects the executable region before publication discards the
+    // checked source. Published consumers use region().
+    auto realized_region() const noexcept -> const SemanticRegion&;
+    auto specialized() const noexcept -> std::optional<BodyID>;
 
 private:
+    auto publish() noexcept -> void;
     SemIRBodyData data;
+
+    friend class SemIRProgram;
+};
+
+// Construction transfers one region with the local tables that own its IDs.
+struct StructuredRegionDraft final {
+    LifetimeRegionTree lifetime_regions;
+    ImmutableBodyTable<ElaboratedLocalBinding, LocalBindingID> bindings;
+    ImmutableBodyTable<ElaboratedPattern, PatternID> patterns;
+    SemanticRegion region;
 };
 
 struct StructuredBodyDraft final {
@@ -544,4 +606,6 @@ struct StructuredBodyDraft final {
     ImmutableBodyTable<ElaboratedLocalBinding, LocalBindingID> bindings;
     ImmutableBodyTable<ElaboratedPattern, PatternID> patterns;
     SemanticRegion region;
+    std::optional<SemanticRegion> residual;
+    std::optional<BodyID> specialized;
 };

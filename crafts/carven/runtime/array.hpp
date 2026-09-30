@@ -49,15 +49,21 @@ constexpr auto adopt_array_value(const std::array<Source, N>& source) noexcept -
 } // namespace detail
 
 template<typename Element, std::size_t Extent, Integer Index>
-constexpr auto checked_array_index(std::array<Element, Extent>& array, Index index) noexcept
-    -> Element& {
-    return array[checked_index_offset(index, Extent)];
+constexpr auto checked_array_index(
+    std::array<Element, Extent>& array,
+    Index index,
+    SourceSite site
+) noexcept -> Element& {
+    return array[checked_index_offset(index, Extent, site)];
 }
 
 template<typename Element, std::size_t Extent, Integer Index>
-constexpr auto checked_array_index(const std::array<Element, Extent>& array, Index index) noexcept
-    -> const Element& {
-    return array[checked_index_offset(index, Extent)];
+constexpr auto checked_array_index(
+    const std::array<Element, Extent>& array,
+    Index index,
+    SourceSite site
+) noexcept -> const Element& {
+    return array[checked_index_offset(index, Extent, site)];
 }
 
 // The caller retains source storage for borrowed elements. Stateless selects

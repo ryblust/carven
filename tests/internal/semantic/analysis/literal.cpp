@@ -40,7 +40,7 @@ namespace {
 
 const ct::Suite tests([] static noexcept {
     ct::test(
-        "Semantic constant evaluation: literals normalize suffix, context, sign, and spelling",
+        "Semantic constant facts: literals normalize suffix, context, sign, and spelling",
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& compilation = fixture.compilation;

@@ -1,0 +1,269 @@
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{
+    Owner,
+    consume_owner,
+    mark,
+    reset,
+    matches,
+    FixedOwner,
+    event,
+};
+
+import .control using Failure;
+import .construction using crossed_step;
+import .outcomes using owned_outcome;
+
+fn short_circuit(flag: bool) -> bool {
+    return (flag && (Owner { 1 }.probe() as bool)) && (matches("1 11 ") as bool);
+}
+
+test "Lifetimes: short circuit temporaries live through the full expression" {
+    reset();
+    check(short_circuit(true));
+    check(matches("1 11 -1 "));
+    reset();
+    check(!short_circuit(false));
+    check(matches(""));
+}
+
+test "Lifetimes: moving a local owner occurs once at its consumer" {
+    reset();
+    if true {
+        let first = Owner { 1 };
+        let second = &&first;
+        check(matches("1 101 "));
+    }
+    check(matches("1 101 -1 -1 "));
+}
+
+test "Lifetimes: Take completes before later call operands" {
+    reset();
+    if true {
+        let owner = Owner { 1 };
+        consume_owner(&&owner, event(2));
+        check(matches("1 101 2 9 -1 "));
+    }
+    check(matches("1 101 2 9 -1 -1 "));
+}
+
+fn ordered_short_circuit(flag: bool) -> bool {
+    return (flag && (FixedOwner { 1 }.probe(event(2), event(3)) as bool))
+        && (matches("1 2 3 9 ") as bool);
+}
+
+test "Lifetimes: conditional construction survives ordered full expression operands" {
+    reset();
+    check(ordered_short_circuit(true));
+    check(matches("1 2 3 9 -1 "));
+    reset();
+    check(!ordered_short_circuit(false));
+    check(matches(""));
+    if ordered_short_circuit(true) { mark(8); }
+    check(matches("1 2 3 9 -1 8 "));
+}
+
+fn observed(value: bool) -> bool {
+    mark(8);
+    return value;
+}
+
+fn nested_owners(flag: bool) -> bool {
+    return observed(
+        (Owner { 1 }.probe() as bool)
+            && (flag && (FixedOwner { 2 }.probe(event(3), event(4)) as bool))
+    );
+}
+
+test "Lifetimes: nested conditional operands destroy owners in reverse construction order" {
+    reset();
+    check(nested_owners(true));
+    check(matches("1 11 2 3 4 9 8 -2 -1 "));
+    reset();
+    check(!nested_owners(false));
+    check(matches("1 11 8 -1 "));
+}
+
+fn discard_short_circuit(flag: bool) {
+    let _ = flag && (FixedOwner { 1 }.probe(event(2), event(3)) as bool);
+    mark(8);
+}
+
+test "Lifetimes: discarded short circuit operands execute once and finish before successors" {
+    reset();
+    discard_short_circuit(false);
+    check(matches("8 "));
+    reset();
+    discard_short_circuit(true);
+    check(matches("1 2 3 9 -1 8 "));
+}
+
+fn conditional_outcome(flag: bool) -> bool throw Failure {
+    return (flag && (owned_outcome(true)?.probe() as bool)) && (matches("1 11 ") as bool);
+}
+
+fn conditional_branch_owner(flag: bool) -> bool {
+    return (
+        flag
+            && (
+                (if (flag) { FixedOwner { 3 } } else { FixedOwner { 4 } }).probe(event(5), event(6))
+                    as bool
+            )
+    )
+        && (matches("3 5 6 9 ") as bool);
+}
+
+fn conditional_failure(flag: bool) -> bool throw Failure {
+    return (Owner { 1 }.probe() as bool) && (flag && (owned_outcome(false)?.probe() as bool));
+}
+
+test "Lifetimes: joined outcomes and branch values retain full expression owners" {
+    reset();
+    try {
+        check(conditional_outcome(true)?);
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+    }
+    check(matches("1 11 -1 "));
+    reset();
+    try {
+        check(!conditional_outcome(false)?);
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+    }
+    check(matches(""));
+    reset();
+    check(conditional_branch_owner(true));
+    check(matches("3 5 6 9 -3 "));
+    reset();
+    check(!conditional_branch_owner(false));
+    check(matches(""));
+    reset();
+    try {
+        let _ = conditional_failure(true)?;
+    } catch {
+        Failure(_) => mark(8),
+    }
+    check(matches("1 11 -1 8 "));
+}
+
+private fn crossed_combine(first: bool, second: bool, third: i32) -> bool {
+    mark(9);
+    return first && second && third > 0;
+}
+
+private fn crossed_run(selected: bool, succeeds: bool) -> bool throw Failure {
+    return crossed_combine(
+        Owner { 1 }.probe() as bool,
+        if selected {
+            FixedOwner { 2 }.probe(crossed_step(3, succeeds)?, 4) as bool
+        } else {
+            false
+        },
+        crossed_step(5, true)?
+    );
+}
+
+test "crossed conditional owners preserve source cleanup order" {
+    reset();
+    try {
+        check(crossed_run(true, true)?);
+    } catch {
+        Failure(_) => fail("unexpected"),
+    }
+    check(matches("1 11 2 3 9 -2 5 9 -1 "));
+    reset();
+    try {
+        check(!crossed_run(false, true)?);
+    } catch {
+        Failure(_) => fail("unexpected"),
+    }
+    check(matches("1 11 5 9 -1 "));
+    reset();
+    try {
+        let _ = crossed_run(true, false)?;
+    } catch {
+        Failure(_) => mark(8),
+    }
+    check(matches("1 11 2 3 -2 -1 8 "));
+}
+
+private fn later_shared_outcome(succeeds: bool) -> Owner throw Failure {
+    mark(13);
+    if !succeeds { throw Failure::Stop; }
+    return Owner { 3 };
+}
+
+private fn final_shared_outcome(
+    first: bool,
+    second: bool,
+    third: Owner,
+    succeeds: bool
+) -> Owner throw Failure {
+    let _ = first;
+    let _ = second;
+    let _ = third.id;
+    mark(8);
+    if !succeeds { throw Failure::Stop; }
+    return Owner { 4 };
+}
+
+private fn shared_cleanup(
+    selected: bool,
+    conditional_succeeds: bool,
+    later_succeeds: bool,
+    final_succeeds: bool
+) throw Failure {
+    final_shared_outcome(
+        Owner { 1 }.probe() as bool,
+        selected && (FixedOwner { 2 }.probe(crossed_step(5, conditional_succeeds)?, 6) as bool),
+        later_shared_outcome(later_succeeds)?,
+        final_succeeds
+    )?;
+}
+
+test "Lifetimes: final outcomes clean before conditional and earlier full expression owners" {
+    // The short-circuit operand shares the call's full expression. Its owner
+    // survives the later argument and the final carrier, unlike crossed_run's
+    // expression-position lexical branch.
+    reset();
+    try {
+        shared_cleanup(true, true, true, true)?;
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+    }
+    check(matches("1 11 2 5 9 13 3 8 4 -4 -3 -2 -1 "));
+
+    reset();
+    try {
+        shared_cleanup(false, false, true, true)?;
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+    }
+    check(matches("1 11 13 3 8 4 -4 -3 -1 "));
+
+    reset();
+    try {
+        shared_cleanup(true, false, true, true)?;
+        fail("expected conditional failure");
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 11 2 5 -2 -1 7 "));
+
+    reset();
+    try {
+        shared_cleanup(true, true, false, true)?;
+        fail("expected later failure");
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 11 2 5 9 13 -2 -1 7 "));
+
+    reset();
+    try {
+        shared_cleanup(true, true, true, false)?;
+        fail("expected final failure");
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 11 2 5 9 13 3 8 -3 -2 -1 7 "));
+}

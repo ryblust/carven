@@ -10,6 +10,9 @@ changing the published evaluation and lifetime contracts.
 and storage-observation summaries, and prepares operand demands and operation plans
 on request. Each fragment owns its operation preparation. SemIR owns types,
 lifetimes, origins, constants, effects, patterns, and structured control flow.
+Conditional-evaluation summaries constrain intermediate storage that may cross
+branches. Realization also accounts for a result's final construction position
+within its cleanup frame when choosing ordinary or deferred storage.
 Propagation markers select their operand operation. Summary queries require an
 occurrence from the prepared body. The published program outlives realization.
 
@@ -41,12 +44,18 @@ avoids signed integer promotion uses C++ wrapping. Signed overflow and narrow
 multiplication retain runtime implementations. Operand literal types and explicit
 result conversions preserve promotion, overload, and deduction behavior.
 
+`PreparedSIMDLane` selects a compile-time lane index
+only when a published integer fact satisfies the operation's bound. The selected
+runtime overload has no reporting path or site parameter. The original operand
+still executes for its effects; unknown and out-of-range controls retain checked
+runtime calls. This does not infer slice bounds or move checks across effects.
+
 ## Format and print plans
 
 `PreparedFormatText` owns the complete text. `PreparedWriterFormat` owns literal
 segments, builtin fields, reservation bounds, and retained operand indices.
 Fields consume the retained operands in order: one value, followed by a width
-when the integer field has no static width. Retained operand indices map this
+when the integer field has no literal width. Retained operand indices map this
 pack to the original source expressions.
 `PreparedDelegatedFormat` owns native format bytes in `format_string`, retained
 operand indices, and an encoding guarantee. `PreparedPrint` owns optional scalar
@@ -60,8 +69,8 @@ Delegated residual formatting additionally budgets escaped braces and field
 spellings through the bounded `semantic.format` serializer. Over-budget or
 unsupported work retains runtime formatting. Serialization of the source
 fallback is outside the optional materialization budget. Supported, known dynamic
-integer widths and floating widths/precisions resolve to static specification text
-within the preparation budget. Writer classification accepts static integer
+integer widths and floating widths/precisions resolve to literal specification text
+within the preparation budget. Writer classification accepts literal integer
 specifications and dynamic widths of type `i8`, `u8`, `i16`, `u16`, or `i32`,
 with optional zero padding and an optional `b`, `B`, `o`, `d`, `x`, or `X`
 presentation.

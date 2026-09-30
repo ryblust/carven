@@ -344,6 +344,14 @@ auto ASTDumper::render_top_level_item(
                             std::format("FunctionParameter {}", format_dump_span(parameter.span))
                         );
                         const auto parameter_prefix = child_prefix(item_prefix, item_last);
+                        if (parameter.const_span.has_value()) {
+                            render_span_field(
+                                parameter_prefix,
+                                false,
+                                "const",
+                                *parameter.const_span
+                            );
+                        }
                         if (parameter.access.marker.has_value()) {
                             render_span_field(
                                 parameter_prefix,
@@ -405,11 +413,11 @@ auto ASTDumper::render_top_level_item(
                 }
                 render_expression(declaration.initializer, nested_prefix, true, "initializer ");
             },
-            [&](const ASTConstantBlock& block) noexcept {
+            [&](const ASTConstBlock& block) noexcept {
                 append_line(
                     prefix,
                     is_last,
-                    std::format("ConstantBlock {}", format_dump_span(item.span))
+                    std::format("ConstBlock {}", format_dump_span(item.span))
                 );
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_span_field(nested_prefix, false, "keyword", block.keyword_span);

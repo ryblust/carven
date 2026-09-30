@@ -1,0 +1,9 @@
+error [CV-INTERPRET-EXECUTION]: typed failure escaped execution without recovery
+  failure: Missing {}
+ --> implicit.cv:3:27
+  |
+3 | fn load() throw Missing { throw Missing {}; }
+  |                           ^^^^^^^^^^^^^^^^^
+  |
+5 | load()?;
+  | ------ while interpreting this function call

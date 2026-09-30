@@ -1,0 +1,11 @@
+fn element(values: [i32], index: i32) -> i32 {
+    return values[index];
+}
+
+test "slice bounds" {
+    let values = [1, 2, 3];
+    check(element(values, -4) == 1);
+    println("unreachable");
+}
+
+test "later" { println("unreachable"); }

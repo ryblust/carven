@@ -8,6 +8,8 @@ import std;
 
 namespace {
 
+constexpr auto site = carven::runtime::SourceSite::native();
+
 namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
@@ -19,19 +21,25 @@ const ct::Suite tests([] static noexcept {
                 +[](const carven::runtime::TestFailure&) static noexcept {}
             );
             outer.begin_case("module", "outer");
-            ct::expect(std::addressof(carven::runtime::current_test()) == std::addressof(outer));
+            ct::expect(
+                std::addressof(carven::runtime::current_test(site)) == std::addressof(outer)
+            );
             if (!ct::expect(carven::runtime::active_test_report != nullptr)) {
                 return;
             }
             ct::expect(carven::runtime::active_test_report->case_name == "outer");
             inner.begin_case("module", "inner");
             ct::expect(carven::runtime::active_test_report->case_name == "inner");
-            ct::expect(std::addressof(carven::runtime::current_test()) == std::addressof(inner));
-            carven::runtime::current_test()
-                .report_failure("test.cv", 1, 1, "check", "false", std::nullopt, {});
+            ct::expect(
+                std::addressof(carven::runtime::current_test(site)) == std::addressof(inner)
+            );
+            carven::runtime::current_test(site)
+                .report_failure({"test.cv", 1, 1}, "check", "false", std::nullopt, {});
             inner.end_case();
             ct::expect(inner.result() == 1);
-            ct::expect(std::addressof(carven::runtime::current_test()) == std::addressof(outer));
+            ct::expect(
+                std::addressof(carven::runtime::current_test(site)) == std::addressof(outer)
+            );
             ct::expect(carven::runtime::active_test_report->case_name == "outer");
             outer.end_case();
             ct::expect(carven::runtime::active_test_report == nullptr);

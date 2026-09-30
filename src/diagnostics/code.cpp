@@ -47,7 +47,7 @@ namespace {
       "CV-CONST-EXPORTED-TYPE",                                                                    \
       Error,                                                                                       \
       "Exported constant is missing its declared type.")                                           \
-    X(ConstAdmission, "CV-CONST-ADMISSION", Error, "Invalid constant execution contract.")         \
+    X(ConstAdmission, "CV-CONST-ADMISSION", Error, "Invalid compile-time execution contract.")     \
     X(ConstInitializer, "CV-CONST-INITIALIZER", Error, "Invalid constant initializer.")            \
     X(ConstIndexBounds, "CV-CONST-INDEX-BOUNDS", Error, "Constant array index is out of bounds.")  \
     X(ConstLimit, "CV-CONST-LIMIT", Error, "Constant evaluation resource limit exceeded.")         \
@@ -65,8 +65,8 @@ namespace {
     X(FlowBreakOutsideLoop, "CV-FLOW-BREAK-OUTSIDE-LOOP", Error, "Break outside a loop.")          \
     X(FlowContinueOutsideLoop, "CV-FLOW-CONTINUE-OUTSIDE-LOOP", Error, "Continue outside a loop.") \
     X(FlowMissingReturn, "CV-FLOW-MISSING-RETURN", Error, "Missing return path.")                  \
-    X(FlowTransferValueBranch,                                                                     \
-      "CV-FLOW-TRANSFER-VALUE-BRANCH",                                                             \
+    X(FlowTransferBoundary,                                                                        \
+      "CV-FLOW-TRANSFER-BOUNDARY",                                                                 \
       Error,                                                                                       \
       "Control transfer crosses a value-expression boundary.")                                     \
     X(FlowUnreachable, "CV-FLOW-UNREACHABLE", Warning, "Unreachable statement.")                   \

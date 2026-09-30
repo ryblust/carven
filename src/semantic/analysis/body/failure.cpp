@@ -19,6 +19,7 @@ import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
+import :semantic.semir.completion;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -40,6 +41,7 @@ auto BodyElaborator::build_try(
     };
 
     const auto try_origin = origin(span);
+    const auto try_reachable = reachable;
     const auto outer_failure = failure_context_for_current_path();
     const auto protected_failures = draft().add_empty_failure_term();
     auto pending = BodyPendingFailureTerms();
@@ -58,8 +60,10 @@ auto BodyElaborator::build_try(
     if (!protected_body.has_value()) {
         co_return std::unexpected(protected_body.error());
     }
-    auto normal = reachable;
     pop_frame();
+
+    auto completion = CompletionQuery(body_builder.completion_patterns());
+    completion.enter_try(*protected_body);
 
     auto arms = std::vector<SemCatchArm>();
     arms.reserve(source.arms.size());
@@ -74,6 +78,8 @@ auto BodyElaborator::build_try(
     auto catch_all_covered = false;
     auto incoming_failures = protected_failures;
     for (const auto& arm : source.arms) {
+        [[maybe_unused]] const auto handler_path =
+            BodyReferencePathGuard(reference_path_reachable, try_reachable);
         push_frame(arm.span);
         auto bindings = std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>();
         auto expected_names = std::optional<std::flat_set<std::string, std::less<>>>();
@@ -92,6 +98,7 @@ auto BodyElaborator::build_try(
             auto coverage_pattern = std::optional<PatternID>();
             auto coverage_source_pattern = std::optional<ASTPatternID>();
             auto coverage_type = std::optional<TypeID>();
+            auto alternative_reachable = false;
             if (const auto* typed = std::get_if<ASTCatchTypedPattern>(&alternative.value)) {
                 auto failure_type = (co_await resolve_type(typed->type));
                 if (!failure_type.has_value()) {
@@ -105,13 +112,17 @@ auto BodyElaborator::build_try(
                         "catch alternatives require a concrete nominal failure type"
                     ));
                 }
+                alternative_reachable = completion.catch_entry(*failure_type);
+                [[maybe_unused]] const auto pattern_path =
+                    BodyReferencePathGuard(reference_path_reachable, alternative_reachable);
                 auto pattern = (co_await build_pattern(
                     typed->inner,
                     *failure_type,
                     bindings,
                     !expected_names.has_value(),
                     alternative_names,
-                    pattern_bounds
+                    pattern_bounds,
+                    completion
                 ));
                 if (!pattern.has_value()) {
                     co_return std::unexpected(pattern.error());
@@ -127,9 +138,12 @@ auto BodyElaborator::build_try(
                     .type = BodyType(*failure_type),
                     .inner = pattern->pattern,
                 };
+                completion.consume_catch(*failure_type, pattern->pattern);
                 accepted_piece =
                     draft().add_intersection_failure_term(incoming_failures, {*concrete});
             } else {
+                alternative_reachable = completion.catch_entry(std::nullopt);
+                completion.consume_catch(std::nullopt, std::nullopt);
                 if (catches_all) {
                     co_return std::unexpected(fail(
                         alternative.span,
@@ -153,7 +167,7 @@ auto BodyElaborator::build_try(
                 SemCatchAlternative {
                     .origin = origin(alternative.span),
                     .pattern = semantic_pattern,
-                    .reachable = false,
+                    .reachable = alternative_reachable,
                 }
             );
             coverage_alternatives.push_back(
@@ -279,7 +293,8 @@ auto BodyElaborator::build_try(
             if (!coverage_alternatives[index].failure_type.has_value()) {
                 alternative_useful[index] = alternative_useful[index] || !catch_all_covered;
             }
-            alternatives[index].reachable = alternative_useful[index];
+            alternatives[index].reachable =
+                alternatives[index].reachable && alternative_useful[index];
         }
         std::ranges::sort(exhaustive_types, {}, &TypeID::index);
         exhaustive_types.erase(
@@ -303,6 +318,7 @@ auto BodyElaborator::build_try(
                 return alternative.reachable;
             }
         );
+        const auto pattern_accepted = completion.catch_accepted();
 
         auto produced_bindings = std::vector<LocalBindingID>();
         for (const auto& [name, binding] : bindings) {
@@ -320,13 +336,15 @@ auto BodyElaborator::build_try(
             draft().add_guarded_failure_contribution(outer_failure.term, accepted, local_failures);
             draft().add_guarded_failure_contribution(outer_failure.term, accepted, range_failures);
         }
+        [[maybe_unused]] const auto accepted_path =
+            BodyReferencePathGuard(reference_path_reachable, pattern_accepted);
         const auto local_failure =
             BodyFailureContext {local_failures, outer_failure.accepts_catch_residual};
         failure_contexts.push_back(local_failure);
         catches.push_back({accepted, local_failure});
         auto arm_pending = BodyPendingFailureTerms();
         auto guard_tree = std::optional<SemanticExpression>();
-        auto body_reachable = true;
+        auto body_reachable = pattern_accepted;
         auto guard_may_reject = false;
         if (arm.guard.has_value()) {
             const auto id = arm.guard->expression;
@@ -337,17 +355,13 @@ auto BodyElaborator::build_try(
             if (value_form) {
                 collect_pending(arm_pending, *guard);
             }
-            const auto known = known_boolean_constant(
-                draft(),
-                active_builder().known_constant(guard->expression())
-            );
             auto checked = require_bool(*guard, ast.expression(id).span);
             if (!checked.has_value()) {
                 co_return std::unexpected(checked.error());
             }
             guard_tree = std::move(*checked);
-            body_reachable = guard->completes && (!known.has_value() || *known);
-            guard_may_reject = guard->completes && known != true;
+            body_reachable = pattern_accepted && guard->completes;
+            guard_may_reject = guard->completes;
         }
         auto body = co_await [&]() noexcept -> AnalysisTask<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
@@ -368,7 +382,6 @@ auto BodyElaborator::build_try(
             draft().add_guarded_failure_contribution(gated, accepted, term);
             append_pending_failures(pending, {gated});
         }
-        normal = normal || (arm_useful && body_reachable && reachable);
         catches.pop_back();
         failure_contexts.pop_back();
         arms.push_back(
@@ -388,6 +401,19 @@ auto BodyElaborator::build_try(
         catch_all_covered |= catches_all && !guard_may_reject;
         incoming_failures =
             guard_may_reject ? draft().add_union_failure_term({residual, accepted}) : residual;
+        completion.finish_catch(guard_may_reject);
+        if (const auto possible = completion.pending_failures()) {
+            auto types = std::vector<TypeID>();
+            for (const auto type : *possible) {
+                if (const auto* concrete = std::get_if<TypeID>(&type)) {
+                    types.push_back(*concrete);
+                } else {
+                    invariant_violation("known catch residual has no concrete failure type");
+                }
+            }
+            incoming_failures =
+                draft().add_intersection_failure_term(incoming_failures, std::move(types));
+        }
         pop_frame();
     }
 
@@ -399,7 +425,6 @@ auto BodyElaborator::build_try(
         );
     }
     draft().add_failure_contribution(outer_failure.term, incoming_failures);
-    reachable = normal;
     // Keep explicit type selection for the Clang 23 coroutine workaround.
     // Do not replace with value_or; see decl/constant.cpp.
     auto result = make_built(
@@ -413,6 +438,10 @@ auto BodyElaborator::build_try(
         span,
         std::move(pending)
     );
+    const auto normal =
+        exits(result.expression(), body_builder.completion_patterns()).contains(Exit::Normal);
+    reachable = normal;
+    result.completes = normal;
     if (!value_form) {
         append_expression(result, span);
         co_return std::optional<BuiltExpression>();

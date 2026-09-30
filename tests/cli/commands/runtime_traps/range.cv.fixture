@@ -1,0 +1,7 @@
+fn tail(values: [i32], start: usize) -> usize {
+    return values.slice(start, 3).len();
+}
+
+fn run_range() {
+    println(tail([1, 2, 3], 4));
+}

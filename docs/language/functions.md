@@ -2,8 +2,8 @@
 
 [Language](README.md)
 
-This page defines ordinary calls, closures, and callable views. Required
-compile-time calls additionally follow [Compile-time function execution](constants.md#compile-time-function-execution).
+This page defines ordinary calls, closures, and callable views. Calls executed
+in the static stage additionally follow [Static execution of functions](constants.md#static-execution-of-functions).
 
 ## Functions and calls
 
@@ -22,8 +22,9 @@ Result-inference dependency cycles require an explicit result type to break the
 cycle. A declaration without a body defaults to `void` when no result type is written. Parameter names must be
 unique. A call requires the exact
 arity, access marker, and compatible argument type declared by the callable.
-The callee is evaluated first, then arguments are evaluated once from left to
-right. A concrete closure selects its object identity; a callable view selects
+At runtime, the callee is evaluated first, then runtime arguments are evaluated
+once from left to right. [Static parameters](#static-parameters) specify the
+separate static inputs. A concrete closure selects its object identity; a callable view selects
 its target description. Invocation reads that target's current captures after
 argument evaluation. An explicit closure copy requests a capture-value snapshot.
 
@@ -49,6 +50,123 @@ explicit `-> T` to break the signature dependency. Result completion uses
 declaration signatures and body inference; operator constraints, constant
 branches, and caller context do not resolve a signature cycle.
 
+## Static parameters
+
+A named function parameter may declare an explicit static input with
+`const name: T`. Calls retain ordinary argument syntax and full source arity:
+
+```carven
+fn add(value: i32, const offset: i32) -> i32 {
+    const adjusted = offset + 1;
+    return value + adjusted;
+}
+
+fn relay(value: i32, const offset: i32) -> i32 => add(value, offset);
+
+fn example(value: i32) -> i32 {
+    const offset = 2;
+    return relay(value, offset);
+}
+```
+
+The parameter is an immutable value, without source-addressable storage. It
+cannot combine `const` with Write (`&`) or Take (`&&`). Literal expressions,
+explicit constants, enclosing static parameters and admitted operations on those
+values can supply the input. Calls to `const fn` can compute it. A wrapper must
+repeat the `const` parameter contract when forwarding a static input.
+
+An ordinary runtime `let`, `var`, parameter, or `for` index does not qualify.
+Inside a `const` block or `const test`, all local values belong to the static
+stage and can supply static inputs at the call.
+
+`const fn` and `const` parameters express separate properties: the former permits
+execution of the function in static roots, while the latter fixes
+an input at compilation. An ordinary function can have static parameters and
+still execute its body at runtime. Declaring both does not move an ordinary call
+or its runtime arguments to compilation.
+
+Static argument expressions are evaluated and frozen in source order during
+specialization. The residual call then evaluates the callee and runtime arguments
+in source order. A `const fn` body uses these same specialization stages even
+when called during static execution. Inside a `const` block or `const test`,
+arguments instead execute together in source order, and the call selects an
+instance using the resulting static values.
+
+The compiler selects an instance by the source function and typed static values.
+The generated C++ signature contains only runtime parameters. Two source calls
+with equal static values can share that instance, while each static argument
+expression retains its own static execution. Body-local `const` initializers
+are static roots in their static environment.
+
+Functions with static parameters require direct calls and cannot be imported from
+or exported to C++. Lambda parameters and callable-view types do not accept
+`const` parameters.
+
+### Static control
+
+Stage selection is explicit. In a runtime body, ordinary `if`, `&&`, `||`, and `for` retain runtime
+semantics and do not require static operands, and the values of their operands
+never select what is analyzed or executed in the static stage. Every static root
+and static argument inside ordinary control is required in each instance that
+reaches the construct.
+
+Inside a `const` block or `const test`, ordinary control executes in the static
+stage and selects the statements that execute. Types and contracts are still
+checked in every source arm.
+
+`const if` selects one arm per instance. Every condition of the chain, including
+each `else if`, must be a static expression. All arms undergo name, type,
+failure-contract, ownership, and return analysis, which static values cannot
+change: the function has one contract for all its instances. Only the selected
+arm is specialized
+and generated; local initializer roots and static call arguments in other arms
+are not evaluated during specialization:
+
+```carven
+fn scale(value: i32, const divisor: i32) -> i32 {
+    const if divisor == 0 {
+        return 0;
+    } else {
+        const factor = 100 / divisor;
+        return value * factor;
+    }
+}
+```
+
+`scale(x, 0)` never evaluates `100 / divisor`.
+
+Type formation still computes constant extents in every arm before
+specialization, without executing their declarations. A `const { ... }` block
+in the body executes with its local constants; see the
+[`const` block rules](constants.md#const-blocks).
+
+`const for` expands a Read integer range whose bounds are static. Its index is a
+static binding in each iteration, so it can supply static arguments and dependent
+constants:
+
+```carven
+fn sum(value: i32, const count: i32) -> i32 {
+    var total = 0;
+    const for index in 0..count {
+        total += add(value, index);
+    }
+    return total;
+}
+```
+
+In a runtime body, `const alias = index` preserves the static stage;
+`let alias = index` does not.
+Each iteration has its own scope while outer variables remain shared. `break`,
+`continue`, `return`, and failure propagation keep their ordinary meaning.
+Reversed and empty ranges have no iterations. Expansion has cumulative iteration,
+instance, and nesting limits; exceeding one is a compiler diagnostic, without an
+implicit runtime substitute.
+
+Unselected `const if` arms, iterations after a static `break`, and statements after
+a static exit are checked in the source body and omitted from specialization.
+The [compiler's specialization model](../compiler/analysis/construction.md#static-specialization)
+defines the resulting semantic representation.
+
 ## Lambdas and callable views
 
 ### Creation and captures
@@ -56,8 +174,13 @@ branches, and caller context do not resolve a signature cycle.
 A lambda expression creates a closure value; it does not execute its body.
 The capture list is mandatory, including `[]` for no captures. Capture entries
 name runtime bindings visible at the creation site, and each name may occur
-only once. A module declaration or compile-time constant cannot be an explicit
+only once. A module declaration or constant cannot be an explicit
 capture. Captures are established in list order when the expression runs.
+
+Visible local constants can be used without capture when their values can be
+determined while constructing the lambda body. A constant that depends on an
+unbound enclosing static parameter cannot cross this boundary. A runtime `let`
+initialized from that value can be captured explicitly.
 
 | Source form | Stored state | Access inside the body | Effect on the source |
 | --- | --- | --- | --- |
@@ -111,7 +234,7 @@ expected signature is checked against the body before the closure type is comple
 These rules apply equally to block and expression bodies.
 
 Source `fn(...) -> R throw E + F` denotes a non-owning callable view. Parameter
-access, parameter types, and success result match exactly. A source callable
+stages, access, parameter types, and success result match exactly. A source callable
 may have a smaller failure set than the expected view. Array adaptation applies
 these rules recursively to element types, including zero-length arrays. Failure
 contracts inside parameter and success-result types remain identical. Direct closure calls

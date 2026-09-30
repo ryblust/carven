@@ -577,7 +577,7 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
             }
         );
     }
-    if (check(TokenKind::If)) {
+    if (check_optionally_const(TokenKind::If)) {
         auto form = parse_if_form();
         if (!form) {
             return std::nullopt;
@@ -714,6 +714,7 @@ auto Parser::parse_lambda_expression() noexcept -> std::optional<ASTExprID> {
         parameters.push_back({
             .span =
                 type.has_value() ? join(start, builder.type(*type).span) : join(start, name.span),
+            .const_span = std::nullopt,
             .access = access,
             .target = slice(source, name.span) == "_" ? ASTBindingTarget {ASTDiscardBindingTarget {
                                                             .underscore_span = name.span,

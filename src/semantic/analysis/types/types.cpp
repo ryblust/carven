@@ -2,12 +2,47 @@ module carven:semantic.analysis.types.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
+import :diagnostics.suggestion;
 import :semantic.analysis.names;
 import :semantic.analysis.program;
 import :semantic.analysis.types;
 import :support.invariant;
 import :support.visit;
 import std;
+
+auto source_builtin_type(std::string_view name) noexcept -> std::optional<BuiltinType> {
+    static constexpr auto names = std::array {
+        std::pair {std::string_view("bool"), BuiltinType::Bool},
+        std::pair {std::string_view("char"), BuiltinType::Char},
+        std::pair {std::string_view("String"), BuiltinType::String},
+        std::pair {std::string_view("str"), BuiltinType::Str},
+        std::pair {std::string_view("i8"), BuiltinType::I8},
+        std::pair {std::string_view("i16"), BuiltinType::I16},
+        std::pair {std::string_view("i32"), BuiltinType::I32},
+        std::pair {std::string_view("i64"), BuiltinType::I64},
+        std::pair {std::string_view("u8"), BuiltinType::U8},
+        std::pair {std::string_view("u16"), BuiltinType::U16},
+        std::pair {std::string_view("u32"), BuiltinType::U32},
+        std::pair {std::string_view("u64"), BuiltinType::U64},
+        std::pair {std::string_view("isize"), BuiltinType::Isize},
+        std::pair {std::string_view("usize"), BuiltinType::Usize},
+        std::pair {std::string_view("f32"), BuiltinType::F32},
+        std::pair {std::string_view("f64"), BuiltinType::F64},
+        std::pair {std::string_view("void"), BuiltinType::Void},
+        std::pair {std::string_view("u8x32"), BuiltinType::U8x32},
+        std::pair {std::string_view("mask32"), BuiltinType::Mask32},
+        std::pair {std::string_view("f32x8"), BuiltinType::F32x8},
+        std::pair {std::string_view("mask8"), BuiltinType::Mask8},
+        std::pair {std::string_view("u8x16"), BuiltinType::U8x16},
+        std::pair {std::string_view("mask16"), BuiltinType::Mask16},
+        std::pair {std::string_view("f32x4"), BuiltinType::F32x4},
+        std::pair {std::string_view("mask4"), BuiltinType::Mask4},
+    };
+    const auto* found = std::ranges::find(names, name, [](const auto& entry) static noexcept {
+        return entry.first;
+    });
+    return found == names.end() ? std::nullopt : std::optional(found->second);
+}
 
 namespace {
 
@@ -27,32 +62,6 @@ auto fail(
                                          .build());
 }
 
-auto builtin_kind(std::string_view name) noexcept -> std::optional<BuiltinType> {
-    static constexpr auto names = std::array {
-        std::pair {std::string_view("bool"), BuiltinType::Bool},
-        std::pair {std::string_view("char"), BuiltinType::Char},
-        std::pair {std::string_view("String"), BuiltinType::String},
-        std::pair {std::string_view("str"), BuiltinType::Str},
-        std::pair {std::string_view("i8"), BuiltinType::I8},
-        std::pair {std::string_view("i16"), BuiltinType::I16},
-        std::pair {std::string_view("i32"), BuiltinType::I32},
-        std::pair {std::string_view("i64"), BuiltinType::I64},
-        std::pair {std::string_view("u8"), BuiltinType::U8},
-        std::pair {std::string_view("u16"), BuiltinType::U16},
-        std::pair {std::string_view("u32"), BuiltinType::U32},
-        std::pair {std::string_view("u64"), BuiltinType::U64},
-        std::pair {std::string_view("isize"), BuiltinType::Isize},
-        std::pair {std::string_view("usize"), BuiltinType::Usize},
-        std::pair {std::string_view("f32"), BuiltinType::F32},
-        std::pair {std::string_view("f64"), BuiltinType::F64},
-        std::pair {std::string_view("void"), BuiltinType::Void},
-    };
-    const auto* found = std::ranges::find(names, name, [](const auto& entry) static noexcept {
-        return entry.first;
-    });
-    return found == names.end() ? std::nullopt : std::optional(found->second);
-}
-
 auto select_global_symbol(
     const ProgramDraft& draft,
     AnalysisCatalogView catalog,
@@ -68,7 +77,11 @@ auto select_global_symbol(
             module_id,
             origin,
             DiagnosticCode::TypeUnresolved,
-            std::format("unresolved type name '{}'", name)
+            std::format(
+                "unresolved type name '{}'{}",
+                name,
+                spelling_suggestion(name, catalog.visible_names(module_id))
+            )
         ));
     }
     if (candidates.size() != 1uz) {
@@ -155,7 +168,7 @@ auto resolve_named(
         ));
     }
     if (named.global_root.has_value()
-        || (!builtin_kind(root).has_value() && catalog.lookup(module_id, root).empty())) {
+        || (!source_builtin_type(root).has_value() && catalog.lookup(module_id, root).empty())) {
         auto components = std::vector<Span>();
         for (const auto& component : named.components) {
             components.push_back(component.name_span);
@@ -227,7 +240,7 @@ auto resolve_named(
     }
     const auto component = named.components.front().name_span;
     const auto name = draft.source_slice_copy(module_id, component);
-    if (const auto builtin = builtin_kind(name)) {
+    if (const auto builtin = source_builtin_type(name)) {
         co_return ConstructionTypeRef {draft.builtin_type(*builtin)};
     }
     const auto selected =
@@ -293,6 +306,7 @@ auto resolve_function_type(
             co_return std::unexpected(value_type.error());
         }
         parameters.push_back({
+            .stage = ParameterStage::Runtime,
             .access = semantic_access_mode(parameter.access),
             .type = *value_type,
         });

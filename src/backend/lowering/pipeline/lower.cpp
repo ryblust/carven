@@ -4,10 +4,10 @@ import :backend.generation.plan;
 import :backend.lower;
 import :backend.lowering.context;
 import :backend.lowering.decl;
+import :backend.target;
 import :backend.target.item;
 import :backend.target.name;
 import :backend.target.unit;
-import :backend.target;
 import :semantic.semir.decl;
 import :semantic.semir.ids;
 import :support.invariant;
@@ -48,10 +48,10 @@ auto wrap_linkage_namespaces(
 auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& schedule) noexcept
     -> TargetUnitSections {
     auto root = std::vector<TargetItem>();
-    auto active = std::optional<ModuleLowering>();
+    auto* active = static_cast<ModuleLowering*>(nullptr);
     auto module_items = std::vector<TargetItem>();
     const auto flush = [&]() noexcept {
-        if (!active.has_value()) {
+        if (active == nullptr) {
             return;
         }
         root.push_back(namespace_item(
@@ -63,34 +63,35 @@ auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& s
         module_items.clear();
     };
     for (const auto& planned : schedule.forward_declarations) {
-        if (!active.has_value() || active->active_module() != planned.module_id) {
+        if (active == nullptr || active->active_module() != planned.module_id) {
             flush();
-            active.emplace(context, planned.module_id);
+            active = &context.module_context(planned.module_id);
         }
         auto& module_context = *active;
         module_items.push_back(lower_forward_declaration(module_context, planned.declaration));
     }
     flush();
 
-    active.reset();
+    active = nullptr;
     for (const auto& planned : schedule.declarations) {
-        if (!active.has_value() || active->active_module() != planned.module_id) {
+        if (active == nullptr || active->active_module() != planned.module_id) {
             flush();
-            active.emplace(context, planned.module_id);
+            active = &context.module_context(planned.module_id);
         }
         auto& module_context = *active;
         planned.declaration.visit([&](auto id) noexcept {
             if constexpr (std::same_as<decltype(id), CallableID>) {
-                module_items.push_back(lower_closure_type(module_context, id));
+                auto lowered = lower_closure_type(module_context, id);
+                append_items(module_items, module_context.take_query_aliases());
+                module_items.push_back(std::move(lowered));
             } else {
-                append_items(
-                    module_items,
-                    lower_declaration(
-                        module_context,
-                        DeclarationRef {id},
-                        std::same_as<decltype(id), FunctionID>
-                    )
+                auto lowered = lower_declaration(
+                    module_context,
+                    DeclarationRef {id},
+                    std::same_as<decltype(id), FunctionID>
                 );
+                append_items(module_items, module_context.take_query_aliases());
+                append_items(module_items, std::move(lowered));
             }
         });
     }
@@ -106,7 +107,7 @@ auto lower_cpp_api_header(
     ArtifactLowering& context,
     const TargetCppAPIHeaderArtifact& schedule
 ) noexcept -> TargetUnitSections {
-    auto module_context = context.module_context(schedule.module_id);
+    auto& module_context = context.module_context(schedule.module_id);
     auto declarations = std::vector<TargetItem>();
     for (const auto function : schedule.cpp_export_declarations) {
         declarations.push_back(lower_cpp_export_header_declaration(module_context, function));
@@ -126,34 +127,41 @@ auto lower_module(
     const TargetModuleImplementationArtifact& artifact
 ) noexcept -> TargetUnitSections {
     const auto& schedule = artifact.schedule;
-    auto module_context = context.module_context(schedule.module_id);
-    auto lowered = lower_module_schedule(module_context, schedule);
-    auto declarations = std::vector<TargetItem>();
-    if (!lowered.private_declarations.empty()) {
-        declarations.push_back(namespace_item(
-            context.plan().names().module_names(schedule.module_id).module_namespace_name,
-            target_items(namespace_item(std::nullopt, std::move(lowered.private_declarations))),
+    auto lowered = lower_module_schedule(context, schedule);
+    const auto& names = context.plan().names();
+    const auto module_namespace = [&](ModuleID module_id, std::vector<TargetItem> items) noexcept {
+        return namespace_item(
+            names.module_names(module_id).module_namespace_name,
+            std::move(items),
             TargetCompilerReason::ArtifactScaffolding,
             false
+        );
+    };
+    auto root = std::vector<TargetItem>();
+    if (!lowered.nominal_declarations.empty()) {
+        root.push_back(
+            module_namespace(schedule.module_id, std::move(lowered.nominal_declarations))
+        );
+    }
+    append_items(root, context.take_module_support());
+    if (!lowered.private_declarations.empty()) {
+        root.push_back(module_namespace(
+            schedule.module_id,
+            target_items(namespace_item(std::nullopt, std::move(lowered.private_declarations)))
         ));
     }
-    auto body = wrap_linkage_namespaces(context, std::move(declarations));
-    append_items(body, context.constant_storage().take());
-    auto module_items = std::vector<TargetItem>();
+    append_items(root, std::move(lowered.shared_declarations));
+    append_items(root, std::move(lowered.shared_definitions));
     context.require_cpp_environment(schedule.module_id, CppEnvironmentRequirement::Using);
+    auto module_items = std::vector<TargetItem>();
     if (!lowered.private_items.empty()) {
         module_items.push_back(namespace_item(std::nullopt, std::move(lowered.private_items)));
     }
     append_items(module_items, std::move(lowered.module_items));
-    auto root = std::vector<TargetItem>();
     if (!module_items.empty()) {
-        root.push_back(namespace_item(
-            context.plan().names().module_names(schedule.module_id).module_namespace_name,
-            std::move(module_items),
-            TargetCompilerReason::ArtifactScaffolding,
-            false
-        ));
+        root.push_back(module_namespace(schedule.module_id, std::move(module_items)));
     }
+    auto body = wrap_linkage_namespaces(context, std::move(root));
     auto epilogue = std::vector<TargetItem>();
     if (lowered.entry_wrapper.has_value()) {
         epilogue.push_back(std::move(*lowered.entry_wrapper));
@@ -164,7 +172,6 @@ auto lower_module(
             std::move(lowered.cpp_export_facades)
         ));
     }
-    append_items(body, wrap_linkage_namespaces(context, std::move(root)));
     return {
         .preamble = std::move(lowered.source_fragments),
         .body = std::move(body),

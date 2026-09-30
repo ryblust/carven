@@ -27,11 +27,16 @@ struct TargetModuleNames final {
     TargetName public_namespace_name;
     std::flat_map<FunctionID, TargetIdentifier> public_functions;
     std::flat_set<std::string> reserved_identifiers;
+    // Body names depend on the provider surface, not requested instances.
+    std::flat_set<std::string> body_reserved_identifiers;
 };
 
 struct TargetClosureCatalog final {
     ProgramIdentity semantic_identity;
     std::vector<std::optional<ModuleID>> owner_modules;
+    // Discovery position within the owner module; it depends only on that
+    // module's source, so closure names stay stable when other modules change.
+    std::vector<std::uint32_t> module_ordinals;
     std::vector<std::vector<CallableID>> production_definitions;
     std::vector<std::vector<CallableID>> test_definitions;
     std::vector<CallableID> definition_order;
@@ -41,6 +46,12 @@ struct TargetClosureCatalog final {
     auto tests(ModuleID id) const noexcept -> std::span<const CallableID>;
 };
 
+struct TargetContentNames final {
+    std::vector<std::optional<TargetIdentifier>> queries;
+    std::vector<std::optional<TargetIdentifier>> displays;
+    std::vector<std::optional<TargetIdentifier>> constants;
+};
+
 class TargetNamePlan final {
 public:
     TargetNamePlan(
@@ -48,7 +59,6 @@ public:
         std::vector<TargetModuleNames> modules,
         TargetName generated_namespace,
         TargetName domain_namespace,
-        std::vector<TargetEntityName> functions,
         std::vector<TargetEntityName> structures,
         std::vector<TargetEntityName> enumerations,
         std::vector<std::optional<TargetEntityName>> callables,
@@ -56,7 +66,8 @@ public:
         std::vector<TargetIdentifier> enum_cases,
         std::vector<std::optional<TargetPayloadEnumNames>> payload_enums,
         std::vector<std::optional<TargetIdentifier>> test_functions,
-        std::vector<TargetIdentifier> module_runners
+        std::vector<TargetIdentifier> module_runners,
+        TargetContentNames content_names
     ) noexcept;
 
     TargetNamePlan(const TargetNamePlan&) = delete;
@@ -69,9 +80,8 @@ public:
     auto module_names(ModuleID id) const noexcept -> const TargetModuleNames&;
     auto generated_namespace() const noexcept -> const TargetName&;
     auto domain_namespace() const noexcept -> const TargetName&;
-    auto function_identifier(FunctionID id) const noexcept -> const TargetIdentifier&;
-    auto function_name(ModuleID active_module, FunctionID id) const noexcept -> TargetName;
-    auto global_function_name(FunctionID id) const noexcept -> TargetName;
+    // A function or an instance of one; an instance is named in its function's module.
+    auto callable_identifier(CallableID id) const noexcept -> const TargetIdentifier&;
     auto callable_owner(CallableID id) const noexcept -> ModuleID;
     auto structure_identifier(StructID id) const noexcept -> const TargetIdentifier&;
     auto structure_name(std::optional<ModuleID> active_module, StructID id) const noexcept
@@ -80,26 +90,30 @@ public:
     auto enumeration_name(std::optional<ModuleID> active_module, EnumID id) const noexcept
         -> TargetName;
     auto enum_case_identifier(EnumCaseID id) const noexcept -> const TargetIdentifier&;
-    auto callable_name(ModuleID active_module, CallableID id) const noexcept -> TargetName;
+    auto callable_name(std::optional<ModuleID> active_module, CallableID id) const noexcept
+        -> TargetName;
     auto closure_type_name(std::optional<ModuleID> active_module, CallableID id) const noexcept
         -> TargetName;
     auto closure_owner(CallableID id) const noexcept -> ModuleID;
     auto payload_enum(EnumID enumeration) const noexcept -> const TargetPayloadEnumNames&;
     auto test_function(TestID test) const noexcept -> const TargetIdentifier&;
     auto module_runner(ModuleID id) const noexcept -> const TargetIdentifier&;
+    auto query_identifier(TypeID type) const noexcept -> const TargetIdentifier&;
+    auto display_identifier(TypeID type) const noexcept -> const TargetIdentifier&;
+    auto constant_identifier(ConstantID constant) const noexcept -> const TargetIdentifier&;
+    auto module_support_name(ModuleID module, const TargetIdentifier& identifier) const noexcept
+        -> TargetName;
 
 private:
     auto entity_name(
         std::optional<ModuleID> active_module,
         const TargetEntityName& entity
     ) const noexcept -> TargetName;
-    auto global_entity_name(const TargetEntityName& entity) const noexcept -> TargetName;
 
     ProgramIdentity source_identity;
     std::vector<TargetModuleNames> target_modules;
     TargetName target_generated_namespace;
     TargetName target_domain_namespace;
-    std::vector<TargetEntityName> target_function_names;
     std::vector<TargetEntityName> target_structure_names;
     std::vector<TargetEntityName> target_enumeration_names;
     std::vector<std::optional<TargetEntityName>> target_callable_names;
@@ -108,6 +122,7 @@ private:
     std::vector<std::optional<TargetPayloadEnumNames>> target_payload_enums;
     std::vector<std::optional<TargetIdentifier>> target_test_functions;
     std::vector<TargetIdentifier> target_module_runners;
+    TargetContentNames target_content_names;
 };
 
 class FailureABI final {
@@ -145,7 +160,8 @@ struct TargetModuleSchedule final {
     ModuleID module_id;
     std::vector<NominalDeclarationRef> private_nominal_order;
     std::vector<CallableID> closure_definitions;
-    std::vector<CallableID> interface_closures;
+    // Complete set of named and closure callables with interface linkage.
+    std::vector<CallableID> interface_callables;
     std::vector<TestID> emitted_tests;
     bool emit_program_entry;
 };
@@ -212,6 +228,8 @@ public:
     auto failure_abi() const noexcept -> const FailureABI&;
     auto artifacts() const noexcept -> TargetPlanTableEntries<TargetArtifactPlan, TargetArtifactID>;
     auto artifact_count() const noexcept -> std::size_t;
+    auto interface_of(ModuleID id) const noexcept -> std::optional<TargetArtifactID>;
+    auto module_schedule(ModuleID id) const noexcept -> const TargetModuleSchedule&;
     auto artifact(TargetArtifactID id) const noexcept -> const TargetArtifactPlan&;
 
 private:
@@ -231,6 +249,8 @@ private:
     TargetNamePlan name_plan;
     FailureABI failure_abi_plan;
     TargetPlanTable<TargetArtifactPlan, TargetArtifactID> artifact_plans;
+    std::map<ModuleID, TargetArtifactID> module_interfaces;
+    std::map<ModuleID, TargetArtifactID> module_implementations;
 
     friend class PlannedCompilation;
 };

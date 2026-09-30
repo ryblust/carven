@@ -11,4 +11,4 @@ struct ResolvedEnumCase final {
     std::optional<ConstantID> constant;
 };
 
-enum class ExpressionMode { Body, RequiredRoot };
+enum class ExpressionMode { Body, StaticRoot };

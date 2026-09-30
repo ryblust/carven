@@ -21,7 +21,7 @@ dereferenced. Native aliases and operations remain subject to C++ legality.
 `addressof(&place)` obtains `ptr<&T>` when that place permits Write access.
 The builtin follows ordinary name lookup and shadowing. It evaluates its place
 once. It does not accept a temporary, a
-compile-time lexical constant, or Take access. The result is non-null at its
+local constant, or Take access. The result is non-null at its
 creation. Assignment to a live owner preserves its address; Take ends that
 owner's identity, so later assignment does not revive old pointers. An address
 returned from a Read array parameter may still refer to its caller's storage.
@@ -81,7 +81,7 @@ not retain cross-expression facts. Save such a pointer in a local handle and
 check that handle. An unproven dereference reports `CV-PTR-NONNULL`; the compiler
 does not insert a runtime trap. Passing a nullable address to an API is allowed
 without a dereference proof. Non-nullness never proves that a target is alive.
-Required compile-time execution checks liveness when it dereferences a local
+Static execution checks liveness when it dereferences a local
 address, including byte addresses whose text backing has expired. Ordinary runtime
 pointer operations do not add a general borrow or liveness checker; external
 addresses retain their provider's lifetime contract.

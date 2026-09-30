@@ -13,8 +13,17 @@ local function run(target, scenario, payloads)
     local stderr = os.isfile(stderr_file) and io.readfile(stderr_file) or ""
     os.tryrm(stdout_file)
     os.tryrm(stderr_file)
-    assert(stderr == (scenario == "success" and payloads == "0" and ""
-        or "carven: tests: 1 passed; 0 failed\n"), "language entry produced stderr:\n" .. stderr)
+    stderr = stderr:gsub("\r\n", "\n")
+    local expected = scenario == "success" and payloads == "0" and ""
+        or "carven: tests: 1 passed; 0 failed\n"
+    if scenario == "throw" or scenario == "propagate" then
+        -- An escaped entry failure names its type, payload, and entry declaration.
+        expected = expected .. "tests/language/entry/entry_point.cv:22:1: error: failure "
+            .. "'tests.language.entry.entry_point.EntryFailure' escaped the program entry\n"
+            .. "  failure:\n    EntryFailure {\n        payload: <opaque>,\n    }\n"
+            .. "  note: program exited with a failure status\n\n"
+    end
+    assert(stderr == expected, "language entry produced stderr:\n" .. stderr)
     return code, stdout
 end
 

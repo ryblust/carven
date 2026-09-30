@@ -1,0 +1,197 @@
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{
+    Owner,
+    mark,
+    reset,
+    matches,
+    PatternOwner,
+};
+
+enum Failure {
+    Stop,
+}
+
+fn returning() -> i32 {
+    let owner = Owner { 1 };
+    return 7;
+}
+
+fn failing() -> i32 throw Failure {
+    let owner = Owner { 2 };
+    throw Failure::Stop;
+}
+
+test "Lifetimes: selected lexical regions destroy in reverse construction order" {
+    reset();
+    if true {
+        let first = Owner { 1 };
+        let second = Owner { 2 };
+        mark(9);
+    }
+    mark(8);
+    check(matches("1 2 9 -2 -1 8 "));
+}
+
+test "Lifetimes: condition evaluation ends before branch execution" {
+    reset();
+    if (Owner { 1 }.probe() as bool) { mark(9); }
+    check(matches("1 11 -1 9 "));
+    reset();
+    if (Owner { 2 }.probe() as bool) && false { mark(9); }
+    check(matches("2 12 -2 "));
+    reset();
+    if (Owner { 3 }.probe() as bool) || true { mark(9); }
+    check(matches("3 13 -3 9 "));
+}
+
+test "Lifetimes: loop conditions release owners before each iteration" {
+    reset();
+    var remaining = 2;
+    while (Owner { 4 }.probe() as bool) && remaining > 0 {
+        mark(9);
+        remaining -= 1;
+        continue;
+    }
+    check(matches("4 14 -4 9 4 14 -4 9 4 14 -4 "));
+}
+
+test "Lifetimes: return and failure leave their owning lexical region" {
+    reset();
+    check(returning() == 7);
+    mark(9);
+    check(matches("1 -1 9 "));
+    reset();
+    try {
+        let _ = failing()?;
+    } catch {
+        Failure(_) => mark(9),
+    }
+    check(matches("2 -2 9 "));
+}
+
+fn step(&n: i32) {
+    mark(9);
+    n += 1;
+}
+
+test "Lifetimes: loop bodies finish before continue steps and break" {
+    reset();
+    for var n = 0; n < 2; step(&n) {
+        let owner = Owner { 1 };
+        if n == 0 { continue; }
+        break;
+    }
+    check(matches("1 -1 9 1 -1 "));
+}
+
+test "Lifetimes: handler owners finish before the following statement" {
+    reset();
+    try {
+        let protected = Owner { 1 };
+        let _ = failing()?;
+    } catch {
+        Failure(_) => {
+            let handler = Owner { 3 };
+            mark(9);
+        },
+    }
+    mark(8);
+    check(matches("1 2 -2 -1 3 9 -3 8 "));
+}
+
+enum PatternOwners {
+    Pair(PatternOwner, PatternOwner, i32, i32),
+}
+
+fn accept_pattern(accepted: bool) -> bool {
+    mark(9);
+    return accepted;
+}
+
+fn selected_pattern_owner(value: PatternOwners, accepted: bool) -> i32 {
+    return match value {
+        .Pair(chosen, _, 0 | 1, 0 | 1)
+            | .Pair(_, chosen, 2 | 3, 2 | 3)
+            | .Pair(chosen, _, 2 | 4, 2 | 4) if accept_pattern(accepted) => chosen.id as i32,
+        .Pair(_, _, _, _) => -1,
+    };
+}
+
+test "Lifetimes: pattern alternatives commit only the selected binding before one guard" {
+    let value = PatternOwners::Pair(PatternOwner { 1 }, PatternOwner { 2 }, 2, 2);
+    reset();
+    check(selected_pattern_owner(value, true) == 2);
+    check(matches("102 9 -2 "));
+    reset();
+    check(selected_pattern_owner(value, false) == -1);
+    check(matches("102 9 -2 "));
+}
+
+enum NestedPatternOwners {
+    Wrapped(PatternOwners),
+    Empty,
+}
+
+private fn selected_nested_pattern_owner(value: NestedPatternOwners, accepted: bool) -> i32 {
+    return match value {
+        .Wrapped(.Pair(chosen, _, 0 | 1, 0 | 1)) if accept_pattern(accepted) => chosen.id as i32,
+        .Wrapped(.Pair(_, chosen, _, _)) => chosen.id as i32,
+        .Empty => -1,
+    };
+}
+
+test "Lifetimes: nested payload bindings clean before a rejected guard's successor" {
+    let accepted = NestedPatternOwners::Wrapped(
+        PatternOwners::Pair(PatternOwner { 1 }, PatternOwner { 2 }, 0, 1)
+    );
+    reset();
+    check(selected_nested_pattern_owner(accepted, true) == 1);
+    check(matches("101 9 -1 "));
+
+    reset();
+    check(selected_nested_pattern_owner(accepted, false) == 2);
+    check(matches("101 9 -1 102 -2 "));
+
+    let rejected = NestedPatternOwners::Wrapped(
+        PatternOwners::Pair(PatternOwner { 3 }, PatternOwner { 4 }, 2, 2)
+    );
+    reset();
+    check(selected_nested_pattern_owner(rejected, true) == 4);
+    check(matches("104 -4 "));
+
+    let empty: NestedPatternOwners = .Empty;
+    reset();
+    check(selected_nested_pattern_owner(empty, true) == -1);
+    check(matches(""));
+}
+
+fn expanded_lifetime(const count: i32, skip: i32, stop: i32) {
+    let outer = Owner { 9 };
+    const for index in 0..count {
+        let iteration = Owner { index + 1 };
+        if index == skip { continue; }
+        if index == stop { break; }
+        mark(20 + index);
+    }
+    mark(30);
+}
+
+fn expanded_lifetime_return(const count: i32, selected: i32) -> i32 {
+    let outer = Owner { 9 };
+    const for index in 0..count {
+        let iteration = Owner { index + 1 };
+        if index == selected { return index; }
+    }
+    return -1;
+}
+
+test "Lifetimes: expanded runtime transfers preserve iteration and outer cleanup" {
+    reset();
+    expanded_lifetime(3, 0, 1);
+    check(matches("9 1 -1 2 -2 30 -9 "));
+    reset();
+    expanded_lifetime(2, -1, -1);
+    check(matches("9 1 20 -1 2 21 -2 30 -9 "));
+    reset();
+    check(expanded_lifetime_return(3, 1) == 1);
+    check(matches("9 1 -1 2 -2 -9 "));
+}

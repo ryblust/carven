@@ -1,0 +1,12 @@
+struct Denied { code: i32 }
+struct Missing {}
+
+fn load(code: i32) throw Denied + Missing {
+    if code > 0 { throw Denied { code: code }; }
+    throw Missing {};
+}
+
+fn main() throw Denied + Missing {
+    println("before");
+    load(7)?;
+}

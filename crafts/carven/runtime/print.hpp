@@ -1,6 +1,6 @@
 #pragma once
 
-#include "display.hpp"
+#include "display/display.hpp"
 
 #include <cstdio>
 #include <exception>

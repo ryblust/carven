@@ -7,6 +7,7 @@ import :semantic.analysis.expr.aggregate;
 import :semantic.analysis.expr.interpolation;
 import :semantic.analysis.expr.member;
 import :semantic.analysis.expr.result;
+import :semantic.analysis.expr.simd;
 import :semantic.analysis.expr.text;
 import :semantic.analysis.operations;
 import :semantic.semir.structured;
@@ -44,53 +45,62 @@ auto interpret_call(
     }
     if (const auto* member = std::get_if<ASTMemberExpr>(&callee.value)) {
         if (member->op == ASTMemberOperator::Scope) {
-            if (const auto qualifier = text_qualifier(site, member->operand_id);
-                !qualifier.empty()) {
+            auto type = (co_await site.resolve_type_qualifier(member->operand_id));
+            if (!type.has_value()) {
+                co_return std::unexpected(type.error());
+            }
+            if (!type->has_value()) {
+                co_return site.invalid_type_qualifier(
+                    site.syntax().expression(member->operand_id).span
+                );
+            }
+            const auto canonical = site.draft().type_copy(**type);
+            if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
+                const auto kind = builtin->kind;
                 const auto name = site.spelling(member->name_span);
+                if (const auto intrinsic = simd_member(kind, name, true)) {
+                    co_return co_await construct_simd_call(
+                        site,
+                        *intrinsic,
+                        kind,
+                        std::optional<typename Site::Value>(),
+                        source.arguments,
+                        span
+                    );
+                }
                 auto selected = std::optional<TextIntrinsic>();
-                if (qualifier == "String" && name == "from_str") {
+                if (kind == BuiltinType::String && name == "from_str") {
                     selected = TextIntrinsic::FromStr;
                 }
-                if (qualifier == "str" && name == "from_utf8_unchecked") {
+                if (kind == BuiltinType::Str && name == "from_utf8_unchecked") {
                     selected = TextIntrinsic::FromUTF8Unchecked;
                 }
-                if (qualifier == "char" && name == "from_u32_unchecked") {
+                if (kind == BuiltinType::Char && name == "from_u32_unchecked") {
                     selected = TextIntrinsic::FromU32Unchecked;
                 }
                 if (!selected) {
                     co_return std::unexpected(site.fail(
                         member->name_span,
                         DiagnosticCode::TypeMethodCall,
-                        "text type has no such factory"
+                        "builtin type has no such factory"
                     ));
                 }
-                const auto intrinsic = *selected;
                 if (source.arguments.size()
-                    != text_intrinsic_contract(intrinsic).parameters.size()) {
+                    != text_intrinsic_contract(*selected).parameters.size()) {
                     co_return std::unexpected(site.fail(
                         span,
                         DiagnosticCode::TypeMethodCallArity,
                         "text factory argument count does not match"
                     ));
                 }
-                co_return (co_await construct_text_call(
+                co_return co_await construct_text_call(
                     site,
-                    intrinsic,
+                    *selected,
                     std::nullopt,
                     source.arguments,
                     span
-                ));
-            }
-            auto type = (co_await site.resolve_nominal_qualifier(member->operand_id));
-            if (!type.has_value()) {
-                co_return std::unexpected(type.error());
-            }
-            if (!type->has_value()) {
-                co_return site.invalid_nominal_qualifier(
-                    site.syntax().expression(member->operand_id).span
                 );
             }
-            const auto canonical = site.draft().type_copy(**type);
             if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
                 if constexpr (Site::mode == ExpressionMode::Body) {
                     co_return (
@@ -100,7 +110,7 @@ auto interpret_call(
                     co_return std::unexpected(site.fail(
                         span,
                         DiagnosticCode::ConstAdmission,
-                        "class operations are not admitted in required constant expressions"
+                        "class operations are not supported in compile-time execution"
                     ));
                 }
             }
@@ -117,6 +127,34 @@ auto interpret_call(
         auto operand = (co_await site.read(member->operand_id, std::nullopt));
         if (!operand.has_value()) {
             co_return std::unexpected(operand.error());
+        }
+        for (const auto kind :
+             {BuiltinType::U8x16,
+              BuiltinType::Mask16,
+              BuiltinType::F32x4,
+              BuiltinType::Mask4,
+              BuiltinType::U8x32,
+              BuiltinType::Mask32,
+              BuiltinType::F32x8,
+              BuiltinType::Mask8}) {
+            if (site.type(*operand) == ConstructionTypeRef(site.draft().builtin_type(kind))) {
+                const auto intrinsic = simd_member(kind, site.spelling(member->name_span), false);
+                if (!intrinsic) {
+                    co_return std::unexpected(site.fail(
+                        span,
+                        DiagnosticCode::TypeMethodCall,
+                        "SIMD value has no such method"
+                    ));
+                }
+                co_return co_await construct_simd_call(
+                    site,
+                    *intrinsic,
+                    kind,
+                    std::optional(std::move(*operand)),
+                    source.arguments,
+                    span
+                );
+            }
         }
         const auto slice = decide_slice_method(
             site.draft(),

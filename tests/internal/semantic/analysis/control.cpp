@@ -41,11 +41,14 @@ const ct::Suite tests([] static noexcept {
             "}\n"
         ));
 
-        static_cast<void>(analyze_test_program(
-            "private fn known() -> i32 {\n"
-            "    if true { return 1; } else { let ignored = 0; }\n"
-            "}\n"
-        ));
+        ct::expect_diagnostic(
+            analyze_test_errors(
+                "private fn known() -> i32 {\n"
+                "    if true { return 1; } else { let ignored = 0; }\n"
+                "}\n"
+            ),
+            DiagnosticCode::FlowMissingReturn
+        );
 
         const auto live_fallthrough = analyze_test_errors(
             "private fn invalid(value: bool) -> i32 {\n"
@@ -53,6 +56,120 @@ const ct::Suite tests([] static noexcept {
             "}\n"
         );
         ct::expect_diagnostic(live_fallthrough, DiagnosticCode::FlowMissingReturn);
+    });
+
+    ct::test("Semantic control: a known condition does not select completion", [] static noexcept {
+        const auto conditions = std::to_array<std::string_view>({
+            "flag",
+            "!flag",
+            "flag || true",
+            "flag && false",
+            "true",
+            "(2 + 3) == 5",
+            "[false, true][1]",
+        });
+        for (const auto keyword : {"let", "const"}) {
+            ct::each(
+                conditions,
+                [](auto condition) static noexcept { return condition; },
+                [&](auto condition) noexcept {
+                    ct::expect_diagnostic(
+                        analyze_test_errors(
+                            std::format(
+                                "fn probe() -> i32 {{ {} flag = true; if {} {{ return 1; }} }}",
+                                keyword,
+                                condition
+                            )
+                        ),
+                        DiagnosticCode::FlowMissingReturn
+                    );
+                    ct::expect_diagnostic(
+                        analyze_test_errors(
+                            std::format(
+                                "fn probe() -> i32 {{ {} flag = true; while {} {{}} }}",
+                                keyword,
+                                condition
+                            )
+                        ),
+                        DiagnosticCode::FlowMissingReturn
+                    );
+                }
+            );
+        }
+        static_cast<void>(analyze_test_program("fn probe() -> i32 { while {} }"));
+        ct::expect_diagnostic(
+            analyze_test_errors("fn probe() -> i32 { while { break; } }"),
+            DiagnosticCode::FlowMissingReturn
+        );
+        const auto literal = analyze_test_errors("fn probe() -> i32 { while true { return 1; } }");
+        const auto* missing = ct::find_diagnostic(literal, DiagnosticCode::FlowMissingReturn);
+        if (ct::expect(missing != nullptr)) {
+            ct::expect_equal(missing->attachment.helps.size(), 1uz);
+        }
+    });
+
+    ct::test(
+        "Semantic control: static slice projection preserves index checks",
+        [] static noexcept {
+            const auto program = analyze_test_program(
+                "const values: [i32] = [3, 7]; "
+                "fn valid() -> i32 => values[1]; "
+                "fn checked() -> i32 => values[4];"
+            );
+            const auto callables = test_function_callables(program);
+            if (!ct::expect_equal(callables.size(), 2uz)) {
+                return;
+            }
+            for (auto position = 0uz; position < callables.size(); ++position) {
+                ct::scenario(std::format("index {}", position), [&]() noexcept {
+                    const auto body_id =
+                        callable_body_id(program.declarations().callable(callables[position]));
+                    if (!ct::expect(body_id.has_value())) {
+                        return;
+                    }
+                    const auto& body = program.bodies().body(*body_id);
+                    if (!ct::expect_equal(body.region().statements.size(), 1uz)) {
+                        return;
+                    }
+                    const auto* returned =
+                        std::get_if<SemReturn>(&body.region().statements.front().value);
+                    if (!ct::expect(returned != nullptr && returned->value.has_value())) {
+                        return;
+                    }
+                    const auto& expression = *returned->value;
+                    const auto* index = std::get_if<SemIndex>(&expression.value);
+                    if (!ct::expect(index != nullptr)) {
+                        return;
+                    }
+                    ct::expect(std::holds_alternative<RuntimeCheckedBounds>(index->bounds));
+                    ct::expect(expression.constant.has_value() == (position == 0uz));
+                });
+            }
+        }
+    );
+
+    ct::test("Semantic control: bindings cannot select pointer paths", [] static noexcept {
+        ct::expect_diagnostic(
+            analyze_test_errors(
+                "fn probe() -> i32 { var p: ptr<i32> = nullptr; let flag = false; "
+                "if flag { return *p; } return 0; }"
+            ),
+            DiagnosticCode::PointerNonNull
+        );
+        ct::expect_diagnostic(
+            analyze_test_errors(
+                "fn probe() -> i32 { var p: ptr<i32> = nullptr; let flag = true; "
+                "if flag && false { return *p; } return 0; }"
+            ),
+            DiagnosticCode::PointerNonNull
+        );
+        ct::expect_diagnostic(
+            analyze_test_errors(
+                "fn probe() -> i32 { var p: ptr<i32> = nullptr; const flag = false; "
+                "if flag { return *p; } return 0; }"
+            ),
+            DiagnosticCode::PointerNonNull
+        );
     });
 
     ct::test("Semantic structure: nested lambda owns a distinct body", [] static noexcept {
@@ -124,9 +241,12 @@ const ct::Suite tests([] static noexcept {
                 ),
                 DiagnosticCode::EffectUnmarked
             );
-            static_cast<void>(analyze_test_program(
-                "fn valid() { var x = 1; if false { let moved = &&x; } let result = x; }"
-            ));
+            ct::expect_diagnostic(
+                analyze_test_errors(
+                    "fn invalid() { var x = 1; if false { let moved = &&x; } let result = x; }"
+                ),
+                DiagnosticCode::AccessUnavailable
+            );
         }
     );
 
@@ -136,9 +256,11 @@ const ct::Suite tests([] static noexcept {
             static_cast<void>(analyze_test_program(
                 "struct E {} fn fail() throw E { throw E {}; } "
                 "fn valid() { var x = 1; let moved = &&x; "
-                "match true { _ if if true { x = 2; false } else { false } => {}, _ => { let read = x; }, } "
+                "match true { _ if if true { x = 2; false } else { x = 2; false } => {}, "
+                "_ => { let read = x; }, } "
                 "let again = &&x; try { fail()?; } catch { "
-                "E(_) if if true { x = 3; false } else { false } => {}, E(_) => { let read = x; }, } }"
+                "E(_) if if true { x = 3; false } else { x = 3; false } => {}, "
+                "E(_) => { let read = x; }, } }"
             ));
         }
     );
@@ -293,7 +415,7 @@ const ct::Suite tests([] static noexcept {
         }
     );
 
-    ct::test("Semantic control: published effects follow possible execution", [] static noexcept {
+    ct::test("Semantic control: published effects include every branch", [] static noexcept {
         const auto program = analyze_test_program(R"(
         fn direct() -> i32 { return if false { require(false); 1 } else { 2 }; }
         fn indirect() -> i32 { return if false { stop(); 1 } else { 2 }; }
@@ -314,11 +436,11 @@ const ct::Suite tests([] static noexcept {
             if (!ct::expect(returned->value.has_value())) {
                 return;
             }
-            ct::expect(!returned->value->exits_test);
-            ct::expect(!program.may_stop_test(callables[index]));
+            ct::expect(returned->value->exits_test);
+            ct::expect(program.may_stop_test(callables[index]));
         }
         for (const auto entry : program.tests().entries()) {
-            const auto& body = program.bodies().body(entry.value.body);
+            const auto& body = program.bodies().body(*entry.value.body);
             const auto* initialized =
                 std::get_if<SemInitialize>(&body.region().statements.front().value);
             if (!ct::expect(initialized != nullptr)) {
@@ -328,23 +450,57 @@ const ct::Suite tests([] static noexcept {
         }
     });
 
+    ct::test("Semantic control: residual effects follow static selection", [] static noexcept {
+        const auto program = analyze_test_program(R"(
+        fn selected() -> i32 {
+            return const if false { require(false); 1 }
+                         else { let value = 2; value };
+        }
+        fn ordinary() -> i32 {
+            return if false { require(false); 1 }
+                   else { let value = 2; value };
+        }
+        fn selected_caller() -> i32 { return selected(); }
+        fn ordinary_caller() -> i32 { return ordinary(); }
+    )");
+        const auto callables = test_function_callables(program);
+        const auto expected = std::array {false, true, false, true};
+        if (!ct::expect_equal(callables.size(), expected.size())) {
+            return;
+        }
+        for (const auto [index, callable] : std::views::enumerate(callables)) {
+            const auto& body =
+                program.bodies().body(*program.declarations().body_for_callable(callable));
+            if (!ct::expect(!body.region().statements.empty())) {
+                return;
+            }
+            const auto* returned = std::get_if<SemReturn>(&body.region().statements.front().value);
+            if (!ct::expect(returned != nullptr && returned->value.has_value())) {
+                return;
+            }
+            ct::expect_equal(returned->value->exits_test, expected[index]);
+            ct::expect_equal(body.region().exits_test, expected[index]);
+            ct::expect_equal(program.may_stop_test(callable), expected[index]);
+        }
+    });
+
     ct::test(
         "Semantic control: native invocations inherit argument completion",
         [] static noexcept {
             const auto invocations = std::array {
-                "::native_call(if {} {{ fail(\"stop\"); }} else {{ 1 }})",
-                "::Native {{ if {} {{ fail(\"stop\"); }} else {{ 1 }} }}",
+                "::native_call(if flag {{ fail(\"stop\"); }} else {{ {} }})",
+                "::Native {{ if flag {{ fail(\"stop\"); }} else {{ {} }} }}",
             };
             for (const auto invocation : invocations) {
-                const auto body = [&](std::string_view condition) noexcept {
+                const auto body = [&](std::string_view alternative) noexcept {
                     return std::format(
-                        "private fn run() -> i32 {{ {}; }}",
-                        std::vformat(invocation, std::make_format_args(condition))
+                        "private fn run(flag: bool) -> i32 {{ {}; }}",
+                        std::vformat(invocation, std::make_format_args(alternative))
                     );
                 };
-                static_cast<void>(analyze_test_program(body("true")));
+                static_cast<void>(analyze_test_program(body("fail(\"stop\"); 1")));
                 ct::expect_diagnostic(
-                    analyze_test_errors(body("false")),
+                    analyze_test_errors(body("1")),
                     DiagnosticCode::FlowMissingReturn
                 )
                     .note("invocation = ", invocation);
@@ -508,7 +664,7 @@ const ct::Suite tests([] static noexcept {
             if p == nullptr { return 0; }
             var slot: ptr<i32> = nullptr;
             return match x {
-                (if true { slot = p; 0 } else { 0 })..0 | 0..(*slot) => *slot,
+                (if true { slot = p; 0 } else { slot = p; 0 })..0 | 0..(*slot) => *slot,
                 _ => *slot
             };
         }
@@ -519,7 +675,7 @@ const ct::Suite tests([] static noexcept {
             if p == nullptr { return 0; }
             var slot: ptr<i32> = nullptr;
             return match x {
-                .Number((if true { slot = p; 0 } else { 0 })..(*slot)) => *slot,
+                .Number((if true { slot = p; 0 } else { slot = p; 0 })..(*slot)) => *slot,
                 _ => *slot
             };
         }
@@ -530,7 +686,7 @@ const ct::Suite tests([] static noexcept {
             if p == nullptr { return 0; }
             var slot: ptr<i32> = nullptr;
             return match x {
-                (if true { slot = p; 0 } else { 0 })..(*slot) => *slot,
+                (if true { slot = p; 0 } else { slot = p; 0 })..(*slot) => *slot,
                 _ => *slot
             };
         }
@@ -542,7 +698,7 @@ const ct::Suite tests([] static noexcept {
             if p == nullptr { return 0; }
             var slot: ptr<i32> = nullptr;
             return match x {
-                .Number((if true { slot = p; 0 } else { 0 })..10) => *slot,
+                .Number((if true { slot = p; 0 } else { slot = p; 0 })..10) => *slot,
                 _ => *slot
             };
         }
@@ -552,7 +708,167 @@ const ct::Suite tests([] static noexcept {
         }
     );
 
-    ct::test("Semantic control: successful reports exclude message test stops", [] static noexcept {
+    ct::test(
+        "Semantic patterns: tag rejection preserves distinct ownership joins",
+        [] static noexcept {
+            const auto body = R"(
+        fn probe(subject: Choice) {
+            var value = 1;
+            let moved = &&value;
+            match subject {
+                .Number(_, (if true { value = 2; 0 } else { value = 2; 0 })..10) => {},
+                _ => {},
+            }
+            let read = value;
+        }
+    )";
+            static_cast<void>(
+                analyze_test_program(std::string("enum Choice { Number(i32, i32) } ") + body)
+            );
+            ct::expect_diagnostic(
+                analyze_test_errors(std::string("enum Choice { Number(i32, i32), Empty } ") + body),
+                DiagnosticCode::AccessUnavailable
+            );
+        }
+    );
+
+    ct::test(
+        "Semantic patterns: exhaustive payloads preserve later bound pointer facts",
+        [] static noexcept {
+            struct Input final {
+                std::string_view name;
+                std::string_view declarations;
+                std::string_view pattern;
+                bool exhaustive;
+            };
+            const auto inputs = std::array {
+                Input {
+                    .name = "complete boolean coverage",
+                    .declarations = "enum Choice { Number(bool, i32) }",
+                    .pattern = "true | false",
+                    .exhaustive = true,
+                },
+                Input {
+                    .name = "partial boolean coverage",
+                    .declarations = "enum Choice { Number(bool, i32) }",
+                    .pattern = "true",
+                    .exhaustive = false,
+                },
+                Input {
+                    .name = "complete bounded integer coverage",
+                    .declarations = "enum Choice { Number(u8, i32) }",
+                    .pattern = "0..=255",
+                    .exhaustive = true,
+                },
+                Input {
+                    .name = "complete open integer coverage",
+                    .declarations = "enum Choice { Number(u8, i32) }",
+                    .pattern = "0..",
+                    .exhaustive = true,
+                },
+                Input {
+                    .name = "partial integer coverage",
+                    .declarations = "enum Choice { Number(u8, i32) }",
+                    .pattern = "0..255",
+                    .exhaustive = false,
+                },
+                Input {
+                    .name = "complete numeric enum coverage",
+                    .declarations = "enum Kind { Only } enum Choice { Number(Kind, i32) }",
+                    .pattern = ".Only",
+                    .exhaustive = true,
+                },
+            };
+            ct::each(inputs, &Input::name, [](const Input& input) static noexcept {
+                const auto source = std::string(input.declarations) + R"(
+        fn probe(subject: Choice, pointer: ptr<i32>, flag: bool) -> i32 {
+            if pointer == nullptr { return 0; }
+            var slot: ptr<i32> = nullptr;
+            return match subject {
+                .Number(
+    )" + std::string(input.pattern)
+                    + R"(,
+                    (if flag { slot = pointer; 0 } else { slot = pointer; 0 })..10) => *slot,
+                _ => *slot,
+            };
+        }
+    )";
+                if (input.exhaustive) {
+                    static_cast<void>(analyze_test_program(source));
+                } else {
+                    ct::expect_diagnostic(
+                        analyze_test_errors(source),
+                        DiagnosticCode::PointerNonNull
+                    );
+                }
+            });
+        }
+    );
+
+    ct::test(
+        "Semantic patterns: outward bound exits skip remaining pointer reads",
+        [] static noexcept {
+            static_cast<void>(analyze_test_program(R"(
+        fn probe(subject: i32, pointer: ptr<i32>) -> i32 {
+            return match subject {
+                (if true { fail(); 0 } else { fail(); 0 })..(*pointer) | 0..(*pointer) => 1,
+                _ => 2,
+            };
+        }
+    )"));
+        }
+    );
+
+    ct::test(
+        "Semantic patterns: guard rejection retains established pointer facts",
+        [] static noexcept {
+            struct Input final {
+                std::string_view name;
+                std::string_view pattern;
+                bool exhaustive;
+            };
+            const auto inputs = std::array {
+                Input {
+                    .name = "complete catch alternatives",
+                    .pattern = "Failure(.One) | Failure(.Two)",
+                    .exhaustive = true,
+                },
+                Input {
+                    .name = "partial catch alternatives",
+                    .pattern = "Failure(.One)",
+                    .exhaustive = false,
+                },
+            };
+            ct::each(inputs, &Input::name, [](const Input& input) static noexcept {
+                const auto source = std::string(R"(
+        enum Failure { One, Two }
+        fn raise(flag: bool) throw Failure {
+            if flag { throw Failure::One; } else { throw Failure::Two; }
+        }
+        fn probe(pointer: ptr<i32>, flag: bool) -> i32 {
+            if pointer == nullptr { return 0; }
+            var slot: ptr<i32> = nullptr;
+            return try { raise(flag)?; 0 } catch {
+    )") + std::string(input.pattern)
+                    + R"(
+                if if flag { slot = pointer; false } else { slot = pointer; false } => 1,
+                Failure(_) => *slot,
+            };
+        }
+    )";
+                if (input.exhaustive) {
+                    static_cast<void>(analyze_test_program(source));
+                } else {
+                    ct::expect_diagnostic(
+                        analyze_test_errors(source),
+                        DiagnosticCode::PointerNonNull
+                    );
+                }
+            });
+        }
+    );
+
+    ct::test("Semantic control: report messages contribute their test stops", [] static noexcept {
         const auto program = analyze_test_program(R"(
         fn message() -> str { fail(); }
         fn quiet() { assert(true, message()); check(true, message()); require(true, message()); }
@@ -560,7 +876,7 @@ const ct::Suite tests([] static noexcept {
         fn conditional(flag: bool) { assert(flag, message()); }
     )");
         const auto callables = test_function_callables(program);
-        const auto expected = std::array {true, false, false, true};
+        const auto expected = std::array {true, true, true, true};
         if (!ct::expect(callables.size() == expected.size())) {
             return;
         }
@@ -571,23 +887,24 @@ const ct::Suite tests([] static noexcept {
     });
 
     ct::test(
-        "Semantic control: report completion follows the selected continuation",
+        "Semantic control: only fail completes a report without returning",
         [] static noexcept {
-            for (const auto operation : {"assert", "require"}) {
-                static_cast<void>(analyze_test_program(
-                    std::format("private fn stopped() -> i32 {{ {}(false); }}", operation)
-                ));
-                ct::expect_diagnostic(
-                    analyze_test_errors(
-                        std::format("private fn open() -> i32 {{ {}(true); }}", operation)
-                    ),
-                    DiagnosticCode::FlowMissingReturn
-                )
-                    .note("operation = ", operation);
+            for (const auto operation : {"assert", "require", "check"}) {
+                for (const auto condition : {"false", "true"}) {
+                    ct::expect_diagnostic(
+                        analyze_test_errors(
+                            std::format(
+                                "private fn open() -> i32 {{ {}({}); }}",
+                                operation,
+                                condition
+                            )
+                        ),
+                        DiagnosticCode::FlowMissingReturn
+                    )
+                        .note("operation = ", operation);
+                }
             }
-            static_cast<void>(analyze_test_program(
-                "private fn stopped() -> i32 { check(false, if true { fail(); } else { \"unused\" }); }"
-            ));
+            static_cast<void>(analyze_test_program("private fn stopped() -> i32 { fail(); }"));
         }
     );
 

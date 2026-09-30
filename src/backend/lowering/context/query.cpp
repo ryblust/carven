@@ -1,8 +1,9 @@
 module carven:backend.lowering.context.query.impl;
 
-import :backend.lowering.context;
 import :backend.lowering.constant;
+import :backend.lowering.context;
 import :backend.target.symbol;
+import :support.invariant;
 import :support.visit;
 import std;
 
@@ -167,12 +168,25 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query, TypeNameScope sco
     );
 }
 
-auto ModuleLowering::lower_cpp_query(const CppQueryType& query, TypeNameScope scope) noexcept
-    -> TargetTypeID {
-    const auto type = target().intern_type({
-        .value = TargetDecltypeType(cpp_type_query(query, scope)),
+auto ModuleLowering::lower_cpp_query(TypeID query_type) noexcept -> TargetTypeID {
+    if (const auto found = query_types.find(query_type); found != query_types.end()) {
+        return found->second;
+    }
+    const auto* native = std::get_if<CppTypeValue>(&semantic().types().type(query_type).value);
+    const auto* query = native == nullptr ? nullptr : std::get_if<CppQueryType>(&native->form);
+    if (query == nullptr) {
+        invariant_violation("native query lowering requires a canonical query type");
+    }
+    const auto underlying = target().intern_type({
+        .value = TargetDecltypeType(cpp_type_query(*query, TypeNameScope::Global)),
         .const_qualified = false,
     });
-    artifact_lowering.name_query_type(type);
-    return type;
+    const auto identifier = names().query_identifier(query_type);
+    const auto alias = named_type(names().module_support_name(active_module(), identifier));
+    query_aliases.push_back(compiler_item(
+        TargetDecl {TargetTypeAlias {.name = identifier, .type = underlying}},
+        TargetCompilerReason::ArtifactScaffolding
+    ));
+    query_types.emplace(query_type, alias);
+    return alias;
 }

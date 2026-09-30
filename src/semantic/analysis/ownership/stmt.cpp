@@ -124,6 +124,10 @@ auto OwnershipBodyAnalyzer::statement(
                 (co_await evaluate(value.expression));
                 co_return {};
             },
+            [&](const SemStaticBinding& value) noexcept -> ContinuationTask<std::monostate> {
+                store(result.normal->state, binding_place(value.binding), {}, source.origin);
+                co_return {};
+            },
             [&](const SemInitialize& value) noexcept -> ContinuationTask<std::monostate> {
                 (co_await evaluate(value.initializer));
                 if (result.normal.has_value()) {
@@ -179,6 +183,14 @@ auto OwnershipBodyAnalyzer::statement(
             },
             [&](const SemRangeLoop& value) noexcept -> ContinuationTask<std::monostate> {
                 result = (co_await range(value, std::move(result.normal->state)));
+                co_return {};
+            },
+            [](const SemExpandedLoop&) static noexcept -> ContinuationTask<std::monostate> {
+                invariant_violation("expanded loop reached generic body analysis");
+                co_return {};
+            },
+            [&](const SemConstBlock& value) noexcept -> ContinuationTask<std::monostate> {
+                result = (co_await region(*value.region, std::move(result.normal->state)));
                 co_return {};
             },
             [&](const OwnedSemanticRegion& value) noexcept -> ContinuationTask<std::monostate> {

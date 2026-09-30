@@ -1,7 +1,5 @@
 fn f() {
-
     call();
-
 }
 
 fn g() {
@@ -10,4 +8,8 @@ fn g() {
 
         2
     );
+}
+
+fn h() {
+    if ready { return (1); }
 }

@@ -1,0 +1,1 @@
+fn f(const n:usize){var total:usize=0;let x=const if n==0{let y=2;y+1}else{0};const for i in 0..n{total+=i;}}

@@ -39,6 +39,38 @@ auto normalize_span(Span span, std::size_t source_size) noexcept -> NormalizedSp
     return {.start = start, .end = std::max(start, end)};
 }
 
+// Estimate terminal cells for common wide and combining scalars.
+auto terminal_columns(char32_t scalar) noexcept -> std::size_t {
+    struct ScalarRange final {
+        char32_t first;
+        char32_t last;
+    };
+
+    static constexpr auto combining = std::array {
+        ScalarRange {.first = 0x0300, .last = 0x036f},
+        ScalarRange {.first = 0x200b, .last = 0x200d},
+        ScalarRange {.first = 0xfe00, .last = 0xfe0f},
+    };
+    static constexpr auto wide = std::array {
+        ScalarRange {.first = 0x1100, .last = 0x115f},
+        ScalarRange {.first = 0x2e80, .last = 0xa4cf},
+        ScalarRange {.first = 0xac00, .last = 0xd7a3},
+        ScalarRange {.first = 0xf900, .last = 0xfaff},
+        ScalarRange {.first = 0xfe30, .last = 0xfe4f},
+        ScalarRange {.first = 0xff00, .last = 0xff60},
+        ScalarRange {.first = 0xffe0, .last = 0xffe6},
+        ScalarRange {.first = 0x1f300, .last = 0x1faff},
+        ScalarRange {.first = 0x20000, .last = 0x3fffd},
+    };
+    const auto contains = [scalar](const ScalarRange& range) noexcept -> bool {
+        return scalar >= range.first && scalar <= range.last;
+    };
+    if (std::ranges::any_of(combining, contains)) {
+        return 0uz;
+    }
+    return std::ranges::any_of(wide, contains) ? 2uz : 1uz;
+}
+
 auto display_line(std::string_view text) noexcept -> DisplayLine {
     static constexpr auto hexadecimal = std::string_view("0123456789abcdef");
 
@@ -88,7 +120,7 @@ auto display_line(std::string_view text) noexcept -> DisplayLine {
             result.columns[index + continuation] = column;
         }
         index += sequence.width;
-        ++column;
+        column += terminal_columns(sequence.scalar);
         result.columns[index] = column;
     }
 
@@ -124,7 +156,8 @@ auto append_source_line(
     std::size_t marker_begin,
     std::size_t marker_end,
     char marker,
-    std::string_view message
+    std::string_view message,
+    bool show_source
 ) noexcept -> void {
     auto raw = slice(text, line);
     if (raw.ends_with('\n')) {
@@ -136,11 +169,13 @@ auto append_source_line(
     const auto displayed = display_line(raw);
     const auto number = std::to_string(line_number);
 
-    output.append(gutter_width - number.size(), ' ');
-    output += number;
-    output += " | ";
-    output += displayed.text;
-    output += '\n';
+    if (show_source) {
+        output.append(gutter_width - number.size(), ' ');
+        output += number;
+        output += " | ";
+        output += displayed.text;
+        output += '\n';
+    }
 
     const auto relative_begin = std::min(marker_begin - line.start(), raw.size());
     const auto relative_end = std::min(marker_end - line.start(), raw.size());
@@ -164,7 +199,8 @@ auto append_frame(
     const SourceManager& sources,
     SourceID source_id,
     const LabelFrame& frame,
-    std::size_t gutter_width
+    std::size_t gutter_width,
+    bool show_source
 ) noexcept -> void {
     const auto first = sources.line_span(source_id, frame.first_line);
     if (frame.first_line == frame.last_line) {
@@ -177,7 +213,8 @@ auto append_frame(
             frame.span.start,
             frame.span.end,
             frame.marker,
-            frame.label->message
+            frame.label->message,
+            show_source
         );
         return;
     }
@@ -191,7 +228,8 @@ auto append_frame(
         frame.span.start,
         first.end(),
         frame.marker,
-        {}
+        {},
+        true
     );
     if (frame.last_line > frame.first_line + 1) {
         append_ellipsis(output, gutter_width);
@@ -207,8 +245,22 @@ auto append_frame(
         last.start(),
         frame.span.end,
         frame.marker,
-        frame.label->message
+        frame.label->message,
+        true
     );
+}
+
+auto append_advice(
+    std::string& output,
+    const DiagnosticAttachment& attachment,
+    const TerminalStyler& styler
+) noexcept -> void {
+    for (const auto& note : attachment.notes) {
+        output += std::format("{} {}\n", styler.bold_cyan("note:"), note.message);
+    }
+    for (const auto& help : attachment.helps) {
+        output += std::format("{} {}\n", styler.bold_green("help:"), help);
+    }
 }
 
 } // namespace
@@ -228,9 +280,7 @@ auto render_diagnostic(
     const auto styled_code = styler.bold(diagnostic_code_info(finding.code).name);
     if (!attachment.primary.has_value()) {
         auto output = std::format("{} [{}]: {}\n", styled_severity, styled_code, finding.message);
-        for (const auto& note : attachment.notes) {
-            output += std::format("{} {}\n", styler.bold_cyan("note:"), note.message);
-        }
+        append_advice(output, attachment, styler);
         return output;
     }
     const auto& primary = *attachment.primary;
@@ -319,15 +369,29 @@ auto render_diagnostic(
         const auto gutter_width = decimal_width(largest_line);
         append_separator(output, gutter_width);
         for (auto index = 0uz; index < frames.size(); ++index) {
-            if (index > 0) {
+            // Labels on one source line share its text and stack their markers.
+            const auto single_line = [](const LabelFrame& frame) static noexcept -> bool {
+                return frame.first_line == frame.last_line;
+            };
+            const auto shares_line = index > 0
+                && single_line(frames[index])
+                && single_line(frames[index - 1])
+                && frames[index].first_line == frames[index - 1].first_line;
+            if (index > 0 && !shares_line) {
                 append_separator(output, gutter_width);
             }
-            append_frame(output, source.text, sources, source_id, frames[index], gutter_width);
+            append_frame(
+                output,
+                source.text,
+                sources,
+                source_id,
+                frames[index],
+                gutter_width,
+                !shares_line
+            );
         }
     }
-    for (const auto& note : attachment.notes) {
-        output += std::format("{} {}\n", styler.bold_cyan("note:"), note.message);
-    }
+    append_advice(output, attachment, styler);
     return output;
 }
 

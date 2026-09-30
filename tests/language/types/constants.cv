@@ -85,7 +85,7 @@ fn record_known_operand(&count: i32) -> bool {
     return true;
 }
 
-test "Constants: known operation results retain operand execution" {
+test "Constants: Boolean operations retain operand execution" {
     var count = 0;
     let value = KnownPayload::Value(record_known_operand(&count) && false);
     check(value == KnownPayload::Value(false));

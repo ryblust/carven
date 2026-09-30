@@ -1,0 +1,167 @@
+import std::utf.error using { UTF8Error, UTF8ErrorKind };
+import std::utf.validation using { validate_utf8, UTF8Validator };
+
+private fn compare_validation(bytes: [u8], split: usize) {
+    var vector = UTF8Validator::create();
+    var scalar = UTF8Validator::create();
+    var vector_failed = false;
+    var scalar_failed = false;
+    var vector_error = UTF8Error {
+        kind:.InvalidLead,
+        offset: 0,
+        sequence_start: 0
+    };
+    var scalar_error = vector_error;
+    try {
+        vector.feed(bytes.slice(0, split))?;
+        vector.feed(bytes.slice(split, bytes.len()))?;
+        vector.check_complete()?;
+    } catch {
+        UTF8Error(error) => {
+            vector_failed = true;
+            vector_error = error;
+        },
+    }
+    try {
+        for byte in bytes {
+            scalar.push(byte)?;
+        }
+        scalar.check_complete()?;
+    } catch {
+        UTF8Error(error) => {
+            scalar_failed = true;
+            scalar_error = error;
+        },
+    }
+    assert(vector_failed == scalar_failed);
+    if scalar_failed {
+        assert(vector_error.kind == scalar_error.kind);
+        assert(vector_error.offset == scalar_error.offset);
+        assert(vector_error.sequence_start == scalar_error.sequence_start);
+    }
+    assert(vector.processed_bytes() == scalar.processed_bytes());
+    assert(vector.is_complete() == scalar.is_complete());
+    for byte in [0x90u8, 0xa0, 0x80, 0x80, 0x61] {
+        vector_failed = false;
+        scalar_failed = false;
+        try {
+            vector.push(byte)?;
+        } catch {
+            UTF8Error(error) => {
+                vector_failed = true;
+                vector_error = error;
+            },
+        }
+        try {
+            scalar.push(byte)?;
+        } catch {
+            UTF8Error(error) => {
+                scalar_failed = true;
+                scalar_error = error;
+            },
+        }
+        assert(vector_failed == scalar_failed);
+        if scalar_failed {
+            assert(vector_error.kind == scalar_error.kind);
+            assert(vector_error.offset == scalar_error.offset);
+            assert(vector_error.sequence_start == scalar_error.sequence_start);
+        }
+        assert(vector.processed_bytes() == scalar.processed_bytes());
+        assert(vector.is_complete() == scalar.is_complete());
+    }
+}
+
+// Each UTF-8 byte class boundary: ASCII, continuation ranges, overlong and
+// surrogate-sensitive leads, and invalid leads.
+private fn class_boundaries() -> [u8; 24] => [
+    0x00,
+    0x7f,
+    0x80,
+    0x8f,
+    0x90,
+    0x9f,
+    0xa0,
+    0xbf,
+    0xc0,
+    0xc1,
+    0xc2,
+    0xdf,
+    0xe0,
+    0xe1,
+    0xec,
+    0xed,
+    0xee,
+    0xef,
+    0xf0,
+    0xf1,
+    0xf3,
+    0xf4,
+    0xf5,
+    0xff
+];
+
+test "UTF8: block validation agrees for byte class pairs across vector and group boundaries" {
+    var bytes: [u8; 96] = {};
+    for boundary in [16usize, 32, 64] {
+        for first in class_boundaries() {
+            for second in class_boundaries() {
+                bytes[boundary - 1] = first;
+                bytes[boundary] = second;
+                compare_validation(bytes, 96);
+            }
+        }
+        bytes[boundary - 1] = 0;
+        bytes[boundary] = 0;
+    }
+}
+
+test "UTF8: byte class mutations in mixed blocks preserve diagnostics and state" {
+    let pattern = "abc你😀de".bytes;
+    var bytes: [u8; 96] = {};
+    for index in 0usize..96 {
+        bytes[index] = pattern[index % pattern.len()];
+    }
+    for position in 0usize..96 {
+        let original = bytes[position];
+        for replacement in class_boundaries() {
+            bytes[position] = replacement;
+            compare_validation(bytes, 96);
+        }
+        bytes[position] = original;
+    }
+    for end in 0usize..=96 {
+        for split in 0..=end {
+            compare_validation(bytes.as_slice().slice(0, end), split);
+        }
+    }
+}
+
+private const fn verify_constant_blocks() -> bool {
+    let valid = "abc你😀deabc你😀deabc你😀deabc你😀deabc你😀deabc你😀de".bytes;
+    validate_utf8(valid)?;
+    for position in 0usize..64 {
+        var bytes: [u8; 64] = {};
+        bytes[position] = 0xf5;
+        var rejected = false;
+        try {
+            validate_utf8(bytes)?;
+        } catch {
+            UTF8Error(error) => {
+                rejected = error.kind
+                    == .InvalidLead
+                    && error.offset == position
+                    && error.sequence_start == position;
+            },
+        }
+        assert(rejected);
+    }
+    return true;
+}
+
+const test "UTF8: generated classification tables validate constant multibyte blocks" {
+    try {
+        check(verify_constant_blocks()?);
+    } catch {
+        UTF8Error(_) => fail("valid constant block rejected"),
+    }
+}

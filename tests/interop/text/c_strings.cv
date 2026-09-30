@@ -9,7 +9,7 @@ import "text/c_strings.hpp" using c_strings::{
     Box,
 };
 
-import .cstring_constant_api using constant_text_value;
+import .cstring_constant using constant_text_value;
 import "text/c_strings.hpp" using c_strings::select;
 import "text/c_strings.hpp" using c_other::*;
 
@@ -50,7 +50,7 @@ test "C strings: static storage and exact native pointer values" {
     check(remembered());
 }
 
-test "C strings: compile-time values retain bytes across modules" {
+test "C strings: constants retain bytes across modules" {
     check(unicode(saved_cstring));
     check(same(empty_cstring, c""));
     check(same(copied_cstring, c"old"));

@@ -10,6 +10,8 @@ import :test.internal.harness.death;
 
 namespace {
 
+constexpr auto site = carven::runtime::SourceSite::native();
+
 namespace ct = carven::testing;
 
 template<typename Integer>
@@ -26,10 +28,10 @@ constexpr auto ordinary_integer_contract() noexcept -> bool {
         && integer_add(Integer {2}, Integer {3}) == Integer {5}
     && integer_subtract(Integer {5}, Integer {3}) == Integer {2}
     && integer_multiply(Integer {6}, Integer {7}) == Integer {42}
-    && integer_divide(Integer {7}, Integer {2}) == Integer {3}
-    && integer_remainder(Integer {7}, Integer {2}) == Integer {1}
-    && integer_left_shift(Integer {3}, Integer {2}) == Integer {12}
-    && integer_right_shift(Integer {12}, Integer {2}) == Integer {3};
+    && integer_divide(Integer {7}, Integer {2}, site) == Integer {3}
+    && integer_remainder(Integer {7}, Integer {2}, site) == Integer {1}
+    && integer_left_shift(Integer {3}, Integer {2}, site) == Integer {12}
+    && integer_right_shift(Integer {12}, Integer {2}, site) == Integer {3};
 }
 
 template<carven::runtime::Integer Integer>
@@ -50,15 +52,15 @@ constexpr auto wrapping_integer_contract() noexcept -> bool {
             && integer_subtract(minimum, Integer {1}) == maximum
             && integer_multiply(maximum, Integer {2}) == multiplied
             && integer_negate(minimum) == minimum
-            && integer_divide(minimum, Integer {-1}) == minimum
-            && integer_remainder(minimum, Integer {-1}) == Integer {0}
-        && integer_left_shift(maximum, Integer {1}) == multiplied;
+            && integer_divide(minimum, Integer {-1}, site) == minimum
+            && integer_remainder(minimum, Integer {-1}, site) == Integer {0}
+        && integer_left_shift(maximum, Integer {1}, site) == multiplied;
     } else {
         return integer_add(maximum, Integer {1}) == Integer {0}
         && integer_subtract(Integer {0}, Integer {1}) == maximum
             && integer_multiply(maximum, Integer {2}) == multiplied
             && integer_negate(Integer {1}) == maximum
-            && integer_left_shift(maximum, Integer {1}) == multiplied;
+            && integer_left_shift(maximum, Integer {1}, site) == multiplied;
     }
 }
 
@@ -75,16 +77,20 @@ static_assert(wrapping_integer_contract<std::size_t>());
 
 // Signed right shift retains the arithmetic result during constant evaluation.
 static_assert(
-    carven::runtime::integer_right_shift(std::int8_t {-1}, std::int8_t {1}) == std::int8_t {-1}
+    carven::runtime::integer_right_shift(std::int8_t {-1}, std::int8_t {1}, site)
+    == std::int8_t {-1}
 );
 static_assert(
-    carven::runtime::integer_right_shift(std::int16_t {-8}, std::int16_t {2}) == std::int16_t {-2}
+    carven::runtime::integer_right_shift(std::int16_t {-8}, std::int16_t {2}, site)
+    == std::int16_t {-2}
 );
 static_assert(
-    carven::runtime::integer_right_shift(std::int32_t {-7}, std::int32_t {1}) == std::int32_t {-4}
+    carven::runtime::integer_right_shift(std::int32_t {-7}, std::int32_t {1}, site)
+    == std::int32_t {-4}
 );
 static_assert(
-    carven::runtime::integer_right_shift(std::int64_t {-7}, std::int64_t {1}) == std::int64_t {-4}
+    carven::runtime::integer_right_shift(std::int64_t {-7}, std::int64_t {1}, site)
+    == std::int64_t {-4}
 );
 
 } // namespace
@@ -108,16 +114,16 @@ const ct::Suite tests([] static noexcept {
     ct::test("Runtime: invalid arithmetic always terminates", [] static noexcept {
         using namespace carven::runtime;
         ct::expect(expect_termination("runtime-integer-divide-zero", []() static noexcept {
-            static_cast<void>(integer_divide(std::int32_t {1}, std::int32_t {0}));
+            static_cast<void>(integer_divide(std::int32_t {1}, std::int32_t {0}, site));
         }));
         ct::expect(expect_termination("runtime-integer-remainder-zero", []() static noexcept {
-            static_cast<void>(integer_remainder(std::int32_t {1}, std::int32_t {0}));
+            static_cast<void>(integer_remainder(std::int32_t {1}, std::int32_t {0}, site));
         }));
         ct::expect(expect_termination("runtime-left-shift-negative", []() static noexcept {
-            static_cast<void>(integer_left_shift(std::int32_t {1}, std::int32_t {-1}));
+            static_cast<void>(integer_left_shift(std::int32_t {1}, std::int32_t {-1}, site));
         }));
         ct::expect(expect_termination("runtime-right-shift-width", []() static noexcept {
-            static_cast<void>(integer_right_shift(std::int32_t {1}, std::int32_t {32}));
+            static_cast<void>(integer_right_shift(std::int32_t {1}, std::int32_t {32}, site));
         }));
     });
 });

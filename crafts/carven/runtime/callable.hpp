@@ -2,10 +2,10 @@
 
 #include "outcome.hpp"
 #include "passing.hpp"
+#include "trap.hpp"
 
 #include <concepts>
 #include <cstddef>
-#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <type_traits>
@@ -127,11 +127,14 @@ public:
     // Function targets are stored by value; object targets remain borrowed.
     template<typename SourceResult, bool Noexcept>
         requires (compatible<SourceResult (*)(Arguments...) noexcept(Noexcept)>())
-    FunctionRef(SourceResult (*function)(Arguments...) noexcept(Noexcept)) noexcept
+    FunctionRef(
+        SourceResult (*function)(Arguments...) noexcept(Noexcept),
+        SourceSite site = SourceSite::native()
+    ) noexcept
         : entity(reinterpret_cast<ErasedFunctionPointer>(function)),
           thunk(&invoke_function<decltype(function)>) {
         if (function == nullptr) {
-            std::abort();
+            trap("callable view requires a non-null function", site);
         }
     }
 

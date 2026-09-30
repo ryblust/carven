@@ -308,13 +308,72 @@ const ct::Suite tests([] static noexcept {
   |
 1 | abcdef
   |  ^^ primary
-  |
-1 | abcdef
   |  -- secondary
 )REPORT")
             );
         }
     );
+
+    ct::test(
+        "Diagnostic report: wide and combining scalars advance markers by terminal cells",
+        [] static noexcept {
+            static constexpr auto text = std::string_view("\"日本\" + e\u0301 + 1");
+            const auto start = static_cast<std::uint32_t>(text.rfind('+'));
+            const auto diagnostic = make_diagnostic(
+                "wide",
+                {
+                    .span =
+                        {
+                            .source_id = SourceID::from_index(0),
+                            .span = Span::from_bounds(start, start + 1),
+                        },
+                    .message = "here",
+                }
+            );
+            const auto source = SourceView {
+                .source_id = SourceID::from_index(0),
+                .text = text,
+                .origin = "wide.cv",
+            };
+            ct::expect_equal(
+                render_diagnostic(diagnostic, source),
+                std::format(
+                    "error [CV-LEXICAL]: wide\n --> wide.cv:1:{}\n  |\n1 | {}\n  | {}^ here\n",
+                    start + 1,
+                    text,
+                    std::string(11, ' ')
+                )
+            );
+        }
+    );
+
+    ct::test("Diagnostic report: help follows notes after the source frames", [] static noexcept {
+        static constexpr auto source = SourceView {
+            .source_id = SourceID::from_index(0),
+            .text = "let a = 1;",
+            .origin = "app.cv",
+        };
+        const auto span = SourceSpan {
+            .source_id = SourceID::from_index(0),
+            .span = Span::from_bounds(4, 5),
+        };
+        const auto diagnostic = DiagnosticBuilder(DiagnosticCode::AccessImmutable, "read-only")
+                                    .primary(span)
+                                    .note("context")
+                                    .help("declare with 'var'")
+                                    .build();
+        ct::expect_equal(
+            render_diagnostic(diagnostic, source),
+            std::string_view(R"REPORT(error [CV-ACCESS-IMMUTABLE]: read-only
+ --> app.cv:1:5
+  |
+1 | let a = 1;
+  |     ^
+note: context
+help: declare with 'var'
+)REPORT")
+        );
+    });
 
     ct::test(
         "Diagnostic report: gutters grow to the largest displayed line number",

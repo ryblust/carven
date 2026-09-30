@@ -14,4 +14,6 @@ fn verify() {
     eprintln("unreachable");
 }
 
-verify();
+fn run_failure() {
+    verify();
+}

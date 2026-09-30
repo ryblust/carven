@@ -24,6 +24,8 @@ struct DiagnosticAttachment final {
     std::optional<DiagnosticLabel> primary;
     std::vector<DiagnosticLabel> related;
     std::vector<DiagnosticNote> notes;
+    // Each entry suggests a source change for the rejected contract.
+    std::vector<std::string> helps;
 };
 
 struct Diagnostic final {

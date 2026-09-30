@@ -24,7 +24,7 @@ enum IntervalPayload {
     Empty
 }
 
-const test "Range patterns: static partitions execute at compile time" {
+const test "Range patterns: static partitions execute in the static stage" {
     check(classify_interval(-1) == -1);
     check(classify_interval(0) == 0);
     check(classify_interval(9) == 0);

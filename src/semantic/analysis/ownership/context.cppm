@@ -192,7 +192,6 @@ struct OwnershipBodyFacts final {
     std::vector<OwnershipLocalObject> locals;
     std::flat_map<const SemanticExpression*, std::size_t> temporaries;
     std::flat_map<LifetimeRegionID, std::vector<std::size_t>> lifetime_objects;
-    std::flat_set<PatternID> irrefutable_patterns;
     std::flat_map<const SemCatchArm*, std::flat_map<TypeID, OwnershipCatchAcceptance>> catches;
 };
 
@@ -258,7 +257,9 @@ private:
         DiagnosticCode code,
         std::string message,
         ProgramOriginID origin,
-        std::optional<ProgramOriginID> related = std::nullopt
+        std::optional<ProgramOriginID> related = std::nullopt,
+        std::string related_label = "related storage or access",
+        std::string help = {}
     ) noexcept -> void;
     auto outlives(std::size_t source, std::size_t destination) const noexcept -> bool;
     auto full_expression_storage(std::size_t object) const noexcept -> bool;
@@ -324,7 +325,6 @@ private:
         const OwnershipPlace& place,
         ProgramOriginID origin
     ) noexcept -> void;
-    auto constant_truth(const SemanticExpression& source) const noexcept -> std::optional<bool>;
     auto constant_index(const SemanticExpression& source) const noexcept
         -> std::optional<std::uint64_t>;
     auto place(const SemanticExpression& source, OwnershipState state, bool read = true) noexcept
@@ -368,7 +368,6 @@ private:
         std::span<const SemPatternBounds> bounds,
         OwnershipState state
     ) noexcept -> ContinuationTask<OwnershipCondition>;
-    auto irrefutable(PatternID pattern) const noexcept -> bool;
     auto object_type(std::size_t object) const noexcept -> TypeID;
     auto object_origin(std::size_t object) const noexcept -> ProgramOriginID;
 
@@ -403,11 +402,14 @@ public:
     auto contents(TypeID type) const noexcept -> TypeContents;
     // Answers are borrowed during body evaluation, before the solver updates them.
     auto query(OwnershipCallInput input) noexcept -> std::span<const OwnershipCallCompletion>;
+    // An empty help adds no advice.
     auto diagnose(
         DiagnosticCode code,
         std::string message,
         ProgramOriginID origin,
-        std::optional<ProgramOriginID> related
+        std::optional<ProgramOriginID> related,
+        std::string related_label,
+        std::string help
     ) noexcept -> void;
     // A return copy is reported only when every diagnosed context admits Take.
     auto observe_returned_copy(ProgramOriginID origin, bool transferable) noexcept -> void;

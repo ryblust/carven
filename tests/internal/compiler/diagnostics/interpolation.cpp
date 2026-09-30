@@ -102,7 +102,7 @@ const ct::Suite tests([] static noexcept {
                  .source = R"(const text = f"{42:{-1}}";)",
                  .code = DiagnosticCode::ConstEvaluation,
                  .primary_text = R"(f"{42:{-1}}")"},
-                {.name = "runtime binding is not a required constant",
+                {.name = "runtime binding is not a constant",
                  .source = R"(fn bad() { let x = 1; const text = f"{x}"; })",
                  .code = DiagnosticCode::ConstInitializer,
                  .primary_text = R"(const text = f"{x}")"},

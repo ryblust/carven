@@ -14,7 +14,7 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
     if (args.size() == 1
         && (std::string_view(args[0]) == "--help" || std::string_view(args[0]) == "-h")) {
         std::print(
-            "Check sources and run required constant evaluation and const tests.\n"
+            "Check sources and run compile-time execution and const tests.\n"
             "\n"
             "Usage:\n"
             "  carven check [options] <source-file>...\n"

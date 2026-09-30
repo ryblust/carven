@@ -87,7 +87,7 @@ auto interpret_enum_case(
         payload.push_back(std::move(*value));
     }
     auto known = std::optional<ConstantID>();
-    if (constants.size() == payload.size() && !(Site::mode == ExpressionMode::RequiredRoot)) {
+    if (constants.size() == payload.size() && !(Site::mode == ExpressionMode::StaticRoot)) {
         known = site.draft().intern_constant(
             {.type = type,
              .value =
@@ -106,54 +106,28 @@ auto interpret_text(
 ) noexcept -> ExpressionResult<typename Site::Value> {
     const auto type =
         resolve_text_intrinsic_type(site.draft(), text_intrinsic_contract(intrinsic).result);
-    auto known = fold_expression_constant(
-        site,
-        [&]() noexcept {
-            return fold_text_intrinsic_constant(site.draft(), intrinsic, site.known(operand), type);
-        },
-        span
-    );
-    if (!known.has_value()) {
-        return std::unexpected(known.error());
-    }
-    return construct_text_value(site, intrinsic, type, std::move(operand), *known, span);
-}
-
-template<typename Site>
-auto text_qualifier(Site& site, ASTExprID expression) noexcept -> std::string_view {
-    const auto* name = std::get_if<ASTNameExpr>(&site.syntax().expression(expression).value);
-    if (name != nullptr) {
-        const auto spelling = site.spelling(name->name_span);
-        for (const auto candidate : {"String", "str", "char"}) {
-            if (spelling == candidate) {
-                return candidate;
-            }
-        }
-    }
-    return {};
+    return construct_text_value(site, intrinsic, type, std::move(operand), std::nullopt, span);
 }
 
 template<typename Site>
 auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexcept
     -> ExpressionTask<typename Site::Selection> {
     if (source.op == ASTMemberOperator::Scope) {
-        if (!text_qualifier(site, source.operand_id).empty()) {
-            co_return std::unexpected(site.fail(
-                source.name_span,
-                DiagnosticCode::TypeMethodCall,
-                "text factories must be called directly"
-            ));
-        }
-        auto type = (co_await site.resolve_nominal_qualifier(source.operand_id));
+        auto type = (co_await site.resolve_type_qualifier(source.operand_id));
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
         }
         if (!type->has_value()) {
-            co_return site.invalid_nominal_qualifier(
-                site.syntax().expression(source.operand_id).span
-            );
+            co_return site.invalid_type_qualifier(site.syntax().expression(source.operand_id).span);
         }
         const auto canonical = site.draft().type_copy(**type);
+        if (std::holds_alternative<BuiltinTypeValue>(canonical.value)) {
+            co_return std::unexpected(site.fail(
+                source.name_span,
+                DiagnosticCode::TypeMethodCall,
+                "builtin factories must be called directly"
+            ));
+        }
         if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
             if constexpr (Site::mode == ExpressionMode::Body) {
                 co_return (co_await site.associated_reference(record->structure, source.name_span));
@@ -161,7 +135,7 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
                 co_return std::unexpected(site.fail(
                     span,
                     DiagnosticCode::ConstAdmission,
-                    "class operations are not admitted in required constant expressions"
+                    "class operations are not supported in compile-time execution"
                 ));
             }
         }

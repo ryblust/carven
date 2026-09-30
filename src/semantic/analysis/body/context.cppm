@@ -13,15 +13,16 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.resolve;
-import :semantic.analysis.constant.evaluation;
 import :semantic.analysis.construction.requests;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.analysis.stage.session;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
+import :semantic.semir.completion;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -38,10 +39,11 @@ enum class BodyLocalRole {
 };
 
 struct BodyLocalStorage final {
-    std::variant<BoundStorage, ConstantID> storage;
+    BoundStorage storage;
     ConstructionTypeRef type;
     bool used;
     bool takeable;
+    bool static_source;
     BodyLocalRole role;
     std::optional<Span> unused_candidate;
 };
@@ -143,7 +145,6 @@ struct BodyCatchContext final {
 struct BuiltPattern final {
     PatternID pattern;
     std::vector<LocalBindingID> bindings;
-    bool irrefutable;
 };
 
 struct BodyPatternBindingStorage final {
@@ -194,16 +195,6 @@ auto is_failure_payload_type(const ProgramDraft& draft, TypeID type) noexcept ->
         || std::holds_alternative<EnumTypeValue>(canonical);
 }
 
-auto known_boolean_constant(const ProgramDraft& draft, std::optional<ConstantID> constant) noexcept
-    -> std::optional<bool> {
-    if (!constant.has_value()) {
-        return std::nullopt;
-    }
-    const auto& fact = draft.constant(*constant);
-    const auto* boolean = std::get_if<BooleanConstant>(&fact.value);
-    return boolean == nullptr ? std::nullopt : std::optional(boolean->value);
-}
-
 auto create_body_failure_term(
     ProgramDraft& draft,
     FailureTermID failures,
@@ -252,6 +243,21 @@ public:
         bool accepts_catch_residual,
         bool test_body
     ) noexcept;
+    // Inside a const block, a const test or a module const block every local
+    // is a static value and control is ordinary execution.
+    auto static_stage() const noexcept -> bool;
+    auto initializer_value(
+        const ASTVariableDecl& source,
+        std::optional<ConstructionTypeRef> declared
+    ) noexcept -> AnalysisTask<SemanticExpression>;
+    auto constant_initializer(
+        const ASTVariableDecl& source,
+        std::optional<ConstructionTypeRef> declared
+    ) noexcept -> AnalysisTask<SemanticExpression>;
+    auto static_expression(
+        ASTExprID expression,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> AnalysisTask<BuiltExpression>;
     auto add_parameter(
         const ASTFunctionParameter& source,
         const ConstructionCallableParameter& contract
@@ -270,17 +276,31 @@ private:
     auto expansion(Span span, ProgramExpansionReason reason) noexcept -> ProgramOriginID;
     auto spelling(Span span) const noexcept -> std::string;
     auto fail(Span span, DiagnosticCode code, std::string message) noexcept -> AnalysisFailure;
+    auto type_mismatch(ConstructionTypeRef actual, ConstructionTypeRef expected, Span span) noexcept
+        -> AnalysisFailure;
     auto warn(Span span, DiagnosticCode code, std::string message) noexcept -> void;
     auto resolve_type(ASTTypeID type) noexcept -> AnalysisTask<ConstructionTypeRef>;
     auto resolve_construction_type(const ASTConstructionType& type) noexcept
         -> AnalysisTask<ConstructionTypeRef>;
     auto resolve_array_extent(ASTExprID expression) noexcept -> AnalysisTask<std::uint64_t>;
+    // Computes a local constant for a type or a separate body. Its declaration
+    // still executes in its own stage, so the computation writes no output and
+    // leaves the initializer in place. No value means the constant depends on
+    // an unbound static input.
+    auto compute_static_binding(LocalBindingID binding) noexcept
+        -> AnalysisTask<std::optional<ConstantID>>;
+    // Replaces references to computable local constants with their values.
+    auto resolve_static_references(SemanticExpression& expression) noexcept -> AnalysisTask<bool>;
+    // Reads a static or foreign local as a value. A local of another body is
+    // available only as its frozen constant; no value means it has none.
+    auto read_local(const BodyLocalStorage& local, Span span) noexcept
+        -> AnalysisTask<std::optional<SemanticExpression>>;
     auto resolve_constant_name(std::string_view name, Span span) noexcept
         -> AnalysisTask<std::optional<ConstantID>>;
     auto resolve_function(std::string_view name, Span span) noexcept
         -> AnalysisTask<std::optional<FunctionID>>;
     auto construction_requests() noexcept -> ConstructionRequests&;
-    auto resolve_nominal_qualifier(ASTExprID expression) noexcept
+    auto resolve_type_qualifier(ASTExprID expression) noexcept
         -> AnalysisTask<std::optional<TypeID>>;
     auto resolve_constant_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> AnalysisTask<ResolvedEnumCase>;
@@ -345,6 +365,9 @@ private:
         -> AnalysisResult<void>;
     auto find_local(std::string_view name) const noexcept -> const BodyLocalStorage*;
     auto use_local(std::string_view name) noexcept -> BodyLocalStorage*;
+    // Whether the innermost const block was entered after `name` was bound
+    // as a runtime local. The block executes before that storage exists.
+    auto runtime_local_outside_block(std::string_view name) const noexcept -> bool;
     auto find_global(std::string_view name, Span span) noexcept
         -> AnalysisTask<const CatalogSymbol*>;
     auto consume_value(BuiltExpression& expression, Span span, AccessMode access) noexcept
@@ -481,7 +504,8 @@ private:
         std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>& bindings,
         bool allow_new_bindings,
         std::flat_set<std::string, std::less<>>& used_bindings,
-        std::vector<SemPatternBounds>& pattern_bounds
+        std::vector<SemPatternBounds>& pattern_bounds,
+        CompletionQuery& completion
     ) noexcept -> AnalysisTask<BuiltPattern>;
     auto resolve_pattern_constraint(const ASTConstraintOperand& operand) noexcept
         -> AnalysisTask<ConstructionTypeRef>;
@@ -503,6 +527,8 @@ private:
     auto update_statement(const ASTUpdate& source) noexcept -> AnalysisTask<void>;
     auto transfer_statement(const ASTControlTransfer& source) noexcept -> AnalysisTask<void>;
     auto while_statement(const ASTWhileStmt& source, Span span) noexcept -> AnalysisTask<void>;
+    auto const_block_statement(const ASTConstBlock& source, Span span) noexcept
+        -> AnalysisTask<void>;
     auto for_statement(const ASTForStmt& source, Span span) noexcept -> AnalysisTask<void>;
     auto c_style_for_statement(
         const ASTForStmt& source,
@@ -543,7 +569,8 @@ private:
         ASTExprID source,
         AccessMode access,
         std::optional<ConstructionTypeRef> expected,
-        std::optional<DiagnosticCode> mismatch_code = std::nullopt
+        std::optional<DiagnosticCode> mismatch_code = std::nullopt,
+        ParameterStage stage = ParameterStage::Runtime
     ) noexcept -> AnalysisTask<BuiltCallArgument>;
     auto bind_call_argument(
         BuiltExpression built,
@@ -569,7 +596,19 @@ private:
     std::vector<BodyFailureContext> failure_contexts;
     std::vector<BodyCatchContext> catches;
     std::vector<BodyLoopContext> loops;
-    std::vector<std::size_t> value_boundary_loop_depths;
+
+    // A value-control branch and a const block confine control transfers:
+    // return cannot leave either, and break or continue reach only inner loops.
+    struct TransferBoundary final {
+        std::size_t loop_depth;
+        std::string_view construct;
+    };
+
+    std::vector<TransferBoundary> transfer_boundaries;
+    // The frame count at entry to each enclosing const block. A local of an
+    // earlier frame is visible inside the block only when it is static.
+    std::vector<std::size_t> const_block_frames;
+    bool static_body = false;
     std::optional<LifetimeRegionID> active_full_expression;
     bool reachable;
     bool reference_path_reachable;
@@ -587,11 +626,6 @@ public:
         ConstructionRequests& requests
     ) noexcept;
     auto run() noexcept -> AnalysisTask<void>;
-    auto defer_constant_block(
-        ProgramModuleID module_id,
-        const ASTConstantBlock& source,
-        BodyLocalNames locals = {}
-    ) noexcept -> void;
     auto ensure_function_signature(FunctionID id, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
     auto ensure_function_body(FunctionID id, ProgramModuleID requester, Span span) noexcept
@@ -603,18 +637,13 @@ public:
     ConstructionRequests& requests;
 
 private:
-    struct PendingConstantBlock final {
-        ProgramModuleID module_id;
-        ASTConstantBlock syntax;
-        BodyLocalNames locals;
-    };
-
     auto block_source(
-        ProgramModuleID module,
+        ProgramModuleID module_id,
         Span keyword,
         const std::optional<ASTBlockLabel>& label
     ) noexcept -> BlockSource;
-    auto build_constant_block(PendingConstantBlock source) noexcept -> AnalysisTask<void>;
+    auto build_const_block(ProgramModuleID module_id, const ASTConstBlock& source) noexcept
+        -> AnalysisTask<void>;
 
     struct Unvisited final {};
 
@@ -633,8 +662,16 @@ private:
     std::vector<State> states;
     std::vector<std::optional<BodyID>> body_ids;
     std::vector<FunctionID> active_path;
-    std::vector<ConstantBodyRoot> constant_roots;
-    std::vector<PendingConstantBlock> constant_blocks;
+    std::vector<StaticBodyRoot> static_body_roots;
+
+    // A local constant by binding identity. The value is set once a type or a
+    // separate body has required it.
+    struct StaticRoot final {
+        SemanticExpression initializer;
+        std::optional<ConstantID> value;
+    };
+
+    std::map<LocalBindingID, StaticRoot> static_roots;
     std::map<std::pair<SourceID, Span>, Diagnostic> unused_locals;
     std::set<std::pair<SourceID, Span>> used_locals;
 };

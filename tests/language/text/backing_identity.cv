@@ -39,7 +39,7 @@ const fn default_text_byte_queries_are_empty() -> bool {
 const frozen_text_view = String::from_str("ab").as_str();
 const frozen_byte_view = String::from_str("ab").bytes;
 
-const test "Text: borrowed backing identity executes at compile time" {
+const test "Text: borrowed backing identity executes in the static stage" {
     check(text_views_share_backing());
     check(retained_text_views_share_backing());
     check(transferred_text_has_live_backing());

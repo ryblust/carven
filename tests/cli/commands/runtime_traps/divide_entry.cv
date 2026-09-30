@@ -1,0 +1,3 @@
+import .divide using run_divide;
+
+run_divide();

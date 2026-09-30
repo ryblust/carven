@@ -133,7 +133,8 @@ struct ModuleConstantDeclaration final {
 };
 
 struct FunctionBodyImplementation final {
-    BodyID body;
+    // Source templates have no body after executable publication.
+    std::optional<BodyID> body;
 };
 
 struct ClosureBodyImplementation final {
@@ -168,7 +169,8 @@ struct TestDeclaration final {
     bool is_const;
     ModuleID module_id;
     BlockSource source;
-    BodyID body;
+    // Static tests retain their result metadata, but no executable body.
+    std::optional<BodyID> body;
 };
 
 enum class FailureContractPolicy {
@@ -208,6 +210,7 @@ public:
     auto callable(CallableID id) const noexcept -> const CallableDeclaration&;
     auto body_for_callable(CallableID callable) const noexcept -> std::optional<BodyID>;
     auto callable_for_body(BodyID body) const noexcept -> std::optional<CallableID>;
+    auto function_for_callable(CallableID callable) const noexcept -> std::optional<FunctionID>;
     auto modules() const noexcept -> IDTableEntries<ModuleID, ModuleDeclaration, ProgramIdentity>;
     auto functions() const noexcept
         -> IDTableEntries<FunctionID, FunctionDeclaration, ProgramIdentity>;
@@ -222,6 +225,7 @@ public:
         -> IDTableEntries<CallableID, CallableDeclaration, ProgramIdentity>;
 
 private:
+    auto publish_bodies(std::span<const std::optional<BodyID>> bodies) noexcept -> void;
     DeclarationStore(
         ImmutableProgramTable<ModuleDeclaration, ModuleID> modules,
         ImmutableProgramTable<FunctionDeclaration, FunctionID> functions,
@@ -241,8 +245,10 @@ private:
     ImmutableProgramTable<ModuleConstantDeclaration, ModuleConstantID> module_constant_rows;
     ImmutableProgramTable<CallableDeclaration, CallableID> callable_rows;
     std::map<BodyID, CallableID> body_callables;
+    std::map<CallableID, FunctionID> callable_functions;
 
     friend class DeclarationBuilder;
+    friend class SemIRProgram;
 };
 
 class DeclarationBuilder;

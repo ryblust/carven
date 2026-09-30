@@ -1,6 +1,6 @@
 compiled
 static test
-constant block
+const block
 running 1
 --timings
 --help

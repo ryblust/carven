@@ -11,28 +11,14 @@ import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.expr.text;
 import :semantic.analysis.operations;
+import :semantic.analysis.types.display;
 import :semantic.evaluation.operation;
 import :semantic.semir.constant;
+import :semantic.semir.simd;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :source.text;
 import std;
-
-template<typename Site, typename Fold>
-auto fold_expression_constant(Site& site, Fold fold, Span span) noexcept
-    -> ExpressionResult<std::optional<ConstantID>> {
-    if constexpr ((Site::mode == ExpressionMode::RequiredRoot)) {
-        return std::nullopt;
-    }
-    auto fact = fold();
-    if (fact.has_value()) {
-        return site.draft().intern_constant(std::move(*fact));
-    }
-    if (const auto diagnostic = constant_evaluation_diagnostic(fact.error())) {
-        return std::unexpected(site.fail(span, diagnostic->code, std::string(diagnostic->message)));
-    }
-    return std::nullopt;
-}
 
 template<typename Site>
 auto interpret_literal(
@@ -117,32 +103,18 @@ auto interpret_unary(
         co_return std::unexpected(site.fail(
             source.operator_span,
             decision.error().code,
-            std::string(decision.error().message)
+            std::format(
+                "{}, found '{}'",
+                decision.error().message,
+                type_display_name(site.draft(), site.type(*operand))
+            )
         ));
     }
     const auto builtin = operator_result_builtin(*decision);
     const auto type = builtin.has_value()
         ? ConstructionTypeRef {site.draft().builtin_type(*builtin)}
         : site.type(*operand);
-    auto known = std::optional<ConstantID>();
-    if (const auto* concrete = std::get_if<TypeID>(&type)) {
-        auto value = fold_expression_constant(
-            site,
-            [&]() noexcept {
-                return fold_unary_constant(
-                    site.draft(),
-                    operation,
-                    site.known(*operand),
-                    *concrete
-                );
-            },
-            source.operator_span
-        );
-        if (!value.has_value()) {
-            co_return std::unexpected(value.error());
-        }
-        known = *value;
-    }
+    const auto known = std::optional<ConstantID>();
     auto state = Site::operand_state();
     auto value = site.consume_read(state, std::move(*operand), source.operator_span);
     if (!value) {
@@ -168,9 +140,14 @@ auto require_expression_boolean(Site& site, typename Site::Value& value, Span sp
         }
     }
     if (!type_shapes_compatible(site.draft(), site.type(value), boolean)) {
-        return std::unexpected(
-            site.fail(span, DiagnosticCode::TypeConditionBool, "condition must have type bool")
-        );
+        return std::unexpected(site.fail(
+            span,
+            DiagnosticCode::TypeConditionBool,
+            std::format(
+                "condition must have type bool, found '{}'",
+                type_display_name(site.draft(), site.type(value))
+            )
+        ));
     }
     return {};
 }
@@ -202,9 +179,6 @@ auto interpret_binary(
             const auto* boolean = std::get_if<BooleanConstant>(&fact.value);
             return boolean == nullptr ? std::nullopt : std::optional(boolean->value);
         };
-        const auto left_truth = truth(site.condition_constant(*left));
-        [[maybe_unused]] const auto execution =
-            site.enter_operand_execution(!left_truth.has_value() || *left_truth == and_operation);
         auto right = (co_await site.read(source.right, boolean));
         if (!right.has_value()) {
             co_return std::unexpected(right.error());
@@ -219,11 +193,9 @@ auto interpret_binary(
         auto result = std::optional<bool>();
         if (source_left_truth.has_value()) {
             result = *source_left_truth == and_operation ? right_truth : source_left_truth;
-        } else if (right_truth.has_value() && *right_truth != and_operation) {
-            result = right_truth;
         }
         auto known = std::optional<ConstantID>();
-        if (result.has_value() && !(Site::mode == ExpressionMode::RequiredRoot)) {
+        if (result.has_value() && !(Site::mode == ExpressionMode::StaticRoot)) {
             known = site.draft().intern_constant(
                 {.type = std::get<TypeID>(boolean), .value = BooleanConstant {.value = *result}}
             );
@@ -236,6 +208,22 @@ auto interpret_binary(
             source.operator_span
         );
     }
+    const auto operand_context =
+        [&](const typename Site::Value& operand) noexcept -> std::optional<ConstructionTypeRef> {
+        if (site.external(site.type(operand))) {
+            return std::nullopt;
+        }
+        const auto operand_type = site.type(operand);
+        if (const auto* id = std::get_if<TypeID>(&operand_type)) {
+            const auto canonical = site.draft().type_copy(*id);
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+            const auto layout = builtin ? simd_layout(builtin->kind) : std::nullopt;
+            if (layout && builtin->kind == layout->vector) {
+                return site.draft().builtin_type(layout->element);
+            }
+        }
+        return site.type(operand);
+    };
     auto left = std::optional<typename Site::Value>();
     auto right = std::optional<typename Site::Value>();
     if (binary_operand_plan(site.syntax(), source) == BinaryOperandPlan::LeftExpectedFromRight) {
@@ -244,10 +232,7 @@ auto interpret_binary(
             co_return std::unexpected(value.error());
         }
         right.emplace(std::move(*value));
-        value = (co_await site.read(
-            source.left,
-            site.external(site.type(*right)) ? std::nullopt : std::optional(site.type(*right))
-        ));
+        value = (co_await site.read(source.left, operand_context(*right)));
         if (!value.has_value()) {
             co_return std::unexpected(value.error());
         }
@@ -258,10 +243,7 @@ auto interpret_binary(
             co_return std::unexpected(value.error());
         }
         left.emplace(std::move(*value));
-        value = (co_await site.read(
-            source.right,
-            site.external(site.type(*left)) ? std::nullopt : std::optional(site.type(*left))
-        ));
+        value = (co_await site.read(source.right, operand_context(*left)));
         if (!value.has_value()) {
             co_return std::unexpected(value.error());
         }
@@ -297,33 +279,83 @@ auto interpret_binary(
         co_return std::unexpected(site.fail(
             source.operator_span,
             decision.error().code,
-            std::string(decision.error().message)
+            std::format(
+                "{}: '{}' and '{}'",
+                decision.error().message,
+                type_display_name(site.draft(), site.type(*left)),
+                type_display_name(site.draft(), site.type(*right))
+            )
         ));
     }
-    const auto builtin = operator_result_builtin(*decision);
+    const auto builtin_kind = [&](const auto& input) noexcept -> std::optional<BuiltinType> {
+        const auto input_type = site.type(input);
+        const auto* concrete = std::get_if<TypeID>(&input_type);
+        if (!concrete) {
+            return std::nullopt;
+        }
+        const auto canonical = site.draft().type_copy(*concrete);
+        const auto* value = std::get_if<BuiltinTypeValue>(&canonical.value);
+        return value ? std::optional(value->kind) : std::nullopt;
+    };
+    const auto left_kind = builtin_kind(*left);
+    const auto right_kind = builtin_kind(*right);
+    const auto layout = left_kind && simd_layout(*left_kind) ? simd_layout(*left_kind)
+        : right_kind                                         ? simd_layout(*right_kind)
+                                                             : std::nullopt;
+    const auto builtin = operator_result_builtin(
+        *decision,
+        layout ? std::optional(left_kind == layout->mask ? layout->mask : layout->vector)
+               : std::nullopt
+    );
     const auto type = builtin.has_value()
         ? ConstructionTypeRef {site.draft().builtin_type(*builtin)}
         : site.type(*left);
-    auto known = std::optional<ConstantID>();
-    if (const auto* concrete = std::get_if<TypeID>(&type)) {
-        auto value = fold_expression_constant(
-            site,
-            [&]() noexcept {
-                return fold_binary_constant(
-                    site.draft(),
-                    operation,
-                    site.known(*left),
-                    site.known(*right),
-                    *concrete
+    if (layout && left_kind != layout->mask) {
+        const auto splat =
+            [&](typename Site::Value input,
+                BuiltinType kind) noexcept -> ExpressionResult<typename Site::Value> {
+            if (kind != layout->element) {
+                return input;
+            }
+            auto splat_state = Site::operand_state();
+            auto scalar = site.consume_read(splat_state, std::move(input), source.operator_span);
+            if (!scalar) {
+                return std::unexpected(scalar.error());
+            }
+            auto constant = std::optional<ConstantID>();
+            if (scalar->constant) {
+                const auto& fact = site.draft().constant(*scalar->constant);
+                const auto bits = layout->element == BuiltinType::F32
+                    ? std::bit_cast<std::uint32_t>(std::get<F32Constant>(fact.value).value)
+                    : static_cast<std::uint32_t>(std::get<IntegerConstant>(fact.value).magnitude());
+                constant = site.draft().intern_constant(
+                    {.type = site.draft().builtin_type(layout->vector),
+                     .value =
+                         SIMDConstant {.lanes = std::vector<std::uint32_t>(layout->width, bits)}}
                 );
-            },
-            source.operator_span
-        );
-        if (!value.has_value()) {
-            co_return std::unexpected(value.error());
+            }
+            auto inputs = std::vector<SemCallArgument>();
+            inputs.push_back({.access = AccessMode::Read, .expression = std::move(*scalar)});
+            return site.finish_constructed(
+                site.draft().builtin_type(layout->vector),
+                SemIntrinsic {.operation = SIMDIntrinsic::Splat, .operands = std::move(inputs)},
+                std::move(splat_state),
+                source.operator_span,
+                constant
+            );
+        };
+        auto first = splat(std::move(*left), *left_kind);
+        if (!first) {
+            co_return std::unexpected(first.error());
         }
-        known = *value;
+        auto second = splat(std::move(*right), *right_kind);
+        if (!second) {
+            co_return std::unexpected(second.error());
+        }
+        left = std::move(*first);
+        right = std::move(*second);
     }
+    const auto known = std::optional<ConstantID>();
     auto state = Site::operand_state();
     auto first = site.consume_read(state, std::move(*left), source.operator_span);
     if (!first) {
@@ -394,7 +426,12 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
         co_return std::unexpected(site.fail(
             source.operator_span,
             decision.error().code,
-            std::string(decision.error().message)
+            std::format(
+                "{} from '{}' to '{}'",
+                decision.error().message,
+                type_display_name(site.draft(), site.type(*operand)),
+                type_display_name(site.draft(), *target)
+            )
         ));
     }
     if (*decision == CastKind::Identity) {
@@ -408,20 +445,7 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
             source.operator_span
         );
     }
-    auto known = std::optional<ConstantID>();
-    if (const auto* concrete = std::get_if<TypeID>(&*target)) {
-        auto value = fold_expression_constant(
-            site,
-            [&]() noexcept {
-                return fold_cast_constant(site.draft(), *decision, site.known(*operand), *concrete);
-            },
-            source.operator_span
-        );
-        if (!value.has_value()) {
-            co_return std::unexpected(value.error());
-        }
-        known = *value;
-    }
+    const auto known = std::optional<ConstantID>();
     co_return construct_cast(
         site,
         *decision,

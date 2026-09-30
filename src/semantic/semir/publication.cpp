@@ -98,10 +98,10 @@ auto validate_publication_topology(
         if (!declarations.contains(declaration.module_id)) {
             invariant_violation("test declaration used an invalid module");
         }
-        if (!bodies.contains(declaration.body)) {
+        if (!declaration.body || !bodies.contains(*declaration.body)) {
             invariant_violation("test declaration used an invalid body");
         }
-        if (bodies.body(declaration.body).kind() != BodyKind::Test) {
+        if (bodies.body(*declaration.body).kind() != BodyKind::Test) {
             invariant_violation("test declaration used a non-test body");
         }
     }
@@ -223,6 +223,10 @@ auto validate_publication_topology(
     auto closure_site_claims = std::vector<std::uint8_t>(callable_count, 0u);
     for (const auto [body_id, body] : bodies.entries()) {
         static_cast<void>(body_id);
+        // An instance repeats the construction sites of the body it specializes.
+        if (body.specialized()) {
+            continue;
+        }
         visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
             const auto* closure = std::get_if<SemClosure>(&expression.value);
             if (closure == nullptr) {
@@ -250,20 +254,21 @@ auto validate_publication_topology(
         declaration.implementation.visit(
             Overloaded {
                 [&](const FunctionBodyImplementation& implementation) noexcept {
-                    if (!named) {
+                    if (!implementation.body || !bodies.contains(*implementation.body)) {
+                        invariant_violation("function implementation used an invalid body");
+                    }
+                    // Only an instance is a function body without a declaration.
+                    if (named == bodies.body(*implementation.body).specialized().has_value()) {
                         invariant_violation(
                             "function body implementation had no function declaration"
                         );
                     }
-                    if (!bodies.contains(implementation.body)) {
-                        invariant_violation("function implementation used an invalid body");
-                    }
-                    if (bodies.body(implementation.body).kind() != BodyKind::Function) {
+                    if (bodies.body(*implementation.body).kind() != BodyKind::Function) {
                         invariant_violation("function implementation used a non-function body");
                     }
                     claim_once(
                         body_claims,
-                        implementation.body.index(),
+                        implementation.body->index(),
                         "body was assigned to more than one declaration"
                     );
                 },
@@ -300,16 +305,16 @@ auto validate_publication_topology(
         static_cast<void>(test_id);
         claim_once(
             body_claims,
-            declaration.body.index(),
+            declaration.body->index(),
             "body was assigned to more than one declaration"
         );
     }
     for (const auto [id, body] : bodies.entries()) {
-        if (body.kind() == BodyKind::ConstantBlock) {
-            claim_once(body_claims, id.index(), "constant block was assigned to a declaration");
+        if (body.kind() == BodyKind::ConstBlock) {
+            claim_once(body_claims, id.index(), "const block was assigned to a declaration");
         }
     }
-    require_complete(body_claims, "published body had no callable, test, or constant-block owner");
+    require_complete(body_claims, "published body had no callable, test, or const-block owner");
 }
 
 auto validate_publication_facts(
@@ -439,123 +444,36 @@ auto validate_publication_facts(
         if (!types.contains(fact.type)) {
             invariant_violation("constant used an unpublished type");
         }
-        const auto& canonical = types.type(fact.type).value;
-        const auto valid = fact.value.visit(
-            Overloaded {
-                [&](const RangeConstant& value) noexcept {
-                    const auto* range = std::get_if<RangeTypeValue>(&canonical);
-                    if (range == nullptr) {
-                        return false;
-                    }
-                    const auto* builtin =
-                        std::get_if<BuiltinTypeValue>(&types.type(range->element).value);
-                    return builtin != nullptr
-                        && builtin_is_integer(builtin->kind)
-                        && integer_constant_fits(value.begin, builtin->kind)
-                        && integer_constant_fits(value.end, builtin->kind);
-                },
-                [&](const IntegerConstant& value) noexcept {
-                    const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical);
-                    return builtin != nullptr
-                        && builtin_is_integer(builtin->kind)
-                        && integer_constant_fits(value, builtin->kind);
-                },
-                [&](const NullPointerConstant&) noexcept {
-                    return std::holds_alternative<PointerTypeValue>(canonical);
-                },
-                [&](const BooleanConstant&) noexcept {
-                    return canonical == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}};
-                },
-                [&](const StringConstant& value) noexcept {
-                    return provenance.contains(value.value)
-                        && canonical == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Str}};
-                },
-                [&](const CStringConstant& value) noexcept {
-                    return provenance.contains(value.value)
-                        && valid_cstring_bytes(provenance.spelling(value.value))
-                        && canonical
-                        == CanonicalTypeValue {CppTypeValue {.form = CppConstCharPointerType {}}};
-                },
-                [&](const F32Constant&) noexcept {
-                    return canonical == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::F32}};
-                },
-                [&](const F64Constant&) noexcept {
-                    return canonical == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::F64}};
-                },
-                [&](const CharacterConstant& value) noexcept {
-                    return canonical == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Char}}
-                    && value.scalar <= 0x10ffffu
-                        && (value.scalar < 0xd800u || value.scalar > 0xdfffu);
-                },
-                [&](const NumericEnumConstant& value) noexcept {
-                    const auto* enumeration = std::get_if<EnumTypeValue>(&canonical);
-                    return enumeration != nullptr
-                        && declarations.contains(value.enum_case)
-                        && declarations.enum_case(value.enum_case).owner
-                        == enumeration->enumeration;
-                },
-                [&](const PayloadEnumConstant& value) noexcept {
-                    const auto* enumeration = std::get_if<EnumTypeValue>(&canonical);
-                    if (enumeration == nullptr || !declarations.contains(value.enum_case)) {
-                        return false;
-                    }
-                    const auto& enum_case = declarations.enum_case(value.enum_case);
-                    if (enum_case.owner != enumeration->enumeration
-                        || enum_case.payload_types.size() != value.payload.size()) {
-                        return false;
-                    }
-                    for (const auto [child, expected] :
-                         std::views::zip(value.payload, enum_case.payload_types)) {
-                        if (!constants.contains(child)
-                            || constants.constant(child).type != expected) {
-                            return false;
-                        }
-                    }
-                    return true;
-                },
-                [&](const StructConstant& value) noexcept {
-                    const auto* structure = std::get_if<StructTypeValue>(&canonical);
-                    if (structure == nullptr || !declarations.contains(structure->structure)) {
-                        return false;
-                    }
-                    const auto& fields = declarations.structure(structure->structure).fields;
-                    if (fields.size() != value.fields.size()) {
-                        return false;
-                    }
-                    for (const auto [child, field] : std::views::zip(value.fields, fields)) {
-                        if (!constants.contains(child)
-                            || constants.constant(child).type != field.type) {
-                            return false;
-                        }
-                    }
-                    return true;
-                },
-                [&](const ArrayConstant& value) noexcept {
-                    const auto* array = std::get_if<ArrayTypeValue>(&canonical);
-                    if (array == nullptr || array->extent != value.elements.size()) {
-                        return false;
-                    }
-                    for (const auto child : value.elements) {
-                        if (!constants.contains(child)
-                            || constants.constant(child).type != array->element) {
-                            return false;
-                        }
-                    }
-                    return true;
-                },
-                [&](const SliceConstant& value) noexcept {
-                    const auto* slice = std::get_if<SliceTypeValue>(&canonical);
-                    if (slice == nullptr) {
-                        return false;
-                    }
-                    for (const auto child : value.elements) {
-                        if (!constants.contains(child)
-                            || constants.constant(child).type != slice->element) {
-                            return false;
-                        }
-                    }
-                    return true;
-                },
+        const auto valid = constant_matches_type(
+            fact,
+            [&](TypeID id) noexcept -> std::optional<CanonicalType> {
+                return types.contains(id) ? std::optional(types.type(id)) : std::nullopt;
+            },
+            [&](ConstantID id) noexcept -> std::optional<ConstantFact> {
+                return constants.contains(id) ? std::optional(constants.constant(id))
+                                              : std::nullopt;
+            },
+            [&](StructID id) noexcept -> std::optional<std::vector<TypeID>> {
+                if (!declarations.contains(id)) {
+                    return std::nullopt;
+                }
+                auto fields = std::vector<TypeID>();
+                for (const auto& field : declarations.structure(id).fields) {
+                    fields.push_back(field.type);
+                }
+                return fields;
+            },
+            [&](EnumID owner, EnumCaseID id) noexcept -> std::optional<std::vector<TypeID>> {
+                if (!declarations.contains(id)) {
+                    return std::nullopt;
+                }
+                const auto& declaration = declarations.enum_case(id);
+                return declaration.owner == owner ? std::optional(declaration.payload_types)
+                                                  : std::nullopt;
+            },
+            [&](ProgramSpellingID id) noexcept -> std::optional<std::string_view> {
+                return provenance.contains(id) ? std::optional(provenance.spelling(id))
+                                               : std::nullopt;
             }
         );
         if (!valid) {
@@ -624,7 +542,7 @@ auto validate_publication_facts(
 
 } // namespace
 
-auto validate_semantic_storage(const SemIRProgram& program) noexcept -> void {
+auto validate_resolved_storage(const SemIRProgram& program) noexcept -> void {
     validate_publication_facts(
         program.identity(),
         program.provenance(),

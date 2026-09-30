@@ -12,34 +12,40 @@ import std;
 
 SemIRBody::SemIRBody(SemIRBodyData data) noexcept
     : data(std::move(data)) {
-    visit_semantic_nodes(
-        this->data.region,
-        Overloaded {
-            [](const SemanticRegion& region) static noexcept {
-                static_cast<void>(region.failures.resolved());
-            },
-            [](const SemanticExpression& expression) static noexcept {
-                static_cast<void>(expression.type.resolved());
-                static_cast<void>(expression.failures.resolved());
-                if (const auto* call = std::get_if<SemCall>(&expression.value)) {
-                    static_cast<void>(call->callee_failures.resolved());
-                }
-                if (const auto* attempt = std::get_if<SemTry>(&expression.value)) {
-                    static_cast<void>(attempt->protected_failures.resolved());
-                    static_cast<void>(attempt->residual_failures.resolved());
-                    for (const auto& arm : attempt->arms) {
-                        static_cast<void>(arm.accepted_failures.resolved());
-                        for (const auto& alternative : arm.alternatives) {
-                            if (const auto* typed =
-                                    std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
-                                static_cast<void>(typed->type.resolved());
+    const auto require_resolved = [](const SemanticRegion& region) static noexcept {
+        visit_semantic_nodes(
+            region,
+            Overloaded {
+                [](const SemanticRegion& region) static noexcept {
+                    static_cast<void>(region.failures.resolved());
+                },
+                [](const SemanticExpression& expression) static noexcept {
+                    static_cast<void>(expression.type.resolved());
+                    static_cast<void>(expression.failures.resolved());
+                    if (const auto* call = std::get_if<SemCall>(&expression.value)) {
+                        static_cast<void>(call->callee_failures.resolved());
+                    }
+                    if (const auto* attempt = std::get_if<SemTry>(&expression.value)) {
+                        static_cast<void>(attempt->protected_failures.resolved());
+                        static_cast<void>(attempt->residual_failures.resolved());
+                        for (const auto& arm : attempt->arms) {
+                            static_cast<void>(arm.accepted_failures.resolved());
+                            for (const auto& alternative : arm.alternatives) {
+                                if (const auto* typed =
+                                        std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
+                                    static_cast<void>(typed->type.resolved());
+                                }
                             }
                         }
                     }
-                }
-            },
-        }
-    );
+                },
+            }
+        );
+    };
+    require_resolved(this->data.region);
+    if (this->data.residual) {
+        require_resolved(*this->data.residual);
+    }
 }
 
 BodyType::BodyType(ConstructionTypeRef value) noexcept
@@ -143,4 +149,12 @@ auto SemIRBody::pattern(PatternID id) const noexcept -> const Pattern& {
 
 auto SemIRBody::region() const noexcept -> const SemanticRegion& {
     return data.region;
+}
+
+auto SemIRBody::realized_region() const noexcept -> const SemanticRegion& {
+    return data.residual ? *data.residual : data.region;
+}
+
+auto SemIRBody::specialized() const noexcept -> std::optional<BodyID> {
+    return data.specialized;
 }

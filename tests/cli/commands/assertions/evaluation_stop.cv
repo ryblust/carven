@@ -1,0 +1,25 @@
+fn stopped_value() -> i32 {
+    require(false, "evaluation stopped");
+    return 7;
+}
+
+test "initializer stops its test" {
+    let value = stopped_value();
+    println("unreachable initializer {value}");
+}
+
+test "condition stops its test" {
+    if stopped_value() > 0 { println("unreachable branch"); }
+    println("unreachable condition");
+}
+
+test "loop condition stops its test" {
+    while stopped_value() > 0 {
+        println("unreachable loop");
+    }
+    println("unreachable loop successor");
+}
+
+test "later test executes" {
+    println("later test");
+}

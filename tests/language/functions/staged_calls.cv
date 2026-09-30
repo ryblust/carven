@@ -1,0 +1,352 @@
+fn runtime_stamp(&trace: i32, value: i32, const mark: i32) -> i32 {
+    trace = trace * 10 + mark;
+    return value + mark;
+}
+
+const fn constant_capable_stamp(&trace: i32, value: i32, const mark: i32) -> i32 {
+    trace = trace * 10 + mark;
+    return value + mark;
+}
+
+const fn add_control(value: i32, const offset: i32) -> i32 {
+    const amount = offset + 1;
+    return value + amount;
+}
+
+const fn relay_control(value: i32, const offset: i32) -> i32 => add_control(value, offset);
+
+const fn choose_control(value: i32, const enabled: bool, const label: str) -> i32 {
+    const selected = enabled && label == "ok";
+    if selected { return value + 1; }
+    return value;
+}
+
+const fn sum_expanded(value: i32, const count: usize) -> i32 {
+    var total = 0;
+    const for index in 0..count {
+        total += add_control(value, index as i32);
+    }
+    return total;
+}
+
+const fn trace_expanded(value: i32, const count: usize) -> i32 {
+    var trace = 0;
+    const for index in 0..count {
+        let digit = add_control(value, index as i32);
+        if index == 1usize { continue; }
+        if index == 4usize { break; }
+        trace = trace * 10 + digit;
+    }
+    return trace;
+}
+
+const fn return_from_expansion(value: i32, const count: usize) -> i32 {
+    var trace = 0;
+    const for index in 0..count {
+        let digit = add_control(value, index as i32);
+        trace = trace * 10 + digit;
+        if index == 2usize { return trace; }
+    }
+    return trace;
+}
+
+const test "Staged calls: static execution uses explicit controls and expanded ranges" {
+    var trace = 0;
+    check(constant_capable_stamp(&trace, 5, 2) == 7);
+    check(trace == 2);
+    check(add_control(5, 2) == 8);
+    check(relay_control(5, 2) == 8);
+    check(choose_control(5, true, "ok") == 6);
+    check(choose_control(5, false, "ok") == 5);
+    check(sum_expanded(2, 4usize) == 18);
+    check(sum_expanded(2, 0usize) == 0);
+    check(trace_expanded(0, 6usize) == 134);
+    check(return_from_expansion(0, 5usize) == 123);
+    check(return_from_expansion(0, 2usize) == 12);
+}
+
+test "Staged calls: runtime values remain runtime and expanded exits keep their targets" {
+    var value = 5;
+    value += 1;
+    var trace = 0;
+    check(runtime_stamp(&trace, value, 3) == 9);
+    check(trace == 3);
+    check(constant_capable_stamp(&trace, value, 4) == 10);
+    check(trace == 34);
+    check(relay_control(value, 2) == 9);
+    check(choose_control(value, true, "ok") == 7);
+    check(choose_control(value, false, "ok") == 6);
+    value = 0;
+    check(sum_expanded(value, 4usize) == 10);
+    check(trace_expanded(value, 6usize) == 134);
+    check(return_from_expansion(value, 5usize) == 123);
+}
+
+const fn dynamic_expansion_exits(const count: usize, skip: i32, stop: i32) -> i32 {
+    var trace = 0;
+    const for index in 0..count {
+        let digit = add_control(0, index as i32);
+        if digit == skip { continue; }
+        if digit == stop { break; }
+        trace = trace * 10 + digit;
+    }
+    return trace;
+}
+
+const fn nested_expansion(const rows: i32, const columns: i32) -> i32 {
+    var total = 0;
+    const for row in 0..rows {
+        const for column in 0..columns {
+            total += add_control(0, row * 10 + column);
+        }
+    }
+    return total;
+}
+
+const test "Staged calls: nested expansion paths and dynamic exits agree" {
+    check(dynamic_expansion_exits(6usize, 2, 5) == 134);
+    check(nested_expansion(2, 3) == 42);
+}
+
+test "Staged calls: expanded control transfers retain runtime decisions" {
+    var skip = 1;
+    skip += 1;
+    var stop = 4;
+    stop += 1;
+    check(dynamic_expansion_exits(6usize, skip, stop) == 134);
+    check(nested_expansion(2, 3) == 42);
+}
+
+private const fn private_control(value: i32, const offset: i32) -> i32 => value + offset;
+
+fn call_private_control(value: i32) -> i32 => private_control(value, 7);
+
+test "Staged calls: private instance keeps one native declaration scope" {
+    var value = 4;
+    value += 1;
+    check(call_private_control(value) == 12);
+}
+
+const fn static_mark() -> i32 => 4;
+
+const fn record_argument(&trace: i32, digit: i32) -> i32 {
+    trace = trace * 10 + digit;
+    return digit;
+}
+
+const fn mixed_arguments(before: i32, const mark: i32, first: i32, second: i32, after: i32) -> i32 {
+    return before * 10000 + mark * 1000 + first * 100 + second * 10 + after;
+}
+
+const fn verify_mixed_arguments() -> bool {
+    var trace = 0;
+    let result = mixed_arguments(
+        trace,
+        static_mark(),
+        record_argument(&trace, 1),
+        record_argument(&trace, 2),
+        trace
+    );
+    return result == 4132 && trace == 12;
+}
+
+const test "Staged calls: mixed arguments preserve static source order" {
+    check(verify_mixed_arguments());
+}
+
+test "Staged calls: erasing static arguments preserves runtime snapshots and order" {
+    check(verify_mixed_arguments());
+}
+
+const fn staged_effect_target(
+    left: i32,
+    const first: i32,
+    right: i32,
+    const second: i32,
+    &trace: i32
+) -> i32 {
+    const anchor = 3;
+    trace = trace * 10 + anchor;
+    return left + first + right + second + anchor;
+}
+
+test "Staged calls: residual arguments and body effects retain source order" {
+    var trace = 0;
+    let result = staged_effect_target(
+        record_argument(&trace, 1),
+        1,
+        record_argument(&trace, 2),
+        2,
+        &trace
+    );
+    check(result == 9);
+    check(trace == 123);
+}
+
+const fn terminate_static_recursion(value: i32, const remaining: i32) -> i32 {
+    const if remaining == 0 { return value; }
+    return terminate_static_recursion(value + 1, remaining - 1);
+}
+
+fn unselected_static_arm(count: i32, const enabled: bool) -> i32 {
+    var total = 0;
+    const if enabled {
+        const for index in 0..4 {
+            total += add_control(0, index);
+        }
+    } else {
+        for index in 0..count {
+            total += index;
+        }
+    }
+    return total;
+}
+
+const fn unselected_static_root(const divisor: i32) -> i32 {
+    const if divisor == 0 {
+        return 0;
+    } else {
+        const factor = 100 / divisor;
+        return factor;
+    }
+}
+
+const fn terminate_expanded_iterations(const count: i32) -> i32 {
+    const for index in 0..count {
+        const if index == 1 { return 17; }
+        add_control(0, index);
+    }
+    return 23;
+}
+
+const test "Staged calls: selected returns stop recursive instance planning" {
+    check(terminate_static_recursion(4, 3) == 7);
+    check(terminate_expanded_iterations(4) == 17);
+    check(terminate_expanded_iterations(1) == 23);
+    check(unselected_static_root(0) == 0);
+    check(unselected_static_root(4) == 25);
+}
+
+test "Staged calls: unselected const if arms are not specialized" {
+    var count = 3;
+    count += 1;
+    check(unselected_static_arm(count, false) == 6);
+    check(unselected_static_arm(count, true) == 10);
+    check(terminate_static_recursion(count, 3) == 7);
+    check(terminate_expanded_iterations(4) == 17);
+    check(unselected_static_root(0) == 0);
+    check(unselected_static_root(5) == 20);
+}
+
+const fn short_static_control(value: i32, const enabled: bool, const offset: i32) -> bool {
+    return enabled && add_control(value, offset) > 0;
+}
+
+const fn partial_static_control(value: i32, const enabled: bool, const offset: i32) -> i32 {
+    if value < 0 { return -1; } else if enabled { return add_control(value, offset); }
+    return value;
+}
+
+const fn guarded_static_division(flag: bool, const divisor: i32) -> bool {
+    if flag { return true; } else if 1 / divisor == 1 { return false; }
+    return true;
+}
+
+const test "Staged calls: partial static decisions preserve interpreted paths" {
+    check(!short_static_control(1, false, 3));
+    check(short_static_control(1, true, 3));
+    check(partial_static_control(-2, true, 3) == -1);
+    check(partial_static_control(2, false, 3) == 2);
+    check(partial_static_control(2, true, 3) == 6);
+    check(guarded_static_division(true, 0));
+    check(!guarded_static_division(false, 1));
+}
+
+test "Staged calls: partial static decisions preserve native paths" {
+    var value = 1;
+    value += 1;
+    check(!short_static_control(value, false, 3));
+    check(short_static_control(value, true, 3));
+    check(partial_static_control(-value, true, 3) == -1);
+    check(partial_static_control(value, false, 3) == 2);
+    check(partial_static_control(value, true, 3) == 6);
+    var flag = false;
+    flag = !flag;
+    check(guarded_static_division(flag, 0));
+    check(!guarded_static_division(!flag, 1));
+}
+
+fn captured_static_value(const enabled: bool, value: i32) -> i32 {
+    let select = [enabled, value]() -> i32 {
+        if enabled { return value + 1; }
+        return value;
+    };
+    return select();
+}
+
+test "Staged calls: reused closure callables retain each instance capture value" {
+    var value = 4;
+    value += 1;
+    check(captured_static_value(true, value) == 6);
+    check(captured_static_value(false, value) == 5);
+}
+
+const fn expansion_bindings(value: i32, const count: i32) -> i32 {
+    var total = 0;
+    const for row in 0..count {
+        var subtotal = value + row;
+        let matched = match subtotal {
+            bound => bound + 1
+        };
+        const for column in 0..2 {
+            let increment = matched + column;
+            subtotal += increment;
+        }
+        total += subtotal;
+    }
+    return total;
+}
+
+const fn break_before_return(stop: bool, const count: i32) -> i32 {
+    const for index in 0..count {
+        const if index == 0 {
+            if stop { break; }
+        } else {
+            return 9;
+        }
+    }
+    return 4;
+}
+
+const test "Staged calls: expansion preserves outer storage and early break paths" {
+    check(expansion_bindings(2, 3) == 36);
+    check(break_before_return(true, 2) == 4);
+    check(break_before_return(false, 2) == 9);
+}
+
+test "Staged calls: iteration locals and pattern bindings have independent storage" {
+    var value = 1;
+    value += 1;
+    check(expansion_bindings(value, 3) == 36);
+    var stop = false;
+    stop = !stop;
+    check(break_before_return(stop, 2) == 4);
+    check(break_before_return(!stop, 2) == 9);
+}
+
+const fn frozen_slice_call(&trace: i32, const values: [i32], amount: i32) -> i32 {
+    trace += amount;
+    return values[0] + values[1];
+}
+
+const test "Static calls: frozen inputs are values and Write arguments retain caller storage" {
+    var values = [1, 2];
+    var trace = 0;
+    check(frozen_slice_call(&trace, values.as_slice(), 3) == 3);
+    values[0] = 7;
+    check(frozen_slice_call(&trace, values.as_slice(), 4) == 9);
+    check(trace == 7);
+    values[0] = 1;
+    check(frozen_slice_call(&trace, values.as_slice(), 5) == 3);
+    check(trace == 12);
+}

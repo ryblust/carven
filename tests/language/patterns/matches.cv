@@ -29,7 +29,7 @@ fn record_evaluation(&calls: i32) -> bool {
 
 fn next_match_subject(&calls: i32) -> bool => record_evaluation(&calls);
 
-test "Pattern matching: known values retain subject and rejected guard execution" {
+test "Pattern matching: runtime subjects retain subject and rejected guard execution" {
     var subjects = 0;
     var guards = 0;
     let result = match next_match_subject(&subjects) && false {

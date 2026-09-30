@@ -1,0 +1,40 @@
+import .first using { dormant_first, first };
+import .second using second;
+import .api using { biased, relay, runtime_relay, unrolled, untouched };
+
+const staged_answer = relay(10, 3);
+
+const test "Modules: static controls retain their contract across imports" {
+    check(staged_answer == 15);
+    check(relay(20, 1) == 23);
+}
+
+test "Modules: imported instances accept runtime data" {
+    var value = 10;
+    value += 1;
+    check(relay(value, 3) == 16);
+    check(runtime_relay(value, 3) == 16);
+    check(staged_answer == 15);
+}
+
+test "Modules: imported instances reach the provider's private dependencies" {
+    var value = 1;
+    value += 1;
+    check(unrolled(value, 1) == 4);
+    check(unrolled(value, 3) == 42);
+    check(biased(value, 5) == 107);
+    check(untouched() == 0);
+}
+
+test "Modules: shared inline instances link across consumers" {
+    var value = 7;
+    value += 1;
+    check(first(value) == 13);
+    check(second(value) == 13);
+}
+
+test "Modules: unused native dependencies need no declarations" {
+    var value = 7;
+    value += 1;
+    check(!dormant_first(value));
+}

@@ -18,7 +18,7 @@ namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
     ct::test(
-        "Semantic constant evaluation: integer folds use the runtime arithmetic contract",
+        "Semantic constant facts: integer folds use the runtime arithmetic contract",
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& values = fixture.compilation;
@@ -89,7 +89,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Semantic constant evaluation: casts and text intrinsics return canonical facts",
+        "Semantic constant facts: casts and text intrinsics return canonical facts",
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& values = fixture.compilation;
@@ -165,7 +165,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Semantic constant evaluation: operand facts retain program owner evidence",
+        "Semantic constant facts: operand facts retain program owner evidence",
         [] static noexcept {
             const auto first = ConstantEvaluationFixture();
             const auto second = ConstantEvaluationFixture();

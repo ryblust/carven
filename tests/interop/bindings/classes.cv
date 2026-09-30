@@ -3,9 +3,7 @@ import <functional> using std::identity;
 private class NativeCallback {
     callback: identity,
 
-    fn create() -> NativeCallback => {
-        callback: identity {}
-    };
+    fn create() -> NativeCallback => { callback: identity {} };
 
     fn invoke(self, value: i32) -> i32 => self.callback(value);
 }

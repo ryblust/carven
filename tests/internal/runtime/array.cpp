@@ -8,6 +8,8 @@ import std;
 
 namespace {
 
+constexpr auto site = carven::runtime::SourceSite::native();
+
 namespace ct = carven::testing;
 
 struct ArrayElement final {
@@ -45,8 +47,8 @@ const ct::Suite tests([] static noexcept {
     ct::test("Runtime: checked array indexing preserves references", [] static noexcept {
         using namespace carven::runtime;
         auto values = std::array<std::int32_t, 3> {1, 2, 3};
-        checked_array_index(values, std::int32_t {0}) = 4;
-        checked_array_index(values, std::size_t {2}) = 6;
+        checked_array_index(values, std::int32_t {0}, site) = 4;
+        checked_array_index(values, std::size_t {2}, site) = 6;
         ct::expect_equal(values[0], 4);
         ct::expect_equal(values[2], 6);
     });

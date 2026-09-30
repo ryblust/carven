@@ -9,6 +9,8 @@ import :backend.realization.display;
 import :backend.realization.format;
 import :backend.realization.operation;
 import :backend.target.expr;
+import :backend.target.name;
+import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :semantic.semir.body;
@@ -21,6 +23,7 @@ import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :semantic.semir.text;
 import :semantic.semir.type;
+import :source.provenance.ids;
 import :source.provenance;
 import :support.invariant;
 import :support.visit;
@@ -87,19 +90,42 @@ auto realize_unary(
     return result;
 }
 
+auto source_site_expression(ModuleLowering& context, ProgramOriginID origin) noexcept
+    -> TargetExpr {
+    const auto provenance = context.semantic().provenance();
+    const auto source = target_source_origin(provenance, origin);
+    auto arguments = std::vector<TargetExpr>();
+    arguments.push_back(string_expression(source.display_origin, TargetStringLiteralKind::String));
+    arguments.push_back(integer_expression(source.line));
+    arguments.push_back(integer_expression(provenance.location(origin).column));
+    return call_expression(
+        intrinsic_expression(TargetSymbol::RuntimeSourceSite),
+        std::move(arguments)
+    );
+}
+
 auto realize_binary(
     ModuleLowering& context,
     const PreparedBinary& preparation,
     TargetExpr left,
-    TargetExpr right
+    TargetExpr right,
+    ProgramOriginID origin
 ) noexcept -> TargetExpr {
     auto result = preparation.operation.visit(
         Overloaded {
             [&](TargetSymbol runtime) noexcept {
+                auto arguments = target_expressions(std::move(left), std::move(right));
+                const auto traps = runtime == TargetSymbol::RuntimeIntegerDivide
+                    || runtime == TargetSymbol::RuntimeIntegerRemainder
+                    || runtime == TargetSymbol::RuntimeIntegerLeftShift
+                    || runtime == TargetSymbol::RuntimeIntegerRightShift;
+                if (traps) {
+                    arguments.push_back(source_site_expression(context, origin));
+                }
                 return template_call_expression(
                     intrinsic_expression(runtime),
                     {context.lower_type(preparation.result_type)},
-                    target_expressions(std::move(left), std::move(right))
+                    std::move(arguments)
                 );
             },
             [&](TargetBinaryOperator operation) noexcept {
@@ -119,15 +145,6 @@ auto realize_binary(
 }
 
 namespace {
-
-auto field_identifier(ModuleLowering& context, StructID owner, std::uint32_t index) noexcept
-    -> TargetIdentifier {
-    const auto& structure = context.semantic().declarations().structure(owner);
-    return context.name_allocator().source(
-        context.semantic().provenance().spelling(structure.fields[index].name),
-        context.semantic().provenance().spelling(structure.name)
-    );
-}
 
 auto native_call(
     ModuleLowering& context,
@@ -235,7 +252,8 @@ auto native_operation(
                     context,
                     *plan,
                     std::move(arguments[0]),
-                    std::move(arguments[1])
+                    std::move(arguments[1]),
+                    source.origin
                 );
             },
             [&](const CppUpdateOperation& update) noexcept -> TargetExpr {
@@ -354,7 +372,7 @@ auto realize_operation(
                     fields.push_back(
                         {field.declaration_index,
                          {.name =
-                              field_identifier(context, value.structure, field.declaration_index),
+                              context.field_identifier(value.structure, field.declaration_index),
                           .value = target_child(std::move(operands[index]))}}
                     );
                 }
@@ -392,7 +410,8 @@ auto realize_operation(
                     context,
                     *plan,
                     std::move(operands[0]),
-                    std::move(operands[1])
+                    std::move(operands[1]),
+                    source.origin
                 );
             },
             [](const SemShortCircuit&) static noexcept -> TargetExpr {
@@ -408,7 +427,10 @@ auto realize_operation(
                     builtin != nullptr && builtin->kind == BuiltinType::Char) {
                     return call_expression(
                         intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
-                        target_expressions(std::move(operands[0]))
+                        target_expressions(
+                            std::move(operands[0]),
+                            source_site_expression(context, source.origin)
+                        )
                     );
                 }
                 return TargetExpr {
@@ -430,17 +452,26 @@ auto realize_operation(
             [&](const SemField& value) noexcept -> TargetExpr {
                 return member_expression(
                     std::move(operands[0]),
-                    field_identifier(context, value.field.owner, value.field.field_index)
+                    context.field_identifier(value.field.owner, value.field.field_index)
                 );
             },
             [&](const SemIndex& value) noexcept -> TargetExpr {
-                if (std::holds_alternative<RuntimeCheckedBounds>(value.bounds)
-                    && !std::holds_alternative<SliceTypeValue>(
+                if (std::holds_alternative<RuntimeCheckedBounds>(value.bounds)) {
+                    // A consumed place takes its consumer's origin; the subscript
+                    // keeps the position the executor reports.
+                    const auto is_slice = std::holds_alternative<SliceTypeValue>(
                         context.semantic().types().type(value.source->type.resolved()).value
-                    )) {
+                    );
                     return call_expression(
-                        intrinsic_expression(TargetSymbol::RuntimeCheckedArrayIndex),
-                        target_expressions(std::move(operands[0]), std::move(operands[1]))
+                        intrinsic_expression(
+                            is_slice ? TargetSymbol::RuntimeCheckedSliceIndex
+                                     : TargetSymbol::RuntimeCheckedArrayIndex
+                        ),
+                        target_expressions(
+                            std::move(operands[0]),
+                            std::move(operands[1]),
+                            source_site_expression(context, value.index->origin)
+                        )
                     );
                 }
                 return TargetExpr {
@@ -452,6 +483,9 @@ auto realize_operation(
             },
             [](const SemReport&) static noexcept -> TargetExpr {
                 invariant_violation("condition report requires control-flow realization");
+            },
+            [](const SemUnreachable&) static noexcept -> TargetExpr {
+                invariant_violation("unreachable operation has no value realization");
             },
             [&](const SemPrint& value) noexcept -> TargetExpr {
                 const auto* prepared = std::get_if<PreparedPrint>(preparation);
@@ -498,72 +532,160 @@ auto realize_operation(
                 }
                 return realize_format(context, source, value, *prepared, std::move(operands));
             },
-            [&](const SemSliceIntrinsic& value) noexcept -> TargetExpr {
-                const auto method = [&](const char* name) noexcept -> TargetExpr {
-                    auto receiver = std::move(operands.front());
-                    operands.erase(operands.begin());
-                    return call_member(std::move(receiver), name, std::move(operands));
-                };
-                switch (value.intrinsic) {
-                    case SliceIntrinsic::FromArray:
-                        return call_expression(
-                            intrinsic_expression(TargetSymbol::RuntimeAsSlice),
-                            std::move(operands)
-                        );
-                    case SliceIntrinsic::Len:     return method("size");
-                    case SliceIntrinsic::IsEmpty: return method("empty");
-                    case SliceIntrinsic::Slice:   return method("slice");
-                }
-                std::unreachable();
-            },
-            [&](const SemTextIntrinsic& value) noexcept -> TargetExpr {
-                switch (value.intrinsic) {
-                    case TextIntrinsic::FromStr:
-                        return call_expression(
-                            static_member_expression(
-                                context.lower_type(source.type.resolved()),
-                                TargetIdentifier::from_spelling("from_str")
-                            ),
-                            std::move(operands)
-                        );
-                    case TextIntrinsic::FromU32Unchecked:
-                        return TargetExpr {
-                            .value = TargetStaticCastExpr {
-                                .type = context.lower_type(source.type.resolved()),
-                                .operand = target_child(std::move(operands[0]))
+            [&](const SemIntrinsic& value) noexcept -> TargetExpr {
+                return value.operation.visit(
+                    Overloaded {
+                        [&](const SliceIntrinsicOperation& family) noexcept -> TargetExpr {
+                            const auto method = [&](const char* name) noexcept -> TargetExpr {
+                                auto receiver = std::move(operands.front());
+                                operands.erase(operands.begin());
+                                return call_member(std::move(receiver), name, std::move(operands));
+                            };
+                            switch (family.intrinsic) {
+                                case SliceIntrinsic::FromArray:
+                                    return call_expression(
+                                        intrinsic_expression(TargetSymbol::RuntimeAsSlice),
+                                        std::move(operands)
+                                    );
+                                case SliceIntrinsic::Len:     return method("size");
+                                case SliceIntrinsic::IsEmpty: return method("empty");
+                                case SliceIntrinsic::Slice:
+                                    operands.push_back(
+                                        source_site_expression(context, source.origin)
+                                    );
+                                    return method("slice");
                             }
-                        };
-                    case TextIntrinsic::FromUTF8Unchecked:
-                        return call_expression(
-                            intrinsic_expression(TargetSymbol::RuntimeUTF8Text),
-                            std::move(operands)
-                        );
-                    case TextIntrinsic::AsStr:
-                        return call_member(std::move(operands[0]), "as_str", {});
-                    case TextIntrinsic::Append:
-                    case TextIntrinsic::Push:
-                        return call_member(
-                            std::move(operands[0]),
-                            value.intrinsic == TextIntrinsic::Append ? "append" : "push",
-                            target_expressions(std::move(operands[1]))
-                        );
-                    case TextIntrinsic::Clear:
-                        return call_member(std::move(operands[0]), "clear", {});
-                    case TextIntrinsic::Len: return call_member(std::move(operands[0]), "size", {});
-                    case TextIntrinsic::IsEmpty:
-                        return call_member(std::move(operands[0]), "empty", {});
-                    case TextIntrinsic::Bytes:
-                        return call_expression(
-                            intrinsic_expression(TargetSymbol::RuntimeTextBytes),
-                            target_expressions(std::move(operands[0]))
-                        );
-                    case TextIntrinsic::Chars:
-                        return call_expression(
-                            intrinsic_expression(TargetSymbol::RuntimeTextChars),
-                            target_expressions(std::move(operands[0]))
-                        );
-                }
-                std::unreachable();
+                            std::unreachable();
+                        },
+                        [&](const SIMDIntrinsic& family) noexcept -> TargetExpr {
+                            const auto owner = simd_owner(
+                                family,
+                                source.type.resolved(),
+                                value.operands.front().expression.type.resolved(),
+                                [&](TypeID type) noexcept -> const CanonicalType& {
+                                    return context.semantic().types().type(type);
+                                }
+                            );
+                            const auto contract = simd_contract(family, owner);
+                            if (const auto* lane = std::get_if<PreparedSIMDLane>(preparation)) {
+                                auto receiver = std::move(operands.front());
+                                operands.erase(operands.begin(), operands.begin() + 2);
+                                return template_call_expression(
+                                    TargetExpr {
+                                        .value =
+                                            TargetMemberExpr {
+                                                .operand = target_child(std::move(receiver)),
+                                                .name =
+                                                    TargetIdentifier::from_spelling(contract.name)
+                                            }
+                                    },
+                                    {TargetIntegerLiteral {
+                                        .negative = false,
+                                        .magnitude = lane->index,
+                                        .suffix = TargetIntegerSuffix::None
+                                    }},
+                                    std::move(operands)
+                                );
+                            }
+                            if (simd_reports(family)) {
+                                operands.push_back(source_site_expression(context, source.origin));
+                            }
+                            if (simd_is_factory(family)) {
+                                return call_expression(
+                                    static_member_expression(
+                                        context.lower_type(source.type.resolved()),
+                                        TargetIdentifier::from_spelling(contract.name)
+                                    ),
+                                    std::move(operands)
+                                );
+                            }
+                            auto receiver = std::move(operands.front());
+                            operands.erase(operands.begin());
+                            if (const auto input = simd_static_input(family)) {
+                                const auto id = value.operands[*input].expression.constant;
+                                if (!id) {
+                                    invariant_violation("SIMD immediate was not realized");
+                                }
+                                const auto& control = std::get<IntegerConstant>(
+                                    context.semantic().constants().constant(*id).value
+                                );
+                                operands.erase(
+                                    operands.begin() + static_cast<std::ptrdiff_t>(*input - 1uz)
+                                );
+                                auto callee = TargetExpr {
+                                    .value = TargetMemberExpr {
+                                        .operand = target_child(std::move(receiver)),
+                                        .name = TargetIdentifier::from_spelling(contract.name)
+                                    }
+                                };
+                                return template_call_expression(
+                                    std::move(callee),
+                                    {TargetIntegerLiteral {
+                                        .negative = false,
+                                        .magnitude = control.magnitude(),
+                                        .suffix = TargetIntegerSuffix::None
+                                    }},
+                                    std::move(operands)
+                                );
+                            }
+                            return call_member(
+                                std::move(receiver),
+                                contract.name,
+                                std::move(operands)
+                            );
+                        },
+                        [&](const TextIntrinsic& family) noexcept -> TargetExpr {
+                            switch (family) {
+                                case TextIntrinsic::FromStr:
+                                    return call_expression(
+                                        static_member_expression(
+                                            context.lower_type(source.type.resolved()),
+                                            TargetIdentifier::from_spelling("from_str")
+                                        ),
+                                        std::move(operands)
+                                    );
+                                case TextIntrinsic::FromU32Unchecked:
+                                    return TargetExpr {
+                                        .value = TargetStaticCastExpr {
+                                            .type = context.lower_type(source.type.resolved()),
+                                            .operand = target_child(std::move(operands[0]))
+                                        }
+                                    };
+                                case TextIntrinsic::FromUTF8Unchecked:
+                                    return call_expression(
+                                        intrinsic_expression(TargetSymbol::RuntimeUTF8Text),
+                                        std::move(operands)
+                                    );
+                                case TextIntrinsic::AsStr:
+                                    return call_member(std::move(operands[0]), "as_str", {});
+                                case TextIntrinsic::Append:
+                                case TextIntrinsic::Push:
+                                    return call_member(
+                                        std::move(operands[0]),
+                                        family == TextIntrinsic::Append ? "append" : "push",
+                                        target_expressions(std::move(operands[1]))
+                                    );
+                                case TextIntrinsic::Clear:
+                                    return call_member(std::move(operands[0]), "clear", {});
+                                case TextIntrinsic::Len:
+                                    return call_member(std::move(operands[0]), "size", {});
+                                case TextIntrinsic::IsEmpty:
+                                    return call_member(std::move(operands[0]), "empty", {});
+                                case TextIntrinsic::Bytes:
+                                    return call_expression(
+                                        intrinsic_expression(TargetSymbol::RuntimeTextBytes),
+                                        target_expressions(std::move(operands[0]))
+                                    );
+                                case TextIntrinsic::Chars:
+                                    return call_expression(
+                                        intrinsic_expression(TargetSymbol::RuntimeTextChars),
+                                        target_expressions(std::move(operands[0]))
+                                    );
+                            }
+                            std::unreachable();
+                        }
+                    }
+                );
             },
             [&](const SemClosure&) noexcept -> TargetExpr {
                 return TargetExpr {

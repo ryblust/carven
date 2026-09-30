@@ -36,12 +36,6 @@ auto NullabilityBodyAnalyzer::condition(const SemanticExpression& source, NullSt
         .no = std::move(evaluated.normal),
         .exits = std::move(evaluated.exits)
     };
-    if (truth(source) == true) {
-        result.no.reset();
-    }
-    if (truth(source) == false) {
-        result.yes.reset();
-    }
     if (const auto* comparison = std::get_if<SemBinary>(&source.value); comparison != nullptr
         && (comparison->operation == BinaryOperator::Equal
             || comparison->operation == BinaryOperator::NotEqual)) {
@@ -136,6 +130,10 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
             },
             [&](const SemConstant&) noexcept -> ContinuationTask<std::monostate> {
                 set_value(constant_value(source));
+                co_return {};
+            },
+            [&](const SemUnreachable&) noexcept -> ContinuationTask<std::monostate> {
+                flow.normal.reset();
                 co_return {};
             },
             [&](const SemBinding& value) noexcept -> ContinuationTask<std::monostate> {
@@ -302,19 +300,33 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 set_value({});
                 co_return {};
             },
-            [&](const SemSliceIntrinsic& value) noexcept -> ContinuationTask<std::monostate> {
-                for (const auto& operand : value.operands) {
-                    static_cast<void>((co_await evaluate(operand.expression)));
-                }
-                set_value({});
-                co_return {};
-            },
-            [&](const SemTextIntrinsic& value) noexcept -> ContinuationTask<std::monostate> {
-                for (const auto& operand : value.operands) {
-                    static_cast<void>((co_await evaluate(operand.expression)));
-                }
-                set_value({});
-                co_return {};
+            [&](const SemIntrinsic& value) noexcept -> ContinuationTask<std::monostate> {
+                co_return co_await value.operation.visit(
+                    Overloaded {
+                        [&](const SliceIntrinsicOperation&) noexcept
+                            -> ContinuationTask<std::monostate> {
+                            for (const auto& operand : value.operands) {
+                                static_cast<void>((co_await evaluate(operand.expression)));
+                            }
+                            set_value({});
+                            co_return {};
+                        },
+                        [&](const SIMDIntrinsic&) noexcept -> ContinuationTask<std::monostate> {
+                            for (const auto& operand : value.operands) {
+                                static_cast<void>(co_await evaluate(operand.expression));
+                            }
+                            set_value({});
+                            co_return {};
+                        },
+                        [&](const TextIntrinsic&) noexcept -> ContinuationTask<std::monostate> {
+                            for (const auto& operand : value.operands) {
+                                static_cast<void>((co_await evaluate(operand.expression)));
+                            }
+                            set_value({});
+                            co_return {};
+                        }
+                    }
+                );
             },
             [&](const SemTake& value) noexcept -> ContinuationTask<std::monostate> {
                 auto taken = (co_await evaluate(*value.place));

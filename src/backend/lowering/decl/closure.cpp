@@ -4,8 +4,8 @@ import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
 import :backend.lowering.context;
-import :backend.lowering.decl.lowerer;
 import :backend.lowering.decl;
+import :backend.lowering.decl.lowerer;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -84,7 +84,7 @@ auto lower_closure_type(ModuleLowering& context, CallableID callable_id) noexcep
     for (const auto& parameter : signature.parameters) {
         parameters.push_back(
             {.local = std::nullopt,
-             .type = context.lower_parameter(parameter),
+             .type = context.lower_parameter(parameter.access, parameter.type),
              .default_value = std::nullopt}
         );
     }
@@ -138,10 +138,13 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
     auto parameters = std::vector<TargetParameter>();
     for (auto index = 0uz; index < signature.parameters.size(); ++index) {
         const auto name = parameter_local(context, names, body, body.inputs().parameters[index]);
-        inputs.parameters.push_back(name);
+        inputs.parameters.emplace_back(body.inputs().parameters[index], name);
         parameters.push_back(
             {.local = name,
-             .type = context.lower_parameter(signature.parameters[index]),
+             .type = context.lower_parameter(
+                 signature.parameters[index].access,
+                 signature.parameters[index].type
+             ),
              .default_value = std::nullopt}
         );
     }
@@ -164,6 +167,7 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
             .result = context.callable_result(callable_id),
             .body = std::move(lowered.statements),
             .const_qualified = true,
+            .inline_specifier = false,
         }}
     );
 }

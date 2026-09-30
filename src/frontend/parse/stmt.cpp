@@ -126,11 +126,24 @@ auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
         }
         return builder.append_statement({
             .span = join(keyword.span, builder.block(*body).span),
-            .value = ASTConstantBlock {
+            .value = ASTConstBlock {
                 .keyword_span = keyword.span,
                 .label = std::move(label),
                 .body = *body,
             },
+        });
+    }
+    if (check_optionally_const(TokenKind::For)) {
+        return parse_for_statement();
+    }
+    if (check_optionally_const(TokenKind::If)) {
+        auto form = parse_if_form();
+        if (!form) {
+            return std::nullopt;
+        }
+        return builder.append_statement({
+            .span = form->span,
+            .value = std::move(*form),
         });
     }
     if (check(TokenKind::Let) || check(TokenKind::Var) || check(TokenKind::Const)) {
@@ -161,19 +174,6 @@ auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
     }
     if (check(TokenKind::While)) {
         return parse_while_statement();
-    }
-    if (check(TokenKind::For)) {
-        return parse_for_statement();
-    }
-    if (check(TokenKind::If)) {
-        auto form = parse_if_form();
-        if (!form) {
-            return std::nullopt;
-        }
-        return builder.append_statement({
-            .span = form->span,
-            .value = std::move(*form),
-        });
     }
     if (check(TokenKind::Match)) {
         auto form = parse_match_form();
@@ -349,9 +349,12 @@ auto Parser::parse_control_transfer(bool with_semicolon) noexcept
 
 auto Parser::parse_while_statement() noexcept -> std::optional<ASTStmtID> {
     const auto keyword = expect(TokenKind::While, "expected 'while'");
-    const auto condition = parse_expression_before_block();
-    if (!condition) {
-        return std::nullopt;
+    auto condition = std::optional<ASTExprID> {};
+    if (!check(TokenKind::LeftBrace)) {
+        condition = parse_expression_before_block();
+        if (!condition) {
+            return std::nullopt;
+        }
     }
     const auto body = parse_ordinary_block();
     if (!body) {
@@ -361,15 +364,18 @@ auto Parser::parse_while_statement() noexcept -> std::optional<ASTStmtID> {
         .span = join(keyword.span, builder.block(*body).span),
         .value = ASTWhileStmt {
             .keyword_span = keyword.span,
-            .condition = *condition,
+            .condition = condition,
             .body = *body,
         },
     });
 }
 
 auto Parser::parse_for_statement() noexcept -> std::optional<ASTStmtID> {
+    const auto const_keyword = match(TokenKind::Const);
     const auto keyword = expect(TokenKind::For, "expected 'for'");
-    const auto header = parse_for_header();
+    const auto const_span =
+        const_keyword.transform([](const Token& token) static { return token.span; });
+    const auto header = parse_for_header(const_span);
     if (!header) {
         return std::nullopt;
     }
@@ -378,8 +384,9 @@ auto Parser::parse_for_statement() noexcept -> std::optional<ASTStmtID> {
         return std::nullopt;
     }
     return builder.append_statement({
-        .span = join(keyword.span, builder.block(*body).span),
+        .span = join(const_keyword.value_or(keyword).span, builder.block(*body).span),
         .value = ASTForStmt {
+            .const_span = const_span,
             .keyword_span = keyword.span,
             .header = *header,
             .body = *body,
@@ -387,7 +394,8 @@ auto Parser::parse_for_statement() noexcept -> std::optional<ASTStmtID> {
     });
 }
 
-auto Parser::parse_for_header() noexcept -> std::optional<ASTForHeader> {
+auto Parser::parse_for_header(std::optional<Span> const_span) noexcept
+    -> std::optional<ASTForHeader> {
     const auto start = current().span;
     const auto checkpoint = begin_speculation();
     const auto access = match(TokenKind::Ampersand);
@@ -397,7 +405,7 @@ auto Parser::parse_for_header() noexcept -> std::optional<ASTForHeader> {
         type = parse_type();
     }
     const auto range_form = !failed && check(TokenKind::In);
-    finish_speculation(checkpoint, range_form);
+    finish_speculation(checkpoint, range_form, !const_span);
     if (range_form) {
         consume();
         const auto begin = parse_expression_before_block();
@@ -424,6 +432,10 @@ auto Parser::parse_for_header() noexcept -> std::optional<ASTForHeader> {
         };
     }
 
+    if (const_span) {
+        fail("'const for' requires a range header", *const_span);
+        return std::nullopt;
+    }
     auto initializer = ASTForInitializer {
         .span = start,
         .value = std::monostate {},
@@ -455,13 +467,13 @@ auto Parser::parse_for_header() noexcept -> std::optional<ASTForHeader> {
     }
     expect(TokenKind::Semicolon, "expected first ';' in C-style for header");
 
-    auto condition = std::optional<ASTExprID> {};
-    if (!check(TokenKind::Semicolon)) {
-        const auto expression = parse_expression();
-        if (!expression) {
-            return std::nullopt;
-        }
-        condition = *expression;
+    if (check(TokenKind::Semicolon)) {
+        fail_here("C-style for requires a condition; write a loop without one as 'while { }'");
+        return std::nullopt;
+    }
+    const auto condition = parse_expression();
+    if (!condition) {
+        return std::nullopt;
     }
     expect(TokenKind::Semicolon, "expected second ';' in C-style for header");
 
@@ -486,8 +498,7 @@ auto Parser::parse_for_header() noexcept -> std::optional<ASTForHeader> {
     }
     const auto end = failed ? current().span
         : !steps.empty()    ? steps.back().span
-        : condition         ? builder.expression(*condition).span
-                            : initializer.span;
+                            : builder.expression(*condition).span;
     if (failed) {
         return std::nullopt;
     }
@@ -495,7 +506,7 @@ auto Parser::parse_for_header() noexcept -> std::optional<ASTForHeader> {
         .span = join(start, end),
         .value = ASTCStyleForHeader {
             .initializer = initializer,
-            .condition = condition,
+            .condition = *condition,
             .steps = std::move(steps),
         },
     };

@@ -113,6 +113,8 @@ const ct::Suite tests([] static noexcept {
         [] static noexcept {
             auto owner = ExecutionOwnedText("a");
             const auto borrowed = owner.borrow();
+            // Copying the borrow is part of the lifetime contract under test.
+            // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
             const auto copied_borrow = borrowed;
             if (!ct::expect(borrowed.bytes() == "a")) {
                 return;

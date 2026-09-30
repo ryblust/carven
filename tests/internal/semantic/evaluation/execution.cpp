@@ -1,20 +1,64 @@
 module carven:test.internal.semantic.evaluation.execution;
 
-import :diagnostics.code;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.catalog;
 import :semantic.analysis.construction;
+import :semantic.analysis.stage.session;
+import :semantic.evaluation.display;
 import :semantic.evaluation.execution;
+import :semantic.semir.constant_access;
 import :semantic.semir.decl;
+import :semantic.semir.program;
 import :source.batch;
 import :source.text;
 import :test.harness.framework;
+import :test.internal.semantic.analysis.fixture;
 import :test.internal.semantic.evaluation.fixture;
 import std;
 
 namespace {
 
 namespace ct = carven::testing;
+
+class BodyExecutionContext final : public SemanticExecutionContext {
+public:
+    explicit BodyExecutionContext(const SemIRProgram& program) noexcept;
+    auto function_for_callable(CallableID callable) const noexcept
+        -> std::optional<FunctionID> override;
+    auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
+        -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> override;
+    auto report(const ExecutionEvent& event) noexcept -> void override;
+    auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
+
+    std::vector<ExecutionEvent> reports;
+    std::string output;
+
+private:
+    const SemIRProgram& program;
+};
+
+BodyExecutionContext::BodyExecutionContext(const SemIRProgram& program) noexcept
+    : program(program) {}
+
+auto BodyExecutionContext::function_for_callable(CallableID callable) const noexcept
+    -> std::optional<FunctionID> {
+    return program.source_function(callable);
+}
+
+auto BodyExecutionContext::prepare_call(CallableID callable, ProgramOriginID) noexcept
+    -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> {
+    const auto body = callable_body_id(program.declarations().callable(callable));
+    ct::require(body.has_value());
+    co_return ExecutionBody(program.bodies().body(*body));
+}
+
+auto BodyExecutionContext::report(const ExecutionEvent& event) noexcept -> void {
+    reports.push_back(event);
+}
+
+auto BodyExecutionContext::write(ExecutionOutputStream, std::string_view bytes) noexcept -> void {
+    output += bytes;
+}
 
 class ExecutionContext final : public SemanticExecutionContext {
 public:
@@ -25,15 +69,15 @@ public:
     ) noexcept;
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
-    auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
+    auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
         -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> override;
-    auto report(const ExecutionDiagnostic& diagnostic) noexcept -> void override;
+    auto report(const ExecutionEvent& event) noexcept -> void override;
 
     auto write(ExecutionOutputStream, std::string_view) noexcept -> void override;
 
     std::string output;
     std::vector<FunctionID> calls;
-    std::vector<ExecutionDiagnostic> diagnostics;
+    std::vector<ExecutionEvent> reports;
 
 private:
     ProgramDraft& draft;
@@ -59,8 +103,9 @@ auto ExecutionContext::function_for_callable(CallableID callable) const noexcept
     return draft.function_for_callable(callable);
 }
 
-auto ExecutionContext::prepare_call(FunctionID function, ProgramOriginID origin) noexcept
+auto ExecutionContext::prepare_call(CallableID callable, ProgramOriginID origin) noexcept
     -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> {
+    const auto function = *draft.function_for_callable(callable);
     calls.push_back(function);
     const auto body = co_await requests.ensure_function_body(
         function,
@@ -69,11 +114,13 @@ auto ExecutionContext::prepare_call(FunctionID function, ProgramOriginID origin)
     );
     ct::require(body.has_value());
     ct::require(draft.body_draft(*body).inputs.parameters.empty());
+    auto realized = co_await requests.stage().realize_body(*body);
+    ct::require(realized.has_value());
     co_return ExecutionBody(draft.body_draft(*body));
 }
 
-auto ExecutionContext::report(const ExecutionDiagnostic& diagnostic) noexcept -> void {
-    diagnostics.push_back(diagnostic);
+auto ExecutionContext::report(const ExecutionEvent& event) noexcept -> void {
+    reports.push_back(event);
 }
 
 template<typename Action>
@@ -107,7 +154,7 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
     const auto origin = draft.append_source_origin(draft.module_source(module_id), Span::at(0u));
     auto context = ExecutionContext(draft, construction.construction_requests(), module_id);
     const auto evaluate = [&](std::string_view name,
-                              ExecutionLimits limits = constant_execution_limits()) noexcept {
+                              ExecutionLimits limits = static_execution_limits()) noexcept {
         const auto found = std::ranges::find(view.symbols(), name, &CatalogSymbol::name);
         ct::require(found != view.symbols().end());
         const auto function = std::get<CatalogFunctionForm>(found->form);
@@ -133,19 +180,19 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
         );
         context.output.clear();
         context.calls.clear();
-        context.diagnostics.clear();
-        return execute_constant_root(draft, context, expression, limits).run();
+        context.reports.clear();
+        return execute_static_root(draft, context, expression, limits).run();
     };
     action(draft, context, evaluate);
 }
 
 auto check_limit(const ExecutionContext& context, std::string_view resource) noexcept -> void {
-    ct::expect(context.diagnostics.size() == 1uz);
-    if (context.diagnostics.size() != 1uz) {
+    ct::expect(context.reports.size() == 1uz);
+    if (context.reports.size() != 1uz) {
         return;
     }
-    ct::expect(context.diagnostics.front().code == DiagnosticCode::ConstLimit);
-    ct::expect(context.diagnostics.front().message.contains(resource));
+    ct::expect(context.reports.front().reason() == ExecutionReason::Limit);
+    ct::expect(context.reports.front().message().contains(resource));
 }
 
 auto check_integer(
@@ -166,7 +213,163 @@ namespace {
 
 const ct::Suite tests([] static noexcept {
     ct::test(
-        "Constant execution: logical operators preserve results and required calls",
+        "Semantic execution: checks complete and halts own the synchronously reported cause",
+        [] static noexcept {
+            struct Scenario final {
+                std::string_view operation;
+                ExecutionTermination termination;
+                ExecutionReason reason;
+                std::string_view message;
+            };
+            const auto scenarios = std::array {
+                Scenario {
+                    .operation = "check",
+                    .termination = ExecutionTermination::Continue,
+                    .reason = ExecutionReason::Test,
+                    .message = "check failed",
+                },
+                Scenario {
+                    .operation = "require",
+                    .termination = ExecutionTermination::StopRoot,
+                    .reason = ExecutionReason::Test,
+                    .message = "requirement failed",
+                },
+                Scenario {
+                    .operation = "fail",
+                    .termination = ExecutionTermination::StopRoot,
+                    .reason = ExecutionReason::Test,
+                    .message = "explicit failure",
+                },
+                Scenario {
+                    .operation = "assert",
+                    .termination = ExecutionTermination::Abort,
+                    .reason = ExecutionReason::Assertion,
+                    .message = "assertion failed",
+                },
+            };
+            ct::each(scenarios, &Scenario::operation, [](const auto& scenario) static noexcept {
+                const auto program = analyze_test_program(
+                    std::format(
+                        "test {{ {}({}\"owned\"); println(\"after\"); }}",
+                        scenario.operation,
+                        scenario.operation == "fail" ? "" : "false, "
+                    )
+                );
+                auto context = BodyExecutionContext(program);
+                auto values = PublishedConstantValues(program);
+                auto tests = program.tests().entries();
+                if (!ct::expect(!std::ranges::empty(tests))) {
+                    return;
+                }
+                const auto test = *tests.begin();
+                if (!ct::expect(test.value.body.has_value())) {
+                    return;
+                }
+                auto result = execute_body(
+                                  values,
+                                  context,
+                                  ExecutionBody(program.bodies().body(*test.value.body))
+                )
+                                  .run();
+                if (!ct::expect(context.reports.size() == 1uz)) {
+                    return;
+                }
+                const auto& event = context.reports.front();
+                ct::expect(event.reason() == scenario.reason);
+                ct::expect(event.termination() == scenario.termination);
+                ct::expect(event.message() == scenario.message);
+                ct::expect(execution_message(event).contains("message: owned"));
+                if (scenario.termination == ExecutionTermination::Continue) {
+                    ct::expect(result.has_value());
+                    ct::expect(context.output == "after\n");
+                    return;
+                }
+                if (!ct::expect(!result.has_value())) {
+                    return;
+                }
+                const auto* halt = std::get_if<ExecutionHalt>(&result.error());
+                if (!ct::expect(halt != nullptr)) {
+                    return;
+                }
+                ct::expect(halt->event.origin == event.origin);
+                ct::expect(halt->event.reason() == event.reason());
+                ct::expect(halt->event.termination() == event.termination());
+                ct::expect(context.output.empty());
+                context.reports.clear();
+                ct::expect(halt->event.termination() == scenario.termination);
+                ct::expect(halt->event.message() == scenario.message);
+                ct::expect(execution_message(halt->event).contains("message: owned"));
+            });
+        }
+    );
+
+    ct::test(
+        "Semantic execution: report text budget covers empty and multiline fields exactly",
+        [] static noexcept {
+            struct Scenario final {
+                std::string_view name;
+                std::string_view message;
+                std::string_view rendered;
+            };
+            const auto scenarios = std::array {
+                Scenario {
+                    .name = "empty",
+                    .message = "",
+                    .rendered = "check failed\n  condition: false\n  message: \"\"",
+                },
+                Scenario {
+                    .name = "multiline",
+                    .message = "first\\nsecond",
+                    .rendered =
+                        "check failed\n  condition: false\n  message:\n    first\n    second",
+                },
+            };
+            ct::each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
+                const auto program = analyze_test_program(
+                    std::format("test {{ check(false, \"{}\"); }}", scenario.message)
+                );
+                auto context = BodyExecutionContext(program);
+                auto values = PublishedConstantValues(program);
+                auto tests = program.tests().entries();
+                if (!ct::expect(!std::ranges::empty(tests))) {
+                    return;
+                }
+                const auto test = *tests.begin();
+                if (!ct::expect(test.value.body.has_value())) {
+                    return;
+                }
+                const auto body = ExecutionBody(program.bodies().body(*test.value.body));
+                auto limits = static_execution_limits();
+                limits.text_work = scenario.rendered.size();
+                const auto completed = execute_body(values, context, body, limits).run();
+                ct::expect(completed.has_value());
+                if (!ct::expect(context.reports.size() == 1uz)) {
+                    return;
+                }
+                ct::expect(context.reports.front().termination() == ExecutionTermination::Continue);
+                ct::expect(execution_message(context.reports.front()) == scenario.rendered);
+                context.reports.clear();
+                --limits.text_work;
+                auto limited = execute_body(values, context, body, limits).run();
+                if (!ct::expect(!limited.has_value())) {
+                    return;
+                }
+                const auto* halt = std::get_if<ExecutionHalt>(&limited.error());
+                if (!ct::expect(halt != nullptr)) {
+                    return;
+                }
+                ct::expect(halt->event.reason() == ExecutionReason::Limit);
+                ct::expect(halt->event.termination() == ExecutionTermination::StopRoot);
+                if (!ct::expect(context.reports.size() == 1uz)) {
+                    return;
+                }
+                ct::expect(context.reports.front().reason() == halt->event.reason());
+            });
+        }
+    );
+
+    ct::test(
+        "Static execution: logical operators preserve results and their calls",
         [] static noexcept {
             struct Scenario final {
                 std::string_view expression;
@@ -207,7 +410,7 @@ const ct::Suite tests([] static noexcept {
                             .note("scenario.right = ", scenario.right);
                         ct::expect(context.calls.size() == scenario.calls)
                             .note("scenario.right = ", scenario.right);
-                        ct::expect(context.diagnostics.empty())
+                        ct::expect(context.reports.empty())
                             .note("scenario.right = ", scenario.right);
                     }
                 );
@@ -216,7 +419,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Constant execution: aggregate work counts constructed and copied slots",
+        "Static execution: aggregate work counts constructed and copied slots",
         [] static noexcept {
             struct Scenario final {
                 std::string_view source;
@@ -284,7 +487,7 @@ const ct::Suite tests([] static noexcept {
                             return;
                         }
                         check_integer(draft, *result, scenario.result);
-                        ct::expect(context.diagnostics.empty());
+                        ct::expect(context.reports.empty());
                     }
                 );
             });
@@ -292,7 +495,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Constant execution: calls share work within a root and new roots start independently",
+        "Static execution: calls share work within a root and new roots start independently",
         [] static noexcept {
             with_execution(
                 R"(
@@ -314,7 +517,7 @@ const ct::Suite tests([] static noexcept {
                                             .has_value())) {
                             return;
                         }
-                        ct::expect(context.diagnostics.empty());
+                        ct::expect(context.reports.empty());
                     }
                     ct::expect(!(evaluate(
                                      "run",
@@ -340,7 +543,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Constant execution: step limits include nested calls and recursive equality",
+        "Static execution: step limits include nested calls and recursive equality",
         [] static noexcept {
             with_execution(
                 R"(
@@ -412,7 +615,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Constant execution: text work counts produced bytes across copies append and clear",
+        "Static execution: text work counts produced bytes across copies append and clear",
         [] static noexcept {
             struct Scenario final {
                 std::string_view body;
@@ -467,14 +670,14 @@ const ct::Suite tests([] static noexcept {
                             return;
                         }
                         ct::expect(execution_text(draft, *result) == scenario.result);
-                        ct::expect(context.diagnostics.empty());
+                        ct::expect(context.reports.empty());
                     }
                 );
             });
         }
     );
 
-    ct::test("Constant execution: print output consumes the text-work budget", [] static noexcept {
+    ct::test("Static execution: print output consumes the text-work budget", [] static noexcept {
         with_execution(
             R"(const fn run() { println("ab", 3); })",
             [](ProgramDraft&, ExecutionContext& context, const auto& evaluate) static noexcept {
@@ -499,7 +702,7 @@ const ct::Suite tests([] static noexcept {
         );
     });
 
-    ct::test("Constant execution: slice elements retain their array addresses", [] static noexcept {
+    ct::test("Static execution: slice elements retain their array addresses", [] static noexcept {
         with_execution(
             R"(
             fn direct() -> bool {
@@ -532,13 +735,13 @@ const ct::Suite tests([] static noexcept {
                         return;
                     }
                     ct::expect(std::get<BooleanConstant>(atom->value).value).note("name = ", name);
-                    ct::expect(context.diagnostics.empty()).note("name = ", name);
+                    ct::expect(context.reports.empty()).note("name = ", name);
                 }
             }
         );
     });
 
-    ct::test("Constant execution: slice display borrows its elements", [] static noexcept {
+    ct::test("Static execution: slice display borrows its elements", [] static noexcept {
         with_execution(
             R"(const fn run() -> bool {
             let values = [1, 2];
@@ -565,13 +768,13 @@ const ct::Suite tests([] static noexcept {
                 ct::expect(std::get<BooleanConstant>(atom->value).value);
                 ct::expect(context.output.contains('1'));
                 ct::expect(context.output.contains('2'));
-                ct::expect(context.diagnostics.empty());
+                ct::expect(context.reports.empty());
             }
         );
     });
 
     ct::test(
-        "Constant execution: text views query and project without constructing their contents",
+        "Static execution: text views query and project without constructing their contents",
         [] static noexcept {
             with_execution(
                 R"(
@@ -611,7 +814,7 @@ const ct::Suite tests([] static noexcept {
                         }
                         ct::expect(std::get<BooleanConstant>(atom->value).value)
                             .note("name = ", name);
-                        ct::expect(context.diagnostics.empty()).note("name = ", name);
+                        ct::expect(context.reports.empty()).note("name = ", name);
                     }
                     ct::expect(!(evaluate(
                                      "owned",
@@ -641,7 +844,7 @@ const ct::Suite tests([] static noexcept {
                         return;
                     }
                     ct::expect(children->size() == 2uz);
-                    ct::expect(context.diagnostics.empty());
+                    ct::expect(context.reports.empty());
                 }
             );
         }

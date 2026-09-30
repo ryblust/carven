@@ -12,6 +12,16 @@ struct LoweringCompleted final {};
 
 enum class LoweringExitKind { FunctionReturn, Failure, Break, Continue, Test, Value, Unreachable };
 
+// How a consumer receives the result of a value region.
+enum class LoweringRegionDelivery {
+    // The region is invoked as a typed factory.
+    Factory,
+    // A direct expression is copied into typed storage or a by-value operand.
+    Copied,
+    // A direct expression may be bound by reference.
+    Bound,
+};
+
 struct LoweringExitTarget final {
     LoweringExitKind kind;
     std::size_t identity;
@@ -68,6 +78,9 @@ struct Lowered final {
     std::optional<T> normal;
     LoweringExitSummary exits;
     bool has_declarations;
+    // Cleanup still owed by this statement scope; closed child scopes have
+    // already discharged their own objects before a successor executes.
+    bool needs_cleanup;
 };
 
 struct LoweringKnownBool final {
@@ -119,11 +132,17 @@ struct LoweringInitializeResult final {
     LoweringDeferredStorage storage;
 };
 
+// Each arm assigns its result to a named local.
+struct LoweringAssignResult final {
+    TargetLocalID local;
+};
+
 using LoweringResultDestination = std::variant<
     LoweringDiscardResult,
     LoweringReturnResult,
     LoweringYieldResult,
-    LoweringInitializeResult>;
+    LoweringInitializeResult,
+    LoweringAssignResult>;
 
 auto returns_result(const LoweringResultDestination& result) noexcept -> bool {
     return std::holds_alternative<LoweringReturnResult>(result)
@@ -136,10 +155,12 @@ public:
     auto continues() const noexcept -> bool;
     auto empty() const noexcept -> bool;
     auto owns_storage() const noexcept -> bool;
+    auto needs_cleanup() const noexcept -> bool;
     auto exits() const noexcept -> const LoweringExitSummary&;
     auto record_exits(const LoweringExitSummary& exits) noexcept -> void;
     auto consume_exit(LoweringExitTarget target) noexcept -> bool;
     auto emit(TargetStmt statement, bool continues = true) noexcept -> void;
+    auto declare(TargetVariableStmt variable, bool needs_cleanup) noexcept -> void;
     auto terminate(TargetStmt statement, LoweringExitTarget target) noexcept -> void;
     auto append(LoweringStmtBuilder source) noexcept -> void;
     auto attribute(const TargetAttribution& attribution) noexcept -> void;
@@ -162,6 +183,7 @@ public:
             .normal = std::move(value),
             .exits = std::move(lowered.exits),
             .has_declarations = lowered.has_declarations,
+            .needs_cleanup = lowered.needs_cleanup,
         };
     }
 
@@ -176,12 +198,22 @@ public:
             source.normal ? std::optional(LoweringCompleted {}) : std::nullopt;
         statements.lowered.exits = std::move(source.exits);
         statements.lowered.has_declarations = source.has_declarations;
+        statements.lowered.needs_cleanup = source.needs_cleanup;
         append(std::move(statements));
         return std::move(source.normal);
     }
 
     auto result_factory(TargetTypeID type, LoweringExitTarget yield) && noexcept -> TargetExpr;
-    auto result_region(TargetTypeID type, LoweringExitTarget yield) && noexcept -> TargetExpr;
+    // A direct region that only returns expressions is spelled as that
+    // expression, or as `?:` for one two-way conditional; any other region
+    // invokes a typed factory. A copied result relies on its typed consumer. A
+    // bound result is cast to the result type, so a selected expression that
+    // names storage still delivers a value.
+    auto result_region(
+        TargetTypeID type,
+        LoweringExitTarget yield,
+        LoweringRegionDelivery delivery
+    ) && noexcept -> TargetExpr;
     auto finish() && noexcept -> std::vector<TargetStmt>;
 
 private:

@@ -34,5 +34,7 @@ auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
     if (!checked) {
         return std::unexpected(checked.error());
     }
+    result->publish_surfaces();
+    result->publish_bodies();
     return result;
 }

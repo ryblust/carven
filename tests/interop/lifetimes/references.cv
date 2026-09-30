@@ -1,0 +1,180 @@
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{ mark, reset, matches, ResultMaker, event };
+import .control using Failure;
+import .construction using initialization_argument;
+
+fn probe_fixed_receiver(succeeds: bool) throw Failure {
+    let _ = ResultMaker { 1 }.make(3).probe(initialization_argument(succeeds)?, 0);
+    mark(8);
+}
+
+fn probe_conditional_fixed_receiver(selected: bool, succeeds: bool) throw Failure {
+    let _ = selected
+        && (ResultMaker { 1 }.make(3).probe(initialization_argument(succeeds)?, 0) as bool);
+    mark(8);
+}
+
+test "Lifetimes: nested receiver temporaries span fallible argument evaluation" {
+    reset();
+    try {
+        probe_fixed_receiver(true)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 3 2 9 -3 -1 8 "));
+    reset();
+    try {
+        probe_fixed_receiver(false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 3 2 -3 -1 7 "));
+    reset();
+    try {
+        probe_conditional_fixed_receiver(false, false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("8 "));
+    reset();
+    try {
+        probe_conditional_fixed_receiver(true, true)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 3 2 9 -3 -1 8 "));
+    reset();
+    try {
+        probe_conditional_fixed_receiver(true, false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 3 2 -3 -1 7 "));
+}
+
+fn probe_conditional_reference(selected: bool, succeeds: bool) throw Failure {
+    let _ = selected
+        && (
+            ::lifetime_probe::receiver_reference().probe(initialization_argument(succeeds)?) as bool
+        );
+    mark(8);
+}
+
+fn probe_conditional_const_reference(selected: bool, succeeds: bool) throw Failure {
+    let _ = selected
+        && (
+            ::lifetime_probe::receiver_const_reference().probe(initialization_argument(succeeds)?)
+                as bool
+        );
+    mark(8);
+}
+
+test "Lifetimes: conditional native references borrow noncopyable receivers" {
+    reset();
+    try {
+        probe_conditional_reference(false, false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("8 "));
+    reset();
+    try {
+        probe_conditional_reference(true, true)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 2 9 8 "));
+    reset();
+    try {
+        probe_conditional_reference(true, false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 2 7 "));
+
+    reset();
+    try {
+        probe_conditional_const_reference(false, false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("8 "));
+    reset();
+    try {
+        probe_conditional_const_reference(true, true)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 2 9 8 "));
+    reset();
+    try {
+        probe_conditional_const_reference(true, false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("1 2 7 "));
+}
+
+fn probe_literal_reference(selected: bool, succeeds: bool) throw Failure {
+    let _ = selected
+        && (
+            ::lifetime_probe::receiver_from_literal(1).probe(initialization_argument(succeeds)?)
+                as bool
+        );
+    mark(8);
+}
+
+fn probe_ordered_literal_reference(selected: bool, succeeds: bool) throw Failure {
+    let _ = selected
+        && (
+            ::lifetime_probe::receiver_from_literal(1, event(5)).probe(
+                    initialization_argument(succeeds)?
+                )
+                as bool
+        );
+    mark(8);
+}
+
+test "Lifetimes: native Read literals preserve query category before later effects" {
+    reset();
+    try {
+        probe_literal_reference(false, false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("8 "));
+    reset();
+    try {
+        probe_literal_reference(true, true)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("3 2 9 8 "));
+    reset();
+    try {
+        probe_literal_reference(true, false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("3 2 7 "));
+    reset();
+    try {
+        probe_ordered_literal_reference(false, false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("8 "));
+    reset();
+    try {
+        probe_ordered_literal_reference(true, true)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("5 3 2 9 8 "));
+    reset();
+    try {
+        probe_ordered_literal_reference(true, false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("5 3 2 7 "));
+}

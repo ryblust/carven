@@ -75,7 +75,7 @@ nested external type applications are supported. External construction uses
 `T { ... }` with positional initializers, which may be empty. External types in
 function signatures and field declarations must be named explicitly; local
 owners may infer their type from an external expression. Such results are
-not Carven compile-time constants and do not participate in pattern coverage or
+not Carven constants and do not participate in pattern coverage or
 failure-set construction. C++ determines the result of the complete braced
 construction, including template argument deduction and narrowing checks.
 Read scalar expressions with established constant results and no selected source
@@ -93,14 +93,14 @@ component can therefore fail native compilation after successful Carven analysis
 storage containing the decoded UTF-8 bytes and a trailing NUL. Empty text is
 valid. Internal NUL, including `\0` and `\u{0}`, is rejected. Its type is always
 a pointer, including direct native calls and template deduction; it is not a
-character array or a Carven `str`. Copies retain access to static storage.
+character array or a Carven `str`. Copies retain access to program-lifetime storage.
 
 C strings support constant initialization, function calls, local copies,
-assignment, and Take during compile-time execution. Freezing preserves their
+assignment, and Take during static execution. Freezing preserves their
 bytes and pointer type, including in supported aggregates. Each emitted pointer
-refers to static storage; pointer identity across translation units is unspecified.
+refers to program-lifetime storage; pointer identity across translation units is unspecified.
 
-Printing follows the text rules in [Printing](execution.md#printing). Constant execution and
+Printing follows the text rules in [Printing](execution.md#printing). Static execution and
 interpretation read retained C string bytes for display and default text
 formatting. Reading unknown native memory, comparing C string pointers, and
 observing their addresses are outside the evaluator's supported operations.
@@ -199,6 +199,9 @@ belong in native headers. Fragment fences do not isolate macro or pragma state.
 A fragment may contain its own configured includes, but cannot configure headers
 already included before it. Distinct native compilation environments belong in
 separate C++ source files managed by the build system.
+
+A staged body uses native names published through header imports or
+`import(cpp)` declarations. Fragment-only names remain implementation-only.
 
 ## Declared function boundaries
 

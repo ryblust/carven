@@ -40,8 +40,8 @@ auto emit_missing_entry_error() noexcept -> int {
         "running a program requires a runtime entry point",
         {},
         "define 'fn main()' or top-level runtime statements. "
-        "Constant blocks execute during semantic analysis and do not define a runtime entry. "
-        "Use 'carven check <source-file>' for analysis and constant evaluation only"
+        "A 'const' block executes during semantic analysis and does not define a runtime entry. "
+        "Use 'carven check <source-file>' for analysis and compile-time execution only"
     );
 }
 
@@ -60,9 +60,16 @@ auto emit_source_diagnostics(
     std::span<const Diagnostic> diagnostics,
     const SourceManager& sources
 ) noexcept -> void {
+    // Analysis stages finish in dependency order; readers follow source order.
+    auto ordered = Diagnostics(diagnostics.begin(), diagnostics.end());
+    std::ranges::stable_sort(ordered, {}, [](const Diagnostic& diagnostic) static noexcept {
+        const auto& primary = diagnostic.attachment.primary;
+        return primary ? std::tuple(1u, primary->span.source_id.index(), primary->span.span.start())
+                       : std::tuple(0u, 0u, 0u);
+    });
     std::print(
         std::cerr,
         "{}",
-        render_diagnostics(diagnostics, sources, initialize_diagnostic_color())
+        render_diagnostics(ordered, sources, initialize_diagnostic_color())
     );
 }

@@ -105,11 +105,14 @@ const ct::Suite tests([] static noexcept {
                     slice_type,
                     lifetime,
                     facts.origin,
-                    SemSliceIntrinsic {
-                        .intrinsic = SliceIntrinsic::FromArray,
+                    SemIntrinsic {
+                        .operation =
+                            SliceIntrinsicOperation {
+                                .intrinsic = SliceIntrinsic::FromArray,
+                                .result_extent = scenario.query ? std::optional<std::uint64_t>(0u)
+                                                                : scenario.extent
+                            },
                         .operands = std::move(operands),
-                        .result_extent =
-                            scenario.query ? std::optional<std::uint64_t>(0u) : scenario.extent,
                     }
                 );
                 if (scenario.query) {
@@ -121,10 +124,13 @@ const ct::Suite tests([] static noexcept {
                         size_type,
                         lifetime,
                         facts.origin,
-                        SemSliceIntrinsic {
-                            .intrinsic = SliceIntrinsic::Len,
+                        SemIntrinsic {
+                            .operation =
+                                SliceIntrinsicOperation {
+                                    .intrinsic = SliceIntrinsic::Len,
+                                    .result_extent = scenario.extent
+                                },
                             .operands = std::move(query_operands),
-                            .result_extent = scenario.extent,
                         }
                     );
                 }

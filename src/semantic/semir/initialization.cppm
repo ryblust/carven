@@ -30,6 +30,14 @@ auto query_default_initialization(
                 using Value = std::remove_cvref_t<decltype(value)>;
                 if constexpr (std::same_as<Value, BuiltinTypeValue>) {
                     return builtin_is_numeric(value.kind)
+                        || value.kind == BuiltinType::U8x32
+                        || value.kind == BuiltinType::Mask32
+                        || value.kind == BuiltinType::F32x8
+                        || value.kind == BuiltinType::Mask8
+                        || value.kind == BuiltinType::U8x16
+                        || value.kind == BuiltinType::Mask16
+                        || value.kind == BuiltinType::F32x4
+                        || value.kind == BuiltinType::Mask4
                         || value.kind == BuiltinType::Bool
                         || value.kind == BuiltinType::Char
                         || value.kind == BuiltinType::Str

@@ -5,7 +5,7 @@ import :semantic.analysis.program;
 import :semantic.semir.ids;
 import std;
 
-// A const fn promises structural compile-time executability for every
+// A const fn promises structural static executability for every
 // semantically reachable path. Reachable function dependencies must also
 // explicitly promise that capability.
 auto validate_const_contracts(

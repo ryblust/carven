@@ -51,3 +51,16 @@ test "Short circuit: selected operands retain their values and evaluation order"
     check(selected);
     check(!(true && value));
 }
+
+test "Short circuit: runtime results preserve required operands" {
+    var trace = 0;
+    let never = observe(&trace, 1, true) && false;
+    check(!never);
+    check(trace == 1);
+    let always = observe(&trace, 2, false) || true;
+    check(always);
+    check(trace == 12);
+    const skip = false;
+    check(!(skip && observe(&trace, 3, true)));
+    check(trace == 12);
+}

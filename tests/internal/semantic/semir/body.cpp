@@ -10,6 +10,7 @@ import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.contents;
 import :semantic.semir.decl;
+import :semantic.semir.delegation;
 import :semantic.semir.program;
 import :semantic.semir.table;
 import :semantic.semir.type;
@@ -69,6 +70,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
             .parameters =
                 {
                     ConstructionCallableParameter {
+                        .stage = ParameterStage::Runtime,
                         .access = AccessMode::Read,
                         .type = boolean,
                     },
@@ -200,7 +202,7 @@ auto rejects_expression(std::string_view scenario, MakeExpression make_expressio
             .origin = prepared.origin,
             .lifetime = body.lifetime,
             .reachable = true,
-            .value = SemExpressionStatement {.expression = std::move(invalid)}
+            .value = SemExpressionStatement {.expression = std::move(invalid)},
         }
     );
     auto result = boolean_expression(prepared, body);
@@ -211,11 +213,114 @@ auto rejects_expression(std::string_view scenario, MakeExpression make_expressio
     });
 }
 
+enum class ResidualConstructionContract { AddedFact, ChangedWitness, ChangedTarget, ChangedAccess };
+
+auto check_residual_construction(ResidualConstructionContract contract) noexcept -> void {
+    auto sources = SourceManager();
+    auto diagnostics = DiagnosticSink();
+    auto prepared = prepare_function(sources, diagnostics);
+    auto body = body_fixture(prepared);
+    auto argument = boolean_expression(prepared, body);
+    const auto original = std::get<SemConstant>(argument.value).constant;
+    if (contract == ResidualConstructionContract::ChangedWitness) {
+        argument.constant = original;
+    }
+    const auto query_type = prepared.builder.intern_type({
+        .value = CppTypeValue {
+            .form = CppQueryType {
+                .expression = CppConstructQuery {
+                    .target = prepared.boolean_type,
+                    .arguments = {{
+                        .operand = {.type = prepared.boolean_type, .access = AccessMode::Read},
+                        .constant = argument.constant,
+                    }},
+                },
+            },
+        },
+    });
+    auto construction = body.builder.make_expression(
+        query_type,
+        body.lifetime,
+        prepared.origin,
+        SemCpp {
+            .operation = CppConstructOperation {.target = prepared.boolean_type},
+            .operands = {{.access = AccessMode::Read, .expression = std::move(argument)}},
+        }
+    );
+    auto graph =
+        std::move(body.builder)
+            .finish(
+                SemanticRegion {
+                    .lifetime = body.lifetime,
+                    .origin = prepared.origin,
+                    .statements = {{
+                        .origin = prepared.origin,
+                        .lifetime = body.lifetime,
+                        .reachable = true,
+                        .value = SemExpressionStatement {.expression = std::move(construction)},
+                    }},
+                    .result = boolean_expression(prepared, body),
+                    .result_reachable = true,
+                    .failures = BodyFailures(body.failures),
+                    .exits_test = false,
+                }
+            );
+    auto residual = graph.region;
+    auto& operation = std::get<SemCpp>(
+        std::get<SemExpressionStatement>(residual.statements.front().value).expression.value
+    );
+    auto& operand = operation.operands.front();
+    operand.expression.constant = original;
+    if (contract == ResidualConstructionContract::ChangedWitness) {
+        const auto replacement = prepared.builder.intern_constant({
+            .type = prepared.boolean_type,
+            .value = BooleanConstant {.value = false},
+        });
+        operand.expression.constant = replacement;
+        operand.expression.value = SemConstant {.constant = replacement};
+    } else if (contract == ResidualConstructionContract::ChangedTarget) {
+        std::get<CppConstructOperation>(operation.operation).target =
+            prepared.builder.builtin_type(BuiltinType::I32);
+    } else if (contract == ResidualConstructionContract::ChangedAccess) {
+        operand.access = AccessMode::Write;
+    }
+    graph.residual = std::move(residual);
+    prepared.builder.add_body_draft(std::move(graph));
+    if (contract == ResidualConstructionContract::AddedFact) {
+        ct::expect(std::move(prepared.builder).finish().has_value());
+        ct::expect(diagnostics.empty());
+    } else {
+        ct::expect(expect_termination(
+            std::format("semir-residual-construction-{}", std::to_underlying(contract)),
+            [&] noexcept { static_cast<void>(std::move(prepared.builder).finish()); }
+        ));
+    }
+}
+
 } // namespace
 
 namespace {
 
 const ct::Suite tests([] static noexcept {
+    ct::test(
+        "SemIR body: residual C++ construction can establish additional scalar facts",
+        [] static noexcept { check_residual_construction(ResidualConstructionContract::AddedFact); }
+    );
+    ct::test(
+        "SemIR body: residual C++ construction preserves checked scalar witnesses",
+        [] static noexcept {
+            check_residual_construction(ResidualConstructionContract::ChangedWitness);
+        }
+    );
+    ct::test(
+        "SemIR body: residual C++ construction preserves its checked target",
+        [] static noexcept {
+            check_residual_construction(ResidualConstructionContract::ChangedTarget);
+        }
+    );
+    ct::test("SemIR body: residual C++ construction preserves operand access", [] static noexcept {
+        check_residual_construction(ResidualConstructionContract::ChangedAccess);
+    });
     ct::test(
         "SemIR body: publication preserves structured parameters and result",
         [] static noexcept {
@@ -454,6 +559,8 @@ const ct::Suite tests([] static noexcept {
                     .bindings = MutableBodyTable<LocalBinding, LocalBindingID>(identity).seal(),
                     .patterns = MutableBodyTable<Pattern, PatternID>(identity).seal(),
                     .region = std::move(draft.region),
+                    .residual = std::nullopt,
+                    .specialized = std::nullopt,
                 });
             };
             if (scenario != "completed tree") {
@@ -521,55 +628,51 @@ const ct::Suite tests([] static noexcept {
         }
     );
 
-    ct::test(
-        "SemIR body: match success must follow from its subject and pattern",
-        [] static noexcept {
-            ct::expect(rejects_expression(
-                "match-selection-fact",
-                [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
-                    auto subject = boolean_expression(prepared, body);
-                    subject.constant = std::get<SemConstant>(subject.value).constant;
-                    const auto pattern = body.builder.add_pattern({
-                        .type = prepared.boolean_type,
-                        .value =
-                            LiteralPattern {
-                                .constant = prepared.builder.intern_constant(
-                                    {.type = prepared.boolean_type,
-                                     .value = BooleanConstant {.value = false}}
-                                )
-                            },
-                        .origin = prepared.origin,
-                    });
-                    auto arms = std::vector<SemMatchArm>();
-                    arms.push_back({
-                        .pattern = pattern,
-                        .bindings = {},
-                        .guard = std::nullopt,
-                        .body =
-                            SemanticRegion {
-                                .lifetime = body.lifetime,
-                                .origin = prepared.origin,
-                                .statements = {},
-                                .result = boolean_expression(prepared, body),
-                                .result_reachable = true,
-                                .failures = BodyFailures(body.failures),
-                                .exits_test = false,
-                            },
-                        .reachable = true,
-                        .pattern_always_matches = true,
-                        .pattern_bounds = {},
-                    });
-                    auto result = boolean_expression(prepared, body);
-                    result.value = SemMatch {
-                        .subject = OwnedSemanticExpression(std::move(subject)),
-                        .subject_is_place = false,
-                        .arms = std::move(arms),
-                    };
-                    return result;
-                }
-            ));
-        }
-    );
+    ct::test("SemIR body: match success must follow from its pattern", [] static noexcept {
+        ct::expect(rejects_expression(
+            "match-selection-fact",
+            [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
+                auto subject = boolean_expression(prepared, body);
+                const auto pattern = body.builder.add_pattern({
+                    .type = prepared.boolean_type,
+                    .value =
+                        LiteralPattern {
+                            .constant = prepared.builder.intern_constant(
+                                {.type = prepared.boolean_type,
+                                 .value = BooleanConstant {.value = false}}
+                            )
+                        },
+                    .origin = prepared.origin,
+                });
+                auto arms = std::vector<SemMatchArm>();
+                arms.push_back({
+                    .pattern = pattern,
+                    .bindings = {},
+                    .guard = std::nullopt,
+                    .body =
+                        SemanticRegion {
+                            .lifetime = body.lifetime,
+                            .origin = prepared.origin,
+                            .statements = {},
+                            .result = boolean_expression(prepared, body),
+                            .result_reachable = true,
+                            .failures = BodyFailures(body.failures),
+                            .exits_test = false,
+                        },
+                    .reachable = true,
+                    .pattern_always_matches = true,
+                    .pattern_bounds = {},
+                });
+                auto result = boolean_expression(prepared, body);
+                result.value = SemMatch {
+                    .subject = OwnedSemanticExpression(std::move(subject)),
+                    .subject_is_place = false,
+                    .arms = std::move(arms),
+                };
+                return result;
+            }
+        ));
+    });
 });
 
 } // namespace

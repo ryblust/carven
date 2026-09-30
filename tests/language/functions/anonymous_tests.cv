@@ -1,4 +1,4 @@
-// Tests: anonymous declarations coexist; constant block labels may repeat.
+// Tests: anonymous declarations coexist; const block labels may repeat.
 const "preparation" {}
 const "preparation" {}
 

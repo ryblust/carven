@@ -121,3 +121,14 @@ auto freeze_constant_value(ProgramDraft& draft, ExecutionValue value) noexcept
     const auto shapes = ExecutionTypeShapes(draft);
     return freeze_value(draft, shapes, std::move(value), 0);
 }
+
+auto constant_initializer_type(ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> ConstructionTypeRef {
+    const auto* id = std::get_if<TypeID>(&type);
+    if (id
+        && draft.type_copy(*id).value
+            == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::String}}) {
+        return draft.builtin_type(BuiltinType::Str);
+    }
+    return type;
+}

@@ -2,6 +2,7 @@ module carven:semantic.analysis.decl.constant.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
+import :diagnostics.suggestion;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.interop;
@@ -138,7 +139,7 @@ auto DeclResolver::resolve_constant_name(
     co_return std::nullopt;
 }
 
-auto DeclResolver::resolve_nominal_qualifier(
+auto DeclResolver::resolve_type_qualifier(
     ProgramModuleID module_id,
     ASTView syntax,
     ASTExprID expression
@@ -152,6 +153,9 @@ auto DeclResolver::resolve_nominal_qualifier(
         co_return std::optional<TypeID>();
     }
     const auto spelling = draft.source_slice_copy(module_id, name->name_span);
+    if (const auto builtin = source_builtin_type(spelling)) {
+        co_return std::optional(draft.builtin_type(*builtin));
+    }
     auto selected = select_symbol(module_id, spelling, name->name_span);
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
@@ -221,6 +225,14 @@ auto DeclResolver::resolve_constant_enum_case(
         module_id,
         origin,
         DiagnosticCode::TypeMemberUnresolved,
-        std::format("enum has no case named '{}'", name)
+        std::format(
+            "enum '{}' has no case named '{}'{}",
+            owner_symbol.name,
+            name,
+            spelling_suggestion(
+                name,
+                catalog.enum_case_names(std::get<CatalogEnumForm>(owner_symbol.form).enumeration)
+            )
+        )
     ));
 }

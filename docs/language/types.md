@@ -19,7 +19,15 @@ bool  char  str  String  void
 i8 i16 i32 i64 isize
 u8 u16 u32 u64 usize
 f32 f64
+u8x16 mask16 f32x4 mask4 u8x32 mask32 f32x8 mask8
 ```
+
+Builtin type names are reserved. Module declarations cannot reuse them.
+
+`u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, and `mask8`
+are explicit fixed-width logical SIMD types.
+Their operators, memory contracts, and native backends are documented in the
+[SIMD craft](../../crafts/carven/std/simd/README.md).
 
 Structures and enums are nominal: identity comes from the declaration, not
 from structural similarity. Arrays are identified by both element type and
@@ -136,8 +144,8 @@ not make integer conditions valid.
 Integer negate, add, subtract, multiply, and left shift wrap at the
 Carven type width; compound assignment and increment/decrement inherit the same
 rule. Signed `MIN / -1` returns `MIN`, with remainder zero. Division or remainder
-by zero and a negative or out-of-width shift count terminate at runtime and
-diagnose during required execution. Signed right shift is arithmetic.
+by zero and a negative or out-of-width shift count terminate at runtime with a
+[trap report](execution.md) and diagnose during static execution. Signed right shift is arithmetic.
 
 `isize` and `usize` are the signed and unsigned native-model integers. Their
 width is fixed by the supported compilation data model and participates in the
@@ -151,7 +159,7 @@ floating exception mechanism. Native floating results depend on the selected
 C++ compiler and floating environment. Floating division follows those native
 operations, including their handling of zero divisors.
 
-Required constant execution and interpretation perform each floating operation
+Static execution and interpretation perform each floating operation
 using the compiler host's native `float` or `double` environment. They support
 negation, addition, subtraction, multiplication, division, comparisons, and the
 ordinary admitted numeric casts. Signed zero, infinities, and NaNs are values;
@@ -192,5 +200,5 @@ The UTF standard library supplies validation and text
 construction from `[u8]`. Borrowed text retains the input storage relationship
 and follows the same lifetime and mutation checks as slices.
 
-Constant initializers can instead create slices with static backing; see
+Constant initializers can instead create slices with program-lifetime backing; see
 [Frozen constant slices](constants.md#frozen-constant-slices).

@@ -33,19 +33,14 @@ BodyRealizer::BodyRealizer(
       metadata(preparation.body()),
       inputs(std::move(target_inputs)),
       names(context.make_callable_name_allocator()) {
-    const auto& parameter_bindings = metadata.inputs().parameters;
     const auto& capture_bindings = metadata.inputs().captures;
-    if (inputs.parameters.size() != parameter_bindings.size()
-        || inputs.captures.size() != capture_bindings.size()) {
-        invariant_violation("target inputs do not match semantic body inputs");
+    if (inputs.captures.size() != capture_bindings.size()) {
+        invariant_violation("target captures do not match semantic body inputs");
     }
-    for (auto index = 0uz; index < parameter_bindings.size(); ++index) {
-        binding_locals.emplace(parameter_bindings[index], inputs.parameters[index]);
-        names.reserve(context.target().local_name(inputs.parameters[index]).spelling());
-        names.reserve(
-            context.target().local_name(inputs.parameters[index]).spelling(),
-            callable_scope
-        );
+    for (const auto& [binding, local] : inputs.parameters) {
+        binding_locals.emplace(binding, local);
+        names.reserve(context.target().local_name(local).spelling());
+        names.reserve(context.target().local_name(local).spelling(), callable_scope);
     }
     for (auto index = 0uz; index < capture_bindings.size(); ++index) {
         capture_names.emplace(capture_bindings[index], inputs.captures[index]);
@@ -54,13 +49,13 @@ BodyRealizer::BodyRealizer(
     }
     for (const auto binding : metadata.bindings()) {
         if (!binding_locals.contains(binding.id) && !capture_names.contains(binding.id)) {
-            const auto preferred =
-                names.source(context.semantic().provenance().spelling(binding.value.name));
             binding_locals.emplace(
                 binding.id,
-                context.target().add_local(
-                    names.local_symbol(preferred.spelling(), binding.id.index(), callable_scope)
-                )
+                context.target().add_local(names.local_symbol(
+                    context.semantic().provenance().spelling(binding.value.name),
+                    binding.id.index(),
+                    callable_scope
+                ))
             );
         }
     }
@@ -79,8 +74,13 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
         }
     }
     auto completed = std::move(statements).finish();
+    auto parameters = std::vector<TargetLocalID>();
+    for (const auto& [binding, local] : inputs.parameters) {
+        static_cast<void>(binding);
+        parameters.push_back(local);
+    }
     auto referenced_parameters =
-        finish_body_declarations(completed, inputs.parameters, mutable_owners, removable_locals);
+        finish_body_declarations(completed, parameters, mutable_owners, removable_locals);
     return {
         .statements = std::move(completed),
         .referenced_parameters = std::move(referenced_parameters),
@@ -96,10 +96,16 @@ auto BodyRealizer::region(
         if (!statements.continues()) {
             break;
         }
+        if (!item.reachable) {
+            continue;
+        }
         static_cast<void>(statements.accept((co_await statement(item))));
     }
     if (statements.continues()) {
         if (source.result.has_value()) {
+            if (!source.result_reachable) {
+                co_return statements;
+            }
             auto delivery = LoweringStmtBuilder();
             (co_await result_expression(*source.result, result, delivery, source.lifetime));
             // Tail owners are initialized, observed and delivered before this block exits.

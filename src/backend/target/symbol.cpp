@@ -61,9 +61,9 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "carven/runtime/report.hpp",
                 true
             );
-        case TargetSymbol::RuntimeCurrentTest:
+        case TargetSymbol::RuntimeReportTestFailure:
             return symbol_info(
-                "::carven::runtime::current_test",
+                "::carven::runtime::report_test_failure",
                 "carven/runtime/testing.hpp",
                 true
             );
@@ -80,11 +80,29 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "carven/runtime/report.hpp"
             );
         case TargetSymbol::RuntimeDisplayWriter:
-            return symbol_info("::carven::runtime::DisplayWriter", "carven/runtime/display.hpp");
+            return symbol_info(
+                "::carven::runtime::DisplayWriter",
+                "carven/runtime/display/display.hpp"
+            );
+        case TargetSymbol::RuntimeScalarDisplay:
+            return symbol_info(
+                "::carven::runtime::ScalarDisplay",
+                "carven/runtime/display/display.hpp"
+            );
+        case TargetSymbol::RuntimeSequenceDisplay:
+            return symbol_info(
+                "::carven::runtime::SequenceDisplay",
+                "carven/runtime/display/display.hpp"
+            );
+        case TargetSymbol::RuntimeRangeDisplay:
+            return symbol_info(
+                "::carven::runtime::RangeDisplay",
+                "carven/runtime/display/display.hpp"
+            );
         case TargetSymbol::RuntimeStructuralDisplay:
             return symbol_info(
                 "::carven::runtime::structural_display",
-                "carven/runtime/display.hpp"
+                "carven/runtime/display/display.hpp"
             );
         case TargetSymbol::RuntimePrint:
             return symbol_info("::carven::runtime::print", "carven/runtime/print.hpp", true);
@@ -124,12 +142,34 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
             return symbol_info("::carven::runtime::Slice", "carven/runtime/slice.hpp");
         case TargetSymbol::RuntimeString:
             return symbol_info("::carven::runtime::String", "carven/runtime/string.hpp");
+        case TargetSymbol::RuntimeF32x4:
+            return symbol_info("::carven::runtime::simd::F32x4", "carven/runtime/simd/simd.hpp");
+        case TargetSymbol::RuntimeF32x8:
+            return symbol_info("::carven::runtime::simd::F32x8", "carven/runtime/simd/simd.hpp");
+        case TargetSymbol::RuntimeMask4:
+            return symbol_info("::carven::runtime::simd::Mask4", "carven/runtime/simd/simd.hpp");
+        case TargetSymbol::RuntimeMask8:
+            return symbol_info("::carven::runtime::simd::Mask8", "carven/runtime/simd/simd.hpp");
+        case TargetSymbol::RuntimeU8x16:
+            return symbol_info("::carven::runtime::simd::U8x16", "carven/runtime/simd/simd.hpp");
+        case TargetSymbol::RuntimeU8x32:
+            return symbol_info("::carven::runtime::simd::U8x32", "carven/runtime/simd/simd.hpp");
+        case TargetSymbol::RuntimeMask16:
+            return symbol_info("::carven::runtime::simd::Mask16", "carven/runtime/simd/simd.hpp");
+        case TargetSymbol::RuntimeMask32:
+            return symbol_info("::carven::runtime::simd::Mask32", "carven/runtime/simd/simd.hpp");
         case TargetSymbol::RuntimeStrCharsView:
             return symbol_info("::carven::runtime::StrCharsView", "carven/runtime/text.hpp");
         case TargetSymbol::RuntimeEntryArgsType:
             return symbol_info("::carven::runtime::EntryArgs", "carven/runtime/entry.hpp");
         case TargetSymbol::RuntimeEntryArgs:
             return symbol_info("::carven::runtime::entry_args", "carven/runtime/entry.hpp", true);
+        case TargetSymbol::RuntimeReportEntryFailure:
+            return symbol_info(
+                "::carven::runtime::report_entry_failure",
+                "carven/runtime/entry.hpp",
+                true
+            );
         case TargetSymbol::RuntimeFunctionRef:
             return symbol_info("::carven::runtime::FunctionRef", "carven/runtime/callable.hpp");
         case TargetSymbol::RuntimeTextBytes:
@@ -192,6 +232,14 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "carven/runtime/array.hpp",
                 true
             );
+        case TargetSymbol::RuntimeCheckedSliceIndex:
+            return symbol_info(
+                "::carven::runtime::checked_slice_index",
+                "carven/runtime/slice.hpp",
+                true
+            );
+        case TargetSymbol::RuntimeSourceSite:
+            return symbol_info("::carven::runtime::SourceSite", "carven/runtime/trap.hpp");
         case TargetSymbol::RuntimeUTF8Text:
             return symbol_info("::carven::runtime::utf8_text", "carven/runtime/text.hpp", true);
         case TargetSymbol::RuntimeCheckedUnicodeScalar:

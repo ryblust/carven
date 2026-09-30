@@ -28,15 +28,25 @@ enum class BuiltinType {
     StrCharsView,
     Void,
     EntryArgs,
+    U8x16,
+    Mask16,
+    F32x4,
+    Mask4,
+    U8x32,
+    Mask32,
+    F32x8,
+    Mask8,
 };
 
 // The closed builtin domain is present in every canonical store, before source analysis.
 inline constexpr auto builtin_types = std::array {
-    BuiltinType::Bool,         BuiltinType::Char, BuiltinType::I8,        BuiltinType::I16,
-    BuiltinType::I32,          BuiltinType::I64,  BuiltinType::U8,        BuiltinType::U16,
-    BuiltinType::U32,          BuiltinType::U64,  BuiltinType::Isize,     BuiltinType::Usize,
-    BuiltinType::F32,          BuiltinType::F64,  BuiltinType::String,    BuiltinType::Str,
-    BuiltinType::StrCharsView, BuiltinType::Void, BuiltinType::EntryArgs,
+    BuiltinType::Bool,         BuiltinType::Char,  BuiltinType::I8,        BuiltinType::I16,
+    BuiltinType::I32,          BuiltinType::I64,   BuiltinType::U8,        BuiltinType::U16,
+    BuiltinType::U32,          BuiltinType::U64,   BuiltinType::Isize,     BuiltinType::Usize,
+    BuiltinType::F32,          BuiltinType::F64,   BuiltinType::String,    BuiltinType::Str,
+    BuiltinType::StrCharsView, BuiltinType::Void,  BuiltinType::EntryArgs, BuiltinType::U8x16,
+    BuiltinType::Mask16,       BuiltinType::F32x4, BuiltinType::Mask4,     BuiltinType::U8x32,
+    BuiltinType::Mask32,       BuiltinType::F32x8, BuiltinType::Mask8,
 };
 
 auto builtin_is_integer(BuiltinType type) noexcept -> bool;
@@ -124,7 +134,10 @@ struct FailureSet final {
     auto operator==(const FailureSet&) const noexcept -> bool = default;
 };
 
+enum class ParameterStage { Runtime, Static };
+
 struct CallableParameter final {
+    ParameterStage stage;
     AccessMode access;
     TypeID type;
     constexpr auto operator==(const CallableParameter&) const noexcept -> bool = default;
@@ -134,12 +147,15 @@ struct CallableSignature final {
     std::vector<CallableParameter> parameters;
     TypeID result;
     FailureSetID failures;
+    // A callable with Static parameters is realized only through static instances.
+    auto has_static_parameters() const noexcept -> bool;
     auto operator==(const CallableSignature&) const noexcept -> bool = default;
 };
 
 using ConstructionTypeRef = std::variant<TypeID, TypeTermID>;
 
 struct ConstructionCallableParameter final {
+    ParameterStage stage;
     AccessMode access;
     ConstructionTypeRef type;
 };
@@ -374,6 +390,7 @@ public:
                 for (const auto& parameter : value.parameters) {
                     parameters.push_back(
                         CallableParameter {
+                            .stage = parameter.stage,
                             .access = parameter.access,
                             .type = resolve_ref(parameter.type),
                         }

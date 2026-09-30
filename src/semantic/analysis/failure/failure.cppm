@@ -35,6 +35,14 @@ struct FailureTerm final {
     std::vector<GuardedContribution> guarded_inputs;
     std::vector<TypeID> excluded_members;
     std::optional<std::vector<TypeID>> retained_members;
+
+    // A throw statement that introduces a direct member; diagnostics only.
+    struct ThrowSite final {
+        TypeID member;
+        ProgramOriginID origin;
+    };
+
+    std::vector<ThrowSite> throw_sites;
 };
 
 struct RequiresEmptyFailure final {
@@ -116,6 +124,11 @@ public:
         -> FailureTermID;
     auto copy(FailureTermID term) const noexcept -> FailureTerm;
     auto add_member(FailureTermID destination, TypeID member) noexcept -> void;
+    auto add_thrown_member(
+        FailureTermID destination,
+        TypeID member,
+        ProgramOriginID origin
+    ) noexcept -> void;
     auto add_contribution(FailureTermID destination, FailureTermID source) noexcept -> void;
     auto add_guarded_contribution(
         FailureTermID destination,

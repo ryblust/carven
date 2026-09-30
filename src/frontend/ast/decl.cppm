@@ -112,6 +112,7 @@ struct ASTRecordDecl final {
 
 struct ASTFunctionParameter final {
     Span span;
+    std::optional<Span> const_span;
     ASTAccessSyntax access;
     ASTBindingTarget target;
     std::optional<ASTTypeID> type;
@@ -154,7 +155,7 @@ struct ASTBlockLabel final {
     std::string text;
 };
 
-struct ASTConstantBlock final {
+struct ASTConstBlock final {
     Span keyword_span;
     std::optional<ASTBlockLabel> label;
     ASTBlockID body;
@@ -174,7 +175,7 @@ struct ASTItem final {
         ASTRecordDecl,
         ASTFunctionDecl,
         ASTConstantDecl,
-        ASTConstantBlock,
+        ASTConstBlock,
         ASTTestDecl>
         value;
 };

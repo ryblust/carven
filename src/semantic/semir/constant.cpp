@@ -184,6 +184,10 @@ auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
         } else if constexpr (std::same_as<Value, IntegerConstant>) {
             mix(value.magnitude());
             mix(value.negative());
+        } else if constexpr (std::same_as<Value, SIMDConstant>) {
+            for (const auto lane : value.lanes) {
+                mix(lane);
+            }
         } else if constexpr (std::same_as<Value, BooleanConstant>) {
             mix(value.value);
         } else if constexpr (std::same_as<Value, CharacterConstant>) {
@@ -244,4 +248,18 @@ auto ConstantStoreBuilder::seal() && noexcept -> ConstantStore {
         sealed.add(std::move(fact));
     }
     return ConstantStore(std::move(sealed).seal());
+}
+
+auto matches_simd_constant(BuiltinType owner, const SIMDConstant& value) noexcept -> bool {
+    const auto layout = simd_layout(owner);
+    if (!layout || value.lanes.size() != layout->width) {
+        return false;
+    }
+    if (owner == layout->mask) {
+        return std::ranges::all_of(value.lanes, [](auto lane) static noexcept {
+            return lane == 0u || lane == 255u;
+        });
+    }
+    return layout->element == BuiltinType::F32
+        || std::ranges::all_of(value.lanes, [](auto lane) static noexcept { return lane <= 255u; });
 }

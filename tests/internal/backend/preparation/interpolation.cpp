@@ -14,7 +14,7 @@ namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
     ct::test(
-        "Format preparation: known contents retain owning operations and source operands",
+        "Format preparation: static contents fold while runtime holes retain source operands",
         [] static noexcept {
             struct Scenario final {
                 std::string_view body;
@@ -27,9 +27,13 @@ const ct::Suite tests([] static noexcept {
                 {R"(return f"{42:04} {-42:06x} {true} {'😀'} {"{text}"}";)",
                  "0042 -0002a true 😀 {text}"},
                 {R"(let version = 42; let copy = version; return f"build-{copy:04}";)",
+                 std::nullopt},
+                {R"(const version = 42; const copy = version; return f"build-{copy:04}";)",
                  "build-0042"},
-                {R"(let text = "我\0"; return f"{text}";)", std::string_view("我\0", 4)},
-                {R"(return f"{touch() && false}";)", "false"},
+                {R"(let text = "我\0"; return f"{text}";)", std::nullopt},
+                {R"(const text = "我\0"; return f"{text}";)", std::string_view("我\0", 4)},
+                {R"(return f"{touch() && false}";)", std::nullopt},
+                {R"(return f"{false && touch()}";)", "false"},
                 {R"(var version = 42; return f"{version}";)", std::nullopt},
                 {R"(return f"{1.25}";)", "1.25"},
                 {R"(return f"{42:>{4}}";)", std::nullopt},
@@ -181,7 +185,7 @@ const ct::Suite tests([] static noexcept {
                 const auto braces = std::string(length, '{');
                 const auto program = analyze_test_program(
                     std::format(
-                        "fn format(value: f64) -> String {{ let text = \"{}\"; return f\"{{text}}{{value:a}}\"; }}",
+                        "fn format(value: f64) -> String {{ const text = \"{}\"; return f\"{{text}}{{value:a}}\"; }}",
                         braces
                     )
                 );

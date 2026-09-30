@@ -14,12 +14,14 @@ import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
+import :semantic.analysis.constant.fold;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
+import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
@@ -107,6 +109,7 @@ auto BodyExprSite::finish_index(
     Value index,
     Span span
 ) noexcept -> ExpressionResult<Value> {
+    const auto known = element_constant(draft(), receiver.constant(), index.constant());
     auto state = operand_state();
     state.completes = receiver.completes;
     append_pending_failures(state.pending, take_pending_failures(receiver));
@@ -139,18 +142,20 @@ auto BodyExprSite::finish_index(
     if (!array) {
         // A slice value borrows its elements from another owner. Indexing still
         // denotes that element's place, but grants only Read access.
+        auto place = body.active_builder().make_place(
+            std::nullopt,
+            AccessMode::Read,
+            type,
+            SemIndex {
+                UniqueIndirect(std::move(*value)),
+                UniqueIndirect(std::move(*subscript)),
+                bounds
+            },
+            body.origin(span)
+        );
+        place.expression.constant = known;
         return Value {
-            .storage = body.active_builder().make_place(
-                std::nullopt,
-                AccessMode::Read,
-                type,
-                SemIndex {
-                    UniqueIndirect(std::move(*value)),
-                    UniqueIndirect(std::move(*subscript)),
-                    bounds
-                },
-                body.origin(span)
-            ),
+            .storage = std::move(place),
             .pending_failures = std::move(state.pending),
             .takeable = false,
             .completes = state.completes
@@ -160,7 +165,8 @@ auto BodyExprSite::finish_index(
         type,
         SemIndex {UniqueIndirect(std::move(*value)), UniqueIndirect(std::move(*subscript)), bounds},
         std::move(state),
-        span
+        span,
+        known
     );
 }
 
@@ -170,6 +176,7 @@ auto BodyExprSite::finish_field(
     Value receiver,
     Span span
 ) noexcept -> ExpressionResult<Value> {
+    const auto known = field_constant(draft(), receiver.constant(), field.field_index);
     if (auto* place = std::get_if<PlaceExpression>(&receiver.storage)) {
         return Value {
             .storage = body.active_builder().make_place(
@@ -193,7 +200,8 @@ auto BodyExprSite::finish_field(
         type,
         SemField {UniqueIndirect(std::move(*value)), field},
         std::move(state),
-        span
+        span,
+        known
     );
 }
 

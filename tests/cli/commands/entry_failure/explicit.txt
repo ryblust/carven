@@ -1,0 +1,7 @@
+explicit.cv:9:1: error: failure 'explicit.Denied' escaped the program entry
+  failure:
+    Denied {
+        code: 7,
+    }
+  note: program exited with a failure status
+

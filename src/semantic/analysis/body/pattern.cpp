@@ -2,6 +2,7 @@ module carven:semantic.analysis.body.pattern.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
+import :diagnostics.suggestion;
 import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
@@ -20,6 +21,7 @@ import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
+import :semantic.semir.completion;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
@@ -34,8 +36,12 @@ auto BodyElaborator::build_pattern(
     std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>& bindings,
     bool allow_new_bindings,
     std::flat_set<std::string, std::less<>>& used_bindings,
-    std::vector<SemPatternBounds>& pattern_bounds
+    std::vector<SemPatternBounds>& pattern_bounds,
+    CompletionQuery& completion
 ) noexcept -> AnalysisTask<BuiltPattern> {
+    // Predicate attempts have their own normal path. Their caller chooses the
+    // execution entry through reference_path_reachable.
+    const auto enclosing_reachable = std::exchange(reachable, true);
     const auto& source = ast.pattern(source_id);
     const auto pattern_origin = origin(source.span);
     const auto add = [&](ElaboratedPatternValue value) noexcept {
@@ -47,13 +53,12 @@ auto BodyElaborator::build_pattern(
             }
         );
     };
-    co_return (co_await source.value.visit(
+    auto result = (co_await source.value.visit(
         Overloaded {
             [&](const ASTWildcardPattern&) noexcept -> AnalysisTask<BuiltPattern> {
                 co_return BuiltPattern {
                     .pattern = add(WildcardPattern {}),
                     .bindings = {},
-                    .irrefutable = true,
                 };
             },
             [&](const ASTLiteral& literal) noexcept -> AnalysisTask<BuiltPattern> {
@@ -79,7 +84,6 @@ auto BodyElaborator::build_pattern(
                 co_return BuiltPattern {
                     .pattern = add(LiteralPattern {.constant = constant}),
                     .bindings = {},
-                    .irrefutable = false,
                 };
             },
             [&](const ASTNegativeNumberPattern& negative) noexcept -> AnalysisTask<BuiltPattern> {
@@ -111,7 +115,6 @@ auto BodyElaborator::build_pattern(
                 co_return BuiltPattern {
                     .pattern = add(LiteralPattern {.constant = constant}),
                     .bindings = {},
-                    .irrefutable = false,
                 };
             },
             [&](const ASTRangePattern& range) noexcept -> AnalysisTask<BuiltPattern> {
@@ -180,7 +183,6 @@ auto BodyElaborator::build_pattern(
                             "range bounds cannot refer to bindings introduced by the same pattern"
                         ));
                     }
-                    checked->constant = body_builder.known_constant(*checked);
                     const auto static_bound = [&](this const auto& self,
                                                   const SemanticExpression& expr) noexcept -> bool {
                         const auto* type = std::get_if<TypeID>(&expr.type.construction());
@@ -236,8 +238,12 @@ auto BodyElaborator::build_pattern(
                     pattern_bounds.push_back(
                         {.pattern = id, .begin = std::move(first), .end = std::move(last)}
                     );
+                    static_cast<void>(completion.pattern(
+                        id,
+                        std::span<const SemPatternBounds>(pattern_bounds).last(1)
+                    ));
                 }
-                co_return BuiltPattern {.pattern = id, .bindings = {}, .irrefutable = false};
+                co_return BuiltPattern {.pattern = id, .bindings = {}};
             },
             [&](const ASTBindingPattern& binding) noexcept -> AnalysisTask<BuiltPattern> {
                 const auto name = spelling(binding.name_span);
@@ -271,6 +277,7 @@ auto BodyElaborator::build_pattern(
                             .type = type,
                             .used = false,
                             .takeable = true,
+                            .static_source = false,
                             .role = BodyLocalRole::Local,
                             .unused_candidate = std::nullopt,
                         },
@@ -295,7 +302,6 @@ auto BodyElaborator::build_pattern(
                 co_return BuiltPattern {
                     .pattern = add(BindingPattern {.binding = found->second.storage.binding}),
                     .bindings = {found->second.storage.binding},
-                    .irrefutable = true,
                 };
             },
             [&](const ASTConstraintPattern& constraint) noexcept -> AnalysisTask<BuiltPattern> {
@@ -313,7 +319,6 @@ auto BodyElaborator::build_pattern(
                 co_return BuiltPattern {
                     .pattern = add(ElaboratedTypeConstraintPattern {.type = *constrained}),
                     .bindings = {},
-                    .irrefutable = true,
                 };
             },
             [&](const ASTCasePattern& case_pattern) noexcept -> AnalysisTask<BuiltPattern> {
@@ -365,7 +370,12 @@ auto BodyElaborator::build_pattern(
                     co_return std::unexpected(fail(
                         case_pattern.name_span,
                         DiagnosticCode::TypeMatchPattern,
-                        std::format("enum has no case named '{}'", case_name)
+                        std::format(
+                            "enum '{}' has no case named '{}'{}",
+                            draft().spelling(draft().enum_declaration_copy(owner).name),
+                            case_name,
+                            spelling_suggestion(case_name, catalog().enum_case_names(owner))
+                        )
                     ));
                 }
                 const auto payload_ids = case_pattern.payload.has_value()
@@ -380,19 +390,24 @@ auto BodyElaborator::build_pattern(
                 }
                 auto payload = std::vector<PatternID>();
                 auto result_bindings = std::vector<LocalBindingID>();
+                auto accepted = true;
                 for (auto index = 0uz; index < payload_ids.size(); ++index) {
+                    [[maybe_unused]] const auto path =
+                        BodyReferencePathGuard(reference_path_reachable, accepted);
                     auto child = (co_await build_pattern(
                         payload_ids[index],
                         selected->payload_types[index],
                         bindings,
                         allow_new_bindings,
                         used_bindings,
-                        pattern_bounds
+                        pattern_bounds,
+                        completion
                     ));
                     if (!child.has_value()) {
                         co_return std::unexpected(child.error());
                     }
                     payload.push_back(child->pattern);
+                    accepted = accepted && completion.pattern(child->pattern).accepted;
                     result_bindings.insert(
                         result_bindings.end(),
                         child->bindings.begin(),
@@ -407,7 +422,6 @@ auto BodyElaborator::build_pattern(
                             .payload = std::move(payload),
                         }),
                     .bindings = std::move(result_bindings),
-                    .irrefutable = false,
                 };
             },
             [&](const ASTOrPattern& or_pattern) noexcept -> AnalysisTask<BuiltPattern> {
@@ -417,8 +431,10 @@ auto BodyElaborator::build_pattern(
                 auto alternatives = std::vector<PatternID>();
                 auto expected_names = std::optional<std::flat_set<std::string, std::less<>>>();
                 auto result_bindings = std::vector<LocalBindingID>();
-                auto irrefutable = false;
+                auto rejected = true;
                 for (auto index = 0uz; index < or_pattern.alternatives.size(); ++index) {
+                    [[maybe_unused]] const auto path =
+                        BodyReferencePathGuard(reference_path_reachable, rejected);
                     auto alternative_names = std::flat_set<std::string, std::less<>>();
                     auto alternative = (co_await build_pattern(
                         or_pattern.alternatives[index],
@@ -426,7 +442,8 @@ auto BodyElaborator::build_pattern(
                         bindings,
                         index == 0uz && allow_new_bindings,
                         alternative_names,
-                        pattern_bounds
+                        pattern_bounds,
+                        completion
                     ));
                     if (!alternative.has_value()) {
                         co_return std::unexpected(alternative.error());
@@ -441,7 +458,7 @@ auto BodyElaborator::build_pattern(
                         ));
                     }
                     alternatives.push_back(alternative->pattern);
-                    irrefutable |= alternative->irrefutable;
+                    rejected = rejected && completion.pattern(alternative->pattern).rejected;
                 }
                 for (const auto& name : *expected_names) {
                     if (!used_bindings.insert(name).second) {
@@ -459,11 +476,15 @@ auto BodyElaborator::build_pattern(
                 co_return BuiltPattern {
                     .pattern = add(OrPattern {.alternatives = std::move(alternatives)}),
                     .bindings = std::move(result_bindings),
-                    .irrefutable = irrefutable,
                 };
             },
         }
     ));
+    if (result) {
+        static_cast<void>(completion.pattern(result->pattern));
+    }
+    reachable = enclosing_reachable;
+    co_return result;
 }
 
 auto BodyElaborator::resolve_pattern_constraint(const ASTConstraintOperand& operand) noexcept
@@ -509,9 +530,7 @@ auto BodyElaborator::build_match(
         ));
     }
     const auto subject_is_place = std::holds_alternative<PlaceExpression>(subject->storage);
-    const auto subject_constant = active_builder().known_constant(subject->expression());
     auto subject_tree = take_built(*subject, ast.expression(source.subject).span);
-    subject_tree.constant = subject_constant;
     if (source.arms.empty()) {
         co_return std::unexpected(
             fail(span, DiagnosticCode::MatchNonExhaustive, "match has no arms")
@@ -529,8 +548,12 @@ auto BodyElaborator::build_match(
 
     auto plans = std::vector<ArmPlan>();
     plans.reserve(source.arms.size());
+    auto completion = CompletionQuery(body_builder.completion_patterns());
+    auto predicate_reachable = selection_reachable;
 
     for (const auto& arm : source.arms) {
+        [[maybe_unused]] const auto path =
+            BodyReferencePathGuard(reference_path_reachable, predicate_reachable);
         push_frame(arm.span);
         auto bindings = std::flat_map<std::string, BodyPatternBindingStorage, std::less<>>();
         auto used = std::flat_set<std::string, std::less<>>();
@@ -544,12 +567,16 @@ auto BodyElaborator::build_match(
             bindings,
             true,
             used,
-            pattern_bounds
+            pattern_bounds,
+            completion
         ));
         failure_contexts.pop_back();
         if (!pattern.has_value()) {
             co_return std::unexpected(pattern.error());
         }
+        const auto selected = completion.pattern(pattern->pattern);
+        predicate_reachable = predicate_reachable
+            && (selected.rejected || (selected.accepted && arm.guard.has_value()));
         pattern->bindings.clear();
         for (const auto& [name, binding] : bindings) {
             static_cast<void>(name);
@@ -645,15 +672,14 @@ auto BodyElaborator::build_match(
     }
 
     auto arms = std::vector<SemMatchArm>();
-    auto normal = false;
     auto remaining = selection_reachable;
     for (auto& plan : plans) {
         const auto matches = known_pattern_match(
             draft(),
             body_builder.pattern_copy(plan.pattern.pattern),
-            subject_constant
+            std::nullopt
         );
-        const auto useful = remaining && plan.useful && matches != false;
+        const auto useful = remaining && plan.useful;
         [[maybe_unused]] const auto path = BodyReferencePathGuard(reference_path_reachable, useful);
         if (useful) {
             draft().add_failure_contribution(
@@ -665,8 +691,11 @@ auto BodyElaborator::build_match(
         [[maybe_unused]] const auto suspended =
             BodyFullExpressionSuspension(active_full_expression);
         reachable = true;
+        const auto selected = completion.pattern(plan.pattern.pattern);
+        [[maybe_unused]] const auto accepted_path =
+            BodyReferencePathGuard(reference_path_reachable, selected.accepted);
         auto guard_tree = std::optional<SemanticExpression>();
-        auto body_reachable = true;
+        auto body_reachable = selected.accepted;
         auto guard_may_reject = false;
         if (plan.source->guard.has_value()) {
             const auto id = plan.source->guard->expression;
@@ -677,21 +706,16 @@ auto BodyElaborator::build_match(
             if (value_form) {
                 collect_pending(pending, *guard);
             }
-            const auto known = known_boolean_constant(
-                draft(),
-                active_builder().known_constant(guard->expression())
-            );
             auto checked = require_bool(*guard, ast.expression(id).span);
             if (!checked.has_value()) {
                 co_return std::unexpected(checked.error());
             }
             guard_tree = std::move(*checked);
-            body_reachable = guard->completes && (!known.has_value() || *known);
-            guard_may_reject = guard->completes && known != true;
+            body_reachable = selected.accepted && guard->completes;
+            guard_may_reject = guard->completes;
         }
-        if ((plan.pattern.irrefutable || matches == true) && !guard_may_reject) {
-            remaining = false;
-        }
+        remaining = remaining
+            && ((selected.rejected && matches != true) || (selected.accepted && guard_may_reject));
         auto body = co_await [&]() noexcept -> AnalysisTask<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
                 BodyReferencePathGuard(reference_path_reachable, body_reachable);
@@ -706,7 +730,6 @@ auto BodyElaborator::build_match(
         if (!body.has_value()) {
             co_return std::unexpected(body.error());
         }
-        normal = normal || (useful && body_reachable && reachable);
         arms.push_back(
             {plan.pattern.pattern,
              std::move(plan.pattern.bindings),
@@ -718,7 +741,6 @@ auto BodyElaborator::build_match(
         );
         pop_frame();
     }
-    reachable = normal;
     // Keep explicit type selection for the Clang 23 coroutine workaround.
     // Do not replace with value_or; see decl/constant.cpp.
     auto result = make_built(
@@ -727,6 +749,10 @@ auto BodyElaborator::build_match(
         span,
         std::move(pending)
     );
+    const auto normal =
+        exits(result.expression(), body_builder.completion_patterns()).contains(Exit::Normal);
+    reachable = normal;
+    result.completes = normal;
     if (!value_form) {
         append_expression(result, span);
         co_return std::optional<BuiltExpression>();

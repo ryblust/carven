@@ -15,9 +15,9 @@ auto short_circuit_failures = 0;
 auto report(const carven::runtime::TestFailure& failure) noexcept -> void {
     short_circuit_failures += failure.case_name
         == "Testing: dynamic short circuit explanations observe only executed operands";
-    observed_output += failure.file;
+    observed_output += failure.site.file;
     observed_output += ':';
-    observed_output += std::to_string(failure.line);
+    observed_output += std::to_string(failure.site.line);
     observed_output += "\noperation: ";
     observed_output += failure.operation;
     if (failure.condition.has_value()) {
@@ -63,8 +63,10 @@ auto cv_test_reporting_verify() noexcept -> void {
         || !contains(text, "expected: [\n    15,\n    16,\n]")
         || !contains(text, "comparison_next(&calls) == 1: <not evaluated>")
         || !contains(text, "comparison_next(&calls) == 2: false")
-        || !contains(text, "calls: 1\n4: 4")
-        || !contains(text, "1: 1\n2: 2")) {
+        || !contains(text, "condition: calls == 4\ncalls: 1\n")
+        || !contains(text, "condition: 1 > 2\ntests/language/testing/reporting.cv:168")
+        || contains(text, "4: 4")
+        || contains(text, "false: false\n")) {
         std::cerr << text;
         std::abort();
     }

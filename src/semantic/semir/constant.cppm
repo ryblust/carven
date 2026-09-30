@@ -1,9 +1,12 @@
 module carven:semantic.semir.constant;
 
+import :semantic.semir.decl;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
+import :semantic.semir.simd;
 import :semantic.semir.table;
 import :semantic.semir.type;
+import :source.provenance;
 import :source.provenance.ids;
 import std;
 
@@ -36,6 +39,13 @@ struct NullPointerConstant final {
     constexpr auto operator==(const NullPointerConstant&) const noexcept -> bool = default;
 };
 
+// Each lane stores its representation bits. The owning type determines width,
+// element interpretation, and mask semantics.
+struct SIMDConstant final {
+    std::vector<std::uint32_t> lanes;
+    auto operator==(const SIMDConstant&) const noexcept -> bool = default;
+};
+
 struct BooleanConstant final {
     bool value;
     constexpr auto operator==(const BooleanConstant&) const noexcept -> bool = default;
@@ -60,6 +70,8 @@ struct F32Constant final {
         return std::bit_cast<std::uint32_t>(value) == std::bit_cast<std::uint32_t>(other.value);
     }
 };
+
+auto matches_simd_constant(BuiltinType owner, const SIMDConstant& value) noexcept -> bool;
 
 struct F64Constant final {
     double value;
@@ -104,6 +116,7 @@ struct SliceConstant final {
 };
 
 using ConstantValue = std::variant<
+    SIMDConstant,
     IntegerConstant,
     RangeConstant,
     BooleanConstant,
@@ -130,6 +143,128 @@ auto constant_children(const ConstantValue& value) noexcept
 
 auto normalize_integer_cast(IntegerConstant source, BuiltinType target) noexcept -> IntegerConstant;
 auto integer_constant_fits(IntegerConstant constant, BuiltinType type) noexcept -> bool;
+
+// Readers return optional values so malformed identities fail this contract
+// before any store's terminating lookup boundary is crossed.
+template<typename Types, typename Constants, typename Fields, typename Cases, typename Spellings>
+auto constant_matches_type(
+    const ConstantFact& fact,
+    Types types,
+    Constants constants,
+    Fields fields,
+    Cases cases,
+    Spellings spellings
+) noexcept -> bool {
+    const auto canonical = types(fact.type);
+    if (!canonical) {
+        return false;
+    }
+    const auto& type = canonical->value;
+    const auto builtin = [&](BuiltinType expected) noexcept {
+        return type == CanonicalTypeValue {BuiltinTypeValue {.kind = expected}};
+    };
+    const auto children_match = [&](std::span<const ConstantID> children,
+                                    std::span<const TypeID> expected) noexcept {
+        if (children.size() != expected.size()) {
+            return false;
+        }
+        for (const auto& [child, target] : std::views::zip(children, expected)) {
+            const auto value = constants(child);
+            if (!value || value->type != target) {
+                return false;
+            }
+        }
+        return true;
+    };
+    return fact.value.visit([&](const auto& value) noexcept -> bool {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, RangeConstant>) {
+            const auto* range = std::get_if<RangeTypeValue>(&type);
+            if (!range) {
+                return false;
+            }
+            const auto element = types(range->element);
+            const auto* kind = element ? std::get_if<BuiltinTypeValue>(&element->value) : nullptr;
+            return kind
+                && integer_constant_fits(value.begin, kind->kind)
+                && integer_constant_fits(value.end, kind->kind);
+        } else if constexpr (std::same_as<Value, IntegerConstant>) {
+            const auto* kind = std::get_if<BuiltinTypeValue>(&type);
+            return kind && integer_constant_fits(value, kind->kind);
+        } else if constexpr (std::same_as<Value, SIMDConstant>) {
+            const auto* kind = std::get_if<BuiltinTypeValue>(&type);
+            return kind && matches_simd_constant(kind->kind, value);
+        } else if constexpr (std::same_as<Value, BooleanConstant>) {
+            return builtin(BuiltinType::Bool);
+        } else if constexpr (std::same_as<Value, F32Constant>) {
+            return builtin(BuiltinType::F32);
+        } else if constexpr (std::same_as<Value, F64Constant>) {
+            return builtin(BuiltinType::F64);
+        } else if constexpr (std::same_as<Value, CharacterConstant>) {
+            return builtin(BuiltinType::Char)
+                && value.scalar <= 0x10ffffu
+                && (value.scalar < 0xd800u || value.scalar > 0xdfffu);
+        } else if constexpr (std::same_as<Value, NullPointerConstant>) {
+            return std::holds_alternative<PointerTypeValue>(type);
+        } else if constexpr (std::same_as<Value, StringConstant>) {
+            return builtin(BuiltinType::Str) && spellings(value.value).has_value();
+        } else if constexpr (std::same_as<Value, CStringConstant>) {
+            const auto* native = std::get_if<CppTypeValue>(&type);
+            const auto bytes = spellings(value.value);
+            return native
+                && std::holds_alternative<CppConstCharPointerType>(native->form)
+                && bytes
+                && valid_cstring_bytes(*bytes);
+        } else if constexpr (std::same_as<Value, NumericEnumConstant>
+                             || std::same_as<Value, PayloadEnumConstant>) {
+            const auto* enumeration = std::get_if<EnumTypeValue>(&type);
+            if (!enumeration) {
+                return false;
+            }
+            const auto payload = cases(enumeration->enumeration, value.enum_case);
+            if (!payload) {
+                return false;
+            }
+            if constexpr (std::same_as<Value, NumericEnumConstant>) {
+                return payload->empty();
+            } else {
+                return children_match(value.payload, *payload);
+            }
+        } else if constexpr (std::same_as<Value, StructConstant>) {
+            const auto* record = std::get_if<StructTypeValue>(&type);
+            if (!record) {
+                return false;
+            }
+            const auto expected = fields(record->structure);
+            return expected && children_match(value.fields, *expected);
+        } else if constexpr (std::same_as<Value, ArrayConstant>
+                             || std::same_as<Value, SliceConstant>) {
+            auto element = std::optional<TypeID>();
+            if constexpr (std::same_as<Value, ArrayConstant>) {
+                const auto* array = std::get_if<ArrayTypeValue>(&type);
+                if (!array || array->extent != value.elements.size()) {
+                    return false;
+                }
+                element = array->element;
+            } else {
+                const auto* slice = std::get_if<SliceTypeValue>(&type);
+                if (!slice) {
+                    return false;
+                }
+                element = slice->element;
+            }
+            for (const auto id : value.elements) {
+                const auto child = constants(id);
+                if (!child || child->type != *element) {
+                    return false;
+                }
+            }
+            return true;
+        } else {
+            static_assert(std::same_as<Value, void>, "constant type contract is incomplete");
+        }
+    });
+}
 
 class ConstantStore final {
 public:

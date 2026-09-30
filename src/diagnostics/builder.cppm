@@ -12,6 +12,7 @@ public:
     auto related(SourceSpan span, std::string message = {}) noexcept -> DiagnosticBuilder&;
     auto note(std::string message, std::optional<SourceSpan> span = std::nullopt) noexcept
         -> DiagnosticBuilder&;
+    auto help(std::string message) noexcept -> DiagnosticBuilder&;
     auto build() noexcept -> Diagnostic;
 
 private:

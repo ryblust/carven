@@ -30,22 +30,27 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     const auto outcome = owner.fresh_local(TargetTemporaryNameKind::Outcome);
     const auto storage =
         LoweringDeferredStorage {.local = outcome, .value_type = owner.context.call_result(call)};
-    if (automatic_storage) {
-        statements.emit(generated_statement(
+    const auto needs_cleanup = owner.needs_cleanup(source(fragment).operation.type.resolved())
+        || std::ranges::any_of(owner.context.plan().failure_abi().members(transport.failures),
+                               [&](TypeID type) noexcept { return owner.needs_cleanup(type); });
+    const auto automatic = storage_form(fragment.position) == StorageForm::Automatic;
+    if (automatic) {
+        statements.declare(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
                 .local = outcome,
                 .type = storage.value_type,
                 .initializer = raw(fragment)
-            }
-        ));
+            },
+            needs_cleanup
+        );
     } else {
-        owner.declare_deferred(storage, false, declarations);
+        owner.declare_deferred(storage, false, declarations, needs_cleanup);
         owner.initialize_deferred(storage, raw(fragment), statements);
     }
     auto access = name_expression(outcome);
-    if (!automatic_storage) {
+    if (!automatic) {
         access = dereference_expression(std::move(access));
     }
     if (propagate_outcome) {
@@ -66,7 +71,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     }
     if (owner.context.semantic().may_stop_test(call)) {
         auto stopped_access = name_expression(outcome);
-        if (!automatic_storage) {
+        if (!automatic) {
             stopped_access = dereference_expression(std::move(stopped_access));
         }
         auto stopped = template_call_expression(
@@ -89,7 +94,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     auto success = call_member(std::move(access), "success_if", {});
     if (project_success) {
         const auto name = owner.fresh_local(TargetTemporaryNameKind::SuccessProjection);
-        statements.emit(generated_statement(
+        statements.declare(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
@@ -104,15 +109,16 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
                             && scalar(source(fragment).operation.type.resolved()))
                 )),
                 .initializer = std::move(success)
-            }
-        ));
+            },
+            false
+        );
         success = name_expression(name);
         complete(fragment, Saved {.local = name, .kind = SavedKind::Success});
     } else {
         complete(fragment, LoweringCompleted {});
     }
     auto failure = owner.dispatch_failure(
-        OutcomeFailureSource {.storage = outcome, .deferred = !automatic_storage},
+        OutcomeFailureSource {.storage = outcome, .deferred = !automatic},
         transport.failures,
         transport.destination
     );

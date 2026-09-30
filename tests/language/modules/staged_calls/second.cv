@@ -1,0 +1,4 @@
+import .api using { inspect_native, relay };
+
+export fn second(value: i32) -> i32 => relay(value, 3);
+export fn inspect_second(value: i32) -> i32 => inspect_native(value, 5);

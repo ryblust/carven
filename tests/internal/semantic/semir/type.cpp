@@ -42,7 +42,10 @@ const ct::Suite tests([] static noexcept {
             ct::expect(expect_termination("type-parameter-child-must-exist", [&] noexcept {
                 static_cast<void>(types.append(
                     {.value = ConstructionCallableViewTypeValue {
-                         .parameters = {{.access = AccessMode::Read, .type = future}},
+                         .parameters =
+                             {{.stage = ParameterStage::Runtime,
+                               .access = AccessMode::Read,
+                               .type = future}},
                          .result = integer,
                          .failures = failure
                      }}

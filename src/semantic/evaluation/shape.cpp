@@ -83,6 +83,14 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
             result.supported = std::holds_alternative<CppConstCharPointerType>(cpp->form);
         } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
             result.supported = builtin_is_numeric(builtin->kind)
+                || builtin->kind == BuiltinType::U8x32
+                || builtin->kind == BuiltinType::Mask32
+                || builtin->kind == BuiltinType::F32x8
+                || builtin->kind == BuiltinType::Mask8
+                || builtin->kind == BuiltinType::U8x16
+                || builtin->kind == BuiltinType::Mask16
+                || builtin->kind == BuiltinType::F32x4
+                || builtin->kind == BuiltinType::Mask4
                 || builtin->kind == BuiltinType::Bool
                 || builtin->kind == BuiltinType::Char
                 || builtin->kind == BuiltinType::Str

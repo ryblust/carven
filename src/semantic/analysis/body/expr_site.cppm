@@ -56,6 +56,10 @@ public:
         -> ExpressionResult<bool>;
     auto read_argument(ASTExprID expression, std::optional<ConstructionTypeRef> expected) noexcept
         -> ExpressionTask<Value>;
+    auto read_static_argument(
+        ASTExprID expression,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<Value>;
     auto consume_write(OperandState& state, Value value, Span span) noexcept
         -> ExpressionResult<SemanticExpression>;
     auto consume_read(OperandState& state, Value value, Span span) noexcept
@@ -66,7 +70,7 @@ public:
         OperandState state,
         Span span,
         std::optional<ConstantID> known = std::nullopt
-    ) noexcept -> Value;
+    ) noexcept -> ExpressionResult<Value>;
     auto cpp_construct(
         const ASTConstructionExpr& source,
         ConstructionTypeRef type,
@@ -86,7 +90,6 @@ public:
     ) noexcept -> ExpressionTask<Value>;
     auto type(const Value& value) const noexcept -> ConstructionTypeRef;
     auto known(const Value& value) const noexcept -> std::optional<ConstantID>;
-    auto condition_constant(const Value& value) const noexcept -> std::optional<ConstantID>;
     auto external(ConstructionTypeRef type) const noexcept -> bool;
     auto dereference(const ASTPrefixExpr& source, Span span) noexcept -> ExpressionTask<Value>;
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
@@ -164,18 +167,22 @@ public:
         Span span,
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected
     ) noexcept -> ExpressionTask<Selection>;
+    auto static_expression_lifetime() const noexcept -> LifetimeRegionID;
+    auto resolve_static_references(SemanticExpression& expression) noexcept -> AnalysisTask<bool>;
+    auto resolve_static_name(std::string_view name, Span span) noexcept
+        -> ExpressionTask<std::optional<SemanticExpression>>;
     auto resolve_name(std::string_view name, Span span) noexcept
         -> ExpressionTask<std::optional<ConstantID>>;
     auto construction_requests() noexcept -> ConstructionRequests&;
     auto resolve_function(std::string_view name, Span span) noexcept
         -> ExpressionTask<std::optional<FunctionID>>;
-    auto resolve_nominal_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>>;
+    auto resolve_type_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>>;
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> ExpressionTask<ResolvedEnumCase>;
     auto is_numeric_enum(TypeID type) noexcept -> bool;
     auto admits(const ASTExpr&) const noexcept -> bool;
     auto spelling(Span span) const noexcept -> std::string;
-    auto invalid_nominal_qualifier(Span span) noexcept -> ExpressionResult<Value>;
+    auto invalid_type_qualifier(Span span) noexcept -> ExpressionResult<Value>;
     auto require_invariant_storage(
         ConstructionTypeRef source,
         ConstructionTypeRef target,
@@ -227,7 +234,7 @@ private:
         Span span,
         BodyPendingFailureTerms pending,
         bool completes
-    ) noexcept -> Value;
+    ) noexcept -> ExpressionResult<Value>;
     auto external_operation(
         CppOperation operation,
         Value operand,

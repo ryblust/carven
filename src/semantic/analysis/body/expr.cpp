@@ -97,6 +97,7 @@ auto BodyElaborator::lambda_expression(
         }
         parameters.push_back(
             ConstructionCallableParameter {
+                .stage = ParameterStage::Runtime,
                 .access = access,
                 .type = *type,
             }
@@ -171,19 +172,25 @@ auto BodyElaborator::lambda_expression(
             ));
         }
         const auto* local = use_local(name);
-        if (local == nullptr || std::holds_alternative<ConstantID>(local->storage)) {
+        if (local != nullptr && runtime_local_outside_block(name)) {
+            co_return std::unexpected(fail(
+                capture.name_span,
+                DiagnosticCode::ConstAdmission,
+                std::format("const block cannot use the runtime value '{}'", name)
+            ));
+        }
+        if (local == nullptr || batch->static_roots.contains(local->storage.binding)) {
             co_return std::unexpected(fail(
                 capture.name_span,
                 DiagnosticCode::LambdaCaptureInvalid,
                 std::format("'{}' is not a runtime local that can be captured", name)
             ));
         }
-        if (const auto* storage = std::get_if<BoundStorage>(&local->storage);
-            storage != nullptr && storage->binding.owner() != active_builder().identity()) {
+        if (local->storage.binding.owner() != active_builder().identity()) {
             co_return std::unexpected(fail(
                 capture.name_span,
                 DiagnosticCode::ConstAdmission,
-                "constant block cannot capture a value from an enclosing execution frame"
+                "const block cannot capture a value from an enclosing execution frame"
             ));
         }
         if (type_contains_callable_view(draft(), local->type)) {
@@ -193,18 +200,8 @@ auto BodyElaborator::lambda_expression(
                 "callable views cannot be captured by a lambda"
             ));
         }
-        auto storage = local->storage.visit(
-            Overloaded {
-                [&](const BoundStorage& value) noexcept -> BodyExpressionStorage {
-                    return active_builder().binding_expression(value.binding);
-                },
-                [](ConstantID) noexcept -> BodyExpressionStorage {
-                    invariant_violation("compile-time constant reached runtime capture");
-                },
-            }
-        );
         auto built = BuiltExpression {BuiltExpression {
-            .storage = std::move(storage),
+            .storage = active_builder().binding_expression(local->storage.binding),
 
             .pending_failures = {},
             .takeable = false,
@@ -251,7 +248,7 @@ auto BodyElaborator::lambda_expression(
     );
     child.lexical_class = lexical_class;
     for (const auto& [name, local] : visible_locals()) {
-        if (std::holds_alternative<ConstantID>(local.storage)) {
+        if (batch->static_roots.contains(local.storage.binding)) {
             child.inherited_locals.emplace(name, local);
         }
     }

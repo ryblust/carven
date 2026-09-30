@@ -68,8 +68,8 @@ const ct::Suite tests([] static noexcept {
             const auto second = memory.create(integer_value(integer, 7));
 
             ct::expect(first != second);
-            auto* first_value = memory.resolve(first);
-            auto* second_value = memory.resolve(second);
+            const auto* first_value = memory.resolve(first);
+            const auto* second_value = memory.resolve(second);
             if (!ct::expect(first_value != nullptr)) {
                 return;
             }
@@ -255,7 +255,7 @@ const ct::Suite tests([] static noexcept {
             ct::expect(memory.resolve(*element) == nullptr);
             ct::expect(!(memory.view(slice).has_value()));
 
-            auto* replacement = std::get_if<ExecutionOwnedText>(memory.resolve(owner));
+            const auto* replacement = std::get_if<ExecutionOwnedText>(memory.resolve(owner));
             if (!ct::expect(replacement != nullptr)) {
                 return;
             }

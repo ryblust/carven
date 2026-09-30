@@ -262,7 +262,7 @@ const ct::Suite tests([] static noexcept {
                     );
                     check_format(
                         std::string(prefix) + "first\n\n};",
-                        std::string(prefix) + "\n    first,\n\n};\n"
+                        std::string(prefix) + " first };\n"
                     );
                 }
             );

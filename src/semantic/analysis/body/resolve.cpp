@@ -16,7 +16,6 @@ public:
     BodyResolver(
         const TypeResolution& types,
         const CanonicalTypeStore& canonical_types,
-        const ConstantStore& constants,
         const std::vector<bool>& test_stops,
         const FailureSolution& failures,
         const FailureSetStore& failure_sets,
@@ -41,7 +40,6 @@ private:
     const TypeResolution& types;
     const CanonicalTypeStore& canonical_types;
     const std::vector<bool>& test_stops;
-    const ConstantStore& constants;
     const FailureSolution& failures;
     const FailureSetStore& failure_sets;
     CompilationProvenanceReader provenance;
@@ -51,7 +49,6 @@ private:
 BodyResolver::BodyResolver(
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
-    const ConstantStore& constants,
     const std::vector<bool>& test_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
@@ -61,7 +58,6 @@ BodyResolver::BodyResolver(
     : types(types),
       canonical_types(canonical_types),
       test_stops(test_stops),
-      constants(constants),
       failures(failures),
       failure_sets(failure_sets),
       provenance(provenance),
@@ -90,6 +86,7 @@ auto BodyResolver::operator()(BodyFailures& term) const noexcept -> void {
 }
 
 auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
+    value.exits_test = false;
     (*this)(value.type);
     (*this)(value.failures);
     while (auto* adoption = std::get_if<SemArrayAdopt>(&value.value)) {
@@ -101,6 +98,9 @@ auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
         auto source = std::move(*adoption->source);
         value.constant = source.constant;
         value.value = std::move(source.value);
+    }
+    if (const auto* report = std::get_if<SemReport>(&value.value)) {
+        value.exits_test = report->kind == ReportKind::Require || report->kind == ReportKind::Fail;
     }
     if (auto* call = std::get_if<SemCall>(&value.value)) {
         (*this)(call->callee_failures);
@@ -122,24 +122,16 @@ auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
 }
 
 auto BodyResolver::leave(SemanticExpression& value) noexcept -> void {
-    const auto truth = [&](const SemanticExpression& expression) noexcept {
-        return known_boolean(constants, expression);
-    };
-    // Construction owns direct report effects; completion adds selected call effects.
-    visit_evaluation_children(value.value, truth, [&](const auto& child) noexcept {
+    visit_evaluation_children(value.value, [&](const auto& child) noexcept {
         value.exits_test |= child.exits_test;
     });
 }
 
 auto BodyResolver::child_stops(const SemanticStatement& value) const noexcept -> bool {
     auto stops = false;
-    visit_evaluation_children(
-        value.value,
-        [&](const SemanticExpression& expression) noexcept {
-            return known_boolean(constants, expression);
-        },
-        [&](const auto& child) noexcept { stops |= child.exits_test; }
-    );
+    visit_evaluation_children(value.value, [&](const auto& child) noexcept {
+        stops |= child.exits_test;
+    });
     return stops;
 }
 
@@ -153,6 +145,7 @@ auto BodyResolver::leave(SemanticRegion& value) noexcept -> void {
 }
 
 auto BodyResolver::operator()(SemanticRegion& value) const noexcept -> void {
+    value.exits_test = false;
     (*this)(value.failures);
 }
 
@@ -245,7 +238,6 @@ auto resolve_body(
     StructuredBodyDraft body,
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
-    const ConstantStore& constants,
     const std::vector<bool>& test_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,
@@ -255,7 +247,6 @@ auto resolve_body(
     const auto resolve = BodyResolver(
         types,
         canonical_types,
-        constants,
         test_stops,
         failures,
         failure_sets,
@@ -272,6 +263,9 @@ auto resolve_body(
                             return resolve(std::move(pattern));
                         });
     visit_semantic_nodes(body.region, resolve);
+    if (body.residual) {
+        visit_semantic_nodes(*body.residual, resolve);
+    }
     return SemIRBody({
         .id = body.id,
         .kind = body.kind,
@@ -281,5 +275,7 @@ auto resolve_body(
         .bindings = std::move(bindings).seal(),
         .patterns = std::move(patterns).seal(),
         .region = std::move(body.region),
+        .residual = std::move(body.residual),
+        .specialized = body.specialized,
     });
 }

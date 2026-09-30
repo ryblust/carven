@@ -55,8 +55,12 @@ target("carven-test-language-entry-point")
 target_end()
 
 for _, scenario in ipairs({
-    {name = "failure", status = 1},
-    {name = "recovery", status = 0},
+    {name = "failure", status = 1, stderr = {
+        ":7:1: error: failure 'tests.language.entry.implicit_failure.Failure' escaped the program entry\n",
+        "  failure: Failure {}\n",
+        "  note: program exited with a failure status\n",
+    }},
+    {name = "recovery", status = 0, stderr = {}},
 }) do
     target("carven-test-language-implicit-entry-" .. scenario.name)
         set_default(false)
@@ -70,11 +74,16 @@ for _, scenario in ipairs({
                 try = true, timeout = 30000, stdout = stdout_file, stderr = stderr_file,
             })
             local stdout = io.readfile(stdout_file) or ""
-            local stderr = io.readfile(stderr_file) or ""
+            local stderr = (io.readfile(stderr_file) or ""):gsub("\r\n", "\n")
             os.tryrm(stdout_file)
             os.tryrm(stderr_file)
             assert(status == scenario.status, "implicit entry exit status: " .. tostring(status))
-            assert(stdout == "" and stderr == "", "implicit entry emitted unexpected output")
+            assert(stdout == "", "implicit entry emitted unexpected output")
+            assert(#scenario.stderr ~= 0 or stderr == "", "implicit entry emitted diagnostics")
+            for _, expected in ipairs(scenario.stderr) do
+                assert(stderr:find(expected, 1, true),
+                    "implicit entry report omits: " .. expected .. "\n" .. stderr)
+            end
             return true
         end)
     target_end()

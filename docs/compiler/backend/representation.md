@@ -26,7 +26,7 @@ uses reconstruct the normalized values through the same target operations.
 
 ## Constants and default values
 
-Required constant calls and direct constant expressions arrive as completed
+Calls executed in the static stage and direct constant expressions arrive as completed
 semantic values. Finite floating values use round-tripping literals; nonfinite
 values lower to typed `std::bit_cast` calls from their stored integer bits, with
 ordinary target-symbol and type dependencies. Emission only serializes those
@@ -36,24 +36,25 @@ their completed children. These value initializers establish no source address
 identity and do not extend temporary backing lifetimes.
 
 `SliceConstant` instead requests persistent backing for its completed elements.
-`backend.lowering.constant` reconstructs completed values. `ArtifactLowering`
-owns one `ConstantStorage` that allocates its namespace against the module's
-reserved identifiers and deduplicates backing by constant identity within
-the artifact. It emits an `inline constexpr` declaration initialized by a typed
-`std::array` and realizes the slice as `runtime::as_slice` of that named array.
-Generated names distinguish linkage domains, source modules, and artifacts;
-different artifacts may use different backing. Storage remains in its source
+`backend.lowering.constant` reconstructs completed values. Each `ModuleLowering`
+owns one `ConstantStorage` within its artifact. Storage records which canonical
+constant identities have been materialized; declarations and references use
+names from `TargetNamePlan`. It emits an `inline constexpr` declaration initialized
+by a typed `std::array` and realizes the slice as `runtime::as_slice` of that array.
+Generated names distinguish linkage domains and source modules; artifacts can
+materialize the same planned backing independently. Storage remains in its source
 module's C++ namespace so user types resolve in the same scope. Empty values use
 the same representation. Elements are reconstructed from their canonical constants,
-preserving the slice's element type. Private type definitions precede static backing, followed by function
-bodies; dependencies request complete element definitions for static storage.
+preserving the slice's element type. Private type definitions precede slice backing, followed by function
+bodies; dependencies request complete element definitions for that storage.
 Target variable declarations participate in ordinary traversal, verification,
 dependency collection, and emission. The runtime slice supplies the
 read-only access and bounds operations.
 
-Constant blocks have already executed during semantic analysis. Their independent
-bodies remain available for semantic validation but have no callable or module
-item to schedule, so they produce no C++ body or runtime call.
+`const` blocks have already executed during semantic analysis. A module-scope
+block's body remains available for semantic validation but has no callable or
+module item to schedule; a block in a body is absent from every realized region.
+Neither produces a C++ body or a runtime call.
 
 `SemDefault` realizes as typed C++ value initialization (`T {}`), with pointers
 using a typed null cast. Semantic analysis has already established Carven default
@@ -63,7 +64,7 @@ scheduling preserves source operand order, snapshots and cleanup. Empty structur
 and default arrays stay compact in generated syntax. Scalar, pointer, slice and
 range defaults need no execution when discarded.
 Native default constructors remain observable even when the result is discarded,
-and C++ checks their availability and access. Required constant defaults arrive
+and C++ checks their availability and access. Defaults in static roots arrive
 at lowering as completed values through the usual freezing path.
 
 Constant functions also retain ordinary runtime bodies. Runtime calls use normal
@@ -198,7 +199,7 @@ protocol.
 
 C string constants have an intrinsic external `const char*` type. Lowering emits
 their decoded bytes as a narrow C++ string literal converted to a pointer, so
-calls and deduction receive the declared pointer type with static storage lifetime.
+calls and deduction receive the declared pointer type with program-lifetime storage.
 Ordinary string literals retain `std::string_view` realization.
 
 [Artifact-local query aliases](artifacts.md#external-query-aliases) name shared

@@ -9,12 +9,16 @@ namespace {
 
 struct DeclarationReferenceFacts final {
     std::flat_map<NominalDeclarationRef, TargetTypeCompleteness> requirements;
-    std::flat_set<CallableID> closures;
+    std::flat_set<CallableID> callables;
 };
 
 class DeclarationReferenceCollector final {
 public:
-    explicit DeclarationReferenceCollector(const SemIRProgram& semantic) noexcept;
+    // Each module publishes the references exposed by its own definitions.
+    DeclarationReferenceCollector(
+        const SemIRProgram& semantic,
+        std::optional<ModuleID> surface_module
+    ) noexcept;
     auto finish() && noexcept -> DeclarationReferenceFacts;
 
 private:
@@ -27,20 +31,41 @@ private:
     auto collect_signature(CallableSignatureID signature_id) noexcept -> void;
     auto collect_callable(CallableID callable) noexcept -> void;
     auto collect_type(TypeID type_id, TargetTypeCompleteness completeness) noexcept -> void;
+    auto collect_surface(CallableID callable) noexcept -> void;
+    auto collect_body_callable(CallableID callable) noexcept -> void;
 
 public:
     auto collect_declaration(DeclarationRef declaration) noexcept -> void;
 
 private:
     const SemIRProgram& semantic;
+    std::optional<ModuleID> surface_module;
+    std::flat_map<CallableID, FunctionID> module_functions;
     DeclarationReferenceFacts result;
     std::set<std::pair<TypeID, TargetTypeCompleteness>> visited_types;
     std::set<CallableSignatureID> visited_signatures;
+    std::set<CallableID> visited_surfaces;
 };
 
-DeclarationReferenceCollector::DeclarationReferenceCollector(const SemIRProgram& semantic) noexcept
+DeclarationReferenceCollector::DeclarationReferenceCollector(
+    const SemIRProgram& semantic,
+    std::optional<ModuleID> surface_module
+) noexcept
     : semantic(semantic),
-      result {.requirements = {}, .closures = {}} {}
+      surface_module(surface_module),
+      result {.requirements = {}, .callables = {}} {
+    if (!surface_module) {
+        return;
+    }
+    for (const auto item : semantic.declarations().module_decl(*surface_module).items) {
+        if (const auto* function = std::get_if<FunctionID>(&item)) {
+            module_functions.emplace(
+                semantic.declarations().function(*function).callable,
+                *function
+            );
+        }
+    }
+}
 
 auto DeclarationReferenceCollector::finish() && noexcept -> DeclarationReferenceFacts {
     return std::move(result);
@@ -75,6 +100,9 @@ auto DeclarationReferenceCollector::collect_signature(CallableSignatureID signat
     }
     const auto& signature = semantic.callable_signatures().signature(signature_id);
     for (const auto& parameter : signature.parameters) {
+        if (parameter.stage == ParameterStage::Static) {
+            continue;
+        }
         collect_type(
             parameter.type,
             parameter.access == AccessMode::Read ? TargetTypeCompleteness::CompleteDefinition
@@ -126,7 +154,7 @@ auto DeclarationReferenceCollector::collect_type(
             },
             [&](const FunctionTypeValue& value) noexcept { collect_callable(value.callable); },
             [&](const ClosureTypeValue& value) noexcept {
-                result.closures.insert(value.callable);
+                result.callables.insert(value.callable);
                 collect_callable(value.callable);
                 const auto body_id = semantic.declarations().body_for_callable(value.callable);
                 const auto& body = semantic.bodies().body(*body_id);
@@ -144,12 +172,39 @@ auto DeclarationReferenceCollector::collect_type(
     );
 }
 
+auto DeclarationReferenceCollector::collect_body_callable(CallableID callable) noexcept -> void {
+    const auto found = module_functions.find(callable);
+    if (found == module_functions.end()) {
+        return;
+    }
+    result.callables.insert(callable);
+    collect_declaration(found->second);
+}
+
+auto DeclarationReferenceCollector::collect_surface(CallableID callable) noexcept -> void {
+    if (!visited_surfaces.insert(callable).second) {
+        return;
+    }
+    const auto& surface = semantic.callable_surface(callable);
+    for (const auto type : surface.types) {
+        collect_type(type, TargetTypeCompleteness::CompleteDefinition);
+    }
+    for (const auto reference : surface.callables) {
+        collect_body_callable(reference);
+    }
+}
+
 auto DeclarationReferenceCollector::collect_declaration(DeclarationRef declaration) noexcept
     -> void {
     declaration.visit(
         Overloaded {
             [&](FunctionID id) noexcept {
-                collect_callable(semantic.declarations().function(id).callable);
+                const auto& function = semantic.declarations().function(id);
+                collect_callable(function.callable);
+                result.callables.insert(function.callable);
+                if (function.module_id == surface_module) {
+                    collect_surface(function.callable);
+                }
             },
             [&](StructID id) noexcept {
                 for (const auto& field : semantic.declarations().structure(id).fields) {
@@ -232,7 +287,7 @@ auto collect_target_references(
             std::vector<std::flat_map<NominalDeclarationRef, TargetTypeCompleteness>>(
                 surface_declarations.size()
             ),
-        .surface_closures = std::vector<std::flat_set<CallableID>>(surface_declarations.size()),
+        .surface_callables = std::vector<std::flat_set<CallableID>>(surface_declarations.size()),
     };
     auto visited = std::vector<bool>(surface_declarations.size());
     for (const auto entry : semantic.declarations().modules()) {
@@ -241,13 +296,13 @@ auto collect_target_references(
             invariant_violation("semantic modules are not a dense owned table");
         }
         visited[index] = true;
-        auto collector = DeclarationReferenceCollector(semantic);
+        auto collector = DeclarationReferenceCollector(semantic, entry.id);
         for (const auto declaration : surface_declarations[index]) {
             collector.collect_declaration(declaration);
         }
         auto facts = std::move(collector).finish();
         result.surface_requirements[index] = std::move(facts.requirements);
-        result.surface_closures[index] = std::move(facts.closures);
+        result.surface_callables[index] = std::move(facts.callables);
     }
     if (!std::ranges::all_of(visited, std::identity {})) {
         invariant_violation("surface references contain an unknown module row");
@@ -259,7 +314,7 @@ auto target_nominal_dependencies(
     const SemIRProgram& semantic,
     NominalDeclarationRef nominal
 ) noexcept -> std::vector<NominalDeclarationRef> {
-    auto collector = DeclarationReferenceCollector(semantic);
+    auto collector = DeclarationReferenceCollector(semantic, std::nullopt);
     collector.collect_declaration(target_declaration_ref(nominal));
     const auto facts = std::move(collector).finish();
     auto result = std::vector<NominalDeclarationRef>();

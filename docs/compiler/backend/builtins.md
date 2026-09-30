@@ -42,7 +42,7 @@ Nested owning expressions, initialization, and failure-transport returns retain 
 expression lambda to preserve their construction and delivery boundary. Its
 parameters use the existing Read storage policy.
 
-Both forms append static text and call
+Both forms append literal text and call
 `integer<base, uppercase, zero_pad>(value, width)` or
 `integer_dynamic_width<base, uppercase, zero_pad>(value, width)` in order, copy
 text fields, select boolean text, and encode Unicode scalars directly. Floating fields call
@@ -52,7 +52,7 @@ a bounded stack buffer and append converted bytes directly to the destination.
 Writer realization consumes completed operands before emitting reservation and
 field writes.
 
-The prepared minimum and maximum byte counts for statically bounded fragments
+The prepared minimum and maximum byte counts for fragments with known bounds
 reach the writer as ordinary arguments, followed by an initializer list of
 explicit dynamic text byte lengths. Carven emits each `.size()` query after all
 holes complete. Runtime
@@ -118,6 +118,22 @@ to create a view over the input bytes. Neither operation validates content;
 semantic ownership analysis preserves the text's input backing before lowering.
 The backend supplies runtime includes without a source-level header import.
 
+`utf.hpp` validates borrowed, contiguous UTF-8 through `utf8_is_valid`.
+Constant evaluation, inputs shorter than 32 bytes, and targets selecting the
+portable SIMD backend use its scalar scanner. Other runtime inputs use the
+existing SIMD component to check complete 32-byte blocks. Three preceding bytes
+carry continuation requirements across blocks; the scalar scanner revisits the
+last scalar and checks the remaining tail, including truncation at an exact block
+boundary. Loads copy only proven readable bytes and require no report site.
+The scan returns a Boolean; `checked_utf8` alone attaches the ingress site's
+failure report. Single-scalar encoding and decoding remain scalar.
+
+SIMD selection follows the consumer's compilation target and
+`CARVEN_SIMD_FORCE_SCALAR`; `simd::hardware_accelerated` exposes that selection,
+not a runtime CPU probe. Translation units using these inline runtime headers
+select the same SIMD backend. Runtime does not depend on the `std::utf` craft,
+whose source implementation owns streaming state and precise encoding errors.
+
 ## Builtin calls and reports
 
 `SemPrint` lowers to runtime printing calls; `SemReport` shares condition
@@ -144,11 +160,11 @@ construction and operand completion retain their boundaries.
 Structural print operands use a borrowing wrapper with a generated stateless,
 const-callable display helper. `realization.display` reads published nominal
 fields and enum cases and constructs direct field accesses and writer statements.
-`ModuleLowering` shares helpers by semantic type and display depth across all use
-sites in the module. Helpers are emitted in dependency order after complete
+`ModuleLowering` shares one helper per semantic type across all use sites in the
+module. Helpers are emitted in dependency order after complete
 private type declarations, before consuming functions. Fully qualified helper
 types avoid local name lookup; no function pointer or captured helper state is
-needed. Generated size follows the reachable type-depth pairs and their fields,
+needed. Generated size follows the reachable types and their fields,
 plus constant-size use sites. Field layout is emitted as literal text;
 sequence emitters receive the known depth for indentation and visit runtime
 elements within display limits. `DisplayWriter` handles scalar conversion, nested text
@@ -172,9 +188,40 @@ Known left operands select their branch during realization. Explanation
 storage is local to the report operation and is completed before message evaluation;
 `TestFailure` borrows it only during the reporter callback.
 
+`trap.hpp` owns `SourceSite`, the active test context, the report layout, and
+trap termination. A `SourceSite` names a Carven file, line, and column in two
+machine words on 64-bit targets: a null-terminated file literal and two 32-bit numbers.
+The site is a required argument of every operation that can report: checked
+division, remainder, shifts, array and slice indexing, slice ranges, SIMD lane
+and memory checks, scalar conversion, test reports, and the entry wrapper. A
+`char` that crosses an imported result or an exported parameter reports the
+declaration of that function. A generated statement spans several physical
+lines under one `#line` directive, so a C++ source location cannot supply the
+column. A native boundary without a Carven position uses a native C++ site:
+bytes adopted from a native producer, entry
+arguments, a null function pointer, a subscript written in C++, and the test
+runner protocol. An index check reports its subscript's position, which is the
+position the executor reports. Trap functions are marked cold and non-inlined
+where the C++ compiler supports it. After the checked wrapper is inlined,
+native optimization can defer site materialization to the failure path; this
+is not guaranteed by the site's size or the cold attribute alone.
+`entry.hpp` uses the same layout for a failure that escapes the program entry;
+that report does not terminate the process.
+
+For SIMD `lane` and `with_lane`, preparation selects a template
+overload when the control has a known value within that operation's bounds.
+These overloads enforce the bound with `static_assert` and take no `SourceSite`.
+Operand effects retain source order even when the control value becomes a
+template argument. Dynamic controls and known out-of-range controls retain the
+checked operation and its original report site. Known mask prefixes already fold
+to complete constant masks. Memory operations still check the actual slice range;
+a known lane index is not a memory-range proof.
+
 `testing.hpp` owns test-stop transport and `TestContext`, which tracks the active
 case and completed-case counts. `report.hpp` owns condition observation, failure
-text, and fatal assertions. Report calls carry the source line and column.
+text, and fatal assertions. `check`, `require`, and `fail` call
+`report_test_failure`, which reaches the runner of the active test and traps at
+the report's site when no test is active.
 The default layout groups test identity, condition, operands, and message under
 each failure location and identifies test stop or execution abort. It borrows
 the active case's module and name for every report. The runner emits a summary

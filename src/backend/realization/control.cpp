@@ -15,6 +15,24 @@ import :support.task;
 import :support.visit;
 import std;
 
+namespace {
+
+// Selects between one branch and its alternative; emission spells a nested
+// conditional alternative as `else if`.
+auto conditional(TargetIfBranch branch, std::vector<TargetStmt> alternative) noexcept
+    -> TargetStmt {
+    auto branches = std::vector<TargetIfBranch>();
+    branches.push_back(std::move(branch));
+    return generated_statement(
+        TargetIfStmt {
+            .branches = std::move(branches),
+            .else_body = alternative.empty() ? std::nullopt : std::optional(std::move(alternative))
+        }
+    );
+}
+
+} // namespace
+
 auto BodyRealizer::structured_expression(
     const SemanticExpression& source,
     const LoweringResultDestination& result,
@@ -113,24 +131,16 @@ auto BodyRealizer::lower_if(
             }
             co_return statements;
         }
-        auto branches = std::vector<TargetIfBranch>();
         auto selected = (co_await region(branch.body, result));
         auto alternative = (co_await self(index + 1uz));
         const auto continues = selected.continues() || alternative.continues();
         statements.record_exits(selected.exits());
         statements.record_exits(alternative.exits());
-        branches.push_back(
-            {.condition = predicate_expression(std::move(*test)),
-             .body = std::move(selected).finish()}
-        );
         statements.emit(
-            generated_statement(
-                TargetIfStmt {
-                    .branches = std::move(branches),
-                    .else_body = alternative.empty()
-                        ? std::nullopt
-                        : std::optional {std::move(alternative).finish()}
-                }
+            conditional(
+                {.condition = predicate_expression(std::move(*test)),
+                 .body = std::move(selected).finish()},
+                std::move(alternative).finish()
             ),
             continues
         );
@@ -141,37 +151,33 @@ auto BodyRealizer::lower_if(
 }
 
 auto BodyRealizer::lower_arm(
-    const PatternBindings& pattern,
-    LoweringPredicate predicate,
+    const PatternSelection& pattern,
     std::span<const LocalBindingID> bindings,
     const SemanticRegion& source,
     const std::optional<SemanticExpression>& guard,
     const LoweringResultDestination& result,
-    RegionExit& done
+    RegionExit* done
 ) noexcept -> ContinuationTask<LoweringStmtBuilder> {
-    auto statements = LoweringStmtBuilder();
     auto chosen = LoweringStmtBuilder();
+    if (!pattern.accepted) {
+        co_return chosen;
+    }
     for (const auto binding : bindings) {
-        chosen.emit(generated_statement(
-            TargetVariableStmt {
-                .binding = TargetVariableBinding::ConstValue,
-                .maybe_unused = true,
-                .local = binding_locals.at(binding),
-                .type = context.lower_type(metadata.binding(binding).type),
-                .initializer =
-                    dereference_expression(name_expression(pattern.addresses.at(binding)))
-            }
-        ));
+        declare_binding(
+            binding,
+            PatternRealizer::subject_expression(pattern.bindings.at(binding)),
+            chosen
+        );
     }
-    chosen.append((co_await guarded_region(source, guard, result, done)));
-    if (const auto* known = std::get_if<LoweringKnownBool>(&predicate)) {
-        if (known->value) {
-            statements.append(std::move(chosen));
-        }
+    if (done != nullptr) {
+        chosen.append((co_await guarded_region(source, guard, result, *done)));
     } else {
-        pattern_branch(predicate_expression(std::move(predicate)), std::move(chosen), statements);
+        if (guard) {
+            invariant_violation("guarded pattern arm has no selection exit");
+        }
+        chosen.append((co_await region(source, result)));
     }
-    co_return statements;
+    co_return chosen;
 }
 
 auto BodyRealizer::lower_match(
@@ -184,84 +190,111 @@ auto BodyRealizer::lower_match(
         .target = exit_target(LoweringExitKind::Value)
     };
     auto scope = LoweringStmtBuilder();
-    const auto subject = fresh_local(TargetTemporaryNameKind::Owner);
-    auto subject_value = scope.accept((co_await operand({
-        .expression = std::addressof(*value.subject),
-        .use = value.subject_is_place ? PreparedUse::ConstPlace : PreparedUse::Consume,
-        .demand = PreparedDemand::Value,
-    })));
-    if (!scope.continues()) {
-        destination.append(std::move(scope));
-        co_return {};
-    }
-    scope.emit(generated_statement(
-        TargetVariableStmt {
-            .binding = value.subject_is_place ? TargetVariableBinding::RvalueReference
-                                              : TargetVariableBinding::ConstValue,
-            .maybe_unused = true,
-            .local = subject,
-            .type = context.intrinsic_type(TargetSymbol::Auto),
-            .initializer = std::move(*subject_value)
-        }
-    ));
-    for (const auto& arm : value.arms) {
-        if (!arm.reachable) {
-            continue;
-        }
+    // A named local subject is matched in place; any other subject is held once.
+    const auto* named = std::get_if<SemBinding>(&value.subject->value);
+    const auto direct = value.subject_is_place
+        && named != nullptr
+        && !capture_names.contains(named->binding)
+        && !delayed_bindings.contains(named->binding);
+    const auto subject =
+        direct ? binding_locals.at(named->binding) : fresh_local(TargetTemporaryNameKind::Owner);
+    if (!direct) {
+        auto subject_value = scope.accept((co_await operand({
+            .expression = std::addressof(*value.subject),
+            .use = value.subject_is_place ? PreparedUse::ConstPlace : PreparedUse::Consume,
+            .demand = PreparedDemand::Value,
+        })));
         if (!scope.continues()) {
-            break;
+            destination.append(std::move(scope));
+            co_return {};
         }
-        auto statements = LoweringStmtBuilder();
-        if (const auto* binding =
-                std::get_if<BindingPattern>(&metadata.pattern(arm.pattern).value)) {
-            declare_binding(binding->binding, name_expression(subject), statements);
-            statements.append((co_await guarded_region(arm.body, arm.guard, result, done)));
-            scope.scope(std::move(statements));
-            continue;
-        }
-        if (arm.pattern_always_matches) {
-            statements.append((co_await guarded_region(arm.body, arm.guard, result, done)));
-            scope.scope(std::move(statements));
-            continue;
-        }
-        auto matcher = PatternRealizer(
-            context,
-            names,
-            metadata,
-            [&](PatternID pattern, bool upper, LoweringStmtBuilder& destination) noexcept {
-                return pattern_bound(arm.pattern_bounds, pattern, upper, destination);
+        scope.emit(generated_statement(
+            TargetVariableStmt {
+                .binding = value.subject_is_place ? TargetVariableBinding::RvalueReference
+                                                  : TargetVariableBinding::ConstValue,
+                .maybe_unused = true,
+                .local = subject,
+                .type = context.intrinsic_type(TargetSymbol::Auto),
+                .initializer = std::move(*subject_value)
             }
-        );
-        const auto pattern = matcher.prepare(pattern_bindings(arm.bindings), statements);
-        auto predicate = statements.accept(
-            co_await matcher.match(
+        ));
+    }
+    // Arms are tried in order. A guard-free arm whose test needs no statements
+    // selects between its body and the remaining arms, so the chain needs no
+    // exit label; other arms fall through to their successors and leave through
+    // `done` when selected.
+    const auto lower_arms =
+        [&](this const auto& self,
+            std::size_t first) noexcept -> ContinuationTask<LoweringStmtBuilder> {
+        auto arms = LoweringStmtBuilder();
+        for (auto index = first; index < value.arms.size() && arms.continues(); ++index) {
+            const auto& arm = value.arms[index];
+            if (!arm.reachable) {
+                continue;
+            }
+            auto matcher = PatternRealizer(
+                context,
+                names,
+                metadata,
+                arm.pattern_bounds,
+                [&](PatternID pattern, bool upper, LoweringStmtBuilder& destination) noexcept {
+                    return pattern_bound(arm.pattern_bounds, pattern, upper, destination);
+                }
+            );
+            auto pattern = co_await matcher.match(
                 arm.pattern,
-                {.root = subject, .dereference_root = false, .payload_index = std::nullopt},
-                pattern
-            )
-        );
-        if (predicate) {
-            statements.append(
-                co_await lower_arm(
-                    pattern,
-                    std::move(*predicate),
-                    arm.bindings,
-                    arm.body,
-                    arm.guard,
-                    result,
-                    done
-                )
+                {.root = subject, .dereference_root = false, .payload_index = std::nullopt}
+            );
+            removable_locals.insert_range(matcher.projection_locals());
+            if (!arm.guard
+                && pattern.tests.size() == 1uz
+                && pattern.tests.front().statements.empty()
+                && pattern.tests.front().normal
+                && !known_predicate(pattern.tests.front().normal).has_value()) {
+                auto predicate = std::move(*pattern.tests.front().normal);
+                pattern.tests.clear();
+                auto selected =
+                    co_await lower_arm(pattern, arm.bindings, arm.body, arm.guard, result, nullptr);
+                auto alternative = (co_await self(index + 1uz));
+                const auto continues = selected.continues() || alternative.continues();
+                arms.record_exits(selected.exits());
+                arms.record_exits(alternative.exits());
+                arms.emit(
+                    conditional(
+                        {.condition = predicate_expression(std::move(predicate)),
+                         .body = std::move(selected).finish()},
+                        std::move(alternative).finish()
+                    ),
+                    continues
+                );
+                co_return arms;
+            }
+            const auto unconditional = !pattern.rejected && !arm.guard;
+            auto selected = co_await lower_arm(
+                pattern,
+                arm.bindings,
+                arm.body,
+                arm.guard,
+                result,
+                unconditional ? nullptr : std::addressof(done)
+            );
+            arms.scope(matcher.select(std::move(pattern), std::move(selected)));
+            if (unconditional) {
+                co_return arms;
+            }
+        }
+        if (arms.continues()) {
+            arms.terminate(
+                generated_statement(
+                    TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
+                ),
+                LoweringExitTarget {LoweringExitKind::Unreachable, 0}
             );
         }
-        scope.scope(std::move(statements));
-    }
+        co_return arms;
+    };
     if (scope.continues()) {
-        scope.terminate(
-            generated_statement(
-                TargetUnreachableStmt {.reason = TargetUnreachableReason::SemIRProof}
-            ),
-            LoweringExitTarget {LoweringExitKind::Unreachable, 0}
-        );
+        scope.append((co_await lower_arms(0uz)));
     }
     destination.scope(std::move(scope));
     if (destination.exits().contains(done.target)) {
@@ -342,31 +375,26 @@ auto BodyRealizer::lower_try(
             context,
             names,
             metadata,
+            arm.pattern_bounds,
             [&](PatternID pattern, bool upper, LoweringStmtBuilder& destination) noexcept {
                 return pattern_bound(arm.pattern_bounds, pattern, upper, destination);
             }
         );
-        const auto state = matcher.prepare(pattern_bindings(arm.bindings), statements);
-        auto predicate = std::optional<LoweringPredicate>(LoweringKnownBool {false});
+        auto choices = std::vector<PatternSelection>();
         for (const auto& alternative : arm.alternatives) {
             if (!alternative.reachable) {
                 continue;
             }
-            if (!predicate || known_predicate(predicate) == true) {
-                break;
-            }
             auto candidate = LoweringStmtBuilder();
-            auto selected = std::optional<LoweringPredicate>(LoweringKnownBool {true});
+            auto selected = matcher.test(
+                std::move(LoweringStmtBuilder())
+                    .complete<LoweringPredicate>(LoweringKnownBool {true})
+            );
             if (const auto* pattern = std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
                 if (failures.size() == 1uz) {
-                    selected = candidate.accept(
-                        co_await matcher.match(
-                            pattern->inner,
-                            {.root = storage,
-                             .dereference_root = true,
-                             .payload_index = std::nullopt},
-                            state
-                        )
+                    selected = co_await matcher.match(
+                        pattern->inner,
+                        {.root = storage, .dereference_root = true, .payload_index = std::nullopt}
                     );
                 } else {
                     const auto projection = fresh_local(TargetTemporaryNameKind::FailureProjection);
@@ -381,44 +409,44 @@ auto BodyRealizer::lower_try(
                             .initializer = failure_projection(slot, pattern->type.resolved())
                         }
                     ));
-                    selected = matcher.combine(
-                        ShortCircuitOperator::And,
-                        LoweringDynamicBool {binary_expression(
-                            name_expression(projection),
-                            TargetBinaryOperator::NotEqual,
-                            intrinsic_expression(TargetSymbol::StdNullptr)
-                        )},
+                    selected = matcher.test(
+                        std::move(candidate).complete<LoweringPredicate>(
+                            LoweringDynamicBool {binary_expression(
+                                name_expression(projection),
+                                TargetBinaryOperator::NotEqual,
+                                intrinsic_expression(TargetSymbol::StdNullptr)
+                            )}
+                        )
+                    );
+                    selected.source_locals.insert(projection);
+                    selected = matcher.sequence(
+                        std::move(selected),
                         co_await matcher.match(
                             pattern->inner,
                             {.root = projection,
                              .dereference_root = true,
-                             .payload_index = std::nullopt},
-                            state
-                        ),
-                        candidate
+                             .payload_index = std::nullopt}
+                        )
                     );
                 }
             }
-            predicate = matcher.combine(
-                ShortCircuitOperator::Or,
-                std::move(*predicate),
-                std::move(candidate).complete<LoweringPredicate>(std::move(selected)),
-                statements
-            );
+            const auto rejected = selected.rejected;
+            choices.push_back(std::move(selected));
+            if (!rejected) {
+                break;
+            }
         }
-        if (predicate) {
-            statements.append(
-                co_await lower_arm(
-                    state,
-                    std::move(*predicate),
-                    arm.bindings,
-                    arm.body,
-                    arm.guard,
-                    result,
-                    done
-                )
-            );
-        }
+        auto pattern = matcher.alternatives(std::move(choices));
+        removable_locals.insert_range(matcher.projection_locals());
+        auto selected = co_await lower_arm(
+            pattern,
+            arm.bindings,
+            arm.body,
+            arm.guard,
+            result,
+            std::addressof(done)
+        );
+        statements.append(matcher.select(std::move(pattern), std::move(selected)));
         caught = previous_caught;
         destination.scope(std::move(statements));
     }
@@ -427,29 +455,6 @@ auto BodyRealizer::lower_try(
         destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
     }
     co_return {};
-}
-
-auto BodyRealizer::pattern_bindings(std::span<const LocalBindingID> bindings) const noexcept
-    -> std::vector<PatternBindingType> {
-    auto result = std::vector<PatternBindingType>();
-    result.reserve(bindings.size());
-    for (const auto binding : bindings) {
-        result.push_back({.binding = binding, .type = metadata.binding(binding).type});
-    }
-    return result;
-}
-
-auto BodyRealizer::pattern_branch(
-    TargetExpr condition,
-    LoweringStmtBuilder selected,
-    LoweringStmtBuilder& destination
-) noexcept -> void {
-    destination.record_exits(selected.exits());
-    auto branches = std::vector<TargetIfBranch>();
-    branches.push_back({.condition = std::move(condition), .body = std::move(selected).finish()});
-    destination.emit(generated_statement(
-        TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
-    ));
 }
 
 auto BodyRealizer::pattern_bound(

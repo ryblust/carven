@@ -189,7 +189,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Syntax dump: test and constant block labels distinguish absent and empty",
+        "Syntax dump: test and const block labels distinguish absent and empty",
         [] static noexcept {
             const auto owned =
                 dump_source("labels.cv", "test {} test \"\" {} const \"scope\" { const {} }");
@@ -205,7 +205,7 @@ const ct::Suite tests([] static noexcept {
 
             const auto output = render_ast_dump(owned.sources, *parsed);
             ct::expect(output.contains("TestDeclaration"));
-            ct::expect(output.contains("ConstantBlock"));
+            ct::expect(output.contains("ConstBlock"));
             ct::expect(output.contains("label <absent>"));
             ct::expect(output.contains("label [13, 15) \"\\\"\\\"\""));
             ct::expect(output.contains("label [25, 32) \"\\\"scope\\\"\""));
@@ -439,6 +439,50 @@ const ct::Suite tests([] static noexcept {
         ct::expect(output.contains("global_root [12, 14) \"::\""));
         ct::expect(output.contains("global_root [23, 25) \"::\""));
         ct::expect(output.contains("name [25, 31) \"vendor\""));
+    });
+    ct::test(
+        "Dump: static function parameter qualifier retains its source span",
+        [] static noexcept {
+            const auto owned = dump_source("static.cv", "fn pick(const index: usize) => index;");
+            const auto source = owned.sources.view(owned.source_id);
+            const auto lexical = lex(source);
+            if (!ct::expect(lexical.diagnostics.empty())) {
+                return;
+            }
+            const auto parsed = parse(owned.sources, lexical.value);
+            if (!ct::expect(parsed.has_value())) {
+                return;
+            }
+
+            const auto output = render_ast_dump(owned.sources, *parsed);
+            ct::expect(output.contains("FunctionParameter [8, 26)"));
+            ct::expect(output.contains("const [8, 13) \"const\""));
+            ct::expect(output.contains("name [14, 19) \"index\""));
+        }
+    );
+
+    ct::test("Dump: static control qualifiers retain their source spans", [] static noexcept {
+        const auto owned = dump_source(
+            "static.cv",
+            "fn f(n) { const for i in 0..n { const if i == 0 { continue; } } }"
+        );
+        const auto source = owned.sources.view(owned.source_id);
+        const auto lexical = lex(source);
+        if (!ct::expect(lexical.diagnostics.empty())) {
+            return;
+        }
+        const auto parsed = parse(owned.sources, lexical.value);
+        if (!ct::expect(parsed.has_value())) {
+            return;
+        }
+
+        const auto output = render_ast_dump(owned.sources, *parsed);
+        ct::expect(output.contains("ForStatement [10, 63)"));
+        ct::expect(output.contains("const [10, 15) \"const\""));
+        ct::expect(output.contains("for [16, 19) \"for\""));
+        ct::expect(output.contains("IfForm [32, 61)"));
+        ct::expect(output.contains("const [32, 37) \"const\""));
+        ct::expect(output.contains("if [38, 40) \"if\""));
     });
 });
 

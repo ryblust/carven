@@ -4,7 +4,6 @@ import :diagnostics.builder;
 import :diagnostics.code;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
-import :semantic.analysis.constant.evaluation;
 import :semantic.analysis.constant.freeze;
 import :semantic.analysis.expr.aggregate;
 import :semantic.analysis.expr.conversion;
@@ -18,6 +17,7 @@ import :semantic.analysis.expr.text;
 import :semantic.analysis.failure;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.analysis.stage.session;
 import :semantic.evaluation.limits;
 import :semantic.evaluation.shape;
 import :semantic.evaluation.value;
@@ -29,11 +29,11 @@ import :support.invariant;
 import std;
 
 template<typename Scope>
-class ConstantRootSite final {
+class StaticRootSite final {
 public:
     using Value = SemanticExpression;
     using Selection = Value;
-    static constexpr auto mode = ExpressionMode::RequiredRoot;
+    static constexpr auto mode = ExpressionMode::StaticRoot;
 
     struct OperandState final {
         bool completes;
@@ -68,7 +68,7 @@ public:
             return std::unexpected(fail(
                 span,
                 DiagnosticCode::ConstAdmission,
-                "class representation is not admitted in required constant expressions"
+                "class representation is not supported in compile-time execution"
             ));
         }
         return {};
@@ -118,7 +118,7 @@ public:
         return make(type, std::move(value), span);
     }
 
-    ConstantRootSite(
+    StaticRootSite(
         ProgramDraft& program,
         ProgramModuleID module_id,
         ASTView syntax,
@@ -130,13 +130,8 @@ public:
           source_module_id(module_id),
           ast(syntax),
           scope(scope),
-          lifetimes(program.create_evaluation_root_identity()),
-          lifetime(lifetimes.add({
-              .parent = std::nullopt,
-              .kind = LifetimeRegionKind::FullExpression,
-              .origin = program.append_source_origin(program.module_source(module_id), root_span),
-          })),
-          empty_failures(program.intern_failure_set({})) {
+          lifetime(root_lifetime(program, module_id, scope, root_span)),
+          empty_failures(program.add_empty_failure_term()) {
         if (syntax.source_id() != program.syntax_tree(module_id).view().source_id()) {
             invariant_violation("constant expression mixed a module with another syntax tree");
         }
@@ -182,10 +177,6 @@ public:
     }
 
     auto known(const Value& value) const noexcept -> std::optional<ConstantID> {
-        return value.constant;
-    }
-
-    auto condition_constant(const Value& value) const noexcept -> std::optional<ConstantID> {
         return value.constant;
     }
 
@@ -247,6 +238,15 @@ public:
 
     auto extension(const ASTNameExpr& name, Span span, std::optional<ConstructionTypeRef>) noexcept
         -> ExpressionTask<Value> {
+        if constexpr (requires { scope.resolve_static_name(spelling(name.name_span), span); }) {
+            auto selected = co_await scope.resolve_static_name(spelling(name.name_span), span);
+            if (!selected) {
+                co_return std::unexpected(selected.error());
+            }
+            if (*selected) {
+                co_return std::move(**selected);
+            }
+        }
         auto resolved = (co_await scope.resolve_name(
             program.source_slice_copy(source_module_id, name.name_span),
             name.name_span
@@ -281,7 +281,7 @@ public:
         const auto result_type = type(*operand);
         co_return make(
             result_type,
-            SemPropagate {OwnedSemanticExpression(std::move(*operand))},
+            SemPropagate {.operand = OwnedSemanticExpression(std::move(*operand))},
             span
         );
     }
@@ -336,8 +336,8 @@ public:
         return program.source_slice_copy(source_module_id, span);
     }
 
-    auto resolve_nominal_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>> {
-        co_return (co_await scope.resolve_nominal_qualifier(id));
+    auto resolve_type_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>> {
+        co_return (co_await scope.resolve_type_qualifier(id));
     }
 
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
@@ -354,7 +354,7 @@ public:
         co_return selected;
     }
 
-    auto invalid_nominal_qualifier(Span) const noexcept -> ExpressionResult<Value> {
+    auto invalid_type_qualifier(Span) const noexcept -> ExpressionResult<Value> {
         return std::unexpected(ExpressionNotAdmitted {});
     }
 
@@ -477,7 +477,7 @@ public:
             co_return std::unexpected(fail(
                 span,
                 DiagnosticCode::ConstAdmission,
-                "required constant expression can only call an explicitly declared const fn"
+                "compile-time execution can only call an explicitly declared const fn"
             ));
         }
         auto& requests = scope.construction_requests();
@@ -529,7 +529,7 @@ public:
             contract.result,
             SemCall {
                 .callee = OwnedSemanticExpression(std::move(selected_callee)),
-                .target = std::nullopt,
+                .target = declaration.callable,
                 .arguments = std::move(arguments),
                 .callee_failures = BodyFailures(contract.failures)
             },
@@ -562,7 +562,7 @@ public:
         });
     }
 
-    auto evaluate(const Value& value) noexcept -> AnalysisTask<ExecutionValue> {
+    auto complete_root(const Value& value) noexcept -> void {
         if (!pending_failures.empty()) {
             program.require_empty_failures(
                 program.add_union_failure_term(std::move(pending_failures)),
@@ -570,17 +570,52 @@ public:
                 EmptyFailureRequirementKind::OrdinaryConsumption
             );
         }
-        co_return (co_await evaluate_constant_root(program, scope.construction_requests(), value));
+    }
+
+    auto evaluate(Value& value) noexcept -> ExpressionTask<ExecutionValue> {
+        complete_root(value);
+        // Type construction still needs local constants before body staging.
+        // Keep that pre-read at the scope boundary until types carry static inputs.
+        if constexpr (requires { scope.resolve_static_references(value); }) {
+            auto closed = co_await scope.resolve_static_references(value);
+            if (!closed) {
+                co_return std::unexpected(closed.error());
+            }
+            if (!*closed) {
+                co_return std::unexpected(ExpressionNotAdmitted {});
+            }
+        }
+        co_return co_await scope.construction_requests().stage().evaluate(value);
     }
 
 private:
+    static auto root_lifetime(
+        ProgramDraft& program,
+        ProgramModuleID module_id,
+        Scope& scope,
+        Span span
+    ) noexcept -> LifetimeRegionID {
+        if constexpr (requires { scope.static_expression_lifetime(); }) {
+            return scope.static_expression_lifetime();
+        } else {
+            auto lifetimes = MutableBodyTable<LifetimeRegion, LifetimeRegionID>(
+                program.create_evaluation_root_identity()
+            );
+            return lifetimes.add({
+                .parent = std::nullopt,
+                .kind = LifetimeRegionKind::FullExpression,
+                .origin = program.append_source_origin(program.module_source(module_id), span),
+            });
+        }
+    }
+
     template<typename Operation>
     auto make(ConstructionTypeRef type, Operation operation, Span span) noexcept -> Value {
         auto known = std::optional<ConstantID>();
         if constexpr (std::same_as<Operation, SemConstant>) {
             known = operation.constant;
         }
-        return SemanticExpression {
+        auto expression = SemanticExpression {
             .type = BodyType(type),
             .lifetime = lifetime,
             .origin = program.append_source_origin(program.module_source(source_module_id), span),
@@ -591,9 +626,17 @@ private:
             .category = SemanticValueCategory::Value,
             .value = std::move(operation),
         };
+        return expression;
     }
 
 public:
+    auto read_static_argument(
+        ASTExprID expression,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<Value> {
+        co_return co_await read_argument(expression, expected);
+    }
+
     auto read_argument(ASTExprID expression, std::optional<ConstructionTypeRef> expected) noexcept
         -> ExpressionTask<Value> {
         co_return (co_await read_value_argument(*this, expression, expected));
@@ -605,7 +648,6 @@ private:
     ProgramModuleID source_module_id;
     ASTView ast;
     Scope& scope;
-    MutableBodyTable<LifetimeRegion, LifetimeRegionID> lifetimes;
     LifetimeRegionID lifetime;
     BodyFailures empty_failures;
     std::vector<FailureTermID> pending_failures;
@@ -622,6 +664,31 @@ private:
 };
 
 template<typename Scope>
+auto build_static_expression(
+    ProgramDraft& draft,
+    ProgramModuleID module_id,
+    ASTView syntax,
+    Scope& scope,
+    ASTExprID expression,
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> ExpressionTask<SemanticExpression> {
+    auto site = StaticRootSite(draft, module_id, syntax, scope, syntax.expression(expression).span);
+    auto result = co_await site.read(expression, expected);
+    if (!result) {
+        co_return std::unexpected(result.error());
+    }
+    if (expected) {
+        auto checked =
+            site.convert_argument(*result, *expected, syntax.expression(expression).span);
+        if (!checked) {
+            co_return std::unexpected(checked.error());
+        }
+    }
+    site.complete_root(*result);
+    co_return std::move(*result);
+}
+
+template<typename Scope>
 auto evaluate_constant_expression(
     ProgramDraft& draft,
     ProgramModuleID module_id,
@@ -630,8 +697,7 @@ auto evaluate_constant_expression(
     ASTExprID expression,
     std::optional<ConstructionTypeRef> expected = std::nullopt
 ) noexcept -> ExpressionTask<ConstantID> {
-    auto site =
-        ConstantRootSite(draft, module_id, syntax, scope, syntax.expression(expression).span);
+    auto site = StaticRootSite(draft, module_id, syntax, scope, syntax.expression(expression).span);
     auto result = (co_await site.read(expression, expected));
     if (!result.has_value()) {
         co_return std::unexpected(result.error());
@@ -668,39 +734,29 @@ auto evaluate_array_extent(
     Scope& scope,
     ASTExprID expression
 ) noexcept -> AnalysisTask<std::uint64_t> {
-    auto site =
-        ConstantRootSite(draft, module_id, syntax, scope, syntax.expression(expression).span);
-    auto value = (co_await site.read(expression, std::nullopt));
+    auto value = co_await evaluate_constant_expression(draft, module_id, syntax, scope, expression);
     if (!value) {
         if (const auto* diagnostic = std::get_if<AnalysisFailure>(&value.error())) {
             co_return std::unexpected(*diagnostic);
         }
     }
-    auto fact = std::optional<ConstantAtom>();
-    if (value) {
-        auto evaluated = (co_await site.evaluate(*value));
-        if (!evaluated) {
-            co_return std::unexpected(evaluated.error());
-        }
-        if (const auto result = execution_atom(draft, *evaluated)) {
-            fact = *result;
-        }
-    }
-    const auto* integer = fact.has_value() ? std::get_if<IntegerConstant>(&fact->value) : nullptr;
+    const auto* integer =
+        value ? std::get_if<IntegerConstant>(&draft.constant(*value).value) : nullptr;
+    const auto fail = [&](Span span, DiagnosticCode code, std::string message) noexcept {
+        return draft.diagnostics().error(DiagnosticBuilder(code, std::move(message))
+                                             .primary(locate(syntax.source_id(), span))
+                                             .build());
+    };
     const auto span = syntax.expression(expression).span;
     if (integer == nullptr) {
-        co_return std::unexpected(site.fail(
-            span,
-            DiagnosticCode::ConstArrayExtent,
-            "array extent must be a constant integer"
-        ));
+        co_return std::unexpected(
+            fail(span, DiagnosticCode::ConstArrayExtent, "array extent must be a constant integer")
+        );
     }
     if (integer->negative()) {
-        co_return std::unexpected(site.fail(
-            span,
-            DiagnosticCode::ConstNegativeArrayExtent,
-            "array extent cannot be negative"
-        ));
+        co_return std::unexpected(
+            fail(span, DiagnosticCode::ConstNegativeArrayExtent, "array extent cannot be negative")
+        );
     }
     co_return integer->magnitude();
 }

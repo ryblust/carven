@@ -10,6 +10,13 @@ import std;
 
 namespace {
 
+auto interpreter_halt(ExecutionFailure failure) noexcept -> ExecutionHalt {
+    if (auto* halt = std::get_if<ExecutionHalt>(&failure)) {
+        return std::move(*halt);
+    }
+    invariant_violation("interpreter root did not produce its stopping cause");
+}
+
 class Interpreter final : public SemanticExecutionContext {
 public:
     Interpreter(
@@ -17,28 +24,24 @@ public:
         const ExecutionOutput& output,
         const InterpreterOptions& options
     ) noexcept;
-    auto run(FunctionID entry) noexcept -> std::expected<void, ExecutionDiagnostic>;
-    auto run_tests() noexcept
-        -> std::expected<std::vector<InterpreterTestResult>, ExecutionDiagnostic>;
+    auto run(FunctionID entry) noexcept -> std::expected<void, ExecutionHalt>;
+    auto run_tests() noexcept -> std::expected<std::vector<InterpreterTestResult>, ExecutionHalt>;
     auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> override;
-    auto prepare_call(FunctionID function, ProgramOriginID origin) noexcept
+    auto prepare_call(CallableID callable, ProgramOriginID origin) noexcept
         -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> override;
-    auto report(const ExecutionDiagnostic& diagnostic) noexcept -> void override;
+    auto report(const ExecutionEvent& event) noexcept -> void override;
     auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
     auto trace(const ExecutionTraceEvent& event) noexcept -> void override;
 
 private:
-    auto admit_modules() noexcept -> void;
-    auto reject(ProgramOriginID origin, std::string_view message) noexcept -> void;
+    auto admit_modules() noexcept -> std::expected<void, ExecutionHalt>;
+    auto reject(ProgramOriginID origin, std::string_view message) noexcept -> ExecutionHalt;
 
     const SemIRProgram& program;
     const ExecutionOutput& output;
     const InterpreterOptions& options;
     PublishedConstantValues values;
-    std::map<CallableID, FunctionID> functions;
-    std::optional<ExecutionDiagnostic> error;
-    bool testing = false;
     std::vector<InterpreterTestResult> test_results;
 };
 
@@ -50,69 +53,64 @@ Interpreter::Interpreter(
     : program(program),
       output(output),
       options(options),
-      values(program) {
-    for (const auto row : program.declarations().functions()) {
-        functions.emplace(row.value.callable, row.id);
-    }
-}
+      values(program) {}
 
-auto Interpreter::reject(ProgramOriginID origin, std::string_view message) noexcept -> void {
-    if (!error) {
-        error = ExecutionDiagnostic {
-            .origin = origin,
-            .code = DiagnosticCode::InterpretAdmission,
-            .message = std::string(message),
-            .calls = {},
-            .report_kind = std::nullopt
-        };
-        if (options.report) {
-            options.report(std::nullopt, *error);
-        }
-    }
+auto Interpreter::reject(ProgramOriginID origin, std::string_view message) noexcept
+    -> ExecutionHalt {
+    auto event = ExecutionEvent {
+        .origin = origin,
+        .cause =
+            ExecutionIssue {
+                .reason = ExecutionReason::Admission,
+                .message = std::string(message),
+                .termination = ExecutionTermination::StopRoot,
+            },
+        .fields = {},
+        .calls = {},
+    };
+    report(event);
+    return {.event = std::move(event)};
 }
 
 auto Interpreter::function_for_callable(CallableID callable) const noexcept
     -> std::optional<FunctionID> {
-    const auto found = functions.find(callable);
-    return found == functions.end() ? std::nullopt : std::optional(found->second);
+    return program.source_function(callable);
 }
 
-auto Interpreter::prepare_call(FunctionID function, ProgramOriginID origin) noexcept
+auto Interpreter::prepare_call(CallableID callable, ProgramOriginID origin) noexcept
     -> ContinuationTask<std::expected<ExecutionBody, ExecutionCallFailure>> {
-    const auto& declaration = program.declarations().function(function);
-    const auto& callable = program.declarations().callable(declaration.callable);
-    const auto body = callable_body_id(callable);
+    const auto& declaration = program.declarations().callable(callable);
+    const auto body = callable_body_id(declaration);
     if (!body) {
         co_return std::unexpected(
-            ExecutionDiagnostic {
+            ExecutionEvent {
                 .origin = origin,
-                .code = DiagnosticCode::InterpretAdmission,
-                .message = "native function has no interpreter implementation",
+                .cause =
+                    ExecutionIssue {
+                        .reason = ExecutionReason::Admission,
+                        .message = "callable has no executable interpreter body",
+                        .termination = ExecutionTermination::StopRoot,
+                    },
+                .fields = {},
                 .calls = {},
-                .report_kind = std::nullopt
             }
         );
     }
-    co_return ExecutionBody(program.bodies().body(*body));
+    const auto& metadata = program.bodies().body(*body);
+    co_return ExecutionBody(metadata);
 }
 
-auto Interpreter::report(const ExecutionDiagnostic& diagnostic) noexcept -> void {
-    auto reported = diagnostic;
-    if (diagnostic.code == DiagnosticCode::ConstLimit) {
-        reported.code = DiagnosticCode::InterpretLimit;
-    } else if (diagnostic.code == DiagnosticCode::ConstAdmission
-               || diagnostic.code == DiagnosticCode::InterpretAdmission) {
-        reported.code = DiagnosticCode::InterpretAdmission;
-    } else if (diagnostic.code != DiagnosticCode::AssertionFailed) {
-        reported.code = DiagnosticCode::InterpretExecution;
-    }
+auto Interpreter::report(const ExecutionEvent& event) noexcept -> void {
+    // Execution reports while the newest result is active; admission and entry
+    // execution have no test result. Report history never decides control.
     if (options.report) {
-        options.report(testing ? std::optional(test_results.back().test) : std::nullopt, reported);
+        options.report(
+            test_results.empty() ? std::nullopt : std::optional(test_results.back().test),
+            event
+        );
     }
-    if (testing) {
-        test_results.back().diagnostics.push_back(std::move(reported));
-    } else if (!error) {
-        error = std::move(reported);
+    if (!test_results.empty()) {
+        test_results.back().reports.push_back(event);
     }
 }
 
@@ -128,44 +126,43 @@ auto Interpreter::trace(const ExecutionTraceEvent& event) noexcept -> void {
     }
 }
 
-auto Interpreter::admit_modules() noexcept -> void {
+auto Interpreter::admit_modules() noexcept -> std::expected<void, ExecutionHalt> {
     for (const auto module_declaration : program.declarations().modules()) {
         if (!module_declaration.value.cpp_source_fragments.empty()) {
-            reject(
+            return std::unexpected(reject(
                 module_declaration.value.origin,
                 "native source fragments may initialize state and require a native runtime"
-            );
+            ));
         }
     }
+    return {};
 }
 
-auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, ExecutionDiagnostic> {
-    admit_modules();
+auto Interpreter::run(FunctionID entry) noexcept -> std::expected<void, ExecutionHalt> {
+    if (auto admitted = admit_modules(); !admitted) {
+        return std::unexpected(std::move(admitted.error()));
+    }
     const auto& declaration = program.declarations().function(entry);
     if (declaration.entry_point != EntryPointKind::NoArguments) {
-        reject(
+        return std::unexpected(reject(
             declaration.origin,
             "command-line argument values are not supported by the interpreter"
-        );
+        ));
     }
-    if (error) {
-        return std::unexpected(std::move(*error));
-    }
-    const auto result =
-        execute_function(values, *this, entry, declaration.origin, options.limits).run();
-    if (error) {
-        return std::unexpected(std::move(*error));
-    }
+    auto result =
+        execute_function(values, *this, declaration.callable, declaration.origin, options.limits)
+            .run();
     if (!result) {
-        invariant_violation("interpreter execution failed without a diagnostic");
+        return std::unexpected(interpreter_halt(std::move(result.error())));
     }
     return {};
 }
 
 auto Interpreter::run_tests() noexcept
-    -> std::expected<std::vector<InterpreterTestResult>, ExecutionDiagnostic> {
-    testing = true;
-    admit_modules();
+    -> std::expected<std::vector<InterpreterTestResult>, ExecutionHalt> {
+    if (auto admitted = admit_modules(); !admitted) {
+        return std::unexpected(std::move(admitted.error()));
+    }
     auto selected = std::vector<TestID>();
     for (const auto row : program.tests().entries()) {
         if (!row.value.is_const) {
@@ -174,26 +171,28 @@ auto Interpreter::run_tests() noexcept
     }
     std::ranges::stable_sort(selected, [&](TestID left, TestID right) noexcept {
         const auto module_name = [&](TestID id) noexcept {
-            const auto& module =
+            const auto& declaration =
                 program.declarations().module_decl(program.tests().test(id).module_id);
-            return program.provenance().module_record(module.provenance_module).path.value();
+            return program.provenance().module_record(declaration.provenance_module).path.value();
         };
         return module_name(left) < module_name(right);
     });
-    if (error) {
-        return std::unexpected(std::move(*error));
-    }
     for (const auto id : selected) {
-        test_results.push_back({.test = id, .diagnostics = {}});
-        const auto result = execute_body(
-                                values,
-                                *this,
-                                ExecutionBody(program.bodies().body(program.tests().test(id).body)),
-                                options.limits
+        test_results.push_back({
+            .test = id,
+            .reports = {},
+            .termination = ExecutionTermination::Continue,
+        });
+        auto result = execute_body(
+                          values,
+                          *this,
+                          ExecutionBody(program.bodies().body(*program.tests().test(id).body)),
+                          options.limits
         )
-                                .run();
-        if (!result && test_results.back().diagnostics.empty()) {
-            invariant_violation("interpreted test failed without a diagnostic");
+                          .run();
+        if (!result) {
+            const auto halt = interpreter_halt(std::move(result.error()));
+            test_results.back().termination = halt.event.termination();
         }
         if (test_results.back().aborted()) {
             break;
@@ -205,7 +204,16 @@ auto Interpreter::run_tests() noexcept
 } // namespace
 
 auto InterpreterTestResult::aborted() const noexcept -> bool {
-    return !diagnostics.empty() && diagnostics.back().code == DiagnosticCode::AssertionFailed;
+    return termination == ExecutionTermination::Abort;
+}
+
+auto interpreter_diagnostic_code(ExecutionReason reason) noexcept -> DiagnosticCode {
+    switch (reason) {
+        case ExecutionReason::Admission: return DiagnosticCode::InterpretAdmission;
+        case ExecutionReason::Limit:     return DiagnosticCode::InterpretLimit;
+        case ExecutionReason::Assertion: return DiagnosticCode::AssertionFailed;
+        default:                         return DiagnosticCode::InterpretExecution;
+    }
 }
 
 auto interpret(
@@ -213,7 +221,7 @@ auto interpret(
     FunctionID entry,
     const ExecutionOutput& output,
     const InterpreterOptions& options
-) noexcept -> std::expected<void, ExecutionDiagnostic> {
+) noexcept -> std::expected<void, ExecutionHalt> {
     return Interpreter(program, output, options).run(entry);
 }
 
@@ -221,6 +229,6 @@ auto interpret_tests(
     const SemIRProgram& program,
     const ExecutionOutput& output,
     const InterpreterOptions& options
-) noexcept -> std::expected<std::vector<InterpreterTestResult>, ExecutionDiagnostic> {
+) noexcept -> std::expected<std::vector<InterpreterTestResult>, ExecutionHalt> {
     return Interpreter(program, output, options).run_tests();
 }

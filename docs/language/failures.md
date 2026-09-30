@@ -104,7 +104,9 @@ then the arm guard runs once. A false
 guard continues with the next arm. Catch-arm order remains observable even
 though failure-set member order does not. A non-exhaustive catch diagnostic
 identifies each failure type that is not fully covered, including partial payload
-patterns and guards that may reject. A `try` around an infallible body is valid
+patterns and guards that may reject. A test that leaves failures unhandled and a
+callable body that exceeds its `throw` contract name the failure types and the
+nearest `?` operands that propagate them. A `try` around an infallible body is valid
 and produces no diagnostic.
 
 ## Rethrow and payload lifetime

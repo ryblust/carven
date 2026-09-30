@@ -2,6 +2,10 @@
 
 Standard crafts own library APIs and their implementations. The current
 [UTF craft](utf/README.md) provides encoding, validation, and text APIs.
+The [SIMD craft](simd/README.md) provides byte and floating algorithms and bounded
+block traversal over Carven's built-in vector primitives. Native primitives use
+NEON, opt-in AVX2, or a portable fallback, with identical lane semantics in
+constant execution.
 
 Carven source uses language operations without importing runtime implementations.
 The [compiler reference](../../../docs/compiler/README.md#craft-implementation-boundary)

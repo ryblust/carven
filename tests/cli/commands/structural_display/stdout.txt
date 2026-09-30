@@ -73,3 +73,11 @@ Envelope {
     Token,
     Token,
 ]
+__A {
+    __A: 3,
+    A_cv: 2,
+    a__b: 7,
+    a__b_cv: 4,
+    cv_name_5f5f41: 11,
+    cv_name_member_5f5f41: 6,
+}

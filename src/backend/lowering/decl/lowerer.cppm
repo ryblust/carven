@@ -13,6 +13,12 @@ auto is_char_type(const SemIRProgram& semantic, TypeID type) noexcept -> bool;
 auto lower_function(ModuleLowering& context, FunctionID function, bool declaration_only) noexcept
     -> TargetDecl;
 
+// Lowers a callable that has a function body.
+auto lower_carven_function(
+    ModuleLowering& context,
+    CallableID callable,
+    bool declaration_only
+) noexcept -> TargetDecl;
 
 auto lower_structure(ModuleLowering& context, StructID structure) noexcept -> TargetDecl;
 

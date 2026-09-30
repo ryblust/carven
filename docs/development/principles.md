@@ -16,7 +16,7 @@ incompatible cases. Changes to ownership, mutable access, captures, failure
 handling, or retained lifetimes follow an explicit source form or a rule of
 the enclosing construct.
 
-## Compile-time computation and specialization
+## Static computation and specialization
 
 Use established types, values, structure, access, lifetimes, and failure contracts
 to select native implementations. Format structure, extents, and result uses can
@@ -49,10 +49,10 @@ required evaluation, storage observations, ownership, cleanup, and failure
 behavior. Compiler-side computation must agree with the target operation's
 behavior.
 
-Required constant execution completes before emission under an explicit source
+Static execution completes before emission under an explicit source
 contract and resource limits. Define admitted operations and results separately
 from optional precomputation. Allow ordinary control flow, mutable locals, and
-incremental construction within that contract. Explicit compile-time execution
+incremental construction within that contract. Explicit static execution
 can also produce output or validate tests without retaining a result value.
 Give observable operations an execution-stage contract; optional precomputation
 must preserve their required effects.
@@ -60,7 +60,7 @@ must preserve their required effects.
 Compiler-side implementations can use host code independently of C++ constant
 evaluation support in the runtime implementation. Define which completed types
 and backing storage can be retained after temporary construction state ends.
-Optional precomputation preserves owning construction; required constant results
+Optional precomputation preserves owning construction; static results
 follow their defined freezing rules.
 
 Distinguish exact sizes, upper bounds, and minimum widths when planning storage.
@@ -84,7 +84,7 @@ remain on failure. The application defines recovery and any rollback operation.
 
 Use skilled handwritten C++ with the same evaluation, ownership, lifetime,
 and safety guarantees as the cost baseline. Runtime storage, allocation,
-indirection, checks, and dispatch each serve a required behavior. Compile-time
+indirection, checks, and dispatch each serve a required behavior. Static
 facts need runtime representation only when execution uses them.
 
 Evaluate Carven compilation time and memory, generated C++ compilation cost,
@@ -120,7 +120,7 @@ rules, and stopping condition. Unknown facts retain the ordinary operation.
 
 Ownership, nullability, types, and failures have their own correctness analyses
 and solvers. Their published facts can guide implementation selection. Required
-semantic checks and constant execution follow their language contracts.
+semantic checks and static execution follow their language contracts.
 
 ## Build on the C++ ecosystem
 
@@ -143,13 +143,13 @@ algorithmic choices with the library that owns them.
 
 Standard and user crafts use the same language facilities and admission rules.
 Develop shared execution capabilities so library code can benefit from
-compile-time evaluation and specialization within defined operation and result
+static execution and specialization within defined operation and result
 contracts. Let concrete library needs guide the evolution of language mechanisms.
 
 ## Semantic authority and native boundaries
 
 Carven defines evaluation order, access, ownership, lifetimes, and failures for
-an explicit source batch. Validate statically checkable conditions before
+an explicit source batch. Validate conditions that analysis can check before
 publishing the semantic program. Preserve those semantics and required runtime
 checks through lowering and execution.
 
@@ -160,9 +160,10 @@ satisfy the external behavior and storage contracts; native results establish
 only the relationships supported by the boundary's semantic model.
 
 The driver combines explicit application inputs with installed Crafts. Package
-authors prepare Crafts that build together in the selected environment. The build
-system owns dependency acquisition, additional source selection, and native build
-configuration.
+authors or users prepare Crafts for the selected platform and configuration before
+installation. Packaging tools can automate that preparation using the same source
+layout. The build system owns dependency acquisition, additional source selection,
+and native build configuration.
 
 Give each semantic fact one authority. Later stages consume published facts;
 generated names and text represent their output.

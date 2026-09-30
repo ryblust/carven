@@ -1,0 +1,65 @@
+// Narrow logical types remain usable beside the craft's wider default blocks.
+private const fn verify_narrow_primitives() -> bool {
+    let bytes: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    let value = u8x16::from_array(bytes);
+    assert(value.to_array() == bytes);
+    assert((value >= 8).bits() == 0xff00);
+    assert(((value + 255) - 255 == value).all());
+    assert(value.extract(value + 16, 9).lane(15) == 24);
+    assert(value.lookup(u8x16::splat(16)).to_array() == u8x16::splat(0).to_array());
+    assert(value.lookup(u8x16::splat(15)).lane(0) == 15);
+    assert(value.shift_left(4).lane(15) == 240);
+    assert(value.shift_right(2).lane(15) == 3);
+    assert(mask16::from_bits(0x8000).first_or(99) == 15);
+    assert(mask16::prefix(16).all());
+    let floats = f32x4::from_array([1.0, -2.0, 3.0, -4.0]);
+    assert((floats < 0.0).bits() == 10);
+    assert((floats * 2.0 / 2.0 == floats).all());
+    assert(floats.extract(floats, 4).to_array() == floats.to_array());
+    assert(mask4::from_bits(0xf8).bits() == 8);
+    assert(mask4::from_bits(8).first_or(99) == 3);
+    let zero = f32x4::splat(0.0);
+    let nan = zero / zero;
+    assert((zero == -zero).all());
+    assert((nan == nan).any() == false);
+    assert((nan != nan).all());
+    assert((nan < zero).any() == false);
+    assert((nan <= zero).any() == false);
+    assert((nan > zero).any() == false);
+    assert((nan >= zero).any() == false);
+    return true;
+}
+
+private const fn verify_wide_bits_and_lookup() -> bool {
+    let endpoints = mask32::from_bits(0x80000001);
+    assert(endpoints.bits() == 0x80000001 && endpoints.count() == 2);
+    assert(mask32::prefix(32).bits() == 0xffffffff);
+    assert(mask32::from_bits(0x80000000).first_or(99) == 31);
+    assert(mask8::from_bits(0x80).first_or(99) == 7);
+    assert(mask8::prefix(8).bits() == 255);
+    var entries: [u8; 32] = {};
+    for index in 0usize..32 {
+        entries[index] = (index + 1) as u8;
+    }
+    let table = u8x32::from_array(entries);
+    let indices = u8x32::splat(0).with_lane(0, 31).with_lane(15, 16).with_lane(16, 15).with_lane(
+        31,
+        32
+    );
+    let selected = table.lookup(indices);
+    assert(selected.lane(0) == 32);
+    assert(selected.lane(15) == 17);
+    assert(selected.lane(16) == 16);
+    assert(selected.lane(31) == 0);
+    return true;
+}
+
+const test "SIMD: narrow shapes and wide mask bits preserve logical contracts" {
+    check(verify_narrow_primitives());
+    check(verify_wide_bits_and_lookup());
+}
+
+test "SIMD: native narrow shapes and cross-register byte lookup agree" {
+    check(verify_narrow_primitives());
+    check(verify_wide_bits_and_lookup());
+}

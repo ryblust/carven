@@ -14,7 +14,7 @@ Use the following references for changes within a subsystem:
 | [Construction](analysis/construction.md) | Declaration and expression completion, solving, and native delegation |
 | [Semantic representation](analysis/semir.md) | Identity, canonical facts, structured operations, and published contracts |
 | [Ownership analysis](analysis/ownership.md) | Availability, storage loans, call relationships, and pointer nullability |
-| [Semantic execution](analysis/evaluation.md) | Execution interfaces, required roots, storage, freezing, output, and interpretation |
+| [Semantic execution](analysis/evaluation.md) | Execution interfaces, static roots, storage, freezing, output, and interpretation |
 | [C++ generation](backend/README.md) | Planning, representation selection, realization, and artifact emission |
 
 [Language reference](../language/README.md) defines source validity and observable
@@ -71,7 +71,7 @@ a successful result.
 ## Design considerations
 
 Carven establishes source types, coverage, evaluation order, ownership, and
-failure contracts. Required constants, constant blocks, static tests, and
+failure contracts. Static roots, `const` blocks, static tests, and
 interpretation execute shared semantic operations with separate admission and
 completion rules.
 Only explicit `const fn` bodies can be called in required contexts. After
@@ -100,7 +100,7 @@ selection, and runtime performs the remaining work.
 
 ## Subsystem ownership
 
-Directories group semantic responsibilities. Construction requests constant
+Directories group semantic responsibilities. Construction requests static
 execution when its results determine declaration types or array extents.
 
 | Owner | Responsibility |
@@ -114,6 +114,11 @@ execution when its results determine declaration types or array extents.
 | `backend/` | Representation selection and C++ realization from published semantic facts |
 | `crafts/carven/runtime/` | Shared native support for language operations under their semantic contracts |
 | `crafts/carven/std/` | Standard-library APIs, algorithms, containers, and their native implementation support |
+
+Semantic execution owns host values, bounded display, and structured report
+data. Runtime components own their native implementations. Compiler source does
+not include runtime headers; backend symbol metadata describes the runtime
+dependencies of generated C++. Cross-mode tests check shared observable contracts.
 
 The structured executor consumes typed semantic operations and an execution context.
 The analysis adapter supplies declaration completion and diagnostics. Evaluation
@@ -171,6 +176,13 @@ facts and topology, then computes type contents. After releasing the consumed
 draft, syntax, imports, and construction solutions, `finish()` checks body
 contracts, global semantic contracts, ownership, and local pointer nullability,
 in that order. All checks read `const SemIRProgram&`.
+
+Before returning the program, publication records callable/type surfaces and
+closure construction order, then releases checked source regions and static-only
+bodies. Surviving bodies keep their IDs and contain one executable region.
+Source-template callables and completed static tests retain declarations and
+provenance without a body reference. No source tree is available to downstream
+planning or execution.
 Source diagnostics use a separate channel. Body contracts establish the parameter
 and binding relations used by global checks. Successful checks deliver the program.
 
@@ -190,15 +202,18 @@ A craft owns its library API and may include C++ implementation support alongsid
 its source modules. That support may include runtime headers. Runtime provides
 shared language facilities and does not depend on standard crafts.
 
-Standard and user crafts use the same type, ownership, constant-execution, and
+Standard and user crafts use the same type, ownership, static-execution, and
 publication rules. Library identity comes from resolved declarations. Native C++
 imports retain their delegated contracts.
 
 ## Diagnostics and dependencies
 
 Source operations retain origins. Implicit operations use linked expansion
-origins. Diagnostics are produced at the rule owner. Compiler-private invariant
-failures terminate at the violated boundary.
+origins. Diagnostics are produced at the rule owner. Body construction continues
+past a failed function, test, or `const` block. A failed function is recorded
+once; a later request for its body or inferred contract fails without another
+diagnostic. Stages that read completed bodies run only after construction
+reports no error. Compiler-private invariant failures terminate at the violated boundary.
 
 Frontend facilities depend on source and syntax. Semantic construction consumes
 syntax; SemIR owns data, storage, and structural contracts without depending on

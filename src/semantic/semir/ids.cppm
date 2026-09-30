@@ -36,6 +36,7 @@ private:
     std::uint32_t row_index;
 
     friend class ProgramDraft;
+    friend class SemIRProgram;
     friend class ConstantStoreBuilder;
     template<typename Value, typename ID>
     friend class MutableProgramTable;

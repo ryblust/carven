@@ -116,6 +116,14 @@ public:
     }
 
 private:
+    // Only publication consumes and rebuilds these rows; readers never receive
+    // mutable access to a sealed table.
+    auto release() && noexcept -> std::vector<Value> { return std::move(storage); }
+
+    friend class SemIRProgram;
+    friend class DeclarationStore;
+    friend class BodyStore;
+
     ImmutableProgramTable(ProgramIdentity identity, std::vector<Value> values) noexcept
         : program_identity(identity),
           storage(std::move(values)) {}
@@ -346,6 +354,13 @@ public:
 
     auto entries() const noexcept -> IDTableEntries<ID, Value, BodyIdentity> {
         return IDTableEntries<ID, Value, BodyIdentity>(body_identity, storage);
+    }
+
+    // An instance body keeps the local identities of the body it specializes.
+    auto clone() const noexcept -> ImmutableBodyTable
+        requires std::copy_constructible<Value>
+    {
+        return ImmutableBodyTable(body_identity, storage);
     }
 
     template<typename Result, typename Mapper>

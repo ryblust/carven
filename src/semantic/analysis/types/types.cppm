@@ -10,6 +10,8 @@ import :semantic.analysis.program;
 import :semantic.semir.program;
 import std;
 
+auto source_builtin_type(std::string_view name) noexcept -> std::optional<BuiltinType>;
+
 using ArrayExtentResolver = std::function<AnalysisTask<std::uint64_t>(ASTExprID)>;
 
 auto semantic_access_mode(ASTAccessSyntax access) noexcept -> AccessMode;

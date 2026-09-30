@@ -129,92 +129,92 @@ const ct::Suite tests([] static noexcept {
                 .source =
                     "struct Failure {} fn invalid(source: [[fn() -> i32 throw Failure]; 0]) { let adopted: [[fn() -> i32]; 0] = source; }",
                 .code = DiagnosticCode::TypeMismatch,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "source",
             },
             {
                 .name = "array of slices rejects callable failure widening",
                 .source =
                     "struct Failure {} fn invalid(source: [[fn() -> i32]; 1]) { let adopted: [[fn() -> i32 throw Failure]; 1] = source; }",
                 .code = DiagnosticCode::TypeMismatch,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "source",
             },
             {
                 .name = "array callable failure narrowing",
                 .source =
                     "struct Failure {} fn invalid(source: [fn() -> i32 throw Failure; 1]) { let adopted: [fn() -> i32; 1] = source; }",
                 .code = DiagnosticCode::TypeMismatch,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "source",
             },
             {
                 .name = "empty array callable failure narrowing",
                 .source =
                     "struct Failure {} fn invalid(source: [fn() -> i32 throw Failure; 0]) { let adopted: [fn() -> i32; 0] = source; }",
                 .code = DiagnosticCode::TypeMismatch,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "source",
             },
             {
                 .name = "nested array callable failure narrowing",
                 .source =
                     "struct Failure {} fn invalid(source: [[fn() -> i32 throw Failure; 1]; 1]) { let adopted: [[fn() -> i32; 1]; 1] = source; }",
                 .code = DiagnosticCode::TypeMismatch,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "source",
             },
             {
                 .name = "callable parameter failure invariance",
                 .source =
                     "struct Failure {} fn invalid(source: fn(fn() -> i32 throw Failure) -> i32) { let adopted: fn(fn() -> i32) -> i32 = source; }",
                 .code = DiagnosticCode::TypeMismatch,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "source",
             },
             {
                 .name = "callable parameter failure invariance in arrays",
                 .source =
                     "struct Failure {} fn invalid(source: [fn(fn() -> i32) -> i32; 0]) { let adopted: [fn(fn() -> i32 throw Failure) -> i32; 0] = source; }",
                 .code = DiagnosticCode::TypeMismatch,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "source",
             },
             {
                 .name = "void return rejects a data result",
                 .source = "fn invalid() -> void { return 42; }",
                 .code = DiagnosticCode::TypeReturnValue,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "return 42;",
             },
             {
                 .name = "value return rejects void",
                 .source = "fn action() {} fn invalid() -> i32 { return action(); }",
                 .code = DiagnosticCode::TypeMismatch,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "action()",
             },
             {
                 .name = "void cannot initialize a binding",
                 .source = "fn action() {} fn invalid() { let value = action(); }",
                 .code = DiagnosticCode::TypeValueRequired,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "action()",
             },
             {
                 .name = "void forwarding requires failure consumption",
                 .source =
                     "struct Failure {} fn action() throw Failure { throw Failure {}; } fn invalid() throw Failure { return action(); }",
                 .code = DiagnosticCode::EffectUnmarked,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "action()",
             },
             {
                 .name = "missing return",
                 .source = "fn value() -> i32 {}",
                 .code = DiagnosticCode::FlowMissingReturn,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "{}",
             },
             {
                 .name = "nonconstant binding",
                 .source = "fn invalid(input: i32) { const value = input; }",
                 .code = DiagnosticCode::ConstInitializer,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "const value = input",
             },
             {
                 .name = "nonexhaustive match",
                 .source = "fn invalid(value: i32) { match value { 1 => {}, } }",
                 .code = DiagnosticCode::MatchNonExhaustive,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "match value { 1 => {}, }",
             },
             {
                 .name = "pattern binding mismatch",
@@ -222,7 +222,7 @@ const ct::Suite tests([] static noexcept {
                           "fn invalid(value: Value) -> i32 { return match value { "
                           ".Integer(item) | .Flag(_) => 1, _ => 0, }; }",
                 .code = DiagnosticCode::MatchBindingMismatch,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = ".Flag(_)",
             },
             {
                 .name = "duplicate pattern binding",
@@ -230,7 +230,7 @@ const ct::Suite tests([] static noexcept {
                           "fn invalid(value: Value) -> i32 { return match value { "
                           ".Pair(item, item) => item, }; }",
                 .code = DiagnosticCode::NameDuplicateLocal,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "item",
             },
             {
                 .name = "subsumed or-pattern alternative",
@@ -252,32 +252,32 @@ const ct::Suite tests([] static noexcept {
                 .name = "recursive value storage",
                 .source = "enum Recursive { Next(Recursive), End }",
                 .code = DiagnosticCode::TypeRecursiveStorage,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "enum Recursive { Next(Recursive), End }",
             },
             {
                 .name = "published surface visibility leak",
                 .source = "struct Hidden {} export enum Public { Value(Hidden), Empty }",
                 .code = DiagnosticCode::TypeVisibilityLeak,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "Value(Hidden)",
             },
             {
                 .name = "module-domain surface visibility leak",
                 .source = "private struct Hidden {} fn shared() -> Hidden { return Hidden {}; }",
                 .code = DiagnosticCode::TypeVisibilityLeak,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "fn shared() -> Hidden { return Hidden {}; }",
             },
             {
                 .name = "nested callable surface visibility leak",
                 .source = "private struct Hidden {} "
                           "export fn shared(callback: fn(Hidden) -> i32) {}",
                 .code = DiagnosticCode::TypeVisibilityLeak,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "callback",
             },
             {
                 .name = "failure surface visibility leak",
                 .source = "private struct Hidden {} export fn shared() throw Hidden {}",
                 .code = DiagnosticCode::TypeVisibilityLeak,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "export fn shared() throw Hidden {}",
             },
             {
                 .name = "unmarked inferred failure",
@@ -285,20 +285,20 @@ const ct::Suite tests([] static noexcept {
                           "private fn caller() -> i32 { return failing(); } "
                           "private fn failing() -> i32 { throw Failure {}; }",
                 .code = DiagnosticCode::EffectUnmarked,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "failing()",
             },
             {
                 .name = "published callable requires a declared failure contract",
                 .source = "struct Failure {} fn failing() { throw Failure {}; }",
                 .code = DiagnosticCode::EffectThrowPublished,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "fn failing() { throw Failure {}; }",
             },
             {
                 .name = "declared failure contract does not expand",
                 .source = "struct First {} struct Second {} "
                           "fn bounded() throw First { throw Second {}; }",
                 .code = DiagnosticCode::EffectSignatureBound,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "throw Second {};",
             },
             {
                 .name = "partial catch",
@@ -307,7 +307,7 @@ const ct::Suite tests([] static noexcept {
                           "fn invalid() -> i32 { return try { fail()? } catch { "
                           "Failure(.First(value)) => value, }; }",
                 .code = DiagnosticCode::EffectCatchNonExhaustive,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "try { fail()? } catch { Failure(.First(value)) => value, }",
             },
             {
                 .name = "escaping capturing closure",
@@ -315,20 +315,20 @@ const ct::Suite tests([] static noexcept {
                           "let callback: fn(i32) -> i32 = "
                           "[value](input: i32) { return input + value; }; }",
                 .code = DiagnosticCode::TypeCallableViewEscape,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "[value](input: i32) { return input + value; }",
             },
             {
                 .name = "stored callable view",
                 .source = "struct Invalid { callback: fn(i32) -> i32 }",
                 .code = DiagnosticCode::TypeCallableViewEscape,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "callback: fn(i32) -> i32",
             },
             {
                 .name = "returned callable view",
                 .source = "fn invalid(callback: fn(i32) -> i32) -> fn(i32) -> i32 { "
                           "return callback; }",
                 .code = DiagnosticCode::TypeCallableViewEscape,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "return callback;",
             },
             {
                 .name = "inferred lambda return join cannot escape as a callable view",
@@ -337,7 +337,7 @@ const ct::Suite tests([] static noexcept {
                           "fn invalid() { let choose = [](flag: bool) { "
                           "if flag { return first; } return second; }; }",
                 .code = DiagnosticCode::TypeCallableViewEscape,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "return first;",
             },
             {
                 .name = "widened view cannot outlive its source view storage",
@@ -348,7 +348,7 @@ const ct::Suite tests([] static noexcept {
                           "if true { let inner: fn(i32) -> i32 throw First = narrow; "
                           "outer = inner; } }",
                 .code = DiagnosticCode::TypeCallableViewEscape,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "outer = inner",
             },
             {
                 .name = "taken stored view cannot be failure-widened",
@@ -358,7 +358,7 @@ const ct::Suite tests([] static noexcept {
                           "let source: fn(i32) -> i32 throw First = narrow; "
                           "let widened: fn(i32) -> i32 throw First + Second = &&source; }",
                 .code = DiagnosticCode::TypeCallableViewEscape,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "&&source",
             },
             {
                 .name = "Write-borrow callable storage rejects a capturing target",
@@ -367,7 +367,7 @@ const ct::Suite tests([] static noexcept {
                           "let owner = [offset](value: i32) { return value + offset; }; "
                           "destination = owner; }",
                 .code = DiagnosticCode::TypeCallableViewEscape,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "destination = owner",
             },
             {
                 .name = "captured callable view",
@@ -375,7 +375,7 @@ const ct::Suite tests([] static noexcept {
                           "let wrapper = [callback](value: i32) { return callback(value); }; "
                           "let result = wrapper(1); }",
                 .code = DiagnosticCode::TypeCallableViewEscape,
-                .primary_text = NonemptyPrimarySpan {},
+                .primary_text = "callback",
             },
             {
                 .name = "Take conflicts with an active callable-view loan",

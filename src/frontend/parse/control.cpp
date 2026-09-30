@@ -61,6 +61,7 @@ auto Parser::parse_expression_before_block() noexcept -> std::optional<ASTExprID
 }
 
 auto Parser::parse_if_form() noexcept -> std::optional<ASTIfForm> {
+    const auto const_keyword = match(TokenKind::Const);
     const auto first_keyword = expect(TokenKind::If, "expected 'if'");
     auto branches = std::vector<ASTIfForm::Branch> {};
     auto keyword = first_keyword;
@@ -97,7 +98,8 @@ auto Parser::parse_if_form() noexcept -> std::optional<ASTIfForm> {
         break;
     }
     return ASTIfForm {
-        .span = join(first_keyword.span, end),
+        .span = join(const_keyword.value_or(first_keyword).span, end),
+        .const_span = const_keyword.transform([](const Token& token) static { return token.span; }),
         .branches = std::move(branches),
         .else_branch = final_else,
     };

@@ -68,7 +68,7 @@ private:
         auto resolve_function(std::string_view name, Span span) noexcept
             -> AnalysisTask<std::optional<FunctionID>>;
         auto construction_requests() noexcept -> ConstructionRequests&;
-        auto resolve_nominal_qualifier(ASTExprID expression) noexcept
+        auto resolve_type_qualifier(ASTExprID expression) noexcept
             -> AnalysisTask<std::optional<TypeID>>;
         auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
             -> AnalysisTask<ResolvedEnumCase>;
@@ -127,7 +127,7 @@ private:
         std::string_view name,
         Span origin
     ) noexcept -> AnalysisTask<std::optional<ConstantID>>;
-    auto resolve_nominal_qualifier(
+    auto resolve_type_qualifier(
         ProgramModuleID module_id,
         ASTView syntax,
         ASTExprID expression

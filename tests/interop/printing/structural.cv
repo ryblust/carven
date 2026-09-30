@@ -5,7 +5,7 @@ struct Envelope {
     value: ::DisplayCopyable
 }
 
-fn main() {
+export(cpp) fn structural_output() {
     let value = ::DisplayNative();
     println(value);
     println(f"{value}");

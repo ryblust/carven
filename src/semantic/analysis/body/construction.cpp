@@ -2,6 +2,7 @@ module carven:semantic.analysis.body.construction.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
+import :diagnostics.suggestion;
 import :frontend.ast.control;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
@@ -14,16 +15,20 @@ import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
+import :semantic.analysis.constant.freeze;
 import :semantic.analysis.constant.root;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.analysis.types;
+import :semantic.analysis.types.display;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
+import :semantic.evaluation.output;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
+import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
@@ -110,11 +115,131 @@ auto BodyElaborator::resolve_array_extent(ASTExprID id) noexcept -> AnalysisTask
     co_return (co_await evaluate_array_extent(draft(), source_module_id, ast, scope, id));
 }
 
+auto BodyElaborator::static_expression(
+    ASTExprID expression,
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> AnalysisTask<BuiltExpression> {
+    if (static_stage()) {
+        co_return co_await this->expression(expression, expected);
+    }
+    auto scope = BodyExprSite(*this);
+    auto result = co_await build_static_expression(
+        draft(),
+        source_module_id,
+        ast,
+        scope,
+        expression,
+        expected
+    );
+    if (!result) {
+        if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
+            co_return std::unexpected(*diagnostic);
+        }
+        co_return std::unexpected(fail(
+            ast.expression(expression).span,
+            DiagnosticCode::ConstAdmission,
+            "static input requires admitted static operands"
+        ));
+    }
+    co_return BuiltExpression {
+        .storage = std::move(*result),
+        .pending_failures = {},
+        .takeable = false,
+        .completes = true,
+    };
+}
+
+auto BodyElaborator::read_local(const BodyLocalStorage& local, Span span) noexcept
+    -> AnalysisTask<std::optional<SemanticExpression>> {
+    const auto binding = local.storage.binding;
+    if (binding.owner() != active_builder().identity()) {
+        auto constant = co_await compute_static_binding(binding);
+        if (!constant) {
+            co_return std::unexpected(constant.error());
+        }
+        if (!*constant) {
+            co_return std::nullopt;
+        }
+        co_return active_builder().make_expression(
+            local.type,
+            active_builder().lifetime(),
+            origin(span),
+            SemConstant {.constant = **constant}
+        );
+    }
+    auto value = active_builder().binding_expression(binding).expression;
+    value.category = SemanticValueCategory::Value;
+    value.lifetime = active_builder().lifetime();
+    value.origin = origin(span);
+    co_return value;
+}
+
+auto BodyElaborator::resolve_static_references(SemanticExpression& source) noexcept
+    -> AnalysisTask<bool> {
+    auto bindings = std::vector<SemanticExpression*>();
+    visit_semantic_nodes(source, [&](SemanticExpression& expression) noexcept {
+        if (std::holds_alternative<SemBinding>(expression.value)) {
+            bindings.push_back(&expression);
+        }
+    });
+    auto complete = true;
+    for (auto* expression : bindings) {
+        auto value =
+            co_await compute_static_binding(std::get<SemBinding>(expression->value).binding);
+        if (!value) {
+            co_return std::unexpected(value.error());
+        }
+        if (!*value) {
+            complete = false;
+            continue;
+        }
+        expression->constant = **value;
+        expression->value = SemConstant {.constant = **value};
+    }
+    co_return complete;
+}
+
+auto BodyElaborator::compute_static_binding(LocalBindingID binding) noexcept
+    -> AnalysisTask<std::optional<ConstantID>> {
+    const auto found = batch->static_roots.find(binding);
+    if (found == batch->static_roots.end()) {
+        co_return std::nullopt;
+    }
+    if (found->second.value) {
+        co_return found->second.value;
+    }
+    auto initializer = found->second.initializer;
+    auto complete = co_await resolve_static_references(initializer);
+    if (!complete) {
+        co_return std::unexpected(complete.error());
+    }
+    if (!*complete) {
+        co_return std::nullopt;
+    }
+    const auto published_type = constant_initializer_type(draft(), initializer.type.construction());
+    auto result = co_await construction_requests().stage().evaluate(
+        initializer,
+        ExecutionOutputMode::Discard
+    );
+    if (!result) {
+        co_return std::unexpected(result.error());
+    }
+    const auto frozen = freeze_constant_value(draft(), std::move(*result));
+    if (!frozen || !compatible(draft().constant(*frozen).type, published_type)) {
+        co_return std::unexpected(fail(
+            draft().source_origin(initializer.origin).span,
+            DiagnosticCode::ConstInitializer,
+            "constant initializer has no frozen representation of its published type"
+        ));
+    }
+    batch->static_roots.at(binding).value = *frozen;
+    co_return *frozen;
+}
+
 auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noexcept
     -> AnalysisTask<std::optional<ConstantID>> {
     if (const auto* local = use_local(name)) {
-        const auto* constant = std::get_if<ConstantID>(&local->storage);
-        co_return constant == nullptr ? std::nullopt : std::optional(*constant);
+        co_return co_await compute_static_binding(local->storage.binding);
     }
     auto selected = (co_await find_global(name, span));
     if (!selected.has_value()) {
@@ -184,7 +309,7 @@ auto BodyElaborator::resolve_function(std::string_view name, Span span) noexcept
     co_return std::optional(function->function);
 }
 
-auto BodyElaborator::resolve_nominal_qualifier(ASTExprID expression) noexcept
+auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
     -> AnalysisTask<std::optional<TypeID>> {
     auto current_id = expression;
     while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(current_id).value)) {
@@ -195,6 +320,9 @@ auto BodyElaborator::resolve_nominal_qualifier(ASTExprID expression) noexcept
         co_return std::optional<TypeID>();
     }
     const auto text = spelling(name->name_span);
+    if (const auto builtin = source_builtin_type(text)) {
+        co_return std::optional(draft().builtin_type(*builtin));
+    }
     if (find_local(text) != nullptr) {
         co_return std::optional<TypeID>();
     }
@@ -246,7 +374,12 @@ auto BodyElaborator::resolve_constant_enum_case(
     co_return std::unexpected(fail(
         span,
         DiagnosticCode::TypeMemberUnresolved,
-        std::format("enum has no case named '{}'", name)
+        std::format(
+            "enum '{}' has no case named '{}'{}",
+            type_display_name(draft(), type),
+            name,
+            spelling_suggestion(name, catalog().enum_case_names(nominal->enumeration))
+        )
     ));
 }
 

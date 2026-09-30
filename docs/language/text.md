@@ -48,7 +48,7 @@ resolution depends on the receiver type.
 | Raw | `r"..."` | `r"""..."""` | No | No |
 | Interpolated | `f"..."` | `f"""..."""` | Yes | Yes |
 
-Ordinary and raw literals produce `str` with static storage. Multiline
+Ordinary and raw literals produce `str` with program-lifetime storage. Multiline
 interpolation follows the same type, ownership, and evaluation rules as
 single-line interpolation. All text must be valid UTF-8; no Unicode normalization
 is performed. `c"..."` is single-line and NUL-free, with ordinary escapes.
@@ -138,7 +138,7 @@ and interpretation. The executor checks the scalar precondition when the operati
 executes and diagnoses an invalid value; this is an execution error, not a typed
 failure. Native construction retains the caller-provided precondition without
 adding validation. Unchecked borrowed text construction is not yet supported
-during constant execution or interpretation.
+during static execution or interpretation.
 
 ## Owning String and text borrowing
 
@@ -296,9 +296,9 @@ aggregate, enum, or callable formatting protocol.
 Interpolation supports ordinary expression composition and failure propagation.
 An early failure skips later holes and formatting, retaining completed effects
 and destroying temporary values. Discarding the result still executes formatting.
-Direct interpolation and interpolation in functions executed at compile time use the same
-[supported builtin formatting subset](constants.md#compile-time-function-execution)
-in required constant contexts. For example,
+Direct interpolation and interpolation in functions executed in the static stage use the same
+[supported builtin formatting subset](constants.md#static-execution-of-functions)
+in static roots. For example,
 `const title = f"build-{42:04}";` produces static `str` text, and
 `const bytes = f"{'我'}".len();` produces `3usize`. Nested calls, `String {}`,
 `String::from_str(...)`, `.as_str()`, `.len()` and `.is_empty()` compose before
@@ -324,7 +324,7 @@ providers must preserve this separation through indirect aliases and reentrant c
 A failing receiver or hole skips the append and later operands, preserving completed
 effects, including mutations performed by earlier holes. Once formatting begins,
 there is no rollback guarantee on termination. The method is also available in
-compile-time execution under the same formatting subset and execution budgets.
+static execution under the same formatting subset and execution budgets.
 
 Formatting preserves internal NUL and produces valid UTF-8 on normal completion.
 The compiler may omit the final UTF-8 scan when operand types and supported static

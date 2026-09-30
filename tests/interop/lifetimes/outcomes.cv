@@ -1,0 +1,185 @@
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{
+    Owner,
+    observe_owner,
+    mark,
+    reset,
+    matches,
+    event,
+};
+
+import .control using Failure;
+import .construction using fixed_success;
+
+fn owned_outcome(flag: bool) -> Owner throw Failure {
+    if flag { return Owner { 1 }; }
+    throw Failure::Stop;
+}
+
+test "Lifetimes: discarded outcomes destroy success owners and propagate failures" {
+    reset();
+    try {
+        owned_outcome(true)?;
+    } catch {
+        Failure(_) => mark(8),
+    }
+    mark(9);
+    check(matches("1 -1 9 "));
+    reset();
+    try {
+        owned_outcome(false)?;
+    } catch {
+        Failure(_) => mark(8),
+    }
+    mark(9);
+    check(matches("8 9 "));
+}
+
+fn root_outcome_with_owners(flag: bool) throw Failure {
+    let first = Owner { 2 };
+    owned_outcome(flag)?;
+    let second = Owner { 3 };
+    fixed_success()?;
+    mark(9);
+}
+
+test "Lifetimes: direct root outcomes complete before surrounding lexical owners" {
+    reset();
+    try {
+        root_outcome_with_owners(true)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("2 1 -1 3 41 -41 9 -3 -2 "));
+    reset();
+    try {
+        root_outcome_with_owners(false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("2 -2 7 "));
+}
+
+fn void_consumer(owner: Owner, value: i32) {
+    observe_owner(owner, value);
+}
+
+fn forward_void_lifetime() {
+    let local = Owner { 1 };
+    return void_consumer(Owner { 2 }, event(3) as i32);
+}
+
+fn forward_void_failure() throw Failure {
+    let local = Owner { 4 };
+    return void_consumer(
+        Owner { 5 },
+        if true { throw Failure::Stop; } else { throw Failure::Stop; }
+    );
+}
+
+test "Lifetimes: void return operands clean up before returning locals" {
+    reset();
+    forward_void_lifetime();
+    check(matches("1 2 3 9 -2 -1 "));
+    reset();
+    try {
+        forward_void_failure()?;
+    } catch {
+        Failure(_) => mark(8),
+    }
+    check(matches("4 5 -5 -4 8 "));
+}
+
+fn forward_void_outcome() throw Failure {
+    let local = Owner { 1 };
+    return void_consumer(Owner { 2 }, event(3) as i32);
+}
+
+test "Lifetimes: void forwarding into Outcome preserves operand cleanup" {
+    reset();
+    try {
+        forward_void_outcome()?;
+    } catch {
+        Failure(_) => mark(8),
+    }
+    check(matches("1 2 3 9 -2 -1 "));
+}
+
+private fn observe_or_fail(owner: Owner, reject: bool) -> i32 throw Failure {
+    owner.probe();
+    if reject { throw Failure::Stop; }
+    return 7;
+}
+
+private fn nested_full_expression(reject: bool) -> i32 {
+    return try {
+        let value = observe_or_fail(Owner { 1 }, reject)?;
+        mark(value);
+        value
+    } catch {
+        Failure(_) => {
+            mark(9);
+            0
+        },
+    };
+}
+
+test "Lifetimes: nested full expressions clean operands before continuation and handler" {
+    reset();
+    check(nested_full_expression(false) == 7);
+    check(matches("1 11 -1 7 "));
+    reset();
+    check(nested_full_expression(true) == 0);
+    check(matches("1 11 -1 9 "));
+}
+
+private fn tail_owner(id: i32, reject: bool) -> Owner throw Failure {
+    mark(id + 10);
+    if reject { throw Failure::Stop; }
+    return Owner { id };
+}
+
+private fn observe_pair(first: Owner, second: Owner) -> i32 {
+    first.probe();
+    second.probe();
+    return 7;
+}
+
+private fn region_tail(first_rejects: bool, second_rejects: bool) -> i32 {
+    return try {
+        observe_pair(tail_owner(1, first_rejects)?, tail_owner(2, second_rejects)?)
+    } catch {
+        Failure(_) => {
+            mark(8);
+            0
+        },
+    };
+}
+
+private fn backed_tail(reject: bool) -> i32 {
+    return try {
+        observe_or_fail(Owner { 3 }, reject)?
+    } catch {
+        Failure(_) => {
+            mark(8);
+            0
+        },
+    };
+}
+
+test "Lifetimes: region tails retain owners through delivery and clean before handlers" {
+    reset();
+    check(region_tail(false, false) == 7);
+    check(matches("11 1 12 2 11 12 -2 -1 "));
+    reset();
+    check(region_tail(true, false) == 0);
+    check(matches("11 8 "));
+    reset();
+    check(region_tail(false, true) == 0);
+    check(matches("11 1 12 -1 8 "));
+    reset();
+    check(backed_tail(false) == 7);
+    check(matches("3 13 -3 "));
+    reset();
+    check(backed_tail(true) == 0);
+    check(matches("3 13 -3 8 "));
+}

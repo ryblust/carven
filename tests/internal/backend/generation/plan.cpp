@@ -127,7 +127,12 @@ auto public_names(std::string source_text) noexcept -> std::array<std::string, 2
     const auto function = function_named(compilation.semantic(), "identity");
     return {
         std::string(compilation.target().names().structure_identifier(structure).spelling()),
-        std::string(compilation.target().names().function_identifier(function).spelling()),
+        std::string(compilation.target()
+                        .names()
+                        .callable_identifier(
+                            compilation.semantic().declarations().function(function).callable
+                        )
+                        .spelling()),
     };
 }
 

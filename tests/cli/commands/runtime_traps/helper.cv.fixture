@@ -1,0 +1,7 @@
+fn helper(value: i32) {
+    check(value > 0, "value must be positive");
+}
+
+fn run_helper() {
+    helper(-1);
+}

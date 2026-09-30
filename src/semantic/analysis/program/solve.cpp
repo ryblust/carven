@@ -8,7 +8,6 @@ import :support.invariant;
 import std;
 
 auto ProgramDraft::solve_test_stops(
-    const ConstantStore& constants,
     const CanonicalTypeStore& types,
     const TypeResolution& resolved_types,
     const DeclarationStore& declarations
@@ -30,14 +29,11 @@ auto ProgramDraft::solve_test_stops(
         }
         using Node = std::
             variant<const SemanticExpression*, const SemanticRegion*, const SemanticStatement*>;
-        auto nodes = std::vector<Node> {&storage.bodies[body_id->index()].definition->region};
-        const auto truth = [&](const SemanticExpression& expression) noexcept {
-            return known_boolean(constants, expression);
-        };
+        const auto& body = *storage.bodies[body_id->index()].definition;
+        auto nodes = std::vector<Node> {body.residual ? &*body.residual : &body.region};
         const auto observe = [&](const SemanticExpression& expression) noexcept {
             if (const auto* report = std::get_if<SemReport>(&expression.value); report != nullptr
-                && (report->kind == ReportKind::Require || report->kind == ReportKind::Fail)
-                && (!report->condition || truth(**report->condition) != true)) {
+                && (report->kind == ReportKind::Require || report->kind == ReportKind::Fail)) {
                 mark(entry.id);
             }
             if (const auto* call = std::get_if<SemCall>(&expression.value)) {
@@ -70,7 +66,7 @@ auto ProgramDraft::solve_test_stops(
                     if constexpr (std::same_as<Value, SemanticExpression>) {
                         observe(*node);
                     }
-                    visit_evaluation_children(node->value, truth, add);
+                    visit_evaluation_children(node->value, add);
                 }
             });
         }
@@ -90,9 +86,10 @@ auto ProgramDraft::verify_body(
     const auto body_id = body.id();
     const auto identity = body.identity();
     const auto kind = body.kind();
+    // An instance body keeps the local identities of the body it specializes.
     if (body_id.owner() != program_identity
         || identity.program() != program_identity
-        || body_id.index() != identity.body_index()) {
+        || body.specialized().value_or(body_id).index() != identity.body_index()) {
         invariant_violation("final body has inconsistent program/body identity evidence");
     }
     if (body.provenance_identity() != provenance_appender.reader().identity()) {
@@ -102,9 +99,9 @@ auto ProgramDraft::verify_body(
         invariant_violation("final body disagreed with its reservation metadata");
     }
     const auto callable = declaration_view.callable_for_body(body_id);
-    if (kind == BodyKind::ConstantBlock) {
+    if (kind == BodyKind::ConstBlock) {
         if (callable.has_value() || storage.bodies[body_id.index()].test.has_value()) {
-            invariant_violation("constant block has a callable or test owner");
+            invariant_violation("const block has a callable or test owner");
         }
     } else if (kind == BodyKind::Test) {
         if (callable.has_value() || !storage.bodies[body_id.index()].test.has_value()) {
@@ -162,14 +159,13 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
     auto constants = std::move(input.constants).seal();
     auto failure_sets = std::move(input.failure_sets).seal();
     auto signatures = std::move(input.callable_signatures).seal();
-    auto test_stops = solve_test_stops(constants, types, resolved_types, declarations);
+    auto test_stops = solve_test_stops(types, resolved_types, declarations);
     auto bodies = MutableProgramTable<SemIRBody, BodyID>(program_identity);
     for (auto& slot : input.bodies) {
         auto body = resolve_body(
             std::move(*slot.definition),
             resolved_types,
             types,
-            constants,
             test_stops,
             *failures,
             failure_sets,
@@ -181,6 +177,16 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
         if (bodies.add(std::move(body)) != expected) {
             invariant_violation("body publication changed its reserved identity");
         }
+    }
+    auto static_instances = std::vector<StaticInstance>();
+    static_instances.reserve(input.static_instances.size());
+    for (auto& slot : input.static_instances) {
+        const auto* progress =
+            std::get_if<ConstructionStorage::StaticInstanceSlot::Progress>(&slot.state);
+        if (!progress || *progress != ConstructionStorage::StaticInstanceSlot::Progress::Complete) {
+            invariant_violation("construction solving began with an incomplete static instance");
+        }
+        static_instances.push_back(std::move(slot.instance));
     }
     auto final_bodies = BodyStore(std::move(bodies).seal());
     auto final_tests = TestStore(std::move(input.test_slots).seal());
@@ -194,6 +200,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
         std::move(declarations),
         std::move(final_bodies),
         std::move(final_tests),
+        std::move(static_instances),
         std::move(test_stops)
     );
 }
@@ -210,6 +217,7 @@ auto ProgramDraft::finalize_callable_signatures(
         for (const auto& parameter : contract.parameters) {
             parameters.push_back(
                 CallableParameter {
+                    .stage = parameter.stage,
                     .access = parameter.access,
                     .type = types.resolve(parameter.type),
                 }

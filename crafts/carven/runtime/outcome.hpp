@@ -158,6 +158,15 @@ public:
         return Outcome(std::in_place_type<Success>);
     }
 
+    // A trivially copied result needs no in-place factory.
+    template<typename Value = Result>
+        requires std::same_as<Value, Result>
+        && (!std::is_void_v<Value>)
+        && detail::trivially_copied_and_destroyed<Value>
+    static constexpr auto success(std::type_identity_t<Value> value) noexcept -> Outcome {
+        return Outcome(std::in_place_type<Success>, [&]() noexcept -> Result { return value; });
+    }
+
     template<typename Value>
         requires detail::ContainsExact<std::remove_cvref_t<Value>, Failures...>
         && std::is_constructible_v<std::remove_cvref_t<Value>, Value&&>

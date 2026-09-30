@@ -14,6 +14,7 @@ import std;
 enum class OperatorResult {
     Operand,
     Boolean,
+    Mask,
 };
 
 struct OperationDiagnostic final {
@@ -74,7 +75,10 @@ auto numeric_operand_plan(const ASTView& ast, ASTExprID left, ASTExprID right) n
 auto binary_operand_plan(const ASTView& ast, const ASTBinaryExpr& expression) noexcept
     -> BinaryOperandPlan;
 
-auto operator_result_builtin(OperatorResult result) noexcept -> std::optional<BuiltinType>;
+auto operator_result_builtin(
+    OperatorResult result,
+    std::optional<BuiltinType> operand = std::nullopt
+) noexcept -> std::optional<BuiltinType>;
 auto select_contextual_numeric_type(
     const ProgramDraft& draft,
     TypeID inferred,

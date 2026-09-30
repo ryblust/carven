@@ -3,18 +3,25 @@ module carven:semantic.evaluation.initialization.impl;
 import :semantic.evaluation.executor;
 import :semantic.evaluation.value;
 import :semantic.semir.constant;
+import :semantic.semir.simd;
 import :semantic.semir.type;
 import std;
 
 auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noexcept
     -> ExecutionTask<ExecutionValue> {
     if (auto checked = step(origin); !checked) {
-        co_return std::unexpected(checked.error());
+        co_return std::unexpected(std::move(checked.error()));
     }
     const auto canonical = values.type_copy(target);
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
         if (builtin_is_integer(builtin->kind)) {
             co_return ConstantAtom {.type = target, .value = IntegerConstant::zero()};
+        }
+        if (const auto layout = simd_layout(builtin->kind)) {
+            co_return ConstantAtom {
+                .type = target,
+                .value = SIMDConstant {.lanes = std::vector<std::uint32_t>(layout->width)}
+            };
         }
         switch (builtin->kind) {
             case BuiltinType::Bool:
@@ -43,7 +50,7 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
     } else if (std::holds_alternative<ArrayTypeValue>(canonical.value)
                || std::holds_alternative<StructTypeValue>(canonical.value)) {
         if (auto checked = check_aggregate_size(target, origin); !checked) {
-            co_return std::unexpected(checked.error());
+            co_return std::unexpected(std::move(checked.error()));
         }
         const auto* array = std::get_if<ArrayTypeValue>(&canonical.value);
         auto fields = std::optional<std::vector<TypeID>>();
@@ -53,7 +60,7 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
             if (!fields) {
                 co_return std::unexpected(fail(
                     origin,
-                    DiagnosticCode::ConstEvaluation,
+                    ExecutionReason::Evaluation,
                     "default initialization requires completed fields"
                 ));
             }
@@ -61,7 +68,7 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
         const auto count =
             array != nullptr ? static_cast<std::size_t>(array->extent) : fields->size();
         if (auto checked = account_aggregate(count, origin); !checked) {
-            co_return std::unexpected(checked.error());
+            co_return std::unexpected(std::move(checked.error()));
         }
         auto elements = std::vector<ExecutionValue>();
         elements.reserve(count);
@@ -71,7 +78,7 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
                 origin
             ));
             if (!element) {
-                co_return std::unexpected(element.error());
+                co_return std::unexpected(std::move(element.error()));
             }
             elements.push_back(std::move(*element));
         }
@@ -79,7 +86,7 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
     }
     co_return std::unexpected(fail(
         origin,
-        DiagnosticCode::ConstEvaluation,
+        ExecutionReason::Evaluation,
         "type does not support default initialization during execution"
     ));
 }

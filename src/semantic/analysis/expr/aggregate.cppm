@@ -309,7 +309,7 @@ auto construct_slice_value(
             if (start && end && *start <= *end) {
                 result_extent = *end - *start;
             }
-        } else if (extent) {
+        } else if (extent && operands.front().expression.constant) {
             switch (intrinsic) {
                 case SliceIntrinsic::Len:
                     known = site.draft().intern_constant(
@@ -330,10 +330,10 @@ auto construct_slice_value(
     }
     return site.finish_constructed(
         result_type,
-        SemSliceIntrinsic {
-            .intrinsic = intrinsic,
-            .operands = std::move(operands),
-            .result_extent = result_extent
+        SemIntrinsic {
+            .operation =
+                SliceIntrinsicOperation {.intrinsic = intrinsic, .result_extent = result_extent},
+            .operands = std::move(operands)
         },
         std::move(state),
         span,

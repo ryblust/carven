@@ -40,11 +40,13 @@ const ct::Suite tests([] static noexcept {
                             return;
                         }
                         ct::expect(format->operands.size() == 2uz);
-                        ct::expect(prepared->operand_indices == std::vector<std::size_t> {1uz});
                         ct::expect(
-                            prepared->format.text == std::vector<std::string> {"false/{", "}"}
+                            prepared->operand_indices == std::vector<std::size_t> {0uz, 1uz}
                         );
-                        ct::expect(prepared->format.minimum_size == 24u);
+                        ct::expect(
+                            prepared->format.text == std::vector<std::string> {"", "/{", "}"}
+                        );
+                        ct::expect(prepared->format.minimum_size == 23u);
                         ct::expect(prepared->format.maximum_size == 24u);
                     }
                 );

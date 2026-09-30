@@ -33,7 +33,9 @@ auto OwnershipBatchAnalyzer::diagnose(
     DiagnosticCode code,
     std::string message,
     ProgramOriginID origin,
-    std::optional<ProgramOriginID> related
+    std::optional<ProgramOriginID> related,
+    std::string related_label,
+    std::string help
 ) noexcept -> void {
     if (failure.has_value()) {
         return;
@@ -41,7 +43,10 @@ auto OwnershipBatchAnalyzer::diagnose(
     auto diagnostic = DiagnosticBuilder(code, std::move(message));
     diagnostic.primary(program.provenance().source_span(origin));
     if (related.has_value()) {
-        diagnostic.related(program.provenance().source_span(*related), "related storage or access");
+        diagnostic.related(program.provenance().source_span(*related), std::move(related_label));
+    }
+    if (!help.empty()) {
+        diagnostic.help(std::move(help));
     }
     failure = diagnostics.error(diagnostic.build());
 }
@@ -259,7 +264,11 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
 
 auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisSummary> {
     auto evaluation_count = 0uz;
+    // Source bodies are checked; an instance repeats one with fewer paths.
     for (const auto [id, source] : bodies.entries()) {
+        if (source.specialized()) {
+            continue;
+        }
         auto input = root_input(source);
         OwnershipBodyAnalyzer(*this, input, true).check_contracts();
         static_cast<void>(query(std::move(input)));
@@ -288,7 +297,9 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
                     DiagnosticCode::AccessBorrowConflict,
                     escape.message,
                     escape.origin,
-                    escape.related
+                    escape.related,
+                    "related storage or access",
+                    {}
                 );
             }
             return std::unexpected(*failure);
@@ -328,7 +339,9 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
                 DiagnosticCode::AccessBorrowConflict,
                 escape.message,
                 escape.origin,
-                escape.related
+                escape.related,
+                "related storage or access",
+                {}
             );
         }
         if (failure.has_value()) {

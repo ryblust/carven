@@ -7,13 +7,13 @@ defines the phase ownership and [publication order](../README.md#publication-gat
 ## Expression construction
 
 Within `analysis/constant`, `literal` normalizes source literals, `admission`
-checks const-function capability contracts, and `evaluation` connects required
-evaluation to construction requests and source diagnostics.
+checks const-function capability contracts, and `evaluation` connects static
+execution to construction requests and source diagnostics.
 `analysis.constant.root` constructs typed initializer and extent roots and owns
 their construction state, lifetimes, admission policy, and budgets. `analysis/expr`
-shares contextual typing and typed operation construction between required roots
+shares contextual typing and typed operation construction between static roots
 and ordinary bodies. Expression sites supply source scope, admission, value
-consumption, lifetime, and failure effects. Required root expressions retain
+consumption, lifetime, and failure effects. Static root expressions retain
 their construction admission rule, while called function bodies use their
 ordinary semantic construction. `analysis.expr.interpret` dispatches syntax
 to `scalar`, `member`, and `call` handlers, which recurse through the expression site.
@@ -22,7 +22,7 @@ to `scalar`, `member`, and `call` handlers, which recurse through the expression
 
 `analysis.expr.result` defines `ExpressionResult<T>`, which carries `T` on success.
 Failure carries either an existing `AnalysisFailure` token or
-`ExpressionNotAdmitted`, which has no diagnostic yet. Required initializer, enum,
+`ExpressionNotAdmitted`, which has no diagnostic yet. Static initializer, enum,
 and extent consumers diagnose non-admission in their own source context. Ordinary
 body construction reports invalid source forms directly and passes only diagnosed
 failures back to body analysis. Constant-name lookup returns an optional constant
@@ -75,8 +75,74 @@ Ordinary functions and lambdas share return construction for block and expressio
 bodies. Declared or context-supplied results provide return type context. Inferred
 results check independently typed returns for invariant compatibility. Missing
 returns and result-inference cycles are checked during body and signature
-completion, before required execution. Constant execution consumes the completed
+completion, before static execution. Static execution consumes the completed
 contract; call arguments do not specialize the function's result type.
+
+## Static specialization
+
+A named function parameter records its execution stage independently of its
+access and type. Body construction checks static-expression admission for static
+arguments, local `const` initializers, `const if` conditions, and `const for` ranges.
+Static bindings are `const` parameters, local `const` bindings, and `const for`
+indices. Ordinary locals, parameters, and range indices do not acquire that
+admission through folding. Every source arm undergoes ordinary checking.
+
+`build_static_expression` in `analysis/constant/root` constructs local initializers,
+static call inputs, SIMD immediates, and static control inputs as typed static
+roots. Their expressions use the owning body's expression lifetime and an
+independent failure context. Root failures are consumed by static execution and
+do not enter the enclosing runtime failure contract. Local initializers are
+stored in `SemStaticBinding`. Ordinary source control receives the same name,
+type, failure, ownership, and return checks regardless of constant operand facts.
+`const if` selects the residual arm during specialization.
+
+Fixed type formation, C++ construction type queries, and separately constructed
+lambda bodies read a closed source root
+during construction. The read follows binding identities, computes a copy of the
+initializer with its output discarded, and records the frozen value by binding;
+later reads reuse it. The source initializer is unchanged and executes during
+specialization. An unbound static input cannot determine a fixed type or
+implicitly enter a separate body. Local owning text freezes to `str`; static call inputs retain their
+declared types. Explicit captures require runtime local storage.
+C++ construction queries resolve explicit static references and propagate pure
+operand facts; ordinary runtime calls retain their execution obligations.
+
+`analysis/stage` copies a completed generic region and rewrites it in a static
+binding environment. Static values become constant expressions; selected
+`const if` regions replace their control; `const for` becomes `SemExpandedLoop`
+with an ordered region per index. Local roots and `const` blocks execute once
+per selected instance or expanded source occurrence, in source order. Ordinary control retains its static roots and static
+arguments. Explicit instance, iteration, node, and depth budgets bound this work
+per specialization root.
+
+Type formation precedes selection and expansion, so a root read by a type is
+computed even in an unselected arm. A `const` block in a body is constructed in
+place as a `SemConstBlock` region with its own lexical frame and failure
+context. Construction rejects a runtime local declared outside the block and a
+control transfer that would leave it. Runtime bodies first specialize static
+inputs, then execute the ordinary residual region. Static blocks and static tests
+execute all local bindings and controls in source order; calls select instances
+from evaluated static arguments through the analysis execution context.
+
+`ProgramDraft` owns instance reservations, completion or failure states, and
+bodies; a stage session owns active roots and specialization budgets. Instances
+are keyed by the source function and normalized static arguments, and each has
+its own callable and body. Residual calls publish that callable and runtime
+arguments. An instance copies the source
+binding, pattern, and lifetime tables; expanded iterations append independent
+local identities. Closure callable identities stay fixed while capture values
+specialize.
+Iteration binding remaps the selected region and extends one copy of its local
+tables. Residual installation transfers that region and its tables while retaining
+the checked region and body inputs.
+
+Publication verifies residual regions through ordinary semantic contracts and
+checks instance identities and argument types. Executable bodies contain no static
+control or static initializers. After validation, publication computes
+callable/type surfaces and closure construction order, then discards checked
+source regions and static-only bodies. Declarations and tests clear references
+to removed bodies. Surviving body IDs and local table identities remain stable.
+Specialization does not change parameter, result, or layout types.
 
 ## Ordinary class declarations
 
@@ -95,7 +161,7 @@ The completed operation uses `SemCall` with an ordinary receiver argument.
 Declaration analysis checks the receiver contract; recursive default
 initialization rejects classes in both construction and published-program queries.
 Private representation remains available to type contents, ownership, and target
-realization. Required constant evaluation rejects class values and operations.
+realization. Static execution rejects class values and operations.
 
 ## Completion requests
 
@@ -112,12 +178,12 @@ Declaration and body completion retain their separate state and cycle policies.
 
 Function results are completed on demand. A dependency on an active, unknown
 result produces an inference-cycle diagnostic. Known signatures support recursive
-calls. A required constant call requests a completed typed body; requesting an
+calls. A call in a static root requests a completed typed body; requesting an
 actively elaborated body diagnoses an unfinished-body dependency. Execution
 recursion uses completed bodies under the evaluator's call-depth limit. Each body
 is elaborated once; later requests reuse its completed or failed result.
 
-Completion requests, contextual expression construction, and required execution
+Completion requests, contextual expression construction, and static execution
 suspend through `ContinuationTask`. A synchronous analysis entry drives a lazy,
 depth-first continuation loop; dependency requests await their result without
 replaying source operations. Active-dependency diagnostics and declaration order

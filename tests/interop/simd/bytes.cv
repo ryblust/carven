@@ -1,0 +1,252 @@
+import std::simd.bytes using {
+    block_count,
+    load_block,
+    count_byte,
+    find_byte,
+    first_or,
+    ascii_digit,
+    ascii_prefix,
+    ascii_whitespace,
+    ascii_lower,
+    extract,
+    shift_in,
+    shift_left,
+    shift_right,
+    swizzle,
+    store,
+    store_partial,
+};
+
+private const fn reversed_lanes() -> [u8; 32] {
+    var result: [u8; 32] = {};
+    for lane in 0usize..32 {
+        result[lane] = (31 - lane) as u8;
+    }
+    return result;
+}
+
+const fn qualified_factory(u8x32: u8) -> u8x32 => (u8x32)::splat(u8x32);
+
+const frozen_vector = qualified_factory(7).with_lane(15, 99);
+const frozen_mask = mask32::from_bits(0x8001);
+
+const fn stamped(&trace: i32, digit: i32) -> u8x32 {
+    trace = trace * 10 + digit;
+    return u8x32::splat(digit as u8);
+}
+
+const fn verify_vectors() -> bool {
+    assert(frozen_vector.lane(0) == 7 && frozen_vector.lane(15) == 99);
+    assert(frozen_mask.bits() == 0x8001);
+    var trace = 0;
+    let combined = stamped(&trace, 1) + stamped(&trace, 2);
+    assert(trace == 12 && (combined == 3).all());
+    let selected_eagerly = mask32::prefix(0).select(stamped(&trace, 3), stamped(&trace, 4));
+    assert(trace == 1234 && (selected_eagerly == 4).all());
+    var input: [u8; 32] = {};
+    for index in 0usize..32 {
+        input[index] = index as u8;
+    }
+    let v = u8x32::from_array(input);
+    assert(v.to_array() == input);
+    var changed = v;
+    changed += 1;
+    changed -= u8x32::splat(1);
+    changed ^= 255;
+    changed &= 15;
+    changed |= 0x80;
+    assert((changed == ((~v & 15) | 0x80)).all());
+    var mask = mask32::prefix(8);
+    mask |= mask32::from_bits(0x8000);
+    mask &= mask32::prefix(16);
+    mask ^= mask32::prefix(1);
+    assert(mask.bits() == 0x80fe);
+    assert((v == v).all());
+    assert((v != v).count() == 0);
+    assert(((v + 255) - 255 == v).all());
+    assert((255 + v == v - 1).all());
+    assert((((~v) ^ 255) == v).all());
+    assert((v < 8).bits() == 0x00ff);
+    assert((8 <= v).bits() == 0xffffff00);
+    assert(((v & 1) == 1).bits() == 0xaaaaaaaa);
+    assert(((v | 0x80) > 127).all());
+    assert((v >= 32).any() == false);
+    assert(v.with_lane(15, 99).lane(15) == 99);
+    assert(v.lane(15) == 15);
+    assert(first_or(mask32::from_bits(0x8001), 16) == 0);
+    assert(first_or(mask32::from_bits(0x8000), 16) == 15);
+    assert(first_or(mask32::from_bits(0), 77) == 77);
+    assert(mask32::from_bits(0x8001).bits() == 0x8001);
+    for count in 0usize..=32 {
+        let active = mask32::prefix(count);
+        assert(active.count() == count);
+        assert(active.all() == (count == 32));
+        assert(active.any() == (count != 0));
+        assert((active | ~active).all());
+        assert((active ^ active).any() == false);
+    }
+    const reverse = reversed_lanes();
+    assert(swizzle(v, reverse).to_array() == reverse);
+    const duplicate = u8x32::splat(3).to_array();
+    assert((swizzle(v, duplicate) == 3).all());
+    let indices = u8x32::splat(255).with_lane(0, 15).with_lane(1, 32);
+    let selected = v.lookup(indices);
+    assert(selected.lane(0) == 15);
+    assert(selected.lane(1) == 0);
+    assert(selected.lane(15) == 0);
+    const for offset in 0usize..=32 {
+        let mixed = extract(v, v + 32, offset);
+        assert(mixed.lane(0) == (offset as u8));
+        assert(mixed.lane(31) == ((offset + 31) as u8));
+    }
+    assert(shift_in(v, v + 32, 3).lane(0) == 29);
+    var out: [u8; 32] = {};
+    store(v, &out);
+    assert(out == input);
+    store_partial(v + 16, &out, 3);
+    assert(out[0] == 16 && out[2] == 18 && out[3] == 3);
+    store_partial(v, &out, 0);
+    assert(out[0] == 16);
+    return true;
+}
+
+const fn verify_classification() -> bool {
+    for byte in 0u16..256 {
+        let scalar = byte as u8;
+        let v = u8x32::splat(scalar);
+        assert(ascii_digit(v).all() == (scalar >= 0x30 && scalar <= 0x39));
+        assert(
+            ascii_whitespace(v).all()
+                == (scalar == 0x20 || scalar == 0x09 || scalar == 0x0a || scalar == 0x0d)
+        );
+        var expected = scalar;
+        if scalar >= 0x41 && scalar <= 0x5a { expected += 0x20; }
+        assert((ascii_lower(v) == expected).all());
+    }
+    return true;
+}
+
+const fn verify_blocks() -> bool {
+    var data: [u8; 97] = {};
+    data[15] = 7;
+    data[16] = 7;
+    data[32] = 7;
+    data[63] = 7;
+    data[64] = 7;
+    data[96] = 7;
+    let all = data.as_slice();
+    let sizes: [usize; 14] = [0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 97];
+    for size in sizes {
+        let bytes = all.slice(0, size);
+        var expected: usize = 0;
+        var first = size;
+        for index in 0..size {
+            if bytes[index] == 7 {
+                expected += 1;
+                if first == size { first = index; }
+            }
+        }
+        assert(count_byte(bytes, 7) == expected);
+        assert(count_byte(bytes, 0) == size - expected);
+        assert(count_byte(bytes, 99) == 0);
+        assert(find_byte(bytes, 7) == first);
+        assert(find_byte(bytes, 99) == size);
+        var visited: usize = 0;
+        for index in 0..block_count(bytes) {
+            let block = load_block(bytes, index * 32);
+            assert(block.active.count() == block.len);
+            visited += block.len;
+        }
+        assert(visited == size);
+        let empty = load_block(bytes, size);
+        assert(empty.len == 0 && empty.active.any() == false);
+        assert((empty.value == 0).all());
+    }
+    assert(u8x32::load(all, 1).lane(14) == 7);
+    assert(u8x32::load_partial(all, 96, 99).lane(1) == 99);
+    return true;
+}
+
+const test "SIMD: static execution agrees on vectors, masks and static controls" {
+    check(verify_vectors());
+    check(verify_classification());
+    check(verify_blocks());
+}
+
+test "SIMD: native execution agrees on vectors, masks and static controls" {
+    check(verify_vectors());
+    check(verify_classification());
+    check(verify_blocks());
+}
+
+const fn verify_ascii_prefix() -> bool {
+    let lengths: [usize; 13] = [0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 96, 97];
+    for length in lengths {
+        var text: [u8; 97] = {};
+        assert(ascii_prefix(text.as_slice().slice(0, length)) == length);
+        for position in 0..length {
+            text[position] = 0x80;
+            assert(ascii_prefix(text.as_slice().slice(0, length)) == position);
+            text[position] = 0;
+        }
+    }
+    return true;
+}
+
+const test "SIMD: ASCII prefix positions and tails" {
+    check(verify_ascii_prefix());
+}
+
+test "SIMD: native ASCII prefix positions and tails" {
+    check(verify_ascii_prefix());
+}
+
+const fn shift_count() -> usize => 4;
+
+// Boundary bytes expose sign, carry, and cross-lane leaks in word-based shifts.
+const fn verify_shift(const amount: usize) -> bool {
+    for byte in [0u16, 1, 0x55, 0x7f, 0x80, 0xaa, 0xfe, 0xff] {
+        let value = u8x32::splat(byte as u8);
+        assert((shift_left(value, amount) == (((byte << (amount as u16)) & 255) as u8)).all());
+        assert((shift_right(value, amount) == ((byte >> (amount as u16)) as u8)).all());
+    }
+    return true;
+}
+
+const fn verify_shifts_and_first() -> bool {
+    const count = shift_count();
+    let boundaries: [u8; 16] = [0, 1, 2, 3, 15, 16, 31, 63, 64, 127, 128, 129, 191, 223, 254, 255];
+    var bytes: [u8; 32] = {};
+    for lane in 0usize..32 {
+        bytes[lane] = boundaries[lane % 16];
+    }
+    let shifted = shift_right(u8x32::from_array(bytes), count).to_array();
+    for lane in 0usize..32 {
+        assert(shifted[lane] == bytes[lane] >> (count as u8));
+    }
+    assert(mask32::prefix(0).first_or(1234) == 1234);
+    assert(mask4::prefix(0).first_or(1234) == 1234);
+    for lane in 0usize..32 {
+        let mask = mask32::from_bits(1u32 << (lane as u32));
+        assert(mask.first_or(99) == lane);
+        assert((mask | mask32::from_bits(0x80000000)).first_or(99) == lane);
+    }
+    for lane in 0usize..4 {
+        assert(mask4::from_bits(1u8 << (lane as u8)).first_or(99) == lane);
+    }
+    return true;
+}
+
+const test "SIMD: lane shifts and first queries have constant semantics" {
+    check(verify_shifts_and_first());
+    const for amount in 0usize..8 {
+        check(verify_shift(amount));
+    }
+}
+
+test "SIMD: lane shifts and first queries have native semantics" {
+    check(verify_shifts_and_first());
+    const for amount in 0usize..8 {
+        check(verify_shift(amount));
+    }
+}

@@ -4,6 +4,7 @@ import :backend.generation.linkage;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
+import :backend.target;
 import :backend.target.decl;
 import :backend.target.expr;
 import :backend.target.item;
@@ -11,7 +12,6 @@ import :backend.target.name;
 import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target.type;
-import :backend.target;
 import :frontend.program.parse;
 import :semantic.analyze;
 import :source.batch;
@@ -125,8 +125,6 @@ const ct::Suite tests([] static noexcept {
             const nested: [[i32; 2]] = [[1, 2], [3, 4]];
             const text: [str] = ["我\0", "😀"];
             const fn make() -> [i32; 2] => [1, 2];
-            fn constant_data_1() -> i32 => 1;
-            fn constant_data_1_2() -> i32 => 2;
             fn first() -> [i32] => numbers;
             fn second() -> [i32] => numbers;
             fn empty_view() -> [i32] => empty;
@@ -149,7 +147,7 @@ const ct::Suite tests([] static noexcept {
                     .empty_arrays = 0uz,
                     .referenced_names = {},
                     .saw_function_definition = false,
-                    .source_names = {"constant_data_1", "constant_data_1_2"}
+                    .source_names = {}
                 };
                 if (!ct::expect(traverse_target_unit(unit.sections(), facts))) {
                     return;
@@ -173,7 +171,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Generation: static slice backing names are isolated across artifact owners",
+        "Generation: static slice backing names are owned by their context module",
         [] static noexcept {
             auto sources = SourceManager();
             auto inputs = std::vector<SourceModuleInput>();

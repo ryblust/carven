@@ -1,0 +1,7 @@
+fn element(values: [i32; 3], index: i32) -> i32 {
+    return 1 + values[index];
+}
+
+fn run_index() {
+    println(element([1, 2, 3], 7));
+}

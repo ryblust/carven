@@ -26,13 +26,10 @@ import std;
 auto lower_structure(ModuleLowering& context, StructID id) noexcept -> TargetDecl {
     const auto& declaration = context.semantic().declarations().structure(id);
     auto members = std::vector<TargetRecordMember>();
-    for (const auto& field : declaration.fields) {
+    for (const auto [index, field] : std::views::enumerate(declaration.fields)) {
         members.push_back(
             TargetStructField {
-                .name = context.name_allocator().source(
-                    context.semantic().provenance().spelling(field.name),
-                    context.semantic().provenance().spelling(declaration.name)
-                ),
+                .name = context.field_identifier(id, index),
                 .type = context.lower_type(field.type),
             }
         );
@@ -156,7 +153,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
              ++payload_index) {
             record_members.push_back(
                 TargetStructField {
-                    .name = TargetNameAllocator::enum_payload_field(payload_index),
+                    .name = enum_payload_field_identifier(payload_index),
                     .type = cases[case_index].payload_types[payload_index],
                 }
             );
@@ -309,8 +306,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         auto arguments = std::vector<TargetExpr>();
         const auto& source = context.semantic().declarations().enum_case(sum_case.id);
         for (auto index = 0uz; index < source.payload_types.size(); ++index) {
-            const auto name =
-                context.target().add_local(TargetNameAllocator::enum_payload_field(index));
+            const auto name = context.target().add_local(enum_payload_field_identifier(index));
             parameters.push_back(
                 {.local = name,
                  .type = context.lower_type(source.payload_types[index]),

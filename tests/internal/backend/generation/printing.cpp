@@ -4,11 +4,11 @@ import :backend.generation.linkage;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
+import :backend.target;
 import :backend.target.name;
 import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target.type;
-import :backend.target;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
@@ -19,7 +19,7 @@ namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
     ct::test(
-        "Generation: known printing arguments retain source effects and inner String construction",
+        "Generation: mixed printing arguments retain runtime effects and inner String construction",
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -88,7 +88,7 @@ const ct::Suite tests([] static noexcept {
                 constructions += query.constructions;
             }
             ct::expect(outputs == 2uz);
-            ct::expect(known_arguments == 2uz);
+            ct::expect(known_arguments == 1uz);
             ct::expect(effects == 1uz);
             ct::expect(constructions == 1uz);
         }

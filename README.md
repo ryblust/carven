@@ -100,7 +100,7 @@ Run the program or select its runtime tests using the same source file:
 ```
 
 The program prints `42`. With `--tests`, the driver runs the tests instead of the
-program entry and reports their results. Required constant evaluation and
+program entry and reports their results. Compile-time execution and
 `const test` still run during analysis. Add `--timings` to see time spent in each
 command stage.
 

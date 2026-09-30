@@ -25,7 +25,7 @@ private fn known_effect_arguments(before: i32, flag: bool, after: i32) -> i32 {
     return before * 100 + (flag as i32) * 10 + after;
 }
 
-test "Evaluation: known argument results preserve earlier snapshots and later reads" {
+test "Evaluation: Boolean arguments preserve earlier snapshots and later reads" {
     var trace = 3;
     let result = known_effect_arguments(trace, record(&trace, 4) > 0 && false, trace);
     check(result == 334);

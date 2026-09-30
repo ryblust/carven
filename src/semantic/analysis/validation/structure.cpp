@@ -30,9 +30,14 @@ auto BodyContractVerifier::verify_rows() noexcept -> void {
         }
         static_cast<void>(require_type(binding.type));
         require_origin(binding.origin);
+        // An instance keeps the table of the body it specializes; its static
+        // parameters are bound by the instance and are no longer inputs.
+        const auto bound_static_parameter =
+            body.specialized() && std::holds_alternative<ParameterBindingStorage>(binding.storage);
         if ((std::holds_alternative<ParameterBindingStorage>(binding.storage)
              || std::holds_alternative<CaptureBindingStorage>(binding.storage))
-            && inputs[id.index()] == 0u) {
+            && inputs[id.index()] == 0u
+            && !bound_static_parameter) {
             invariant_violation("parameter or capture binding is absent from BodyInputs");
         }
     }
@@ -200,7 +205,7 @@ auto BodyContractVerifier::compatible_pattern_type(TypeID left, TypeID right) co
                    first.parameters,
                    second.parameters,
                    [&](const CallableParameter& x, const CallableParameter& y) noexcept {
-                       return x.access == y.access && self(x.type, y.type);
+                       return x.stage == y.stage && x.access == y.access && self(x.type, y.type);
                    }
             );
     };

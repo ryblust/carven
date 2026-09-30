@@ -58,7 +58,7 @@ enum class DiagnosticCode {
     FlowBreakOutsideLoop,
     FlowContinueOutsideLoop,
     FlowMissingReturn,
-    FlowTransferValueBranch,
+    FlowTransferBoundary,
     FlowUnreachable,
     FlowUnreachableMatchArm,
     FlowValueBranchResult,

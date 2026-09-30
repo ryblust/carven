@@ -14,20 +14,81 @@ import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
+import :semantic.analysis.constant.freeze;
 import :semantic.analysis.constant.literal;
 import :semantic.analysis.constant.root;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
+import :semantic.analysis.types.display;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.decl;
+import :semantic.semir.simd;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
 import std;
+
+auto BodyElaborator::initializer_value(
+    const ASTVariableDecl& source,
+    std::optional<ConstructionTypeRef> declared
+) noexcept -> AnalysisTask<SemanticExpression> {
+    const auto span = ast.expression(*source.initializer).span;
+    auto initializer = (co_await expression(*source.initializer, declared));
+    if (!initializer.has_value()) {
+        co_return std::unexpected(initializer.error());
+    }
+    if (declared.has_value()) {
+        auto coerced = coerce_to(*initializer, *declared, span);
+        if (!coerced.has_value()) {
+            co_return std::unexpected(coerced.error());
+        }
+    } else {
+        auto inferred = infer_value_type(*initializer, span);
+        if (!inferred.has_value()) {
+            co_return std::unexpected(inferred.error());
+        }
+    }
+    co_return consume_value(*initializer, span, AccessMode::Read);
+}
+
+// Outside the static stage a constant reads static sources only. Inside it
+// every value is one, and the constant freezes what execution produced.
+auto BodyElaborator::constant_initializer(
+    const ASTVariableDecl& source,
+    std::optional<ConstructionTypeRef> declared
+) noexcept -> AnalysisTask<SemanticExpression> {
+    if (static_stage()) {
+        // A failure that leaves the initializer is reported when it executes.
+        failure_contexts.push_back({draft().add_empty_failure_term(), false});
+        auto value = co_await initializer_value(source, declared);
+        failure_contexts.pop_back();
+        co_return value;
+    }
+    auto scope = BodyExprSite(*this);
+    auto result = co_await build_static_expression(
+        draft(),
+        source_module_id,
+        ast,
+        scope,
+        *source.initializer,
+        declared
+    );
+    if (result) {
+        co_return std::move(*result);
+    }
+    if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
+        co_return std::unexpected(*diagnostic);
+    }
+    co_return std::unexpected(fail(
+        source.span,
+        DiagnosticCode::ConstInitializer,
+        "constant initializer requires admitted static operands"
+    ));
+}
 
 auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
     -> AnalysisTask<void> {
@@ -48,59 +109,53 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
     }
     const auto* named = std::get_if<ASTNamedBindingTarget>(&source.target);
     if (source.kind == ASTBindingKind::Const) {
-        auto scope = BodyExprSite(*this);
-        auto result = (co_await evaluate_constant_expression(
-            draft(),
-            source_module_id,
-            ast,
-            scope,
-            *source.initializer,
-            declared
-        ));
+        auto result = co_await constant_initializer(source, declared);
         if (!result) {
-            if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
-                co_return std::unexpected(*diagnostic);
-            }
+            co_return std::unexpected(result.error());
+        }
+        const auto type = constant_initializer_type(draft(), result->type.construction());
+        if (declared && !compatible(type, *declared)) {
             co_return std::unexpected(fail(
                 source.span,
-                DiagnosticCode::ConstInitializer,
-                "const initializer is not a proven Carven constant"
+                DiagnosticCode::TypeMismatch,
+                "frozen constant differs from its declared type"
             ));
         }
-        const auto constant = *result;
+        const auto name = named == nullptr ? std::string("_") : spelling(named->name_span);
+        const auto storage = body_builder.add_owner_binding(
+            draft().intern_spelling(name),
+            type,
+            frames.back().lifetime,
+            false,
+            origin(binding_target_span(source.target))
+        );
+        auto initializer = OwnedSemanticExpression(std::move(*result));
+        batch->static_roots.emplace(
+            storage.binding,
+            BodyBatchElaborator::StaticRoot {.initializer = *initializer, .value = std::nullopt}
+        );
+        append_statement(
+            SemStaticBinding {.binding = storage.binding, .initializer = std::move(initializer)},
+            origin(source.span)
+        );
         if (named == nullptr) {
             co_return {};
         }
         co_return bind_local(
             named->name_span,
             BodyLocalStorage {
-                .storage = constant,
-                .type = draft().constant(constant).type,
+                .storage = storage,
+                .type = type,
                 .used = false,
                 .takeable = false,
+                .static_source = true,
                 .role = BodyLocalRole::Local,
                 .unused_candidate = std::nullopt,
             },
             DiagnosticCode::NameDuplicateLocal
         );
     }
-    auto initializer = (co_await expression(*source.initializer, declared));
-    if (!initializer.has_value()) {
-        co_return std::unexpected(initializer.error());
-    }
-    if (declared.has_value()) {
-        auto coerced = coerce_to(*initializer, *declared, ast.expression(*source.initializer).span);
-        if (!coerced.has_value()) {
-            co_return std::unexpected(coerced.error());
-        }
-    } else {
-        auto inferred = infer_value_type(*initializer, ast.expression(*source.initializer).span);
-        if (!inferred.has_value()) {
-            co_return std::unexpected(inferred.error());
-        }
-    }
-    auto value =
-        consume_value(*initializer, ast.expression(*source.initializer).span, AccessMode::Read);
+    auto value = co_await initializer_value(source, declared);
     if (!value.has_value()) {
         co_return std::unexpected(value.error());
     }
@@ -117,7 +172,10 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
         origin(binding_target_span(source.target))
     );
     body_builder.remember_initializer(storage.binding, *value);
-    append_statement(SemInitialize {storage.binding, std::move(*value)}, origin(source.span));
+    append_statement(
+        SemInitialize {.binding = storage.binding, .initializer = std::move(*value)},
+        origin(source.span)
+    );
     if (named == nullptr) {
         co_return {};
     }
@@ -128,6 +186,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             .type = binding_type,
             .used = false,
             .takeable = true,
+            .static_source = false,
             .role = BodyLocalRole::Local,
             .unused_candidate = std::nullopt,
         },
@@ -170,7 +229,21 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
         );
         co_return {};
     }
-    auto right = (co_await expression(source.value, target->expression.type.construction()));
+    const auto target_type = target->expression.type.construction();
+    const auto layout = [&]() noexcept -> std::optional<SIMDLayout> {
+        const auto* id = std::get_if<TypeID>(&target_type);
+        if (!id) {
+            return std::nullopt;
+        }
+        const auto canonical = draft().type_copy(*id);
+        const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+        return builtin ? simd_layout(builtin->kind) : std::nullopt;
+    }();
+    const auto operand_type =
+        layout && target_type == ConstructionTypeRef(draft().builtin_type(layout->vector))
+        ? ConstructionTypeRef(draft().builtin_type(layout->element))
+        : target_type;
+    auto right = (co_await expression(source.value, operand_type));
     if (!right.has_value()) {
         co_return std::unexpected(right.error());
     }
@@ -204,13 +277,34 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
     );
     if (!is_cpp_type(target->expression.type.construction())
         && !is_cpp_type(right_value->type.construction())
-        && (!decision.has_value() || *decision != OperatorResult::Operand)) {
+        && (!decision.has_value()
+            || (*decision != OperatorResult::Operand
+                && ConstructionTypeRef(draft().builtin_type(*operator_result_builtin(*decision)))
+                    != target_type))) {
         co_return std::unexpected(fail(
             source.operator_span,
             decision.has_value() ? DiagnosticCode::TypeBinary : decision.error().code,
-            decision.has_value() ? "compound assignment has no value result"
-                                 : std::string(decision.error().message)
+            decision.has_value()
+                ? "compound assignment has no value result"
+                : std::format(
+                      "{}: '{}' and '{}'",
+                      decision.error().message,
+                      type_display_name(draft(), target->expression.type.construction()),
+                      type_display_name(draft(), right_value->type.construction())
+                  )
         ));
+    }
+    if (layout
+        && right_value->type.construction()
+            == ConstructionTypeRef(draft().builtin_type(layout->element))) {
+        auto operands = std::vector<SemCallArgument>();
+        operands.push_back({.access = AccessMode::Read, .expression = std::move(*right_value)});
+        right_value = active_builder().make_expression(
+            target_type,
+            active_builder().lifetime(),
+            origin(source.operator_span),
+            SemIntrinsic {.operation = SIMDIntrinsic::Splat, .operands = std::move(operands)}
+        );
     }
     append_statement(
         SemAssign {std::move(target->expression), operation, std::move(*right_value)},
@@ -307,11 +401,11 @@ auto BodyElaborator::return_statement(
     Span keyword_span,
     bool implicit
 ) noexcept -> AnalysisTask<void> {
-    if (!value_boundary_loop_depths.empty()) {
+    if (!transfer_boundaries.empty()) {
         static_cast<void>(fail(
             keyword_span,
-            DiagnosticCode::FlowTransferValueBranch,
-            "return cannot cross a value-control branch"
+            DiagnosticCode::FlowTransferBoundary,
+            std::format("return cannot cross {}", transfer_boundaries.back().construct)
         ));
         reachable = false;
         co_return {};
@@ -422,12 +516,12 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
                     "break is only valid inside a loop"
                 ));
             }
-            if (!value_boundary_loop_depths.empty()
-                && loops.size() <= value_boundary_loop_depths.back()) {
+            if (!transfer_boundaries.empty()
+                && loops.size() <= transfer_boundaries.back().loop_depth) {
                 static_cast<void>(fail(
                     source.keyword_span,
-                    DiagnosticCode::FlowTransferValueBranch,
-                    "break cannot cross a value-control branch"
+                    DiagnosticCode::FlowTransferBoundary,
+                    std::format("break cannot cross {}", transfer_boundaries.back().construct)
                 ));
                 reachable = false;
                 co_return {};
@@ -435,7 +529,7 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
             if (source.value.has_value()) {
                 co_return std::unexpected(fail(
                     source.span,
-                    DiagnosticCode::FlowTransferValueBranch,
+                    DiagnosticCode::FlowTransferBoundary,
                     "break cannot carry a value"
                 ));
             }
@@ -452,12 +546,12 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
                     "continue is only valid inside a loop"
                 ));
             }
-            if (!value_boundary_loop_depths.empty()
-                && loops.size() <= value_boundary_loop_depths.back()) {
+            if (!transfer_boundaries.empty()
+                && loops.size() <= transfer_boundaries.back().loop_depth) {
                 static_cast<void>(fail(
                     source.keyword_span,
-                    DiagnosticCode::FlowTransferValueBranch,
-                    "continue cannot cross a value-control branch"
+                    DiagnosticCode::FlowTransferBoundary,
+                    std::format("continue cannot cross {}", transfer_boundaries.back().construct)
                 ));
                 reachable = false;
                 co_return {};
@@ -465,7 +559,7 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
             if (source.value.has_value()) {
                 co_return std::unexpected(fail(
                     source.span,
-                    DiagnosticCode::FlowTransferValueBranch,
+                    DiagnosticCode::FlowTransferBoundary,
                     "continue cannot carry a value"
                 ));
             }
@@ -500,8 +594,9 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
                 ));
             }
             const auto& target = failure_context_for_current_path();
-            draft().add_failure_member(target.term, *failure_type);
-            append_statement(SemThrow {std::move(*value), *failure_type}, origin(source.span));
+            const auto throw_origin = origin(source.span);
+            draft().add_thrown_failure_member(target.term, *failure_type, throw_origin);
+            append_statement(SemThrow {std::move(*value), *failure_type}, throw_origin);
             reachable = false;
             co_return {};
         }

@@ -5,7 +5,6 @@ import :backend.target.name;
 import std;
 
 enum class TargetTemporaryNameKind {
-    Display,
     Discard,
     Operand,
     MatchDone,
@@ -20,6 +19,7 @@ enum class TargetTemporaryNameKind {
     PayloadProjection,
     Region,
     Continue,
+    Break,
     Explanation,
     CppBoundaryParameter,
 };
@@ -40,13 +40,45 @@ struct TargetPayloadEnumNames final {
     TargetIdentifier storage_member;
 };
 
+struct TargetContentName final {
+    std::string preferred;
+    std::string content;
+};
+
+auto content_name_digest(std::string_view content) noexcept -> std::string;
+
+auto source_target_identifier(
+    std::string_view spelling,
+    std::string_view enclosing_class = {}
+) noexcept -> TargetIdentifier;
+auto public_target_identifier(std::string_view spelling) noexcept -> TargetIdentifier;
+auto generated_target_namespace() noexcept -> TargetName;
+auto linkage_target_namespace(const LinkageDomainID& linkage_domain) noexcept -> TargetName;
+auto claim_target_identifier(
+    std::string_view preferred,
+    std::flat_set<std::string>& occupied
+) noexcept -> TargetIdentifier;
+auto claim_target_type_identifier(
+    std::string_view preferred,
+    std::flat_set<std::string>& occupied
+) noexcept -> TargetIdentifier;
+// Equal complete content shares a spelling; distinct content claims a unique
+// spelling in content order, independently of request order.
+auto claim_content_identifiers(
+    std::span<const TargetContentName> requests,
+    std::flat_set<std::string>& occupied
+) noexcept -> std::vector<TargetIdentifier>;
+auto enum_payload_field_identifier(std::size_t payload_index) noexcept -> TargetIdentifier;
+auto process_entry_identifier() noexcept -> TargetIdentifier;
+auto process_argument_count_identifier() noexcept -> TargetIdentifier;
+auto process_argument_vector_identifier() noexcept -> TargetIdentifier;
+auto test_context_identifier() noexcept -> TargetIdentifier;
+
 class TargetNameAllocator final {
 public:
     TargetNameAllocator() = default;
     // The enclosing names remain immutable and outlive this allocator.
     explicit TargetNameAllocator(const std::flat_set<std::string>& enclosing) noexcept;
-    auto source(std::string_view spelling, std::string_view enclosing_class = {}) const noexcept
-        -> TargetIdentifier;
     auto alias_scope(TargetScopeID source, TargetScopeID target) noexcept -> void;
     auto canonical_scope(TargetScopeID scope) const noexcept -> TargetScopeID;
     auto reserve(std::string_view spelling) noexcept -> void;
@@ -60,36 +92,6 @@ public:
     ) noexcept -> TargetIdentifier;
     auto fresh(TargetTemporaryNameKind kind) noexcept -> TargetIdentifier;
     auto fresh(TargetTemporaryNameKind kind, TargetScopeID scope) noexcept -> TargetIdentifier;
-    static auto public_identifier(std::string_view spelling) noexcept -> TargetIdentifier;
-    static auto fixed(std::string_view spelling) noexcept -> TargetIdentifier;
-    static auto generated_namespace() noexcept -> TargetName;
-    static auto domain_namespace(const LinkageDomainID& linkage_domain) noexcept -> TargetName;
-    static auto artifact_storage_namespace(
-        std::size_t ordinal,
-        const std::flat_set<std::string>& reserved
-    ) noexcept -> TargetIdentifier;
-    static auto constant_storage_identifier(std::size_t ordinal) noexcept -> TargetIdentifier;
-    static auto derived_type(const TargetIdentifier& source_name, std::string_view role) noexcept
-        -> TargetIdentifier;
-    static auto derived_value(std::string_view role, const TargetIdentifier& source_name) noexcept
-        -> TargetIdentifier;
-    static auto claim_source(
-        std::string_view preferred,
-        std::flat_set<std::string>& occupied
-    ) noexcept -> TargetIdentifier;
-    static auto claim_type(
-        std::string_view preferred,
-        std::flat_set<std::string>& occupied
-    ) noexcept -> TargetIdentifier;
-    static auto claim_value(
-        std::string_view preferred,
-        std::flat_set<std::string>& occupied
-    ) noexcept -> TargetIdentifier;
-    static auto enum_payload_field(std::size_t payload_index) noexcept -> TargetIdentifier;
-    static auto process_entry() noexcept -> TargetIdentifier;
-    static auto process_argument_count() noexcept -> TargetIdentifier;
-    static auto process_argument_vector() noexcept -> TargetIdentifier;
-    static auto test_context() noexcept -> TargetIdentifier;
 
 private:
     auto is_reserved(const std::string& spelling) const noexcept -> bool;

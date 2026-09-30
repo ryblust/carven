@@ -73,8 +73,8 @@ share one module namespace. Duplicate module declarations are invalid; function
 overloading is not supported.
 
 Nominal and callable identities are collected across the closed compilation.
-Declaration signatures, required constant facts, and any function bodies needed
-for constant execution are completed through their dependencies. Declaration order
+Declaration signatures, constants, and any function bodies needed
+for static execution are completed through their dependencies. Declaration order
 therefore does not control whether a module declaration can be named; valid
 forward constant dependencies and forward or mutually recursive function calls
 are supported. A cycle among constant-required facts is invalid.

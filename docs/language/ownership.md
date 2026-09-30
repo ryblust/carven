@@ -15,7 +15,7 @@ Inside `ptr<&T>`, `&` is the pointer type's explicit target-access parameter.
 
 - `let` creates an immutable runtime owner.
 - `var` creates a mutable runtime owner.
-- A local `const` creates a compile-time lexical binding.
+- A local `const` creates a static binding.
 - An unmarked parameter has `Read` access.
 - A parameter marked `&` has `Write` access.
 - A parameter marked `&&` has `Take` access.
@@ -31,7 +31,7 @@ lives until the enclosing scope ends; local `const _` still requires a constant
 fact. Module constants always require a named target.
 
 A local declaration publishes its name only after its declared type,
-initializer, and any required constant proof are complete. Its own name is not
+initializer, and any constant it needs are complete. Its own name is not
 visible in those inputs, so an initializer may select an outer binding with the
 same spelling. The completed binding is visible to following statements in its
 scope.
@@ -78,7 +78,7 @@ This does not provide simultaneous decomposition into multiple field owners.
 
 `&&expression` is the ownership-transfer expression and has its operand's value
 type. Taking a complete owner makes that binding unavailable, including for a
-copyable type. This is a static state transition, not a runtime wrapper or a
+copyable type. This is a state transition checked during analysis, not a runtime wrapper or a
 promise of a particular C++ move operation.
 
 Returning a named owner copies it; a return ends the owner but does not imply

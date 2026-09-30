@@ -312,7 +312,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         }
         return builder.append_item({
             .span = join(start, builder.block(*body).span),
-            .value = ASTConstantBlock {
+            .value = ASTConstBlock {
                 .keyword_span = keyword.span,
                 .label = std::move(label),
                 .body = *body,
@@ -524,6 +524,7 @@ auto Parser::parse_function(
 
     auto parameters = std::vector<ASTFunctionParameter> {};
     while (!failed && !check(TokenKind::RightParen)) {
+        const auto parameter_const = match(TokenKind::Const);
         auto access = ASTAccessSyntax {.mode = ASTAccessMode::Read, .marker = std::nullopt};
         if (const auto marker = match(TokenKind::Ampersand)) {
             access = {.mode = ASTAccessMode::Write, .marker = marker->span};
@@ -531,14 +532,21 @@ auto Parser::parse_function(
             access = {.mode = ASTAccessMode::Take, .marker = marker->span};
         }
         const auto parameter_name = expect(TokenKind::Identifier, "expected parameter name");
+        if (parameter_const.has_value() && access.marker.has_value()) {
+            fail("const parameter cannot have an access marker", parameter_const->span);
+        }
         auto type = std::optional<ASTTypeID> {};
         if (match(TokenKind::Colon)) {
             type = parse_type();
         }
-        const auto start = access.marker.value_or(parameter_name.span);
+        const auto start = parameter_const.has_value()
+            ? parameter_const->span
+            : access.marker.value_or(parameter_name.span);
         parameters.push_back({
             .span = type.has_value() ? join(start, builder.type(*type).span)
                                      : join(start, parameter_name.span),
+            .const_span =
+                parameter_const.transform([](const Token& token) static { return token.span; }),
             .access = access,
             .target = slice(source, parameter_name.span) == "_"
                 ? ASTBindingTarget {ASTDiscardBindingTarget {

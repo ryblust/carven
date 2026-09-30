@@ -27,7 +27,7 @@ auto construct_interpolation(
     auto state = Site::operand_state();
     auto destination = std::optional<OwnedSemanticExpression>();
     if (receiver) {
-        if constexpr (Site::mode == ExpressionMode::RequiredRoot) {
+        if constexpr (Site::mode == ExpressionMode::StaticRoot) {
             co_return std::unexpected(ExpressionNotAdmitted {});
         } else {
             auto place = site.consume_write(state, std::move(*receiver), span);

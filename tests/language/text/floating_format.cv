@@ -21,7 +21,7 @@ const precise_value = fixed_precision(1.25);
 const infinite = specials(1.0 / 0.0);
 const negative_zero = specials(-0.0);
 
-const test "Floating format: constant execution uses native specifications" {
+const test "Floating format: static execution uses native specifications" {
     check(padded == "value=    1.25");
     check(unpadded == "value=1");
     check(plain_value == "1.25");

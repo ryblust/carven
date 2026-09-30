@@ -17,7 +17,7 @@ struct ExecutionLimits final {
     std::size_t aggregate_work;
 };
 
-auto constant_execution_limits() noexcept -> ExecutionLimits {
+auto static_execution_limits() noexcept -> ExecutionLimits {
     return {
         .steps = maximum_constant_steps,
         .text_work = 8uz * maximum_constant_text_bytes,

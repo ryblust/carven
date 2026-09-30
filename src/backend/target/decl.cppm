@@ -114,6 +114,7 @@ struct TargetOutOfClassMemberDefinition final {
     TargetTypeID result;
     std::vector<TargetStmt> body;
     bool const_qualified;
+    bool inline_specifier;
 };
 
 using TargetRecordMember = std::variant<TargetStructField, TargetMemberFunctionDecl>;

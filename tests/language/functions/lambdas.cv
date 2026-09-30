@@ -192,9 +192,7 @@ test "Callable arrays: nested stateless adoption evaluates its source once" {
     var count = 0;
     let callbacks: [[fn() -> i32; 1]; 1] = [&count]() {
         count += 1;
-        return [
-            [[]() => 17]
-        ];
+        return [[[]() => 17]];
     }();
     check(count == 1);
     check(callbacks[0][0]() == 17);

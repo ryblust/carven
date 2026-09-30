@@ -72,7 +72,6 @@ private:
         -> std::optional<NullPlace>;
     auto value_at(const NullState& state, const NullPlace& place) const noexcept -> NullValue;
     auto constant_value(const SemanticExpression& source) const noexcept -> NullValue;
-    auto truth(const SemanticExpression& source) const noexcept -> std::optional<bool>;
     auto invalidate(NullState& state, const std::optional<NullPlace>& place) const noexcept -> void;
     auto invalidate_exposed(NullState& state) const noexcept -> void;
     auto store(NullState& state, const NullPlace& place, const NullValue& value) const noexcept
@@ -109,7 +108,6 @@ private:
         std::span<const SemPatternBounds> bounds,
         NullState state
     ) noexcept -> ContinuationTask<NullCondition>;
-    auto irrefutable(PatternID pattern) const noexcept -> bool;
     auto failures(NullFlow& flow, FailureSetID failures) const noexcept -> void;
     auto require_nonnull(ProgramOriginID origin, const NullValue& value) noexcept -> void;
 

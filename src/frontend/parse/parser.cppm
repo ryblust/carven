@@ -102,6 +102,8 @@ private:
     auto current() const noexcept -> Token;
     auto check(TokenKind kind) const noexcept -> bool;
     auto check_next(TokenKind kind) const noexcept -> bool;
+    // A control form is its plain keyword optionally preceded by `const`.
+    auto check_optionally_const(TokenKind keyword) const noexcept -> bool;
     auto consume() noexcept -> Token;
     auto match(TokenKind kind) noexcept -> std::optional<Token>;
     auto fail(
@@ -160,7 +162,7 @@ private:
     auto parse_control_transfer(bool with_semicolon) noexcept -> std::optional<ASTControlTransfer>;
     auto parse_while_statement() noexcept -> std::optional<ASTStmtID>;
     auto parse_for_statement() noexcept -> std::optional<ASTStmtID>;
-    auto parse_for_header() noexcept -> std::optional<ASTForHeader>;
+    auto parse_for_header(std::optional<Span> const_span) noexcept -> std::optional<ASTForHeader>;
     auto parse_for_step() noexcept -> std::optional<ASTForStep>;
     auto parse_expression() noexcept -> std::optional<ASTExprID>;
     template<typename ParseOperand>

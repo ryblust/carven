@@ -22,6 +22,14 @@ type facts; exhaustive queries and full diagnostics share its algorithm. Catch
 acceptance describes the current arm, independently of coverage accumulated by
 earlier arms.
 
+Ownership and nullability use `semantic.analysis.pattern.control` to propagate
+states through the pattern table and dynamic bounds, using type coverage to
+identify exhaustive acceptance. Ordered alternatives follow rejection; enum
+payloads follow acceptance. Range bounds execute in order,
+and outward exits bypass later bounds and alternatives. Each analysis supplies
+expression evaluation, state joins, binding projections, and its guard and catch
+destinations.
+
 Queries distinguish body-local objects from caller inputs. Availability belongs
 to an owner; holder relationships belong to storage positions within that owner.
 Query inputs describe aliases, accesses, availability, relationships, and
@@ -34,7 +42,7 @@ restrictions; pointers do not propagate target contents. Relationship
 construction skips types without closure owners or callable views. Native Read
 passing is selected from C++ copy and destruction traits.
 
-Constant execution queries the same type contents over completed declaration
+Static execution queries the same type contents over completed declaration
 fields during construction. This supplies storage observation rules for its
 admitted types; native copy and destruction traits remain C++ responsibilities.
 

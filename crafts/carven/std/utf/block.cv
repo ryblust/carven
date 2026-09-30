@@ -1,0 +1,79 @@
+import std::simd.bytes using { shift_in, shift_right };
+
+// Lookup4-style adjacent-byte classification. Each bit denotes a constraint;
+// intersecting the three nibble tables selects the applicable constraints.
+// Algorithm reference: simdutf/src/generic/utf8_validation/utf8_lookup4_algorithm.h.
+private const too_short: u8 = 1;
+private const too_long: u8 = 2;
+private const overlong_three: u8 = 4;
+private const too_large: u8 = 8;
+private const surrogate: u8 = 16;
+private const overlong_two: u8 = 32;
+// These cases have disjoint preceding low nibbles and share one flag.
+private const four_byte_boundary: u8 = 64;
+private const two_continuations: u8 = 128;
+
+private const fn previous_high_flags(nibble: u8) -> u8 {
+    if nibble < 8 { return too_long; }
+    if nibble < 12 { return two_continuations; }
+    if nibble == 12 { return too_short | overlong_two; }
+    if nibble == 13 { return too_short; }
+    if nibble == 14 { return too_short | overlong_three | surrogate; }
+    return too_short | too_large | four_byte_boundary;
+}
+
+private const fn previous_low_flags(nibble: u8) -> u8 {
+    var flags = too_short | too_long | two_continuations;
+    if nibble == 0 { flags |= overlong_three | overlong_two | four_byte_boundary; }
+    if nibble == 1 { flags |= overlong_two; }
+    if nibble == 4 { flags |= too_large; }
+    if nibble >= 5 { flags |= too_large | four_byte_boundary; }
+    if nibble == 13 { flags |= surrogate; }
+    return flags;
+}
+
+private const fn current_high_flags(nibble: u8) -> u8 {
+    if nibble < 8 || nibble >= 12 { return too_short; }
+    var flags = too_long | overlong_two | two_continuations;
+    if nibble == 8 { return flags | overlong_three | four_byte_boundary; }
+    if nibble == 9 { return flags | overlong_three | too_large; }
+    return flags | surrogate | too_large;
+}
+
+// Ordinary constant construction keeps the table's meaning beside its values.
+private const fn classification_table(part: usize) -> u8x32 {
+    var entries: [u8; 32] = {};
+    for index in 0usize..32 {
+        let nibble = (index % 16) as u8;
+        if part == 0 {
+            entries[index] = previous_high_flags(nibble);
+        } else if part == 1 {
+            entries[index] = previous_low_flags(nibble);
+        } else {
+            entries[index] = current_high_flags(nibble);
+        }
+    }
+    return u8x32::from_array(entries);
+}
+
+private const previous_high = classification_table(0);
+private const previous_low = classification_table(1);
+private const current_high = classification_table(2);
+
+// previous is zero at a scalar boundary, or the preceding validated full block.
+// An unfinished suffix is allowed; the next block or scalar tail checks it.
+const fn invalid_utf8_block(previous: u8x32, current: u8x32) -> mask32 {
+    let prev1 = shift_in(previous, current, 1);
+    let prev2 = shift_in(previous, current, 2);
+    let prev3 = shift_in(previous, current, 3);
+    let adjacent = previous_high.lookup(shift_right(prev1, 4))
+        & previous_low.lookup(prev1 & 15)
+        & current_high.lookup(shift_right(current, 4));
+    let required = ((prev2 >= 0xe0) ^ (prev3 >= 0xf0)).select(
+        u8x32::splat(two_continuations),
+        u8x32::splat(0)
+    );
+    // Reject forbidden leads immediately, including the last byte of a feed.
+    // Adjacent-pair rules alone could defer their rejection until the next byte.
+    return ((adjacent ^ required) != 0) | ((current & 0xfe) == 0xc0) | (current >= 0xf5);
+}

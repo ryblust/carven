@@ -2,6 +2,7 @@ module carven:semantic.analysis.body.locals.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
+import :diagnostics.suggestion;
 import :frontend.ast.decl;
 import :semantic.analysis.body.context;
 import :semantic.analysis.catalog;
@@ -116,6 +117,23 @@ auto BodyElaborator::use_local(std::string_view name) noexcept -> BodyLocalStora
     return inherited == inherited_locals.end() ? nullptr : mark(inherited->second);
 }
 
+auto BodyElaborator::static_stage() const noexcept -> bool {
+    return static_body || !const_block_frames.empty();
+}
+
+auto BodyElaborator::runtime_local_outside_block(std::string_view name) const noexcept -> bool {
+    if (static_body || const_block_frames.empty()) {
+        return false;
+    }
+    for (auto index = frames.size(); index-- > 0uz;) {
+        if (const auto found = frames[index].names.find(name); found != frames[index].names.end()) {
+            return index < const_block_frames.front() && !found->second.static_source;
+        }
+    }
+    const auto inherited = inherited_locals.find(name);
+    return inherited != inherited_locals.end() && !inherited->second.static_source;
+}
+
 auto BodyElaborator::local_was_used(std::string_view name) const noexcept -> bool {
     const auto* local = find_local(name);
     return local != nullptr && local->used;
@@ -125,9 +143,16 @@ auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
     -> AnalysisTask<const CatalogSymbol*> {
     const auto candidates = catalog().lookup(source_module_id, name);
     if (candidates.empty()) {
-        co_return std::unexpected(
-            fail(span, DiagnosticCode::NameUnresolved, std::format("unresolved name '{}'", name))
-        );
+        auto known = catalog().visible_names(source_module_id);
+        for (const auto& frame : frames) {
+            known.append_range(frame.names.keys());
+        }
+        known.append_range(inherited_locals.keys());
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::NameUnresolved,
+            std::format("unresolved name '{}'{}", name, spelling_suggestion(name, known))
+        ));
     }
     if (candidates.size() != 1uz) {
         co_return std::unexpected(fail(
@@ -177,6 +202,7 @@ auto BodyElaborator::add_parameter(
             .type = contract.type,
             .used = false,
             .takeable = contract.access == AccessMode::Take,
+            .static_source = contract.stage == ParameterStage::Static,
             .role = BodyLocalRole::Parameter,
             .unused_candidate = std::nullopt,
         },
@@ -204,6 +230,7 @@ auto BodyElaborator::add_capture(
             .type = type,
             .used = false,
             .takeable = false,
+            .static_source = false,
             .role = BodyLocalRole::Capture,
             .unused_candidate = std::nullopt,
         },

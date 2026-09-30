@@ -1,10 +1,12 @@
 module carven:test.internal.backend.generation.decl;
 
 import :backend.generation.linkage;
+import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
 import :backend.realization.decl;
+import :backend.target;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -14,7 +16,6 @@ import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.traversal;
 import :backend.target.type;
-import :backend.target;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
@@ -61,6 +62,28 @@ auto assignment(TargetLocalID id) noexcept -> TargetStmt {
     );
 }
 
+auto jump(std::string_view label) noexcept -> TargetStmt {
+    return target_lowering_statement(
+        TargetGotoStmt {.label = name(label), .role = TargetJumpRole::ForLoopContinue}
+    );
+}
+
+auto exit(std::string_view label) noexcept -> TargetStmt {
+    return target_lowering_statement(
+        TargetLabelStmt {.label = name(label), .role = TargetJumpRole::ForLoopContinue}
+    );
+}
+
+auto conditional_jump(std::string_view label) noexcept -> TargetStmt {
+    auto body = std::vector<TargetStmt>();
+    body.push_back(jump(label));
+    auto branches = std::vector<TargetIfBranch>();
+    branches.push_back({.condition = literal(), .body = std::move(body)});
+    return target_lowering_statement(
+        TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+    );
+}
+
 struct DeclarationFlags final {
     std::vector<bool> result;
 
@@ -88,6 +111,48 @@ auto boolean_type(TargetUnitBuilder& builder) noexcept -> TargetTypeID {
 namespace {
 
 const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Names: content spelling preserves identity and source separation",
+        [] static noexcept {
+            const auto stems = std::array {"CarvenQuery", "CarvenDisplay", "carven_constant"};
+            ct::each(
+                stems,
+                [](const auto& stem) static noexcept { return stem; },
+                [](const auto& stem) static noexcept {
+                    const auto source = source_target_identifier(stem);
+                    ct::expect(source.spelling() != stem);
+                    ct::expect(
+                        std::format("{}_1234567890123456", source.spelling())
+                        != std::format("{}_1234567890123456", stem)
+                    );
+                }
+            );
+            const auto requests = std::array {
+                TargetContentName {.preferred = "Shared", .content = "second"},
+                TargetContentName {.preferred = "Shared", .content = "first"},
+                TargetContentName {.preferred = "Shared", .content = "first"},
+            };
+            auto occupied = std::flat_set<std::string> {"Shared"};
+            const auto planned = claim_content_identifiers(requests, occupied);
+            if (!ct::expect_equal(planned.size(), requests.size())) {
+                return;
+            }
+            ct::expect(planned[0] != planned[1]);
+            ct::expect(planned[1] == planned[2]);
+            ct::expect(planned[0].spelling() != "Shared");
+            ct::expect(planned[1].spelling() != "Shared");
+            const auto reversed = std::array {requests[2], requests[1], requests[0]};
+            auto reverse_occupied = std::flat_set<std::string> {"Shared"};
+            const auto reverse_names = claim_content_identifiers(reversed, reverse_occupied);
+            if (!ct::expect_equal(reverse_names.size(), requests.size())) {
+                return;
+            }
+            ct::expect(planned[0] == reverse_names[2]);
+            ct::expect(planned[1] == reverse_names[1]);
+            ct::expect(planned[2] == reverse_names[0]);
+        }
+    );
+
     ct::test("Declarations: reads clear attributes while writes retain names", [] static noexcept {
         auto builder = TargetUnitBuilder();
         const auto type = boolean_type(builder);
@@ -208,6 +273,52 @@ const ct::Suite tests([] static noexcept {
         static_cast<void>(finish_body_declarations(body, {}, {}, {}));
         ct::expect(flags(body) == std::vector<bool> {false, false, true, false, false});
     });
+
+    ct::test(
+        "Declarations: exit restructuring preserves skipped storage scopes",
+        [] static noexcept {
+            auto builder = TargetUnitBuilder();
+            const auto type = boolean_type(builder);
+            const auto scoped = builder.add_local(name("scoped"));
+            const auto unscoped = builder.add_local(name("unscoped"));
+            auto block = std::vector<TargetStmt>();
+            block.push_back(local(scoped, type));
+            block.push_back(read(scoped));
+            auto accepted = std::vector<TargetStmt>();
+            accepted.push_back(conditional_jump("scoped_exit"));
+            accepted.push_back(
+                target_lowering_statement(TargetBlockStmt {.statements = std::move(block)})
+            );
+            accepted.push_back(exit("scoped_exit"));
+            static_cast<void>(finish_body_declarations(accepted, {}, {}, {}));
+            ct::require(accepted.size() == 1uz);
+            const auto* conditional = std::get_if<TargetIfStmt>(&accepted.front().value);
+            ct::require(conditional != nullptr);
+            ct::require(conditional->branches.front().body.size() == 1uz);
+            ct::expect(
+                std::holds_alternative<TargetBlockStmt>(
+                    conditional->branches.front().body.front().value
+                )
+            );
+
+            auto rejected = std::vector<TargetStmt>();
+            rejected.push_back(conditional_jump("unscoped_exit"));
+            rejected.push_back(local(unscoped, type));
+            rejected.push_back(exit("unscoped_exit"));
+            rejected.push_back(read(unscoped));
+            static_cast<void>(finish_body_declarations(rejected, {}, {}, {}));
+            ct::require(rejected.size() == 4uz);
+            ct::expect(std::holds_alternative<TargetVariableStmt>(rejected[1].value));
+            ct::expect(std::holds_alternative<TargetLabelStmt>(rejected[2].value));
+            const auto* retained = std::get_if<TargetIfStmt>(&rejected.front().value);
+            ct::require(retained != nullptr);
+            ct::expect(
+                std::holds_alternative<TargetGotoStmt>(
+                    retained->branches.front().body.front().value
+                )
+            );
+        }
+    );
 
     ct::test(
         "Declarations: final generated bodies own parameter and local use facts",

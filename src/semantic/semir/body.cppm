@@ -16,7 +16,7 @@ enum class BodyKind {
     Function,
     Closure,
     Test,
-    ConstantBlock,
+    ConstBlock,
 };
 
 enum class LifetimeRegionKind {
@@ -43,6 +43,7 @@ public:
     auto region(LifetimeRegionID id) const noexcept -> const LifetimeRegion&;
     auto outlives(LifetimeRegionID outer, LifetimeRegionID inner) const noexcept -> bool;
     auto entries() const noexcept -> IDTableEntries<LifetimeRegionID, LifetimeRegion, BodyIdentity>;
+    auto clone() const noexcept -> LifetimeRegionTree;
 
 private:
     ImmutableBodyTable<LifetimeRegion, LifetimeRegionID> region_rows;

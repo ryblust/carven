@@ -77,15 +77,10 @@ struct CatalogTestForm final {
     TestID test;
 };
 
-struct CatalogConstantBlockForm final {};
+struct CatalogConstBlockForm final {};
 
-using CatalogModuleItemForm = std::variant<
-    FunctionID,
-    StructID,
-    EnumID,
-    ModuleConstantID,
-    CatalogTestForm,
-    CatalogConstantBlockForm>;
+using CatalogModuleItemForm = std::
+    variant<FunctionID, StructID, EnumID, ModuleConstantID, CatalogTestForm, CatalogConstBlockForm>;
 
 struct CatalogModuleItem final {
     ASTItemID item_id;
@@ -189,6 +184,9 @@ public:
     auto cpp_imports(ProgramModuleID id) const noexcept -> std::span<const CatalogCppBinding>;
     auto lookup(ProgramModuleID module_id, std::string_view name) const noexcept
         -> std::span<const CatalogLookupCandidate>;
+    // Candidate spellings for diagnostics, in name order.
+    auto visible_names(ProgramModuleID module_id) const noexcept -> std::vector<std::string>;
+    auto enum_case_names(EnumID enumeration) const noexcept -> std::vector<std::string>;
 
 private:
     explicit AnalysisCatalogView(const AnalysisCatalog& catalog) noexcept;

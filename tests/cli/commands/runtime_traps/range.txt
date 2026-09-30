@@ -1,0 +1,3 @@
+range.cv:2:12: error: slice range is out of bounds
+  note: execution aborted
+

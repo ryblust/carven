@@ -282,7 +282,7 @@ auto expect_range_equal(
 
 template<typename Function>
     requires std::is_nothrow_invocable_v<Function&>
-auto scenario(std::string_view name, Function&& body) noexcept -> void {
+auto scenario(std::string_view name, Function body) noexcept -> void {
     const auto context = detail::ScenarioContext(name);
     static_cast<void>(std::invoke(body));
 }
@@ -296,8 +296,8 @@ template<typename Range, typename Projection, typename Callback>
                  std::string_view>
 auto each(
     const Range& cases,
-    Projection&& projection,
-    Callback&& callback,
+    Projection projection,
+    Callback callback,
     std::source_location location = std::source_location::current()
 ) noexcept -> void {
     if (std::ranges::begin(cases) == std::ranges::end(cases)) {

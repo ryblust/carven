@@ -1,4 +1,4 @@
-Check sources and run required constant evaluation and const tests.
+Check sources and run compile-time execution and const tests.
 
 Usage:
   carven check [options] <source-file>...

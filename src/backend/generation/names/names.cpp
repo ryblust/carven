@@ -3,19 +3,6 @@ module carven:backend.generation.names.impl;
 import :backend.generation.names;
 import std;
 
-auto TargetNameAllocator::artifact_storage_namespace(
-    std::size_t ordinal,
-    const std::flat_set<std::string>& reserved
-) noexcept -> TargetIdentifier {
-    auto occupied = reserved;
-    return claim_value(std::format("constant_data_{}", ordinal), occupied);
-}
-
-auto TargetNameAllocator::constant_storage_identifier(std::size_t ordinal) noexcept
-    -> TargetIdentifier {
-    return fixed(std::format("value_{}", ordinal));
-}
-
 namespace {
 
 auto implementation_reserved(std::string_view spelling) noexcept -> bool {
@@ -23,9 +10,10 @@ auto implementation_reserved(std::string_view spelling) noexcept -> bool {
         || (spelling.size() >= 2 && spelling[0] == '_' && spelling[1] >= 'A' && spelling[1] <= 'Z');
 }
 
-auto encoded_identifier(std::string_view spelling) noexcept -> std::string {
+auto encoded_identifier(std::string_view spelling, std::string_view prefix = "cv_name_") noexcept
+    -> std::string {
     static constexpr auto digits = std::string_view("0123456789abcdef");
-    auto escaped = std::string("cv_name_");
+    auto escaped = std::string(prefix);
     escaped.reserve(escaped.size() + spelling.size() * 2);
     for (const auto byte : spelling) {
         const auto value = static_cast<unsigned char>(byte);
@@ -35,28 +23,27 @@ auto encoded_identifier(std::string_view spelling) noexcept -> std::string {
     return escaped;
 }
 
+auto generated_content_identifier(std::string_view spelling) noexcept -> bool {
+    return spelling == "CarvenQuery"
+        || spelling == "CarvenDisplay"
+        || spelling == "carven_constant"
+        || spelling.starts_with("CarvenQuery_")
+        || spelling.starts_with("CarvenDisplay_")
+        || spelling.starts_with("carven_constant_");
+}
+
 auto source_identifier(std::string_view spelling, std::string_view enclosing_class) noexcept
     -> std::string {
-    if (TargetIdentifier::accepts_spelling(spelling)
-        && !implementation_reserved(spelling)
-        && spelling != enclosing_class) {
-        return std::string(spelling);
+    auto result = TargetIdentifier::accepts_spelling(spelling)
+            && !implementation_reserved(spelling)
+            && !generated_content_identifier(spelling)
+            && !spelling.starts_with("cv_name_")
+        ? std::string(spelling)
+        : encoded_identifier(spelling);
+    if (result == enclosing_class) {
+        return encoded_identifier(spelling, "cv_name_member_");
     }
-    if (!spelling.empty() && !implementation_reserved(spelling)) {
-        const auto suffixed = std::format("{}_cv", spelling);
-        if (TargetIdentifier::accepts_spelling(suffixed)) {
-            return suffixed;
-        }
-    }
-    auto readable = std::string(spelling);
-    readable.erase(readable.begin(), std::ranges::find_if(readable, [](char value) static noexcept {
-                       return value != '_';
-                   }));
-    if (readable.empty()) {
-        readable = "name";
-    }
-    readable += "_cv";
-    return TargetIdentifier::accepts_spelling(readable) ? readable : encoded_identifier(spelling);
+    return result;
 }
 
 auto upper_camel_spelling(std::string_view spelling) noexcept -> std::string {
@@ -134,9 +121,22 @@ auto claim_spelling(
     return candidate;
 }
 
+auto derived_type_identifier(const TargetIdentifier& source_name, std::string_view role) noexcept
+    -> TargetIdentifier {
+    return TargetIdentifier::from_spelling(
+        std::format("{}{}", upper_camel_spelling(source_name.spelling()), role)
+    );
+}
+
+auto derived_value_identifier(std::string_view role, const TargetIdentifier& source_name) noexcept
+    -> TargetIdentifier {
+    return TargetIdentifier::from_spelling(
+        std::format("{}_{}", role, lower_snake_spelling(source_name.spelling()))
+    );
+}
+
 auto temporary_stem(TargetTemporaryNameKind kind) noexcept -> std::string_view {
     switch (kind) {
-        case TargetTemporaryNameKind::Display:              return "display";
         case TargetTemporaryNameKind::Discard:              return "discard";
         case TargetTemporaryNameKind::Operand:              return "operand";
         case TargetTemporaryNameKind::MatchDone:            return "match_done";
@@ -150,6 +150,7 @@ auto temporary_stem(TargetTemporaryNameKind kind) noexcept -> std::string_view {
         case TargetTemporaryNameKind::FailureProjection:    return "failure";
         case TargetTemporaryNameKind::PayloadProjection:    return "payload";
         case TargetTemporaryNameKind::Region:               return "region";
+        case TargetTemporaryNameKind::Break:                return "cv_break";
         case TargetTemporaryNameKind::Continue:             return "continue_target";
         case TargetTemporaryNameKind::Explanation:          return "explanation";
         case TargetTemporaryNameKind::CppBoundaryParameter: return "cpp_boundary_parameter";
@@ -167,10 +168,8 @@ auto TargetNameAllocator::is_reserved(const std::string& spelling) const noexcep
         || (enclosing_names != nullptr && enclosing_names->contains(spelling));
 }
 
-auto TargetNameAllocator::source(
-    std::string_view spelling,
-    std::string_view enclosing_class
-) const noexcept -> TargetIdentifier {
+auto source_target_identifier(std::string_view spelling, std::string_view enclosing_class) noexcept
+    -> TargetIdentifier {
     return TargetIdentifier::from_spelling(source_identifier(spelling, enclosing_class));
 }
 
@@ -212,7 +211,8 @@ auto TargetNameAllocator::local_symbol(
     if (existing != local_names.end()) {
         return existing->second;
     }
-    const auto preferred = std::string(source(spelling, enclosing_class).spelling());
+    const auto preferred =
+        std::string(source_target_identifier(spelling, enclosing_class).spelling());
     auto candidate = preferred;
     auto& suffix = next_suffix.try_emplace(std::string(preferred), 2uz).first->second;
     auto& scope_names = local_claimed_names[scope];
@@ -265,72 +265,40 @@ auto TargetNameAllocator::claim(std::string_view preferred, TargetScopeID scope)
     return TargetIdentifier::from_spelling(candidate);
 }
 
-auto TargetNameAllocator::public_identifier(std::string_view spelling) noexcept
-    -> TargetIdentifier {
+auto public_target_identifier(std::string_view spelling) noexcept -> TargetIdentifier {
     if (TargetIdentifier::accepts_spelling(spelling)
         && !implementation_reserved(spelling)
         && !spelling.starts_with("cv_escaped_")) {
-        return fixed(spelling);
+        return TargetIdentifier::from_spelling(spelling);
     }
-    static constexpr auto digits = std::string_view("0123456789abcdef");
-    auto result = std::string("cv_escaped_");
-    for (const auto byte : spelling) {
-        const auto value = static_cast<unsigned char>(byte);
-        result += digits[value >> 4u];
-        result += digits[value & 0x0fu];
-    }
-    return fixed(result);
+    return TargetIdentifier::from_spelling(encoded_identifier(spelling, "cv_escaped_"));
 }
 
-auto TargetNameAllocator::fixed(std::string_view spelling) noexcept -> TargetIdentifier {
-    return TargetIdentifier::from_spelling(spelling);
-}
-
-auto TargetNameAllocator::generated_namespace() noexcept -> TargetName {
+auto generated_target_namespace() noexcept -> TargetName {
     return TargetName::from_components({
-        fixed("carven"),
-        fixed("generated"),
+        TargetIdentifier::from_spelling("carven"),
+        TargetIdentifier::from_spelling("generated"),
     });
 }
 
-auto TargetNameAllocator::domain_namespace(const LinkageDomainID& linkage_domain) noexcept
-    -> TargetName {
-    return TargetName::from_components({fixed(linkage_domain.namespace_identifier())});
+auto linkage_target_namespace(const LinkageDomainID& linkage_domain) noexcept -> TargetName {
+    return TargetName::from_components(
+        {TargetIdentifier::from_spelling(linkage_domain.namespace_identifier())}
+    );
 }
 
-auto TargetNameAllocator::derived_type(
-    const TargetIdentifier& source_name,
-    std::string_view role
-) noexcept -> TargetIdentifier {
-    return fixed(std::format("{}{}", upper_camel_spelling(source_name.spelling()), role));
-}
-
-auto TargetNameAllocator::derived_value(
-    std::string_view role,
-    const TargetIdentifier& source_name
-) noexcept -> TargetIdentifier {
-    return fixed(std::format("{}_{}", role, lower_snake_spelling(source_name.spelling())));
-}
-
-auto TargetNameAllocator::claim_source(
+auto claim_target_identifier(
     std::string_view preferred,
     std::flat_set<std::string>& occupied
 ) noexcept -> TargetIdentifier {
-    return fixed(claim_spelling(preferred, "_", occupied));
+    return TargetIdentifier::from_spelling(claim_spelling(preferred, "_", occupied));
 }
 
-auto TargetNameAllocator::claim_type(
+auto claim_target_type_identifier(
     std::string_view preferred,
     std::flat_set<std::string>& occupied
 ) noexcept -> TargetIdentifier {
-    return fixed(claim_spelling(preferred, "", occupied));
-}
-
-auto TargetNameAllocator::claim_value(
-    std::string_view preferred,
-    std::flat_set<std::string>& occupied
-) noexcept -> TargetIdentifier {
-    return fixed(claim_spelling(preferred, "_", occupied));
+    return TargetIdentifier::from_spelling(claim_spelling(preferred, "", occupied));
 }
 
 auto payload_enum_names(std::span<const TargetIdentifier> case_names) noexcept
@@ -342,38 +310,78 @@ auto payload_enum_names(std::span<const TargetIdentifier> case_names) noexcept
     auto cases = std::vector<TargetPayloadEnumCaseNames> {};
     cases.reserve(case_names.size());
     for (const auto& name : case_names) {
-        const auto record_type = TargetNameAllocator::derived_type(name, "Payload");
-        const auto projection_base = TargetNameAllocator::derived_value("as", name);
+        const auto record_type = derived_type_identifier(name, "Payload");
+        const auto projection_base = derived_value_identifier("as", name);
         const auto projection_function = std::format("{}_if", projection_base.spelling());
         cases.push_back({
-            .record_type = TargetNameAllocator::claim_type(record_type.spelling(), occupied),
-            .projection_function = TargetNameAllocator::claim_value(projection_function, occupied),
+            .record_type = claim_target_type_identifier(record_type.spelling(), occupied),
+            .projection_function = claim_target_identifier(projection_function, occupied),
         });
     }
     return {
         .cases = std::move(cases),
-        .storage_type = TargetNameAllocator::claim_type("Storage", occupied),
-        .storage_member = TargetNameAllocator::claim_value("storage", occupied),
+        .storage_type = claim_target_type_identifier("Storage", occupied),
+        .storage_member = claim_target_identifier("storage", occupied),
     };
 }
 
-auto TargetNameAllocator::enum_payload_field(std::size_t payload_index) noexcept
-    -> TargetIdentifier {
-    return fixed(std::format("value_{}", payload_index));
+auto enum_payload_field_identifier(std::size_t payload_index) noexcept -> TargetIdentifier {
+    return TargetIdentifier::from_spelling(std::format("value_{}", payload_index));
 }
 
-auto TargetNameAllocator::process_entry() noexcept -> TargetIdentifier {
-    return fixed("main");
+auto process_entry_identifier() noexcept -> TargetIdentifier {
+    return TargetIdentifier::from_spelling("main");
 }
 
-auto TargetNameAllocator::process_argument_count() noexcept -> TargetIdentifier {
-    return fixed("carven_argc");
+auto process_argument_count_identifier() noexcept -> TargetIdentifier {
+    return TargetIdentifier::from_spelling("carven_argc");
 }
 
-auto TargetNameAllocator::process_argument_vector() noexcept -> TargetIdentifier {
-    return fixed("carven_argv");
+auto process_argument_vector_identifier() noexcept -> TargetIdentifier {
+    return TargetIdentifier::from_spelling("carven_argv");
 }
 
-auto TargetNameAllocator::test_context() noexcept -> TargetIdentifier {
-    return fixed("carven_test_context");
+auto test_context_identifier() noexcept -> TargetIdentifier {
+    return TargetIdentifier::from_spelling("carven_test_context");
+}
+
+auto content_name_digest(std::string_view content) noexcept -> std::string {
+    auto digest = 0xcbf29ce484222325ull;
+    for (const auto byte : content) {
+        digest = (digest ^ static_cast<unsigned char>(byte)) * 0x100000001b3ull;
+    }
+    return std::format("{:016x}", digest);
+}
+
+auto claim_content_identifiers(
+    std::span<const TargetContentName> requests,
+    std::flat_set<std::string>& occupied
+) noexcept -> std::vector<TargetIdentifier> {
+    auto order = std::vector<std::size_t>(requests.size());
+    std::iota(order.begin(), order.end(), 0uz);
+    std::ranges::sort(order, [&](std::size_t left, std::size_t right) noexcept {
+        const auto& first = requests[left];
+        const auto& second = requests[right];
+        return std::tie(first.preferred, first.content)
+            < std::tie(second.preferred, second.content);
+    });
+    auto names = std::vector<std::optional<TargetIdentifier>>(requests.size());
+    auto previous = std::optional<std::size_t>();
+    for (const auto index : order) {
+        const auto& request = requests[index];
+        if (previous
+            && request.preferred == requests[*previous].preferred
+            && request.content == requests[*previous].content) {
+            names[index] = names[*previous];
+        } else {
+            names[index] = claim_target_identifier(request.preferred, occupied);
+        }
+        previous = index;
+    }
+    auto result = std::vector<TargetIdentifier>();
+    result.reserve(names.size());
+    for (auto& name : names) {
+        result.push_back(std::move(*name));
+    }
+    return result;
 }

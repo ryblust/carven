@@ -21,6 +21,8 @@ struct ASTControlTransfer final {
 
 struct ASTIfForm final {
     Span span;
+    // Present for `const if`; every condition of the chain is then static.
+    std::optional<Span> const_span;
 
     struct Branch final {
         Span keyword_span;

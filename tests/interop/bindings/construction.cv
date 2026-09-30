@@ -24,9 +24,7 @@ test "C++ construction: deduced results compose with indexing calls and copies" 
     check(copy[0] == 9);
     check(copy.size() == 4);
     check(vector { 5, 6 }[1] == 6);
-    let nested = Box {
-        Box { 7 }
-    };
+    let nested = Box { Box { 7 } };
     check(nested.read() == 7);
     let specified = vector<i32> { 8, 9 };
     check(specified[0] == 8);
@@ -63,9 +61,32 @@ test "C++ construction: representable scalar literals remain constant expression
     check(value.value == 1.5);
 }
 
-test "C++ construction: constant delivery retains prior effects and later operands" {
+const fn construction_limit() -> i32 => 250;
+
+test "C++ construction: closed static roots supply scalar value queries" {
+    const limit = construction_limit();
+    let named = Byte { limit };
+    let combined = Byte { limit + 5 };
+    check(named.value == 250);
+    check(combined.value == 255);
+}
+
+fn construction_runtime_digit() -> u8 {
+    record(3);
+    return 2u8;
+}
+
+test "C++ construction: static reference resolution preserves runtime operand effects" {
+    const offset = 1u8;
     reset();
-    let value = Byte { ((record(1) == 1) && false) as i32 };
+    let value = Byte { offset + construction_runtime_digit() };
+    check(value.value == 3u8);
+    check(recorded() == 3);
+}
+
+test "C++ construction: scalar delivery retains prior effects and later operands" {
+    reset();
+    let value = Byte { ((record(1) == 1) && false) as u8 };
     check(value.value == 0);
     check(recorded() == 1);
     reset();
@@ -84,11 +105,11 @@ fn fail_construction() -> bool throw ConstructionFailure {
     throw ConstructionFailure {};
 }
 
-test "C++ construction: known result cannot bypass a failing argument" {
+test "C++ construction: scalar delivery cannot bypass a failing argument" {
     reset();
     let caught = try {
         let result = pair {
-            Byte { (fail_construction()? && false) as i32 },
+            Byte { (fail_construction()? && false) as u8 },
             record(5)
         };
         false
@@ -99,10 +120,10 @@ test "C++ construction: known result cannot bypass a failing argument" {
     check(recorded() == 4);
 }
 
-test "C++ construction: constant delivery retains temporary backing through later arguments" {
+test "C++ construction: scalar delivery retains temporary backing through later arguments" {
     ::formatted_append_probe::reset();
     let result = pair {
-        Byte { ((::formatted_append_probe::make(42).value == 42) && false) as i32 },
+        Byte { ((::formatted_append_probe::make(42).value == 42) && false) as u8 },
         ::formatted_append_probe::record()
     };
     check(result.first.value == 0);

@@ -55,6 +55,17 @@ public:
 
 private:
     enum class SavedKind { Value, Place, StoredValue, StoredPlace, Success };
+    enum class ConstructionPosition { Operand, Final };
+    enum class StorageForm { Automatic, Deferred };
+
+    struct BuildRequest final {
+        ResultDemand demand;
+        PreparedUse use;
+        ConstantLiteralContext literal;
+        bool retain_backing;
+        std::size_t expression_depth;
+        ConstructionPosition position;
+    };
 
     struct Saved final {
         TargetLocalID local;
@@ -68,6 +79,7 @@ private:
         std::variant<LocalBindingID, ConstantID, Saved, TargetExpr, LoweringCompleted> completion;
         LoweringStmtBuilder declarations;
         LoweringStmtBuilder statements;
+        ConstructionPosition position;
         bool executes;
         bool observes;
     };
@@ -87,7 +99,7 @@ private:
     LifetimeRegionID cleanup;
     ExpressionBuilder* previous_frame;
     bool independent_scope;
-    bool automatic_storage;
+    StorageForm operand_storage;
     LoweringStmtBuilder declarations;
     LoweringStmtBuilder statements;
 
@@ -96,6 +108,7 @@ private:
     auto take_statements(bool shared = false) noexcept -> LoweringStmtBuilder;
     auto has_independent_scope(std::optional<LifetimeRegionID> delivered_region) const noexcept
         -> bool;
+    auto storage_form(ConstructionPosition position) const noexcept -> StorageForm;
 
     template<typename T>
     static auto complete(Fragment& value, T result) noexcept -> void {
@@ -106,23 +119,16 @@ private:
     auto source(const Fragment& value) const noexcept -> const PreparedOperation&;
     auto scalar(TypeID id) const noexcept -> bool;
     auto names_storage(const PreparedOperation& value) const noexcept -> bool;
-    auto stable_place_binding(const SemanticExpression& value) const noexcept -> bool;
+    auto stable_place(const SemanticExpression& value) const noexcept -> bool;
     auto borrowed_owner(const PreparedOperation& value, PreparedUse use) const noexcept -> bool;
+    auto const_parameter(const Fragment& fragment) const noexcept -> bool;
     auto pending(const Fragment& value) const noexcept -> bool;
     auto discard_pending(Fragment& value) noexcept -> void;
     auto has_storage_read(const Fragment& value) const noexcept -> bool;
     auto has_effect(const Fragment& value) const noexcept -> bool;
     static auto value_binding(PreparedUse use) noexcept -> TargetVariableBinding;
-    auto build(
-        const SemanticExpression& expression,
-        bool result_needed = true,
-        PreparedUse result_use = PreparedUse::Consume,
-        bool propagate_outcome = false,
-        ConstantLiteralContext literal = ConstantLiteralContext::Exact,
-        bool direct_return = false,
-        bool retain_backing = true,
-        std::size_t expression_depth = 0
-    ) noexcept -> ContinuationTask<Fragment>;
+    auto build(const SemanticExpression& expression, BuildRequest request) noexcept
+        -> ContinuationTask<Fragment>;
     auto complete_writer(
         Fragment& value,
         const SemFormat& format,

@@ -1,5 +1,6 @@
 module;
 #include <carven/runtime/print.hpp>
+#include <carven/runtime/report.hpp>
 
 module carven:test.internal.runtime.printing;
 
@@ -46,20 +47,16 @@ const ct::Suite tests([] static noexcept {
 
             auto sequence = carven::runtime::DisplayWriter();
             const auto values = std::array<int, 65>();
-            sequence.sequence(
-                values,
-                [](auto& output, int value) static noexcept { output.scalar(value); },
-                0
-            );
+            sequence.sequence(values, [](auto& output, int value) static noexcept {
+                output.scalar(value);
+            });
             ct::expect(sequence.result().starts_with("[\n    0,\n"));
             ct::expect(sequence.result().ends_with("\n    ...,\n]"));
 
             auto empty = carven::runtime::DisplayWriter();
-            empty.sequence(
-                std::array<int, 0> {},
-                [](auto& output, int value) static noexcept { output.scalar(value); },
-                0
-            );
+            empty.sequence(std::array<int, 0> {}, [](auto& output, int value) static noexcept {
+                output.scalar(value);
+            });
             ct::expect(empty.result() == "[]");
 
             auto bounded = carven::runtime::DisplayWriter();
@@ -67,6 +64,74 @@ const ct::Suite tests([] static noexcept {
             bounded.text("我");
             ct::expect(bounded.result().size() == 16386uz);
             ct::expect(bounded.result().ends_with("a..."));
+        }
+    );
+    ct::test("Runtime printing: writer depth bounds recursive emitters", [] static noexcept {
+        struct Nested final {
+            auto operator()(carven::runtime::DisplayWriter& writer, int remaining) const noexcept
+                -> void {
+                if (!writer.enter()) {
+                    return;
+                }
+                writer.text("[");
+                if (remaining != 0) {
+                    (*this)(writer, remaining - 1);
+                } else {
+                    writer.scalar(1);
+                }
+                writer.text("]");
+                writer.leave();
+            }
+        };
+        auto writer = carven::runtime::DisplayWriter();
+        Nested {}(writer, 10);
+        ct::expect_equal(writer.result(), "[[[[[[[[...]]]]]]]]");
+        writer.scalar(2);
+        ct::expect(writer.result().ends_with("]2"));
+    });
+    ct::test(
+        "Runtime reports: repeated operand text is omitted before consuming the report budget",
+        [] static noexcept {
+            const auto bytes = std::string(10'000uz, 'a');
+            const auto source = std::format("\"{}\"", bytes);
+            const auto left = std::string_view(bytes);
+            const auto right = std::string_view("b");
+            auto emissions = 0;
+            const auto emit = [&](carven::runtime::DisplayWriter& output, auto value) noexcept {
+                ++emissions;
+                output.scalar(value);
+            };
+            auto comparisons = 0;
+            const auto compare = [&](auto first, auto second) noexcept {
+                ++comparisons;
+                return first == second;
+            };
+            auto writer = carven::runtime::DisplayWriter();
+            ct::expect(!carven::runtime::observe_comparison(
+                writer,
+                carven::runtime::structural_display(left, emit),
+                carven::runtime::structural_display(right, emit),
+                compare,
+                source,
+                "other"
+            ));
+            ct::expect_equal(writer.result(), "other: \"b\"\n");
+            ct::expect_equal(comparisons, 1);
+            ct::expect_equal(emissions, 2);
+            auto passed = carven::runtime::DisplayWriter();
+            ct::expect(
+                carven::runtime::observe_comparison(
+                    passed,
+                    carven::runtime::structural_display(left, emit),
+                    carven::runtime::structural_display(left, emit),
+                    compare,
+                    source,
+                    source
+                )
+            );
+            ct::expect(passed.result().empty());
+            ct::expect_equal(comparisons, 2);
+            ct::expect_equal(emissions, 2);
         }
     );
 });

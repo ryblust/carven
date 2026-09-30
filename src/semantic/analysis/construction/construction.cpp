@@ -16,6 +16,7 @@ ProgramConstruction::ProgramConstruction(
     : draft(draft),
       catalog(catalog),
       requests(*this),
+      static_stage(draft, requests),
       declarations(draft, catalog, usage, requests),
       bodies(draft, catalog, usage, requests) {}
 

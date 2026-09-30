@@ -15,7 +15,7 @@ auto SemanticExecutor::text_handle(const ExecutionValue& value, ProgramOriginID 
     if (const auto* text = std::get_if<ExecutionText>(&value)) {
         if (!text->bytes()) {
             return std::unexpected(
-                fail(origin, DiagnosticCode::ConstEvaluation, "text backing is no longer alive")
+                fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
             );
         }
         return *text;
@@ -23,7 +23,7 @@ auto SemanticExecutor::text_handle(const ExecutionValue& value, ProgramOriginID 
     const auto atom = execution_atom(values, value);
     const auto* text = atom ? std::get_if<StringConstant>(&atom->value) : nullptr;
     if (!text) {
-        return std::unexpected(fail(origin, DiagnosticCode::ConstEvaluation, "expected text"));
+        return std::unexpected(fail(origin, ExecutionReason::Evaluation, "expected text"));
     }
     if (const auto found = retained_text.find(text->value); found != retained_text.end()) {
         return found->second;
@@ -38,13 +38,13 @@ auto SemanticExecutor::text_storage(const ExecutionPlace& place, ProgramOriginID
     -> ExecutionResult<ExecutionOwnedText*> {
     auto selected = located(place, origin);
     if (!selected) {
-        return std::unexpected(selected.error());
+        return std::unexpected(std::move(selected.error()));
     }
     if (auto* text = std::get_if<ExecutionOwnedText>(*selected)) {
         return text;
     }
     return std::unexpected(
-        fail(origin, DiagnosticCode::ConstEvaluation, "text mutation requires String storage")
+        fail(origin, ExecutionReason::Evaluation, "text mutation requires String storage")
     );
 }
 
@@ -55,13 +55,13 @@ auto SemanticExecutor::append_text(
 ) noexcept -> ExecutionResult<ExecutionValue> {
     auto target = text_storage(destination, origin);
     if (!target) {
-        return std::unexpected(target.error());
+        return std::unexpected(std::move(target.error()));
     }
     if (bytes.size() > maximum_constant_text_bytes - (*target)->bytes().size()) {
-        return std::unexpected(fail(origin, DiagnosticCode::ConstLimit, "text exceeds 1 MiB"));
+        return std::unexpected(fail(origin, ExecutionReason::Limit, "text exceeds 1 MiB"));
     }
     if (auto checked = account_text(bytes.size(), origin); !checked) {
-        return std::unexpected(checked.error());
+        return std::unexpected(std::move(checked.error()));
     }
     (*target)->append(bytes);
     return ExecutionVoid {};
@@ -69,28 +69,35 @@ auto SemanticExecutor::append_text(
 
 auto SemanticExecutor::text_intrinsic(
     ExecutionFrame& frame,
-    const SemTextIntrinsic& operation,
+    const SemIntrinsic& operation,
     TypeID result_type,
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionValue> {
-    switch (operation.intrinsic) {
+    const auto intrinsic = std::get<TextIntrinsic>(operation.operation);
+    switch (intrinsic) {
         case TextIntrinsic::FromU32Unchecked: {
             auto operand = (co_await value(frame, operation.operands[0].expression));
             if (!operand) {
-                co_return std::unexpected(operand.error());
+                co_return std::unexpected(std::move(operand.error()));
             }
             auto fact = read_fact(*operand, origin);
             if (!fact) {
-                co_return std::unexpected(fact.error());
+                co_return std::unexpected(std::move(fact.error()));
             }
             const auto* integer = std::get_if<IntegerConstant>(&fact->value);
-            if (integer == nullptr
-                || integer->negative()
-                || integer->magnitude() > 0x10ffffu
-                || (integer->magnitude() >= 0xd800u && integer->magnitude() <= 0xdfffu)) {
+            if (integer == nullptr) {
                 co_return std::unexpected(fail(
                     origin,
-                    DiagnosticCode::ConstEvaluation,
+                    ExecutionReason::Evaluation,
+                    "character construction requires an integer operand"
+                ));
+            }
+            if (integer->negative()
+                || integer->magnitude() > 0x10ffffu
+                || (integer->magnitude() >= 0xd800u && integer->magnitude() <= 0xdfffu)) {
+                co_return std::unexpected(trap(
+                    origin,
+                    ExecutionReason::Evaluation,
                     "char::from_u32_unchecked requires a Unicode scalar value"
                 ));
             }
@@ -104,43 +111,43 @@ auto SemanticExecutor::text_intrinsic(
         case TextIntrinsic::Push:   {
             auto receiver = (co_await place(frame, operation.operands[0].expression));
             if (!receiver) {
-                co_return std::unexpected(receiver.error());
+                co_return std::unexpected(std::move(receiver.error()));
             }
-            if (operation.intrinsic == TextIntrinsic::Clear) {
+            if (intrinsic == TextIntrinsic::Clear) {
                 auto target = text_storage(*receiver, origin);
                 if (!target) {
-                    co_return std::unexpected(target.error());
+                    co_return std::unexpected(std::move(target.error()));
                 }
                 **target = ExecutionOwnedText(std::string());
                 co_return ExecutionVoid {};
             }
             auto operand = (co_await value(frame, operation.operands[1].expression));
             if (!operand) {
-                co_return std::unexpected(operand.error());
+                co_return std::unexpected(std::move(operand.error()));
             }
             auto suffix = std::string();
-            if (operation.intrinsic == TextIntrinsic::Append) {
+            if (intrinsic == TextIntrinsic::Append) {
                 auto bytes = text(*operand, origin);
                 if (!bytes) {
-                    co_return std::unexpected(bytes.error());
+                    co_return std::unexpected(std::move(bytes.error()));
                 }
                 suffix = *bytes;
-            } else if (operation.intrinsic == TextIntrinsic::Push) {
+            } else if (intrinsic == TextIntrinsic::Push) {
                 auto fact = read_fact(*operand, origin);
                 if (!fact) {
-                    co_return std::unexpected(fact.error());
+                    co_return std::unexpected(std::move(fact.error()));
                 }
                 const auto* character = std::get_if<CharacterConstant>(&fact->value);
                 if (character == nullptr) {
                     co_return std::unexpected(
-                        fail(origin, DiagnosticCode::ConstEvaluation, "String.push requires a char")
+                        fail(origin, ExecutionReason::Evaluation, "String.push requires a char")
                     );
                 }
                 append_utf8(suffix, character->scalar);
             } else {
                 co_return std::unexpected(fail(
                     origin,
-                    DiagnosticCode::ConstEvaluation,
+                    ExecutionReason::Evaluation,
                     "operation does not implement text mutation"
                 ));
             }
@@ -156,9 +163,9 @@ auto SemanticExecutor::text_intrinsic(
     }
     auto operand = (co_await read_operand(frame, operation.operands[0].expression));
     if (!operand) {
-        co_return std::unexpected(operand.error());
+        co_return std::unexpected(std::move(operand.error()));
     }
-    if ((operation.intrinsic == TextIntrinsic::AsStr || operation.intrinsic == TextIntrinsic::Bytes)
+    if ((intrinsic == TextIntrinsic::AsStr || intrinsic == TextIntrinsic::Bytes)
         && std::holds_alternative<ExecutionValue>(*operand)) {
         auto& temporary = std::get<ExecutionValue>(*operand);
         const auto* text = std::get_if<ExecutionText>(&temporary);
@@ -173,33 +180,33 @@ auto SemanticExecutor::text_intrinsic(
     if (receiver == nullptr) {
         auto selected = located(std::get<ExecutionPlace>(*operand), origin);
         if (!selected) {
-            co_return std::unexpected(selected.error());
+            co_return std::unexpected(std::move(selected.error()));
         }
         receiver = *selected;
     }
     auto bytes = text(*receiver, origin);
     if (!bytes) {
-        co_return std::unexpected(bytes.error());
+        co_return std::unexpected(std::move(bytes.error()));
     }
-    switch (operation.intrinsic) {
+    switch (intrinsic) {
         case TextIntrinsic::FromStr:
             if (auto checked = account_text(bytes->size(), origin); !checked) {
-                co_return std::unexpected(checked.error());
+                co_return std::unexpected(std::move(checked.error()));
             }
             co_return ExecutionOwnedText(std::string(*bytes));
         case TextIntrinsic::AsStr:
         case TextIntrinsic::Bytes: {
             auto handle = text_handle(*receiver, origin);
             if (!handle) {
-                co_return std::unexpected(handle.error());
+                co_return std::unexpected(std::move(handle.error()));
             }
-            if (operation.intrinsic == TextIntrinsic::AsStr) {
+            if (intrinsic == TextIntrinsic::AsStr) {
                 co_return handle->borrow();
             }
             auto backing = memory.text_bytes(*handle, values.builtin_type(BuiltinType::U8));
             if (!backing) {
                 co_return std::unexpected(
-                    fail(origin, DiagnosticCode::ConstEvaluation, "text backing is no longer alive")
+                    fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
                 );
             }
             co_return ExecutionSlice {
@@ -227,7 +234,7 @@ auto SemanticExecutor::text_intrinsic(
         case TextIntrinsic::FromUTF8Unchecked:
             co_return std::unexpected(fail(
                 origin,
-                DiagnosticCode::ConstEvaluation,
+                ExecutionReason::Evaluation,
                 "text operation is not supported in execution"
             ));
     }
@@ -243,7 +250,7 @@ auto SemanticExecutor::format(
     if (operation.receiver) {
         auto selected = (co_await place(frame, **operation.receiver));
         if (!selected) {
-            co_return std::unexpected(selected.error());
+            co_return std::unexpected(std::move(selected.error()));
         }
         destination = std::move(*selected);
     }
@@ -251,7 +258,7 @@ auto SemanticExecutor::format(
     for (const auto& operand : operation.operands) {
         auto result = (co_await read_operand(frame, operand.expression));
         if (!result) {
-            co_return std::unexpected(result.error());
+            co_return std::unexpected(std::move(result.error()));
         }
         operands.push_back(std::move(*result));
     }
@@ -259,7 +266,7 @@ auto SemanticExecutor::format(
     for (auto& operand : operands) {
         auto result = materialize(std::move(operand), origin);
         if (!result) {
-            co_return std::unexpected(result.error());
+            co_return std::unexpected(std::move(result.error()));
         }
         arguments.push_back(std::move(*result));
     }
@@ -278,14 +285,13 @@ auto SemanticExecutor::format(
     if (!result) {
         co_return std::unexpected(fail(
             origin,
-            result.error().kind == BuiltinFormatFailureKind::Limit
-                ? DiagnosticCode::ConstLimit
-                : DiagnosticCode::ConstEvaluation,
+            result.error().kind == BuiltinFormatFailureKind::Limit ? ExecutionReason::Limit
+                                                                   : ExecutionReason::Evaluation,
             std::string(result.error().message)
         ));
     }
     if (auto checked = account_text(result->size(), origin); !checked) {
-        co_return std::unexpected(checked.error());
+        co_return std::unexpected(std::move(checked.error()));
     }
     if (destination) {
         co_return append_text(*destination, *result, origin);
@@ -302,7 +308,7 @@ auto SemanticExecutor::print(
     for (const auto& operand : operation.operands) {
         auto result = (co_await read_operand(frame, operand.expression));
         if (!result) {
-            co_return std::unexpected(result.error());
+            co_return std::unexpected(std::move(result.error()));
         }
         operands.push_back(std::move(*result));
     }
@@ -322,7 +328,7 @@ auto SemanticExecutor::print(
         if (const auto* place = std::get_if<ExecutionPlace>(&operand)) {
             auto selected = located(*place, origin);
             if (!selected) {
-                co_return std::unexpected(selected.error());
+                co_return std::unexpected(std::move(selected.error()));
             }
             argument = *selected;
         }
@@ -330,22 +336,22 @@ auto SemanticExecutor::print(
         if (!formatted) {
             co_return std::unexpected(fail(
                 origin,
-                DiagnosticCode::ConstEvaluation,
+                ExecutionReason::Evaluation,
                 "value cannot be structurally displayed during execution"
             ));
         }
         if (index != 0) {
             if (auto written = (write(" ")); !written) {
-                co_return std::unexpected(written.error());
+                co_return std::unexpected(std::move(written.error()));
             }
         }
         if (auto written = (write(*formatted)); !written) {
-            co_return std::unexpected(written.error());
+            co_return std::unexpected(std::move(written.error()));
         }
     }
     if (operation.kind == PrintKind::Println || operation.kind == PrintKind::Eprintln) {
         if (auto written = (write("\n")); !written) {
-            co_return std::unexpected(written.error());
+            co_return std::unexpected(std::move(written.error()));
         }
     }
     co_return ExecutionVoid {};

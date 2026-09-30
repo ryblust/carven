@@ -14,11 +14,12 @@ import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.admission;
-import :semantic.analysis.constant.evaluation;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
+import :semantic.analysis.stage.session;
 import :semantic.analysis.types;
+import :semantic.analysis.types.display;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.decl;
@@ -39,40 +40,29 @@ auto BodyElaborator::block(ASTBlockID id) noexcept -> AnalysisTask<void> {
     co_return {};
 }
 
-auto BodyBatchElaborator::defer_constant_block(
-    ProgramModuleID module_id,
-    const ASTConstantBlock& source,
-    BodyLocalNames locals
-) noexcept -> void {
-    constant_blocks.push_back({
-        .module_id = module_id,
-        .syntax = source,
-        .locals = std::move(locals),
-    });
-}
-
 auto BodyBatchElaborator::block_source(
-    ProgramModuleID module,
+    ProgramModuleID module_id,
     Span keyword,
     const std::optional<ASTBlockLabel>& label
 ) noexcept -> BlockSource {
     return {
         .label = label ? std::optional(draft->intern_spelling(label->text)) : std::nullopt,
         .origin = draft->append_source_origin(
-            draft->module_source(module),
+            draft->module_source(module_id),
             label ? label->span : keyword
         ),
     };
 }
 
-auto BodyBatchElaborator::build_constant_block(PendingConstantBlock source) noexcept
-    -> AnalysisTask<void> {
-    const auto module_id = source.module_id;
+auto BodyBatchElaborator::build_const_block(
+    ProgramModuleID module_id,
+    const ASTConstBlock& source
+) noexcept -> AnalysisTask<void> {
     const auto* declaration = catalog_data.find_module(module_id);
     if (declaration == nullptr) {
-        invariant_violation("constant block belongs to an unknown module");
+        invariant_violation("const block belongs to an unknown module");
     }
-    auto reservation = draft->reserve_body(BodyKind::ConstantBlock);
+    auto reservation = draft->reserve_body(BodyKind::ConstBlock);
     const auto id = reservation.id();
     auto elaborator = BodyElaborator(
         *this,
@@ -85,15 +75,17 @@ auto BodyBatchElaborator::build_constant_block(PendingConstantBlock source) noex
         true,
         false
     );
-    elaborator.inherited_locals = std::move(source.locals);
-    auto body = (co_await elaborator.run(source.syntax.body));
+    elaborator.static_body = true;
+    // A block is not a callable: nothing returns from it.
+    elaborator.transfer_boundaries.push_back({.loop_depth = 0uz, .construct = "a const block"});
+    auto body = (co_await elaborator.run(source.body));
     if (!body) {
         co_return std::unexpected(body.error());
     }
     draft->add_body_draft(std::move(*body));
-    constant_roots.push_back({
+    static_body_roots.push_back({
         .body = id,
-        .source = block_source(module_id, source.syntax.keyword_span, source.syntax.label),
+        .source = block_source(module_id, source.keyword_span, source.label),
     });
     co_return {};
 }
@@ -129,11 +121,29 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
     }
     if (reachable) {
         if (!is_void_type(draft(), *result_type)) {
-            co_return std::unexpected(fail(
-                span,
+            auto diagnostic = DiagnosticBuilder(
                 DiagnosticCode::FlowMissingReturn,
-                "reachable path of value-returning callable has no return"
-            ));
+                std::format(
+                    "reachable path of callable returning '{}' has no return",
+                    type_display_name(draft(), *result_type)
+                )
+            );
+            diagnostic.primary(locate(ast.source_id(), span));
+            // The value of a condition does not end a loop; only its absence does.
+            if (block_body != nullptr && !ast.block(*block_body).statements.empty()) {
+                const auto& last = ast.statement(ast.block(*block_body).statements.back());
+                const auto* loop = std::get_if<ASTWhileStmt>(&last.value);
+                const auto* literal = loop != nullptr && loop->condition
+                    ? std::get_if<ASTLiteral>(&ast.expression(*loop->condition).value)
+                    : nullptr;
+                const auto* boolean = literal != nullptr
+                    ? std::get_if<BooleanLiteralValue>(&literal->value)
+                    : nullptr;
+                if (boolean != nullptr && boolean->value) {
+                    diagnostic.help("write a loop that has no condition as 'while { ... }'");
+                }
+            }
+            co_return std::unexpected(draft().diagnostics().error(diagnostic.build()));
         }
         append_statement(SemReturn {std::nullopt}, origin(span));
     }
@@ -155,14 +165,13 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
         for (const auto& source_item : source_module.items) {
             const auto& item = ast.item(source_item.item_id);
             if (const auto* function_id = std::get_if<FunctionID>(&source_item.form)) {
-                auto result = (co_await complete_function(*function_id));
-                if (!result.has_value()) {
-                    co_return std::unexpected(result.error());
-                }
+                // A failed body is diagnosed once and remembered; dependents on its
+                // inferred contract receive that failure without another diagnostic.
+                static_cast<void>((co_await complete_function(*function_id)));
                 continue;
             }
-            if (const auto* block = std::get_if<ASTConstantBlock>(&item.value)) {
-                defer_constant_block(source_module.module_id, *block);
+            if (const auto* block = std::get_if<ASTConstBlock>(&item.value)) {
+                static_cast<void>(co_await build_const_block(source_module.module_id, *block));
                 continue;
             }
             const auto* test_form = std::get_if<CatalogTestForm>(&source_item.form);
@@ -195,21 +204,20 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
                 false,
                 true
             );
+            elaborator.static_body = test.is_const;
             auto body = (co_await elaborator.run(test.body));
             if (!body.has_value()) {
-                co_return std::unexpected(body.error());
+                continue;
             }
             if (test.is_const) {
-                constant_roots.push_back({.body = body_id, .source = source});
+                static_body_roots.push_back({.body = body_id, .source = source});
             }
             draft->add_body_draft(std::move(*body));
         }
     }
-    for (auto index = 0uz; index < constant_blocks.size(); ++index) {
-        auto result = (co_await build_constant_block(std::move(constant_blocks[index])));
-        if (!result) {
-            co_return result;
-        }
+    // Later stages read completed bodies; every body error is reported before this gate.
+    if (const auto failure = draft->diagnostics().failure()) {
+        co_return std::unexpected(*failure);
     }
     for (const auto& [location, diagnostic] : unused_locals) {
         if (!used_locals.contains(location)) {
@@ -220,12 +228,34 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
     if (!contracts) {
         co_return std::unexpected(contracts.error());
     }
-    for (auto index = 0uz; index < constant_roots.size(); ++index) {
-        const auto root = constant_roots[index];
-        static_cast<void>((co_await evaluate_constant_body(*draft, requests, root)));
+    auto& stage = requests.stage();
+    auto static_bodies = std::set<BodyID>();
+    for (auto index = 0uz; index < static_body_roots.size(); ++index) {
+        const auto root = static_body_roots[index];
+        static_bodies.insert(root.body);
+        static_cast<void>((co_await stage.run_body(root.body, root.source)));
     }
     if (const auto failure = draft->diagnostics().failure()) {
         co_return std::unexpected(*failure);
+    }
+    // A function with static parameters executes only through its instances,
+    // and the static stage has already executed the bodies that belong to it.
+    for (const auto function : draft->function_declaration_ids()) {
+        if (draft->staged_function(function)) {
+            const auto declaration = draft->function_declaration_copy(function);
+            if (const auto body = draft->body_for_callable(declaration.callable)) {
+                static_bodies.insert(*body);
+            }
+        }
+    }
+    for (const auto body : draft->completed_body_ids()) {
+        if (static_bodies.contains(body) || draft->body_draft(body).specialized) {
+            continue;
+        }
+        auto realized = co_await stage.realize_body(body);
+        if (!realized) {
+            co_return std::unexpected(realized.error());
+        }
     }
     co_return {};
 }
@@ -280,7 +310,7 @@ auto BodyBatchElaborator::ensure_function_body(
         co_return std::unexpected(draft->diagnostics().error(
             DiagnosticBuilder(
                 DiagnosticCode::ConstEvaluation,
-                "constant evaluation depends on an unfinished function body"
+                "compile-time execution depends on an unfinished function body"
             )
                 .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
                 .build()
@@ -294,7 +324,7 @@ auto BodyBatchElaborator::ensure_function_body(
         co_return std::unexpected(draft->diagnostics().error(
             DiagnosticBuilder(
                 DiagnosticCode::ConstAdmission,
-                "constant evaluation requires a Carven function body"
+                "compile-time execution requires a Carven function body"
             )
                 .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
                 .build()

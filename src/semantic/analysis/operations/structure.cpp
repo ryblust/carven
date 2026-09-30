@@ -1,6 +1,7 @@
 module carven:semantic.analysis.operations.structure.impl;
 
 import :diagnostics.builder;
+import :diagnostics.suggestion;
 import :semantic.analysis.operations;
 import :support.invariant;
 import std;
@@ -44,10 +45,18 @@ auto select_structure_initializers(
                 return draft.spelling_copy(candidate.name) == name;
             });
             if (found == fields.end()) {
+                auto names = std::vector<std::string>();
+                for (const auto& candidate : fields) {
+                    names.push_back(draft.spelling_copy(candidate.name));
+                }
                 return fail(
                     field.name_span,
                     DiagnosticCode::TypeConstructUnknownField,
-                    std::format("structure has no field named '{}'", name)
+                    std::format(
+                        "structure has no field named '{}'{}",
+                        name,
+                        spelling_suggestion(name, names)
+                    )
                 );
             }
             const auto index = static_cast<std::size_t>(found - fields.begin());

@@ -86,7 +86,6 @@ TargetNamePlan::TargetNamePlan(
     std::vector<TargetModuleNames> modules,
     TargetName generated_namespace,
     TargetName domain_namespace,
-    std::vector<TargetEntityName> functions,
     std::vector<TargetEntityName> structures,
     std::vector<TargetEntityName> enumerations,
     std::vector<std::optional<TargetEntityName>> callables,
@@ -94,13 +93,13 @@ TargetNamePlan::TargetNamePlan(
     std::vector<TargetIdentifier> enum_cases,
     std::vector<std::optional<TargetPayloadEnumNames>> payload_enums,
     std::vector<std::optional<TargetIdentifier>> test_functions,
-    std::vector<TargetIdentifier> module_runners
+    std::vector<TargetIdentifier> module_runners,
+    TargetContentNames content_names
 ) noexcept
     : source_identity(semantic_identity),
       target_modules(std::move(modules)),
       target_generated_namespace(std::move(generated_namespace)),
       target_domain_namespace(std::move(domain_namespace)),
-      target_function_names(std::move(functions)),
       target_structure_names(std::move(structures)),
       target_enumeration_names(std::move(enumerations)),
       target_callable_names(std::move(callables)),
@@ -108,10 +107,12 @@ TargetNamePlan::TargetNamePlan(
       target_enum_case_names(std::move(enum_cases)),
       target_payload_enums(std::move(payload_enums)),
       target_test_functions(std::move(test_functions)),
-      target_module_runners(std::move(module_runners)) {
+      target_module_runners(std::move(module_runners)),
+      target_content_names(std::move(content_names)) {
     if (target_modules.size() != target_module_runners.size()
         || target_callable_names.size() != target_closure_type_names.size()
-        || target_enumeration_names.size() != target_payload_enums.size()) {
+        || target_enumeration_names.size() != target_payload_enums.size()
+        || target_content_names.queries.size() != target_content_names.displays.size()) {
         invariant_violation("target name plan is not total over semantic rows");
     }
 }
@@ -159,51 +160,17 @@ auto TargetNamePlan::entity_name(
     return TargetName::globally_qualified(std::move(qualified));
 }
 
-auto TargetNamePlan::global_entity_name(const TargetEntityName& entity) const noexcept
-    -> TargetName {
-    const auto& target_namespace =
-        module_names(entity.owner_module).qualified_namespace_name.components();
-    auto qualified =
-        std::vector<TargetIdentifier>(target_namespace.begin(), target_namespace.end());
-    qualified.insert(
-        qualified.end(),
-        entity.relative_name.components().begin(),
-        entity.relative_name.components().end()
-    );
-    return TargetName::globally_qualified(std::move(qualified));
-}
-
-auto TargetNamePlan::function_identifier(FunctionID id) const noexcept -> const TargetIdentifier& {
-    return semantic_row(
-               target_function_names,
-               source_identity,
-               id,
-               "target name plan used unknown function"
-    )
-        .relative_name.components()
-        .back();
-}
-
-auto TargetNamePlan::function_name(ModuleID active_module, FunctionID id) const noexcept
-    -> TargetName {
-    return entity_name(
-        active_module,
-        semantic_row(
-            target_function_names,
-            source_identity,
-            id,
-            "target name plan used unknown function"
-        )
-    );
-}
-
-auto TargetNamePlan::global_function_name(FunctionID id) const noexcept -> TargetName {
-    return global_entity_name(semantic_row(
-        target_function_names,
+auto TargetNamePlan::callable_identifier(CallableID id) const noexcept -> const TargetIdentifier& {
+    const auto& row = semantic_row(
+        target_callable_names,
         source_identity,
         id,
-        "target name plan used unknown function"
-    ));
+        "target name plan used unknown callable"
+    );
+    if (!row) {
+        invariant_violation("target name plan used an unnamed body callable as a function");
+    }
+    return row->relative_name.components().back();
 }
 
 auto TargetNamePlan::callable_owner(CallableID id) const noexcept -> ModuleID {
@@ -280,8 +247,10 @@ auto TargetNamePlan::enum_case_identifier(EnumCaseID id) const noexcept -> const
     );
 }
 
-auto TargetNamePlan::callable_name(ModuleID active_module, CallableID id) const noexcept
-    -> TargetName {
+auto TargetNamePlan::callable_name(
+    std::optional<ModuleID> active_module,
+    CallableID id
+) const noexcept -> TargetName {
     const auto& value = semantic_row(
         target_callable_names,
         source_identity,
@@ -459,7 +428,7 @@ auto artifact_dependencies(const TargetArtifactPlan& artifact) noexcept
             [](const TargetTestEntryArtifact& value) static noexcept {
                 return std::vector {value.runner_header_dependency};
             },
-            [](const TargetCppAPIHeaderArtifact& value) noexcept {
+            [](const TargetCppAPIHeaderArtifact& value) static noexcept {
                 return value.interface_dependencies;
             },
             [](const TargetTestRunnerHeaderArtifact&) static noexcept {
@@ -495,6 +464,14 @@ TargetPlan::TargetPlan(
     artifact_logical_paths.reserve(artifact_plans.size());
     for (const auto entry : artifact_plans.entries()) {
         artifact_logical_paths.emplace_back(artifact_logical_path(entry.value));
+        if (const auto* interface = std::get_if<TargetInterfaceArtifact>(&entry.value)) {
+            for (const auto module_id : interface->component_members) {
+                module_interfaces.emplace(module_id, entry.id);
+            }
+        } else if (const auto* implementation =
+                       std::get_if<TargetModuleImplementationArtifact>(&entry.value)) {
+            module_implementations.emplace(implementation->schedule.module_id, entry.id);
+        }
         for (const auto dependency : artifact_dependencies(entry.value)) {
             if (dependency.owner() != plan_identity || dependency.index() >= entry.id.index()) {
                 invariant_violation("target artifact schedule is not dependency-first");
@@ -550,6 +527,20 @@ auto TargetPlan::artifact(TargetArtifactID id) const noexcept -> const TargetArt
     return artifact_plans.get(id);
 }
 
+auto TargetPlan::interface_of(ModuleID id) const noexcept -> std::optional<TargetArtifactID> {
+    static_cast<void>(names().module_names(id));
+    const auto found = module_interfaces.find(id);
+    return found == module_interfaces.end() ? std::nullopt : std::optional(found->second);
+}
+
+auto TargetPlan::module_schedule(ModuleID id) const noexcept -> const TargetModuleSchedule& {
+    const auto found = module_implementations.find(id);
+    if (found == module_implementations.end()) {
+        invariant_violation("module has no implementation schedule");
+    }
+    return std::get<TargetModuleImplementationArtifact>(artifact(found->second)).schedule;
+}
+
 PlannedCompilation::PlannedCompilation(SemIRProgram semantic, TargetPlan target) noexcept
     : semantic_program(std::move(semantic)),
       target_plan(std::move(target)) {
@@ -585,4 +576,54 @@ auto interface_component_logical_path(std::span<const std::string> anchor_compon
 auto cpp_api_header_logical_path(std::span<const std::string> canonical_components) noexcept
     -> std::string {
     return logical_path("carven/api", canonical_components, ".hpp");
+}
+
+auto TargetNamePlan::query_identifier(TypeID type) const noexcept -> const TargetIdentifier& {
+    const auto& name = semantic_row(
+        target_content_names.queries,
+        source_identity,
+        type,
+        "target query name used an unknown type"
+    );
+    if (!name) {
+        invariant_violation("target query name requires a native query type");
+    }
+    return *name;
+}
+
+auto TargetNamePlan::display_identifier(TypeID type) const noexcept -> const TargetIdentifier& {
+    const auto& name = semantic_row(
+        target_content_names.displays,
+        source_identity,
+        type,
+        "target display name used an unknown type"
+    );
+    if (!name) {
+        invariant_violation("target display name requires a nominal type");
+    }
+    return *name;
+}
+
+auto TargetNamePlan::constant_identifier(ConstantID constant) const noexcept
+    -> const TargetIdentifier& {
+    const auto& name = semantic_row(
+        target_content_names.constants,
+        source_identity,
+        constant,
+        "target constant name used an unknown constant"
+    );
+    if (!name) {
+        invariant_violation("target constant name requires frozen slice backing");
+    }
+    return *name;
+}
+
+auto TargetNamePlan::module_support_name(
+    ModuleID module,
+    const TargetIdentifier& identifier
+) const noexcept -> TargetName {
+    const auto prefix = module_names(module).qualified_namespace_name.components();
+    auto components = std::vector<TargetIdentifier>(prefix.begin(), prefix.end());
+    components.push_back(identifier);
+    return TargetName::globally_qualified(std::move(components));
 }

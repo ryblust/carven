@@ -10,6 +10,7 @@ import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.ids;
 import :semantic.semir.program;
+import :semantic.semir.simd;
 import :semantic.semir.type;
 import :source.provenance;
 import :support.invariant;
@@ -40,6 +41,14 @@ auto integer_suffix(const SemIRProgram& semantic, TypeID type) noexcept -> Targe
         case BuiltinType::F64:
         case BuiltinType::String:
         case BuiltinType::Str:
+        case BuiltinType::U8x32:
+        case BuiltinType::F32x8:
+        case BuiltinType::Mask8:
+        case BuiltinType::Mask32:
+        case BuiltinType::U8x16:
+        case BuiltinType::F32x4:
+        case BuiltinType::Mask4:
+        case BuiltinType::Mask16:
         case BuiltinType::StrCharsView:
         case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return TargetIntegerSuffix::None;
@@ -172,7 +181,63 @@ auto constant_expression(
             [&](const IntegerConstant& value) noexcept {
                 return typed_integer_expression(context, value, fact.type, use);
             },
-            [](const BooleanConstant& value) noexcept { return bool_expression(value.value); },
+            [&](const SIMDConstant& value) noexcept -> TargetExpr {
+                auto inputs = std::vector<TargetExpr>();
+                const auto owner =
+                    std::get<BuiltinTypeValue>(context.semantic().types().type(fact.type).value)
+                        .kind;
+                const auto layout = *simd_layout(owner);
+                const auto mask = owner == layout.mask;
+                auto bits = 0u;
+                for (auto i = 0uz; i < value.lanes.size(); ++i) {
+                    if (mask) {
+                        if (value.lanes[i] != 0u) {
+                            bits |= 1u << i;
+                        }
+                    } else if (layout.element == BuiltinType::F32) {
+                        inputs.push_back(floating_expression(
+                            context,
+                            std::bit_cast<float>(value.lanes[i]),
+                            context.semantic().types().builtin_type(BuiltinType::F32)
+                        ));
+                    } else {
+                        inputs.push_back(
+                            TargetExpr {
+                                .value = TargetLiteralExpr {
+                                    .value = TargetIntegerLiteral {
+                                        .negative = false,
+                                        .magnitude = value.lanes[i],
+                                        .suffix = TargetIntegerSuffix::Unsigned
+                                    }
+                                }
+                            }
+                        );
+                    }
+                }
+                if (mask) {
+                    inputs.push_back(
+                        TargetExpr {
+                            .value = TargetLiteralExpr {
+                                .value = TargetIntegerLiteral {
+                                    .negative = false,
+                                    .magnitude = bits,
+                                    .suffix = TargetIntegerSuffix::Unsigned
+                                }
+                            }
+                        }
+                    );
+                }
+                return call_expression(
+                    static_member_expression(
+                        context.lower_type(fact.type),
+                        TargetIdentifier::from_spelling(mask ? "from_bits" : "from_lanes")
+                    ),
+                    std::move(inputs)
+                );
+            },
+            [](const BooleanConstant& value) static noexcept {
+                return bool_expression(value.value);
+            },
             [&](const StringConstant& value) noexcept {
                 return string_expression(
                     std::string(context.semantic().provenance().spelling(value.value)),
@@ -196,7 +261,7 @@ auto constant_expression(
             [&](const F64Constant& value) noexcept -> TargetExpr {
                 return floating_expression(context, value.value, fact.type);
             },
-            [](const CharacterConstant& value) noexcept -> TargetExpr {
+            [](const CharacterConstant& value) static noexcept -> TargetExpr {
                 return {
                     .value = TargetLiteralExpr {
                         .value = TargetCharacterLiteral {

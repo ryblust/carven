@@ -4,8 +4,8 @@ import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.body;
 import :backend.lowering.context;
-import :backend.lowering.decl.lowerer;
 import :backend.lowering.decl;
+import :backend.lowering.decl.lowerer;
 import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.expr;
@@ -44,13 +44,13 @@ auto test_context_member_call(
 
 auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
     const auto& test = context.semantic().tests().test(id);
-    const auto& body = context.semantic().bodies().body(test.body);
+    const auto& body = context.semantic().bodies().body(*test.body);
     if (!body.inputs().parameters.empty() || !body.inputs().captures.empty()) {
         invariant_violation("test body unexpectedly has callable inputs");
     }
     auto lowered = lower_body(
         context,
-        test.body,
+        *test.body,
         BodyLoweringInputs {
             .parameters = {},
             .captures = {},
@@ -77,7 +77,7 @@ auto lower_test(ModuleLowering& context, TestID id) noexcept -> TargetItem {
 
 auto lower_module_test_runner(ModuleLowering& context, std::span<const TestID> tests) noexcept
     -> TargetItem {
-    const auto local = context.target().add_local(TargetNameAllocator::test_context());
+    const auto local = context.target().add_local(test_context_identifier());
     auto body = std::vector<TargetStmt>();
     const auto provenance_module =
         context.semantic().declarations().module_decl(context.active_module()).provenance_module;
@@ -157,7 +157,7 @@ auto lower_process_entry(
     }
     return compiler_item(
         TargetDecl {TargetFunctionDecl {
-            .name = TargetName {TargetNameAllocator::process_entry()},
+            .name = TargetName {process_entry_identifier()},
             .parameters = std::move(parameters),
             .result = context.intrinsic_type(TargetSymbol::Int),
             .form = TargetFreeFunctionDefinition {.body = std::move(body)},
@@ -173,7 +173,7 @@ auto lower_test_runner_header(
     ArtifactLowering& artifact,
     const TargetTestRunnerHeaderArtifact& schedule
 ) noexcept -> TargetUnitSections {
-    auto context = artifact.module_context(first_program_module(artifact.semantic()));
+    auto& context = artifact.module_context(first_program_module(artifact.semantic()));
     const auto testing_context = context.intrinsic_type(TargetSymbol::TestingContext);
     auto declarations = std::vector<TargetItem>();
     for (const auto module_id : schedule.module_runners) {
@@ -202,7 +202,7 @@ auto lower_test_runner_header(
         ));
     }
     const auto reporter = context.target().add_local(TargetIdentifier::from_spelling("reporter"));
-    const auto local = context.target().add_local(TargetNameAllocator::test_context());
+    const auto local = context.target().add_local(test_context_identifier());
     auto body = std::vector<TargetStmt>();
     body.push_back(generated_statement(
         TargetVariableStmt {
@@ -268,7 +268,7 @@ auto lower_test_runner_header(
 }
 
 auto lower_test_entry(ArtifactLowering& artifact) noexcept -> TargetUnitSections {
-    auto context = artifact.module_context(first_program_module(artifact.semantic()));
+    auto& context = artifact.module_context(first_program_module(artifact.semantic()));
     auto body = std::vector<TargetStmt>();
     body.push_back(generated_statement(
         TargetReturnStmt {

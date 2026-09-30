@@ -149,7 +149,7 @@ private:
     }
 
     auto visit(const ASTIfForm& value) noexcept -> void {
-        visit_fields(value.span, value.branches, value.else_branch);
+        visit_fields(value.span, value.const_span, value.branches, value.else_branch);
     }
 
     auto visit(const ASTMatchArmBody& value) noexcept -> void {
@@ -304,7 +304,7 @@ private:
     }
 
     auto visit(const ASTFunctionParameter& value) noexcept -> void {
-        visit_fields(value.span, value.access, value.target, value.type);
+        visit_fields(value.span, value.const_span, value.access, value.target, value.type);
     }
 
     auto visit(const ASTExpressionBody& value) noexcept -> void {
@@ -332,7 +332,7 @@ private:
 
     auto visit(const ASTBlockLabel& value) noexcept -> void { visit(value.span); }
 
-    auto visit(const ASTConstantBlock& value) noexcept -> void {
+    auto visit(const ASTConstBlock& value) noexcept -> void {
         visit_fields(value.keyword_span, value.label, value.body);
     }
 
@@ -468,7 +468,7 @@ private:
     }
 
     auto visit(const ASTForStmt& value) noexcept -> void {
-        visit_fields(value.keyword_span, value.header, value.body);
+        visit_fields(value.const_span, value.keyword_span, value.header, value.body);
     }
 
     auto visit(const ASTStmt& value) noexcept -> void { visit_fields(value.span, value.value); }

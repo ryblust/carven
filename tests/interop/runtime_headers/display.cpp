@@ -1,4 +1,4 @@
-#include <carven/runtime/display.hpp>
+#include <carven/runtime/display/display.hpp>
 
 static_assert(noexcept(carven::runtime::DisplayWriter()));
 

@@ -10,6 +10,14 @@ namespace {
 auto builtin_symbol(BuiltinType type) noexcept -> TargetSymbol {
     using enum BuiltinType;
     switch (type) {
+        case F32x4:        return TargetSymbol::RuntimeF32x4;
+        case F32x8:        return TargetSymbol::RuntimeF32x8;
+        case Mask4:        return TargetSymbol::RuntimeMask4;
+        case Mask8:        return TargetSymbol::RuntimeMask8;
+        case U8x16:        return TargetSymbol::RuntimeU8x16;
+        case U8x32:        return TargetSymbol::RuntimeU8x32;
+        case Mask16:       return TargetSymbol::RuntimeMask16;
+        case Mask32:       return TargetSymbol::RuntimeMask32;
         case Bool:         return TargetSymbol::Bool;
         case Char:         return TargetSymbol::Char;
         case I8:           return TargetSymbol::StdInt8;
@@ -108,22 +116,19 @@ auto ModuleLowering::variant_type(std::span<const TypeID> members) noexcept -> T
     });
 }
 
-auto ModuleLowering::lower_parameter(
-    const CallableParameter& parameter,
-    TypeNameScope scope
-) noexcept -> TargetTypeID {
-    const auto base = lower_type(parameter.type, scope);
-    const auto* builtin =
-        std::get_if<BuiltinTypeValue>(&semantic().types().type(parameter.type).value);
-    switch (parameter.access) {
+auto ModuleLowering::lower_parameter(AccessMode access, TypeID type, TypeNameScope scope) noexcept
+    -> TargetTypeID {
+    const auto base = lower_type(type, scope);
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&semantic().types().type(type).value);
+    switch (access) {
         case AccessMode::Read:
-            if (semantic().type_contents(parameter.type).read_borrows_storage()) {
+            if (semantic().type_contents(type).read_borrows_storage()) {
                 return reference_type(base, true);
             }
             if (builtin != nullptr) {
                 return intrinsic_type(builtin_symbol(builtin->kind), true);
             }
-            if (semantic().type_contents(parameter.type).read_is_value_snapshot()) {
+            if (semantic().type_contents(type).read_is_value_snapshot()) {
                 return target().intern_type({
                     .value =
                         TargetIntrinsicType {
@@ -156,7 +161,7 @@ auto ModuleLowering::function_type(
     auto parameters = std::vector<TargetTypeID>();
     parameters.reserve(signature.parameters.size());
     for (const auto& parameter : signature.parameters) {
-        parameters.push_back(lower_parameter(parameter, scope));
+        parameters.push_back(lower_parameter(parameter.access, parameter.type, scope));
     }
     return {
         .value =
@@ -293,7 +298,7 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                         .const_qualified = false
                     };
                 }
-                const auto result = lower_cpp_query(std::get<CppQueryType>(value.form), scope);
+                const auto result = lower_cpp_query(id);
                 return {
                     .value =
                         TargetIntrinsicType {
@@ -303,7 +308,7 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                     .const_qualified = false
                 };
             },
-            [](const BuiltinTypeValue& value) noexcept -> TargetType {
+            [](const BuiltinTypeValue& value) static noexcept -> TargetType {
                 return {
                     .value =
                         TargetIntrinsicType {

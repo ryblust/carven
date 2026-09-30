@@ -1,0 +1,11 @@
+test "loop step stops its test" {
+    for var index = 0; index < 1; require(false, "step stopped"), println("unreachable step") {
+        println("body");
+        continue;
+    }
+    println("unreachable test");
+}
+
+test "later test executes" {
+    println("later test");
+}

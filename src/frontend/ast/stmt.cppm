@@ -79,7 +79,7 @@ struct ASTRangeForHeader final {
 
 struct ASTCStyleForHeader final {
     ASTForInitializer initializer;
-    std::optional<ASTExprID> condition;
+    ASTExprID condition;
     std::vector<ASTForStep> steps;
 };
 
@@ -90,11 +90,14 @@ struct ASTForHeader final {
 
 struct ASTWhileStmt final {
     Span keyword_span;
-    ASTExprID condition;
+    // Absent for unconditional `while { }`.
+    std::optional<ASTExprID> condition;
     ASTBlockID body;
 };
 
 struct ASTForStmt final {
+    // Present for `const for`, which expands an integer range at compilation.
+    std::optional<Span> const_span;
     Span keyword_span;
     ASTForHeader header;
     ASTBlockID body;
@@ -103,7 +106,7 @@ struct ASTForStmt final {
 struct ASTStmt final {
     Span span;
     std::variant<
-        ASTConstantBlock,
+        ASTConstBlock,
         ASTVariableDecl,
         ASTAssignment,
         ASTUpdate,

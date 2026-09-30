@@ -83,9 +83,28 @@ auto DeclResolver::resolve_function(
     parameters.reserve(function.parameters.size());
     for (const auto& parameter : function.parameters) {
         const auto access = semantic_access_mode(parameter.access);
+        const auto stage = parameter.const_span ? ParameterStage::Static : ParameterStage::Runtime;
+        if (parameter.const_span && (cpp_import || entry || function.cpp_export.has_value())) {
+            co_return std::unexpected(declaration_failure(
+                draft,
+                symbol.module_id,
+                *parameter.const_span,
+                DiagnosticCode::ConstAdmission,
+                "const parameter cannot cross an open C++ or entry boundary"
+            ));
+        }
         const auto receiver =
             symbol.class_operation && symbol.class_operation->receiver && parameters.empty();
         if (receiver) {
+            if (parameter.const_span) {
+                co_return std::unexpected(declaration_failure(
+                    draft,
+                    symbol.module_id,
+                    *parameter.const_span,
+                    DiagnosticCode::ConstAdmission,
+                    "class receiver cannot be a const parameter"
+                ));
+            }
             if (parameter.type) {
                 co_return std::unexpected(declaration_failure(
                     draft,
@@ -96,7 +115,8 @@ auto DeclResolver::resolve_function(
                 ));
             }
             parameters.push_back(
-                {.access = access,
+                {.stage = stage,
+                 .access = access,
                  .type = draft.intern_type(
                      {.value = StructTypeValue {.structure = symbol.class_operation->owner}}
                  )}
@@ -143,6 +163,7 @@ auto DeclResolver::resolve_function(
                 ));
             }
             parameters.push_back({
+                .stage = stage,
                 .access = AccessMode::Read,
                 .type = draft.builtin_type(BuiltinType::EntryArgs),
             });
@@ -157,7 +178,7 @@ auto DeclResolver::resolve_function(
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
         }
-        parameters.push_back({.access = access, .type = *type});
+        parameters.push_back({.stage = stage, .access = access, .type = *type});
     }
 
     const auto* body = std::get_if<ASTFunctionBody>(&function.implementation);

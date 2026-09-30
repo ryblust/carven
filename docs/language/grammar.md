@@ -287,7 +287,7 @@ top-level-item = module-item
                | statement;
 
 (* A top-level const binding is a module constant declaration;
-   const test introduces a test and const { introduces a constant block. *)
+   const test introduces a test and const { introduces a const block. *)
 module-item = [ visibility-modifier ], module-declaration;
 
 visibility-modifier = "private" | "export";
@@ -317,7 +317,7 @@ Imports form one contiguous prefix. A later `import-declaration` cannot occur
 after a `top-level-item`.
 
 Top-level `const` bindings use `module-constant-declaration`. Top-level `let` and
-`var` bindings are statements in the implicit entry body. Constant blocks execute
+`var` bindings are statements in the implicit entry body. `const` blocks execute
 during semantic analysis. Namespace blocks are unsupported.
 
 ### 3.1 Imports
@@ -418,7 +418,8 @@ class-member = struct-field, ","
 class-operation = "fn", IDENTIFIER,
                   "(", [ class-parameter-list ], ")",
                   [ "->", function-result-type ], [ throw-clause ], function-body;
-class-parameter-list = receiver, [ ",", parameter-list ] | parameter-list;
+class-parameter-list = receiver, [ ",", function-parameter-list ]
+                     | function-parameter-list;
 receiver = [ "&" | "&&" ], "self";
 ```
 
@@ -438,11 +439,15 @@ function-definition = function-head, function-body;
 function-body = ordinary-block | "=>", expression, ";";
 
 function-head = [ "const" ], "fn", IDENTIFIER,
-                "(", [ parameter-list ], ")",
+                "(", [ function-parameter-list ], ")",
                 [ "->", function-result-type ],
                 [ throw-clause ];
 
-parameter-list = parameter, { ",", parameter }, [ "," ];
+function-parameter-list = function-parameter,
+                          { ",", function-parameter }, [ "," ];
+
+function-parameter = parameter
+                   | "const", binding-target, [ ":", type ];
 
 parameter = [ access-marker ], binding-target, [ ":", type ];
 
@@ -455,9 +460,12 @@ throw-clause = "throw", named-type, { "+", named-type };
 
 Function definitions are top-level items or class operations. `import(cpp)` uses the same function
 head followed by `;`; `export(cpp)` uses either function-body form.
-The optional `const` before `fn` declares compile-time call capability. Required
-constant execution can call only functions with this modifier, including through
+The optional `const` before `fn` declares that the function can execute in the
+static stage. Static execution can call only functions with this modifier, including through
 local callable bindings. A `const fn` may call only other `const fn` dependencies.
+A `const` function parameter requires a static argument at each call. It takes
+no access marker and is never the `self` receiver. Lambda parameters use
+`parameter` without this modifier.
 `throw` introduces the callable's failure contract after the success result.
 `throws` is an ordinary identifier. Nested functions, default arguments,
 variadic parameters, and explicit generic parameter lists have no syntax.
@@ -551,7 +559,7 @@ expression. An empty ordinary block is valid.
 
 ```ebnf
 statement = variable-declaration
-          | constant-block
+          | const-block
           | return-statement
           | throw-statement
           | rethrow-statement
@@ -572,14 +580,14 @@ expression-statement = expression, ";";
 
 control-flow-statement = if-form | match-form | try-form;
 
-constant-block = "const", [ STRING_LITERAL ], ordinary-block;
+const-block = "const", [ STRING_LITERAL ], ordinary-block;
 ```
 
 A direct unparenthesized `if-form`, `match-form`, or `try-form` at the beginning
 of a statement is terminated by its own structure.
 
 The grammar has no standalone `{ ... }` block statement.
-Constant blocks may appear at module scope or within statement blocks and do not
+`const` blocks may appear at module scope or within statement blocks and do not
 take a trailing semicolon.
 
 ### 5.3 Assignment and Update Forms
@@ -638,15 +646,16 @@ location.
 ### 5.6 While Statements
 
 ```ebnf
-while-statement = "while", expression, ordinary-block;
+while-statement = "while", [ expression ], ordinary-block;
 ```
 
-The loop body is always braced.
+The loop body is always braced. `while { ... }` has no condition.
 
 ### 5.7 For Statements
 
 ```ebnf
-for-statement = "for", for-header, ordinary-block;
+for-statement = "const", "for", range-for-header, ordinary-block
+              | "for", for-header, ordinary-block;
 
 for-header = range-for-header | c-style-for-header;
 
@@ -657,7 +666,7 @@ range-for-source = expression;
 for-binding = [ "&" ], binding-target, [ ":", type ];
 
 c-style-for-header = [ for-initializer ], ";",
-                         [ expression ], ";",
+                         expression, ";",
                          [ for-step-list ];
 
 for-initializer = variable-declaration-head
@@ -671,6 +680,9 @@ for-step = assignment-form | update-form | expression;
 
 The first semicolon in a C-style header terminates the optional
 `for-initializer`; it is not part of `variable-declaration-head`.
+
+`const for` admits only a range header. Whether its range is static is a
+semantic rule.
 
 `..` and `..=` are maximal-munch tokens. Range expressions are available in
 ordinary expression positions and require both bounds. Omitted bounds are
@@ -860,7 +872,7 @@ information is sufficient.
 ## 8. Conditional Forms
 
 ```ebnf
-if-form = "if", expression, branch-block,
+if-form = [ "const" ], "if", expression, branch-block,
           { "else", "if", expression, branch-block },
           [ "else", branch-block ];
 ```
@@ -868,6 +880,9 @@ if-form = "if", expression, branch-block,
 The same syntactic form may occur wherever an expression is admitted and at the
 beginning of a statement. Whether it requires branch results is a language
 semantic rule, not a grammar alternative.
+
+A leading `const` makes the whole chain a static selection; `else if` arms do
+not repeat it.
 
 ## 9. Try and Match Forms
 

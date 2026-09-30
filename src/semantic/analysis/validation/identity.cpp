@@ -73,7 +73,7 @@ auto BodyContractVerifier::require_nominal_failure_member(TypeID type) const noe
 
 auto BodyContractVerifier::body_callable() const noexcept -> std::optional<CallableID> {
     const auto callable = program.declarations().callable_for_body(body.id());
-    if (body.kind() == BodyKind::Test || body.kind() == BodyKind::ConstantBlock) {
+    if (body.kind() == BodyKind::Test || body.kind() == BodyKind::ConstBlock) {
         if (callable.has_value()) {
             invariant_violation("independent body is owned by a callable declaration");
         }
@@ -122,7 +122,7 @@ auto BodyContractVerifier::verify_body_inputs() const noexcept -> void {
 
 auto BodyContractVerifier::require_body_failure_set(FailureSetID failures) const noexcept -> void {
     const auto callable = body_callable();
-    if (body.kind() == BodyKind::ConstantBlock) {
+    if (body.kind() == BodyKind::ConstBlock) {
         static_cast<void>(require_failure_set(failures));
         return;
     }

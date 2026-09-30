@@ -57,10 +57,29 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
             );
         }
         if (!writable(source)) {
+            const auto binding = root(source);
+            if (!binding) {
+                diagnose(
+                    DiagnosticCode::AccessImmutable,
+                    "Write requires writable storage",
+                    source.origin
+                );
+                return;
+            }
+            const auto& declaration = body.binding(*binding);
+            const auto name = program.provenance().spelling(declaration.name);
+            const auto parameter =
+                std::holds_alternative<ParameterBindingStorage>(declaration.storage);
             diagnose(
                 DiagnosticCode::AccessImmutable,
-                "Write requires writable storage",
-                source.origin
+                std::format("Write requires writable storage; '{}' is read-only", name),
+                source.origin,
+                declaration.origin,
+                std::format("'{}' is declared read-only here", name),
+                parameter ? "mark the parameter '&' to receive writable storage"
+                    : std::holds_alternative<OwnerBindingStorage>(declaration.storage)
+                    ? "declare the binding with 'var' to make it writable"
+                    : ""
             );
         }
     };
@@ -117,7 +136,7 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
                                 write(**value.receiver);
                             }
                         },
-                        [&](const SemTextIntrinsic& value) noexcept {
+                        [&](const SemIntrinsic& value) noexcept {
                             for (const auto& operand : value.operands) {
                                 if (operand.access == AccessMode::Write) {
                                     write(operand.expression);

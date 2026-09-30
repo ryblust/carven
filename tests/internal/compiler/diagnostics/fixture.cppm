@@ -19,20 +19,15 @@ namespace ct = carven::testing;
 
 } // namespace
 
-struct NonemptyPrimarySpan final {};
-
 struct CompilerErrorExpectation final {
     std::string_view name;
     std::string_view source;
     DiagnosticCode code;
-    std::variant<std::string_view, NonemptyPrimarySpan> primary_text;
+    std::string_view primary_text;
 };
 
-auto check_compiler_error(
-    std::string_view source,
-    DiagnosticCode code,
-    std::variant<std::string_view, NonemptyPrimarySpan> primary_text
-) noexcept -> void {
+template<typename Check>
+auto with_compiled_source(std::string_view source, Check check) noexcept -> void {
     auto sources = SourceManager();
     const auto source_id = sources.append_virtual("diagnostic.cv", std::string(source));
     ct::require(source_id.has_value());
@@ -42,34 +37,46 @@ auto check_compiler_error(
         .source_id = *source_id,
         .module_path = *module_path,
     };
-
-    const auto result = compile(
+    check(
         sources,
-        SourceBatch {.modules = std::span(&input, 1)},
-        TargetPlanningRequest {
-            .test_mode = TestGenerationMode::None,
-            .linkage_domain = LinkageDomain::explicit_value("test:semantics").value(),
-        }
+        compile(
+            sources,
+            SourceBatch {.modules = std::span(&input, 1)},
+            TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = LinkageDomain::explicit_value("test:semantics").value(),
+            }
+        )
     );
+}
 
-    if (!ct::expect(!result.has_value())) {
-        return;
-    }
-    const auto* diagnostic = ct::find_diagnostic(result.error(), code);
-    ct::expect_diagnostic(result.error(), code);
-    if (diagnostic == nullptr) {
-        return;
-    }
-    ct::expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
-    ct::expect(diagnostic->attachment.primary.has_value());
-    if (!diagnostic->attachment.primary.has_value()) {
-        return;
-    }
-    if (const auto* text = std::get_if<std::string_view>(&primary_text)) {
-        ct::expect_equal(sources.slice(diagnostic->attachment.primary->span), *text);
-    } else {
-        ct::expect(!diagnostic->attachment.primary->span.span.empty());
-    }
+auto check_compiler_accepts(std::string_view source) noexcept -> void {
+    with_compiled_source(source, [](const auto&, const auto& result) static noexcept {
+        ct::expect(result.has_value());
+    });
+}
+
+auto check_compiler_error(
+    std::string_view source,
+    DiagnosticCode code,
+    std::string_view primary_text
+) noexcept -> void {
+    with_compiled_source(source, [&](const auto& sources, const auto& result) noexcept {
+        if (!ct::expect(!result.has_value())) {
+            return;
+        }
+        const auto* diagnostic = ct::find_diagnostic(result.error(), code);
+        ct::expect_diagnostic(result.error(), code);
+        if (diagnostic == nullptr) {
+            return;
+        }
+        ct::expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
+        ct::expect(diagnostic->attachment.primary.has_value());
+        if (!diagnostic->attachment.primary.has_value()) {
+            return;
+        }
+        ct::expect_equal(sources.slice(diagnostic->attachment.primary->span), primary_text);
+    });
 }
 
 auto check_compiler_errors(std::span<const CompilerErrorExpectation> cases) noexcept -> void {

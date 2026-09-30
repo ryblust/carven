@@ -72,8 +72,8 @@ auto realize_writer_format(
         parameters.push_back(
             {.local = argument,
              .type = context.lower_parameter(
-                 {.access = AccessMode::Read,
-                  .type = value.operands[original].expression.type.resolved()}
+                 AccessMode::Read,
+                 value.operands[original].expression.type.resolved()
              )}
         );
         arguments.push_back(name_expression(argument));

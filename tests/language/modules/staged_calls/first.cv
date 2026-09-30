@@ -1,0 +1,6 @@
+import .api using { dormant, inspect_native, relay };
+
+export fn first(value: i32) -> i32 => relay(value, 3);
+export fn inspect_first(value: i32) -> i32 => inspect_native(value, 5);
+
+export fn dormant_first(value: i32) -> bool => dormant(value, false);

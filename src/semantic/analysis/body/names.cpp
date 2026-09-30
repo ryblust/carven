@@ -31,45 +31,36 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
     -> AnalysisTask<SelectedExpression> {
     const auto text = spelling(name.name_span);
     if (const auto* local = use_local(text)) {
-        if (const auto* constant = std::get_if<ConstantID>(&local->storage)) {
-            auto value = active_builder().make_expression(
-                local->type,
-                active_builder().lifetime(),
-                origin(span),
-                SemConstant {.constant = *constant}
-            );
-            co_return BuiltExpression {
-                .storage = std::move(value),
-
-                .pending_failures = {},
-                .takeable = false,
-                .completes = true,
-            };
-        }
-        const auto& runtime = std::get<BoundStorage>(local->storage);
-        if (runtime.binding.owner() != active_builder().identity()) {
+        if (runtime_local_outside_block(text)) {
             co_return std::unexpected(fail(
                 span,
                 DiagnosticCode::ConstAdmission,
-                "constant block cannot access a value from an enclosing execution frame"
+                std::format("const block cannot use the runtime value '{}'", text)
             ));
         }
-        if (local->role == BodyLocalRole::RangeRead) {
-            auto value = active_builder().binding_expression(runtime.binding).expression;
-            value.category = SemanticValueCategory::Value;
-            value.lifetime = active_builder().lifetime();
-            value.origin = origin(span);
+        const auto binding = local->storage.binding;
+        const auto foreign = binding.owner() != active_builder().identity();
+        if (foreign || local->static_source || local->role == BodyLocalRole::RangeRead) {
+            auto value = co_await read_local(*local, span);
+            if (!value) {
+                co_return std::unexpected(value.error());
+            }
+            if (!*value) {
+                co_return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::ConstAdmission,
+                    "separate body cannot access an unbound value from an enclosing frame"
+                ));
+            }
             co_return BuiltExpression {
-                .storage = std::move(value),
-
+                .storage = std::move(**value),
                 .pending_failures = {},
                 .takeable = false,
                 .completes = true,
             };
         }
         co_return BuiltExpression {
-            .storage = active_builder().binding_expression(runtime.binding),
-
+            .storage = active_builder().binding_expression(binding),
             .pending_failures = {},
             .takeable = local->takeable,
             .completes = true,
@@ -275,7 +266,7 @@ auto BodyElaborator::builtin_operation(
                     draft().builtin_type(BuiltinType::Str),
                     builder.lifetime(),
                     site,
-                    SemTextIntrinsic {TextIntrinsic::AsStr, std::move(inputs)}
+                    SemIntrinsic {.operation = TextIntrinsic::AsStr, .operands = std::move(inputs)}
                 );
             }
             message = UniqueIndirect(std::move(argument));
@@ -310,9 +301,6 @@ auto BodyElaborator::builtin_operation(
             default:                        std::unreachable();
         }
     }();
-    for (auto& operand : operands) {
-        operand.expression.constant = builder.known_constant(operand.expression);
-    }
     return builder.make_expression(
         result_type,
         builder.lifetime(),
@@ -357,7 +345,6 @@ auto BodyElaborator::builtin_callable(
     const auto result_type = draft().builtin_type(BuiltinType::Void);
     const auto failures = draft().add_empty_failure_term();
     auto operation = builtin_operation(builder, selection, std::move(operands));
-    const auto exits_test = operation.exits_test;
     auto statements = std::vector<SemanticStatement>();
     statements.push_back(
         {.origin = site,
@@ -378,7 +365,7 @@ auto BodyElaborator::builtin_callable(
             .result = std::nullopt,
             .result_reachable = false,
             .failures = BodyFailures(failures),
-            .exits_test = exits_test
+            .exits_test = false
         }
     );
     const auto callable = draft().append_body_callable(

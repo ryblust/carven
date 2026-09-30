@@ -1,0 +1,7 @@
+fn lane(value: u8x16, index: usize) -> u8 {
+    return value.lane(index);
+}
+
+fn run_lane() {
+    println(lane(u8x16::splat(7), 16));
+}

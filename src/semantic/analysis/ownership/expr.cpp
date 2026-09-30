@@ -240,6 +240,10 @@ auto OwnershipBodyAnalyzer::expression(
                 [](const SemConstant&) static noexcept -> ContinuationTask<std::monostate> {
                     co_return {};
                 },
+                [&](const SemUnreachable&) noexcept -> ContinuationTask<std::monostate> {
+                    flow.normal.reset();
+                    co_return {};
+                },
                 [&](const SemBinding&) noexcept -> ContinuationTask<std::monostate> {
                     flow = (co_await place(source, std::move(flow.normal->state)));
                     co_return {};
@@ -301,16 +305,9 @@ auto OwnershipBodyAnalyzer::expression(
                     if (!flow.normal.has_value()) {
                         co_return {};
                     }
-                    const auto known = constant_truth(*value.left);
-                    const auto selected = value.operation == ShortCircuitOperator::And;
-                    if (known.has_value() && *known != selected) {
-                        co_return {};
-                    }
                     const auto skipped = flow.normal;
                     static_cast<void>((co_await evaluate(*value.right)));
-                    if (!known.has_value()) {
-                        join_normal_ownership(flow.normal, skipped);
-                    }
+                    join_normal_ownership(flow.normal, skipped);
                     co_return {};
                 },
                 [&](const SemDereference&) noexcept -> ContinuationTask<std::monostate> {
@@ -380,13 +377,7 @@ auto OwnershipBodyAnalyzer::expression(
                     if (value.condition.has_value()) {
                         (co_await evaluate(**value.condition));
                     }
-                    const auto known = value.condition.has_value()
-                        ? constant_truth(**value.condition)
-                        : std::optional(false);
-                    const auto success = known == false ? std::nullopt : flow.normal;
-                    if (known == true) {
-                        co_return {};
-                    }
+                    const auto success = value.condition.has_value() ? flow.normal : std::nullopt;
                     if (value.message) {
                         (co_await evaluate(**value.message));
                     }
@@ -461,75 +452,111 @@ auto OwnershipBodyAnalyzer::expression(
                     accesses.resize(previous_accesses);
                     co_return {};
                 },
-                [&](const SemSliceIntrinsic& value) noexcept -> ContinuationTask<std::monostate> {
-                    const auto previous_readers = storage_readers.size();
-                    auto relationships = (co_await evaluate(value.operands.front().expression));
-                    if (value.intrinsic == SliceIntrinsic::FromArray) {
-                        // A slice refers to backing storage; nested relationships remain
-                        // on that storage and are selected only when an element is read.
-                        relationships = {};
-                        for (const auto& backing : operand_storage) {
-                            relationships.storage_loans.push_back({{}, backing, source.origin});
-                        }
-                    }
-                    protect_storage(relationships);
-                    for (auto i = 1uz; i < value.operands.size(); ++i) {
-                        static_cast<void>((co_await evaluate(value.operands[i].expression)));
-                    }
-                    if (flow.normal) {
-                        flow.normal->value = value.intrinsic == SliceIntrinsic::FromArray
-                                || value.intrinsic == SliceIntrinsic::Slice
-                            ? std::move(relationships)
-                            : OwnershipRelationships {};
-                    }
-                    restore_storage_readers(previous_readers);
-                    co_return {};
-                },
-                [&](const SemTextIntrinsic& value) noexcept -> ContinuationTask<std::monostate> {
-                    const auto previous_accesses = accesses.size();
-                    const auto previous_readers = storage_readers.size();
-                    auto borrowed = OwnershipRelationships {};
-                    auto receiver_storage = std::vector<OwnershipPlace>();
-                    for (const auto& [index, operand] : std::views::enumerate(value.operands)) {
-                        auto relationships = (co_await evaluate(operand.expression));
-                        if (!flow.normal) {
-                            break;
-                        }
-                        if (index == 0
-                            && (value.intrinsic == TextIntrinsic::FromUTF8Unchecked
-                                || value.intrinsic == TextIntrinsic::AsStr
-                                || value.intrinsic == TextIntrinsic::Bytes
-                                || value.intrinsic == TextIntrinsic::Chars)) {
-                            if (program.types().type(operand.expression.type.resolved()).value
-                                == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}) {
-                                for (const auto& backing : operand_storage) {
-                                    relationships.storage_loans.push_back(
-                                        {{}, backing, source.origin}
+                [&](const SemIntrinsic& value) noexcept -> ContinuationTask<std::monostate> {
+                    co_return co_await value.operation.visit(
+                        Overloaded {
+                            [&](const SliceIntrinsicOperation& family) noexcept
+                                -> ContinuationTask<std::monostate> {
+                                const auto previous_readers = storage_readers.size();
+                                auto relationships =
+                                    (co_await evaluate(value.operands.front().expression));
+                                if (family.intrinsic == SliceIntrinsic::FromArray) {
+                                    // A slice refers to backing storage; nested relationships remain
+                                    // on that storage and are selected only when an element is read.
+                                    relationships = {};
+                                    for (const auto& backing : operand_storage) {
+                                        relationships.storage_loans.push_back(
+                                            {{}, backing, source.origin}
+                                        );
+                                    }
+                                }
+                                protect_storage(relationships);
+                                for (auto i = 1uz; i < value.operands.size(); ++i) {
+                                    static_cast<void>(
+                                        (co_await evaluate(value.operands[i].expression))
                                     );
                                 }
+                                if (flow.normal) {
+                                    flow.normal->value =
+                                        family.intrinsic == SliceIntrinsic::FromArray
+                                            || family.intrinsic == SliceIntrinsic::Slice
+                                        ? std::move(relationships)
+                                        : OwnershipRelationships {};
+                                }
+                                restore_storage_readers(previous_readers);
+                                co_return {};
+                            },
+                            [&](const SIMDIntrinsic&) noexcept -> ContinuationTask<std::monostate> {
+                                const auto previous_readers = storage_readers.size();
+                                for (const auto& operand : value.operands) {
+                                    const auto relationships =
+                                        co_await evaluate(operand.expression);
+                                    protect_storage(relationships);
+                                }
+                                if (flow.normal) {
+                                    flow.normal->value = OwnershipRelationships {};
+                                }
+                                restore_storage_readers(previous_readers);
+                                co_return {};
+                            },
+                            [&](const TextIntrinsic& family) noexcept
+                                -> ContinuationTask<std::monostate> {
+                                const auto previous_accesses = accesses.size();
+                                const auto previous_readers = storage_readers.size();
+                                auto borrowed = OwnershipRelationships {};
+                                auto receiver_storage = std::vector<OwnershipPlace>();
+                                for (const auto& [index, operand] :
+                                     std::views::enumerate(value.operands)) {
+                                    auto relationships = (co_await evaluate(operand.expression));
+                                    if (!flow.normal) {
+                                        break;
+                                    }
+                                    if (index == 0
+                                        && (family == TextIntrinsic::FromUTF8Unchecked
+                                            || family == TextIntrinsic::AsStr
+                                            || family == TextIntrinsic::Bytes
+                                            || family == TextIntrinsic::Chars)) {
+                                        if (program.types()
+                                                .type(operand.expression.type.resolved())
+                                                .value
+                                            == CanonicalTypeValue {
+                                                BuiltinTypeValue {BuiltinType::String}
+                                            }) {
+                                            for (const auto& backing : operand_storage) {
+                                                relationships.storage_loans.push_back(
+                                                    {{}, backing, source.origin}
+                                                );
+                                            }
+                                        }
+                                        borrowed = relationships;
+                                    }
+                                    protect_storage(relationships);
+                                    if (index == 0) {
+                                        receiver_storage = operand_storage;
+                                        for (const auto& selected : receiver_storage) {
+                                            accesses.push_back({selected, false});
+                                        }
+                                    }
+                                }
+                                if (flow.normal) {
+                                    if (text_intrinsic_writes(family)) {
+                                        for (const auto& target : receiver_storage) {
+                                            write_access(target, source.origin);
+                                            check_storage_write(
+                                                flow.normal->state,
+                                                target,
+                                                source.origin
+                                            );
+                                        }
+                                    }
+                                    flow.normal->value = std::move(borrowed);
+                                }
+                                restore_storage_readers(previous_readers);
+                                accesses.resize(previous_accesses);
+                                co_return {};
                             }
-                            borrowed = relationships;
                         }
-                        protect_storage(relationships);
-                        if (index == 0) {
-                            receiver_storage = operand_storage;
-                            for (const auto& selected : receiver_storage) {
-                                accesses.push_back({selected, false});
-                            }
-                        }
-                    }
-                    if (flow.normal) {
-                        if (text_intrinsic_writes(value.intrinsic)) {
-                            for (const auto& target : receiver_storage) {
-                                write_access(target, source.origin);
-                                check_storage_write(flow.normal->state, target, source.origin);
-                            }
-                        }
-                        flow.normal->value = std::move(borrowed);
-                    }
-                    restore_storage_readers(previous_readers);
-                    accesses.resize(previous_accesses);
-                    co_return {};
+                    );
                 },
                 [&](const SemArrayAdopt& value) noexcept -> ContinuationTask<std::monostate> {
                     const auto original = (co_await evaluate(*value.source));

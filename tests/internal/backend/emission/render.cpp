@@ -207,6 +207,18 @@ const ct::Suite tests([] static noexcept {
                     .expected = "a < (b == c);"
                 },
                 Case {
+                    .outer = TargetBinaryOperator::BitwiseAnd,
+                    .inner = TargetBinaryOperator::Equal,
+                    .nested_left = true,
+                    .expected = "(a == b) & c;"
+                },
+                Case {
+                    .outer = TargetBinaryOperator::BitwiseOr,
+                    .inner = TargetBinaryOperator::Less,
+                    .nested_left = false,
+                    .expected = "a | (b < c);"
+                },
+                Case {
                     .outer = TargetBinaryOperator::Subtract,
                     .inner = TargetBinaryOperator::Subtract,
                     .nested_left = true,

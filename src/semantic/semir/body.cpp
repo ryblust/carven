@@ -43,6 +43,10 @@ auto LifetimeRegionTree::outlives(LifetimeRegionID outer, LifetimeRegionID inner
     return false;
 }
 
+auto LifetimeRegionTree::clone() const noexcept -> LifetimeRegionTree {
+    return LifetimeRegionTree(region_rows.clone());
+}
+
 auto LifetimeRegionTree::entries() const noexcept
     -> IDTableEntries<LifetimeRegionID, LifetimeRegion, BodyIdentity> {
     return region_rows.entries();

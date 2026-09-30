@@ -1,0 +1,8 @@
+slice.cv:2:12: error: sequence index is out of bounds
+  test:
+    module: slice
+    name: slice bounds
+  index: -4
+  length: 3
+  note: execution aborted
+

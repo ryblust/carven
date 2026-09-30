@@ -8,6 +8,7 @@ import :semantic.analysis.failure;
 import :semantic.evaluation.output;
 import :semantic.semir.constant_access;
 import :semantic.semir.program;
+import :semantic.semir.stage;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import std;
@@ -121,6 +122,7 @@ public:
     auto module_declaration_copy(ModuleID id) const noexcept -> ModuleDeclaration;
     auto function_declaration_copy(FunctionID id) const noexcept -> FunctionDeclaration;
     auto function_for_callable(CallableID id) const noexcept -> std::optional<FunctionID>;
+    auto body_for_callable(CallableID id) const noexcept -> std::optional<BodyID>;
     auto construction_struct_declaration_copy(StructID id) const noexcept
         -> ConstructionStructDeclaration;
     auto enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration;
@@ -159,6 +161,11 @@ public:
         std::vector<TypeID> retained_members
     ) noexcept -> FailureTermID;
     auto add_failure_member(FailureTermID destination, TypeID member) noexcept -> void;
+    auto add_thrown_failure_member(
+        FailureTermID destination,
+        TypeID member,
+        ProgramOriginID origin
+    ) noexcept -> void;
     auto add_failure_contribution(FailureTermID destination, FailureTermID source) noexcept -> void;
     auto add_guarded_failure_contribution(
         FailureTermID destination,
@@ -191,6 +198,27 @@ public:
     auto add_body_draft(StructuredBodyDraft body) noexcept -> void;
     // Stable across nested body completion; borrows end before the draft is consumed.
     auto body_draft(BodyID id) const noexcept -> const StructuredBodyDraft&;
+    auto completed_body_ids() const noexcept -> std::vector<BodyID>;
+    // The executable region of a completed body, when it differs from the
+    // checked one.
+    auto set_residual(BodyID body, StructuredRegionDraft residual) noexcept -> void;
+    auto staged_function(FunctionID function) const noexcept -> bool;
+    auto find_static_instance(
+        FunctionID function,
+        std::span<const ConstantID> arguments
+    ) const noexcept -> std::optional<CallableID>;
+    // Reserves the callable and body of an instance before its body is
+    // specialized, so a reference made meanwhile names the same instance.
+    auto reserve_static_instance(FunctionID function, std::vector<ConstantID> arguments) noexcept
+        -> std::pair<CallableID, BodyID>;
+    auto complete_static_instance(CallableID callable, StructuredBodyDraft body) noexcept -> void;
+    auto fail_static_instance(CallableID callable, AnalysisFailure failure) noexcept -> void;
+    // The instance a callable is, when static specialization produced it.
+    auto static_instance(CallableID callable) const noexcept -> std::optional<StaticInstance>;
+    // Pending instances have no body yet; a failed instance retains its failure.
+    auto static_instance_body(CallableID callable) const noexcept
+        -> AnalysisResult<std::optional<BodyID>>;
+    auto source_module(ProgramSourceID source) const noexcept -> ProgramModuleID;
     auto reserve_test() noexcept -> TestID;
     auto define_test(TestID id, TestDeclaration test) noexcept -> void;
     auto finish() && noexcept -> AnalysisResult<SemIRProgram>;
@@ -208,7 +236,6 @@ private:
         const FailureSolution& failures
     ) noexcept -> void;
     auto solve_test_stops(
-        const ConstantStore& constants,
         const CanonicalTypeStore& types,
         const TypeResolution& resolved_types,
         const DeclarationStore& declarations
@@ -250,7 +277,17 @@ private:
             std::unique_ptr<StructuredBodyDraft> definition;
         };
 
+        struct StaticInstanceSlot final {
+            StaticInstance instance;
+            BodyID body;
+            enum class Progress { Pending, Complete };
+            std::variant<Progress, AnalysisFailure> state;
+        };
+
         std::vector<BodySlot> bodies;
+        std::vector<StaticInstanceSlot> static_instances;
+        std::map<std::pair<FunctionID, std::vector<ConstantID>>, CallableID> static_instance_index;
+        std::map<CallableID, std::size_t> instance_callables;
         ReservedProgramTable<TestDeclaration, TestID> test_slots;
     };
 

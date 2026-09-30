@@ -4,7 +4,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdlib>
 #include <span>
 
 namespace carven::runtime {
@@ -28,14 +27,17 @@ public:
 
     constexpr auto end() const noexcept { return storage.end(); }
 
+    // A native subscript reports this position; generated code calls
+    // checked_slice_index with the position of the Carven subscript.
     template<Integer Index>
     constexpr auto operator[](Index index) const noexcept -> const Element& {
-        return storage[checked_index_offset(index, size())];
+        return storage[checked_index_offset(index, size(), SourceSite::native())];
     }
 
-    constexpr auto slice(std::size_t start, std::size_t end) const noexcept -> Slice {
+    constexpr auto slice(std::size_t start, std::size_t end, SourceSite site) const noexcept
+        -> Slice {
         if (start > end || end > size()) {
-            std::abort();
+            trap("slice range is out of bounds", site);
         }
         return Slice(storage.subspan(start, end - start));
     }
@@ -43,6 +45,12 @@ public:
 private:
     std::span<const Element> storage;
 };
+
+template<typename Element, Integer Index>
+constexpr auto checked_slice_index(Slice<Element> slice, Index index, SourceSite site) noexcept
+    -> const Element& {
+    return slice.data()[checked_index_offset(index, slice.size(), site)];
+}
 
 template<typename Element, std::size_t Size>
 constexpr auto as_slice(const std::array<Element, Size>& input) noexcept -> Slice<Element> {

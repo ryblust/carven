@@ -115,7 +115,7 @@ private const fn check_scalar_construction() {
     check(text == "😀");
 }
 
-const test "Character construction: required execution and constant publication" {
+const test "Character construction: static execution and constant publication" {
     const character = char::from_u32_unchecked(0x10ffff);
     check(character == '\u{10ffff}');
     check_scalar_construction();

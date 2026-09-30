@@ -44,13 +44,15 @@ subdirectories. Import declarations resolve module references within the collect
 batch. Official and third-party Crafts use the same rules.
 
 A Craft may combine `.cv`, `.cpp`, and C++ headers. Carven analyzes every collected
-`.cv`, executes required constant evaluation and static tests, and selects all
+`.cv`, runs compile-time execution and static tests, and selects all
 ordinary tests in test mode. Native execution compiles every collected `.cpp`
 alongside generated implementations. C++ headers are included by those sources.
 Documentation and other resources may accompany the package.
 
-Installed sources must build together in the selected environment, with distinct
-module identities and available native dependencies. Library sources must leave
+Package authors or users select sources for the target platform and configuration
+before placing them in `crafts/`. Packaging tools can prepare the same installed
+layout. Installed sources must build together, with distinct module identities
+and available native dependencies. Library sources must leave
 program entry selection to the application. Keep independent examples, intentional
 compilation-failure tests, and alternative build targets outside the collected
 roots. Analysis errors and static-test failures in any collected module fail the
@@ -59,8 +61,9 @@ command, including modules the application does not import.
 For custom integration, place external repositories outside the collected roots,
 for example in `thirdparty/`. Supply selected `.cv` files explicitly to Carven.
 Supply C++ sources, include paths, defines, compiler options, and libraries to the
-native build. Explicit `.cv` inputs follow the ordinary module-path rules and are
-combined with the automatically collected Crafts.
+native build through its ordinary target configuration. Explicit `.cv` inputs
+follow the ordinary module-path rules and are combined with the automatically
+collected Crafts.
 
 ## Native execution
 
@@ -68,7 +71,9 @@ Carven analyzes all collected modules, generates C++, compiles and links a nativ
 program, then executes it. Program execution requires one entry point.
 `carven --tests` compiles and runs ordinary runtime tests, requires at least
 one runtime test, and leaves the program entry unexecuted. Static tests run during
-analysis. Assertion failures produce a nonzero exit status; later tests continue.
+analysis. Failed checks accumulate; `require` and `fail` stop the current test,
+then later tests continue. Assertion failures and runtime traps abort the process.
+Any test failure produces a nonzero exit status.
 Native header lookup includes the generated directory, both Crafts include roots, and the
 working directory. Before `--`, arguments are source paths, `--tests`, or
 `--timings`; arguments after it are passed unchanged to the executable.
@@ -101,7 +106,7 @@ carven --timings main.cv -- argument
 
 The report shows the outcome, total wall-clock duration, and the stages executed,
 with aligned durations in milliseconds or seconds. Lexing and parsing accumulate
-across sources. Semantic analysis includes constant evaluation and static tests.
+across sources. Semantic analysis includes compile-time execution and static tests.
 Checking, compilation, and runtime commands also report source collection.
 Native runs report C++ compilation and linking. Native and interpreted runs label
 their runtime phase `Execution`; `compile` ends with C++ artifact output.
@@ -119,8 +124,8 @@ are intended for human reading.
 ## Checking
 
 `check` collects the fixed Crafts roots and analyzes the resulting source batch
-through the same semantic pipeline as `compile`, including required constant
-evaluation and `const test` execution. Ordinary
+through the same semantic pipeline as `compile`, including compile-time
+execution and `const test` execution. Ordinary
 functions and runtime tests receive semantic checks without execution. An entry
 point is optional.
 
@@ -142,7 +147,7 @@ and execution rules to supported operations and rejects unsupported capabilities
 
 `interpret` uses the same fixed Crafts roots, resource lookup, source sorting, and
 deduplication as native execution. Other application files remain explicit inputs.
-Required constant initializers, `const {}` blocks, and `const test` execute
+`const` initializers, `const {}` blocks, and `const test` execute
 during analysis. The interpreter executes the published semantic operations and
 checks operation support when its operands complete and execution reaches the
 operation. Program execution requires one entry: top-level
@@ -150,7 +155,7 @@ executable statements or `main`. Declaration-only and empty files remain valid
 for `check`, but do not provide a runtime entry.
 Unused functions still receive ordinary language checks; they do not have to
 belong to the interpreter subset unless declared `const fn`, which has its own
-static capability contract. Required constant execution calls only explicit
+capability contract. Compile-time execution calls only explicit
 `const fn` functions and their `const fn` dependencies. No C++ artifacts or
 native executable are written.
 
@@ -160,9 +165,10 @@ It requires at least one runtime test and does not execute top-level statements 
 module order and source order within each module, each with fresh local storage
 and an independent execution budget. `check` failures accumulate;
 `require` and `fail` stop the current test through helper calls and cannot be caught
-as typed failures. Later tests still run after assertion failures, execution errors,
-or exhausted budgets. The command reports failures and a pass/fail summary to stderr
-and returns 1 if any test fails.
+as typed failures. Unsupported operations and exhausted budgets stop the current
+test; later tests still run. An assertion failure or runtime trap aborts execution,
+skips remaining tests, and produces no pass/fail summary. Otherwise the command
+reports failures and a pass/fail summary to stderr. It returns 1 if any test fails.
 
 The subset supports numeric, bool, char, str, and String locals; supported structs,
 enums, fixed arrays and slices; byte views and iteration; typed failures and
@@ -171,7 +177,7 @@ calls through local bindings of named Carven functions; local mutation;
 conditional control, loops and matching; builtin printing and
 formatting, local pointers, and Write parameters. It uses the shared structured
 executor. Integer arithmetic uses the same language wrapping rules during
-required constant execution and runtime interpretation. Retained C string values
+compile-time execution and runtime interpretation. Retained C string values
 support text printing and default text formatting. Floating operations use the
 compiler host's native environment. Floating printing and formatting use the host
 standard library, including dynamic width and precision within execution budgets.
@@ -185,7 +191,7 @@ execution.
 
 `--trace` reports executed statement locations and function calls and successful
 returns to stderr, indented by call depth. It describes interpreted execution after
-analysis, not constant evaluation, and does not record every expression or variable
+analysis, not compile-time execution, and does not record every expression or variable
 value. Program stderr shares that stream. Combined stdout/stderr display order is
 not a complete execution log.
 
@@ -193,14 +199,15 @@ not a complete execution log.
 Steps charge expression evaluation, statements, and loop progress using the shared
 executor; nested calls share the root budget. It does not limit elapsed time or
 blocking output. Existing per-value, call-depth, aggregate, and cumulative text-work
-limits also apply. Each required constant root keeps its own analysis budget;
+limits also apply. Each compile-time root keeps its own analysis budget;
 this option changes only interpreted execution, with a fresh budget for each
 runtime test. Repeating `--max-steps`, `--trace`, or `--tests` is an error.
 
-Execution errors report `CV-INTERPRET-EXECUTION` with source locations and call
-context; exhausted budgets report `CV-INTERPRET-LIMIT`. Completed output remains
-observable. Invocation, admission, and execution failures return status 1; normal
-completion returns 0, following the existing entry-result convention.
+Assertions, test reports, and runtime traps use the runtime report layout with
+source locations and call context. Other execution errors report
+`CV-INTERPRET-EXECUTION`; exhausted budgets report `CV-INTERPRET-LIMIT`. Completed
+output remains observable. Invocation, admission, and execution failures return
+status 1; normal completion follows the entry-result convention.
 
 ## Source inputs
 
@@ -321,6 +328,18 @@ errors include a command help hint. Source
 warnings are printed on standard error while a successful compilation and
 materialization still return zero.
 
+Source diagnostics are printed in source order within each file. Each function,
+test, and `const` block reports its first error, so one run shows every
+independent body error. A body that depends on the inferred result or failures
+of a failed function reports nothing until that function is corrected. Failure
+contracts, ownership, and constant tests are checked only after every body is
+accepted.
+
+A diagnostic names the rejected facts: expected and actual types, undeclared
+failure types, or the nearest similarly spelled name. Labels on one source line
+share that line. Trailing `note:` lines add context, and `help:` lines suggest a
+source change for the rejected contract.
+
 Carven-rendered diagnostics use color when standard error supports terminal
 styling, unless `NO_COLOR` is nonempty or `TERM=dumb`. Carven does not add styling
 when standard error is redirected.
@@ -353,7 +372,7 @@ inspection and may change between compiler versions.
 
 ## Compile-time program output
 
-Required constant execution, including `const {}` blocks and `const test`, may
+Compile-time execution, including `const {}` blocks and `const test`, may
 use the builtin print operations.
 The driver sends `print`/`println` to stdout and `eprint`/`eprintln` to stderr.
 With `--stdout`, all compile-time program output goes to stderr so stdout contains

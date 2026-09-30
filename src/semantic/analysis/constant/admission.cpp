@@ -28,7 +28,6 @@ public:
 
 private:
     auto reject(ProgramOriginID origin, std::string message) noexcept -> void;
-    auto known_truth(const SemanticExpression& expression) const noexcept -> std::optional<bool>;
     auto supported_type(ConstructionTypeRef type, bool allow_void = false) const noexcept -> bool;
     auto check_function(FunctionID function) noexcept -> void;
     auto check_body(const StructuredBodyDraft& body) noexcept -> void;
@@ -75,18 +74,6 @@ auto ConstFunctionValidator::reject(ProgramOriginID origin, std::string message)
         );
     }
     failure = draft.diagnostics().error(diagnostic.build());
-}
-
-auto ConstFunctionValidator::known_truth(const SemanticExpression& expression) const noexcept
-    -> std::optional<bool> {
-    if (!expression.constant) {
-        return std::nullopt;
-    }
-    if (const auto* boolean =
-            std::get_if<BooleanConstant>(&draft.constant(*expression.constant).value)) {
-        return boolean->value;
-    }
-    return std::nullopt;
 }
 
 auto ConstFunctionValidator::supported_type(
@@ -157,12 +144,7 @@ auto ConstFunctionValidator::check_function(FunctionID function) noexcept -> voi
 
 auto ConstFunctionValidator::check_call(const SemCall& operation, ProgramOriginID origin) noexcept
     -> void {
-    auto target = operation.target;
-    if (!target) {
-        if (const auto* named = std::get_if<SemCallable>(&operation.callee->value)) {
-            target = named->callable;
-        }
-    }
+    const auto target = operation.target;
     if (!target) {
         reject(origin, "cannot prove compile-time capability of indirect call target");
         return;
@@ -198,26 +180,24 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                     nodes.insert(nodes.end(), children.rbegin(), children.rend());
                 },
                 [&](const SemanticStatement* statement) noexcept {
+                    if (std::holds_alternative<SemStaticBinding>(statement->value)
+                        || std::holds_alternative<SemConstBlock>(statement->value)) {
+                        return;
+                    }
                     if (const auto reason = unsupported_execution_statement(*statement)) {
                         reject(statement->origin, std::string(*reason));
                         return;
                     }
                     auto children = std::vector<PendingNode>();
                     statement->value.visit([&](const auto& operation) noexcept {
-                        visit_evaluation_children(
-                            operation,
-                            [&](const auto& expression) noexcept {
-                                return known_truth(expression);
-                            },
-                            [&](const auto& child) noexcept {
-                                using Child = std::remove_cvref_t<decltype(child)>;
-                                if constexpr (std::same_as<Child, SemanticExpression>) {
-                                    children.emplace_back(&child);
-                                } else if constexpr (std::same_as<Child, SemanticRegion>) {
-                                    children.emplace_back(&child);
-                                }
+                        visit_evaluation_children(operation, [&](const auto& child) noexcept {
+                            using Child = std::remove_cvref_t<decltype(child)>;
+                            if constexpr (std::same_as<Child, SemanticExpression>) {
+                                children.emplace_back(&child);
+                            } else if constexpr (std::same_as<Child, SemanticRegion>) {
+                                children.emplace_back(&child);
                             }
-                        );
+                        });
                     });
                     nodes.insert(nodes.end(), children.rbegin(), children.rend());
                 },
@@ -245,18 +225,14 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                     }
                     auto children = std::vector<PendingNode>();
                     expression->value.visit([&](const auto& operation) noexcept {
-                        visit_evaluation_children(
-                            operation,
-                            [&](const auto& value) noexcept { return known_truth(value); },
-                            [&](const auto& child) noexcept {
-                                using Child = std::remove_cvref_t<decltype(child)>;
-                                if constexpr (std::same_as<Child, SemanticExpression>) {
-                                    children.emplace_back(&child);
-                                } else if constexpr (std::same_as<Child, SemanticRegion>) {
-                                    children.emplace_back(&child);
-                                }
+                        visit_evaluation_children(operation, [&](const auto& child) noexcept {
+                            using Child = std::remove_cvref_t<decltype(child)>;
+                            if constexpr (std::same_as<Child, SemanticExpression>) {
+                                children.emplace_back(&child);
+                            } else if constexpr (std::same_as<Child, SemanticRegion>) {
+                                children.emplace_back(&child);
                             }
-                        );
+                        });
                         using Operation = std::remove_cvref_t<decltype(operation)>;
                         if constexpr (std::same_as<Operation, SemCall>) {
                             if (expression->operation_reachable) {

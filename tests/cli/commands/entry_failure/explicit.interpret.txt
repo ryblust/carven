@@ -1,0 +1,12 @@
+error [CV-INTERPRET-EXECUTION]: typed failure escaped execution without recovery
+  failure:
+    Denied {
+        code: 7,
+    }
+ --> explicit.cv:5:19
+   |
+ 5 |     if code > 0 { throw Denied { code: code }; }
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+11 |     load(7)?;
+   |     ------- while interpreting this function call

@@ -47,6 +47,35 @@ C++ operations.
 materializes directives. Rendering serializes that finished tree. Filesystem
 output and native compilation are separate consumers.
 
+## Static instances
+
+Each module implementation emits the static instances it calls as `inline`
+functions in the owner's module namespace. Instance names derive from the function
+and its static values. Native signatures and calls retain only runtime parameters.
+Semantic analysis supplies ordinary residual regions with selected static arms,
+expanded iterations, and constant values; preparation and realization consume
+those regions through their ordinary paths.
+
+An artifact owns module contexts and one definition queue. Each context owns its
+type cache and emitted query aliases, display helpers, and constant backing storage.
+`TargetNamePlan` owns support names derived from complete semantic content.
+Module contexts track materialized constant identities; callable-local allocators
+reserve names for locals and labels. Artifact caches use canonical semantic
+identities. Content digests select preferred spellings;
+naming compares full content when those spellings coincide. Shared bodies reference
+module-owned support names. Provider artifacts are independent of the instances selected by their callers;
+[Artifacts](artifacts.md#staged-bodies) defines their callable surface and definition
+ordering.
+
+Source-template bodies have been discarded before planning. Published closure
+construction order supplies stable names and dependency discovery without
+recovering source trees from instances.
+
+Semantic specialization gives each expanded iteration distinct local bindings,
+patterns, and lifetimes. The backend uses these identities through its ordinary
+storage map; references to outer storage remain shared. Normal cleanup, break,
+continue, return, and failure handling still apply.
+
 ## Reading by task
 
 | Task | Reference |

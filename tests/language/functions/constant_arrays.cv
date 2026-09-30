@@ -328,5 +328,4 @@ test "Const arrays: sequence bindings share projection and control semantics" {
     check(array_range_snapshot() == snapshot);
     check(array_range_read_rows() == rows);
     check(array_range_source_once() == once);
-
 }

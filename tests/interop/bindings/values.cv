@@ -34,11 +34,7 @@ struct Entries {
     values: vector<Entry>,
 }
 
-fn entries() -> Entries => {
-    values: vector<Entry> {
-        Entry { value: 11 }
-    }
-};
+fn entries() -> Entries => { values: vector<Entry> { Entry { value: 11 } } };
 
 test "External owners in structure fields retain Carven template dependencies" {
     let result = entries();

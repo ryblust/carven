@@ -112,7 +112,11 @@ DeclarationStore::DeclarationStore(
       enum_case_rows(std::move(enum_cases)),
       module_constant_rows(std::move(module_constants)),
       callable_rows(std::move(callables)),
-      body_callables(std::move(body_callables)) {}
+      body_callables(std::move(body_callables)) {
+    for (const auto function : function_rows.entries()) {
+        callable_functions.emplace(function.value.callable, function.id);
+    }
+}
 
 auto DeclarationStore::owner() const noexcept -> ProgramIdentity {
     return module_rows.owner();
@@ -184,6 +188,13 @@ auto DeclarationStore::callable_for_body(BodyID body) const noexcept -> std::opt
     require_owner(body.owner(), owner(), "callable lookup used a foreign body");
     const auto found = body_callables.find(body);
     return found == body_callables.end() ? std::nullopt : std::optional(found->second);
+}
+
+auto DeclarationStore::function_for_callable(CallableID callable) const noexcept
+    -> std::optional<FunctionID> {
+    require_owner(callable.owner(), owner(), "function lookup used a foreign callable");
+    const auto found = callable_functions.find(callable);
+    return found == callable_functions.end() ? std::nullopt : std::optional(found->second);
 }
 
 auto DeclarationStore::modules() const noexcept
@@ -681,8 +692,12 @@ auto DeclarationBuilder::complete_callable(
     require_constructing_callables();
     implementation.visit([this](const auto& value) noexcept {
         using Value = std::remove_cvref_t<decltype(value)>;
-        if constexpr (std::same_as<Value, FunctionBodyImplementation>
-                      || std::same_as<Value, ClosureBodyImplementation>) {
+        if constexpr (std::same_as<Value, FunctionBodyImplementation>) {
+            if (!value.body) {
+                invariant_violation("a constructed function requires its source body");
+            }
+            require_owner(value.body->owner(), program_identity, "callable used a foreign body");
+        } else if constexpr (std::same_as<Value, ClosureBodyImplementation>) {
             require_owner(value.body.owner(), program_identity, "callable used a foreign body");
         } else {
             static_assert(std::same_as<Value, CppImportImplementation>);

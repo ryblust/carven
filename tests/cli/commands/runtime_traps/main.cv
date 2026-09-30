@@ -1,0 +1,27 @@
+import .divide using run_divide;
+import .index using run_index;
+import .helper using run_helper;
+import .range using run_range;
+import .lane using run_lane;
+import .failure using run_failure;
+import "selection.hpp";
+
+fn main(args) {
+    ::install_abort_handler();
+    if ::selected(args, c"divide") {
+        run_divide();
+    } else if ::selected(args, c"index") {
+        run_index();
+    } else if ::selected(args, c"helper") {
+        run_helper();
+    } else if ::selected(args, c"range") {
+        run_range();
+    } else if ::selected(args, c"lane") {
+        run_lane();
+    } else if ::selected(args, c"failure") {
+        run_failure();
+    } else {
+        assert(false, "unknown runtime scenario");
+    }
+    println("unreachable");
+}

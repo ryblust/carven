@@ -37,8 +37,10 @@ BodyRealizer::ExpressionBuilder::ExpressionBuilder(
       cleanup(owner.preparation.operation(source).lifetime),
       previous_frame(std::exchange(owner.active_frame, this)),
       independent_scope(has_independent_scope(delivered_region)),
-      automatic_storage(
+      operand_storage(
           independent_scope && !owner.preparation.summary(source).conditional_evaluation
+              ? StorageForm::Automatic
+              : StorageForm::Deferred
       ) {
     static_cast<void>(owner.metadata.lifetime_regions().region(cleanup));
 }
@@ -103,11 +105,12 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
 ) noexcept -> ContinuationTask<Lowered<LoweringResult>> {
     auto fragment = (co_await build(
         source,
-        demand != ResultDemand::Discard,
-        final_use,
-        demand == ResultDemand::PropagateOutcome,
-        literal,
-        demand == ResultDemand::DirectReturn
+        {.demand = demand,
+         .use = final_use,
+         .literal = literal,
+         .retain_backing = true,
+         .expression_depth = 0uz,
+         .position = shared ? ConstructionPosition::Operand : ConstructionPosition::Final}
     ));
     adopt(fragment);
     if (!statements.continues()) {
@@ -138,12 +141,12 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
 ) noexcept -> ContinuationTask<std::monostate> {
     auto fragment = (co_await build(
         initialization.initializer,
-        true,
-        PreparedUse::Consume,
-        false,
-        ConstantLiteralContext::TargetTyped,
-        false,
-        false
+        {.demand = ResultDemand::Value,
+         .use = PreparedUse::Consume,
+         .literal = ConstantLiteralContext::TargetTyped,
+         .retain_backing = false,
+         .expression_depth = 0uz,
+         .position = ConstructionPosition::Final}
     ));
     adopt(fragment);
     if (!statements.continues()) {
@@ -151,7 +154,10 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         co_return {};
     }
     auto value = emit(fragment, PreparedUse::Consume, ConstantLiteralContext::TargetTyped);
-    if (statements.empty() && declarations.empty()) {
+    // Only cleanup-bearing temporaries need to end before the next source
+    // statement. Final storage stays in the enclosing lexical scope.
+    if (!statements.needs_cleanup() && !declarations.needs_cleanup()) {
+        destination.append(take_statements());
         owner.declare_binding(initialization.binding, std::move(value), destination);
         co_return {};
     }
@@ -167,7 +173,8 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
             initialization.binding,
             take_statements().result_region(
                 owner.context.lower_type(owner.metadata.binding(initialization.binding).type),
-                yield
+                yield,
+                LoweringRegionDelivery::Factory
             ),
             destination
         );
@@ -180,7 +187,12 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         .value_type = owner.context.lower_type(owner.metadata.binding(initialization.binding).type)
     };
     owner.delayed_bindings.emplace(initialization.binding, storage);
-    owner.declare_deferred(storage, true, destination);
+    owner.declare_deferred(
+        storage,
+        true,
+        destination,
+        owner.needs_cleanup(owner.metadata.binding(initialization.binding).type)
+    );
     owner.initialize_deferred(storage, std::move(value), statements);
     destination.scope(take_statements());
     co_return {};
@@ -190,14 +202,25 @@ auto BodyRealizer::ExpressionBuilder::assign(
     const SemAssign& assignment,
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
-    automatic_storage &= !owner.preparation.summary(assignment.target).conditional_evaluation;
-    auto target = (co_await build(assignment.target, true, PreparedUse::WritePlace));
+    if (owner.preparation.summary(assignment.target).conditional_evaluation) {
+        operand_storage = StorageForm::Deferred;
+    }
+    auto target = (co_await build(
+        assignment.target,
+        {.demand = ResultDemand::Value,
+         .use = PreparedUse::WritePlace,
+         .literal = ConstantLiteralContext::Exact,
+         .retain_backing = true,
+         .expression_depth = 0uz,
+         .position = ConstructionPosition::Operand}
+    ));
     adopt(target);
     if (!statements.continues()) {
         destination.scope(take_statements());
         co_return {};
     }
-    if (!stable_place_binding(source(target).operation)
+    const auto stable = stable_place(source(target).operation);
+    if (!stable
         && (assignment.compound
             || source(target).requires_execution
             || owner.preparation.summary(assignment.value).requires_execution)) {
@@ -215,6 +238,27 @@ auto BodyRealizer::ExpressionBuilder::assign(
         ));
         complete(target, Saved {.local = name, .kind = SavedKind::Place});
     }
+    // A stable field path is evaluated again for the compound read.
+    auto reread = std::optional<Fragment>();
+    if (assignment.compound
+        && stable
+        && !std::holds_alternative<SemBinding>(source(target).operation.value)) {
+        reread.emplace(
+            co_await build(
+                assignment.target,
+                {.demand = ResultDemand::Value,
+                 .use = PreparedUse::ConstPlace,
+                 .literal = ConstantLiteralContext::Exact,
+                 .retain_backing = true,
+                 .expression_depth = 0uz,
+                 .position = ConstructionPosition::Operand}
+            )
+        );
+        adopt(*reread);
+    }
+    const auto read_target = [&]() noexcept -> TargetExpr {
+        return reread ? raw(*reread) : raw(target);
+    };
     const auto target_type = source(target).operation.type.resolved();
     const auto external =
         std::holds_alternative<CppTypeValue>(
@@ -237,12 +281,20 @@ auto BodyRealizer::ExpressionBuilder::assign(
                 .maybe_unused = false,
                 .local = name,
                 .type = owner.context.lower_type(target_type),
-                .initializer = raw(target)
+                .initializer = read_target()
             }
         ));
         previous = name;
     }
-    auto right = (co_await build(assignment.value, true, PreparedUse::Consume));
+    auto right = (co_await build(
+        assignment.value,
+        {.demand = ResultDemand::Value,
+         .use = PreparedUse::Consume,
+         .literal = ConstantLiteralContext::Exact,
+         .retain_backing = true,
+         .expression_depth = 0uz,
+         .position = ConstructionPosition::Final}
+    ));
     adopt(right);
     if (statements.continues()) {
         auto value = emit(right, PreparedUse::Consume, ConstantLiteralContext::Exact);
@@ -256,8 +308,9 @@ auto BodyRealizer::ExpressionBuilder::assign(
                     target_type,
                     assignment.value.constant
                 ),
-                previous ? name_expression(*previous) : raw(target),
-                std::move(value)
+                previous ? name_expression(*previous) : read_target(),
+                std::move(value),
+                assignment.value.origin
             );
         } else if (assignment.compound) {
             switch (*assignment.compound) {
@@ -376,7 +429,7 @@ auto BodyRealizer::condition(const SemanticExpression& source) noexcept
         co_return std::move(statements).complete<LoweringPredicate>(std::nullopt);
     }
     auto expression_value = std::move(*value);
-    if (shared || statements.empty()) {
+    if (shared || !statements.needs_cleanup()) {
         co_return std::move(statements)
             .complete<LoweringPredicate>(LoweringDynamicBool {std::move(expression_value)});
     }
@@ -384,15 +437,16 @@ auto BodyRealizer::condition(const SemanticExpression& source) noexcept
     // its scalar before cleanup; branch execution starts after that scope ends.
     const auto name = fresh_local(TargetTemporaryNameKind::Operand);
     auto completed = LoweringStmtBuilder();
-    completed.emit(generated_statement(
+    completed.declare(
         TargetVariableStmt {
             .binding = TargetVariableBinding::MutableValue,
             .maybe_unused = false,
             .local = name,
             .type = context.lower_type(preparation.operation(source).type.resolved()),
             .initializer = bool_expression(false)
-        }
-    ));
+        },
+        false
+    );
     statements.emit(generated_statement(
         TargetAssignmentStmt {
             .target = name_expression(name),
@@ -436,7 +490,12 @@ auto BodyRealizer::initialize_binding(
             .value_type = context.lower_type(metadata.binding(source.binding).type)
         };
         delayed_bindings.emplace(source.binding, storage);
-        declare_deferred(storage, true, destination);
+        declare_deferred(
+            storage,
+            true,
+            destination,
+            needs_cleanup(metadata.binding(source.binding).type)
+        );
         auto statements = LoweringStmtBuilder();
         (co_await result_expression(
             source.initializer,
@@ -453,6 +512,29 @@ auto BodyRealizer::initialize_binding(
 
 auto BodyRealizer::assign(const SemAssign& source, LoweringStmtBuilder& destination) noexcept
     -> ContinuationTask<std::monostate> {
+    // A structured value assigned to a named local is assigned in each arm.
+    const auto* binding = std::get_if<SemBinding>(&preparation.operation(source.target).value);
+    const auto& value = preparation.operation(source.value).value;
+    if (!source.compound
+        && binding != nullptr
+        && !capture_names.contains(binding->binding)
+        && !delayed_bindings.contains(binding->binding)
+        && (std::holds_alternative<SemIf>(value)
+            || std::holds_alternative<SemMatch>(value)
+            || std::holds_alternative<SemTry>(value))) {
+        const auto local = binding_locals.at(binding->binding);
+        if (std::holds_alternative<OwnerBindingStorage>(
+                metadata.binding(binding->binding).storage
+            )) {
+            mutable_owners.emplace(local);
+        }
+        (co_await result_expression(
+            source.value,
+            LoweringAssignResult {.local = local},
+            destination
+        ));
+        co_return {};
+    }
     (co_await ExpressionBuilder(*this, source.value).assign(source, destination));
     co_return {};
 }

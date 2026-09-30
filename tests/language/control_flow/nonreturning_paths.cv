@@ -55,7 +55,7 @@ test "Control: nonreturning operands retain types and stop evaluation" {
     } catch {
         SelectedFailure(_) => { caught += 1; },
     }
-    for ;; inactive_value()? {
+    for ; true; inactive_value()? {
         break;
     }
     check(caught == 3);
@@ -68,11 +68,13 @@ fn terminal_boolean() -> bool throw SelectedFailure {
 }
 
 fn terminal_and() -> bool throw SelectedFailure {
-    return (if true { throw SelectedFailure {}; } else { true }) && (inactive_value()? == 0);
+    return (if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; })
+        && (inactive_value()? == 0);
 }
 
 fn terminal_or() -> bool throw SelectedFailure {
-    return (if true { throw SelectedFailure {}; } else { false }) || (inactive_value()? == 0);
+    return (if true { throw SelectedFailure {}; } else { throw SelectedFailure {}; })
+        || (inactive_value()? == 0);
 }
 
 fn terminal_condition() throw SelectedFailure {
@@ -107,7 +109,7 @@ fn terminal_catch_guard() -> i32 throw SelectedFailure {
 }
 
 fn no_loop_exit() {
-    while true {
+    while {
     }
     inactive_value()?;
 }
@@ -145,4 +147,44 @@ test "Control: a guard or condition failure has no rejected successor" {
         SelectedFailure(_) => { caught += 1; },
     }
     check(caught == 6);
+}
+
+enum BoundPair {
+    Pair(i32, i32)
+}
+
+fn staged_pattern(value: BoundPair, const stop: bool, &visits: i32,) -> i32 throw SelectedFailure {
+    return match value {
+        .Pair(
+            (const if stop { throw SelectedFailure {}; } else { 0 })..,
+            (
+                if true {
+                    visits += 1;
+                    0
+                } else {
+                    visits += 1;
+                    0
+                }
+            )..
+        ) => 1,
+        _ => 0,
+    };
+}
+
+test "Control: specialized pattern bounds retain their conditional entry" {
+    var visits = 0;
+    var stopped = false;
+    try {
+        staged_pattern(BoundPair::Pair(1, 2), true, &visits)?;
+    } catch {
+        SelectedFailure(_) => { stopped = true; },
+    }
+    check(stopped);
+    check(visits == 0);
+    try {
+        check(staged_pattern(BoundPair::Pair(1, 2), false, &visits)? == 1);
+    } catch {
+        SelectedFailure(_) => { fail("the completed bound should continue"); },
+    }
+    check(visits == 1);
 }

@@ -1,0 +1,26 @@
+import "simd/provider.hpp";
+
+import(cpp) fn simd_float_storage() -> bool;
+import(cpp) fn simd_guard_pages_available() -> bool;
+import(cpp) fn simd_guarded_tails() -> usize;
+import(cpp) fn simd_utf8_encodings() -> bool;
+import(cpp) fn simd_utf8_guarded() -> bool;
+
+test "Runtime UTF-8: encodings satisfy Unicode bounds across blocks and tails" {
+    check(simd_utf8_encodings());
+}
+
+test "Runtime UTF-8: validation reads only the borrowed range" {
+    if simd_guard_pages_available() { check(simd_utf8_guarded()); }
+}
+
+test "SIMD consumer: float storage preserves signed zeros and NaN bits" {
+    check(simd_float_storage());
+}
+
+test "SIMD consumer: partial loads respect a protected page boundary" {
+    if simd_guard_pages_available() {
+        let status = simd_guarded_tails();
+        check(status == 0);
+    }
+}

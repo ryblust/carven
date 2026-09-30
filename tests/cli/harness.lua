@@ -4,6 +4,12 @@ local function normalize_newlines(value)
     return value:gsub("\r\n", "\n")
 end
 
+local function remove_prefix(value, prefix)
+    if not prefix then return value end
+    local pattern = prefix:gsub("(%W)", "%%%1")
+    return value:gsub(pattern, "")
+end
+
 local step_fields = {
     args = true, exit_code = true, installed_toolchain = true,
     installed_inputs = true, absolute_inputs = true,
@@ -75,7 +81,7 @@ local function check_file_contents(failures, work_dir, prefix, expectations, mus
     end
 end
 
-function main(target, opt, case_specs)
+function main(target, opt, case_specs, execution)
     local case_name = opt.name:match("^[^/]+/(.+)$") or opt.name
     local case_spec = case_specs[case_name]
     assert(case_spec, "unknown CLI test case: " .. case_name)
@@ -99,7 +105,8 @@ function main(target, opt, case_specs)
         assert(not step.installed_inputs or step.installed_toolchain,
             label .. " ignores installed inputs without an installed toolchain")
     end
-    local case_dir = path.join(os.projectdir(), "tests", "cli", case_name)
+    local case_dir = execution and execution.case_dir
+        or path.join(os.projectdir(), "tests", "cli", case_name)
     local work_dir = os.tmpfile() .. ".dir"
     local function case_path(relative)
         return path.normalize(path.absolute(relative, case_dir))
@@ -123,7 +130,8 @@ function main(target, opt, case_specs)
 
     local failures = {}
     local streams = {stdout = {}, stderr = {}}
-    local program = path.absolute(target:dep("carven"):targetfile(), os.projectdir())
+    local program = path.absolute(execution and target:targetfile()
+        or target:dep("carven"):targetfile(), os.projectdir())
     for index, step in ipairs(steps) do
         local stdout_file = path.join(work_dir, ".stdout-" .. index)
         local stderr_file = path.join(work_dir, ".stderr-" .. index)
@@ -153,6 +161,11 @@ function main(target, opt, case_specs)
             if value ~= "" then
                 table.insert(streams[stream], prefix .. value)
             end
+        end
+        -- Prebuilt fixtures retain their source and module suffixes under one known root.
+        if execution then
+            stderr = remove_prefix(stderr, execution.source_prefix)
+            stderr = remove_prefix(stderr, execution.module_prefix)
         end
         local expected_exit_code = step.exit_code or 0
         if exit_code ~= expected_exit_code then

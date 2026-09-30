@@ -1,6 +1,9 @@
 module carven:backend.lowering.context.impl;
 
+import :backend.generation.names;
 import :backend.lowering.context;
+import :semantic.semir.decl;
+import :source.provenance;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -10,8 +13,7 @@ ArtifactLowering::ArtifactLowering(
     TargetArtifactID artifact
 ) noexcept
     : planned_compilation(compilation),
-      artifact_id(artifact),
-      constants(compilation, artifact) {}
+      artifact_id(artifact) {}
 
 auto ArtifactLowering::semantic() const noexcept -> const SemIRProgram& {
     return planned_compilation.semantic();
@@ -29,36 +31,68 @@ auto ArtifactLowering::target() noexcept -> TargetUnitBuilder& {
     return target_builder;
 }
 
-auto ArtifactLowering::constant_storage() noexcept -> ConstantStorage& {
-    return constants;
-}
-
-auto ArtifactLowering::module_context(ModuleID id) noexcept -> ModuleLowering {
-    return ModuleLowering(*this, id);
-}
-
-auto ArtifactLowering::record_provider_interface(ModuleID active, ModuleID provider) noexcept
-    -> void {
-    if (active.owner() != semantic().identity() || provider.owner() != semantic().identity()) {
-        invariant_violation("target lowering dependency used a foreign module");
+auto ArtifactLowering::module_context(ModuleID id) noexcept -> ModuleLowering& {
+    auto found = modules.find(id);
+    if (found == modules.end()) {
+        found = modules.emplace(id, std::make_unique<ModuleLowering>(*this, id)).first;
     }
-    if (active == provider
-        || !std::holds_alternative<TargetModuleImplementationArtifact>(artifact())) {
+    return *found->second;
+}
+
+auto ArtifactLowering::require_interface(ModuleID provider) noexcept -> void {
+    static_cast<void>(semantic().declarations().module_decl(provider));
+    const auto* implementation = std::get_if<TargetModuleImplementationArtifact>(&artifact());
+    if (implementation == nullptr || provider == implementation->schedule.module_id) {
         return;
     }
-    for (const auto entry : plan().artifacts()) {
-        const auto* interface = std::get_if<TargetInterfaceArtifact>(&entry.value);
-        if (interface != nullptr && std::ranges::contains(interface->component_members, provider)) {
-            lowering_dependencies.insert(entry.id);
-            return;
+    const auto interface = plan().interface_of(provider);
+    if (!interface) {
+        invariant_violation("cross-module lowering dependency has no provider interface");
+    }
+    lowering_dependencies.insert(*interface);
+}
+
+auto ArtifactLowering::take_module_support() noexcept -> std::vector<TargetItem> {
+    auto result = std::vector<TargetItem>();
+    auto owners = std::vector<ModuleID>();
+    for (const auto& [owner, context] : modules) {
+        static_cast<void>(context);
+        owners.push_back(owner);
+    }
+    std::ranges::sort(owners, [&](ModuleID left, ModuleID right) noexcept {
+        const auto path = [&](ModuleID id) noexcept {
+            return semantic()
+                .provenance()
+                .module_record(semantic().declarations().module_decl(id).provenance_module)
+                .path.value();
+        };
+        return path(left) < path(right);
+    });
+    for (const auto owner : owners) {
+        auto& context = *modules.at(owner);
+        auto items = context.take_query_aliases();
+        auto storage = context.constant_storage().take();
+        auto helpers = context.take_display_helpers();
+        items.append_range(storage | std::views::as_rvalue);
+        items.append_range(helpers | std::views::as_rvalue);
+        if (!items.empty()) {
+            result.push_back(namespace_item(
+                plan().names().module_names(owner).module_namespace_name,
+                std::move(items),
+                TargetCompilerReason::ArtifactScaffolding,
+                false
+            ));
         }
     }
-    invariant_violation("cross-module lowering dependency has no provider interface");
+    return result;
 }
 
 auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> TargetUnit {
-    if (!constants.empty()) {
-        invariant_violation("module lowering did not place its constant storage");
+    for (const auto& [module_id, context] : modules) {
+        static_cast<void>(module_id);
+        if (!context->constant_storage().empty()) {
+            invariant_violation("module lowering did not place its constant storage");
+        }
     }
     auto dependencies =
         std::vector<TargetArtifactID>(lowering_dependencies.begin(), lowering_dependencies.end());
@@ -70,7 +104,7 @@ auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> Target
 ModuleLowering::ModuleLowering(ArtifactLowering& artifact, ModuleID owner_module_id) noexcept
     : artifact_lowering(artifact),
       module_id(owner_module_id),
-      allocator(artifact.plan().names().module_names(owner_module_id).reserved_identifiers) {
+      constants(artifact.plan().names(), owner_module_id) {
     if (owner_module_id.owner() != semantic().identity()) {
         invariant_violation("module lowering received a foreign semantic module ID");
     }
@@ -90,7 +124,7 @@ auto ModuleLowering::target() noexcept -> TargetUnitBuilder& {
 }
 
 auto ModuleLowering::constant_storage() noexcept -> ConstantStorage& {
-    return artifact_lowering.constant_storage();
+    return constants;
 }
 
 auto ModuleLowering::active_module() const noexcept -> ModuleID {
@@ -107,22 +141,31 @@ auto ModuleLowering::global_function_name(FunctionID id) noexcept -> TargetName 
     if (provider == module_id) {
         require_callable(function.callable);
     }
-    artifact_lowering.record_provider_interface(module_id, provider);
-    return names().global_function_name(id);
+    artifact_lowering.require_interface(provider);
+    return names().callable_name(std::nullopt, function.callable);
 }
 
 auto ModuleLowering::structure_name(StructID id, TypeNameScope scope) noexcept -> TargetName {
     const auto provider = semantic().declarations().structure(id).module_id;
-    artifact_lowering.record_provider_interface(module_id, provider);
+    artifact_lowering.require_interface(provider);
     return names().structure_name(
         scope == TypeNameScope::Module ? std::optional(module_id) : std::nullopt,
         id
     );
 }
 
+auto ModuleLowering::field_identifier(StructID owner, std::size_t index) const noexcept
+    -> TargetIdentifier {
+    const auto& field = semantic().declarations().structure(owner).fields[index];
+    return source_target_identifier(
+        semantic().provenance().spelling(field.name),
+        names().structure_identifier(owner).spelling()
+    );
+}
+
 auto ModuleLowering::enumeration_name(EnumID id, TypeNameScope scope) noexcept -> TargetName {
     const auto provider = semantic().declarations().enumeration(id).module_id;
-    artifact_lowering.record_provider_interface(module_id, provider);
+    artifact_lowering.require_interface(provider);
     return names().enumeration_name(
         scope == TypeNameScope::Module ? std::optional(module_id) : std::nullopt,
         id
@@ -131,10 +174,10 @@ auto ModuleLowering::enumeration_name(EnumID id, TypeNameScope scope) noexcept -
 
 auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
     const auto provider = names().callable_owner(id);
-    if (provider == module_id) {
+    if (provider == module_id || semantic().definition_placement(id) == DefinitionPlacement::Use) {
         require_callable(id);
     }
-    artifact_lowering.record_provider_interface(module_id, provider);
+    artifact_lowering.require_interface(provider);
     return names().callable_name(module_id, id);
 }
 
@@ -143,7 +186,7 @@ auto ModuleLowering::closure_type_name(CallableID id, TypeNameScope scope) noexc
     if (provider == module_id) {
         require_callable(id);
     }
-    artifact_lowering.record_provider_interface(module_id, provider);
+    artifact_lowering.require_interface(provider);
     return names().closure_type_name(
         scope == TypeNameScope::Module ? std::optional(module_id) : std::nullopt,
         id
@@ -151,40 +194,62 @@ auto ModuleLowering::closure_type_name(CallableID id, TypeNameScope scope) noexc
 }
 
 auto ModuleLowering::require_callable(CallableID id) noexcept -> void {
+    artifact_lowering.require_callable(module_id, id);
+}
+
+auto ArtifactLowering::require_callable(ModuleID owner, CallableID id) noexcept -> void {
     static_cast<void>(semantic().declarations().callable(id));
-    if (required_callables.insert(id).second) {
-        pending_callables.push_back(id);
+    if (semantic().definition_placement(id) == DefinitionPlacement::Use) {
+        if (active_definition) {
+            use_placed_edges[*active_definition].insert(id);
+        }
+        if (required_definitions.insert(id).second) {
+            pending_definitions.push_back(id);
+        }
+        return;
+    }
+    const auto* implementation = std::get_if<TargetModuleImplementationArtifact>(&artifact());
+    if (implementation == nullptr) {
+        return;
+    }
+    if (owner != implementation->schedule.module_id) {
+        if (!std::ranges::contains(plan().module_schedule(owner).interface_callables, id)) {
+            invariant_violation("shared body reaches an unpublished callable");
+        }
+        return;
+    }
+    if (required_definitions.insert(id).second) {
+        pending_definitions.push_back(id);
     }
 }
 
-auto ModuleLowering::next_required_callable() noexcept -> std::optional<CallableID> {
-    if (pending_callables.empty()) {
+auto ArtifactLowering::use_placed_callees(CallableID id) const noexcept
+    -> const std::set<CallableID>& {
+    static const auto none = std::set<CallableID>();
+    const auto found = use_placed_edges.find(id);
+    return found == use_placed_edges.end() ? none : found->second;
+}
+
+auto ArtifactLowering::next_definition() noexcept -> std::optional<CallableID> {
+    active_definition.reset();
+    if (pending_definitions.empty()) {
         return std::nullopt;
     }
-    const auto result = pending_callables.front();
-    pending_callables.pop_front();
-    return result;
+    active_definition = pending_definitions.front();
+    pending_definitions.pop_front();
+    return active_definition;
 }
 
 auto ModuleLowering::payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames& {
     const auto provider = semantic().declarations().enumeration(id).module_id;
-    artifact_lowering.record_provider_interface(module_id, provider);
+    artifact_lowering.require_interface(provider);
     return names().payload_enum(id);
 }
 
-auto ModuleLowering::name_allocator() noexcept -> TargetNameAllocator& {
-    return allocator;
-}
-
 auto ModuleLowering::make_callable_name_allocator() const noexcept -> TargetNameAllocator {
-    return TargetNameAllocator(plan().names().module_names(module_id).reserved_identifiers);
+    return TargetNameAllocator(plan().names().module_names(module_id).body_reserved_identifiers);
 }
 
-auto ArtifactLowering::name_query_type(TargetTypeID type) noexcept -> void {
-    target_builder.name_namespace_type(
-        type,
-        TargetIdentifier::from_spelling(
-            std::format("CppQuery_{}_{}", artifact_id.index(), type.index())
-        )
-    );
+auto ModuleLowering::take_query_aliases() noexcept -> std::vector<TargetItem> {
+    return std::exchange(query_aliases, {});
 }

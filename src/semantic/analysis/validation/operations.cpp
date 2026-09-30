@@ -9,16 +9,23 @@ import :semantic.semir.initialization;
 import :support.utf8;
 import std;
 
-auto BodyContractVerifier::verify_computations() const noexcept -> void {
-    visit_semantic_nodes(body.region(), [&](const SemanticExpression& source) noexcept {
+auto BodyContractVerifier::verify_computations(const SemanticRegion& region) const noexcept
+    -> void {
+    visit_semantic_nodes(region, [&](const SemanticExpression& source) noexcept {
         const auto check_result = [&](const OperatorDecision& decision, TypeID operand) noexcept {
             if (!decision.has_value()) {
                 invariant_violation("invalid semantic operator");
             }
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&require_type(operand).value);
+            const auto result = operator_result_builtin(
+                *decision,
+                builtin ? std::optional(builtin->kind) : std::nullopt
+            );
             const auto valid = *decision == OperatorResult::Operand
                 ? source.type.resolved() == operand
-                : require_type(source.type.resolved()).value
-                    == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}};
+                : result
+                    && require_type(source.type.resolved()).value
+                        == CanonicalTypeValue {BuiltinTypeValue {.kind = *result}};
             if (!valid) {
                 invariant_violation("semantic operator has an incompatible result");
             }
@@ -76,8 +83,10 @@ auto BodyContractVerifier::verify_computations() const noexcept -> void {
     });
 }
 
-auto BodyContractVerifier::verify_expression(const SemanticExpression& source) const noexcept
-    -> void {
+auto BodyContractVerifier::verify_expression(
+    const SemanticExpression& source,
+    bool residual
+) const noexcept -> void {
     static_cast<void>(require_type(source.type.resolved()));
     static_cast<void>(require_failure_set(source.failures.resolved()));
     require_origin(source.origin);
@@ -99,6 +108,11 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
             [&](const SemConstant& value) noexcept {
                 if (program.constants().constant(value.constant).type != source.type.resolved()) {
                     invariant_violation("constant expression type mismatch");
+                }
+            },
+            [&](const SemUnreachable&) noexcept {
+                if (source.constant || source.exits_test || source.operation_reachable) {
+                    invariant_violation("unreachable projection carries a completion fact");
                 }
             },
             [&](const SemBinding& value) noexcept {
@@ -124,7 +138,7 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                         );
                     }
                     const auto* construction = std::get_if<CppConstructOperation>(&value.operation);
-                    const auto expected = CppTypeValue {
+                    auto expected = CppTypeValue {
                         .form = construction
                             ? cpp_construct_query(
                                   construction->target,
@@ -135,6 +149,25 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     };
                     const auto* actual =
                         std::get_if<CppTypeValue>(&require_type(source.type.resolved()).value);
+                    // Specialization can establish additional operand values. The
+                    // checked query keeps its original type identity and value witnesses.
+                    if (residual && construction && actual) {
+                        const auto* checked_query = std::get_if<CppQueryType>(&actual->form);
+                        const auto* checked = checked_query
+                            ? std::get_if<CppConstructQuery>(&checked_query->expression)
+                            : nullptr;
+                        auto& derived = std::get<CppConstructQuery>(
+                            std::get<CppQueryType>(expected.form).expression
+                        );
+                        if (checked && checked->arguments.size() == derived.arguments.size()) {
+                            for (auto [original, argument] :
+                                 std::views::zip(checked->arguments, derived.arguments)) {
+                                if (!original.constant) {
+                                    argument.constant.reset();
+                                }
+                            }
+                        }
+                    }
                     if (!valid_cpp_type(expected) || actual == nullptr || *actual != expected) {
                         invariant_violation("C++ operation differs from its result query");
                     }
@@ -183,13 +216,14 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                         invariant_violation("known call target differs from callee contract");
                     }
                 }
+                const auto& parameters = signature.parameters;
                 if (signature.result != source.type.resolved()
-                    || signature.parameters.size() != value.arguments.size()
+                    || parameters.size() != value.arguments.size()
                     || signature.failures != value.callee_failures.resolved()) {
                     invariant_violation("call differs from signature");
                 }
                 for (const auto& [argument, parameter] :
-                     std::views::zip(value.arguments, signature.parameters)) {
+                     std::views::zip(value.arguments, parameters)) {
                     if (argument.expression.type.resolved() != parameter.type
                         || argument.access != parameter.access) {
                         invariant_violation("call argument differs from parameter");
@@ -348,74 +382,136 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                     }
                 }
             },
-            [&](const SemSliceIntrinsic& value) noexcept {
-                const auto contract = slice_intrinsic_contract(value.intrinsic);
-                if (value.operands.size() != contract.arguments.size() + 1) {
-                    invariant_violation("slice intrinsic operand count mismatch");
-                }
-                for (const auto& operand : value.operands) {
-                    if (operand.access != AccessMode::Read) {
-                        invariant_violation("slice intrinsic requires Read operands");
+            [&](const SemIntrinsic& value) noexcept {
+                return value.operation.visit(
+                    Overloaded {
+                        [&](const SliceIntrinsicOperation& family) noexcept {
+                            const auto contract = slice_intrinsic_contract(family.intrinsic);
+                            if (value.operands.size() != contract.arguments.size() + 1) {
+                                invariant_violation("slice intrinsic operand count mismatch");
+                            }
+                            for (const auto& operand : value.operands) {
+                                if (operand.access != AccessMode::Read) {
+                                    invariant_violation("slice intrinsic requires Read operands");
+                                }
+                            }
+                            const auto& receiver =
+                                require_type(value.operands.front().expression.type.resolved())
+                                    .value;
+                            const auto* array = std::get_if<ArrayTypeValue>(&receiver);
+                            const auto* slice = std::get_if<SliceTypeValue>(&receiver);
+                            if ((contract.receiver == SliceIntrinsicShape::Array
+                                 && array == nullptr)
+                                || (contract.receiver == SliceIntrinsicShape::Slice
+                                    && slice == nullptr)) {
+                                invariant_violation("slice intrinsic receiver mismatch");
+                            }
+                            if (array != nullptr && family.result_extent != array->extent) {
+                                invariant_violation(
+                                    "array slice extent differs from its source type"
+                                );
+                            }
+                            const auto result = require_type(source.type.resolved()).value;
+                            if (const auto* builtin = std::get_if<BuiltinType>(&contract.result)) {
+                                if (family.result_extent) {
+                                    invariant_violation(
+                                        "slice query cannot publish a sequence extent"
+                                    );
+                                }
+                                if (result != CanonicalTypeValue {BuiltinTypeValue {*builtin}}) {
+                                    invariant_violation("slice query result mismatch");
+                                }
+                            } else if (result
+                                       != CanonicalTypeValue {SliceTypeValue {
+                                           .element = array ? array->element : slice->element
+                                       }}) {
+                                invariant_violation("slice result element mismatch");
+                            }
+                            for (auto i = 1uz; i < value.operands.size(); ++i) {
+                                if (require_type(value.operands[i].expression.type.resolved()).value
+                                    != CanonicalTypeValue {
+                                        BuiltinTypeValue {contract.arguments[i - 1]}
+                                    }) {
+                                    invariant_violation("slice bound type mismatch");
+                                }
+                            }
+                        },
+                        [&](const SIMDIntrinsic& family) noexcept {
+                            if (value.operands.empty()) {
+                                invariant_violation("SIMD operation requires operands");
+                            }
+                            const auto owner = simd_owner(
+                                family,
+                                source.type.resolved(),
+                                value.operands.front().expression.type.resolved(),
+                                [&](TypeID type) noexcept -> const CanonicalType& {
+                                    return require_type(type);
+                                }
+                            );
+                            const auto contract = simd_contract(family, owner);
+                            if (simd_member(owner, contract.name, simd_is_factory(family))
+                                != family) {
+                                invariant_violation("invalid SIMD owner or operation");
+                            }
+                            if (value.operands.size() != contract.inputs.size()) {
+                                invariant_violation("SIMD arity mismatch");
+                            }
+                            const auto lookup = [&](TypeID type) noexcept -> const CanonicalType& {
+                                return require_type(type);
+                            };
+                            for (const auto& [i, operand] : std::views::enumerate(value.operands)) {
+                                if (operand.access != AccessMode::Read
+                                    || !matches_simd_type(
+                                        contract.inputs[i],
+                                        operand.expression.type.resolved(),
+                                        lookup
+                                    )) {
+                                    invariant_violation("SIMD operand contract mismatch");
+                                }
+                            }
+                            if (!matches_simd_type(
+                                    contract.result,
+                                    source.type.resolved(),
+                                    lookup
+                                )) {
+                                invariant_violation("SIMD result mismatch");
+                            }
+                        },
+                        [&](const TextIntrinsic& family) noexcept {
+                            const auto contract = text_intrinsic_contract(family);
+                            if (value.operands.size() != contract.parameters.size()) {
+                                invariant_violation("text intrinsic operand count mismatch");
+                            }
+                            const auto lookup = [&](TypeID type) noexcept -> const CanonicalType& {
+                                return require_type(type);
+                            };
+                            for (const auto& [index, operand] :
+                                 std::views::enumerate(value.operands)) {
+                                const auto& parameter = contract.parameters[index];
+                                if (operand.access != parameter.access
+                                    || (parameter.access == AccessMode::Write
+                                        && operand.expression.category
+                                            != SemanticValueCategory::Place)) {
+                                    invariant_violation("text intrinsic operand access mismatch");
+                                }
+                                if (!matches_text_intrinsic_type(
+                                        parameter.type,
+                                        operand.expression.type.resolved(),
+                                        lookup
+                                    )) {
+                                    invariant_violation("text intrinsic operand type mismatch");
+                                }
+                            }
+                            if (!matches_text_intrinsic_type(
+                                    contract.result,
+                                    source.type.resolved(),
+                                    lookup
+                                )) {
+                                invariant_violation("text intrinsic result mismatch");
+                            }
+                        }
                     }
-                }
-                const auto& receiver =
-                    require_type(value.operands.front().expression.type.resolved()).value;
-                const auto* array = std::get_if<ArrayTypeValue>(&receiver);
-                const auto* slice = std::get_if<SliceTypeValue>(&receiver);
-                if ((contract.receiver == SliceIntrinsicShape::Array && array == nullptr)
-                    || (contract.receiver == SliceIntrinsicShape::Slice && slice == nullptr)) {
-                    invariant_violation("slice intrinsic receiver mismatch");
-                }
-                if (array != nullptr && value.result_extent != array->extent) {
-                    invariant_violation("array slice extent differs from its source type");
-                }
-                const auto result = require_type(source.type.resolved()).value;
-                if (const auto* builtin = std::get_if<BuiltinType>(&contract.result)) {
-                    if (value.result_extent) {
-                        invariant_violation("slice query cannot publish a sequence extent");
-                    }
-                    if (result != CanonicalTypeValue {BuiltinTypeValue {*builtin}}) {
-                        invariant_violation("slice query result mismatch");
-                    }
-                } else if (result
-                           != CanonicalTypeValue {
-                               SliceTypeValue {.element = array ? array->element : slice->element}
-                           }) {
-                    invariant_violation("slice result element mismatch");
-                }
-                for (auto i = 1uz; i < value.operands.size(); ++i) {
-                    if (require_type(value.operands[i].expression.type.resolved()).value
-                        != CanonicalTypeValue {BuiltinTypeValue {contract.arguments[i - 1]}}) {
-                        invariant_violation("slice bound type mismatch");
-                    }
-                }
-            },
-            [&](const SemTextIntrinsic& value) noexcept {
-                const auto contract = text_intrinsic_contract(value.intrinsic);
-                if (value.operands.size() != contract.parameters.size()) {
-                    invariant_violation("text intrinsic operand count mismatch");
-                }
-                const auto lookup = [&](TypeID type) noexcept -> const CanonicalType& {
-                    return require_type(type);
-                };
-                for (const auto& [index, operand] : std::views::enumerate(value.operands)) {
-                    const auto& parameter = contract.parameters[index];
-                    if (operand.access != parameter.access
-                        || (parameter.access == AccessMode::Write
-                            && operand.expression.category != SemanticValueCategory::Place)) {
-                        invariant_violation("text intrinsic operand access mismatch");
-                    }
-                    if (!matches_text_intrinsic_type(
-                            parameter.type,
-                            operand.expression.type.resolved(),
-                            lookup
-                        )) {
-                        invariant_violation("text intrinsic operand type mismatch");
-                    }
-                }
-                if (!matches_text_intrinsic_type(contract.result, source.type.resolved(), lookup)) {
-                    invariant_violation("text intrinsic result mismatch");
-                }
+                );
             },
             [&](const SemTake& value) noexcept {
                 if (source.type.resolved() != value.place->type.resolved()
@@ -449,10 +545,10 @@ auto BodyContractVerifier::verify_expression(const SemanticExpression& source) c
                         && known_pattern_match(
                                PublishedConstantValues(program),
                                body.pattern(arm.pattern),
-                               value.subject->constant
+                               std::nullopt
                            ) != true) {
                         invariant_violation(
-                            "match selection fact is not established by its subject and pattern"
+                            "match selection fact is not established by its pattern"
                         );
                     }
                     if (body.pattern(arm.pattern).type != value.subject->type.resolved()) {

@@ -51,6 +51,7 @@ auto FailureConstraintStore::add_concrete_term(std::vector<TypeID> members) noex
             .guarded_inputs = {},
             .excluded_members = {},
             .retained_members = std::nullopt,
+            .throw_sites = {},
         }
     );
 }
@@ -67,6 +68,7 @@ auto FailureConstraintStore::add_union_term(std::vector<FailureTermID> inputs) n
             .guarded_inputs = {},
             .excluded_members = {},
             .retained_members = std::nullopt,
+            .throw_sites = {},
         }
     );
 }
@@ -83,6 +85,7 @@ auto FailureConstraintStore::add_residual_term(
             .guarded_inputs = {},
             .excluded_members = normalize_members(std::move(handled_members)),
             .retained_members = std::nullopt,
+            .throw_sites = {},
         }
     );
 }
@@ -99,6 +102,7 @@ auto FailureConstraintStore::add_intersection_term(
             .guarded_inputs = {},
             .excluded_members = {},
             .retained_members = normalize_members(std::move(retained_members)),
+            .throw_sites = {},
         }
     );
 }
@@ -118,6 +122,16 @@ auto FailureConstraintStore::add_member(FailureTermID destination, TypeID member
     if (position == members.end() || *position != member) {
         members.insert(position, member);
     }
+}
+
+auto FailureConstraintStore::add_thrown_member(
+    FailureTermID destination,
+    TypeID member,
+    ProgramOriginID origin
+) noexcept -> void {
+    add_member(destination, member);
+    require_origin(origin);
+    term_table.mutate(destination).throw_sites.push_back({.member = member, .origin = origin});
 }
 
 auto FailureConstraintStore::add_contribution(

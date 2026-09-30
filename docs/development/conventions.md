@@ -25,12 +25,27 @@ source-layout and style rules apply to handwritten code.
 - Use directory levels to express ownership and dependency boundaries. Keep an
   owner's entry, state, and implementation slices in the same directory.
 - Mixed file and directory layouts are permitted at the repository root, the
-  `src/` compiler entry boundary, and where required by build metadata,
-  test-group harnesses, or fixtures whose layout is under test.
+  `src/` compiler entry boundary, the runtime component boundary described below,
+  and where required by build metadata, test-group harnesses, or fixtures whose
+  layout is under test.
 - Place a contract and its implementation together. A contract may have
   multiple implementation slices within the same owner directory.
 - Split files by coherent operations, algorithms, or contracts. Define state
   ownership and dependency direction across implementation slices.
+
+### Runtime components
+
+`crafts/carven/runtime/` is a component entry boundary. A single-file component
+lives in `<name>.hpp`. A component with several files owns `<name>/`, with its
+entry in `<name>/<name>.hpp` and its implementation headers beside it. File and
+directory entries coexist at this boundary.
+
+Within a component directory, the ordinary ownership and dependency rules apply.
+Generated code and other components include its designated entry; implementation
+headers are internal to that component. The runtime umbrella header selects
+component entries and does not expose their implementation headers as contracts.
+Compiler source in `src/` does not include runtime headers. Generated C++ and
+native consumer tests include runtime component entries.
 
 ## Modules and visibility
 
@@ -46,13 +61,21 @@ source-layout and style rules apply to handwritten code.
 - Put imports in one block after the module declaration. Order partitions
   lexically and put `import std;` last. Import only dependencies used by the
   unit. An implementation partition imports its contract.
-- Use a global module fragment only for macro-only test headers and required
-  platform headers.
+- Use a global module fragment for macro-only test headers, required platform
+  headers, or consumer headers exercised by tests.
 - Put translation-unit-private declarations in an anonymous namespace. Close
   every namespace with a namespace comment, using the namespace name for named
   namespaces.
-- In support headers, `detail` contains helpers used only by that header.
-  Cross-header dependencies use named contracts in the owning namespace.
+- A support component exposes the contract used by generated code and craft
+  support sources through its owning namespace. A subsystem namespace such as
+  `carven::runtime::simd` supplies the domain qualifier for its member names.
+- An internal interface shared by headers of one subsystem uses a namespace
+  named for its role, such as `backend`. Keep implementation helpers there when
+  they serve that same responsibility. Use `detail` for header-local helpers
+  that need a separate scope.
+- Backend-dependent support types may live in an inline namespace within their
+  component. Callers use the component name; the defining namespace retains the
+  selected backend's type identity.
 - Helpers used only by one class belong in its private scope where C++
   template rules permit it.
 - Expose operations needed by production callers through the owning interface.

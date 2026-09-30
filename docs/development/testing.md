@@ -86,7 +86,7 @@ apply the modes listed above. Entry tests cover default
 and explicit entries, success and failure status, reported failures, and cleanup.
 
 Execution-selection tests use valid, terminating operands and assert call counts
-or execution traces. Internal constant-execution tests can observe calls through
+or execution traces. Internal static-execution tests can observe calls through
 `SemanticExecutionContext`. Invalid-input and resource-limit cases separately
 assert their diagnostics.
 
@@ -94,6 +94,11 @@ Resource-accounting cases exercise actual construction, copying, calls, and quer
 with small inputs at accepted and rejected limits. Source-level cases use production
 defaults to check diagnostics, source locations, and call traces. Large inputs serve
 scale-dependent contracts such as stack depth or retained-storage growth.
+Semantic resource-limit cases stop after analysis and publication. Backend tests
+cover generation of the corresponding operations with representative inputs.
+The internal runner registers static-specialization budgets separately from its
+other cases, using complementary filters on the same executable. Both selections
+belong to the `internal` group and run in the full suite.
 
 Language tests use local Carven state for counters and execution traces.
 A language fixture may use a same-stem C++ provider header for observations that
@@ -103,7 +108,7 @@ generated programs use Carven's testing support. `const test` checks execute
 during Carven compilation and do not generate
 runtime test functions. Test names may be omitted; an anonymous failure reports
 its file, line, and column. Explicit names retain module-local uniqueness.
-Constant block labels are optional diagnostic strings and may repeat.
+`const` block labels are optional diagnostic strings and may repeat.
 `carven interpret --tests` executes ordinary tests in the
 interpreter subset with runtime semantics. Use shared fixtures to compare interpreted
 and native behavior, including helper assertions and execution ordering.
@@ -112,25 +117,39 @@ Internal interpreter tests cover admission, failure propagation, and per-test
 execution budgets. Language tests cover generated test runners and their exit
 status. CLI tests cover test options, source ordering, matching native/interpreted
 report layouts, and report ordering relative to source output on the same stream.
+Native report scenarios use ordinary prebuilt targets and share executables when
+their entry and build requirements match. Direct-run CLI cases retain coverage of
+source collection, native compilation, argument forwarding, and process results.
 Assertion tests cover conditional messages, fatal termination, and
 independence from `NDEBUG`. Generation tests check that known conditions retain
 required effects without redundant report branches or storage.
 
 Use `const test` for standard-library algorithm boundaries and error contracts
-that support constant execution. Keep representative generated-program cases
+that support static execution. Keep representative generated-program cases
 for native execution: compiler evaluation and generated C++ are separate
 execution boundaries. Runtime cases also cover native storage and lifetimes,
-streaming state, and exhaustive domains beyond constant-execution budgets.
+streaming state, and exhaustive domains beyond static-execution budgets.
 Avoid repeating a full input table when it adds no distinct execution evidence.
 
 User-facing programs live under `examples/`. Their output checks belong to the
 `examples` group; diagnostic and termination cases belong to the test suites.
 
 Crafts public API tests live under `tests/crafts/<craft>/`, mirroring the package
-module hierarchy. The group uses one C++20 binary and Carven's generated default
-inline-test entry. Production sources are supplied by the package rule; the target
-adds test sources explicitly. Application and Crafts test targets use the same
+module hierarchy. The C++20 default target covers all craft APIs. A second target
+forces the portable SIMD backend without instruction-set options and covers UTF-8
+block and streaming validation. Both use Carven's generated default
+inline-test entry. Production sources are supplied by the package rule; targets
+add test sources explicitly. Application and Crafts test targets use the same
 package rule.
+
+Compiler targets and the general internal and craft tests add no SIMD
+instruction-set options. SIMD algorithms, runtime representation, and memory
+contracts belong to C++20 interop consumer targets. The SIMD consumer requests AVX2 through
+`add_vectorexts`; Xmake maps the option for the compiler and ignores unsupported
+options. This checks compiler support, not the running CPU: an x86 build that
+accepts AVX2 requires an AVX2-capable test machine. A portable consumer checks the
+same contracts without instruction-set options. Functional correctness does not
+require enabling an extension.
 
 ## Assertions
 
@@ -245,6 +264,10 @@ and the CLI `fixtures` mapping to copy them to a `.cv` input. This keeps source
 locations and verbatim excerpts stable under repository formatting. Behavioral
 tests use ordinary `.cv` sources and avoid fixed line numbers unless source
 location is the contract under test.
+Prebuilt CLI report fixtures use `build/cli_fixtures/` for stable source identities.
+Preparation preserves unchanged file contents and timestamps; generated C++ and
+objects use the configured build directory. Report comparisons remove the known
+fixture prefix, while failure logs retain the original output.
 
 Generated target configuration directly expresses the boundary under test.
 Use ordinary targets and native Xmake test assertions for program execution and
@@ -280,7 +303,7 @@ throwing operation to execute and reach the installed termination handler. Catch
 exceptions outside the runtime call and report escaped exceptions as test failures.
 
 CLI execution cases cover the shared top-level language surface, analysis-time
-output, constant blocks and static tests, native argument forwarding, interpreter
+output, `const` blocks and static tests, native argument forwarding, interpreter
 admission, source traces, runtime arithmetic, and resource failures. Interpreter
 acceptance uses expected program results; compiled execution also exercises generated C++.
 

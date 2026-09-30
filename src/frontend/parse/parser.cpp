@@ -229,6 +229,10 @@ auto Parser::check_next(TokenKind kind) const noexcept -> bool {
     return cursor + 1 < tokens.size() && tokens[cursor + 1].kind == kind;
 }
 
+auto Parser::check_optionally_const(TokenKind keyword) const noexcept -> bool {
+    return check(keyword) || (check(TokenKind::Const) && check_next(keyword));
+}
+
 auto Parser::consume() noexcept -> Token {
     const auto token = current();
     split_right_shift = false;

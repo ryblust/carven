@@ -28,6 +28,21 @@ auto BodyPreparation::operands(
                 : access == AccessMode::Take ? PreparedUse::NativeTake
                                              : PreparedUse::ConstPlace);
     };
+    // Carven parameters read builtins other than owning strings and entry
+    // arguments as values; C++ calls retain the exact Read borrow.
+    const auto carven = [&](const SemCallArgument& input) noexcept {
+        auto prepared = argument(input);
+        const auto* builtin = std::get_if<BuiltinTypeValue>(
+            &semantic.types().type(input.expression.type.resolved()).value
+        );
+        if (input.access == AccessMode::Read
+            && builtin != nullptr
+            && builtin->kind != BuiltinType::String
+            && builtin->kind != BuiltinType::EntryArgs) {
+            prepared.use = PreparedUse::OperandValue;
+        }
+        result.push_back(prepared);
+    };
     const auto native = [&](const SemCallArgument& input) noexcept {
         auto prepared = argument(input);
         if (input.access == AccessMode::Take) {
@@ -39,6 +54,7 @@ auto BodyPreparation::operands(
         Overloaded {
             [](const SemDefault&) static noexcept {},
             [](const SemConstant&) static noexcept {},
+            [](const SemUnreachable&) static noexcept {},
             [](const SemBinding&) static noexcept {},
             [](const SemCallable&) static noexcept {},
             [](const SemEnumConstructor&) static noexcept {},
@@ -95,14 +111,9 @@ auto BodyPreparation::operands(
                     result.push_back(argument(input));
                 }
             },
-            [&](const SemSliceIntrinsic& value) noexcept {
+            [&](const SemIntrinsic& value) noexcept {
                 for (const auto& input : value.operands) {
-                    result.push_back(argument(input));
-                }
-            },
-            [&](const SemTextIntrinsic& value) noexcept {
-                for (const auto& input : value.operands) {
-                    result.push_back(argument(input));
+                    carven(input);
                 }
             },
             [&](const SemRange& value) noexcept {
@@ -195,17 +206,7 @@ auto BodyPreparation::operands(
                     result.back().demand = PreparedDemand::Effects;
                 }
                 for (const auto& input : value.arguments) {
-                    auto prepared = argument(input);
-                    const auto* builtin = std::get_if<BuiltinTypeValue>(
-                        &semantic.types().type(input.expression.type.resolved()).value
-                    );
-                    if (input.access == AccessMode::Read
-                        && builtin != nullptr
-                        && builtin->kind != BuiltinType::String
-                        && builtin->kind != BuiltinType::EntryArgs) {
-                        prepared.use = PreparedUse::OperandValue;
-                    }
-                    result.push_back(prepared);
+                    carven(input);
                 }
             },
             [](const SemShortCircuit&) static noexcept {},

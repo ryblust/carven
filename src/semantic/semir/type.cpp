@@ -113,6 +113,12 @@ auto validate_signature_owner(const CallableSignature& signature, ProgramIdentit
 
 } // namespace
 
+auto CallableSignature::has_static_parameters() const noexcept -> bool {
+    return std::ranges::any_of(parameters, [](const CallableParameter& parameter) static noexcept {
+        return parameter.stage == ParameterStage::Static;
+    });
+}
+
 auto builtin_is_integer(BuiltinType type) noexcept -> bool {
     switch (type) {
         case BuiltinType::I8:
@@ -131,6 +137,14 @@ auto builtin_is_integer(BuiltinType type) noexcept -> bool {
         case BuiltinType::F64:
         case BuiltinType::String:
         case BuiltinType::Str:
+        case BuiltinType::U8x32:
+        case BuiltinType::F32x8:
+        case BuiltinType::Mask8:
+        case BuiltinType::Mask32:
+        case BuiltinType::U8x16:
+        case BuiltinType::F32x4:
+        case BuiltinType::Mask4:
+        case BuiltinType::Mask16:
         case BuiltinType::StrCharsView:
         case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return false;
@@ -156,6 +170,14 @@ auto builtin_is_signed_integer(BuiltinType type) noexcept -> bool {
         case BuiltinType::F64:
         case BuiltinType::String:
         case BuiltinType::Str:
+        case BuiltinType::U8x32:
+        case BuiltinType::F32x8:
+        case BuiltinType::Mask8:
+        case BuiltinType::Mask32:
+        case BuiltinType::U8x16:
+        case BuiltinType::F32x4:
+        case BuiltinType::Mask4:
+        case BuiltinType::Mask16:
         case BuiltinType::StrCharsView:
         case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return false;
@@ -185,6 +207,14 @@ auto builtin_integer_width(BuiltinType type) noexcept -> std::optional<std::uint
         case BuiltinType::F64:
         case BuiltinType::String:
         case BuiltinType::Str:
+        case BuiltinType::U8x32:
+        case BuiltinType::F32x8:
+        case BuiltinType::Mask8:
+        case BuiltinType::Mask32:
+        case BuiltinType::U8x16:
+        case BuiltinType::F32x4:
+        case BuiltinType::Mask4:
+        case BuiltinType::Mask16:
         case BuiltinType::StrCharsView:
         case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return std::nullopt;

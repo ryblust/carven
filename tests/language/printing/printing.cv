@@ -132,11 +132,7 @@ fn main() {
     println(f"text={c"123"}; empty={c""}; unicode={c"我😀"}");
     eprintln(c"error");
     println([',', '我']);
-    println(
-        [
-            PrintedMoney { 7 }
-        ]
-    );
+    println([PrintedMoney { 7 }]);
     let empty: [i32; 0] = [];
     println(empty);
     println(PrintedEmptyBox::create());

@@ -8,6 +8,7 @@ import :semantic.semir.evaluation;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
+import :semantic.semir.simd;
 import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :semantic.semir.text;
@@ -23,7 +24,8 @@ auto scalar(const SemIRProgram& semantic, TypeID type) noexcept -> bool {
         return builtin_is_integer(builtin->kind)
             || builtin->kind == BuiltinType::Bool
             || builtin->kind == BuiltinType::Char
-            || builtin->kind == BuiltinType::Str;
+            || builtin->kind == BuiltinType::Str
+            || simd_layout(builtin->kind).has_value();
     }
     if (const auto* enumeration = std::get_if<EnumTypeValue>(&value)) {
         return std::holds_alternative<NumericEnumRepresentation>(
@@ -56,6 +58,10 @@ auto integer_operation_may_trap(
     TypeID type,
     std::optional<ConstantID> right
 ) noexcept -> bool {
+    const auto* operation_type = std::get_if<BuiltinTypeValue>(&semantic.types().type(type).value);
+    if (!operation_type || !builtin_is_integer(operation_type->kind)) {
+        return false;
+    }
     const auto* value = right
         ? std::get_if<IntegerConstant>(&semantic.constants().constant(*right).value)
         : nullptr;
@@ -95,6 +101,7 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                     : required;
             },
             [&](const SemConstant&) noexcept { return none; },
+            [&](const SemUnreachable&) noexcept { return required; },
             [&](const SemBinding&) noexcept { return none; },
             [&](const SemCallable&) noexcept { return none; },
             [&](const SemEnumConstructor&) noexcept { return none; },
@@ -157,21 +164,106 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
             },
             [&](const SemPrint&) noexcept { return required; },
             [&](const SemFormat&) noexcept { return required; },
-            [&](const SemSliceIntrinsic& value) noexcept {
-                switch (value.intrinsic) {
-                    case SliceIntrinsic::Slice:     return required;
-                    case SliceIntrinsic::FromArray:
-                    case SliceIntrinsic::Len:
-                    case SliceIntrinsic::IsEmpty:
-                        return operands(value.operands.front().expression);
-                }
-                std::unreachable();
-            },
-            [&](const SemTextIntrinsic& value) noexcept {
-                return text_intrinsic_writes(value.intrinsic)
-                        || value.intrinsic == TextIntrinsic::FromStr
-                    ? required
-                    : operands(value.operands.front().expression);
+            [&](const SemIntrinsic& value) noexcept {
+                return value.operation.visit(
+                    Overloaded {
+                        [&](const SliceIntrinsicOperation& family) noexcept {
+                            switch (family.intrinsic) {
+                                case SliceIntrinsic::Slice:     return required;
+                                case SliceIntrinsic::FromArray:
+                                case SliceIntrinsic::Len:
+                                case SliceIntrinsic::IsEmpty:
+                                    return operands(value.operands.front().expression);
+                            }
+                            std::unreachable();
+                        },
+                        [&](const SIMDIntrinsic& family) noexcept {
+                            const auto owner = simd_owner(
+                                family,
+                                expression.type.resolved(),
+                                value.operands.front().expression.type.resolved(),
+                                [&](TypeID type) noexcept -> const CanonicalType& {
+                                    return semantic.types().type(type);
+                                }
+                            );
+                            const auto layout = *simd_layout(owner);
+                            const auto number =
+                                [&](std::size_t index) noexcept -> std::optional<std::uint64_t> {
+                                const auto constant = value.operands[index].expression.constant;
+                                if (!constant) {
+                                    return std::nullopt;
+                                }
+                                const auto* integer = std::get_if<IntegerConstant>(
+                                    &semantic.constants().constant(*constant).value
+                                );
+                                return integer ? integer->as_unsigned() : std::nullopt;
+                            };
+                            switch (family) {
+                                case SIMDIntrinsic::Load:
+                                case SIMDIntrinsic::LoadPartial: {
+                                    const auto& sequence = value.operands.front().expression;
+                                    auto extent = std::optional<std::uint64_t>();
+                                    if (const auto* operation =
+                                            std::get_if<SemIntrinsic>(&sequence.value)) {
+                                        if (const auto* slice =
+                                                std::get_if<SliceIntrinsicOperation>(
+                                                    &operation->operation
+                                                )) {
+                                            extent = slice->result_extent;
+                                        }
+                                    }
+                                    if (sequence.constant) {
+                                        const auto children = constant_children(
+                                            semantic.constants().constant(*sequence.constant).value
+                                        );
+                                        if (children) {
+                                            extent = children->size();
+                                        }
+                                    }
+                                    const auto offset = number(1);
+                                    if (!extent
+                                        || !offset
+                                        || *offset > *extent
+                                        || (family == SIMDIntrinsic::Load
+                                            && *extent - *offset < layout.width)) {
+                                        return required;
+                                    }
+                                    break;
+                                }
+                                case SIMDIntrinsic::Lane:
+                                case SIMDIntrinsic::WithLane: {
+                                    const auto index = number(1);
+                                    if (!index || *index >= layout.width) {
+                                        return required;
+                                    }
+                                    break;
+                                }
+                                case SIMDIntrinsic::Prefix: {
+                                    const auto count = number(0);
+                                    if (!count || *count > layout.width) {
+                                        return required;
+                                    }
+                                    break;
+                                }
+                                default: break;
+                            }
+                            auto rule = EvaluationRule {
+                                .action = EvaluationAction::Operands,
+                                .operands = {}
+                            };
+                            for (const auto& [index, operand] :
+                                 std::views::enumerate(value.operands)) {
+                                rule.operands[index] = &operand.expression;
+                            }
+                            return rule;
+                        },
+                        [&](const TextIntrinsic& family) noexcept {
+                            return text_intrinsic_writes(family) || family == TextIntrinsic::FromStr
+                                ? required
+                                : operands(value.operands.front().expression);
+                        }
+                    }
+                );
             },
             [&](const SemDereference&) noexcept { return required; },
             [&](const SemAddressOf&) noexcept { return required; },

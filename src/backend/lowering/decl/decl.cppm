@@ -10,9 +10,12 @@ import std;
 
 struct LoweredModuleSchedule final {
     std::vector<TargetItem> source_fragments;
+    std::vector<TargetItem> nominal_declarations;
     std::vector<TargetItem> private_declarations;
     std::vector<TargetItem> private_items;
     std::vector<TargetItem> module_items;
+    std::vector<TargetItem> shared_declarations;
+    std::vector<TargetItem> shared_definitions;
     std::optional<TargetItem> entry_wrapper;
     std::vector<TargetItem> cpp_export_facades;
 };
@@ -28,8 +31,10 @@ auto lower_forward_declaration(ModuleLowering& context, NominalDeclarationRef de
 auto lower_cpp_export_header_declaration(ModuleLowering& context, FunctionID function) noexcept
     -> TargetItem;
 auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexcept -> TargetItem;
-auto lower_module_schedule(ModuleLowering& context, const TargetModuleSchedule& schedule) noexcept
-    -> LoweredModuleSchedule;
+auto lower_module_schedule(
+    ArtifactLowering& artifact,
+    const TargetModuleSchedule& schedule
+) noexcept -> LoweredModuleSchedule;
 auto lower_entry_wrapper(ModuleLowering& context, FunctionID function) noexcept -> TargetItem;
 auto lower_test_runner_header(
     ArtifactLowering& context,

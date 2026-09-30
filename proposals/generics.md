@@ -457,6 +457,12 @@ decide whether a Carven call exists or which implementation it selects.
 - **Reactivation condition:** A concrete API requires a compile-time value that
   cannot remain an ordinary runtime argument or type-level distinction.
 
+[Static function parameters](../docs/language/functions.md#static-parameters)
+fix values for ordinary calls while keeping parameter types, result types, and
+layouts independent of those values. Their instances are residual semantic bodies
+selected by normalized static values; source types and callable signatures remain
+fixed. Generic value arguments and value-dependent types remain deferred here.
+
 ### DEFER-02 — Generic lambdas
 
 - **Reason deferred:** Generic closures add capture, callable identity,

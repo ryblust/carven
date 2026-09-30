@@ -8,6 +8,8 @@ import std;
 
 namespace {
 
+constexpr auto site = carven::runtime::SourceSite::native();
+
 namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
@@ -55,10 +57,10 @@ const ct::Suite tests([] static noexcept {
 
     ct::test("Runtime: checked UTF-8 preserves the borrowed byte range", [] static noexcept {
         const auto text = std::string_view("a\0\xc3\xa9", 4);
-        const auto checked = carven::runtime::checked_utf8(text);
+        const auto checked = carven::runtime::checked_utf8(text, site);
         ct::expect(checked.data() == text.data());
         ct::expect(checked.size() == text.size());
-        ct::expect(carven::runtime::checked_utf8({}).empty());
+        ct::expect(carven::runtime::checked_utf8({}, site).empty());
     });
 
     ct::test(

@@ -8,6 +8,7 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :semantic.analysis.catalog;
 import :semantic.analysis.program;
+import :semantic.analysis.types;
 import :semantic.visibility;
 import :source.cpp.identifier;
 import :support.invariant;
@@ -31,7 +32,7 @@ auto declaration_name(const ASTItem& item) noexcept -> std::optional<Span> {
             [](const ASTConstantDecl& value) static noexcept -> std::optional<Span> {
                 return value.name_span;
             },
-            [](const ASTConstantBlock&) static noexcept -> std::optional<Span> {
+            [](const ASTConstBlock&) static noexcept -> std::optional<Span> {
                 return std::nullopt;
             },
             [](const ASTTestDecl&) static noexcept -> std::optional<Span> { return std::nullopt; },
@@ -73,7 +74,7 @@ auto declaration_visibility(const ASTItem& item) noexcept -> DeclarationVisibili
                 return semantic_visibility(value.visibility);
             },
             [](const ASTTestDecl&) static noexcept { return DeclarationVisibility::Module; },
-            [](const ASTConstantBlock&) static noexcept { return DeclarationVisibility::Module; },
+            [](const ASTConstBlock&) static noexcept { return DeclarationVisibility::Module; },
         }
     );
 }
@@ -335,6 +336,32 @@ auto AnalysisCatalogView::lookup(ProgramModuleID module_id, std::string_view nam
                                      : std::span<const CatalogLookupCandidate>(named->second);
 }
 
+auto AnalysisCatalogView::visible_names(ProgramModuleID module_id) const noexcept
+    -> std::vector<std::string> {
+    if (module_id.index() >= catalog->visible_candidates.size()) {
+        return {};
+    }
+    return std::ranges::to<std::vector<std::string>>(
+        catalog->visible_candidates[module_id.index()].keys()
+    );
+}
+
+auto AnalysisCatalogView::enum_case_names(EnumID enumeration) const noexcept
+    -> std::vector<std::string> {
+    auto names = std::vector<std::string>();
+    const auto* owner = symbol(enum_symbol(enumeration));
+    const auto* form = owner != nullptr ? std::get_if<CatalogEnumForm>(&owner->form) : nullptr;
+    if (form == nullptr) {
+        return names;
+    }
+    for (const auto case_id : form->cases) {
+        if (const auto* declared = symbol(enum_case_symbol(case_id))) {
+            names.push_back(declared->name);
+        }
+    }
+    return names;
+}
+
 auto AnalysisCatalogView::cpp_selection(
     ProgramModuleID module_id,
     std::string_view name
@@ -437,10 +464,10 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
             }
             const auto name_span = declaration_name(item);
             if (!name_span.has_value()) {
-                if (std::holds_alternative<ASTConstantBlock>(item.value)) {
+                if (std::holds_alternative<ASTConstBlock>(item.value)) {
                     catalog_module.items.push_back({
                         .item_id = item_id,
-                        .form = CatalogConstantBlockForm {},
+                        .form = CatalogConstBlockForm {},
                     });
                 }
                 if (std::holds_alternative<ASTTestDecl>(item.value)) {
@@ -455,6 +482,12 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
             const auto implicit_entry = function != nullptr && function->is_implicit_entry;
             auto name = implicit_entry ? std::string("main")
                                        : draft.source_slice_copy(module_id, *name_span);
+            if (source_builtin_type(name)) {
+                diagnostics.push_back(
+                    catalog_error(source_id, "builtin type names are reserved", *name_span)
+                );
+                continue;
+            }
             if (const auto prior = names.find(name); !implicit_entry && prior != names.end()) {
                 auto error = catalog_error(
                     source_id,
@@ -523,8 +556,8 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                         result.module_constant_symbols.push_back(symbol_id);
                         return CatalogConstantForm {.constant = constant};
                     },
-                    [](const ASTConstantBlock&) static noexcept -> CatalogSymbolForm {
-                        invariant_violation("constant block has no symbol form");
+                    [](const ASTConstBlock&) static noexcept -> CatalogSymbolForm {
+                        invariant_violation("const block has no symbol form");
                     },
                     [](const ASTTestDecl&) static noexcept -> CatalogSymbolForm {
                         invariant_violation("catalog declaration item has no symbol form");

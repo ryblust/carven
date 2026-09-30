@@ -16,6 +16,7 @@ DiagnosticBuilder::DiagnosticBuilder(DiagnosticCode code, std::string message) n
               .primary = std::nullopt,
               .related = {},
               .notes = {},
+              .helps = {},
           },
       } {}
 
@@ -43,6 +44,11 @@ auto DiagnosticBuilder::note(std::string message, std::optional<SourceSpan> span
         .message = std::move(message),
         .span = span,
     });
+    return *this;
+}
+
+auto DiagnosticBuilder::help(std::string message) noexcept -> DiagnosticBuilder& {
+    diagnostic.attachment.helps.push_back(std::move(message));
     return *this;
 }
 

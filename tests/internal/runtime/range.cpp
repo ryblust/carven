@@ -26,7 +26,7 @@ namespace {
 
 const ct::Suite tests([] static noexcept {
     ct::test(
-        "Runtime: integer intervals support constant evaluation and maximum endpoints",
+        "Runtime: integer intervals support static execution and maximum endpoints",
         [] static noexcept {
             constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
             static_assert(count_interval({maximum - 1, maximum, true}) == 2);

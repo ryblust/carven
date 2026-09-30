@@ -1,0 +1,206 @@
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{ mark, reset, matches, FixedOwner, event };
+import .control using Failure;
+import .construction using initialization_argument;
+
+private fn selected_snapshot(flag: bool, &first: i32, &second: i32) -> i32 {
+    return ::lifetime_probe::snapshot_after_write(
+            if flag { first } else { second },
+            &first,
+            &second
+        )
+        as i32;
+}
+
+private fn known_snapshot(&first: i32, &second: i32) -> i32 {
+    return ::lifetime_probe::snapshot_after_write(
+            if true { first } else { second },
+            &first,
+            &second
+        )
+        as i32;
+}
+
+test "Lifetimes: scalar value regions complete snapshots before native calls" {
+    var first = 3;
+    var second = 7;
+    check(selected_snapshot(true, &first, &second) == 3);
+    check(first == 103);
+    check(second == 207);
+    first = 3;
+    second = 7;
+    check(selected_snapshot(false, &first, &second) == 7);
+    check(first == 103);
+    check(second == 207);
+    first = 3;
+    second = 7;
+    check(known_snapshot(&first, &second) == 3);
+    check(first == 103);
+    check(second == 207);
+}
+
+private fn known_extent_observer(extent: usize, marker: i32) -> usize {
+    mark(marker);
+    return extent;
+}
+
+test "Lifetimes: known scalar queries retain temporary owners through later operands" {
+    reset();
+    let length = known_extent_observer([FixedOwner { 71 }].as_slice().len(), event(2));
+    check(length == 1usize);
+    check(matches("71 2 2 -71 "));
+    reset();
+    let selected = known_extent_observer(
+        (if event(3) > 0 { [FixedOwner { 72 }] } else { [FixedOwner { 73 }] }).as_slice().len(),
+        event(4)
+    );
+    check(selected == 1usize);
+    check(matches("3 72 4 4 -72 "));
+    reset();
+    let combined = known_extent_observer(
+        (([FixedOwner { 74 }].as_slice().len() == 1usize) && false) as usize,
+        event(5)
+    );
+    check(combined == 0usize);
+    check(matches("74 5 5 -74 "));
+    reset();
+    [FixedOwner { 75 }].as_slice().len();
+    event(6);
+    check(matches("75 -75 6 "));
+    reset();
+    check([FixedOwner { 76 }].as_slice().len() == 1usize && event(7) > 0);
+    check(matches("76 7 -76 "));
+}
+
+fn array_source_step(succeeds: bool) -> i32 throw Failure {
+    ::lifetime_probe::mutate_array_source();
+    if !succeeds { throw Failure::Stop; }
+    return 2;
+}
+
+fn collect_native_references(succeeds: bool) -> i32 throw Failure {
+    let values = [
+        ::lifetime_probe::array_source(1),
+        ::lifetime_probe::array_source(array_source_step(succeeds)?),
+    ];
+    mark(8);
+    return (values[0].id as i32) * 10 + (values[1].id as i32);
+}
+
+fn collect_const_native_references(succeeds: bool) -> i32 throw Failure {
+    let values = [
+        ::lifetime_probe::const_array_source(1),
+        ::lifetime_probe::const_array_source(array_source_step(succeeds)?),
+    ];
+    mark(8);
+    return (values[0].id as i32) * 10 + (values[1].id as i32);
+}
+
+test "Lifetimes: native array elements snapshot references before later mutation and failure" {
+    ::lifetime_probe::reset_array_sources();
+    try {
+        check(collect_native_references(true)? == 12);
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+    }
+    check(::lifetime_probe::array_sources_intact());
+    check(matches("11 3 12 8 "));
+    ::lifetime_probe::reset_array_sources();
+    try {
+        collect_native_references(false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(::lifetime_probe::array_sources_intact());
+    check(matches("11 3 7 "));
+
+    ::lifetime_probe::reset_array_sources();
+    try {
+        check(collect_const_native_references(true)? == 12);
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+    }
+    check(::lifetime_probe::array_sources_intact());
+    check(matches("11 3 12 8 "));
+    ::lifetime_probe::reset_array_sources();
+    try {
+        collect_const_native_references(false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(::lifetime_probe::array_sources_intact());
+    check(matches("11 3 7 "));
+}
+
+fn take_scalar_before_failure(succeeds: bool) -> i32 throw Failure {
+    let value: i32 = 1;
+    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?) as i32;
+}
+
+fn take_pointer_before_failure(succeeds: bool) -> i32 throw Failure {
+    let value: ptr<&i32> = ::lifetime_probe::native_take_address();
+    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?) as i32;
+}
+
+fn take_owner_before_failure(succeeds: bool) -> i32 throw Failure {
+    let value = ::lifetime_probe::NativeTakeOwner {};
+    return ::lifetime_probe::choose_native_take(&&value, initialization_argument(succeeds)?) as i32;
+}
+
+test "Lifetimes: native Take selects rvalue overloads before and after operand stabilization" {
+    ::lifetime_probe::reset_native_take();
+    let scalar: i32 = 1;
+    check((::lifetime_probe::choose_native_take(&&scalar) as i32) == 2);
+    let pointer: ptr<&i32> = ::lifetime_probe::native_take_address();
+    check((::lifetime_probe::choose_native_take(&&pointer) as i32) == 2);
+    let owner = ::lifetime_probe::NativeTakeOwner {};
+    check((::lifetime_probe::choose_native_take(&&owner) as i32) == 2);
+    check(::lifetime_probe::native_take_copy_count() == 0);
+    check(matches("6 6 6 "));
+
+    ::lifetime_probe::reset_native_take();
+    try {
+        check(take_scalar_before_failure(true)? == 2);
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+    }
+    check(matches("2 6 "));
+    ::lifetime_probe::reset_native_take();
+    try {
+        take_scalar_before_failure(false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("2 7 "));
+
+    ::lifetime_probe::reset_native_take();
+    try {
+        check(take_pointer_before_failure(true)? == 2);
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+    }
+    check(matches("2 6 "));
+    ::lifetime_probe::reset_native_take();
+    try {
+        take_pointer_before_failure(false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(matches("2 7 "));
+
+    ::lifetime_probe::reset_native_take();
+    try {
+        check(take_owner_before_failure(true)? == 2);
+    } catch {
+        Failure(_) => fail("unexpected failure"),
+    }
+    check(::lifetime_probe::native_take_copy_count() == 0);
+    check(matches("2 6 "));
+    ::lifetime_probe::reset_native_take();
+    try {
+        take_owner_before_failure(false)?;
+    } catch {
+        Failure(_) => mark(7),
+    }
+    check(::lifetime_probe::native_take_copy_count() == 0);
+    check(matches("2 7 "));
+}

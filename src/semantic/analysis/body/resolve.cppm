@@ -12,7 +12,6 @@ auto resolve_body(
     StructuredBodyDraft body,
     const TypeResolution& types,
     const CanonicalTypeStore& canonical_types,
-    const ConstantStore& constants,
     const std::vector<bool>& test_stops,
     const FailureSolution& failures,
     const FailureSetStore& failure_sets,

@@ -6,6 +6,7 @@ import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
+import :semantic.semir.structured;
 import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
@@ -60,29 +61,92 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Semantic constants: const calls execute in local constant initializers",
+        "Semantic constants: required initializer failures do not enter runtime contracts",
         [] static noexcept {
-            const auto program = analyze_test_program(
-                "const fn source() -> i32 { return 1; } "
-                "fn use() { const _ = (source() == 1) && false; }"
+            const auto program = analyze_test_program(R"(
+            struct Error {}
+            const fn provider() -> i32 throw Error => 2;
+            fn use() -> i32 { const value = provider()?; return value; }
+        )");
+            auto callable = std::optional<CallableID>();
+            for (const auto [id, declaration] : program.declarations().functions()) {
+                static_cast<void>(id);
+                if (program.provenance().spelling(declaration.name) == "use") {
+                    callable = declaration.callable;
+                }
+            }
+            if (!ct::expect(callable.has_value())) {
+                return;
+            }
+            const auto& signature = program.callable_signatures().signature(
+                program.declarations().callable(*callable).signature
             );
-            ct::expect_equal(program.declarations().functions().size(), 2uz);
+            ct::expect(program.failure_sets().failure_set(signature.failures).members.empty());
         }
     );
 
     ct::test(
-        "Constant roots: arithmetic intermediates and extent results are not retained",
+        "Semantic constants: static control and argument failures belong to static roots",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+            struct Error {}
+            const fn enabled() -> bool throw Error => true;
+            const fn count() -> i32 throw Error => 2;
+            const fn immediate() -> usize throw Error => 1usize;
+            fn selected(const value: i32) -> i32 => value;
+            fn use(vector: u8x16) -> u8x16 {
+                const value = count()?;
+                const if enabled()? { selected(count()?); }
+                const for index in 0..count()? { selected(index); }
+                return vector.shift_left(immediate()?);
+            }
+        )");
+            auto callable = std::optional<CallableID>();
+            for (const auto [id, declaration] : program.declarations().functions()) {
+                static_cast<void>(id);
+                if (program.provenance().spelling(declaration.name) == "use") {
+                    callable = declaration.callable;
+                }
+            }
+            if (!ct::expect(callable.has_value())) {
+                return;
+            }
+            const auto& signature = program.callable_signatures().signature(
+                program.declarations().callable(*callable).signature
+            );
+            ct::expect(program.failure_sets().failure_set(signature.failures).members.empty());
+        }
+    );
+
+    ct::test(
+        "Static roots: declared values and extents hold their computed values",
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const answer = (11 + 22) + 44;
         fn accept(value: [i32; (12 + 23) + 45]) {}
     )");
-            for (const auto [id, fact] : program.constants().entries()) {
+            ct::require_equal(program.declarations().module_constants().size(), 1uz);
+            for (const auto [id, declaration] : program.declarations().module_constants()) {
                 static_cast<void>(id);
-                if (const auto* integer = std::get_if<IntegerConstant>(&fact.value)) {
-                    ct::expect(integer->as_signed() != 33);
-                    ct::expect(integer->as_signed() != 35);
-                    ct::expect(integer->as_signed() != 80);
+                const auto* value = std::get_if<IntegerConstant>(
+                    &program.constants().constant(declaration.value).value
+                );
+                if (ct::expect(value != nullptr)) {
+                    ct::expect(value->as_signed() == 77);
+                }
+            }
+            ct::require_equal(program.declarations().functions().size(), 1uz);
+            for (const auto [id, declaration] : program.declarations().functions()) {
+                static_cast<void>(id);
+                const auto& signature = program.callable_signatures().signature(
+                    program.declarations().callable(declaration.callable).signature
+                );
+                ct::require_equal(signature.parameters.size(), 1uz);
+                const auto* array = std::get_if<ArrayTypeValue>(
+                    &program.types().type(signature.parameters.front().type).value
+                );
+                if (ct::expect(array != nullptr)) {
+                    ct::expect(array->extent == 80u);
                 }
             }
         }

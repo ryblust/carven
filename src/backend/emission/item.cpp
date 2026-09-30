@@ -304,7 +304,7 @@ auto TargetRenderer::render_declaration(const TargetDecl& value) noexcept -> Lay
                 name.inline_qualified = concat({name.inline_qualified, text("::"), member});
                 name.wrapping = concat({name.wrapping, text("::"), member});
                 const auto signature = render_function_declarator(
-                    "",
+                    function.inline_specifier ? "inline " : "",
                     name,
                     function.parameters,
                     render_type_layouts(function.result),

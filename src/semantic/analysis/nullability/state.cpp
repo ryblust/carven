@@ -158,11 +158,6 @@ auto NullabilityBodyAnalyzer::constant_value(const SemanticExpression& source) c
     return {};
 }
 
-auto NullabilityBodyAnalyzer::truth(const SemanticExpression& source) const noexcept
-    -> std::optional<bool> {
-    return known_boolean(program, source);
-}
-
 auto NullabilityBodyAnalyzer::invalidate_exposed(NullState& state) const noexcept -> void {
     std::erase_if(state.facts, [&](const auto& entry) noexcept {
         return state.exposed.contains(entry.first.root) || range_aliases.contains(entry.first.root);
@@ -357,8 +352,11 @@ auto check_pointer_nullability(
     const SemIRProgram& program,
     AnalysisDiagnostics diagnostics
 ) noexcept -> AnalysisResult<void> {
+    // Source bodies are checked; an instance repeats one with fewer paths.
     for (const auto entry : program.bodies().entries()) {
-        NullabilityBodyAnalyzer(program, entry.value, diagnostics).run();
+        if (!entry.value.specialized()) {
+            NullabilityBodyAnalyzer(program, entry.value, diagnostics).run();
+        }
     }
     if (const auto failure = diagnostics.failure()) {
         return std::unexpected(*failure);
