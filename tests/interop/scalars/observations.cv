@@ -1,0 +1,88 @@
+import "scalars/observations.hpp";
+
+private fn pair(first: i32, second: i32) -> i32 => first * 10 + second;
+
+private fn take_owner(input: i32) -> i32 {
+    let value = input;
+    return pair(value + 1, ::observation_probe::take(&&value) as i32);
+}
+
+private fn take_parameter(&&value: i32) -> i32 {
+    return pair(value + 1, ::observation_probe::take(&&value) as i32);
+}
+
+private fn read_parameter(value: i32, address: ptr<&i32>) -> i32 {
+    return pair(value, ::observation_probe::write(address) as i32);
+}
+
+test "Observations: native Take preserves an earlier independent value" {
+    check(take_owner(1) == 22);
+    let value = 1;
+    check(take_parameter(&&value) == 22);
+}
+
+test "Observations: writable addresses preserve source snapshots and Read parameters" {
+    var value = 1;
+    let address = addressof(&value);
+    let independent = 8;
+    check(pair(value, ::observation_probe::write(address) as i32) == 12);
+    check(value == 9);
+    value = 1;
+    check(pair(independent, ::observation_probe::write(address) as i32) == 82);
+    value = 1;
+    check(read_parameter(value, address) == 12);
+    check(value == 9);
+}
+
+private struct Record {
+    value: i32
+}
+
+test "Observations: writable projected addresses expose the containing owner" {
+    var record = Record { 1 };
+    let address = addressof(&record.value);
+    check(pair(record.value, ::observation_probe::write(address) as i32) == 12);
+    check(record.value == 9);
+}
+
+test "Observations: Write iteration aliases retain earlier scalar snapshots" {
+    var values = [1];
+    let address = addressof(&values[0]);
+    for &value in values {
+        check(pair(value, ::observation_probe::write(address) as i32) == 12);
+        check(value == 9);
+    }
+    check(values[0] == 9);
+}
+
+test "Observations: callbacks retain earlier reads of Write captures" {
+    var value = 1;
+    let change = [&value]() -> i32 {
+        value = 9;
+        return 2;
+    };
+    check(pair(value, change()) == 12);
+    check(value == 9);
+}
+
+private struct Failure {}
+
+private fn failing() -> i32 throw Failure {
+    throw Failure {};
+}
+
+private fn effect_before_failure(&value: i32) -> i32 throw Failure {
+    return pair(::observation_probe::write(addressof(&value)) as i32, failing()?);
+}
+
+test "Observations: earlier native execution precedes a later failure" {
+    var value = 1;
+    let caught = try {
+        effect_before_failure(&value)?;
+        false
+    } catch {
+        Failure(_) => true
+    };
+    check(caught);
+    check(value == 9);
+}

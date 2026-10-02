@@ -33,7 +33,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     const auto needs_cleanup = owner.needs_cleanup(source(fragment).operation.type.resolved())
         || std::ranges::any_of(owner.context.plan().failure_abi().members(transport.failures),
                                [&](TypeID type) noexcept { return owner.needs_cleanup(type); });
-    const auto automatic = storage_form(fragment.position) == StorageForm::Automatic;
+    const auto automatic = fragment.local_storage;
     if (automatic) {
         statements.declare(
             TargetVariableStmt {
@@ -46,7 +46,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
             needs_cleanup
         );
     } else {
-        owner.declare_deferred(storage, false, declarations, needs_cleanup);
+        owner.declare_deferred(storage, false, reservations, needs_cleanup);
         owner.initialize_deferred(storage, raw(fragment), statements);
     }
     auto access = name_expression(outcome);
@@ -117,10 +117,16 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
     } else {
         complete(fragment, LoweringCompleted {});
     }
-    auto failure = owner.dispatch_failure(
-        OutcomeFailureSource {.storage = outcome, .deferred = !automatic},
+    auto failure = LoweringStmtBuilder();
+    owner.transfer_failure(
+        OutcomeFailureSource {
+            .storage = outcome,
+            .deferred = !automatic,
+            .layout = transport.failures
+        },
         transport.failures,
-        transport.destination
+        transport.destination,
+        failure
     );
     statements.record_exits(failure.exits());
     auto branches = std::vector<TargetIfBranch>();

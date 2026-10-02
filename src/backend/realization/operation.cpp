@@ -90,7 +90,7 @@ auto realize_unary(
     return result;
 }
 
-auto source_site_expression(ModuleLowering& context, ProgramOriginID origin) noexcept
+auto source_site_expression(const ModuleLowering& context, ProgramOriginID origin) noexcept
     -> TargetExpr {
     const auto provenance = context.semantic().provenance();
     const auto source = target_source_origin(provenance, origin);

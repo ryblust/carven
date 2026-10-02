@@ -244,7 +244,7 @@ auto NullabilityBodyAnalyzer::match(const SemMatch& source, NullState state) noe
             std::move(selected.state)
         ));
         auto accepted = std::move(checked_pattern.yes);
-        if (arm.pattern_always_matches) {
+        if (!arm.pattern_may_reject) {
             checked_pattern.no.reset();
         }
         remaining = std::move(checked_pattern.no);

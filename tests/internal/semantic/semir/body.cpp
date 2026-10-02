@@ -628,7 +628,7 @@ const ct::Suite tests([] static noexcept {
         }
     );
 
-    ct::test("SemIR body: match success must follow from its pattern", [] static noexcept {
+    ct::test("SemIR body: match rejection facts require coverage", [] static noexcept {
         ct::expect(rejects_expression(
             "match-selection-fact",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
@@ -660,7 +660,7 @@ const ct::Suite tests([] static noexcept {
                             .exits_test = false,
                         },
                     .reachable = true,
-                    .pattern_always_matches = true,
+                    .pattern_may_reject = false,
                     .pattern_bounds = {},
                 });
                 auto result = boolean_expression(prepared, body);

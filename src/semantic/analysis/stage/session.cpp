@@ -225,7 +225,7 @@ auto StaticExecutionContext::prepare_call(CallableID callable, ProgramOriginID o
     if (!completed) {
         co_return std::unexpected(ExecutionFailure {ExecutionDependencyFailure {}});
     }
-    auto realized = co_await stage.realize_body(*completed);
+    const auto realized = co_await stage.realize_body(*completed);
     if (!realized) {
         co_return std::unexpected(ExecutionFailure {ExecutionDependencyFailure {}});
     }
@@ -433,7 +433,7 @@ auto StaticStage::realize_body(BodyID body) noexcept -> AnalysisTask<void> {
         co_return {};
     }
     auto region = program.body_draft(body).region;
-    auto root = Root(*this, std::nullopt);
+    const auto root = Root(*this, std::nullopt);
     if (!root.entered()) {
         co_return std::unexpected(limit_failure(region.origin, "nesting"));
     }
@@ -463,7 +463,7 @@ auto StaticStage::instance(
         }
         co_return *found;
     }
-    auto root = Root(*this, origin);
+    const auto root = Root(*this, origin);
     if (!root.entered()) {
         co_return std::unexpected(limit_failure(origin, "nesting"));
     }

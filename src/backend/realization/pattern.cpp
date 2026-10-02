@@ -54,7 +54,7 @@ auto PatternRealizer::test(Lowered<LoweringPredicate> predicate) noexcept -> Pat
         .accepted = predicate.normal.has_value() && known != false,
         .rejected = predicate.normal.has_value() && known != true,
     };
-    if (!predicate.statements.empty() || !predicate.exits.targets.empty() || known != true) {
+    if (!predicate.statements.empty() || !predicate.exits.entries.empty() || known != true) {
         result.tests.push_back(std::move(predicate));
     }
     return result;
@@ -204,10 +204,15 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
                             return choice.tests.empty()
                                 || (choice.tests.size() == 1uz
                                     && choice.tests.front().statements.empty()
-                                    && choice.tests.front().exits.targets.empty()
+                                    && choice.tests.front().exits.entries.empty()
                                     && choice.tests.front().normal.has_value());
                         });
     if (direct) {
+        // With no evaluation prefix or source choice, guaranteed acceptance
+        // discharges the whole predicate rather than retaining `test || true`.
+        if (!result.rejected) {
+            return result;
+        }
         auto predicate = LoweringPredicate(LoweringKnownBool {false});
         for (auto& choice : choices) {
             auto next = choice.tests.empty() ? LoweringPredicate(LoweringKnownBool {true})
@@ -323,8 +328,11 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
     return result;
 }
 
-auto PatternRealizer::match(PatternID pattern_id, const PatternSubject& subject) noexcept
-    -> ContinuationTask<PatternSelection> {
+auto PatternRealizer::match(
+    PatternID pattern_id,
+    const PatternSubject& subject,
+    bool accepts_on_entry
+) noexcept -> ContinuationTask<PatternSelection> {
     const auto& pattern = body.pattern(pattern_id);
     const auto paths = completion.pattern(pattern_id);
     auto destination = LoweringStmtBuilder();
@@ -359,6 +367,9 @@ auto PatternRealizer::match(PatternID pattern_id, const PatternSubject& subject)
                 if (!destination.continues()) {
                     co_return finish(std::nullopt);
                 }
+                if (accepts_on_entry) {
+                    co_return finish(LoweringKnownBool {true});
+                }
                 auto condition = std::optional<TargetExpr>();
                 if (first) {
                     condition = binary_expression(
@@ -387,6 +398,9 @@ auto PatternRealizer::match(PatternID pattern_id, const PatternSubject& subject)
                 co_return finish(LoweringDynamicBool {std::move(*condition)});
             },
             [&](const LiteralPattern& value) noexcept -> ContinuationTask<PatternSelection> {
+                if (accepts_on_entry) {
+                    co_return finish(LoweringKnownBool {true});
+                }
                 co_return finish(
                     LoweringDynamicBool {binary_expression(
                         subject_expression(subject),
@@ -408,8 +422,14 @@ auto PatternRealizer::match(PatternID pattern_id, const PatternSubject& subject)
             },
             [&](const OrPattern& value) noexcept -> ContinuationTask<PatternSelection> {
                 auto choices = std::vector<PatternSelection>();
-                for (const auto alternative : value.alternatives) {
-                    auto candidate = co_await match(alternative, subject);
+                for (auto index = 0uz; index < value.alternatives.size(); ++index) {
+                    // An accepting disjunction guarantees its final alternative
+                    // only after all earlier alternatives have rejected.
+                    auto candidate = co_await match(
+                        value.alternatives[index],
+                        subject,
+                        accepts_on_entry && index + 1uz == value.alternatives.size()
+                    );
                     const auto rejected = candidate.rejected;
                     choices.push_back(std::move(candidate));
                     if (!rejected) {
@@ -430,7 +450,7 @@ auto PatternRealizer::match(PatternID pattern_id, const PatternSubject& subject)
                             .enumeration(declaration.owner)
                             .representation
                     )) {
-                    if (single_case(value.enum_case)) {
+                    if (single_case(value.enum_case) || accepts_on_entry) {
                         co_return finish(LoweringKnownBool {true});
                     }
                     co_return finish(
@@ -463,7 +483,7 @@ auto PatternRealizer::match(PatternID pattern_id, const PatternSubject& subject)
                     }
                 ));
                 auto predicate = LoweringPredicate(LoweringKnownBool {true});
-                if (!single_case(value.enum_case)) {
+                if (!single_case(value.enum_case) && !accepts_on_entry) {
                     predicate = LoweringDynamicBool {binary_expression(
                         name_expression(projection),
                         TargetBinaryOperator::NotEqual,
@@ -479,7 +499,8 @@ auto PatternRealizer::match(PatternID pattern_id, const PatternSubject& subject)
                             value.payload[index],
                             {.root = projection,
                              .dereference_root = true,
-                             .payload_index = static_cast<std::uint32_t>(index)}
+                             .payload_index = static_cast<std::uint32_t>(index)},
+                            accepts_on_entry
                         )
                     );
                 }
@@ -488,7 +509,7 @@ auto PatternRealizer::match(PatternID pattern_id, const PatternSubject& subject)
         }
     );
     selection.accepted &= paths.accepted;
-    selection.rejected &= paths.rejected;
+    selection.rejected &= paths.rejected && !accepts_on_entry;
     co_return selection;
 }
 

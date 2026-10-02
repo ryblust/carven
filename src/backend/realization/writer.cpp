@@ -29,12 +29,7 @@ auto BodyRealizer::ExpressionBuilder::complete_writer(
         }
         auto& child = children[index];
         if (!std::holds_alternative<LocalBindingID>(child.completion)) {
-            anchor(
-                child,
-                inputs[index].use,
-                !std::holds_alternative<ConstantID>(child.completion),
-                true
-            );
+            anchor(child, inputs[index].use, !std::holds_alternative<ConstantID>(child.completion));
             adopt(child);
         }
     }

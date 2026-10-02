@@ -352,8 +352,9 @@ struct SemMatchArm final {
     std::optional<SemanticExpression> guard;
     SemanticRegion body;
     bool reachable;
-    // The pattern accepts every value of the subject type.
-    bool pattern_always_matches;
+    // Normal pattern rejection remains possible after preceding unguarded
+    // arms. Required evaluation and the arm's guard remain independent.
+    bool pattern_may_reject;
     std::vector<SemPatternBounds> pattern_bounds;
 };
 

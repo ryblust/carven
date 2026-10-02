@@ -258,6 +258,7 @@ public:
             .alternative_usefulness = {},
             .redundant_alternatives = {},
             .exhaustive_after_arm = std::vector<bool>(arms.size(), false),
+            .pattern_rejection = std::vector<bool>(arms.size(), true),
             .exhaustive = false,
             .missing_witness = "_",
         };
@@ -324,6 +325,26 @@ public:
                 result.exhaustive_after_arm.end(),
                 true
             );
+        }
+        for (auto arm = 0uz; arm < arms.size(); ++arm) {
+            if (!arms[arm].guarded || result.exhaustive_after_arm[arm]) {
+                result.pattern_rejection[arm] = !result.exhaustive_after_arm[arm];
+                continue;
+            }
+            // Guarded arms do not extend definite coverage. Test their pattern
+            // against the existing prefix without lowering that prefix again.
+            auto selected = Matrix(
+                matrix.begin(),
+                matrix.begin() + static_cast<std::ptrdiff_t>(prefix_ends[arm])
+            );
+            for (const auto& alternative : (*lowered)[arm]) {
+                selected.push_back({std::addressof(alternative)});
+            }
+            auto rejected = useful(selected, query);
+            if (!rejected) {
+                return std::unexpected(std::move(rejected.error()));
+            }
+            result.pattern_rejection[arm] = *rejected;
         }
         return result;
     }
@@ -958,4 +979,13 @@ auto patterns_exhaustive(
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<bool, std::string> {
     return CoverageAnalyzer(semantic, patterns).exhaustive(subject_type, arms);
+}
+
+auto compute_pattern_coverage(
+    const SemIRProgram& semantic,
+    const ImmutableBodyTable<Pattern, PatternID>& patterns,
+    TypeID subject_type,
+    std::span<const PatternCoverageArm> arms
+) noexcept -> std::expected<PatternCoverage, std::string> {
+    return CoverageAnalyzer(semantic, patterns).run(subject_type, arms);
 }

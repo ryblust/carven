@@ -122,7 +122,7 @@ auto freeze_constant_value(ProgramDraft& draft, ExecutionValue value) noexcept
     return freeze_value(draft, shapes, std::move(value), 0);
 }
 
-auto constant_initializer_type(ProgramDraft& draft, ConstructionTypeRef type) noexcept
+auto constant_initializer_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> ConstructionTypeRef {
     const auto* id = std::get_if<TypeID>(&type);
     if (id

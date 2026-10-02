@@ -1,9 +1,8 @@
 module carven:semantic.analysis.validation.operations.impl;
 
+import :semantic.analysis.coverage;
 import :semantic.analysis.validation.context;
-import :semantic.evaluation.operation;
 import :semantic.format;
-import :semantic.semir.constant_access;
 import :semantic.semir.format;
 import :semantic.semir.initialization;
 import :support.utf8;
@@ -538,17 +537,29 @@ auto BodyContractVerifier::verify_expression(
                 }
             },
             [&](const SemMatch& value) noexcept {
+                auto arms = std::vector<PatternCoverageArm>();
+                arms.reserve(value.arms.size());
                 for (const auto& arm : value.arms) {
+                    arms.push_back(
+                        {.alternatives = {arm.pattern}, .guarded = arm.guard.has_value()}
+                    );
+                }
+                const auto coverage = compute_pattern_coverage(
+                    program,
+                    body.pattern_table(),
+                    value.subject->type.resolved(),
+                    arms
+                );
+                if (!coverage) {
+                    invariant_violation(coverage.error());
+                }
+                for (auto index = 0uz; index < value.arms.size(); ++index) {
+                    const auto& arm = value.arms[index];
                     const auto roots = std::array {arm.pattern};
                     verify_pattern_bounds(roots, arm.pattern_bounds);
-                    if (arm.pattern_always_matches
-                        && known_pattern_match(
-                               PublishedConstantValues(program),
-                               body.pattern(arm.pattern),
-                               std::nullopt
-                           ) != true) {
+                    if (!arm.pattern_may_reject && coverage->pattern_rejection[index]) {
                         invariant_violation(
-                            "match selection fact is not established by its pattern"
+                            "match rejection fact is not established by pattern coverage"
                         );
                     }
                     if (body.pattern(arm.pattern).type != value.subject->type.resolved()) {

@@ -325,7 +325,7 @@ auto ContentWriter::constant(ConstantID id) noexcept -> ContentTask {
 }
 
 auto ContentWriter::finish() && noexcept -> std::string {
-    auto root = std::exchange(contents, {});
+    const auto root = std::exchange(contents, {});
     number(definitions.size());
     for (const auto& definition : definitions) {
         token(*definition);

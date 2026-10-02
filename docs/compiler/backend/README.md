@@ -47,6 +47,22 @@ C++ operations.
 materializes directives. Rendering serializes that finished tree. Filesystem
 output and native compilation are separate consumers.
 
+## Realization choices
+
+Carven establishes ownership, evaluation order, and failure domains before C++
+generation. Realization uses these facts to select direct expressions, storage,
+and control flow.
+
+Initialization, snapshots, retained backing, and receiver storage implement source
+evaluation, observation, lifetime, and control-flow obligations. Body preparation
+establishes binding stability; realization owns C++ cleanup scopes and failure
+receivers; semantic analysis publishes residual pattern coverage. Native operations
+retain their delegated C++ access and lifetime contracts.
+
+Structural generation tests check these choices. Behavior and lifetime tests check
+their execution and observations. [Testing](../../development/testing.md) defines
+the evidence and measurement boundaries.
+
 ## Static instances
 
 Each module implementation emits the static instances it calls as `inline`

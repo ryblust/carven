@@ -4,6 +4,7 @@ import :backend.generation.plan;
 import :backend.lowering.constant;
 import :backend.lowering.context;
 import :backend.preparation.body;
+import :backend.realization.decl;
 import :backend.realization.expr;
 import :backend.realization.format;
 import :backend.realization.operation;
@@ -36,12 +37,7 @@ BodyRealizer::ExpressionBuilder::ExpressionBuilder(
     : owner(owner),
       cleanup(owner.preparation.operation(source).lifetime),
       previous_frame(std::exchange(owner.active_frame, this)),
-      independent_scope(has_independent_scope(delivered_region)),
-      operand_storage(
-          independent_scope && !owner.preparation.summary(source).conditional_evaluation
-              ? StorageForm::Automatic
-              : StorageForm::Deferred
-      ) {
+      local_storage(owns_cleanup_scope(delivered_region)) {
     static_cast<void>(owner.metadata.lifetime_regions().region(cleanup));
 }
 
@@ -49,7 +45,7 @@ BodyRealizer::ExpressionBuilder::~ExpressionBuilder() noexcept {
     owner.active_frame = previous_frame;
 }
 
-auto BodyRealizer::ExpressionBuilder::has_independent_scope(
+auto BodyRealizer::ExpressionBuilder::owns_cleanup_scope(
     std::optional<LifetimeRegionID> delivered_region
 ) const noexcept -> bool {
     if (owner.metadata.lifetime_regions().region(cleanup).kind != LifetimeRegionKind::FullExpression
@@ -75,6 +71,7 @@ auto BodyRealizer::ExpressionBuilder::evaluate(
     ResultDemand demand,
     PreparedUse use
 ) noexcept -> ContinuationTask<Lowered<LoweringResult>> {
+    const auto storage_scope = StorageScope(*this);
     auto outer = std::move(statements);
     statements = LoweringStmtBuilder();
     auto result = (co_await finish_expression(source, literal, demand, use, true));
@@ -88,6 +85,7 @@ auto BodyRealizer::ExpressionBuilder::deliver_structured(
     LoweringStmtBuilder& destination,
     bool shared
 ) noexcept -> ContinuationTask<std::monostate> {
+    const auto storage_scope = StorageScope(*this, shared);
     auto outer = std::move(statements);
     statements = LoweringStmtBuilder();
     (co_await owner.structured_expression(source, result, statements));
@@ -109,8 +107,7 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
          .use = final_use,
          .literal = literal,
          .retain_backing = true,
-         .expression_depth = 0uz,
-         .position = shared ? ConstructionPosition::Operand : ConstructionPosition::Final}
+         .expression_depth = 0uz}
     ));
     adopt(fragment);
     if (!statements.continues()) {
@@ -145,8 +142,7 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
          .use = PreparedUse::Consume,
          .literal = ConstantLiteralContext::TargetTyped,
          .retain_backing = false,
-         .expression_depth = 0uz,
-         .position = ConstructionPosition::Final}
+         .expression_depth = 0uz}
     ));
     adopt(fragment);
     if (!statements.continues()) {
@@ -156,7 +152,7 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
     auto value = emit(fragment, PreparedUse::Consume, ConstantLiteralContext::TargetTyped);
     // Only cleanup-bearing temporaries need to end before the next source
     // statement. Final storage stays in the enclosing lexical scope.
-    if (!statements.needs_cleanup() && !declarations.needs_cleanup()) {
+    if (!statements.needs_cleanup() && !reservations.needs_cleanup()) {
         destination.append(take_statements());
         owner.declare_binding(initialization.binding, std::move(value), destination);
         co_return {};
@@ -202,17 +198,13 @@ auto BodyRealizer::ExpressionBuilder::assign(
     const SemAssign& assignment,
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
-    if (owner.preparation.summary(assignment.target).conditional_evaluation) {
-        operand_storage = StorageForm::Deferred;
-    }
     auto target = (co_await build(
         assignment.target,
         {.demand = ResultDemand::Value,
          .use = PreparedUse::WritePlace,
          .literal = ConstantLiteralContext::Exact,
          .retain_backing = true,
-         .expression_depth = 0uz,
-         .position = ConstructionPosition::Operand}
+         .expression_depth = 0uz}
     ));
     adopt(target);
     if (!statements.continues()) {
@@ -250,8 +242,7 @@ auto BodyRealizer::ExpressionBuilder::assign(
                  .use = PreparedUse::ConstPlace,
                  .literal = ConstantLiteralContext::Exact,
                  .retain_backing = true,
-                 .expression_depth = 0uz,
-                 .position = ConstructionPosition::Operand}
+                 .expression_depth = 0uz}
             )
         );
         adopt(*reread);
@@ -292,8 +283,7 @@ auto BodyRealizer::ExpressionBuilder::assign(
          .use = PreparedUse::Consume,
          .literal = ConstantLiteralContext::Exact,
          .retain_backing = true,
-         .expression_depth = 0uz,
-         .position = ConstructionPosition::Final}
+         .expression_depth = 0uz}
     ));
     adopt(right);
     if (statements.continues()) {
@@ -474,7 +464,7 @@ auto BodyRealizer::initialize_binding(
                  || builtin->kind == BuiltinType::Char))
             || std::holds_alternative<CallableViewTypeValue>(type)
             || std::holds_alternative<FunctionTypeValue>(type))) {
-        removable_locals.insert(binding_locals.at(source.binding));
+        unused_initializers.emplace(binding_locals.at(source.binding), UnusedInitializer::Omit);
     }
     const auto escapes = source.initializer.exits_test
         || !context.semantic()

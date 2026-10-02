@@ -20,6 +20,9 @@ struct PatternCoverage final {
     std::vector<std::vector<bool>> alternative_usefulness;
     std::vector<CoverageRedundantAlternative> redundant_alternatives;
     std::vector<bool> exhaustive_after_arm;
+    // Pattern rejection on entry from preceding unguarded arms. The current
+    // guard does not affect whether its pattern accepts that remaining domain.
+    std::vector<bool> pattern_rejection;
     bool exhaustive;
     std::string missing_witness;
 };
@@ -28,6 +31,13 @@ auto compute_pattern_coverage(
     const ProgramDraft& draft,
     const MutableBodyTable<ElaboratedPattern, PatternID>& patterns,
     ConstructionTypeRef subject_type,
+    std::span<const PatternCoverageArm> arms
+) noexcept -> std::expected<PatternCoverage, std::string>;
+
+auto compute_pattern_coverage(
+    const SemIRProgram& semantic,
+    const ImmutableBodyTable<Pattern, PatternID>& patterns,
+    TypeID subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string>;
 

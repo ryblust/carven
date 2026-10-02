@@ -16,8 +16,8 @@ import std;
 
 // A source cleanup frame composes completed child fragments. BuildScope isolates
 // output chains during child construction; source-order adoption determines
-// declaration and execution order. Structured regions sharing a source lifetime
-// retain declarations in the frame and initialize them in the selected branch.
+// declaration and execution order. Storage escaping a nested C++ scope exports
+// reservations to its controlling operation in the source cleanup scope.
 class BodyRealizer::ExpressionBuilder final {
 public:
     ExpressionBuilder(
@@ -55,8 +55,6 @@ public:
 
 private:
     enum class SavedKind { Value, Place, StoredValue, StoredPlace, Success };
-    enum class ConstructionPosition { Operand, Final };
-    enum class StorageForm { Automatic, Deferred };
 
     struct BuildRequest final {
         ResultDemand demand;
@@ -64,7 +62,6 @@ private:
         ConstantLiteralContext literal;
         bool retain_backing;
         std::size_t expression_depth;
-        ConstructionPosition position;
     };
 
     struct Saved final {
@@ -77,9 +74,9 @@ private:
     struct Fragment final {
         PreparedOperation preparation;
         std::variant<LocalBindingID, ConstantID, Saved, TargetExpr, LoweringCompleted> completion;
-        LoweringStmtBuilder declarations;
+        LoweringStmtBuilder reservations;
         LoweringStmtBuilder statements;
-        ConstructionPosition position;
+        bool local_storage;
         bool executes;
         bool observes;
     };
@@ -91,24 +88,32 @@ private:
 
     private:
         ExpressionBuilder& frame;
-        LoweringStmtBuilder declarations;
+        LoweringStmtBuilder reservations;
         LoweringStmtBuilder statements;
+    };
+
+    class StorageScope final {
+    public:
+        explicit StorageScope(ExpressionBuilder& frame, bool nested = true) noexcept;
+        ~StorageScope() noexcept;
+
+    private:
+        ExpressionBuilder& frame;
+        bool local_storage;
     };
 
     BodyRealizer& owner;
     LifetimeRegionID cleanup;
     ExpressionBuilder* previous_frame;
-    bool independent_scope;
-    StorageForm operand_storage;
-    LoweringStmtBuilder declarations;
+    bool local_storage;
+    LoweringStmtBuilder reservations;
     LoweringStmtBuilder statements;
 
     auto finish_fragment(Fragment value) noexcept -> Fragment;
     auto adopt(Fragment& value) noexcept -> void;
     auto take_statements(bool shared = false) noexcept -> LoweringStmtBuilder;
-    auto has_independent_scope(std::optional<LifetimeRegionID> delivered_region) const noexcept
+    auto owns_cleanup_scope(std::optional<LifetimeRegionID> delivered_region) const noexcept
         -> bool;
-    auto storage_form(ConstructionPosition position) const noexcept -> StorageForm;
 
     template<typename T>
     static auto complete(Fragment& value, T result) noexcept -> void {
@@ -149,12 +154,7 @@ private:
         PreparedUse use,
         ConstantLiteralContext literal = ConstantLiteralContext::Exact
     ) noexcept -> TargetExpr;
-    auto anchor(
-        Fragment& value,
-        PreparedUse use,
-        bool force = false,
-        bool direct_scalar = false
-    ) noexcept -> void;
+    auto anchor(Fragment& value, PreparedUse use, bool force = false) noexcept -> void;
     auto complete_call(
         Fragment& value,
         const FallibleCall& transport,

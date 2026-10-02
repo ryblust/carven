@@ -86,7 +86,7 @@ auto ExecutionDisplayText::line(std::size_t depth) noexcept -> void {
 
 template<typename Sink>
 auto report_field(
-    Sink&& write,
+    const Sink& write,
     std::string_view label,
     std::string_view text,
     std::string_view indent = "  "

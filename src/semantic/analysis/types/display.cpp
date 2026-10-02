@@ -55,7 +55,7 @@ auto access_marker(AccessMode access) noexcept -> std::string_view {
 }
 
 template<typename Parameters, typename Name>
-auto callable_name(const Parameters& parameters, std::string result, const Name& name) noexcept
+auto callable_name(const Parameters& parameters, std::string_view result, const Name& name) noexcept
     -> std::string {
     auto text = std::string("fn(");
     for (auto index = 0uz; index < parameters.size(); ++index) {

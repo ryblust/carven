@@ -1,6 +1,7 @@
 module carven:backend.preparation.operands.impl;
 
 import :backend.preparation.body;
+import :backend.preparation.format;
 import :semantic.semir.body;
 import :semantic.semir.children;
 import :semantic.semir.decl;
@@ -28,9 +29,9 @@ auto BodyPreparation::operands(
                 : access == AccessMode::Take ? PreparedUse::NativeTake
                                              : PreparedUse::ConstPlace);
     };
-    // Carven parameters read builtins other than owning strings and entry
-    // arguments as values; C++ calls retain the exact Read borrow.
-    const auto carven = [&](const SemCallArgument& input) noexcept {
+    // Carven parameters and builtin writers read builtins other than owning
+    // strings and entry arguments as values; C++ calls retain the exact Read borrow.
+    const auto value_read = [&](const SemCallArgument& input) noexcept {
         auto prepared = argument(input);
         const auto* builtin = std::get_if<BuiltinTypeValue>(
             &semantic.types().type(input.expression.type.resolved()).value
@@ -107,13 +108,20 @@ auto BodyPreparation::operands(
                 if (value.receiver) {
                     add(**value.receiver, PreparedUse::WritePlace);
                 }
+                const auto* prepared = std::get_if<PreparedFormat>(preparation);
+                const auto writer =
+                    prepared != nullptr && std::holds_alternative<PreparedWriterFormat>(*prepared);
                 for (const auto& input : value.operands) {
-                    result.push_back(argument(input));
+                    if (writer) {
+                        value_read(input);
+                    } else {
+                        result.push_back(argument(input));
+                    }
                 }
             },
             [&](const SemIntrinsic& value) noexcept {
                 for (const auto& input : value.operands) {
-                    carven(input);
+                    value_read(input);
                 }
             },
             [&](const SemRange& value) noexcept {
@@ -206,7 +214,7 @@ auto BodyPreparation::operands(
                     result.back().demand = PreparedDemand::Effects;
                 }
                 for (const auto& input : value.arguments) {
-                    carven(input);
+                    value_read(input);
                 }
             },
             [](const SemShortCircuit&) static noexcept {},

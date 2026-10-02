@@ -42,9 +42,11 @@ auto BodyRealizer::binding_expression(LocalBindingID id) noexcept -> TargetExpr 
 auto BodyRealizer::declare_binding(
     LocalBindingID id,
     TargetExpr initializer,
-    LoweringStmtBuilder& destination
+    LoweringStmtBuilder& destination,
+    bool snapshot
 ) noexcept -> void {
     const auto& binding = metadata.binding(id);
+    const auto cleanup = needs_cleanup(binding.type);
     // A typed aggregate initializer already fixes its exact native value type.
     const auto deduced_native = std::holds_alternative<TargetConstructionExpr>(initializer.value)
         && std::holds_alternative<CppTypeValue>(
@@ -55,13 +57,14 @@ auto BodyRealizer::declare_binding(
         : context.lower_type(binding.type);
     destination.declare(
         TargetVariableStmt {
-            .binding = TargetVariableBinding::ConstValue,
+            .binding = snapshot && cleanup ? TargetVariableBinding::ConstSnapshot
+                                           : TargetVariableBinding::ConstValue,
             .maybe_unused = true,
             .local = binding_locals.at(id),
             .type = type,
             .initializer = std::move(initializer),
         },
-        needs_cleanup(binding.type)
+        cleanup
     );
 }
 

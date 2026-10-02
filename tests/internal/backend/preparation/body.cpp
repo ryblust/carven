@@ -181,6 +181,124 @@ const ct::Suite tests([] static noexcept {
             ct::expect(indirect == 2uz);
         }
     );
+
+    ct::test("Preparation: binding storage stability controls observations", [] static noexcept {
+        struct Case final {
+            std::string_view name;
+            std::string_view source;
+            bool observes;
+        };
+        const auto cases = std::array {
+            Case {
+                .name = "immutable owner",
+                .source = "fn probe(input: i32) { let value = input; let _ = value; }",
+                .observes = false
+            },
+            Case {
+                .name = "unmodified mutable owner",
+                .source = "fn probe(input: i32) { var value = input; let _ = value; }",
+                .observes = false
+            },
+            Case {
+                .name = "unexposed Take parameter",
+                .source = "fn probe(&&value: i32) { let _ = value; }",
+                .observes = false
+            },
+            Case {
+                .name = "Read iteration value snapshot",
+                .source = "fn probe(input: i32) { let values = [input]; "
+                          "for value in values { let _ = value; } }",
+                .observes = false
+            },
+            Case {
+                .name = "Write iteration storage alias",
+                .source = "fn probe(input: i32) { var values = [input]; "
+                          "for &value in values { let _ = value; } }",
+                .observes = true
+            },
+            Case {
+                .name = "Read address",
+                .source = "fn probe(input: i32) { let value = input; "
+                          "let _ = addressof(value); let _ = value; }",
+                .observes = false
+            },
+            Case {
+                .name = "assignment",
+                .source = "fn probe(input: i32) { var value = input; "
+                          "value += 1; let _ = value; }",
+                .observes = true
+            },
+            Case {
+                .name = "Write argument",
+                .source = "fn write(&target: i32) { target = 2; } "
+                          "fn probe(input: i32) { var value = input; "
+                          "write(&value); let _ = value; }",
+                .observes = true
+            },
+            Case {
+                .name = "writable address",
+                .source = "fn probe(input: i32) { var value = input; "
+                          "let _ = addressof(&value); let _ = value; }",
+                .observes = true
+            },
+            Case {
+                .name = "Write capture",
+                .source = "fn probe(input: i32) { var value = input; "
+                          "let callback = [&value]() -> i32 { value = 2; return value; }; "
+                          "let _ = value; let _ = callback(); }",
+                .observes = true
+            },
+            Case {
+                .name = "projected assignment",
+                .source = "struct Record { field: i32 } "
+                          "fn probe(input: i32) { var value = Record { input }; "
+                          "value.field = 2; let _ = value.field; }",
+                .observes = true
+            },
+            Case {
+                .name = "native Take of immutable owner",
+                .source = "fn probe(input: i32) { let value = input; "
+                          "let _ = value + 1; ::native_take(&&value); }",
+                .observes = true
+            },
+            Case {
+                .name = "native Take of Take parameter",
+                .source = "fn probe(&&value: i32) { "
+                          "let _ = value + 1; ::native_take(&&value); }",
+                .observes = true
+            },
+            Case {
+                .name = "native value",
+                .source = "fn probe(input: ::Native) { let value = input; let _ = value; }",
+                .observes = true
+            },
+        };
+        ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+            const auto semantic = analyze_test_program(std::string(input.source));
+            auto reads = 0uz;
+            for (const auto entry : semantic.bodies().entries()) {
+                const auto preparation = BodyPreparation(semantic, entry.id);
+                visit_semantic_nodes(
+                    entry.value.region(),
+                    [&](const SemanticExpression& source) noexcept {
+                        const auto* binding = std::get_if<SemBinding>(&source.value);
+                        if (binding == nullptr) {
+                            return;
+                        }
+                        const auto& local = entry.value.binding(binding->binding);
+                        if (semantic.provenance().spelling(local.name) != "value") {
+                            return;
+                        }
+                        ++reads;
+                        const auto& summary = preparation.summary(source);
+                        ct::expect_equal(summary.reads_storage, input.observes);
+                        ct::expect_equal(summary.requires_execution, false);
+                    }
+                );
+            }
+            ct::expect_greater(reads, 0uz);
+        });
+    });
 });
 
 } // namespace

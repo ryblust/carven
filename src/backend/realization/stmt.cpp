@@ -4,6 +4,7 @@ import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.context;
 import :backend.preparation.body;
+import :backend.realization.decl;
 import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.origin;
@@ -86,6 +87,7 @@ auto BodyRealizer::emit_return(
 
 auto BodyRealizer::emit_failure(
     TargetExpr value,
+    const SemanticExpression& source,
     const std::optional<FailureDestination>& exit,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
@@ -93,20 +95,46 @@ auto BodyRealizer::emit_failure(
         return;
     }
     if (exit) {
-        const auto& failure_destination = *exit;
+        const auto storage = fresh_local(TargetTemporaryNameKind::Try);
+        unused_initializers.emplace(
+            storage,
+            preparation.summary(source).requires_execution ? UnusedInitializer::Evaluate
+                                                           : UnusedInitializer::Omit
+        );
+        register_failure(
+            ValueFailureSource {
+                .storage = storage,
+                .type = preparation.operation(source).type.resolved()
+            },
+            failure_receivers[exit->identity].layout,
+            *exit,
+            destination,
+            std::move(value)
+        );
+        return;
+    }
+    deliver_failure(std::move(value), std::nullopt, destination);
+}
+
+auto BodyRealizer::deliver_failure(
+    TargetExpr value,
+    const std::optional<FailureRelay>& relay,
+    LoweringStmtBuilder& destination
+) noexcept -> void {
+    if (!destination.continues()) {
+        return;
+    }
+    if (relay) {
         destination.emit(statement_expression(call_member(
-            name_expression(failure_destination.slot.storage),
+            name_expression(relay->slot.storage),
             "emplace",
             target_expressions(std::move(value))
         )));
         destination.terminate(
             generated_statement(
-                TargetGotoStmt {
-                    .label = failure_destination.label,
-                    .role = TargetJumpRole::FailureTransfer
-                }
+                TargetGotoStmt {.label = relay->label, .role = TargetJumpRole::FailureTransfer}
             ),
-            failure_destination.target
+            relay->target
         );
         return;
     }
@@ -131,7 +159,7 @@ auto BodyRealizer::emit_failure(
 }
 
 auto BodyRealizer::transfer_failure(
-    FailureSlot slot,
+    const FailureSource& source,
     FailureSetID failures,
     const std::optional<FailureDestination>& exit,
     LoweringStmtBuilder& destination
@@ -139,63 +167,125 @@ auto BodyRealizer::transfer_failure(
     if (!destination.continues()) {
         return;
     }
-    destination.scope(dispatch_failure(slot, failures, exit));
+    if (exit
+        && std::ranges::any_of(
+            context.plan().failure_abi().members(failures),
+            [&](TypeID type) noexcept { return failure_contains(source, type); }
+        )) {
+        register_failure(source, failures, *exit, destination);
+        return;
+    }
+    destination.scope(dispatch_failure(source, failures, std::nullopt));
 }
 
-auto BodyRealizer::failure_projection(FailureSlot slot, TypeID type) noexcept -> TargetExpr {
-    auto payload = address_expression(dereference_expression(name_expression(slot.storage)));
-    if (context.plan().failure_abi().members(slot.layout).size() == 1uz) {
-        return payload;
-    }
-    return template_call_expression(
-        intrinsic_expression(TargetSymbol::StdGetIf),
-        {context.lower_type(type)},
-        target_expressions(std::move(payload))
+auto BodyRealizer::register_failure(
+    FailureSource source,
+    FailureSetID failures,
+    const FailureDestination& receiver,
+    LoweringStmtBuilder& destination,
+    std::optional<TargetExpr> initializer
+) noexcept -> void {
+    const auto label = names.fresh(TargetTemporaryNameKind::Try);
+    failure_receivers[receiver.identity].edges.push_back(
+        {.label = label,
+         .source = source,
+         .failures = failures,
+         .initializer = std::move(initializer)}
+    );
+    // This registered identity is completed before the protected region leaves lowering.
+    destination.terminate(
+        generated_statement(
+            TargetGotoStmt {.label = label, .role = TargetJumpRole::FailureTransfer}
+        ),
+        receiver.target
+    );
+}
+
+auto BodyRealizer::failure_contains(const FailureSource& source, TypeID type) const noexcept
+    -> bool {
+    return source.visit(
+        Overloaded {
+            [&](const ValueFailureSource& value) noexcept { return value.type == type; },
+            [&](const auto& carrier) noexcept {
+                return std::ranges::contains(
+                    context.plan().failure_abi().members(carrier.layout),
+                    type
+                );
+            },
+        }
+    );
+}
+
+auto BodyRealizer::failure_projection(const FailureSource& source, TypeID type) noexcept
+    -> TargetExpr {
+    return source.visit(
+        Overloaded {
+            [&](const OutcomeFailureSource& outcome) noexcept {
+                auto storage = name_expression(outcome.storage);
+                if (outcome.deferred) {
+                    storage = dereference_expression(std::move(storage));
+                }
+                return template_call_expression(
+                    member_expression(
+                        std::move(storage),
+                        TargetIdentifier::from_spelling("failure_if")
+                    ),
+                    {context.lower_type(type)},
+                    {}
+                );
+            },
+            [&](const FailureSlot& slot) noexcept {
+                auto payload =
+                    address_expression(dereference_expression(name_expression(slot.storage)));
+                if (context.plan().failure_abi().members(slot.layout).size() == 1uz) {
+                    return payload;
+                }
+                return template_call_expression(
+                    intrinsic_expression(TargetSymbol::StdGetIf),
+                    {context.lower_type(type)},
+                    target_expressions(std::move(payload))
+                );
+            },
+            [](const ValueFailureSource& value) static noexcept {
+                return address_expression(name_expression(value.storage));
+            },
+        }
     );
 }
 
 auto BodyRealizer::dispatch_failure(
     const FailureSource& source,
     FailureSetID failures,
-    const std::optional<FailureDestination>& exit
+    const std::optional<FailureRelay>& relay
 ) noexcept -> LoweringStmtBuilder {
     auto transfers = LoweringStmtBuilder();
-    const auto candidates = context.plan().failure_abi().members(failures);
+    auto candidates = std::vector<TypeID>();
+    for (const auto type : context.plan().failure_abi().members(failures)) {
+        if (failure_contains(source, type)) {
+            candidates.push_back(type);
+        }
+    }
+    if (!candidates.empty()) {
+        if (const auto* value = std::get_if<ValueFailureSource>(&source)) {
+            mutable_owners.insert(value->storage);
+        }
+    }
     for (const auto type : candidates) {
         const auto projection = fresh_local(TargetTemporaryNameKind::FailureProjection);
-        transfers.emit(generated_statement(
+        transfers.declare(
             TargetVariableStmt {
                 .binding = TargetVariableBinding::ConstValue,
                 .maybe_unused = false,
                 .local = projection,
                 .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto)),
-                .initializer = source.visit(
-                    Overloaded {
-                        [&](const OutcomeFailureSource& outcome) noexcept {
-                            auto storage = name_expression(outcome.storage);
-                            if (outcome.deferred) {
-                                storage = dereference_expression(std::move(storage));
-                            }
-                            return template_call_expression(
-                                member_expression(
-                                    std::move(storage),
-                                    TargetIdentifier::from_spelling("failure_if")
-                                ),
-                                {context.lower_type(type)},
-                                {}
-                            );
-                        },
-                        [&](const FailureSlot& slot) noexcept {
-                            return failure_projection(slot, type);
-                        }
-                    }
-                )
-            }
-        ));
+                .initializer = failure_projection(source, type)
+            },
+            false
+        );
         auto transfer = LoweringStmtBuilder();
-        emit_failure(
+        deliver_failure(
             transfer_expression(dereference_expression(name_expression(projection))),
-            exit,
+            relay,
             transfer
         );
         if (type == candidates.back()) {
@@ -263,7 +353,11 @@ auto BodyRealizer::result_expression(
         if (value) {
             if (!context.plan().failure_abi().members(transport->failures).empty()) {
                 destination.record_exits(
-                    LoweringExitSummary {.targets = {{LoweringExitKind::Failure, 0}}}
+                    LoweringExitSummary {
+                        .entries = {
+                            {.target = {LoweringExitKind::Failure, 0}, .needs_cleanup = false}
+                        }
+                    }
                 );
             }
             destination.terminate(
@@ -368,13 +462,13 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                 co_return {};
             },
             [&](const SemRethrow&) noexcept -> ContinuationTask<std::monostate> {
-                transfer_failure(caught->slot, caught->failures, current_failure, destination);
+                transfer_failure(caught->source, caught->failures, current_failure, destination);
                 co_return {};
             },
             [&](const SemThrow& value) noexcept -> ContinuationTask<std::monostate> {
                 auto failure = read_value((co_await expression(value.value)), destination);
                 if (failure) {
-                    emit_failure(std::move(*failure), current_failure, destination);
+                    emit_failure(std::move(*failure), value.value, current_failure, destination);
                 }
                 co_return {};
             },

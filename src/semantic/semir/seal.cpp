@@ -33,7 +33,7 @@ auto DeclarationStore::publish_bodies(std::span<const std::optional<BodyID>> bod
             }
         });
         const auto body = callable_body_id(declaration);
-        const auto callable = rows.add(std::move(declaration));
+        const auto callable = rows.add(declaration);
         if (body) {
             body_callables.emplace(*body, callable);
         }
@@ -86,7 +86,7 @@ auto SemIRProgram::publish_bodies() noexcept -> void {
         if (test.is_const == test.body.has_value()) {
             invariant_violation("test publication disagrees with its execution stage");
         }
-        tests.add(std::move(test));
+        tests.add(test);
     }
     test_store.rows.storage = std::move(tests).seal().release();
 }

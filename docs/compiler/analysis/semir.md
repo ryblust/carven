@@ -154,13 +154,16 @@ from each operation tree and the solved callable effects. Backend consumers read
 these completed effects.
 
 Match construction checks coverage over the subject type. Redundant patterns
-are unreachable; reachable arms can record that their pattern always matches
-the remaining type domain. Failure inference, test-stop,
-ownership, nullability, and realization consume these facts. Subject evaluation
-and guards retain their execution obligations. Literal, range, enum, and compound
-patterns retain ordinary matching. Publication verifies a recorded match success
-against the pattern and coverage, independently of the subject value. Explicit callable
-failure contracts and source constant-expression admission remain independent.
+are unreachable. Each arm records `pattern_may_reject` for normal pattern
+completion on entry: earlier unguarded patterns exclude their covered values,
+while guarded patterns do not extend definite coverage. The current guard is
+separate from its pattern and may still reject. Failure inference, test-stop,
+ownership, nullability, and realization consume this common rejection fact.
+Publication verifies a no-rejection proof through the same coverage query,
+independently of a known subject value. Subject evaluation, dynamic pattern
+bounds, guards, and alternative binding selection retain their execution
+obligations. Explicit callable failure contracts and source constant-expression
+admission remain independent.
 
 Immutable locals initialized from a known function retain its identity through
 copies and callable adaptation. Calls publish that target alongside the original
@@ -292,9 +295,9 @@ fact belongs to this program and has the expression's exact resolved type.
 
 Constant facts serve folding and generated code. Reachability, failure, ownership,
 nullability, and return analysis never read them: a condition, guard, or match
-subject retains every path whatever its value. A match arm carries
-`pattern_always_matches` only when its pattern accepts every value of the
-subject type.
+subject retains every path whatever its value. A match arm's
+`pattern_may_reject` is instead a structural coverage fact over the subject type
+after preceding unguarded patterns, independent of the subject's constant fact.
 Integer arithmetic wraps in both required and runtime execution.
 
 `SliceIntrinsicOperation.result_extent` records a slice's length on normal completion.

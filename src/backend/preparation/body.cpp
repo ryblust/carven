@@ -1,24 +1,136 @@
 module carven:backend.preparation.body.impl;
 
 import :backend.preparation.body;
-import :semantic.semir.children;
+import :semantic.semir.delegation;
 import :semantic.semir.evaluation;
+import :semantic.semir.ids;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :support.invariant;
+import :support.visit;
 import std;
 
 namespace {
 
-// Non-borrowing Carven Read parameters are immutable value snapshots.
-// Owners and Take parameters can still be exposed as native T&&; captures can
-// change with their enclosing closure.
-auto stable_binding(const SemIRProgram& semantic, const LocalBinding& binding) noexcept -> bool {
-    const auto* parameter = std::get_if<ParameterBindingStorage>(&binding.storage);
-    if (parameter == nullptr || parameter->access != AccessMode::Read) {
+// Only direct object projections identify a binding. Pointer and slice targets
+// have separate storage; exposing their descriptor does not identify that storage.
+auto storage_binding(const SemIRProgram& semantic, const SemanticExpression& source) noexcept
+    -> std::optional<LocalBindingID> {
+    auto* selected = std::addressof(source);
+    while (true) {
+        if (const auto* binding = std::get_if<SemBinding>(&selected->value)) {
+            return binding->binding;
+        }
+        if (const auto* field = std::get_if<SemField>(&selected->value);
+            field != nullptr && !field->consumes_source()) {
+            selected = std::addressof(*field->source);
+        } else if (const auto* index = std::get_if<SemIndex>(&selected->value);
+                   index != nullptr
+                   && std::holds_alternative<ArrayTypeValue>(
+                       semantic.types().type(index->source->type.resolved()).value
+                   )) {
+            selected = std::addressof(*index->source);
+        } else if (const auto* take = std::get_if<SemTake>(&selected->value)) {
+            selected = std::addressof(*take->place);
+        } else {
+            return std::nullopt;
+        }
+    }
+}
+
+auto unstable_bindings(const SemIRProgram& semantic, const SemIRBody& body) noexcept
+    -> std::flat_set<LocalBindingID> {
+    auto result = std::vector<LocalBindingID>();
+    const auto expose = [&](const SemanticExpression& source) noexcept {
+        if (const auto binding = storage_binding(semantic, source)) {
+            result.push_back(*binding);
+        }
+    };
+    const auto access = [&](AccessMode mode, const SemanticExpression& source) noexcept {
+        if (mode != AccessMode::Read) {
+            expose(source);
+        }
+    };
+    visit_semantic_nodes(
+        body.region(),
+        Overloaded {
+            [&](const SemanticExpression& source) noexcept {
+                if (const auto* take = std::get_if<SemTake>(&source.value)) {
+                    expose(*take->place);
+                } else if (const auto* address = std::get_if<SemAddressOf>(&source.value)) {
+                    const auto* pointer = std::get_if<PointerTypeValue>(
+                        &semantic.types().type(source.type.resolved()).value
+                    );
+                    if (pointer == nullptr) {
+                        invariant_violation("address-of result must be a pointer");
+                    }
+                    if (pointer->access == PointerAccess::Write) {
+                        expose(*address->source);
+                    }
+                } else if (const auto* closure = std::get_if<SemClosure>(&source.value)) {
+                    for (const auto& capture : closure->captures) {
+                        if (capture.mode == CaptureMode::Write) {
+                            expose(capture.expression);
+                        }
+                    }
+                } else if (const auto* call = std::get_if<SemCall>(&source.value)) {
+                    for (const auto& argument : call->arguments) {
+                        access(argument.access, argument.expression);
+                    }
+                } else if (const auto* intrinsic = std::get_if<SemIntrinsic>(&source.value)) {
+                    for (const auto& operand : intrinsic->operands) {
+                        access(operand.access, operand.expression);
+                    }
+                } else if (const auto* format = std::get_if<SemFormat>(&source.value)) {
+                    if (format->receiver) {
+                        expose(**format->receiver);
+                    }
+                } else if (const auto* cpp = std::get_if<SemCpp>(&source.value)) {
+                    visit_cpp_operands(*cpp, access);
+                } else if (const auto* cpp_call = std::get_if<SemCppCall>(&source.value)) {
+                    visit_cpp_operands(*cpp_call, access);
+                }
+            },
+            [&](const SemanticStatement& source) noexcept {
+                if (const auto* assignment = std::get_if<SemAssign>(&source.value)) {
+                    expose(assignment->target);
+                } else if (const auto* loop = std::get_if<SemRangeLoop>(&source.value);
+                           loop != nullptr && loop->access == AccessMode::Write) {
+                    expose(loop->source);
+                    if (loop->binding) {
+                        // Write iteration bindings alias mutable element storage,
+                        // including changes through a previously created pointer.
+                        result.push_back(*loop->binding);
+                    }
+                }
+            }
+        }
+    );
+    return std::flat_set<LocalBindingID>(std::move(result));
+}
+
+// Snapshot owners remain constant unless their storage changes, is exposed,
+// or aliases shared mutable storage. A writable address or capture accounts for
+// later indirect calls without solving aliases. Native-containing values and
+// captures retain their opaque observation policy.
+auto stable_binding(
+    const SemIRProgram& semantic,
+    const LocalBinding& binding,
+    bool unstable
+) noexcept -> bool {
+    if (!semantic.type_contents(binding.type).read_is_value_snapshot()) {
         return false;
     }
-    return semantic.type_contents(binding.type).read_is_value_snapshot();
+    return binding.storage.visit(
+        Overloaded {
+            [&](const OwnerBindingStorage&) noexcept { return !unstable; },
+            [&](const ParameterBindingStorage& parameter) noexcept {
+                return parameter.access == AccessMode::Read
+                    || (parameter.access == AccessMode::Take && !unstable);
+            },
+            [](const CaptureBindingStorage&) static noexcept { return false; }
+        }
+    );
 }
 
 template<typename Operation>
@@ -33,6 +145,7 @@ struct PreparationVisitor final {
 BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noexcept
     : semantic(semantic),
       metadata(semantic.bodies().body(body)) {
+    const auto unstable = unstable_bindings(semantic, metadata);
     const auto prepare = [&](const SemanticExpression& source) noexcept {
         if (std::holds_alternative<SemPropagate>(source.value)) {
             return;
@@ -48,7 +161,11 @@ BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noex
         auto reads = execution
             || reads_slice
             || (binding != nullptr
-                && !stable_binding(semantic, metadata.binding(binding->binding)));
+                && !stable_binding(
+                    semantic,
+                    metadata.binding(binding->binding),
+                    unstable.contains(binding->binding)
+                ));
         for (const auto* input : rule.operands) {
             if (input != nullptr) {
                 const auto& child = summary(*input);
@@ -56,36 +173,9 @@ BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noex
                 reads |= child.reads_storage;
             }
         }
-        auto conditional = std::holds_alternative<SemIf>(source.value)
-            || std::holds_alternative<SemMatch>(source.value)
-            || std::holds_alternative<SemTry>(source.value)
-            || rule.action == EvaluationAction::ShortCircuit
-            || std::holds_alternative<SemReport>(source.value);
-        // Required operations may omit executed children from their evaluation
-        // rule. Storage scope includes their nested regions; a short circuit
-        // with a known left value includes only its selected operands.
-        if (std::holds_alternative<SemShortCircuit>(source.value)) {
-            for (const auto* input : rule.operands) {
-                if (input != nullptr) {
-                    conditional |= summary(*input).conditional_evaluation;
-                }
-            }
-        } else {
-            visit_semantic_children(source.value, [&](const auto& child) noexcept {
-                if constexpr (std::same_as<
-                                  std::remove_cvref_t<decltype(child)>,
-                                  SemanticExpression>) {
-                    conditional |= summary(child).conditional_evaluation;
-                }
-            });
-        }
         summaries.emplace(
             std::addressof(source),
-            ExpressionSummary {
-                .requires_execution = execution,
-                .reads_storage = reads,
-                .conditional_evaluation = conditional
-            }
+            ExpressionSummary {.requires_execution = execution, .reads_storage = reads}
         );
     };
 

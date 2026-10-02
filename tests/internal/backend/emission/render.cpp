@@ -288,6 +288,51 @@ const ct::Suite tests([] static noexcept {
         }
     );
 
+    ct::test("Emission: owning snapshots annotate only their binding name", [] static noexcept {
+        struct Scenario final {
+            std::string_view name;
+            TargetVariableBinding binding;
+            std::string_view declaration;
+        };
+        const auto scenarios = std::array {
+            Scenario {
+                .name = "ordinary value",
+                .binding = TargetVariableBinding::ConstValue,
+                .declaration = "const bool value"
+            },
+            Scenario {
+                .name = "owning snapshot",
+                .binding = TargetVariableBinding::ConstSnapshot,
+                .declaration =
+                    "const bool value /* NOLINT(performance-unnecessary-copy-initialization) */"
+            }
+        };
+        ct::each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
+            const auto artifact = emitted_statement([&](TargetUnitBuilder& builder) noexcept {
+                return TargetVariableStmt {
+                    .binding = scenario.binding,
+                    .maybe_unused = false,
+                    .local = builder.add_local(TargetIdentifier::from_spelling("value")),
+                    .type = builder.intern_type(
+                        {.value =
+                             TargetIntrinsicType {
+                                 .symbol = TargetSymbol::Bool,
+                                 .type_argument_ids = {}
+                             },
+                         .const_qualified = false}
+                    ),
+                    .initializer = TargetExpr {.value = TargetLiteralExpr {.value = true}}
+                };
+            });
+            ct::expect(artifact.content.contains(scenario.declaration)).note(artifact.content);
+            ct::expect(artifact.content.contains("= true;"));
+            ct::expect_equal(
+                artifact.content.contains("NOLINT"),
+                scenario.binding == TargetVariableBinding::ConstSnapshot
+            );
+        });
+    });
+
     ct::test(
         "Emission: value regions retain explicit result types and selective unused names",
         [] static noexcept {

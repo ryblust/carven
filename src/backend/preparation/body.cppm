@@ -46,7 +46,6 @@ struct PreparedOperation final {
 struct ExpressionSummary final {
     bool requires_execution;
     bool reads_storage;
-    bool conditional_evaluation;
 };
 
 class BodyPreparation final {

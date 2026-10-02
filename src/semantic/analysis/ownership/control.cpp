@@ -126,7 +126,7 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
             std::move(selected.state)
         ));
         accesses.resize(previous_access);
-        if (arm.pattern_always_matches) {
+        if (!arm.pattern_may_reject) {
             checked.no.reset();
         }
         auto accepted = std::move(checked.yes);

@@ -6,6 +6,7 @@ import :backend.lowering.constant;
 import :backend.lowering.context;
 import :backend.preparation.body;
 import :backend.realization.composition;
+import :backend.realization.decl;
 import :backend.realization.pattern;
 import :backend.target.expr;
 import :backend.target.stmt;
@@ -25,6 +26,7 @@ public:
 
 private:
     class ExpressionBuilder;
+    class FailureSiteQuery;
     static constexpr auto callable_scope = TargetScopeID {.ordinal = 0};
 
     struct FailureSlot final {
@@ -33,6 +35,11 @@ private:
     };
 
     struct FailureDestination final {
+        std::size_t identity;
+        LoweringExitTarget target;
+    };
+
+    struct FailureRelay final {
         FailureSlot slot;
         TargetIdentifier label;
         LoweringExitTarget target;
@@ -151,35 +158,78 @@ private:
     ) noexcept -> void;
     auto emit_failure(
         TargetExpr value,
+        const SemanticExpression& source,
         const std::optional<FailureDestination>& exit,
+        LoweringStmtBuilder& destination
+    ) noexcept -> void;
+    auto deliver_failure(
+        TargetExpr value,
+        const std::optional<FailureRelay>& relay,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
 
     struct OutcomeFailureSource final {
         TargetLocalID storage;
         bool deferred;
+        FailureSetID layout;
     };
 
-    using FailureSource = std::variant<OutcomeFailureSource, FailureSlot>;
-    auto failure_projection(FailureSlot slot, TypeID type) noexcept -> TargetExpr;
+    struct ValueFailureSource final {
+        TargetLocalID storage;
+        TypeID type;
+    };
+
+    using FailureSource = std::variant<OutcomeFailureSource, FailureSlot, ValueFailureSource>;
+
+    struct FailureEdge final {
+        TargetIdentifier label;
+        FailureSource source;
+        FailureSetID failures;
+        // A throw value remains at its evaluation site until receiver layout is known.
+        std::optional<TargetExpr> initializer;
+    };
+
+    struct FailureReceiver final {
+        FailureSetID layout;
+        std::vector<FailureEdge> edges;
+    };
+
+    auto failure_contains(const FailureSource& source, TypeID type) const noexcept -> bool;
+    auto failure_projection(const FailureSource& source, TypeID type) noexcept -> TargetExpr;
+    auto register_failure(
+        FailureSource source,
+        FailureSetID failures,
+        const FailureDestination& receiver,
+        LoweringStmtBuilder& destination,
+        std::optional<TargetExpr> initializer = std::nullopt
+    ) noexcept -> void;
     auto dispatch_failure(
         const FailureSource& source,
         FailureSetID failures,
-        const std::optional<FailureDestination>& exit
+        const std::optional<FailureRelay>& relay
     ) noexcept -> LoweringStmtBuilder;
     auto transfer_failure(
-        FailureSlot slot,
+        const FailureSource& source,
         FailureSetID failures,
         const std::optional<FailureDestination>& exit,
         LoweringStmtBuilder& destination
     ) noexcept -> void;
+    auto failure_handler(
+        const SemTry& value,
+        const FailureSource& source,
+        FailureSetID failures,
+        const LoweringResultDestination& result,
+        RegionExit& done,
+        const std::optional<FailureDestination>& outer
+    ) noexcept -> ContinuationTask<LoweringStmtBuilder>;
     auto fresh_local(TargetTemporaryNameKind kind) noexcept -> TargetLocalID;
     auto binding_expression(LocalBindingID id) noexcept -> TargetExpr;
     auto needs_cleanup(TypeID type) const noexcept -> bool;
     auto declare_binding(
         LocalBindingID id,
         TargetExpr initializer,
-        LoweringStmtBuilder& destination
+        LoweringStmtBuilder& destination,
+        bool snapshot = false
     ) noexcept -> void;
     auto declare_deferred(
         const LoweringDeferredStorage& storage,
@@ -204,12 +254,13 @@ private:
     std::flat_map<LocalBindingID, TargetLocalID> binding_locals;
     std::flat_map<LocalBindingID, TargetIdentifier> capture_names;
     std::flat_set<TargetLocalID> mutable_owners;
-    std::flat_set<TargetLocalID> removable_locals;
+    std::flat_map<TargetLocalID, UnusedInitializer> unused_initializers;
     std::flat_map<LocalBindingID, LoweringDeferredStorage> delayed_bindings;
     std::optional<FailureDestination> current_failure;
+    std::vector<FailureReceiver> failure_receivers;
 
     struct CaughtFailure final {
-        FailureSlot slot;
+        FailureSource source;
         FailureSetID failures;
     };
 

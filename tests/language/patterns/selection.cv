@@ -1,0 +1,108 @@
+private enum Choice {
+    Left(i32),
+    Right(i32),
+}
+
+private enum Pair {
+    Values(bool, bool),
+}
+
+private fn select_pair(value: Pair) -> i32 => match value {
+    .Values(true, _) => 1,
+    .Values(false, true) => 2,
+    .Values(false, false) => 3,
+};
+
+private fn select_source(value: Choice) -> i32 => match value {
+    .Left(selected) | .Right(selected) if selected > 0 => selected,
+    .Left(selected) | .Right(selected) => -selected,
+};
+
+private fn record_guard(&calls: i32, accept: bool) -> bool {
+    calls += 1;
+    return accept;
+}
+
+private fn select_guarded(value: bool, &calls: i32, accept: bool) -> i32 => match value {
+    true => 1,
+    false if record_guard(&calls, accept) => 2,
+    false => 3,
+};
+
+private fn reject_guarded(value: bool, &calls: i32, accept: bool) -> i32 => match value {
+    true if record_guard(&calls, accept) => 1,
+    false => 2,
+    true => 3,
+};
+
+private fn select_interval(value: i32) -> i32 => match value {
+    ..0 => -1,
+    0.. => 1,
+};
+
+private struct BoundFailure {}
+
+private fn bound(&trace: i32, digit: i32, value: i32, reject: bool) -> i32 throw BoundFailure {
+    trace = trace * 10 + digit;
+    if reject { throw BoundFailure {}; }
+    return value;
+}
+
+private fn select_bound(
+    value: i32,
+    &trace: i32,
+    reject: bool
+) -> i32 throw BoundFailure => match value {
+    (bound(&trace, 1, 0, reject)?)..=(bound(&trace, 2, 10, false)?) => 1,
+    _ => 2,
+};
+
+test "Pattern selection: residual products preserve source and guard selection" {
+    check(select_pair(Pair::Values(true, true)) == 1);
+    check(select_pair(Pair::Values(true, false)) == 1);
+    check(select_pair(Pair::Values(false, true)) == 2);
+    check(select_pair(Pair::Values(false, false)) == 3);
+    check(select_source(Choice::Left(7)) == 7);
+    check(select_source(Choice::Right(7)) == 7);
+    check(select_source(Choice::Left(-3)) == 3);
+    check(select_source(Choice::Right(-3)) == 3);
+
+    var calls = 0;
+    check(select_guarded(true, &calls, false) == 1);
+    check(calls == 0);
+    check(select_guarded(false, &calls, true) == 2);
+    check(calls == 1);
+    check(select_guarded(false, &calls, false) == 3);
+    check(calls == 2);
+
+    calls = 0;
+    check(reject_guarded(false, &calls, false) == 2);
+    check(calls == 0);
+    check(reject_guarded(true, &calls, true) == 1);
+    check(calls == 1);
+    check(reject_guarded(true, &calls, false) == 3);
+    check(calls == 2);
+    check(select_interval(-2147483648) == -1);
+    check(select_interval(-1) == -1);
+    check(select_interval(0) == 1);
+    check(select_interval(2147483647) == 1);
+}
+
+test "Pattern selection: dynamic bounds retain ordered effects and outward failures" {
+    var trace = 0;
+    try {
+        check(select_bound(5, &trace, false)? == 1);
+    } catch {
+        BoundFailure(_) => fail("unexpected bound failure"),
+    }
+    check(trace == 12);
+
+    trace = 0;
+    let rejected = try {
+        select_bound(5, &trace, true)?
+    } catch {
+        BoundFailure(_) => 3,
+    };
+    check(rejected == 3);
+    check(trace == 1);
+}

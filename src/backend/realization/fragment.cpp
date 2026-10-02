@@ -62,27 +62,46 @@ auto BodyRealizer::ExpressionBuilder::pending(const Fragment& fragment) const no
 
 BodyRealizer::ExpressionBuilder::BuildScope::BuildScope(ExpressionBuilder& source) noexcept
     : frame(source),
-      declarations(std::move(source.declarations)),
+      reservations(std::move(source.reservations)),
       statements(std::move(source.statements)) {
-    frame.declarations = LoweringStmtBuilder();
+    frame.reservations = LoweringStmtBuilder();
     frame.statements = LoweringStmtBuilder();
 }
 
 BodyRealizer::ExpressionBuilder::BuildScope::~BuildScope() noexcept {
-    frame.declarations = std::move(declarations);
+    frame.reservations = std::move(reservations);
     frame.statements = std::move(statements);
 }
 
+BodyRealizer::ExpressionBuilder::StorageScope::StorageScope(
+    ExpressionBuilder& source,
+    bool nested
+) noexcept
+    : frame(source),
+      local_storage(source.local_storage) {
+    if (nested) {
+        frame.local_storage = false;
+    }
+}
+
+BodyRealizer::ExpressionBuilder::StorageScope::~StorageScope() noexcept {
+    frame.local_storage = local_storage;
+}
+
 auto BodyRealizer::ExpressionBuilder::finish_fragment(Fragment value) noexcept -> Fragment {
-    value.declarations.append(std::move(declarations));
+    value.reservations.append(std::move(reservations));
     value.statements.append(std::move(statements));
     return value;
 }
 
 auto BodyRealizer::ExpressionBuilder::adopt(Fragment& value) noexcept -> void {
-    declarations.append(std::move(value.declarations));
+    if (local_storage) {
+        statements.append(std::move(value.reservations));
+    } else {
+        reservations.append(std::move(value.reservations));
+    }
     statements.append(std::move(value.statements));
-    value.declarations = LoweringStmtBuilder();
+    value.reservations = LoweringStmtBuilder();
     value.statements = LoweringStmtBuilder();
 }
 
@@ -121,9 +140,9 @@ auto BodyRealizer::ExpressionBuilder::build(
     auto fragment = Fragment {
         .preparation = std::move(prepared_source),
         .completion = LoweringCompleted {},
-        .declarations = {},
+        .reservations = {},
         .statements = {},
-        .position = request.position,
+        .local_storage = local_storage,
         .executes = false,
         .observes = false
     };
@@ -171,8 +190,7 @@ auto BodyRealizer::ExpressionBuilder::build(
              .use = PreparedUse::OperandValue,
              .literal = ConstantLiteralContext::Exact,
              .retain_backing = true,
-             .expression_depth = 0uz,
-             .position = ConstructionPosition::Operand}
+             .expression_depth = 0uz}
         );
         discard_pending(effects);
         adopt(effects);
@@ -200,6 +218,7 @@ auto BodyRealizer::ExpressionBuilder::build(
     if (std::holds_alternative<SemIf>(value.operation.value)
         || std::holds_alternative<SemMatch>(value.operation.value)
         || std::holds_alternative<SemTry>(value.operation.value)) {
+        const auto storage_scope = StorageScope(*this);
         if (!result_needed) {
             (co_await owner
                  .structured_expression(expression, LoweringDiscardResult {}, statements));
@@ -231,13 +250,14 @@ auto BodyRealizer::ExpressionBuilder::build(
                 .local = owner.fresh_local(TargetTemporaryNameKind::Owner),
                 .value_type = owner.context.lower_type(value.operation.type.resolved())
             };
-            auto outer = std::move(declarations);
-            declarations = LoweringStmtBuilder();
+            auto outer = std::move(reservations);
+            reservations = LoweringStmtBuilder();
             (co_await owner.structured_expression(
                 expression,
                 LoweringInitializeResult {.storage = storage},
                 statements
             ));
+            outer.append(std::move(reservations));
             if (statements.continues()) {
                 owner.declare_deferred(
                     storage,
@@ -247,8 +267,7 @@ auto BodyRealizer::ExpressionBuilder::build(
                 );
                 complete(fragment, Saved {.local = storage.local, .kind = SavedKind::StoredValue});
             }
-            outer.append(std::move(declarations));
-            declarations = std::move(outer);
+            reservations = std::move(outer);
         }
         co_return finish_fragment(std::move(fragment));
     }
@@ -260,8 +279,7 @@ auto BodyRealizer::ExpressionBuilder::build(
                  .use = PreparedUse::OperandValue,
                  .literal = ConstantLiteralContext::Exact,
                  .retain_backing = true,
-                 .expression_depth = 0uz,
-                 .position = ConstructionPosition::Operand}
+                 .expression_depth = 0uz}
             );
             adopt(child);
             fragment.executes = has_effect(child);
@@ -290,8 +308,7 @@ auto BodyRealizer::ExpressionBuilder::build(
              .use = PreparedUse::OperandValue,
              .literal = ConstantLiteralContext::Exact,
              .retain_backing = true,
-             .expression_depth = 0uz,
-             .position = ConstructionPosition::Operand}
+             .expression_depth = 0uz}
         );
         if (known) {
             discard_pending(condition);
@@ -308,8 +325,7 @@ auto BodyRealizer::ExpressionBuilder::build(
                      .use = PreparedUse::OperandValue,
                      .literal = ConstantLiteralContext::Exact,
                      .retain_backing = true,
-                     .expression_depth = 0uz,
-                     .position = ConstructionPosition::Operand}
+                     .expression_depth = 0uz}
                 );
                 adopt(selected);
                 if (observed && statements.continues()) {
@@ -334,18 +350,28 @@ auto BodyRealizer::ExpressionBuilder::build(
         fragment.executes = has_effect(condition);
         fragment.observes = has_storage_read(condition);
         auto test = emit(condition, PreparedUse::OperandValue);
-        auto selected = co_await build(
-            *logic->right,
-            {.demand = result_needed ? ResultDemand::Value : ResultDemand::Discard,
-             .use = PreparedUse::OperandValue,
-             .literal = ConstantLiteralContext::Exact,
-             .retain_backing = true,
-             .expression_depth = 0uz,
-             .position = ConstructionPosition::Operand}
-        );
+        auto selected_result = std::optional<Fragment>();
+        {
+            const auto storage_scope = StorageScope(*this);
+            selected_result.emplace(
+                co_await build(
+                    *logic->right,
+                    {.demand = result_needed ? ResultDemand::Value : ResultDemand::Discard,
+                     .use = PreparedUse::OperandValue,
+                     .literal = ConstantLiteralContext::Exact,
+                     .retain_backing = true,
+                     .expression_depth = 0uz}
+                )
+            );
+        }
+        auto selected = std::move(*selected_result);
         fragment.executes |= has_effect(selected);
         fragment.observes |= has_storage_read(selected);
-        declarations.append(std::move(selected.declarations));
+        if (local_storage) {
+            statements.append(std::move(selected.reservations));
+        } else {
+            reservations.append(std::move(selected.reservations));
+        }
         auto selected_value = std::optional<TargetExpr>();
         if (selected.statements.continues()) {
             if (result_needed) {
@@ -377,7 +403,7 @@ auto BodyRealizer::ExpressionBuilder::build(
         auto name = std::optional<TargetLocalID>();
         if (result_needed) {
             name = owner.fresh_local(TargetTemporaryNameKind::Operand);
-            declarations.declare(
+            statements.declare(
                 TargetVariableStmt {
                     .binding = TargetVariableBinding::MutableValue,
                     .maybe_unused = false,
@@ -431,14 +457,13 @@ auto BodyRealizer::ExpressionBuilder::build(
     children.reserve(inputs.size());
     const auto suffix_begin = sequenced_suffix_begin(value);
     const auto postfix_end = first_unsequenced(value);
-    const auto direct_scalars = independent_scope;
     auto effects = std::vector<std::size_t>();
     auto reads = std::vector<std::size_t>();
     auto effect_cursor = 0uz;
     auto read_cursor = 0uz;
     auto postfix_cursor = 0uz;
     const auto commit = [&](std::size_t index) noexcept -> void {
-        anchor(children[index], inputs[index].use, false, direct_scalars);
+        anchor(children[index], inputs[index].use);
         adopt(children[index]);
     };
     const auto commit_postfix = [&]() noexcept -> void {
@@ -479,7 +504,7 @@ auto BodyRealizer::ExpressionBuilder::build(
     const auto typed_arithmetic = arithmetic != nullptr && arithmetic->target_typed_operands;
     // Construct later fragments first so the storage demand of an earlier
     // source occurrence is known before its residual tree is constructed.
-    // Only the following forward pass adopts statements and declarations.
+    // Only the following forward pass adopts statements and reservations.
     auto constructed = std::vector<std::optional<Fragment>>(inputs.size());
     auto later_prefix = false;
     auto later_effect = false;
@@ -510,8 +535,7 @@ auto BodyRealizer::ExpressionBuilder::build(
              .use = input.use,
              .literal = child_literal,
              .retain_backing = retain_backing || crosses || multiple_uses,
-             .expression_depth = depth_boundary ? 0uz : expression_depth + 1uz,
-             .position = ConstructionPosition::Operand}
+             .expression_depth = depth_boundary ? 0uz : expression_depth + 1uz}
         );
         if (retain_backing || crosses || multiple_uses) {
             retain_input(child, input.use);
@@ -671,7 +695,7 @@ auto BodyRealizer::ExpressionBuilder::build(
         );
     }
     if (depth_boundary) {
-        anchor(fragment, result_use, true, true);
+        anchor(fragment, result_use, true);
         adopt(fragment);
     }
     if (const auto transport = owner.fallible(value.operation)) {

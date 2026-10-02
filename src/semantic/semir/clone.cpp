@@ -30,7 +30,7 @@ private:
 
     template<typename T>
     auto take(std::map<const T*, T>& nodes, const T& source) noexcept -> T {
-        auto node = nodes.extract(&source);
+        const auto node = nodes.extract(&source);
         return std::move(node.mapped());
     }
 
@@ -320,7 +320,7 @@ auto SemanticClone::copy(const SemMatchArm& value) noexcept -> SemMatchArm {
         .guard = copy(value.guard),
         .body = copy(value.body),
         .reachable = value.reachable,
-        .pattern_always_matches = value.pattern_always_matches,
+        .pattern_may_reject = value.pattern_may_reject,
         .pattern_bounds = copy(value.pattern_bounds)
     };
 }

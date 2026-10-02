@@ -70,7 +70,7 @@ auto IterationBindings::lifetime(LifetimeRegionID id) noexcept -> LifetimeRegion
     if (row.parent) {
         row.parent = lifetime(*row.parent);
     }
-    const auto result = lifetimes.add(std::move(row));
+    const auto result = lifetimes.add(row);
     lifetime_ids.emplace(id, result);
     return result;
 }
@@ -84,7 +84,7 @@ auto IterationBindings::binding(LocalBindingID id) noexcept -> LocalBindingID {
         return id;
     }
     row.lifetime = lifetime(row.lifetime);
-    const auto result = bindings.add(std::move(row));
+    const auto result = bindings.add(row);
     binding_ids.emplace(id, result);
     return result;
 }

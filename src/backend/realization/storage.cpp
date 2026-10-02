@@ -25,21 +25,12 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-auto BodyRealizer::ExpressionBuilder::storage_form(ConstructionPosition position) const noexcept
-    -> StorageForm {
-    // The final owner is constructed after every retained operand. Its ordinary
-    // declaration therefore destroys it before all hoisted operand storage.
-    // Earlier ordinary owners could instead outlive a later hoisted owner.
-    return independent_scope && position == ConstructionPosition::Final ? StorageForm::Automatic
-                                                                        : operand_storage;
-}
-
 auto BodyRealizer::ExpressionBuilder::take_statements(bool shared) noexcept -> LoweringStmtBuilder {
     if (shared) {
         return std::move(statements);
     }
-    declarations.append(std::move(statements));
-    return std::move(declarations);
+    reservations.append(std::move(statements));
+    return std::move(reservations);
 }
 
 auto BodyRealizer::ExpressionBuilder::borrowed_owner(
@@ -219,8 +210,7 @@ auto BodyRealizer::ExpressionBuilder::value_binding(PreparedUse use) noexcept
 auto BodyRealizer::ExpressionBuilder::anchor(
     Fragment& fragment,
     PreparedUse use,
-    bool force,
-    bool direct_scalar
+    bool force
 ) noexcept -> void {
     if (!pending(fragment)) {
         return;
@@ -241,7 +231,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         return;
     }
     const auto name = owner.fresh_local(TargetTemporaryNameKind::Owner);
-    if ((direct_scalar || use == PreparedUse::OperandValue || use == PreparedUse::Consume)
+    if ((fragment.local_storage || use == PreparedUse::OperandValue || use == PreparedUse::Consume)
         && scalar(value.operation.type.resolved())
         && use != PreparedUse::WritePlace
         && use != PreparedUse::ConstPlace
@@ -313,10 +303,21 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                 || use == PreparedUse::NativeTake)
         ? emit(fragment, use)
         : raw(fragment);
-    if (storage_form(fragment.position) == StorageForm::Automatic) {
-        // References and ReadArg already carry access in their type. Owned
-        // snapshots instead derive their qualification from the consumer.
-        const auto access_in_type = place || (read && !read_value);
+    if (fragment.local_storage) {
+        if (exact_call && value_binding(use) == TargetVariableBinding::ConstValue) {
+            // C++ adds const to values and leaves reference query results intact.
+            storage_type = owner.context.target().intern_type(
+                {.value =
+                     TargetIntrinsicType {
+                         .symbol = TargetSymbol::StdAddConst,
+                         .type_argument_ids = {storage_type}
+                     },
+                 .const_qualified = false}
+            );
+        }
+        // Exact queries, references and ReadArg carry qualification in their
+        // type. Keyword const cannot qualify an opaque reference alias.
+        const auto access_in_type = exact_call || place || (read && !read_value);
         fragment.statements.declare(
             TargetVariableStmt {
                 .binding =
@@ -335,7 +336,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         return;
     }
     const auto storage = LoweringDeferredStorage {.local = name, .value_type = storage_type};
-    owner.declare_deferred(storage, false, fragment.declarations, needs_cleanup);
+    owner.declare_deferred(storage, false, fragment.reservations, needs_cleanup);
     owner.initialize_deferred(
         storage,
         std::move(initializer),

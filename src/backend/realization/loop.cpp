@@ -20,7 +20,7 @@ namespace {
 
 auto take_for_step(ModuleLowering& context, LoweringStmtBuilder& steps) noexcept
     -> std::optional<TargetForStep> {
-    if (steps.empty() || !steps.continues() || !steps.exits().targets.empty()) {
+    if (steps.empty() || !steps.continues() || !steps.exits().entries.empty()) {
         return std::nullopt;
     }
     auto statements = std::move(steps).finish();

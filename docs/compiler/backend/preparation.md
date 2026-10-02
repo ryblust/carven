@@ -10,19 +10,26 @@ changing the published evaluation and lifetime contracts.
 and storage-observation summaries, and prepares operand demands and operation plans
 on request. Each fragment owns its operation preparation. SemIR owns types,
 lifetimes, origins, constants, effects, patterns, and structured control flow.
-Conditional-evaluation summaries constrain intermediate storage that may cross
-branches. Realization also accounts for a result's final construction position
-within its cleanup frame when choosing ordinary or deferred storage.
+Realization chooses ordinary or deferred storage from the C++ scope that owns
+the source cleanup.
 Propagation markers select their operand operation. Summary queries require an
 occurrence from the prepared body. The published program outlives realization.
 
-Read parameters whose types neither borrow storage nor contain native values
-own immutable copies, so later operand execution needs no snapshot of them.
-A stable slice descriptor does not make its elements stable; indexing still
-observes backing storage. Owners and Take parameters can expose native `T&&`;
-captures can change when a callback replaces the enclosing closure. These bindings,
-Write parameters, borrowed aggregates, and native values retain storage-observation
-obligations across later execution.
+Preparation proves stability for bindings whose type has Read value-snapshot
+semantics. Read parameters own immutable copies. Owners and Take parameters are
+also stable when the body neither changes nor exposes their storage. Assignment,
+Write or Take operands, writable addresses, and Write captures expose a binding.
+Exposure through direct fields and fixed-array projections is attributed to the
+containing binding. The proof is body-wide: exposure excludes an owner or Take
+binding throughout the body. Write iteration bindings alias mutable elements and
+retain storage observations; Read iteration uses the resolved-type snapshot policy.
+
+Captures can change when a callback replaces the enclosing closure. They, Write
+parameters, native values, and types with borrowed or owned backing retain their
+storage-observation obligations. A stable slice descriptor does not make its
+elements stable; indexing still observes backing storage. Stable reads need no
+operand snapshot. Calls and checked operations retain their execution requirements;
+source constant admission remains separate.
 
 ## Operation preparation
 
@@ -91,6 +98,12 @@ execution effects. Every original operand remains in source order. Realization
 uses these demands to preserve effects, failures, scalar snapshots, storage reads,
 and temporary backing, while passing only demanded values to the native operation.
 The sequencing and storage machinery does not classify format plans.
+
+Builtin writer inputs use the same value-read demand as Carven parameters:
+scalars and text descriptors are copied values; owning strings retain Read
+borrowing until their bytes are written. Delegated formatters retain their
+native operand access. Repeated writer use therefore needs no scalar backing
+beyond its evaluation scope, while actual native references retain theirs.
 
 C++ checks native format specifications and formatter availability, performs object
 layout and ordinary optimization, and owns instruction selection. Carven selects

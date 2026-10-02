@@ -223,16 +223,18 @@ public:
         );
     }
 
-    auto external_unary(UnaryOperator, Value, Span) const noexcept -> ExpressionResult<Value> {
-        return std::unexpected(ExpressionNotAdmitted {});
-    }
-
-    auto external_binary(BinaryOperator, Value, Value, Span) const noexcept
+    auto external_unary(UnaryOperator, const Value&, Span) const noexcept
         -> ExpressionResult<Value> {
         return std::unexpected(ExpressionNotAdmitted {});
     }
 
-    auto external_cast(ConstructionTypeRef, Value, Span) const noexcept -> ExpressionResult<Value> {
+    auto external_binary(BinaryOperator, const Value&, const Value&, Span) const noexcept
+        -> ExpressionResult<Value> {
+        return std::unexpected(ExpressionNotAdmitted {});
+    }
+
+    auto external_cast(ConstructionTypeRef, const Value&, Span) const noexcept
+        -> ExpressionResult<Value> {
         return std::unexpected(ExpressionNotAdmitted {});
     }
 
@@ -409,11 +411,12 @@ public:
         co_return std::unexpected(ExpressionNotAdmitted {});
     }
 
-    auto external_index(Value, Value, Span) const noexcept -> ExpressionResult<Value> {
+    auto external_index(const Value&, const Value&, Span) const noexcept
+        -> ExpressionResult<Value> {
         return std::unexpected(ExpressionNotAdmitted {});
     }
 
-    auto external_member(const ASTMemberExpr&, Value, Span) const noexcept
+    auto external_member(const ASTMemberExpr&, const Value&, Span) const noexcept
         -> ExpressionResult<Selection> {
         return std::unexpected(ExpressionNotAdmitted {});
     }

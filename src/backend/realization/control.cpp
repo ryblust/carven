@@ -3,12 +3,16 @@ module carven:backend.realization.control.impl;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.context;
+import :backend.realization.decl;
 import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.symbol;
+import :backend.target.traversal;
 import :semantic.semir.body;
+import :semantic.semir.contents;
 import :semantic.semir.ids;
+import :semantic.semir.program;
 import :semantic.semir.structured;
 import :support.invariant;
 import :support.task;
@@ -32,6 +36,74 @@ auto conditional(TargetIfBranch branch, std::vector<TargetStmt> alternative) noe
 }
 
 } // namespace
+
+class BodyRealizer::FailureSiteQuery final {
+public:
+    struct Site final {
+        TargetStmt* statement;
+        FailureEdge* edge;
+        bool nested_loop;
+    };
+
+    // Edge records and their label storage stay stable through site replacement.
+    explicit FailureSiteQuery(std::span<FailureEdge> edges) noexcept;
+    auto enter_scope(TargetTraversalScope scope) noexcept -> bool;
+    auto leave_scope(TargetTraversalScope scope) noexcept -> bool;
+    auto enter_statement(TargetStmt& statement) noexcept -> bool;
+    auto finish() && noexcept -> std::vector<Site>;
+
+private:
+    std::map<std::string_view, FailureEdge*> index;
+    std::vector<Site> sites;
+    std::size_t loop_depth = 0uz;
+    std::size_t callable_depth = 0uz;
+};
+
+BodyRealizer::FailureSiteQuery::FailureSiteQuery(std::span<FailureEdge> edges) noexcept {
+    for (auto& edge : edges) {
+        index.emplace(edge.label.spelling(), &edge);
+    }
+}
+
+auto BodyRealizer::FailureSiteQuery::enter_scope(TargetTraversalScope scope) noexcept -> bool {
+    if (scope.kind == TargetTraversalScopeKind::Loop) {
+        ++loop_depth;
+    } else if (scope.kind == TargetTraversalScopeKind::Callable) {
+        ++callable_depth;
+    }
+    return true;
+}
+
+auto BodyRealizer::FailureSiteQuery::leave_scope(TargetTraversalScope scope) noexcept -> bool {
+    if (scope.kind == TargetTraversalScopeKind::Loop) {
+        --loop_depth;
+    } else if (scope.kind == TargetTraversalScopeKind::Callable) {
+        --callable_depth;
+    }
+    return true;
+}
+
+auto BodyRealizer::FailureSiteQuery::enter_statement(TargetStmt& statement) noexcept -> bool {
+    const auto* jump = std::get_if<TargetGotoStmt>(&statement.value);
+    if (jump == nullptr || jump->role != TargetJumpRole::FailureTransfer) {
+        return true;
+    }
+    const auto edge = index.find(jump->label.spelling());
+    if (edge == index.end()) {
+        return true;
+    }
+    if (callable_depth != 0uz) {
+        invariant_violation("failure receiver crosses a target callable boundary");
+    }
+    sites.push_back(
+        {.statement = &statement, .edge = edge->second, .nested_loop = loop_depth != 0uz}
+    );
+    return true;
+}
+
+auto BodyRealizer::FailureSiteQuery::finish() && noexcept -> std::vector<Site> {
+    return std::move(sites);
+}
 
 auto BodyRealizer::structured_expression(
     const SemanticExpression& source,
@@ -166,7 +238,8 @@ auto BodyRealizer::lower_arm(
         declare_binding(
             binding,
             PatternRealizer::subject_expression(pattern.bindings.at(binding)),
-            chosen
+            chosen,
+            true
         );
     }
     if (done != nullptr) {
@@ -243,9 +316,12 @@ auto BodyRealizer::lower_match(
             );
             auto pattern = co_await matcher.match(
                 arm.pattern,
-                {.root = subject, .dereference_root = false, .payload_index = std::nullopt}
+                {.root = subject, .dereference_root = false, .payload_index = std::nullopt},
+                !arm.pattern_may_reject
             );
-            removable_locals.insert_range(matcher.projection_locals());
+            for (const auto local : matcher.projection_locals()) {
+                unused_initializers.emplace(local, UnusedInitializer::Omit);
+            }
             if (!arm.guard
                 && pattern.tests.size() == 1uz
                 && pattern.tests.front().statements.empty()
@@ -308,36 +384,20 @@ auto BodyRealizer::lower_try(
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
-    if (context.plan().failure_abi().members(value.protected_failures.resolved()).empty()) {
+    const auto failures = context.plan().failure_abi().members(value.protected_failures.resolved());
+    if (failures.empty()) {
         destination.append((co_await region(*value.body, result)));
         co_return {};
     }
-    const auto storage = fresh_local(TargetTemporaryNameKind::Try);
-    const auto handler = names.fresh(TargetTemporaryNameKind::Try);
     auto done = RegionExit {
         .label = names.fresh(TargetTemporaryNameKind::CatchDone),
         .target = exit_target(LoweringExitKind::Value)
     };
-    const auto failures = context.plan().failure_abi().members(value.protected_failures.resolved());
-    const auto slot =
-        FailureSlot {.storage = storage, .layout = value.protected_failures.resolved()};
-    destination.emit(generated_statement(
-        TargetVariableStmt {
-            .binding = TargetVariableBinding::MutableValue,
-            .maybe_unused = false,
-            .local = storage,
-            .type = context.optional_type(
-                failures.size() == 1uz ? context.lower_type(failures.front())
-                                       : context.variant_type(failures)
-            ),
-            .initializer = intrinsic_expression(TargetSymbol::StdNullopt)
-        }
-    ));
     const auto receiver = FailureDestination {
-        .slot = slot,
-        .label = handler,
+        .identity = failure_receivers.size(),
         .target = exit_target(LoweringExitKind::Failure)
     };
+    failure_receivers.push_back({.layout = value.protected_failures.resolved(), .edges = {}});
     const auto outer = std::exchange(current_failure, receiver);
     auto protected_body = (co_await region(*value.body, result));
     current_failure = outer;
@@ -349,26 +409,144 @@ auto BodyRealizer::lower_try(
             done.target
         );
     }
-    destination.scope(std::move(protected_body));
-    const auto handler_target = receiver.target;
-    const auto handler_used = destination.exits().contains(handler_target);
-    if (!handler_used) {
-        if (destination.exits().contains(done.target)) {
-            destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
+    // Own the records before lowering handlers: nested receivers can grow the registry.
+    auto edges = std::move(failure_receivers[receiver.identity].edges);
+
+    auto query = FailureSiteQuery(edges);
+    protected_body.visit_statements([&](TargetStmt& statement) noexcept {
+        if (!traverse_target_statement(statement, query)) {
+            invariant_violation("failure site traversal did not complete");
         }
-        co_return {};
+    });
+    auto sites = std::move(query).finish();
+    if (sites.empty()) {
+        if (protected_body.exits().contains(receiver.target)) {
+            invariant_violation("failure receiver has an exit without a registered edge");
+        }
+        destination.scope(std::move(protected_body));
+    } else {
+        const auto direct =
+            sites.size() == 1uz
+            && !sites.front().nested_loop
+            && !protected_body.exits().crosses_cleanup(receiver.target)
+            && std::ranges::all_of(
+                context.plan().failure_abi().members(sites.front().edge->failures),
+                [&](TypeID type) noexcept {
+                    return !failure_contains(sites.front().edge->source, type)
+                        || context.semantic().type_contents(type).read_is_value_snapshot();
+                }
+            );
+        if (direct) {
+            const auto& site = sites.front();
+            auto handler = LoweringStmtBuilder();
+            if (site.edge->initializer) {
+                const auto& payload = std::get<ValueFailureSource>(site.edge->source);
+                handler.declare(
+                    TargetVariableStmt {
+                        .binding = TargetVariableBinding::ConstValue,
+                        .maybe_unused = false,
+                        .local = payload.storage,
+                        .type = context.lower_type(payload.type),
+                        .initializer = std::move(*site.edge->initializer)
+                    },
+                    false
+                );
+            }
+            handler.append((co_await failure_handler(
+                value,
+                site.edge->source,
+                site.edge->failures,
+                result,
+                done,
+                outer
+            )));
+            protected_body.replace_exit(receiver.target, handler.exits());
+            site.statement->value = TargetBlockStmt {.statements = std::move(handler).finish()};
+            destination.scope(std::move(protected_body));
+        } else {
+            const auto slot = FailureSlot {
+                .storage = fresh_local(TargetTemporaryNameKind::Try),
+                .layout = value.protected_failures.resolved()
+            };
+            const auto relay = FailureRelay {
+                .slot = slot,
+                .label = names.fresh(TargetTemporaryNameKind::Try),
+                .target = receiver.target
+            };
+            destination.declare(
+                TargetVariableStmt {
+                    .binding = TargetVariableBinding::MutableValue,
+                    .maybe_unused = false,
+                    .local = slot.storage,
+                    .type = context.optional_type(
+                        failures.size() == 1uz ? context.lower_type(failures.front())
+                                               : context.variant_type(failures)
+                    ),
+                    .initializer = intrinsic_expression(TargetSymbol::StdNullopt)
+                },
+                std::ranges::any_of(failures, [&](TypeID type) noexcept {
+                    return needs_cleanup(type);
+                })
+            );
+            for (const auto& site : sites) {
+                auto transfer = LoweringStmtBuilder();
+                if (site.edge->initializer) {
+                    deliver_failure(std::move(*site.edge->initializer), relay, transfer);
+                } else {
+                    transfer = dispatch_failure(site.edge->source, site.edge->failures, relay);
+                }
+                site.statement->value =
+                    TargetBlockStmt {.statements = std::move(transfer).finish()};
+            }
+            destination.scope(std::move(protected_body));
+            destination.resume(relay.label, TargetJumpRole::FailureTransfer, receiver.target);
+            destination.append((co_await failure_handler(
+                value,
+                slot,
+                value.protected_failures.resolved(),
+                result,
+                done,
+                outer
+            )));
+        }
     }
-    destination.resume(handler, TargetJumpRole::FailureTransfer, handler_target);
+    if (destination.exits().contains(done.target)) {
+        destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
+    }
+    co_return {};
+}
+
+auto BodyRealizer::failure_handler(
+    const SemTry& value,
+    const FailureSource& source,
+    FailureSetID failures,
+    const LoweringResultDestination& result,
+    RegionExit& done,
+    const std::optional<FailureDestination>& outer
+) noexcept -> ContinuationTask<LoweringStmtBuilder> {
+    auto handler = LoweringStmtBuilder();
+    const auto candidates = context.plan().failure_abi().members(failures);
+    const auto single = std::ranges::count_if(
+                            candidates,
+                            [&](TypeID type) noexcept { return failure_contains(source, type); }
+                        )
+        == 1;
     for (const auto& arm : value.arms) {
-        if (!destination.continues()) {
+        if (!handler.continues()) {
             break;
         }
-        if (context.plan().failure_abi().members(arm.accepted_failures.resolved()).empty()) {
+        if (!std::ranges::any_of(
+                context.plan().failure_abi().members(arm.accepted_failures.resolved()),
+                [&](TypeID type) noexcept {
+                    return std::ranges::contains(candidates, type)
+                        && failure_contains(source, type);
+                }
+            )) {
             continue;
         }
         const auto previous_caught = std::exchange(
             caught,
-            CaughtFailure {.slot = slot, .failures = arm.accepted_failures.resolved()}
+            CaughtFailure {.source = source, .failures = arm.accepted_failures.resolved()}
         );
         auto statements = LoweringStmtBuilder();
         auto matcher = PatternRealizer(
@@ -385,20 +563,46 @@ auto BodyRealizer::lower_try(
             if (!alternative.reachable) {
                 continue;
             }
-            auto candidate = LoweringStmtBuilder();
             auto selected = matcher.test(
                 std::move(LoweringStmtBuilder())
                     .complete<LoweringPredicate>(LoweringKnownBool {true})
             );
             if (const auto* pattern = std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
-                if (failures.size() == 1uz) {
-                    selected = co_await matcher.match(
-                        pattern->inner,
-                        {.root = storage, .dereference_root = true, .payload_index = std::nullopt}
-                    );
+                const auto type = pattern->type.resolved();
+                if (!std::ranges::contains(candidates, type) || !failure_contains(source, type)) {
+                    continue;
+                }
+                const auto direct_subject = source.visit(
+                    Overloaded {
+                        [](const ValueFailureSource& payload) static noexcept
+                            -> std::optional<PatternSubject> {
+                            return PatternSubject {
+                                .root = payload.storage,
+                                .dereference_root = false,
+                                .payload_index = std::nullopt
+                            };
+                        },
+                        [&](const FailureSlot& slot) noexcept -> std::optional<PatternSubject> {
+                            if (context.plan().failure_abi().members(slot.layout).size() == 1uz) {
+                                return PatternSubject {
+                                    .root = slot.storage,
+                                    .dereference_root = true,
+                                    .payload_index = std::nullopt
+                                };
+                            }
+                            return std::nullopt;
+                        },
+                        [](const OutcomeFailureSource&) static noexcept
+                            -> std::optional<PatternSubject> { return std::nullopt; },
+                    }
+                );
+                if (direct_subject) {
+                    selected = co_await matcher.match(pattern->inner, *direct_subject);
                 } else {
                     const auto projection = fresh_local(TargetTemporaryNameKind::FailureProjection);
-                    candidate.emit(generated_statement(
+                    unused_initializers.emplace(projection, UnusedInitializer::Omit);
+                    auto candidate = LoweringStmtBuilder();
+                    candidate.declare(
                         TargetVariableStmt {
                             .binding = TargetVariableBinding::ConstValue,
                             .maybe_unused = false,
@@ -406,18 +610,24 @@ auto BodyRealizer::lower_try(
                             .type = context.pointer_type(
                                 context.intrinsic_type(TargetSymbol::Auto, true)
                             ),
-                            .initializer = failure_projection(slot, pattern->type.resolved())
-                        }
-                    ));
-                    selected = matcher.test(
-                        std::move(candidate).complete<LoweringPredicate>(
-                            LoweringDynamicBool {binary_expression(
-                                name_expression(projection),
-                                TargetBinaryOperator::NotEqual,
-                                intrinsic_expression(TargetSymbol::StdNullptr)
-                            )}
-                        )
+                            .initializer = failure_projection(source, type)
+                        },
+                        false
                     );
+                    selected = single ? matcher.test(
+                                            std::move(candidate).complete<LoweringPredicate>(
+                                                LoweringKnownBool {true}
+                                            )
+                                        )
+                                      : matcher.test(
+                                            std::move(candidate).complete<LoweringPredicate>(
+                                                LoweringDynamicBool {binary_expression(
+                                                    name_expression(projection),
+                                                    TargetBinaryOperator::NotEqual,
+                                                    intrinsic_expression(TargetSymbol::StdNullptr)
+                                                )}
+                                            )
+                                        );
                     selected.source_locals.insert(projection);
                     selected = matcher.sequence(
                         std::move(selected),
@@ -437,7 +647,9 @@ auto BodyRealizer::lower_try(
             }
         }
         auto pattern = matcher.alternatives(std::move(choices));
-        removable_locals.insert_range(matcher.projection_locals());
+        for (const auto local : matcher.projection_locals()) {
+            unused_initializers.emplace(local, UnusedInitializer::Omit);
+        }
         auto selected = co_await lower_arm(
             pattern,
             arm.bindings,
@@ -448,13 +660,10 @@ auto BodyRealizer::lower_try(
         );
         statements.append(matcher.select(std::move(pattern), std::move(selected)));
         caught = previous_caught;
-        destination.scope(std::move(statements));
+        handler.scope(std::move(statements));
     }
-    transfer_failure(slot, value.residual_failures.resolved(), outer, destination);
-    if (destination.exits().contains(done.target)) {
-        destination.resume(done.label, TargetJumpRole::RegionExit, done.target);
-    }
-    co_return {};
+    transfer_failure(source, value.residual_failures.resolved(), outer, handler);
+    co_return handler;
 }
 
 auto BodyRealizer::pattern_bound(

@@ -9,8 +9,8 @@ import std;
 
 namespace {
 
-struct RemovableDeclarations final {
-    const std::flat_set<TargetLocalID>& candidates;
+struct DeclarationInitializers final {
+    const std::flat_map<TargetLocalID, UnusedInitializer>& candidates;
     std::map<TargetLocalID, const TargetExpr*> initializers;
     std::map<TargetLocalID, std::size_t> references;
 
@@ -43,10 +43,20 @@ struct RemovedInitializerUses final {
     }
 };
 
-struct DeclarationRemoval final {
+struct UnusedDeclarations final {
     const std::flat_set<TargetLocalID>& unused;
+    const std::flat_map<TargetLocalID, UnusedInitializer>& candidates;
 
-    auto erase(std::vector<TargetStmt>& statements) const noexcept -> void {
+    auto finish(std::vector<TargetStmt>& statements) const noexcept -> void {
+        for (auto& statement : statements) {
+            auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+            if (variable != nullptr
+                && unused.contains(variable->local)
+                && candidates.at(variable->local) == UnusedInitializer::Evaluate) {
+                statement.value =
+                    TargetDiscardStmt {.expression = std::move(variable->initializer)};
+            }
+        }
         std::erase_if(statements, [&](const TargetStmt& statement) noexcept {
             const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
             return variable != nullptr && unused.contains(variable->local);
@@ -55,7 +65,7 @@ struct DeclarationRemoval final {
 
     auto enter_expression(TargetExpr& expression, TargetExpressionRole) const noexcept -> bool {
         if (auto* lambda = std::get_if<TargetLambdaExpr>(&expression.value)) {
-            erase(lambda->body);
+            finish(lambda->body);
         }
         return true;
     }
@@ -64,23 +74,27 @@ struct DeclarationRemoval final {
         statement.value.visit([&](auto& value) noexcept {
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (requires { value.body; }) {
-                erase(value.body);
+                finish(value.body);
             } else if constexpr (std::same_as<Value, TargetBlockStmt>) {
-                erase(value.statements);
+                finish(value.statements);
             } else if constexpr (std::same_as<Value, TargetIfStmt>) {
                 for (auto& branch : value.branches) {
-                    erase(branch.body);
+                    finish(branch.body);
                 }
                 if (value.else_body) {
-                    erase(*value.else_body);
+                    finish(*value.else_body);
                 }
             }
             if constexpr (std::same_as<Value, TargetForStmt>) {
                 if (value.initializer) {
-                    const auto* variable =
-                        std::get_if<TargetVariableStmt>(&value.initializer->value);
+                    auto* variable = std::get_if<TargetVariableStmt>(&value.initializer->value);
                     if (variable != nullptr && unused.contains(variable->local)) {
-                        value.initializer.reset();
+                        if (candidates.at(variable->local) == UnusedInitializer::Omit) {
+                            value.initializer.reset();
+                        } else {
+                            value.initializer->value =
+                                TargetDiscardStmt {.expression = std::move(variable->initializer)};
+                        }
                     }
                 }
             }
@@ -89,12 +103,12 @@ struct DeclarationRemoval final {
     }
 };
 
-auto remove_unused_declarations(
+auto finish_unused_declarations(
     std::vector<TargetStmt>& statements,
-    const std::flat_set<TargetLocalID>& candidates
+    const std::flat_map<TargetLocalID, UnusedInitializer>& candidates
 ) noexcept -> void {
     auto declarations =
-        RemovableDeclarations {.candidates = candidates, .initializers = {}, .references = {}};
+        DeclarationInitializers {.candidates = candidates, .initializers = {}, .references = {}};
     if (!traverse_target_statements(statements, declarations)) {
         invariant_violation("local reference traversal did not complete");
     }
@@ -112,14 +126,15 @@ auto remove_unused_declarations(
         const auto found = declarations.initializers.find(local);
         if (found != declarations.initializers.end()
             && unused.insert(local).second
+            && candidates.at(local) == UnusedInitializer::Omit
             && !traverse_target_expression(*found->second, uses)) {
             invariant_violation("initializer reference traversal did not complete");
         }
     }
-    const auto removal = DeclarationRemoval {.unused = unused};
-    removal.erase(statements);
-    if (!traverse_target_statements(statements, removal)) {
-        invariant_violation("local declaration removal did not complete");
+    const auto completed = UnusedDeclarations {.unused = unused, .candidates = candidates};
+    completed.finish(statements);
+    if (!traverse_target_statements(statements, completed)) {
+        invariant_violation("unused declaration finalization did not complete");
     }
 }
 
@@ -296,7 +311,8 @@ struct DeclarationUses final {
 
     template<typename Variable>
     auto visit_variable(Variable& variable) const noexcept -> bool {
-        if (variable.binding == TargetVariableBinding::ConstValue
+        if ((variable.binding == TargetVariableBinding::ConstValue
+             || variable.binding == TargetVariableBinding::ConstSnapshot)
             && mutable_owners.contains(variable.local)) {
             variable.binding = TargetVariableBinding::MutableValue;
         }
@@ -313,9 +329,9 @@ auto finish_body_declarations(
     std::vector<TargetStmt>& statements,
     std::span<const TargetLocalID> parameters,
     const std::flat_set<TargetLocalID>& mutable_owners,
-    const std::flat_set<TargetLocalID>& removable_locals
+    const std::flat_map<TargetLocalID, UnusedInitializer>& unused_initializers
 ) noexcept -> std::vector<bool> {
-    remove_unused_declarations(statements, removable_locals);
+    finish_unused_declarations(statements, unused_initializers);
     auto references = JumpReferences();
     if (!traverse_target_statements(statements, references)) {
         invariant_violation("jump reference traversal did not complete");

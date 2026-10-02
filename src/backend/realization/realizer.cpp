@@ -64,7 +64,8 @@ BodyRealizer::BodyRealizer(
 auto BodyRealizer::finish() noexcept -> LoweredBody {
     auto statements = region(metadata.region(), LoweringDiscardResult {}).run();
 
-    for (const auto exit : statements.exits().targets) {
+    for (const auto& entry : statements.exits().entries) {
+        const auto exit = entry.target;
         if (exit.identity != 0
             || (exit.kind != LoweringExitKind::FunctionReturn
                 && exit.kind != LoweringExitKind::Failure
@@ -80,7 +81,7 @@ auto BodyRealizer::finish() noexcept -> LoweredBody {
         parameters.push_back(local);
     }
     auto referenced_parameters =
-        finish_body_declarations(completed, parameters, mutable_owners, removable_locals);
+        finish_body_declarations(completed, parameters, mutable_owners, unused_initializers);
     return {
         .statements = std::move(completed),
         .referenced_parameters = std::move(referenced_parameters),

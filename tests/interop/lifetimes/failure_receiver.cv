@@ -1,0 +1,128 @@
+import "lifetimes/failure_receiver.hpp" using failure_receiver_probe::mark;
+
+import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{
+    Guard,
+    Self,
+    Tracked,
+    reset,
+    matches,
+};
+
+private struct Failure {}
+
+private struct PayloadFailure {
+    payload: Tracked
+}
+
+private fn scalar_result(guard: Guard, reject: bool) -> i32 throw Failure {
+    mark(3);
+    if reject { throw Failure {}; }
+    return 7;
+}
+
+private fn protected_scalar(reject: bool) -> i32 {
+    return try {
+        let protected = Guard { 1 };
+        let value = scalar_result(Guard { 2 }, reject)?;
+        mark(value);
+        value
+    } catch {
+        Failure(_) => {
+            let handler = Guard { 4 };
+            mark(8);
+            0
+        },
+    };
+}
+
+test "Failure receivers: protected and operand owners end before catch execution" {
+    reset();
+    check(protected_scalar(false) == 7);
+    check(matches("G1 G2 H3 g2 H7 g1 "));
+
+    reset();
+    check(protected_scalar(true) == 0);
+    check(matches("G1 G2 H3 g2 g1 G4 H8 g4 "));
+}
+
+private fn native_result(reject: bool) -> Tracked throw Failure {
+    if reject { throw Failure {}; }
+    return Tracked { 5 };
+}
+
+private fn discarded_native_result(reject: bool) {
+    try {
+        native_result(reject)?;
+        mark(9);
+    } catch {
+        Failure(_) => mark(8),
+    }
+}
+
+test "Failure receivers: inactive native success does not extend successful cleanup" {
+    reset();
+    discarded_native_result(false);
+    check(matches("c5 d5 H9 "));
+
+    reset();
+    discarded_native_result(true);
+    check(matches("H8 "));
+}
+
+private fn retained_native_result(reject: bool) {
+    try {
+        let protected = Guard { 1 };
+        let value = native_result(reject)?;
+        mark(9);
+        let _ = value.get();
+        mark(10);
+    } catch {
+        Failure(_) => mark(8),
+    }
+}
+
+test "Failure receivers: delivered native success and its source have distinct lifetimes" {
+    reset();
+    retained_native_result(false);
+    check(matches("G1 c5 m5 s-5 H9 r5 H10 d5 g1 "));
+
+    reset();
+    retained_native_result(true);
+    check(matches("G1 g1 H8 "));
+}
+
+private fn native_failure() -> i32 throw PayloadFailure {
+    let original = Tracked { 6 };
+    throw PayloadFailure { payload: original };
+}
+
+test "Failure receivers: native failure transport preserves source and catch copies" {
+    reset();
+    try {
+        let _ = native_failure()?;
+    } catch {
+        PayloadFailure(error) => check(error.payload.get() == 6),
+    }
+    // The first copy comes from the named source, the last from the catch binding.
+    // The carrier transfer and moved-from cleanup happen before that catch copy.
+    check(matches("c6 p6 m6 s-6 d6 m6 s-6 p6 r6 d6 d6 "));
+}
+
+private fn self_result() -> Self throw Failure => Self {};
+
+test "Failure receivers: native self addresses distinguish observation from source copying" {
+    let direct = try {
+        self_result()?.at_construction_address() as bool
+    } catch {
+        Failure(_) => false,
+    };
+    check(direct);
+
+    let copied = try {
+        let value = self_result()?;
+        value.at_construction_address() as bool
+    } catch {
+        Failure(_) => false,
+    };
+    check(!copied);
+}

@@ -28,12 +28,18 @@ struct LoweringExitTarget final {
     auto operator==(const LoweringExitTarget&) const noexcept -> bool = default;
 };
 
+struct LoweringExit final {
+    LoweringExitTarget target;
+    bool needs_cleanup;
+};
+
 struct LoweringExitSummary final {
-    std::vector<LoweringExitTarget> targets;
+    std::vector<LoweringExit> entries;
 
     auto contains(LoweringExitTarget target) const noexcept -> bool;
-    auto add(LoweringExitTarget target) noexcept -> void;
-    auto merge(const LoweringExitSummary& other) noexcept -> void;
+    auto crosses_cleanup(LoweringExitTarget target) const noexcept -> bool;
+    auto add(LoweringExitTarget target, bool needs_cleanup = false) noexcept -> void;
+    auto merge(const LoweringExitSummary& other, bool needs_cleanup = false) noexcept -> void;
     auto consume(LoweringExitTarget target) noexcept -> bool;
 };
 
@@ -159,6 +165,8 @@ public:
     auto exits() const noexcept -> const LoweringExitSummary&;
     auto record_exits(const LoweringExitSummary& exits) noexcept -> void;
     auto consume_exit(LoweringExitTarget target) noexcept -> bool;
+    auto replace_exit(LoweringExitTarget target, const LoweringExitSummary& continuation) noexcept
+        -> void;
     auto emit(TargetStmt statement, bool continues = true) noexcept -> void;
     auto declare(TargetVariableStmt variable, bool needs_cleanup) noexcept -> void;
     auto terminate(TargetStmt statement, LoweringExitTarget target) noexcept -> void;
@@ -215,6 +223,11 @@ public:
         LoweringRegionDelivery delivery
     ) && noexcept -> TargetExpr;
     auto finish() && noexcept -> std::vector<TargetStmt>;
+
+    template<typename Visitor>
+    auto visit_statements(const Visitor& visitor) noexcept -> void {
+        lowered.statements.visit(visitor);
+    }
 
 private:
     Lowered<LoweringCompleted> lowered;

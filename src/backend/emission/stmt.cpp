@@ -6,6 +6,18 @@ import std;
 
 namespace {
 
+auto constant_binding(TargetVariableBinding binding) noexcept -> bool {
+    return binding == TargetVariableBinding::ConstValue
+        || binding == TargetVariableBinding::ConstSnapshot
+        || binding == TargetVariableBinding::ConstReference;
+}
+
+auto snapshot_annotation(TargetVariableBinding binding) noexcept -> std::string_view {
+    return binding == TargetVariableBinding::ConstSnapshot
+        ? " /* NOLINT(performance-unnecessary-copy-initialization) */"
+        : "";
+}
+
 auto assignment_spelling(TargetAssignmentOperator op) noexcept -> std::string_view {
     switch (op) {
         case TargetAssignmentOperator::Assign:     return "=";
@@ -52,8 +64,7 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                 return concat({text("return "), render_expression(*value.expression), text(";")});
             },
             [&](const TargetVariableStmt& value) noexcept {
-                const auto constant = value.binding == TargetVariableBinding::ConstValue
-                    || value.binding == TargetVariableBinding::ConstReference;
+                const auto constant = constant_binding(value.binding);
                 auto suffix = std::string {};
                 if (value.binding == TargetVariableBinding::ConstReference
                     || value.binding == TargetVariableBinding::MutableReference) {
@@ -66,7 +77,8 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                      render_type(value.type, constant),
                      text(suffix),
                      text(" "),
-                     render_identifier(value.local)}
+                     render_identifier(value.local),
+                     text(snapshot_annotation(value.binding))}
                 );
                 const auto right = concat({text("= "), render_expression(value.initializer)});
                 const auto declaration = concat(
@@ -160,8 +172,7 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                 );
             },
             [&](const TargetRangeForStmt& value) noexcept {
-                const auto constant = value.binding == TargetVariableBinding::ConstValue
-                    || value.binding == TargetVariableBinding::ConstReference;
+                const auto constant = constant_binding(value.binding);
                 const auto reference = value.binding == TargetVariableBinding::MutableReference
                     || value.binding == TargetVariableBinding::ConstReference;
                 return concat(
@@ -170,6 +181,7 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                      render_type(value.type, constant),
                      text(reference ? "& " : " "),
                      render_identifier(value.local),
+                     text(snapshot_annotation(value.binding)),
                      text(" : "),
                      render_expression(value.range),
                      text(") "),
@@ -238,8 +250,7 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                 );
             },
             [&](const TargetVariableStmt& value) noexcept {
-                const auto constant = value.binding == TargetVariableBinding::ConstValue
-                    || value.binding == TargetVariableBinding::ConstReference;
+                const auto constant = constant_binding(value.binding);
                 auto suffix = std::string();
                 if (value.binding == TargetVariableBinding::ConstReference
                     || value.binding == TargetVariableBinding::MutableReference) {
@@ -253,6 +264,7 @@ auto TargetRenderer::render_for_initializer(const TargetForInitializer& initiali
                      text(suffix),
                      text(" "),
                      render_identifier(value.local),
+                     text(snapshot_annotation(value.binding)),
                      text(" = "),
                      render_expression(value.initializer)}
                 );

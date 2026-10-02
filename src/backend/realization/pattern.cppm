@@ -43,8 +43,13 @@ public:
         PatternBoundRealizer bound = {}
     ) noexcept;
     auto test(Lowered<LoweringPredicate> predicate) noexcept -> PatternSelection;
-    auto match(PatternID pattern_id, const PatternSubject& subject) noexcept
-        -> ContinuationTask<PatternSelection>;
+    // Coverage can prove acceptance on this entry. Matching still evaluates
+    // required bounds and chooses the first successful alternative's sources.
+    auto match(
+        PatternID pattern_id,
+        const PatternSubject& subject,
+        bool accepts_on_entry = false
+    ) noexcept -> ContinuationTask<PatternSelection>;
     auto sequence(PatternSelection left, PatternSelection right) noexcept -> PatternSelection;
     auto alternatives(std::vector<PatternSelection> choices) noexcept -> PatternSelection;
     auto select(PatternSelection selection, LoweringStmtBuilder accepted) noexcept

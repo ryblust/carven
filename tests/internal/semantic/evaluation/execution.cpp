@@ -114,7 +114,7 @@ auto ExecutionContext::prepare_call(CallableID callable, ProgramOriginID origin)
     );
     ct::require(body.has_value());
     ct::require(draft.body_draft(*body).inputs.parameters.empty());
-    auto realized = co_await requests.stage().realize_body(*body);
+    const auto realized = co_await requests.stage().realize_body(*body);
     ct::require(realized.has_value());
     co_return ExecutionBody(draft.body_draft(*body));
 }
@@ -256,8 +256,8 @@ const ct::Suite tests([] static noexcept {
                     )
                 );
                 auto context = BodyExecutionContext(program);
-                auto values = PublishedConstantValues(program);
-                auto tests = program.tests().entries();
+                const auto values = PublishedConstantValues(program);
+                const auto tests = program.tests().entries();
                 if (!ct::expect(!std::ranges::empty(tests))) {
                     return;
                 }
@@ -329,8 +329,8 @@ const ct::Suite tests([] static noexcept {
                     std::format("test {{ check(false, \"{}\"); }}", scenario.message)
                 );
                 auto context = BodyExecutionContext(program);
-                auto values = PublishedConstantValues(program);
-                auto tests = program.tests().entries();
+                const auto values = PublishedConstantValues(program);
+                const auto tests = program.tests().entries();
                 if (!ct::expect(!std::ranges::empty(tests))) {
                     return;
                 }

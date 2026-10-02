@@ -67,8 +67,9 @@ mutable storage for directly initialized local owners. Deferred initialization
 uses mutable result storage.
 
 Automatic value temporaries use const storage for observation and mutable
-storage for `WritePlace`, `Consume`, and `NativeTake`. Reference and Read-parameter
-storage retain the access qualification selected by their types.
+storage for `WritePlace`, `Consume`, and `NativeTake`. Reference, Read-parameter,
+and exact native-query storage retain the access qualification selected by their
+types; consumer access remains independent of the local declaration.
 
 `ProjectionPlace` forwards the consumer's access through fields and array elements;
 `WritePlace` requires mutable access. Realization resolves projection access before
@@ -114,6 +115,9 @@ return complete initializers, preserving explicit construction and
 copy-initialization rules.
 
 Native call results retained for borrowing use the exact queried return type.
+Read-only ordinary storage uses `std::add_const_t<Query>` to qualify value
+queries while preserving reference queries. Read delivery also applies const
+access at the consumer.
 When deferred storage is used, factory deduction is checked against that query, accounting
 for C++ dropping top-level cv from scalar call results. Exact reference retention
 applies to call results. Owning snapshots instead use the normalized object type.
@@ -190,17 +194,19 @@ providers remain usable.
 ## Operand sequencing
 
 `BodyRealizer::ExpressionBuilder` constructs complete child fragments. Each owns
-its declarations, ordered statement prefix, and either a residual target value,
-saved storage, an explicit binding or constant identity, or completed evaluation. Ordinary
+its exported storage reservations, ordered statement prefix, and either a residual
+target value, saved storage, an explicit binding or constant identity, or completed
+evaluation. Ordinary
 residual target trees are consumed once. Repeated consumers explicitly save their
 input. Source subtree summaries describe prospective obligations; residual flags
 describe only execution and observation still present after prefix extraction.
 
 Children are constructed from right to left to determine later statement
-boundaries and backing-retention demands. Their declarations and initializations
-are adopted from left to right, preserving source execution and reverse cleanup
-order. Statement chunks splice in constant time and become vectors at completed
-target statement boundaries.
+boundaries and backing-retention demands. Their reservations and statements
+are adopted from left to right. A reservation enters the cleanup-owning scope
+at its controlling operation, after earlier owners, preserving source execution
+and reverse cleanup order. Statement chunks splice in constant time and become
+vectors at completed target statement boundaries.
 
 One `ContinuationTask` chain covers recursive expression, region, loop, report,
 and pattern construction. The body entry drives the chain; completed fragments
@@ -227,19 +233,20 @@ ordinary construction and evaluation paths.
 
 Expression frames use the existing `LifetimeRegionID`. Conditional execution
 that shares a full-expression lifetime uses the same frame; an expression-position
-lexical region retains its own frame. An independent full-expression frame with
-no conditional evaluation directly initializes ordinary locals in source order.
-Independence requires a distinct cleanup region from every active outer frame;
-nesting in another expression does not by itself require deferred storage.
-An independent lexical region's tail can use the same storage policy when its
-cleanup ID matches the region. Realization encloses tail evaluation and result
-delivery in one block, so all payload and backing uses precede its cleanup.
-The destination of a result that survives the block retains its own storage.
-Preparation summarizes conditional evaluation through nested operands, including
-report messages. Shared evaluation and intermediate owners in conditional frames
-conservatively separate storage declarations from initialization, reserving
-temporary storage in source order at the enclosing expression boundary and
-initializing only on the selected path.
+lexical region retains its own frame. A scope owns cleanup when its full-expression
+or delivered lexical region is distinct from every active outer frame. Realization
+encloses evaluation and delivery in that scope, so all payload and backing uses
+precede cleanup. The destination of a result that survives the scope retains its
+own storage.
+
+Within the cleanup-owning C++ scope, retained operands and Outcomes initialize
+ordinary locals directly. Evaluation in a nested C++ scope exports reservations
+for storage that must survive that scope; initialization remains on its selected
+path. Reservations propagate to the owning scope and enter its statement sequence
+at the controlling operation, after preceding ordinary owners. Ordinary declarations
+and reservations retain source construction order. Result reservations follow their
+retained backing, so the result is destroyed first. Conditional expressions that
+reduce to direct C++ expressions use ordinary expression delivery.
 Reverse destruction order includes those objects and any retained Outcome owners.
 Known or discarded results retain required execution.
 Fallible calls check success before continuing with its value. Result demand controls whether
@@ -259,15 +266,17 @@ For `values.slice(0, 2).len()`, realization executes the checked slice and retur
 `2`; the slice result needs no storage or size query. Failure still prevents
 result delivery.
 
-The frame selects one storage form for intermediate owners, including retained
-operands and their Outcomes. Selecting ordinary and hoisted deferred storage
-independently could reverse their cleanup order. A fragment at the final
-construction position of an independent frame may use an ordinary local: all
-retained operands have been constructed before it, so it is destroyed before
-them. Shared evaluation and recursive operands retain the frame's intermediate
-storage policy. Both owner anchoring and call completion query this policy.
-The build request carries the result demand and construction position separately;
-neither changes the source lifetime or payload delivery contract.
+Each fragment captures whether it is constructed in the cleanup-owning scope.
+Owner anchoring and call completion use this single storage authority. Shared
+evaluation and a dynamic short-circuit operand enter a nested storage scope;
+statically selected short-circuit operands stay in the current scope. Result
+demand remains independent of storage ownership and does not change the source
+lifetime or payload delivery contract.
+
+A copied scalar can remain local to its evaluation scope. Native Read or Take
+may retain a reference to a scalar through the enclosing full expression, so
+that backing follows the same scope rule as other retained storage. Having no
+destructor does not by itself permit a shorter object lifetime.
 
 ### Owning field projection
 
@@ -392,6 +401,10 @@ same arm; differing sources and sources local to an alternative join through
 address slots. A common source already visible outside the alternatives needs
 no slot. Match and catch use the same selection operations.
 
+Owning pattern bindings retain an independent snapshot and its cleanup. Target
+declarations record this obligation as `ConstSnapshot`; emission annotates the
+binding name for clang-tidy's copy-initialization check.
+
 Enum payload projections are pure borrowed pointers. Realization records them as
 removable locals; body completion retains only projections referenced by tag
 tests, payload reads, or binding construction. Removing an unused projection can
@@ -402,7 +415,13 @@ Pattern completion supplies accepted and rejected successors. Realization keeps
 the predicate's required prefix and uses those facts to enter later payloads,
 alternatives, guards, and bodies. A stopped operand needs only a conditional
 branch; its surviving normal path has a known Boolean result. A sole enum case
-needs no tag test.
+needs no tag test. A match arm's published no-rejection proof also removes tests
+already established by earlier unguarded arms. Guaranteed conjunctions pass the
+proof to their payload patterns. A guaranteed disjunction retains tests needed
+to select binding sources and proves its final alternative after earlier ones
+reject. Pure alternatives with a common source need no selection tests. Dynamic
+bounds retain their execution, and differing binding sources join through the
+same selection machinery.
 
 A guard-free arm whose test needs no statements selects between its body and the
 remaining arms, so consecutive such arms form one `if`/`else if` chain. An arm
@@ -420,16 +439,38 @@ retains the payload and accepted failure set needed by a rethrow.
 carrier alternatives and widening. The following rules dispatch those carriers
 through the active control regions.
 
-Handler failures go to the enclosing failure
-target; rethrow preserves the selected failure. Test exit leaves the test.
-Outcome and handler failures share one typed dispatch construction. A handler
-slot uses `optional<E>` for one protected failure type and
-`optional<variant<E...>>` for several. Its layout stays fixed while a catch or
-residual path may narrow the candidate set. The optional retains the failure
-through protected-scope cleanup. Typed projection uses the slot layout; the last
-candidate of a closed dispatch transfers directly after earlier candidates have
-been excluded. Call dispatch follows the success and test-stop checks. Handler
-payload patterns and guards retain their own selection.
+Failure delivery registers a logical receiver, typed source, candidate failure
+set, and unique target edge. A call with several failure alternatives is one
+handoff; each rethrow site is a separate handoff. After the protected region is
+complete, realization selects handler placement and storage from the retained
+handoffs and exit cleanup facts. Composition records whether each exit crosses
+pending cleanup when it is introduced and propagates that fact through closed
+scopes.
+
+The handler executes at a single handoff when its candidate payloads have
+semantic value-snapshot behavior, the exit crosses no observable cleanup, and
+placement crosses no loop inside the protected region. It projects the original
+Outcome or receives a direct throw in an ordinary typed local. Direct throws
+construct independent snapshots because a catch guard can modify the binding
+used by the throw. After receiver edges are resolved, body local-use analysis
+removes unused payload storage. Source execution summaries select omission of a
+pure initializer or evaluation for its effects; evaluated initializers retain
+their local dependencies. Pure projections use the same omission policy.
+
+Other receivers use `optional<E>` for one protected failure type or
+`optional<variant<E...>>` for several. The slot joins handoffs or retains failure
+payloads across protected-scope cleanup. Its layout stays fixed while catch and
+residual paths narrow the candidate set. Outcome, direct-value, and slot sources
+share typed projection and dispatch. The last candidate of a closed dispatch
+transfers directly after earlier candidates have been excluded. Call dispatch
+follows the success and test-stop checks. Handler patterns and guards retain
+their selection.
+
+Native payloads retain transport because copies, moves, addresses, and destruction
+can be observed. Cleanup facts conservatively include every source-carrier
+alternative, so native or owning success values also retain the slot. Source
+placement preserves a handler's loop destinations by excluding loops within the
+protected region; a try inside an outer loop resolves within its own region.
 
 Calls that project results check `TestStopped` before success or typed failures.
 Propagation returns through each Carven frame, preserving C++ scope cleanup;

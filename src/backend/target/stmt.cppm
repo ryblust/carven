@@ -24,6 +24,8 @@ enum class TargetVariableBinding {
     MutableReference,
     RvalueReference,
     ConstValue,
+    // A pattern binding owns a snapshot whose copy and cleanup are observable.
+    ConstSnapshot,
     ConstReference,
 };
 

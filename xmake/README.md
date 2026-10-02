@@ -46,7 +46,8 @@ See [C++ conventions](../docs/development/conventions.md) for source conventions
 The root build copies `.clang-tidy` into each target's generated directory and
 `generated.clang-tidy` into its `rules/` subdirectory. The latter inherits the
 parent configuration and adjusts parameter, borrow, and embedded-NUL checks
-for generated C++.
+for generated C++. Copy-initialization checks are enabled; emission adds a local
+annotation to owning pattern snapshots.
 
 The wrappers apply the versioned overlay in `clang-module-pipeline/`. See its
 [README](clang-module-pipeline/README.md) for supported Xmake versions,

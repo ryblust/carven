@@ -1,0 +1,373 @@
+private struct Failure {
+    code: i32,
+}
+
+private struct OtherFailure {
+    code: i32,
+}
+
+private fn record(&trace: i32, marker: i32) -> i32 {
+    trace = trace * 10 + marker;
+    return marker;
+}
+
+private fn step(&trace: i32, marker: i32, reject: bool) -> i32 throw Failure {
+    let code = record(&trace, marker);
+    if reject { throw Failure { code }; }
+    return code * 10;
+}
+
+private fn other_step(&trace: i32, marker: i32, reject: bool) -> i32 throw OtherFailure {
+    let code = record(&trace, marker);
+    if reject { throw OtherFailure { code }; }
+    return code * 10;
+}
+
+private fn payload(&trace: i32) -> Failure {
+    record(&trace, 1);
+    return Failure { 7 };
+}
+
+private fn direct_rethrow(&trace: i32) -> i32 throw Failure {
+    return try {
+        throw payload(&trace);
+    } catch {
+        Failure(_) => { rethrow; },
+    };
+}
+
+test "Failure receivers: unused payloads keep effects and rethrows retain values" {
+    var trace = 0;
+    let ignored = try {
+        throw payload(&trace);
+    } catch {
+        Failure(_) => {
+            record(&trace, 9);
+            3
+        },
+    };
+    check(ignored == 3);
+    check(trace == 19);
+
+    trace = 0;
+    let propagated = try {
+        direct_rethrow(&trace)?
+    } catch {
+        Failure(error) => error.code,
+    };
+    check(propagated == 7);
+    check(trace == 1);
+}
+
+private fn conditional(&trace: i32, selected: bool, reject: bool) -> i32 {
+    return try {
+        (if selected { step(&trace, 1, reject)? } else { 17 })
+    } catch {
+        Failure(error) => {
+            record(&trace, 9);
+            -error.code
+        },
+    };
+}
+
+test "Failure receivers: a conditional source executes only on its selected path" {
+    var trace = 0;
+    check(conditional(&trace, false, true) == 17);
+    check(trace == 0);
+    check(conditional(&trace, true, false) == 10);
+    check(trace == 1);
+    trace = 0;
+    check(conditional(&trace, true, true) == -1);
+    check(trace == 19);
+}
+
+private fn repeated_body(&trace: i32, rejected_iteration: i32) -> i32 {
+    var iteration = 0;
+    var total = 0;
+    return try {
+        while iteration < 4 {
+            iteration += 1;
+            total += step(&trace, iteration, iteration == rejected_iteration)?;
+        }
+        total
+    } catch {
+        Failure(error) => {
+            record(&trace, 9);
+            error.code * 100 + total
+        },
+    };
+}
+
+private fn condition(&trace: i32, &calls: i32, rejected_iteration: i32) -> bool throw Failure {
+    calls += 1;
+    let code = record(&trace, calls);
+    if calls == rejected_iteration { throw Failure { code }; }
+    return calls < 4;
+}
+
+private fn repeated_condition(&trace: i32, rejected_iteration: i32) -> i32 {
+    var calls = 0;
+    var completed = 0;
+    return try {
+        while condition(&trace, &calls, rejected_iteration)? {
+            completed += 1;
+        }
+        completed
+    } catch {
+        Failure(error) => {
+            record(&trace, 9);
+            error.code * 100 + completed
+        },
+    };
+}
+
+test "Failure receivers: one loop source can succeed repeatedly before failing" {
+    var trace = 0;
+    check(repeated_body(&trace, 3) == 330);
+    check(trace == 1239);
+    trace = 0;
+    check(repeated_body(&trace, 0) == 100);
+    check(trace == 1234);
+    trace = 0;
+    check(repeated_condition(&trace, 3) == 302);
+    check(trace == 1239);
+    trace = 0;
+    check(repeated_condition(&trace, 0) == 3);
+    check(trace == 1234);
+}
+
+private fn each_iteration(&trace: i32, reject_even: bool) -> i32 {
+    var total = 0;
+    for index in 1..5 {
+        total += try {
+            step(&trace, index, reject_even && index % 2 == 0)?
+        } catch {
+            Failure(error) => {
+                record(&trace, 9);
+                -error.code
+            },
+        };
+    }
+    return total;
+}
+
+test "Failure receivers: a receiver inside a loop starts fresh on every iteration" {
+    var trace = 0;
+    check(each_iteration(&trace, true) == 34);
+    check(trace == 129349);
+    trace = 0;
+    check(each_iteration(&trace, false) == 100);
+    check(trace == 1234);
+}
+
+private fn nested_condition(&trace: i32, &calls: i32, rejected_poll: i32) -> bool throw Failure {
+    calls += 1;
+    let code = record(&trace, calls);
+    if calls == rejected_poll { throw Failure { code }; }
+    return calls < 2;
+}
+
+private fn handler_loop_exit(&trace: i32, rejected_poll: i32, break_loop: bool) -> i32 {
+    var total = 0;
+    for var iteration = 1; iteration < 3; ++iteration {
+        var calls = 0;
+        try {
+            while nested_condition(&trace, &calls, rejected_poll)? {
+            }
+        } catch {
+            Failure(_) => {
+                total += iteration;
+                if break_loop { break; }
+                continue;
+            },
+        }
+        record(&trace, 9);
+        total += 100;
+    }
+    return total;
+}
+
+test "Failure receivers: handler loop exits target the loop enclosing the receiver" {
+    var trace = 0;
+    check(handler_loop_exit(&trace, 1, false) == 3);
+    check(trace == 11);
+    trace = 0;
+    check(handler_loop_exit(&trace, 1, true) == 1);
+    check(trace == 1);
+    trace = 0;
+    check(handler_loop_exit(&trace, 0, false) == 200);
+    check(trace == 129129);
+}
+
+private fn two_sources(&trace: i32, rejected_source: i32) -> i32 {
+    return try {
+        step(&trace, 1, rejected_source == 1)? + step(&trace, 2, rejected_source == 2)?
+    } catch {
+        Failure(error) => {
+            record(&trace, 9);
+            -error.code
+        },
+    };
+}
+
+private fn two_types(&trace: i32, rejected_source: i32) -> i32 {
+    return try {
+        step(&trace, 1, rejected_source == 1)? + other_step(&trace, 2, rejected_source == 2)?
+    } catch {
+        Failure(error) => {
+            record(&trace, 9);
+            -error.code
+        },
+        OtherFailure(error) => {
+            record(&trace, 8);
+            -error.code
+        },
+    };
+}
+
+test "Failure receivers: distinct sources keep the first failure and skip later operands" {
+    var trace = 0;
+    check(two_sources(&trace, 0) == 30);
+    check(trace == 12);
+    trace = 0;
+    check(two_sources(&trace, 1) == -1);
+    check(trace == 19);
+    trace = 0;
+    check(two_sources(&trace, 2) == -2);
+    check(trace == 129);
+    trace = 0;
+    check(two_types(&trace, 0) == 30);
+    check(trace == 12);
+    trace = 0;
+    check(two_types(&trace, 1) == -1);
+    check(trace == 19);
+    trace = 0;
+    check(two_types(&trace, 2) == -2);
+    check(trace == 128);
+}
+
+private fn direct(&trace: i32, code: i32) -> i32 {
+    return try {
+        throw Failure { code: record(&trace, code) };
+    } catch {
+        Failure(error) => {
+            record(&trace, 9);
+            error.code
+        },
+    };
+}
+
+test "Failure receivers: direct throws evaluate their payload once before handling" {
+    var trace = 0;
+    check(direct(&trace, 4) == 4);
+    check(trace == 49);
+}
+
+private fn reject_after_mutation(&value: Failure, &trace: i32) -> bool {
+    record(&trace, 2);
+    value.code = 7;
+    return false;
+}
+
+private fn direct_snapshot(&trace: i32) -> i32 {
+    var original = Failure { code: 1 };
+    let caught = try {
+        throw original;
+    } catch {
+        Failure(_) if reject_after_mutation(&original, &trace) => -1,
+        Failure(error) => {
+            record(&trace, 9);
+            error.code
+        },
+    };
+    return caught * 10 + original.code;
+}
+
+test "Failure receivers: a direct throw snapshots its source before a mutating guard" {
+    var trace = 0;
+    check(direct_snapshot(&trace) == 17);
+    check(trace == 29);
+}
+
+private fn guard(&trace: i32, accepted: bool, reject: bool) -> bool throw OtherFailure {
+    let code = record(&trace, 2);
+    if reject { throw OtherFailure { code }; }
+    return accepted;
+}
+
+private fn guarded(&trace: i32, accepted: bool, reject: bool) -> i32 {
+    return try {
+        (
+            try {
+                step(&trace, 1, true)?
+            } catch {
+                Failure(error) if guard(&trace, accepted, reject)? => {
+                    record(&trace, 3);
+                    error.code
+                },
+                Failure(error) => {
+                    let copy = &&error;
+                    record(&trace, 7);
+                    if copy.code == 1 { rethrow; }
+                    -1
+                },
+            }
+        )
+    } catch {
+        Failure(error) => {
+            record(&trace, 8);
+            error.code + 100
+        },
+        OtherFailure(error) => {
+            record(&trace, 6);
+            error.code + 200
+        },
+    };
+}
+
+test "Failure receivers: rejected guards rethrow the original and guard failures leave outward" {
+    var trace = 0;
+    check(guarded(&trace, true, false) == 1);
+    check(trace == 123);
+    trace = 0;
+    check(guarded(&trace, false, false) == 101);
+    check(trace == 1278);
+    trace = 0;
+    check(guarded(&trace, false, true) == 202);
+    check(trace == 126);
+}
+
+private fn nested_handler(&trace: i32) -> i32 {
+    return try {
+        (
+            try {
+                step(&trace, 1, true)?
+            } catch {
+                Failure(error) => {
+                    let copy = &&error;
+                    let nested = try {
+                        other_step(&trace, 2, true)?
+                    } catch {
+                        OtherFailure(inner) => {
+                            record(&trace, 3);
+                            inner.code
+                        },
+                    };
+                    if copy.code + nested == 3 { rethrow; }
+                    -1
+                },
+            }
+        )
+    } catch {
+        Failure(error) => {
+            record(&trace, 9);
+            error.code
+        },
+    };
+}
+
+test "Failure receivers: nested handlers restore the failure used by rethrow" {
+    var trace = 0;
+    check(nested_handler(&trace) == 1);
+    check(trace == 1239);
+}

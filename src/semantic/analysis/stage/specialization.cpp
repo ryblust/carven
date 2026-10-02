@@ -410,7 +410,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
                 arm.reachable = false;
                 continue;
             }
-            auto bounds = pattern_bounds(std::span(&arm.pattern, 1), arm.pattern_bounds);
+            const auto bounds = pattern_bounds(std::span(&arm.pattern, 1), arm.pattern_bounds);
             auto projected = co_await pattern(arm.pattern, bounds, completion);
             if (!projected) {
                 co_return std::unexpected(projected.error());
@@ -436,7 +436,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
             } else {
                 unreachable(arm.body);
             }
-            pending = (selected.rejected && !arm.pattern_always_matches)
+            pending = (selected.rejected && arm.pattern_may_reject)
                 || (selected.accepted && guard_normal);
         }
         rewritten |= std::erase_if(
@@ -463,7 +463,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
                     }
                 }
             }
-            auto bounds = pattern_bounds(roots, arm.pattern_bounds);
+            const auto bounds = pattern_bounds(roots, arm.pattern_bounds);
             for (auto& alternative : arm.alternatives) {
                 const auto* typed = std::get_if<SemTypedCatchPattern>(&alternative.pattern);
                 const auto type = typed ? std::optional(typed->type.construction()) : std::nullopt;

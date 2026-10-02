@@ -128,7 +128,7 @@ auto fold_constant_expression(ProgramDraft& draft, SemanticExpression& source) n
             const auto truth =
                 [&](const SemanticExpression& expression) noexcept -> std::optional<bool> {
                 if (expression.constant) {
-                    const auto fact = draft.constant(*expression.constant);
+                    const auto& fact = draft.constant(*expression.constant);
                     if (const auto* boolean = std::get_if<BooleanConstant>(&fact.value)) {
                         return boolean->value;
                     }
@@ -146,8 +146,8 @@ auto fold_constant_expression(ProgramDraft& draft, SemanticExpression& source) n
             }
         } else if constexpr (std::same_as<Operation, SemRange>) {
             if (operation.begin->constant && operation.end->constant) {
-                const auto first = draft.constant(*operation.begin->constant);
-                const auto last = draft.constant(*operation.end->constant);
+                const auto& first = draft.constant(*operation.begin->constant);
+                const auto& last = draft.constant(*operation.end->constant);
                 folded = ConstantFact {
                     .type = *type,
                     .value = RangeConstant {

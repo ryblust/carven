@@ -19,7 +19,8 @@ auto require_value_region(const LoweringStmtBuilder& region, LoweringExitTarget 
     if (region.continues()) {
         invariant_violation("value region has an undelivered normal result");
     }
-    for (const auto target : region.exits().targets) {
+    for (const auto& exit : region.exits().entries) {
+        const auto target = exit.target;
         if (target != yield && target.kind != LoweringExitKind::Unreachable) {
             invariant_violation("value region contains an external control exit");
         }
@@ -124,16 +125,16 @@ auto LoweringStmtBuilder::terminate(TargetStmt statement, LoweringExitTarget tar
         return;
     }
     emit(std::move(statement), false);
-    lowered.exits.add(target);
+    lowered.exits.add(target, needs_cleanup());
 }
 
 auto LoweringStmtBuilder::append(LoweringStmtBuilder source) noexcept -> void {
     if (!continues()) {
         return;
     }
+    record_exits(source.lowered.exits);
     lowered.statements.append(std::move(source.lowered.statements));
     lowered.normal = source.lowered.normal;
-    lowered.exits.merge(source.lowered.exits);
     lowered.has_declarations |= source.lowered.has_declarations;
     lowered.needs_cleanup |= source.lowered.needs_cleanup;
 }
@@ -157,7 +158,7 @@ auto LoweringStmtBuilder::scope(LoweringStmtBuilder source, TargetAttribution at
         return;
     }
     const auto normal = source.continues();
-    lowered.exits.merge(source.exits());
+    record_exits(source.exits());
     emit(
         TargetStmt {
             .value = TargetBlockStmt {.statements = std::move(source).finish()},
@@ -273,23 +274,36 @@ auto LoweringStmtBuilder::result_region(
 }
 
 auto LoweringExitSummary::contains(LoweringExitTarget target) const noexcept -> bool {
-    return std::ranges::contains(targets, target);
+    return std::ranges::contains(entries, target, &LoweringExit::target);
 }
 
-auto LoweringExitSummary::add(LoweringExitTarget target) noexcept -> void {
-    if (!contains(target)) {
-        targets.push_back(target);
+auto LoweringExitSummary::crosses_cleanup(LoweringExitTarget target) const noexcept -> bool {
+    const auto found = std::ranges::find(entries, target, &LoweringExit::target);
+    return found != entries.end() && found->needs_cleanup;
+}
+
+auto LoweringExitSummary::add(LoweringExitTarget target, bool needs_cleanup) noexcept -> void {
+    const auto found = std::ranges::find(entries, target, &LoweringExit::target);
+    if (found == entries.end()) {
+        entries.push_back({.target = target, .needs_cleanup = needs_cleanup});
+    } else {
+        found->needs_cleanup |= needs_cleanup;
     }
 }
 
-auto LoweringExitSummary::merge(const LoweringExitSummary& other) noexcept -> void {
-    for (const auto target : other.targets) {
-        add(target);
+auto LoweringExitSummary::merge(const LoweringExitSummary& other, bool needs_cleanup) noexcept
+    -> void {
+    for (const auto& exit : other.entries) {
+        add(exit.target, exit.needs_cleanup || needs_cleanup);
     }
 }
 
 auto LoweringExitSummary::consume(LoweringExitTarget target) noexcept -> bool {
-    return std::erase(targets, target) != 0;
+    return std::erase_if(
+               entries,
+               [&](const LoweringExit& exit) noexcept { return exit.target == target; }
+           )
+        != 0;
 }
 
 LoweringStmtBuilder::LoweringStmtBuilder() noexcept
@@ -322,11 +336,22 @@ auto LoweringStmtBuilder::exits() const noexcept -> const LoweringExitSummary& {
 }
 
 auto LoweringStmtBuilder::record_exits(const LoweringExitSummary& exits) noexcept -> void {
-    lowered.exits.merge(exits);
+    lowered.exits.merge(exits, needs_cleanup());
 }
 
 auto LoweringStmtBuilder::consume_exit(LoweringExitTarget target) noexcept -> bool {
     return lowered.exits.consume(target);
+}
+
+auto LoweringStmtBuilder::replace_exit(
+    LoweringExitTarget target,
+    const LoweringExitSummary& continuation
+) noexcept -> void {
+    const auto cleanup = lowered.exits.crosses_cleanup(target);
+    if (!consume_exit(target)) {
+        invariant_violation("continuation replaces an unowned exit");
+    }
+    lowered.exits.merge(continuation, cleanup);
 }
 
 auto LoweringStmtBuilder::finish() && noexcept -> std::vector<TargetStmt> {

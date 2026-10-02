@@ -10,5 +10,5 @@ auto freeze_constant_value(ProgramDraft& draft, ExecutionValue value) noexcept
 
 // A local initializer freezes owning text at its outer boundary. Static call
 // inputs instead preserve their declared types.
-auto constant_initializer_type(ProgramDraft& draft, ConstructionTypeRef type) noexcept
+auto constant_initializer_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> ConstructionTypeRef;

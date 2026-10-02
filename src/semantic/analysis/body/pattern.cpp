@@ -20,7 +20,6 @@ import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
-import :semantic.evaluation.operation;
 import :semantic.semir.completion;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
@@ -673,12 +672,9 @@ auto BodyElaborator::build_match(
 
     auto arms = std::vector<SemMatchArm>();
     auto remaining = selection_reachable;
-    for (auto& plan : plans) {
-        const auto matches = known_pattern_match(
-            draft(),
-            body_builder.pattern_copy(plan.pattern.pattern),
-            std::nullopt
-        );
+    for (auto index = 0uz; index < plans.size(); ++index) {
+        auto& plan = plans[index];
+        const auto pattern_may_reject = coverage->pattern_rejection[index];
         const auto useful = remaining && plan.useful;
         [[maybe_unused]] const auto path = BodyReferencePathGuard(reference_path_reachable, useful);
         if (useful) {
@@ -715,7 +711,8 @@ auto BodyElaborator::build_match(
             guard_may_reject = guard->completes;
         }
         remaining = remaining
-            && ((selected.rejected && matches != true) || (selected.accepted && guard_may_reject));
+            && ((selected.rejected && pattern_may_reject)
+                || (selected.accepted && guard_may_reject));
         auto body = co_await [&]() noexcept -> AnalysisTask<SemanticRegion> {
             [[maybe_unused]] const auto body_path =
                 BodyReferencePathGuard(reference_path_reachable, body_reachable);
@@ -736,7 +733,7 @@ auto BodyElaborator::build_match(
              std::move(guard_tree),
              std::move(*body),
              useful,
-             matches == true,
+             pattern_may_reject,
              std::move(plan.pattern_bounds)}
         );
         pop_frame();

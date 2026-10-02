@@ -62,8 +62,7 @@ public:
 
     template<typename Node>
     auto evaluate(const Node& source) noexcept -> ExitSet {
-        auto traversal = SemanticTraversal<true, Completion>(*this);
-        traversal(source);
+        SemanticTraversal<true, Completion> {*this}(source);
         return get(source).exits;
     }
 
@@ -77,8 +76,7 @@ public:
         // Expanded copies can share source PatternIDs while owning different
         // rewritten bounds. Only the incremental pattern query retains IDs.
         auto query = Completion(patterns);
-        auto traversal = SemanticTraversal<true, Completion>(query);
-        traversal(source);
+        SemanticTraversal<true, Completion> {query}(source);
         return query.get(source);
     }
 
@@ -398,7 +396,7 @@ auto conditional_exits(const SemIf& conditional, const Completion& facts) noexce
         if (!pending) {
             break;
         }
-        const auto condition = facts.get(branch.condition);
+        const auto& condition = facts.get(branch.condition);
         result = result | condition.then(facts.get(branch.body));
         pending = condition.contains(Exit::Normal);
     }
@@ -431,7 +429,7 @@ auto match_exits(const SemMatch& match, Completion& facts) noexcept -> Flow {
             continue;
         }
         auto selected = facts.pattern(arm.pattern, arm.pattern_bounds);
-        if (arm.pattern_always_matches) {
+        if (!arm.pattern_may_reject) {
             selected.rejected = false;
         }
         result = result | selected.outward;
@@ -481,7 +479,7 @@ auto try_exits(const SemTry& attempt, Completion& facts) noexcept -> Flow {
 
 auto loop_exits(const SemLoop& loop, const Completion& facts) noexcept -> Flow {
     const auto condition = loop.condition ? facts.get(*loop.condition) : Flow(Exit::Normal);
-    const auto body = facts.get(*loop.body);
+    const auto& body = facts.get(*loop.body);
     auto result = condition & outward;
     if (loop.condition && condition.contains(Exit::Normal)) {
         result = result | Exit::Normal;
@@ -501,7 +499,7 @@ auto loop_exits(const SemLoop& loop, const Completion& facts) noexcept -> Flow {
 auto expanded_exits(const SemExpandedLoop& loop, const Completion& facts) noexcept -> Flow {
     auto result = Flow();
     for (const auto& iteration : loop.iterations) {
-        const auto body = facts.get(iteration);
+        const auto& body = facts.get(iteration);
         result = result | (body & outward);
         if (body.contains(Exit::Break)) {
             result = result | Exit::Normal;

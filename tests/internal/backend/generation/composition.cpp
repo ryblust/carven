@@ -31,6 +31,18 @@ auto boolean_type(TargetUnitBuilder& target) noexcept -> TargetTypeID {
         .const_qualified = false,
     });
 }
+
+auto boolean_variable(TargetUnitBuilder& target, std::string_view name) noexcept
+    -> TargetVariableStmt {
+    return {
+        .binding = TargetVariableBinding::ConstValue,
+        .maybe_unused = false,
+        .local = target.add_local(TargetIdentifier::from_spelling(name)),
+        .type = boolean_type(target),
+        .initializer = bool_expression(true),
+    };
+}
+
 } // namespace
 
 namespace {
@@ -108,6 +120,185 @@ const ct::Suite tests([] static noexcept {
         }
     );
 
+    ct::test(
+        "Composition: child exits retain cleanup owed by either open scope",
+        [] static noexcept {
+            enum class Composition { Append, Accept, Scope };
+            struct Scenario final {
+                const char* name;
+                Composition composition;
+                bool parent_cleanup;
+                bool child_cleanup;
+            };
+            const auto scenarios = std::array {
+                Scenario {
+                    .name = "append crosses parent cleanup",
+                    .composition = Composition::Append,
+                    .parent_cleanup = true,
+                    .child_cleanup = false
+                },
+                Scenario {
+                    .name = "accept crosses parent cleanup",
+                    .composition = Composition::Accept,
+                    .parent_cleanup = true,
+                    .child_cleanup = false
+                },
+                Scenario {
+                    .name = "scope crosses parent cleanup",
+                    .composition = Composition::Scope,
+                    .parent_cleanup = true,
+                    .child_cleanup = false
+                },
+                Scenario {
+                    .name = "append retains child cleanup",
+                    .composition = Composition::Append,
+                    .parent_cleanup = false,
+                    .child_cleanup = true
+                },
+                Scenario {
+                    .name = "accept retains child cleanup",
+                    .composition = Composition::Accept,
+                    .parent_cleanup = false,
+                    .child_cleanup = true
+                },
+                Scenario {
+                    .name = "scope retains child cleanup",
+                    .composition = Composition::Scope,
+                    .parent_cleanup = false,
+                    .child_cleanup = true
+                },
+            };
+            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                auto target = TargetUnitBuilder {};
+                const auto exit =
+                    LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
+                auto parent = LoweringStmtBuilder {};
+                parent.declare(boolean_variable(target, "parent"), scenario.parent_cleanup);
+                auto child = LoweringStmtBuilder {};
+                child.declare(boolean_variable(target, "child"), scenario.child_cleanup);
+                child.terminate(return_statement(), exit);
+                ct::expect_equal(child.exits().crosses_cleanup(exit), scenario.child_cleanup);
+
+                switch (scenario.composition) {
+                    case Composition::Append: parent.append(std::move(child)); break;
+                    case Composition::Accept:
+                        ct::expect(
+                            !parent
+                                 .accept(std::move(child).complete<LoweringCompleted>(std::nullopt))
+                                 .has_value()
+                        );
+                        break;
+                    case Composition::Scope: parent.scope(std::move(child)); break;
+                }
+                ct::expect(!parent.continues());
+                ct::expect(parent.exits().contains(exit));
+                ct::expect(parent.exits().crosses_cleanup(exit));
+                ct::expect(parent.consume_exit(exit));
+                ct::expect(!parent.exits().contains(exit));
+                ct::expect(!parent.exits().crosses_cleanup(exit));
+            });
+        }
+    );
+
+    ct::test("Composition: completed child cleanup does not mark a later exit", [] static noexcept {
+        auto target = TargetUnitBuilder {};
+        auto child = LoweringStmtBuilder {};
+        child.declare(boolean_variable(target, "closed"), true);
+        auto parent = LoweringStmtBuilder {};
+        parent.scope(std::move(child));
+        ct::expect(parent.continues());
+        ct::expect(!parent.needs_cleanup());
+        const auto exit = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
+        parent.terminate(return_statement(), exit);
+        ct::expect(parent.exits().contains(exit));
+        ct::expect(!parent.exits().crosses_cleanup(exit));
+    });
+
+    ct::test("Composition: cleanup facts follow the source order of each exit", [] static noexcept {
+        auto target = TargetUnitBuilder {};
+        const auto early = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
+        const auto late = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 2};
+        auto parent = LoweringStmtBuilder {};
+        const auto branch = [&](LoweringExitTarget exit) noexcept {
+            auto selected = LoweringStmtBuilder {};
+            selected.terminate(return_statement(), exit);
+            parent.record_exits(selected.exits());
+            auto branches = std::vector<TargetIfBranch>();
+            branches.push_back(
+                {.condition = bool_expression(true), .body = std::move(selected).finish()}
+            );
+            parent.emit(target_lowering_statement(
+                TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+            ));
+        };
+        branch(early);
+        parent.declare(boolean_variable(target, "later"), true);
+        ct::expect(parent.needs_cleanup());
+        ct::expect(!parent.exits().crosses_cleanup(early));
+        branch(late);
+        ct::expect(parent.exits().crosses_cleanup(late));
+        ct::expect(!parent.exits().crosses_cleanup(early));
+
+        // Another path to the same receiver can owe cleanup even when the first did not.
+        branch(early);
+        ct::expect(parent.exits().crosses_cleanup(early));
+        ct::expect(parent.consume_exit(early));
+        ct::expect(!parent.exits().crosses_cleanup(early));
+        ct::expect(parent.exits().crosses_cleanup(late));
+        ct::expect(parent.consume_exit(late));
+        ct::expect(parent.exits().entries.empty());
+    });
+
+    ct::test(
+        "Composition: replacing an exit uses its original cleanup boundary",
+        [] static noexcept {
+            auto target = TargetUnitBuilder {};
+            const auto early =
+                LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
+            const auto late = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 2};
+            const auto outward =
+                LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 3};
+            const auto owned =
+                LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 4};
+            const auto late_outward =
+                LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 5};
+            auto parent = LoweringStmtBuilder {};
+            auto early_branch = LoweringStmtBuilder {};
+            early_branch.terminate(return_statement(), early);
+            parent.record_exits(early_branch.exits());
+            auto branches = std::vector<TargetIfBranch>();
+            branches.push_back(
+                {.condition = bool_expression(true), .body = std::move(early_branch).finish()}
+            );
+            parent.emit(target_lowering_statement(
+                TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+            ));
+            parent.declare(boolean_variable(target, "later"), true);
+            parent.terminate(return_statement(), late);
+            ct::expect(parent.needs_cleanup());
+            ct::expect(!parent.exits().crosses_cleanup(early));
+            ct::expect(parent.exits().crosses_cleanup(late));
+
+            const auto continuation = LoweringExitSummary {
+                .entries = {
+                    {.target = outward, .needs_cleanup = false},
+                    {.target = owned, .needs_cleanup = true},
+                },
+            };
+            parent.replace_exit(early, continuation);
+            ct::expect(!parent.exits().contains(early));
+            ct::expect(!parent.exits().crosses_cleanup(outward));
+            ct::expect(parent.exits().crosses_cleanup(owned));
+            parent.replace_exit(
+                late,
+                LoweringExitSummary {.entries = {{.target = late_outward, .needs_cleanup = false}}}
+            );
+            ct::expect(!parent.exits().contains(late));
+            ct::expect(!parent.exits().crosses_cleanup(late));
+            ct::expect(parent.exits().crosses_cleanup(late_outward));
+        }
+    );
+
     ct::test("Composition: region exits resume only at their own destination", [] static noexcept {
         const auto first = LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 1};
         const auto second = LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 2};
@@ -116,7 +307,7 @@ const ct::Suite tests([] static noexcept {
         ct::expect(!(sequence.consume_exit(second)));
         sequence.resume(TargetIdentifier::from_spelling("done"), TargetJumpRole::RegionExit, first);
         ct::expect(sequence.continues());
-        ct::expect(sequence.exits().targets.empty());
+        ct::expect(sequence.exits().entries.empty());
         ct::expect(expect_termination("composition.foreign-exit", [=]() noexcept {
             auto foreign = LoweringStmtBuilder {};
             foreign.terminate(return_statement(), first);

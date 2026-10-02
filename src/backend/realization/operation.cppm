@@ -40,7 +40,8 @@ auto realize_binary(
     ProgramOriginID origin
 ) noexcept -> TargetExpr;
 
-auto source_site_expression(ModuleLowering& context, ProgramOriginID origin) noexcept -> TargetExpr;
+auto source_site_expression(const ModuleLowering& context, ProgramOriginID origin) noexcept
+    -> TargetExpr;
 
 // Scalar and array adaptation share the source callable policy. Array inputs
 // must already be stabilized by the body realizer.
