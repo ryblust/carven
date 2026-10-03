@@ -144,6 +144,7 @@ auto expression_precedence(const TargetExpr& expression) noexcept -> TargetPrece
             },
             [](const TargetPrefixExpr&) static noexcept { return TargetPrecedence::Prefix; },
             [](const TargetCallExpr&) static noexcept { return TargetPrecedence::Postfix; },
+            [](const TargetTemplateNameExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetIndexExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetMemberExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetScopeMemberExpr&) static noexcept { return TargetPrecedence::Postfix; },
@@ -228,9 +229,9 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                      render_expression(*conditional.false_value, TargetPrecedence::Conditional)}
                 );
             },
-            [&](const TargetCallExpr& call) noexcept {
+            [&](const TargetTemplateNameExpr& name) noexcept {
                 auto templates = std::vector<LayoutNodeID> {};
-                for (const auto& argument : call.template_arguments) {
+                for (const auto& argument : name.arguments) {
                     templates.push_back(argument.visit([&](const auto& value) noexcept {
                         if constexpr (std::same_as<
                                           std::remove_cvref_t<decltype(value)>,
@@ -243,15 +244,20 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                         }
                     }));
                 }
+                return concat(
+                    {render_expression(*name.operand, TargetPrecedence::Postfix),
+                     delimited_list(templates, "<", ">")}
+                );
+            },
+            [&](const TargetCallExpr& call) noexcept {
                 auto arguments = std::vector<LayoutNodeID> {};
                 for (const auto& argument : call.arguments) {
                     arguments.push_back(render_expression(argument));
                 }
-                auto callee = render_expression(*call.callee, TargetPrecedence::Postfix);
-                if (!templates.empty()) {
-                    callee = concat({callee, delimited_list(templates, "<", ">")});
-                }
-                return concat({callee, delimited_list(arguments, "(", ")")});
+                return concat(
+                    {render_expression(*call.callee, TargetPrecedence::Postfix),
+                     delimited_list(arguments, "(", ")")}
+                );
             },
             [&](const TargetArrayExpr& array) noexcept {
                 const auto template_values = std::array {

@@ -4,8 +4,10 @@
 #include "trap.hpp"
 #include "utf.hpp"
 
+#include <concepts>
 #include <cstddef>
 #include <cstdio>
+#include <functional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -47,17 +49,19 @@ CARVEN_RUNTIME_COLD inline auto write_entry_failure(
 // Reports the failure alternative held by a completed entry outcome. The entry
 // has already run its cleanup, so the process still exits normally.
 template<typename Failure, typename Emit>
+    requires std::invocable<Emit&, DisplayWriter&, const Failure&, std::size_t>
 auto report_entry_failure(
     const Failure* failure,
     std::string_view name,
-    Emit emit,
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): Synchronous display borrows the emitter under its lvalue invocation contract.
+    Emit&& emit,
     SourceSite site
 ) noexcept -> void {
     if (failure == nullptr) {
         return;
     }
     auto writer = DisplayWriter();
-    emit(writer, *failure);
+    std::invoke(emit, writer, *failure, std::size_t {0});
     detail::write_entry_failure(name, writer.result(), site);
 }
 

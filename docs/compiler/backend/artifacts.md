@@ -72,7 +72,10 @@ Slice backing arrays are
 module-owned `inline constexpr` objects named by content. Their initializers use
 the same module context as their references. Structural display uses runtime
 scalar, sequence, and range emitters, plus a content-named helper per nominal
-type. Display depth belongs to the runtime writer.
+type. Module lowering caches emitter types separately from expressions referring
+to their `stateless_value` instances. Helper records precede their function
+definitions so instance constraints see complete types. Display calls pass depth
+by value; the runtime writer owns the output budget.
 
 Each runtime test becomes a function. Static tests have already executed during
 analysis and receive no target function name or runner entry. Module runners call
@@ -123,6 +126,13 @@ composed before publication. Only types are interned. A construction-time index
 selects candidates for structural equality; type storage and IDs retain insertion
 order. Target type IDs belong to one unit. Source attribution and function forms
 use exact variants.
+
+`TargetTemplateNameExpr` represents a template-id naming a function or variable,
+including an explicit empty argument list. `TargetCallExpr` contains its callee
+and runtime arguments. Function-template calls compose these nodes; variable
+templates use the name expression directly. Traversal, verification, dependency
+collection, and rendering consume the same argument representation. Entity
+classification reads the primary expression through `template_primary_expression`.
 
 Type construction accepts only children already present in the same unit;
 append-only insertion establishes acyclicity. Finishing validates occurrence type

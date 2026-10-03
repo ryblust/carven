@@ -86,6 +86,21 @@ auto TypeLookup::enter_expression(const TargetExpr& expression, TargetExpression
         } else if constexpr (std::same_as<Value, TargetPrefixExpr>
                              || std::same_as<Value, TargetBinaryExpr>) {
             mix(static_cast<std::size_t>(value.op));
+        } else if constexpr (std::same_as<Value, TargetTemplateNameExpr>) {
+            mix(value.arguments.size());
+            for (const auto& argument : value.arguments) {
+                mix(argument.index());
+                argument.visit([&](const auto& argument_value) noexcept {
+                    using Argument = std::remove_cvref_t<decltype(argument_value)>;
+                    if constexpr (std::same_as<Argument, bool>) {
+                        mix(argument_value);
+                    } else if constexpr (std::same_as<Argument, TargetIntegerLiteral>) {
+                        mix(argument_value.negative);
+                        mix(std::hash<std::uint64_t>()(argument_value.magnitude));
+                        mix(static_cast<std::size_t>(argument_value.suffix));
+                    }
+                });
+            }
         }
     });
     return true;

@@ -119,8 +119,9 @@ struct UnitNames final {
 
     auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool {
         const auto* call = std::get_if<TargetCallExpr>(&expression.value);
-        const auto* name =
-            call == nullptr ? nullptr : std::get_if<TargetNameExpr>(&call->callee->value);
+        const auto* name = call == nullptr
+            ? nullptr
+            : std::get_if<TargetNameExpr>(&template_primary_expression(*call->callee).value);
         if (name != nullptr) {
             calls.emplace(std::string(name->name.components().back().spelling()));
         }
@@ -138,7 +139,8 @@ struct CallFacts final {
         if (call == nullptr) {
             return true;
         }
-        const auto* name = std::get_if<TargetNameExpr>(&call->callee->value);
+        const auto* name =
+            std::get_if<TargetNameExpr>(&template_primary_expression(*call->callee).value);
         if (name == nullptr) {
             return true;
         }
@@ -434,8 +436,11 @@ const ct::Suite tests([] static noexcept {
             auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
                 -> bool {
                 const auto* call = std::get_if<TargetCallExpr>(&expression.value);
-                const auto* name =
-                    call == nullptr ? nullptr : std::get_if<TargetNameExpr>(&call->callee->value);
+                const auto* name = call == nullptr
+                    ? nullptr
+                    : std::get_if<TargetNameExpr>(
+                          &template_primary_expression(*call->callee).value
+                      );
                 if (name != nullptr
                     && instances.contains(std::string(name->name.components().back().spelling()))) {
                     ++calls;
@@ -482,7 +487,9 @@ const ct::Suite tests([] static noexcept {
                     -> bool {
                     const auto* call = std::get_if<TargetCallExpr>(&expression.value);
                     if (call != nullptr) {
-                        if (std::holds_alternative<TargetNameExpr>(call->callee->value)) {
+                        if (std::holds_alternative<TargetNameExpr>(
+                                template_primary_expression(*call->callee).value
+                            )) {
                             ++calls;
                         }
                     }

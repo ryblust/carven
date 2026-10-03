@@ -267,7 +267,6 @@ auto LoweringStmtBuilder::result_region(
     return TargetExpr {
         .value = TargetCallExpr {
             .callee = UniqueIndirect(std::move(*this).result_factory(type, yield)),
-            .template_arguments = {},
             .arguments = {}
         }
     };

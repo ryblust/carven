@@ -11,8 +11,6 @@ namespace {
 class ExecutionDisplayText final {
 public:
     static constexpr auto byte_limit = 16384uz;
-    static constexpr auto depth_limit = 8uz;
-    static constexpr auto element_limit = 64uz;
     auto text(std::string_view value) noexcept -> void;
     auto quoted(std::string_view value, bool character_literal = false) noexcept -> void;
     auto take() && noexcept -> std::string;
@@ -133,6 +131,8 @@ public:
     auto finish() noexcept -> std::string;
 
 private:
+    static constexpr auto depth_limit = 8uz;
+    static constexpr auto element_limit = 64uz;
     const ExecutionValueAccess& values;
     const ExecutionMemory* memory;
     ExecutionDisplayText buffer;
@@ -147,7 +147,7 @@ ExecutionDisplay::ExecutionDisplay(
 
 auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, bool nested) noexcept
     -> bool {
-    if (depth == ExecutionDisplayText::depth_limit) {
+    if (depth >= depth_limit) {
         buffer.text("...");
         return true;
     }
@@ -199,9 +199,8 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
         } else {
             buffer.text(enum_case ? "(" : "[");
         }
-        const auto count = structure || enum_case
-            ? compound->size()
-            : std::min(compound->size(), ExecutionDisplayText::element_limit);
+        const auto count =
+            structure || enum_case ? compound->size() : std::min(compound->size(), element_limit);
         for (auto index = 0uz; index < count; ++index) {
             buffer.line(depth + 1);
             if (structure) {

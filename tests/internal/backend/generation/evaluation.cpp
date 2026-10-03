@@ -109,7 +109,9 @@ const ct::Suite tests([] static noexcept {
                         || name->symbol == TargetSymbol::RuntimeFormatValidUTF8;
                 }
                 if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                    if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                    if (const auto* name = std::get_if<TargetNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        )) {
                         effects += name->name.components().back().spelling() == "touch";
                     }
                 }
@@ -149,11 +151,14 @@ const ct::Suite tests([] static noexcept {
                     if (call == nullptr) {
                         return true;
                     }
-                    if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                    if (const auto* name = std::get_if<TargetNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        )) {
                         effects += name->name.components().back().spelling() == "touch";
                     }
-                    if (const auto* intrinsic =
-                            std::get_if<TargetIntrinsicNameExpr>(&call->callee->value);
+                    if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        );
                         intrinsic != nullptr && intrinsic->symbol == TargetSymbol::RuntimeFormat) {
                         ++formats;
                     }
@@ -370,7 +375,9 @@ const ct::Suite tests([] static noexcept {
                     if (call == nullptr) {
                         return false;
                     }
-                    const auto* member = std::get_if<TargetMemberExpr>(&call->callee->value);
+                    const auto* member = std::get_if<TargetMemberExpr>(
+                        &template_primary_expression(*call->callee).value
+                    );
                     if (member == nullptr) {
                         return false;
                     }
@@ -651,8 +658,9 @@ const ct::Suite tests([] static noexcept {
                             branches +=
                                 std::holds_alternative<TargetConditionalExpr>(expression.value);
                             if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                                if (const auto* name =
-                                        std::get_if<TargetNameExpr>(&call->callee->value)) {
+                                if (const auto* name = std::get_if<TargetNameExpr>(
+                                        &template_primary_expression(*call->callee).value
+                                    )) {
                                     calls += name->name.components().back().spelling() == "sum";
                                 }
                             }
@@ -1148,10 +1156,13 @@ const ct::Suite tests([] static noexcept {
                 auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
                     -> bool {
                     if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                        if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                        if (const auto* name = std::get_if<TargetNameExpr>(
+                                &template_primary_expression(*call->callee).value
+                            )) {
                             ++calls[std::string(name->name.components().back().spelling())];
-                        } else if (const auto* intrinsic =
-                                       std::get_if<TargetIntrinsicNameExpr>(&call->callee->value)) {
+                        } else if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(
+                                       &template_primary_expression(*call->callee).value
+                                   )) {
                             checked_divisions +=
                                 intrinsic->symbol == TargetSymbol::RuntimeIntegerDivide;
                         }
@@ -1487,7 +1498,9 @@ const ct::Suite tests([] static noexcept {
             auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
                 -> bool {
                 if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                    if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                    if (const auto* name = std::get_if<TargetNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        )) {
                         calls += name->name.components().back().spelling() == "operand";
                     }
                 }
@@ -1808,7 +1821,9 @@ const ct::Suite tests([] static noexcept {
                     -> bool {
                     operations += std::holds_alternative<TargetBinaryExpr>(expression.value);
                     if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                        const auto* name = std::get_if<TargetNameExpr>(&call->callee->value);
+                        const auto* name = std::get_if<TargetNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        );
                         if (!ct::expect(name != nullptr)) {
                             return false;
                         }
@@ -1997,7 +2012,9 @@ const ct::Suite tests([] static noexcept {
             auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
                 -> bool {
                 if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                    if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                    if (const auto* name = std::get_if<TargetNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        )) {
                         ct::expect(name->name.components().back().spelling() == "effect");
                         ++effects;
                     }

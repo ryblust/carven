@@ -2,8 +2,10 @@
 
 #include "display/display.hpp"
 
+#include <cstddef>
 #include <cstdio>
 #include <exception>
+#include <functional>
 #include <string_view>
 #include <type_traits>
 #include <version>
@@ -47,7 +49,7 @@ auto print_value(std::FILE* stream, const StructuralDisplay<T, Emit>& value) noe
         );
     } else {
         auto writer = DisplayWriter();
-        value.emit(writer, value.value);
+        std::invoke(value.emit, writer, value.value, std::size_t {0});
         detail::print_value(stream, writer.result());
     }
 }

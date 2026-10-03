@@ -34,7 +34,8 @@ auto PatternQuery::enter_expression(const TargetExpr& expression, TargetExpressi
             || binary->op == TargetBinaryOperator::LessEqual;
     }
     if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-        if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+        if (const auto* name =
+                std::get_if<TargetNameExpr>(&template_primary_expression(*call->callee).value)) {
             bound_calls += name->name.components().back().spelling() == "bound";
         }
     }

@@ -37,7 +37,9 @@ auto AppendQuery::enter_expression(const TargetExpr& expression, TargetExpressio
     if (call == nullptr) {
         return true;
     }
-    if (const auto* name = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value)) {
+    if (const auto* name = std::get_if<TargetIntrinsicNameExpr>(
+            &template_primary_expression(*call->callee).value
+        )) {
         if (name->symbol == TargetSymbol::RuntimeAppendFormat
             || name->symbol == TargetSymbol::RuntimeAppendFormatValidUTF8) {
             entries.push_back({.symbol = name->symbol, .argument_count = call->arguments.size()});
@@ -52,7 +54,8 @@ auto AppendQuery::enter_expression(const TargetExpr& expression, TargetExpressio
         owning_formats += name->symbol == TargetSymbol::RuntimeFormat
             || name->symbol == TargetSymbol::RuntimeFormatValidUTF8;
     }
-    if (const auto* member = std::get_if<TargetMemberExpr>(&call->callee->value)) {
+    if (const auto* member =
+            std::get_if<TargetMemberExpr>(&template_primary_expression(*call->callee).value)) {
         if (const auto* name = std::get_if<TargetIdentifier>(&member->name)) {
             boolean_writes += name->spelling() == "boolean";
         }
@@ -68,7 +71,8 @@ auto AppendQuery::enter_expression(const TargetExpr& expression, TargetExpressio
             );
         }
     }
-    if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+    if (const auto* name =
+            std::get_if<TargetNameExpr>(&template_primary_expression(*call->callee).value)) {
         const auto spelling = name->name.components().back().spelling();
         if (spelling == "select" || spelling == "touch") {
             events.emplace_back(spelling);

@@ -62,7 +62,9 @@ const ct::Suite tests([] static noexcept {
                     if (call == nullptr) {
                         return true;
                     }
-                    const auto* callee = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value);
+                    const auto* callee = std::get_if<TargetIntrinsicNameExpr>(
+                        &template_primary_expression(*call->callee).value
+                    );
                     if (callee != nullptr && callee->symbol == TargetSymbol::StdAddressof) {
                         ct::expect(call->arguments.size() == 1uz);
                         ++address_calls;
@@ -130,8 +132,11 @@ const ct::Suite tests([] static noexcept {
                         ++indices;
                     }
                     const auto* call = std::get_if<TargetCallExpr>(&expression.value);
-                    const auto* callee =
-                        call ? std::get_if<TargetIntrinsicNameExpr>(&call->callee->value) : nullptr;
+                    const auto* callee = call
+                        ? std::get_if<TargetIntrinsicNameExpr>(
+                              &template_primary_expression(*call->callee).value
+                          )
+                        : nullptr;
                     if (callee != nullptr && callee->symbol == TargetSymbol::StdAddressof) {
                         ++addresses;
                     }

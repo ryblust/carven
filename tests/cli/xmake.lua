@@ -21,10 +21,10 @@ local case_specs = {
         args = {"interpret", "input.cv"}, stdout = "stdout.txt", stderr = "stderr.txt",
     },
     ["commands/structural_display"] = {
-        inputs = {"input.cv", "failure.cv"},
+        inputs = {"input.cv", "failure.cv", "helper.cv"},
         steps = {
-            {args = {"interpret", "input.cv"}, stdout = "stdout.txt"},
-            {args = {"input.cv"}, stdout = "stdout.txt"},
+            {args = {"interpret", "input.cv", "helper.cv"}, stdout = "stdout.txt"},
+            {args = {"input.cv", "helper.cv"}, stdout = "stdout.txt"},
             {args = {"check", "failure.cv"}, exit_code = 1,
                 stderr_contains = {'actual: [\n        12,\n    ]', 'expected: [\n        15,\n    ]',
                     'true: <not evaluated>', 'condition: 1 > 2'},

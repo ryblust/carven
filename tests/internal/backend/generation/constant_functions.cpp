@@ -31,7 +31,8 @@ auto FunctionFacts::enter_expression(const TargetExpr& expression, TargetExpress
     -> bool {
     if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
         ++all_calls;
-        if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+        if (const auto* name =
+                std::get_if<TargetNameExpr>(&template_primary_expression(*call->callee).value)) {
             label_calls += name->name.components().back().spelling() == "label";
         }
     }

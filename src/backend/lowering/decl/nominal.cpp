@@ -242,16 +242,11 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         auto body = std::vector<TargetStmt>();
         body.push_back(generated_statement(
             TargetReturnStmt {
-                .expression = TargetExpr {
-                    .value = TargetCallExpr {
-                        .callee = target_child(intrinsic_expression(TargetSymbol::StdGetIf)),
-                        .template_arguments =
-                            {
-                                context.named_type(TargetName {record}),
-                            },
-                        .arguments = std::move(arguments),
-                    },
-                },
+                .expression = template_call_expression(
+                    intrinsic_expression(TargetSymbol::StdGetIf),
+                    {context.named_type(TargetName {record})},
+                    std::move(arguments)
+                ),
             }
         ));
         projection_members.push_back(

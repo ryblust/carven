@@ -11,40 +11,41 @@ abstractions as a design goal.
 
 ### Intent over mechanism
 
-Express whether an operation reads, mutates, or takes ownership of a value, with
-explicit access choices for function arguments and closure captures. Carven
-checks these contracts and manages the corresponding lifetimes. Write your intent
-in source and let the compiler arrange C++ construction, evaluation, and cleanup.
+Express whether an operation reads, mutates, or takes ownership of a value through
+function arguments and closure captures. Carven checks these contracts and
+manages lifetimes, arranging C++ construction, evaluation, and cleanup for you.
 
 ### Compile-time capabilities
 
-Build static data with familiar functions, loops, and text operations, and keep
-constant functions available for runtime use. The compiler also uses known values,
-types, and structure to precompute work and specialize runtime operations.
-Even formatting dynamic values can benefit from prepared text, conversion choices,
-and size information supplied by the compiler.
+Build the data your program needs before it runs. Generate lookup tables,
+validate UTF-8, and construct static text using familiar functions, loops,
+arrays, and text operations. Check the results with `const test`, and use the
+same `const fn` functions at runtime. Specialize the work that remains with
+`const` parameters, `const if`, and `const for`: you choose the compile-time
+inputs, and Carven generates code tailored to them.
 
 ### Typed failure contracts
 
 See what can fail in a function's contract. Propagate with `?` or recover with
 patterns that give you the failure's type and payload. The same model extends to
-callbacks, keeping failures visible as you compose operations. Choose recovery
-where you have the context to handle it, with ownership and cleanup preserved.
+callbacks, keeping failures visible as you compose operations. Handle failures
+where you have the context to recover.
 
 ### Zero-overhead abstractions
 
 Use expressive language features with the cost of skilled handwritten C++ as the
-design target. Carven uses known semantic facts to guide storage and native calls,
-then puts your C++ compiler's optimizer to work. Generated C++ stays available for
-inspection, so you can follow how your source becomes native code and measure it
-with familiar performance tools.
+design target. Carven uses ownership and known values to avoid unnecessary storage
+and branching. Even formatting dynamic values benefits from work prepared at
+compile time. Explicit SIMD types offer portable lane operations with NEON and
+opt-in AVX2 acceleration. Your C++ compiler then optimizes the result. Inspect the
+generated C++ and measure native performance with familiar tools.
 
 ### Seamless C++ interoperability
 
-Bring C++ libraries into Carven through header imports, and make Carven functions
-available to C++ through generated public interfaces. Reuse native types and APIs
-alongside Carven code. Compile, link, and debug with your existing C++ tools and
-build systems, and introduce Carven into a native project alongside existing code.
+Bring C++ libraries into Carven through header imports, and expose Carven functions
+through generated public interfaces. Reuse native types and APIs, compile and
+debug with your existing tools, and introduce Carven into a C++ project alongside
+existing code.
 
 > [!NOTE]
 > Carven is under active development, and language and tooling changes may
@@ -148,7 +149,8 @@ Using the same `main.cv` from above, with an installed `carven` on `PATH`, run:
 ```shell
 carven compile -o out main.cv
 clang++ -std=c++20 -Iout -I/path/to/carven/crafts \
-    out/main.cpp out/crafts/carven/std/utf/*.cpp -o out/hello-carven
+    out/main.cpp out/crafts/carven/std/utf/*.cpp \
+    out/crafts/carven/std/simd/*.cpp -o out/hello-carven
 ./out/hello-carven
 ```
 
@@ -160,13 +162,15 @@ compiler. From the repository root, build the same file with the local compiler:
 ./xmakew run carven compile -o out/manual main.cv
 clang++ -std=c++20 -Iout/manual -Icrafts \
     out/manual/main.cpp out/manual/crafts/carven/std/utf/*.cpp \
+    out/manual/crafts/carven/std/simd/*.cpp \
     -o out/manual/hello-carven
 ./out/manual/hello-carven
 ```
 
 The commands above include the generated implementations for the bundled UTF
-Craft. A `main.cv` that imports `std::utf.text` uses the same source collection;
-there is no need to pass `/path/to/carven/crafts/carven/std/utf/*.cv` explicitly.
+and SIMD Crafts. A `main.cv` that imports `std::utf.text` uses the same source
+collection; there is no need to pass
+`/path/to/carven/crafts/carven/std/utf/*.cv` explicitly.
 When additional Crafts are installed, include their generated implementations
 and native providers in the C++ build as well.
 

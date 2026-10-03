@@ -108,6 +108,7 @@ auto TargetDependencyCollector::enter_expression(
             [](const TargetPrefixExpr&) static noexcept {},
             [](const TargetBinaryExpr&) static noexcept {},
             [](const TargetConditionalExpr&) static noexcept {},
+            [](const TargetTemplateNameExpr&) static noexcept {},
             [](const TargetCallExpr&) static noexcept {},
             [&](const TargetArrayExpr&) noexcept { include("array"); },
             [](const TargetConstructionExpr&) static noexcept {},

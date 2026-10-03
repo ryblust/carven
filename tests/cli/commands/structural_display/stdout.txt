@@ -81,3 +81,45 @@ __A {
     cv_name_5f5f41: 11,
     cv_name_member_5f5f41: 6,
 }
+[
+    [
+        DisplayCell {
+            value: 9,
+        },
+    ],
+]
+[
+    [
+        DisplayCell {
+            value: 9,
+        },
+    ],
+]
+[
+    1..=2,
+    3..4,
+]
+Single::Only Code::First Code::Last
+PayloadOnly::Value(
+    5,
+) OptionalValue::Empty
+Branch {
+    children: [
+        Branch {
+            children: [
+                Branch {
+                    children: [
+                        Branch {
+                            children: [
+                                ...,
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
+Branch {
+    children: [],
+}

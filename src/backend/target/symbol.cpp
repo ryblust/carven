@@ -84,6 +84,11 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "::carven::runtime::DisplayWriter",
                 "carven/runtime/display/display.hpp"
             );
+        case TargetSymbol::RuntimeStatelessValue:
+            return symbol_info(
+                "::carven::runtime::stateless_value",
+                "carven/runtime/stateless.hpp"
+            );
         case TargetSymbol::RuntimeScalarDisplay:
             return symbol_info(
                 "::carven::runtime::ScalarDisplay",

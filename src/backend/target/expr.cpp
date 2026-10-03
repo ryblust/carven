@@ -29,15 +29,40 @@ auto prefix_expression(TargetPrefixOperator operation, TargetExpr operand) noexc
     };
 }
 
+auto template_name_expression(
+    TargetExpr operand,
+    std::vector<TargetTemplateArgument> arguments
+) noexcept -> TargetExpr {
+    return {
+        .value = TargetTemplateNameExpr {
+            .operand = UniqueIndirect(std::move(operand)),
+            .arguments = std::move(arguments),
+        },
+    };
+}
+
+auto template_primary_expression(const TargetExpr& expression) noexcept -> const TargetExpr& {
+    if (const auto* name = std::get_if<TargetTemplateNameExpr>(&expression.value)) {
+        return *name->operand;
+    }
+    return expression;
+}
+
 auto template_call_expression(
     TargetExpr callee,
     std::vector<TargetTemplateArgument> template_arguments,
     std::vector<TargetExpr> arguments
 ) noexcept -> TargetExpr {
+    return call_expression(
+        template_name_expression(std::move(callee), std::move(template_arguments)),
+        std::move(arguments)
+    );
+}
+
+auto call_expression(TargetExpr callee, std::vector<TargetExpr> arguments) noexcept -> TargetExpr {
     return {
         .value = TargetCallExpr {
             .callee = UniqueIndirect(std::move(callee)),
-            .template_arguments = std::move(template_arguments),
             .arguments = std::move(arguments),
         },
     };
@@ -54,5 +79,5 @@ auto call_member(
             .name = TargetIdentifier::from_spelling(member)
         }
     };
-    return template_call_expression(std::move(callee), {}, std::move(arguments));
+    return call_expression(std::move(callee), std::move(arguments));
 }

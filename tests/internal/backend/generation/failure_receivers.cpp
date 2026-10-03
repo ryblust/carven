@@ -69,7 +69,8 @@ auto ReceiverQuery::enter_expression(const TargetExpr& expression, TargetExpress
         return true;
     }
     if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-        if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+        if (const auto* name =
+                std::get_if<TargetNameExpr>(&template_primary_expression(*call->callee).value)) {
             handlers += name->name.components().back().spelling() == "handled";
         }
     }

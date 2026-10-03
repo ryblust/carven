@@ -21,6 +21,7 @@ struct DisplayQuery final {
     std::size_t nodes;
     std::size_t branches;
     std::size_t pair_fields;
+    std::size_t enum_conditions;
     auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
     auto enter_statement(const TargetStmt& statement) noexcept -> bool;
 };
@@ -37,7 +38,15 @@ auto DisplayQuery::enter_expression(const TargetExpr& expression, TargetExpressi
 }
 
 auto DisplayQuery::enter_statement(const TargetStmt& statement) noexcept -> bool {
-    branches += std::holds_alternative<TargetIfStmt>(statement.value);
+    if (const auto* selection = std::get_if<TargetIfStmt>(&statement.value)) {
+        ++branches;
+        for (const auto& branch : selection->branches) {
+            if (const auto* condition = std::get_if<TargetBinaryExpr>(&branch.condition.value)) {
+                enum_conditions += condition->op == TargetBinaryOperator::Equal
+                    || condition->op == TargetBinaryOperator::NotEqual;
+            }
+        }
+    }
     return true;
 }
 
@@ -47,7 +56,12 @@ auto inspect(std::string source) noexcept -> DisplayQuery {
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("display")}
     );
-    auto query = DisplayQuery {.nodes = 0uz, .branches = 0uz, .pair_fields = 0uz};
+    auto query = DisplayQuery {
+        .nodes = 0uz,
+        .branches = 0uz,
+        .pair_fields = 0uz,
+        .enum_conditions = 0uz,
+    };
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         ct::require(traverse_target_unit(unit.sections(), query));
@@ -60,6 +74,40 @@ auto inspect(std::string source) noexcept -> DisplayQuery {
 namespace {
 
 const ct::Suite tests([] static noexcept {
+    ct::test("Generation: enum display selects only unresolved cases", [] static noexcept {
+        struct Scenario final {
+            std::string_view name;
+            std::string_view source;
+            std::size_t conditions;
+        };
+        const auto scenarios = std::array {
+            Scenario {
+                "single numeric case",
+                "enum E { A } fn show(value: E) { println(value); }",
+                0uz,
+            },
+            Scenario {
+                "single payload case",
+                "enum E { A(i32) } fn show(value: E) { println(value); }",
+                0uz,
+            },
+            Scenario {
+                "numeric cases",
+                "enum E { A, B, C } fn show(value: E) { println(value); }",
+                2uz,
+            },
+            Scenario {
+                "payload cases",
+                "enum E { A(i32), B } fn show(value: E) { println(value); }",
+                1uz,
+            },
+        };
+        ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+            const auto query = inspect(std::string(scenario.source));
+            ct::expect_equal(query.enum_conditions, scenario.conditions);
+        });
+    });
+
     ct::test("Generation: shared display types have bounded target syntax", [] static noexcept {
         constexpr auto width = 4uz;
         const auto depths = std::array {2uz, 4uz, 6uz};

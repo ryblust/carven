@@ -76,6 +76,85 @@ auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
 namespace {
 
 const ct::Suite tests([] static noexcept {
+    ct::test("Emission: variable template references retain type dependencies", [] static noexcept {
+        const auto artifact = emitted_statement([](TargetUnitBuilder& builder) static noexcept {
+            const auto scalar = builder.intern_type({
+                .value =
+                    TargetIntrinsicType {
+                        .symbol = TargetSymbol::RuntimeScalarDisplay,
+                        .type_argument_ids = {},
+                    },
+                .const_qualified = false,
+            });
+            const auto sequence = builder.intern_type({
+                .value =
+                    TargetIntrinsicType {
+                        .symbol = TargetSymbol::RuntimeSequenceDisplay,
+                        .type_argument_ids = {scalar},
+                    },
+                .const_qualified = false,
+            });
+            return TargetExprStmt {
+                .expression = prefix_expression(
+                    TargetPrefixOperator::AddressOf,
+                    template_name_expression(
+                        TargetExpr {
+                            .value =
+                                TargetIntrinsicNameExpr {
+                                    .symbol = TargetSymbol::RuntimeStatelessValue,
+                                }
+                        },
+                        {sequence}
+                    )
+                ),
+            };
+        });
+        ct::expect(artifact.content.contains("#include <carven/runtime/stateless.hpp>"));
+        ct::expect(artifact.content.contains("#include <carven/runtime/display/display.hpp>"));
+        ct::expect(artifact.content.contains("&::carven::runtime::stateless_value<"));
+        ct::expect(artifact.content.contains("::carven::runtime::SequenceDisplay<"));
+        ct::expect(artifact.content.contains("::carven::runtime::ScalarDisplay"));
+    });
+
+    ct::test("Emission: explicit empty template arguments survive composition", [] static noexcept {
+        const auto artifact = emitted_statement(
+            TargetExprStmt {
+                .expression = template_call_expression(
+                    TargetExpr {
+                        .value =
+                            TargetNameExpr {
+                                .name = TargetName(TargetIdentifier::from_spelling("selected")),
+                            }
+                    },
+                    {},
+                    {}
+                ),
+            }
+        );
+        ct::expect(artifact.content.contains("selected<>();"));
+    });
+
+    ct::test("Emission: template references compose with member access", [] static noexcept {
+        const auto artifact = emitted_statement(
+            TargetExprStmt {
+                .expression = call_member(
+                    template_name_expression(
+                        TargetExpr {
+                            .value =
+                                TargetNameExpr {
+                                    .name = TargetName(TargetIdentifier::from_spelling("policy")),
+                                }
+                        },
+                        {true}
+                    ),
+                    "apply",
+                    {}
+                ),
+            }
+        );
+        ct::expect(artifact.content.contains("policy<true>.apply();"));
+    });
+
     ct::test("Emission: C++ string quoting owns escape syntax", [] static noexcept {
         ct::expect_equal(
             cpp_string_token("a\\b\n\"c\t"),
@@ -373,7 +452,6 @@ const ct::Suite tests([] static noexcept {
                                                 }
                                         }
                                     ),
-                                    .template_arguments = {},
                                     .arguments = {}
                                 }
                             },

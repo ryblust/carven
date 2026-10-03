@@ -16,7 +16,10 @@ to those C++ operations.
 
 Representation selection expresses published facts through literals, concrete
 types, template arguments, and specialized runtime entries.
-Target calls carry ordered type or boolean/integer literal template arguments.
+Target template-id name expressions carry ordered type or boolean/integer
+literal arguments independently of invocation. Calls consume a callee expression
+and runtime arguments; function-template calls and variable-template references
+use the same name representation.
 These describe native C++ syntax, with type dependencies visited normally.
 
 Structure declarations lower to C++ aggregates containing their declared fields.
@@ -151,6 +154,17 @@ captures are `std::reference_wrapper<T>` fields whose referents are accessed
 through `.get()`. Capture fields permit the generated default
 C++ assignment operation to copy values and rebind reference targets.
 Callable borrows use non-owning `FunctionRef` target descriptions.
+
+Runtime type-selected operations use `Stateless<T>` and `stateless_value<T>`
+from `runtime/stateless.hpp`. The contract admits unqualified empty object types
+with trivial default construction and destruction. Each type has a shared const
+instance; consumers check invocation arguments and results. Operations may
+observe external state.
+
+`FunctionRef::from_stateless(value)` invokes that instance without retaining a
+source-object borrow. The source expression executes once. Stateless array
+adaptation uses the same entry and result adaptation. Ordinary callable borrows
+preserve the supplied object's identity and constness.
 
 Generated function bodies, closure call operators, evaluation lambdas, import
 bridges, and export façades use unconditional `noexcept` specifications.

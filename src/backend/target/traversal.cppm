@@ -291,15 +291,18 @@ auto traverse_target_expression_impl(
                     && traverse_target_owned_expression(value.true_value, visitor)
                     && traverse_target_owned_expression(value.false_value, visitor);
             },
-            [&](TargetTraversalNode<Node, TargetCallExpr>& value) noexcept {
-                return traverse_target_owned_expression(value.callee, visitor)
+            [&](TargetTraversalNode<Node, TargetTemplateNameExpr>& value) noexcept {
+                return traverse_target_owned_expression(value.operand, visitor)
                     && std::ranges::all_of(
-                           value.template_arguments,
+                           value.arguments,
                            [&](const TargetTemplateArgument& argument) noexcept {
                                const auto* type = std::get_if<TargetTypeID>(&argument);
                                return type == nullptr || visit_target_type(visitor, *type);
                            }
-                    )
+                    );
+            },
+            [&](TargetTraversalNode<Node, TargetCallExpr>& value) noexcept {
+                return traverse_target_owned_expression(value.callee, visitor)
                     && traverse_target_expressions(value.arguments, visitor);
             },
             [&](TargetTraversalNode<Node, TargetArrayExpr>& value) noexcept {

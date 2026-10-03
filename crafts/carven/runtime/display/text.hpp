@@ -11,8 +11,6 @@ namespace carven::runtime {
 class DisplayText final {
 public:
     static constexpr auto byte_limit = std::size_t {16384};
-    static constexpr auto depth_limit = std::size_t {8};
-    static constexpr auto element_limit = std::size_t {64};
 
     auto text(std::string_view value) noexcept -> void {
         if (is_truncated) {

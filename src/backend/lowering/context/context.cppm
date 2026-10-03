@@ -126,6 +126,7 @@ public:
         bool stops_test,
         TypeNameScope scope = TypeNameScope::Module
     ) noexcept -> TargetTypeID;
+    auto display_emitter_type(TypeID type) noexcept -> TargetTypeID;
     auto display_emitter(TypeID type) noexcept -> TargetExpr;
     auto take_query_aliases() noexcept -> std::vector<TargetItem>;
     auto take_display_helpers() noexcept -> std::vector<TargetItem>;
@@ -159,7 +160,6 @@ auto name_expression(TargetName name) noexcept -> TargetExpr;
 auto name_expression(TargetIdentifier name) noexcept -> TargetExpr;
 auto name_expression(TargetLocalID local) noexcept -> TargetExpr;
 auto intrinsic_expression(TargetSymbol symbol) noexcept -> TargetExpr;
-auto call_expression(TargetExpr callee, std::vector<TargetExpr> arguments) noexcept -> TargetExpr;
 auto target_expressions(TargetExpr value) noexcept -> std::vector<TargetExpr>;
 auto target_expressions(TargetExpr first, TargetExpr second) noexcept -> std::vector<TargetExpr>;
 auto target_expressions(TargetExpr first, TargetExpr second, TargetExpr third) noexcept

@@ -25,7 +25,8 @@ struct OutcomeOperations final {
         if (call == nullptr) {
             return false;
         }
-        const auto* member = std::get_if<TargetMemberExpr>(&call->callee->value);
+        const auto* member =
+            std::get_if<TargetMemberExpr>(&template_primary_expression(*call->callee).value);
         if (member == nullptr) {
             return false;
         }

@@ -33,7 +33,8 @@ auto ObservationQuery::visit_variable(const TargetVariableStmt&) noexcept -> boo
 auto ObservationQuery::enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
     -> bool {
     if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-        if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+        if (const auto* name =
+                std::get_if<TargetNameExpr>(&template_primary_expression(*call->callee).value)) {
             pure_calls += name->name.components().back().spelling() == "pure";
         }
     }

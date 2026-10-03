@@ -2,6 +2,7 @@
 
 #include "outcome.hpp"
 #include "passing.hpp"
+#include "stateless.hpp"
 #include "trap.hpp"
 
 #include <concepts>
@@ -116,8 +117,7 @@ private:
 
     template<typename Callable>
     static auto invoke_stateless(Entity, Arguments&... arguments) noexcept -> Result {
-        const auto callable = Callable {};
-        return invoke_adapted(callable, arguments...);
+        return invoke_adapted(stateless_value<Callable>, arguments...);
     }
 
 public:
@@ -156,11 +156,9 @@ public:
         : entity(static_cast<const void*>(std::addressof(callable))),
           thunk(&invoke_object<Callable>) {}
 
-    template<typename Callable>
-        requires std::is_empty_v<Callable>
-        && std::is_trivially_default_constructible_v<Callable>
-        && std::is_trivially_destructible_v<Callable>
-        && (compatible<const Callable&>())
+    // The argument is evaluated; invocation uses its type's shared const value.
+    template<Stateless Callable>
+        requires (compatible<const Callable&>())
     static auto from_stateless(const Callable&) noexcept -> FunctionRef {
         return FunctionRef(Entity(static_cast<const void*>(nullptr)), &invoke_stateless<Callable>);
     }

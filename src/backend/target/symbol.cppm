@@ -46,6 +46,7 @@ enum class TargetSymbol {
     RuntimeObserveComparison,
     RuntimeObserveShortCircuit,
     RuntimeDisplayWriter,
+    RuntimeStatelessValue,
     RuntimeStructuralDisplay,
     RuntimeScalarDisplay,
     RuntimeSequenceDisplay,

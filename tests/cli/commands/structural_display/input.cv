@@ -1,3 +1,5 @@
+import .helper using { DisplayCell, show_cells };
+
 struct Money {
     cents: i64
 }
@@ -82,3 +84,43 @@ encoded_fields.__A += encoded_fields.A_cv;
 encoded_fields.a__b += encoded_fields.a__b_cv;
 encoded_fields.cv_name_5f5f41 += encoded_fields.cv_name_member_5f5f41;
 println(encoded_fields);
+
+// Both modules display the same nominal type inside arrays and slices.
+let rows = [[DisplayCell { 9 }]];
+show_cells(rows.as_slice());
+println(rows);
+let ranges = [1..=2, 3..4];
+println(ranges.as_slice());
+
+enum Single {
+    Only
+}
+
+enum Code {
+    First = -1,
+    Last = 7
+}
+
+enum PayloadOnly {
+    Value(i32)
+}
+
+enum OptionalValue {
+    Value(i32),
+    Empty
+}
+
+println(Single::Only, Code::First, Code::Last);
+println(PayloadOnly::Value(5), OptionalValue::Empty);
+
+struct Branch {
+    children: [Branch]
+}
+
+const leaf = Branch { [] };
+const twig = Branch { [leaf] };
+const branch = Branch { [twig] };
+const crown = Branch { [branch] };
+
+println(Branch { [crown] });
+println(leaf);

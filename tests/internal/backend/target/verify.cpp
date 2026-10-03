@@ -94,6 +94,16 @@ auto require_violation(
     ct::expect_equal(result.error().kind, kind);
 }
 
+template<typename T>
+concept PrimaryExpressionBorrowable = requires (T&& expression) {
+    { template_primary_expression(std::forward<T>(expression)) } -> std::same_as<const TargetExpr&>;
+};
+
+static_assert(PrimaryExpressionBorrowable<TargetExpr&>);
+static_assert(PrimaryExpressionBorrowable<const TargetExpr&>);
+static_assert(!PrimaryExpressionBorrowable<TargetExpr>);
+static_assert(!PrimaryExpressionBorrowable<const TargetExpr>);
+
 static_assert(!std::copy_constructible<TargetExpr>);
 static_assert(!std::copy_constructible<TargetStmt>);
 static_assert(std::move_constructible<TargetExpr>);
@@ -109,6 +119,94 @@ static_assert(std::ranges::range<TargetPlanTableEntries<int, TargetArtifactID>>)
 namespace {
 
 const ct::Suite tests([] static noexcept {
+    ct::test("Target builder: template query identity retains every argument", [] static noexcept {
+        auto builder = TargetTestingFixture::unit_builder();
+        const auto type = builder.intern_type(bool_type());
+        const auto query =
+            [&](std::vector<TargetTemplateArgument> arguments) noexcept -> TargetType {
+            return {
+                .value = TargetDecltypeType(template_name_expression(
+                    TargetExpr {.value = TargetNameExpr {.name = TargetName(identifier("policy"))}},
+                    std::move(arguments)
+                )),
+                .const_qualified = false,
+            };
+        };
+        struct Scenario final {
+            std::string_view name;
+            std::vector<TargetTemplateArgument> arguments;
+        };
+        const auto scenarios = std::array {
+            Scenario {"type and true", {type, true}},
+            Scenario {"type and false", {type, false}},
+            Scenario {
+                "integer argument",
+                {TargetIntegerLiteral {
+                    .negative = false,
+                    .magnitude = 3,
+                    .suffix = TargetIntegerSuffix::None,
+                }}
+            },
+            Scenario {"explicit empty arguments", {}},
+        };
+        auto identities = std::vector<TargetTypeID>();
+        ct::each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
+            const auto first = builder.intern_type(query(scenario.arguments));
+            const auto repeated = builder.intern_type(query(scenario.arguments));
+            ct::expect_equal(first.index(), repeated.index());
+            ct::expect(std::ranges::find(identities, first) == identities.end());
+            identities.push_back(first);
+        });
+    });
+
+    ct::test(
+        "Target verifier: standalone template arguments belong to the unit",
+        [] static noexcept {
+            const auto owner = TargetTestingFixture::unit_identity();
+            const auto result_type = TargetTestingFixture::type_id(owner, 0);
+            const auto foreign =
+                TargetTestingFixture::type_id(TargetTestingFixture::unit_identity(), 0);
+            const auto types = std::array {bool_type()};
+            struct Scenario final {
+                std::string_view name;
+                TargetTypeID argument;
+                bool accepted;
+            };
+            const auto scenarios = std::array {
+                Scenario {"unit-owned argument", result_type, true},
+                Scenario {"foreign argument", foreign, false},
+            };
+            ct::each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
+                auto body = one_statement({
+                    .value =
+                        TargetExprStmt {
+                            .expression = template_name_expression(
+                                TargetExpr {
+                                    .value =
+                                        TargetNameExpr {.name = TargetName(identifier("value"))}
+                                },
+                                {scenario.argument}
+                            ),
+                        },
+                    .attribution = attribution(),
+                });
+                const auto result = TargetTestingFixture::validate_unit(
+                    owner,
+                    types,
+                    sections(one_item(function(result_type, std::move(body))))
+                );
+                if (scenario.accepted) {
+                    ct::expect(result.has_value());
+                } else if (ct::expect(!result.has_value())) {
+                    ct::expect_equal(
+                        result.error().kind,
+                        TargetSealViolationKind::InvalidTypeReference
+                    );
+                }
+            });
+        }
+    );
+
     ct::test("Target type construction: children already belong to the unit", [] static noexcept {
         auto builder = TargetUnitBuilder();
         const auto foreign = TargetTestingFixture::unit_identity();
@@ -301,7 +399,6 @@ const ct::Suite tests([] static noexcept {
                 auto nested = TargetExpr {
                     .value = TargetCallExpr {
                         .callee = UniqueIndirect(name("g")),
-                        .template_arguments = {},
                         .arguments = std::move(arguments),
                     }
                 };
@@ -316,7 +413,6 @@ const ct::Suite tests([] static noexcept {
                             .value =
                                 TargetCallExpr {
                                     .callee = UniqueIndirect(name("f")),
-                                    .template_arguments = {},
                                     .arguments = std::move(outer),
                                 }
                         }

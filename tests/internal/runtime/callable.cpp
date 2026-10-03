@@ -32,6 +32,26 @@ struct ConstCallable final {
     auto operator()(int value) const noexcept -> int { return value * 3; }
 };
 
+struct NonConstEmptyCallable final {
+    auto operator()(int value) noexcept -> int { return value; }
+};
+
+struct ConstructedCallable final {
+    ConstructedCallable() noexcept {}
+
+    auto operator()(int value) const noexcept -> int { return value; }
+};
+
+struct DestructedCallable final {
+    ~DestructedCallable() noexcept {}
+
+    auto operator()(int value) const noexcept -> int { return value; }
+};
+
+struct WrongResultCallable final {
+    auto operator()(int value) const noexcept -> long { return value; }
+};
+
 struct ThrowingCallable final {
     auto operator()(int value) const -> int { return value; }
 };
@@ -52,6 +72,19 @@ using CapturingCallable =
     decltype([offset = 1](int value) noexcept -> int { return value + offset; });
 
 using NoncapturingCallable = decltype([](int value) static noexcept -> int { return value; });
+
+static_assert(carven::runtime::Stateless<ConstCallable>);
+static_assert(carven::runtime::Stateless<NoncapturingCallable>);
+static_assert(carven::runtime::Stateless<NonConstEmptyCallable>);
+static_assert(!carven::runtime::Stateless<MutableCallable>);
+static_assert(!carven::runtime::Stateless<CapturingCallable>);
+static_assert(!carven::runtime::Stateless<ConstructedCallable>);
+static_assert(!carven::runtime::Stateless<DestructedCallable>);
+static_assert(!carven::runtime::Stateless<const ConstCallable>);
+static_assert(!carven::runtime::Stateless<volatile ConstCallable>);
+static_assert(!carven::runtime::Stateless<ConstCallable&>);
+static_assert(!carven::runtime::Stateless<void>);
+static_assert(!carven::runtime::Stateless<IntFunctionPointer>);
 
 using MemberFunctionRef = carven::runtime::FunctionRef<int(MemberCallable&, int) noexcept>;
 
@@ -114,6 +147,12 @@ concept StatelessIntTarget =
     requires (const Callable& callable) { IntFunctionRef::from_stateless(callable); };
 
 static_assert(StatelessIntTarget<ConstCallable>);
+static_assert(StatelessIntTarget<NoncapturingCallable>);
+static_assert(StatelessIntTarget<ThrowingCallable>);
+static_assert(!StatelessIntTarget<NonConstEmptyCallable>);
+static_assert(!StatelessIntTarget<ConstructedCallable>);
+static_assert(!StatelessIntTarget<DestructedCallable>);
+static_assert(!StatelessIntTarget<WrongResultCallable>);
 static_assert(!StatelessIntTarget<MutableCallable>);
 static_assert(!StatelessIntTarget<CapturingCallable>);
 
@@ -308,16 +347,37 @@ const ct::Suite tests([] static noexcept {
         }
     );
 
-    ct::test("Callable views: stateless targets require no backing object", [] static noexcept {
-        const auto view = IntFunctionRef::from_stateless(ConstCallable {});
-        ct::expect(view(4) == 12);
-        const auto failing_view = WideFunctionRef::from_stateless(ConstCallable {});
-        const auto result = failing_view(3);
-        if (!ct::expect(result.success_if() != nullptr)) {
-            return;
+    ct::test(
+        "Callable views: stateless targets adapt results without borrowing source storage",
+        [] static noexcept {
+            const auto view = IntFunctionRef::from_stateless(ConstCallable {});
+            ct::expect_equal(view(4), 12);
+            const auto lambda_view =
+                IntFunctionRef::from_stateless([](int value) static noexcept -> int {
+                    return value + 1;
+                });
+            ct::expect_equal(lambda_view(4), 5);
+            const auto failing_view = WideFunctionRef::from_stateless(ConstCallable {});
+            const auto result = failing_view(3);
+            if (!ct::expect(result.success_if() != nullptr)) {
+                return;
+            }
+            ct::expect_equal(result.success_if()->value, 9);
+            const auto widening_view =
+                WideFunctionRef::from_stateless([](int value) static noexcept -> NarrowOutcome {
+                    return NarrowOutcome::failure(ParseFailure {.offset = value});
+                });
+            const auto failure = widening_view(7);
+            const auto* payload = failure.failure_if<ParseFailure>();
+            if (!ct::expect(payload != nullptr)) {
+                return;
+            }
+            ct::expect_equal(payload->offset, 7);
+            const auto void_view =
+                VoidOutcomeFunctionRef::from_stateless([](int) static noexcept -> void {});
+            ct::expect(void_view(0).success_if() != nullptr);
         }
-        ct::expect(result.success_if()->value == 9);
-    });
+    );
 
     ct::test(
         "Runtime FunctionRef: value delivery uses the ordinary transfer policy",

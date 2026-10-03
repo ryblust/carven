@@ -30,10 +30,14 @@ struct ReportQuery final {
 auto ReportQuery::enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
     -> bool {
     if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-        if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value)) {
+        if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(
+                &template_primary_expression(*call->callee).value
+            )) {
             assertions += intrinsic->symbol == TargetSymbol::RuntimeAssertionFailed;
         }
-        calls += std::holds_alternative<TargetNameExpr>(call->callee->value);
+        calls += std::holds_alternative<TargetNameExpr>(
+            template_primary_expression(*call->callee).value
+        );
     }
     return true;
 }

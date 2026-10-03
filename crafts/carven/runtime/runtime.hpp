@@ -11,6 +11,7 @@
 #include "passing.hpp"
 #include "print.hpp"
 #include "slice.hpp"
+#include "stateless.hpp"
 #include "string.hpp"
 #include "testing.hpp"
 #include "text.hpp"

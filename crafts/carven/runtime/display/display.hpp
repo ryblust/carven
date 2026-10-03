@@ -1,9 +1,12 @@
 #pragma once
 
 #include "../format.hpp"
+#include "../stateless.hpp"
 #include "text.hpp"
 
-#include <string>
+#include <concepts>
+#include <cstddef>
+#include <functional>
 #include <string_view>
 #include <type_traits>
 
@@ -20,9 +23,8 @@ public:
     }
 
     template<typename T>
-    auto scalar(const T& value) noexcept -> void {
-        if (depth == DisplayText::depth_limit) {
-            text("...");
+    auto scalar(const T& value, std::size_t depth) noexcept -> void {
+        if (truncate_at_limit(depth)) {
             return;
         }
         if constexpr (std::is_same_v<T, std::string_view>) {
@@ -55,19 +57,20 @@ public:
     }
 
     template<typename Range, typename Emit>
-    auto sequence(const Range& value, Emit emit) noexcept -> void {
-        if (!enter()) {
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): Repeated calls borrow the same emitter as an lvalue.
+    auto sequence(const Range& value, Emit&& emit, std::size_t depth) noexcept -> void {
+        if (truncate_at_limit(depth)) {
             return;
         }
         text("[");
         auto count = std::size_t {0};
         for (const auto& element : value) {
-            line();
-            if (count == DisplayText::element_limit) {
+            line(depth + 1);
+            if (count == element_limit) {
                 text("...,");
                 break;
             }
-            emit(*this, element);
+            std::invoke(emit, *this, element, depth + 1);
             text(",");
             ++count;
             if (buffer.truncated()) {
@@ -75,69 +78,82 @@ public:
             }
         }
         if (count != 0) {
-            line(1);
+            line(depth);
         }
         text("]");
-        leave();
+    }
+
+    template<typename Range, typename Emit>
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): Both endpoints borrow the same emitter as an lvalue.
+    auto range(const Range& value, Emit&& emit, std::size_t depth) noexcept -> void {
+        if (truncate_at_limit(depth)) {
+            return;
+        }
+        std::invoke(emit, *this, value.first, depth + 1);
+        text(value.inclusive ? "..=" : "..");
+        std::invoke(emit, *this, value.last, depth + 1);
     }
 
     auto result() const noexcept -> std::string_view { return buffer.result(); }
 
-    auto enter() noexcept -> bool {
-        if (depth == DisplayText::depth_limit) {
+    // Writes the depth marker when this value cannot be expanded.
+    auto truncate_at_limit(std::size_t depth) noexcept -> bool {
+        if (depth >= depth_limit) {
             text("...");
-            return false;
+            return true;
         }
-        ++depth;
-        return true;
+        return false;
     }
 
-    auto leave() noexcept -> void { --depth; }
-
-    auto line(std::size_t outer = 0) noexcept -> void { buffer.line(depth - outer); }
+    auto line(std::size_t depth) noexcept -> void { buffer.line(depth); }
 
 private:
+    static constexpr auto depth_limit = std::size_t {8};
+    static constexpr auto element_limit = std::size_t {64};
+
     DisplayText buffer;
-    std::size_t depth = 0;
 };
 
 struct ScalarDisplay final {
     template<typename T>
-    auto operator()(DisplayWriter& writer, const T& value) const noexcept -> void {
-        writer.scalar(value);
+    auto operator()(DisplayWriter& writer, const T& value, std::size_t depth) const noexcept
+        -> void {
+        writer.scalar(value, depth);
     }
 };
 
-template<typename Emit>
+template<Stateless Emit>
 struct SequenceDisplay final {
     template<typename Range>
-    auto operator()(DisplayWriter& writer, const Range& value) const noexcept -> void {
-        writer.sequence(value, Emit {});
+    auto operator()(DisplayWriter& writer, const Range& value, std::size_t depth) const noexcept
+        -> void {
+        writer.sequence(value, stateless_value<Emit>, depth);
     }
 };
 
-template<typename Emit>
+template<Stateless Emit>
 struct RangeDisplay final {
     template<typename Range>
-    auto operator()(DisplayWriter& writer, const Range& value) const noexcept -> void {
-        if (!writer.enter()) {
-            return;
-        }
-        Emit {}(writer, value.first);
-        writer.text(value.inclusive ? "..=" : "..");
-        Emit {}(writer, value.last);
-        writer.leave();
+    auto operator()(DisplayWriter& writer, const Range& value, std::size_t depth) const noexcept
+        -> void {
+        writer.range(value, stateless_value<Emit>, depth);
     }
 };
 
 template<typename T, typename Emit>
+    requires std::invocable<Emit&, DisplayWriter&, const T&, std::size_t>
 struct StructuralDisplay final {
     const T& value;
-    Emit emit;
+    Emit& emit;
 };
 
+// Borrows the value and emitter until synchronous consumption completes.
+// Temporaries remain alive only through the enclosing full expression.
 template<typename T, typename Emit>
-auto structural_display(const T& value, Emit emit) noexcept -> StructuralDisplay<T, Emit> {
+    requires std::invocable<Emit&, DisplayWriter&, const T&, std::size_t>
+// NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): Retains an lvalue borrow, including temporaries consumed synchronously.
+auto structural_display(const T& value, Emit&& emit) noexcept
+    -> StructuralDisplay<T, std::remove_reference_t<Emit>> {
     return {.value = value, .emit = emit};
 }
 

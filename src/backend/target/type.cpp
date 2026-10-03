@@ -16,6 +16,9 @@ auto valid_query(const TargetExpr& expression) noexcept -> bool {
             },
             [](const TargetNameExpr&) static noexcept { return true; },
             [](const TargetIntrinsicNameExpr&) static noexcept { return true; },
+            [](const TargetTemplateNameExpr& value) static noexcept {
+                return valid_query(*value.operand);
+            },
             [](const TargetCallExpr& value) static noexcept {
                 return valid_query(*value.callee)
                     && std::ranges::all_of(value.arguments, valid_query);
@@ -76,9 +79,11 @@ auto equal_query(const TargetExpr& left, const TargetExpr& right) noexcept -> bo
             return value.name == other.name;
         } else if constexpr (std::same_as<Value, TargetIntrinsicNameExpr>) {
             return value.symbol == other.symbol;
+        } else if constexpr (std::same_as<Value, TargetTemplateNameExpr>) {
+            return equal_query(*value.operand, *other.operand)
+                && value.arguments == other.arguments;
         } else if constexpr (std::same_as<Value, TargetCallExpr>) {
             return equal_query(*value.callee, *other.callee)
-                && value.template_arguments == other.template_arguments
                 && std::ranges::equal(value.arguments, other.arguments, equal_query);
         } else if constexpr (std::same_as<Value, TargetConstructionExpr>) {
             return value.type == other.type

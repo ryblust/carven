@@ -750,7 +750,8 @@ auto discarded_operation(
         )
         && !std::holds_alternative<SemCpp>(source.value)
         && !std::holds_alternative<SemCppCall>(source.value)) {
-        const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value);
+        const auto* intrinsic =
+            std::get_if<TargetIntrinsicNameExpr>(&template_primary_expression(*call->callee).value);
         implicit =
             intrinsic == nullptr || target_symbol_info(intrinsic->symbol).allows_implicit_discard;
     }

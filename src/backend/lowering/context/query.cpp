@@ -40,17 +40,15 @@ auto ModuleLowering::cpp_constant_argument(
 auto ModuleLowering::cpp_type_query(const CppQueryType& query, TypeNameScope scope) noexcept
     -> TargetExpr {
     const auto operand = [&](const CppTypeOperand& value) noexcept -> TargetExpr {
-        return {
-            .value = TargetCallExpr {
-                .callee = target_child(intrinsic_expression(TargetSymbol::StdDeclval)),
-                .template_arguments = {reference_type(
-                    lower_type(value.type, scope),
-                    value.access == AccessMode::Read,
-                    value.access == AccessMode::Take
-                )},
-                .arguments = {}
-            }
-        };
+        return template_call_expression(
+            intrinsic_expression(TargetSymbol::StdDeclval),
+            {reference_type(
+                lower_type(value.type, scope),
+                value.access == AccessMode::Read,
+                value.access == AccessMode::Take
+            )},
+            {}
+        );
     };
     const auto member = [&](const CppTypeOperand& receiver,
                             std::string_view name) noexcept -> TargetExpr {
@@ -159,7 +157,6 @@ auto ModuleLowering::cpp_type_query(const CppQueryType& query, TypeNameScope sco
                 return {
                     .value = TargetCallExpr {
                         .callee = UniqueIndirect(std::move(callee)),
-                        .template_arguments = {},
                         .arguments = std::move(arguments)
                     }
                 };

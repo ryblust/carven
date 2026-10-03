@@ -1,0 +1,7 @@
+export struct DisplayCell {
+    value: i32
+}
+
+export const fn show_cells(values: [[DisplayCell; 1]]) {
+    println(values);
+}

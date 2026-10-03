@@ -33,7 +33,8 @@ auto FormatQuery::enter_expression(const TargetExpr& expression, TargetExpressio
     if (call == nullptr) {
         return true;
     }
-    const auto* name = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value);
+    const auto* name =
+        std::get_if<TargetIntrinsicNameExpr>(&template_primary_expression(*call->callee).value);
     if (name != nullptr
         && (name->symbol == TargetSymbol::RuntimeFormat
             || name->symbol == TargetSymbol::RuntimeFormatValidUTF8)) {

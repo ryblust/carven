@@ -34,9 +34,10 @@ whole suite and static analysis:
 ```
 
 Clang-tidy checks registered handwritten and generated C++ translation units,
-including crafts headers they use. Generated-code findings are addressed in the
-generator and verified after regeneration. Static analysis is read-only; fixes
-are made in the owning source.
+including crafts headers they use. Generated-code findings guide improvements to
+generator correctness and efficiency under semantic and C++ boundary contracts;
+fixes are verified after regeneration. Static analysis is read-only; fixes are
+made in the owning source.
 
 `.clang-tidy` applies to handwritten C++; generated C++ uses
 `xmake/generated.clang-tidy`. Findings from selected checks fail the analysis

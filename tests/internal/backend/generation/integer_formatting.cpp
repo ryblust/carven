@@ -34,18 +34,25 @@ auto IntegerFormatQuery::enter_expression(
     if (call == nullptr) {
         return true;
     }
-    if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value)) {
+    if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(
+            &template_primary_expression(*call->callee).value
+        )) {
         generic_calls += intrinsic->symbol == TargetSymbol::RuntimeFormat
             || intrinsic->symbol == TargetSymbol::RuntimeFormatValidUTF8
             || intrinsic->symbol == TargetSymbol::RuntimeAppendFormat
             || intrinsic->symbol == TargetSymbol::RuntimeAppendFormatValidUTF8;
     }
-    const auto* member = std::get_if<TargetMemberExpr>(&call->callee->value);
+    const auto* member =
+        std::get_if<TargetMemberExpr>(&template_primary_expression(*call->callee).value);
     if (member != nullptr) {
         const auto* name = std::get_if<TargetIdentifier>(&member->name);
         if (name != nullptr
             && (name->spelling() == "integer" || name->spelling() == "integer_dynamic_width")) {
-            policies.push_back(call->template_arguments);
+            const auto* template_name = std::get_if<TargetTemplateNameExpr>(&call->callee->value);
+            if (!ct::expect(template_name != nullptr)) {
+                return false;
+            }
+            policies.push_back(template_name->arguments);
             ct::expect(call->arguments.size() == 2uz);
         }
     }

@@ -21,16 +21,6 @@ auto intrinsic_expression(TargetSymbol symbol) noexcept -> TargetExpr {
     return {.value = TargetIntrinsicNameExpr {.symbol = symbol}};
 }
 
-auto call_expression(TargetExpr callee, std::vector<TargetExpr> arguments) noexcept -> TargetExpr {
-    return {
-        .value = TargetCallExpr {
-            .callee = target_child(std::move(callee)),
-            .template_arguments = {},
-            .arguments = std::move(arguments),
-        },
-    };
-}
-
 auto target_expressions(TargetExpr value) noexcept -> std::vector<TargetExpr> {
     auto result = std::vector<TargetExpr>();
     result.push_back(std::move(value));

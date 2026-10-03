@@ -44,8 +44,9 @@ const ct::Suite tests([] static noexcept {
                     if (call == nullptr) {
                         return true;
                     }
-                    if (const auto* intrinsic =
-                            std::get_if<TargetIntrinsicNameExpr>(&call->callee->value)) {
+                    if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        )) {
                         outputs += intrinsic->symbol == TargetSymbol::RuntimePrintln;
                         if (intrinsic->symbol == TargetSymbol::RuntimePrintln) {
                             for (const auto& argument : call->arguments) {
@@ -60,11 +61,14 @@ const ct::Suite tests([] static noexcept {
                             }
                         }
                     }
-                    if (const auto* name = std::get_if<TargetNameExpr>(&call->callee->value)) {
+                    if (const auto* name = std::get_if<TargetNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        )) {
                         effects += name->name.components().back().spelling() == "touch";
                     }
-                    if (const auto* member =
-                            std::get_if<TargetStaticMemberExpr>(&call->callee->value)) {
+                    if (const auto* member = std::get_if<TargetStaticMemberExpr>(
+                            &template_primary_expression(*call->callee).value
+                        )) {
                         if (const auto* type =
                                 std::get_if<TargetIntrinsicType>(&unit.type(member->owner).value)) {
                             constructions += type->symbol == TargetSymbol::RuntimeString;

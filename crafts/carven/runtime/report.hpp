@@ -3,8 +3,10 @@
 #include "display/display.hpp"
 #include "trap.hpp"
 
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <optional>
 #include <string_view>
 
@@ -32,16 +34,17 @@ auto observe_comparison(
     DisplayWriter& writer,
     const StructuralDisplay<Left, EmitLeft>& left,
     const StructuralDisplay<Right, EmitRight>& right,
-    Compare compare,
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): Comparators are borrowed and invoked as lvalues, including synchronous temporaries.
+    Compare&& compare,
     std::string_view left_source,
     std::string_view right_source
 ) noexcept -> bool {
-    const auto passed = compare(left.value, right.value);
+    const auto passed = std::invoke(compare, left.value, right.value);
     if (!passed) {
         // A literal operand displays as its own source text and explains nothing.
         const auto observe = [&](std::string_view source, const auto& operand) noexcept {
             auto value = DisplayWriter();
-            operand.emit(value, operand.value);
+            std::invoke(operand.emit, value, operand.value, std::size_t {0});
             detail::observe_operand(writer, source, value.result());
         };
         observe(left_source, left);

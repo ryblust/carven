@@ -157,21 +157,28 @@ subsequent print arguments execute. Allocation counts and incidental buffers
 inside scalar output conversion are not source guarantees; source String
 construction and operand completion retain their boundaries.
 
-Structural print operands use a borrowing wrapper with a generated stateless,
-const-callable display helper. `realization.display` reads published nominal
-fields and enum cases and constructs direct field accesses and writer statements.
-`ModuleLowering` shares one helper per semantic type across all use sites in the
-module. Helpers are emitted in dependency order after complete
-private type declarations, before consuming functions. Fully qualified helper
-types avoid local name lookup; no function pointer or captured helper state is
-needed. Generated size follows the reachable types and their fields,
-plus constant-size use sites. Field layout is emitted as literal text;
-sequence emitters receive the known depth for indentation and visit runtime
-elements within display limits. `DisplayWriter` handles scalar conversion, nested text
-escaping, and bounded output. Its completed text uses the ordinary runtime
-printing entry. Callable leaves remain opaque. Native leaves use the runtime scalar classifier;
-unsupported types remain opaque and no user formatter participates. The wrapper is
-consumed synchronously after ordinary Read argument sequencing.
+Structural print operands use a synchronous borrowing wrapper. The compiler
+selects an emitter type from published semantic types; scalar, sequence, and
+range emitters compose child types, while `realization.display` generates nominal
+field accesses and enum selection. An enum's closed case set makes the final
+alternative unconditional; a single-case enum needs no selection. Module lowering shares a content-named
+nominal helper across its use sites. Helper placement is defined by
+[artifacts](artifacts.md#staged-bodies). Type-selected emitters
+use the shared `stateless_value` instance described in
+[representation](representation.md#callables-and-native-boundaries).
+
+Emitters take `(writer, value, depth)`. Each displayed root starts at depth zero;
+children receive `depth + 1`. Indentation uses that absolute depth. The writer
+checks the depth and element limits and owns the bounded output buffer. Passing
+depth by value keeps sibling observations independent. Semantic execution uses
+the same depth convention with its own semantic value reader.
+
+The wrapper borrows both value and emitter, preserving the emitter's constness.
+Temporary arguments live through the complete expression that synchronously
+consumes the wrapper. Runtime print, comparison, and entry-failure reporting use
+the same invocation protocol. `DisplayWriter` handles scalar conversion, nested
+text escaping, and bounded sequence and range display. Callable and unsupported
+native leaves render opaquely. Completed text uses the ordinary printing entry.
 The wrapper routes top-level C strings to the text printing entry. Nested C strings
 use the writer's quoting and escaping rules; null C strings render as `nullptr`.
 

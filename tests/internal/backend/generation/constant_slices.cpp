@@ -88,7 +88,8 @@ struct StaticSliceFacts final {
         if (call == nullptr) {
             return true;
         }
-        const auto* callee = std::get_if<TargetIntrinsicNameExpr>(&call->callee->value);
+        const auto* callee =
+            std::get_if<TargetIntrinsicNameExpr>(&template_primary_expression(*call->callee).value);
         if (callee == nullptr || callee->symbol != TargetSymbol::RuntimeAsSlice) {
             return true;
         }

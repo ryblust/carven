@@ -133,9 +133,13 @@ struct TargetConditionalExpr final {
 
 using TargetTemplateArgument = std::variant<TargetTypeID, bool, TargetIntegerLiteral>;
 
+struct TargetTemplateNameExpr final {
+    UniqueIndirect<TargetExpr> operand;
+    std::vector<TargetTemplateArgument> arguments;
+};
+
 struct TargetCallExpr final {
     UniqueIndirect<TargetExpr> callee;
-    std::vector<TargetTemplateArgument> template_arguments;
     std::vector<TargetExpr> arguments;
 };
 
@@ -202,6 +206,7 @@ using TargetExprValue = TreeValue<
     TargetPrefixExpr,
     TargetBinaryExpr,
     TargetConditionalExpr,
+    TargetTemplateNameExpr,
     TargetCallExpr,
     TargetArrayExpr,
     TargetConstructionExpr,
@@ -226,6 +231,19 @@ auto binary_expression(TargetExpr left, TargetBinaryOperator operation, TargetEx
     -> TargetExpr;
 
 auto prefix_expression(TargetPrefixOperator operation, TargetExpr operand) noexcept -> TargetExpr;
+
+auto template_name_expression(
+    TargetExpr operand,
+    std::vector<TargetTemplateArgument> arguments
+) noexcept -> TargetExpr;
+
+// Borrows the primary name of a template-id, or the expression itself.
+// The expression must remain alive and unmodified throughout the borrow.
+auto template_primary_expression(const TargetExpr& expression) noexcept -> const TargetExpr&;
+auto template_primary_expression(const TargetExpr&& expression) noexcept
+    -> const TargetExpr& = delete;
+
+auto call_expression(TargetExpr callee, std::vector<TargetExpr> arguments) noexcept -> TargetExpr;
 
 auto template_call_expression(
     TargetExpr callee,
