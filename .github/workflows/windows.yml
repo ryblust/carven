@@ -90,6 +90,9 @@ jobs:
           .\xmakew.ps1 f -y -m release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Show detected toolchain
+        run: .\xmakew.ps1 show -t carven
+
       - name: Build compiler
         run: .\xmakew.ps1 build -y
 

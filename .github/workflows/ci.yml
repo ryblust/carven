@@ -58,7 +58,6 @@ jobs:
         run: |
           brew install llvm xmake
           llvm_root="$(brew --prefix llvm)"
-          echo "LLVM_ROOT=$llvm_root" >> "$GITHUB_ENV"
           echo "$llvm_root/bin" >> "$GITHUB_PATH"
 
       - name: Install LLVM on Linux
@@ -66,7 +65,6 @@ jobs:
         run: |
           curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
           sudo bash "$RUNNER_TEMP/llvm.sh" 23 all
-          echo "LLVM_ROOT=/usr/lib/llvm-23" >> "$GITHUB_ENV"
           echo "/usr/lib/llvm-23/bin" >> "$GITHUB_PATH"
 
       - name: Toolchain versions
@@ -76,15 +74,11 @@ jobs:
           clang-tidy --version
           clang-format --version
 
-      - name: Configure macOS
-        if: runner.os == 'macOS'
-        run: |
-          ./xmakew f -y -m release --sdk="$LLVM_ROOT" --target_minver=26.0 \
-            --ldflags="-L$LLVM_ROOT/lib/c++ -Wl,-rpath,$LLVM_ROOT/lib/c++"
+      - name: Configure Release
+        run: ./xmakew f -y -m release
 
-      - name: Configure Linux
-        if: runner.os == 'Linux'
-        run: ./xmakew f -y -m release --sdk="$LLVM_ROOT" --runtimes=c++_shared --syslinks=c++abi
+      - name: Show detected toolchain
+        run: ./xmakew show -t carven
 
       - name: Build compiler
         run: ./xmakew build -y
