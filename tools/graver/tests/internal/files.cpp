@@ -191,12 +191,12 @@ const ct::Suite tests([] static noexcept {
 #if defined(_WIN32)
             // Win32 collapses link/.. before following the directory symlink.
             constexpr auto expected_count = 2uz;
-            const auto traversal_destination = decoy;
+            const auto& traversal_destination = decoy;
             constexpr auto expected_report = "link/../source.cv\nother/source.cv\n";
             constexpr auto expected_decoy = "fn decoy() {}\n";
 #else
             constexpr auto expected_count = 1uz;
-            const auto traversal_destination = actual;
+            const auto& traversal_destination = actual;
             constexpr auto expected_report = "link/../source.cv\n";
             constexpr auto expected_decoy = "fn decoy(){}";
 #endif
