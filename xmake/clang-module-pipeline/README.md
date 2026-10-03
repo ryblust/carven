@@ -147,7 +147,9 @@ The POSIX wrapper attempts an APFS clone on macOS or a reflink on Linux, with a
 regular copy as fallback. Windows uses `robocopy`. Each wrapper prepares a
 staging directory before publishing the overlay. The POSIX wrapper requires
 `patch` and either `shasum` or `sha256sum`; the PowerShell wrapper requires Git
-for Windows.
+for Windows. It normalizes CRLF to LF in staged patch inputs and restores
+`XMAKE_PROGRAM_DIR` after each invocation so repeated calls in one PowerShell
+session start from the original Xmake installation.
 
 The content-based path requires `clang-scan-deps` from the configured toolchain.
 Scan errors stop the build. Generated headers must exist before scanning, for

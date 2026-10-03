@@ -1,0 +1,92 @@
+name: Windows
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  llvm-mingw:
+    name: Windows / LLVM-MinGW 23 / Release
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: carven
+    env:
+      CARVEN_XMAKE_REPO_DIR: ${{ github.workspace }}/carven-xmake-repo
+      LLVM_MINGW_RELEASE: '20260922'
+      LLVM_MINGW_SHA256: e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8504e7b3047666
+
+    steps:
+      - name: Check out Carven
+        uses: actions/checkout@v7
+        with:
+          path: carven
+          persist-credentials: false
+
+      - name: Check out build rules
+        uses: actions/checkout@v7
+        with:
+          repository: ryblust/carven-xmake-repo
+          path: carven-xmake-repo
+          persist-credentials: false
+
+      - name: Install patch-compatible Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: '3.1.1'
+
+      - name: Install LLVM-MinGW
+        run: |
+          $archiveName = "llvm-mingw-$env:LLVM_MINGW_RELEASE-ucrt-x86_64.zip"
+          $archive = Join-Path $env:RUNNER_TEMP $archiveName
+          $url = "https://github.com/mstorsjo/llvm-mingw/releases/download/$env:LLVM_MINGW_RELEASE/$archiveName"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $env:LLVM_MINGW_SHA256) {
+            throw "LLVM-MinGW archive checksum mismatch"
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $env:RUNNER_TEMP
+          $llvmRoot = Join-Path $env:RUNNER_TEMP "llvm-mingw-$env:LLVM_MINGW_RELEASE-ucrt-x86_64"
+          "LLVM_ROOT=$llvmRoot" >> $env:GITHUB_ENV
+          "CXX=$llvmRoot/bin/clang++.exe" >> $env:GITHUB_ENV
+          "$llvmRoot/bin" >> $env:GITHUB_PATH
+
+      - name: Verify toolchain and repeated wrapper invocation
+        run: |
+          .\xmakew.ps1 --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\xmakew.ps1 --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          clang++ --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          clang-scan-deps --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          clang-tidy --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Configure LLVM-MinGW
+        run: |
+          # The mingw platform uses the GNU Windows ABI, not clang-cl/MSVC.
+          .\xmakew.ps1 f -y -p mingw -a x86_64 -m release `
+            --toolchains=llvm --sdk="$env:LLVM_ROOT" --mingw="$env:LLVM_ROOT" `
+            --runtimes=c++_shared
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build compiler
+        run: .\xmakew.ps1 build -y -vD
+
+      - name: Test all groups
+        run: .\xmakew.ps1 test -vD
+
+      - name: Clang-tidy
+        run: .\xmakew.ps1 check -vD clang.tidy
