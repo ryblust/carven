@@ -150,7 +150,7 @@ const ct::Suite tests([] static noexcept {
     );
 
     ct::test(
-        "Graver files: symlink parent traversal preserves the actual formatting destination",
+        "Graver files: symlink parent traversal follows native path resolution",
         [] static noexcept {
             const auto fixture = Fixture();
             const auto decoy = fixture.path();
@@ -188,27 +188,43 @@ const ct::Suite tests([] static noexcept {
             if (!ct::expect(paths.has_value())) {
                 return;
             }
-            if (!ct::expect_equal(paths->size(), 1uz)) {
+#if defined(_WIN32)
+            // Win32 collapses link/.. before following the directory symlink.
+            constexpr auto expected_count = 2uz;
+            const auto traversal_destination = decoy;
+            constexpr auto expected_report = "link/../source.cv\nother/source.cv\n";
+            constexpr auto expected_decoy = "fn decoy() {}\n";
+#else
+            constexpr auto expected_count = 1uz;
+            const auto traversal_destination = actual;
+            constexpr auto expected_report = "link/../source.cv\n";
+            constexpr auto expected_decoy = "fn decoy(){}";
+#endif
+            if (!ct::expect_equal(paths->size(), expected_count)) {
                 return;
             }
-            ct::expect(std::filesystem::equivalent(paths->front(), actual, error));
+            ct::expect(
+                std::filesystem::equivalent(link / ".." / "source.cv", traversal_destination, error)
+            );
             if (!ct::expect(!(error))) {
                 return;
             }
             auto sources = SourceManager();
-            const auto id = sources.append_file(path_to_generic_utf8(paths->front()));
-            if (!ct::expect(id.has_value())) {
-                return;
+            auto inputs = std::vector<graver::BatchInput>();
+            for (const auto& path : *paths) {
+                const auto id = sources.append_file(path_to_generic_utf8(path));
+                if (!ct::expect(id.has_value())) {
+                    return;
+                }
+                inputs.push_back({.path = path, .source_id = *id});
             }
-            const auto inputs =
-                std::to_array<graver::BatchInput>({{.path = paths->front(), .source_id = *id}});
             const auto batch = graver::format_batch(sources, inputs);
             if (!ct::expect(batch.has_value())) {
                 return;
             }
             ct::expect_equal(
                 graver::check_report(*batch, directory),
-                std::string_view("link/../source.cv\n")
+                std::string_view(expected_report)
             );
             if (!ct::expect(graver::write_batch(*batch).has_value())) {
                 return;
@@ -222,7 +238,7 @@ const ct::Suite tests([] static noexcept {
                 return;
             }
             ct::expect_equal(*actual_text, std::string_view("fn actual() {\n    call();\n}\n"));
-            ct::expect_equal(*decoy_text, std::string_view("fn decoy(){}"));
+            ct::expect_equal(*decoy_text, std::string_view(expected_decoy));
         }
     );
 

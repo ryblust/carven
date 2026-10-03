@@ -2,6 +2,7 @@ module carven:test.internal.backend.generation.linkage;
 
 import :backend.generation.linkage;
 import :backend.generation.request;
+import :test.harness.directory;
 import :test.harness.framework;
 import std;
 
@@ -35,15 +36,17 @@ const ct::Suite tests([] static noexcept {
         ct::expect_equal(explicit_domain->kind(), LinkageDomainKind::Explicit);
         ct::expect_equal(explicit_domain->value(), std::string_view("target:debug"));
 
-        const auto artifact_domain = LinkageDomain::artifact_root("/carven/root/../root");
+        const auto directory = ct::TempDirectory("linkage-domain");
+        const auto root = directory.path("root");
+        const auto artifact_domain = LinkageDomain::artifact_root(root / ".." / "root");
         if (!ct::expect(artifact_domain.has_value())) {
             return;
         }
         ct::expect_equal(artifact_domain->kind(), LinkageDomainKind::ArtifactRoot);
-        ct::expect_equal(artifact_domain->value(), std::string_view("/carven/root"));
+        ct::expect_equal(artifact_domain->value(), root.generic_string());
 
         const auto artifact_domain_with_trailing_separator =
-            LinkageDomain::artifact_root("/carven/root/.");
+            LinkageDomain::artifact_root(root / ".");
         if (!ct::expect(artifact_domain_with_trailing_separator.has_value())) {
             return;
         }
@@ -59,10 +62,15 @@ const ct::Suite tests([] static noexcept {
             const auto left = domain_id(LinkageDomain::explicit_value("target:left").value());
             const auto left_again = domain_id(LinkageDomain::explicit_value("target:left").value());
             const auto right = domain_id(LinkageDomain::explicit_value("target:right").value());
+            const auto directory = ct::TempDirectory("linkage-domain");
+            const auto root = directory.path("root");
+            const auto artifact_domain = LinkageDomain::artifact_root(root);
+            if (!ct::expect(artifact_domain.has_value())) {
+                return;
+            }
             const auto path_spelling =
-                domain_id(LinkageDomain::explicit_value("/carven/root").value());
-            const auto artifact_root =
-                domain_id(LinkageDomain::artifact_root("/carven/root").value());
+                domain_id(LinkageDomain::explicit_value(root.generic_string()).value());
+            const auto artifact_root = domain_id(*artifact_domain);
             const auto tests = domain_id(
                 LinkageDomain::explicit_value("target:left").value(),
                 TestGenerationMode::RunnerEntryPoint
