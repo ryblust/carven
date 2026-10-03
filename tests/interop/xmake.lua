@@ -165,7 +165,7 @@ for _, fixture in ipairs({
             add_rules("@carven/carven")
             set_languages(mode.standard)
             set_exceptions("cxx")
-            if fixture.allocation and is_plat("mingw") then
+            if fixture.allocation and is_plat("windows") then
                 -- DLL-internal allocations cannot use this executable's replacement operator new.
                 set_runtimes("c++_static")
                 -- Xmake's flag probe rejects this supported LLVM-MinGW driver option.

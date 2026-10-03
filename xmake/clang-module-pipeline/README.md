@@ -89,8 +89,8 @@ does not require recompilation. BMI and object outputs have separate records.
 
 ### Non-cascading changes
 
-Carven enables `build.c++.modules.non_cascading_changes` for its non-Windows
-LLVM toolchain when the Xmake runtime contains the content-dependency adapter.
+Carven enables `build.c++.modules.non_cascading_changes` by default on all
+platforms, using LLVM-MinGW on Windows and LLVM elsewhere.
 With this policy enabled, the content-based path uses directly imported BMI
 contents on Clang 19 and newer. Otherwise, it checks transitive BMI contents.
 The full dependency graph and transitive module mappings remain available for
@@ -110,7 +110,11 @@ Use the repository wrapper for local build commands:
 ./xmakew project -k compile_commands
 ```
 
-On Windows, use `.\xmakew.ps1` with the same arguments.
+On Windows, use `.\xmakew.ps1` with the same arguments. The project selects
+LLVM-MinGW and shared libc++ for the default Windows platform. Set
+`LLVM_MINGW_ROOT` to the SDK directory, or make the installation discoverable
+through Xmake's PATH search; no `--toolchain`, `-p mingw`, or `--sdk` argument
+is needed when the SDK is found. CI supplies `LLVM_MINGW_ROOT` explicitly.
 
 For an unexpected compiler, module, or dependency-order failure, clean and
 rebuild before diagnosing the implementation:

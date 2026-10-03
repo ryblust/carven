@@ -304,9 +304,9 @@ Test runtime exception boundaries in isolated C++ consumer processes. Require th
 throwing operation to execute and reach the installed termination handler. Catch
 exceptions outside the runtime call and report escaped exceptions as test failures.
 Allocation-failure injection uses separate executables so ordinary exception tests
-retain the configured runtime and allocator. On MinGW, only injection targets link
-libc++ statically: allocations inside its DLL do not use the executable's replacement
-`operator new`.
+retain the configured runtime and allocator. On Windows with LLVM-MinGW, only
+injection targets link libc++ statically: allocations inside its DLL do not use
+the executable's replacement `operator new`.
 
 CLI execution cases cover the shared top-level language surface, analysis-time
 output, `const` blocks and static tests, native argument forwarding, interpreter

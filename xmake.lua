@@ -8,19 +8,16 @@ set_exceptions("no-cxx")
 set_warnings("allextra")
 set_rundir("$(projectdir)")
 set_policy("build.progress_style", "multirow")
+set_policy("build.c++.modules.non_cascading_changes", true)
 
 if is_plat("windows") then
-    set_toolchains("clang-cl[llvm]")
+    set_toolchains("mingw[llvm]")
+    set_runtimes("c++_shared")
 else
     set_toolchains("llvm")
-    if os.isfile(path.join(os.programdir(), "modules/private/action/build/content_depend.lua")) then
-        set_policy("build.c++.modules.non_cascading_changes", true)
-    end
 end
 
 add_cxxflags("-fno-rtti", {tools = "clang"})
-add_cxxflags("/GR-", {tools = {"cl", "clang_cl"}})
-add_cxxflags("/D_HAS_EXCEPTIONS=0", "/D_CRT_SECURE_NO_WARNINGS", {tools = {"cl", "clang_cl"}})
 
 local carven_xmake_repo_dir = os.getenv("CARVEN_XMAKE_REPO_DIR")
 local carven_repository = "carven-xmake-repo"

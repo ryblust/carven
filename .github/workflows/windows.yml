@@ -57,7 +57,7 @@ jobs:
           }
           Expand-Archive -LiteralPath $archive -DestinationPath $env:RUNNER_TEMP
           $llvmRoot = Join-Path $env:RUNNER_TEMP "llvm-mingw-$env:LLVM_MINGW_RELEASE-ucrt-x86_64"
-          "LLVM_ROOT=$llvmRoot" >> $env:GITHUB_ENV
+          "LLVM_MINGW_ROOT=$llvmRoot" >> $env:GITHUB_ENV
           "CXX=$llvmRoot/bin/clang++.exe" >> $env:GITHUB_ENV
           "$llvmRoot/bin" >> $env:GITHUB_PATH
 
@@ -87,10 +87,7 @@ jobs:
 
       - name: Configure LLVM-MinGW
         run: |
-          # The mingw platform uses the GNU Windows ABI, not clang-cl/MSVC.
-          .\xmakew.ps1 f -y -p mingw -a x86_64 -m release `
-            --toolchain="mingw[llvm]" --sdk="$env:LLVM_ROOT" `
-            --runtimes=c++_shared
+          .\xmakew.ps1 f -y -m release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build compiler
@@ -104,7 +101,7 @@ jobs:
           foreach ($fixture in @("exception-boundary", "allocation-failure")) {
             foreach ($suffix in @("", "-cxx23")) {
               $target = "carven-test-interop-$fixture$suffix"
-              $imports = llvm-readobj --coff-imports "build/mingw/x86_64/release/$target.exe"
+              $imports = llvm-readobj --coff-imports "build/windows/x64/release/$target.exe"
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
               $shared = [bool]($imports -match '(?i)Name: libc\+\+(abi)?\.dll')
               $expectedShared = $fixture -eq "exception-boundary"
