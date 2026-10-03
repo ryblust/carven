@@ -51,6 +51,14 @@ run `xmake clean -a` and `xmake build`, then use stock Xmake for validation.
 For local build-rule development, set `CARVEN_XMAKE_REPO_DIR` to the rule checkout
 when building.
 
+The `sanitizers` option defaults to off, including in Debug builds. Configure
+`./xmakew f -m debug --sanitizers=y` to enable Xmake's address and undefined-behavior
+sanitizer policies, debug symbols, and light optimization. Clean the build tree
+when switching instrumentation. Use `--sanitizers=n` to disable it again.
+The Linux sanitizer CI also supplies a `CXX` adapter for native compilation
+launched by Carven, which runs outside Xmake targets and does not inherit their
+flags. Ordinary compiler and test targets use the project configuration directly.
+
 ## Test responsibilities
 
 | Group | Boundary | Evidence |

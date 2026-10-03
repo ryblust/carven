@@ -10,11 +10,29 @@ set_rundir("$(projectdir)")
 set_policy("build.progress_style", "multirow")
 set_policy("build.c++.modules.non_cascading_changes", true)
 
+option("sanitizers")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Enable AddressSanitizer and UndefinedBehaviorSanitizer")
+option_end()
+
+if has_config("sanitizers") then
+    set_policy("build.sanitizer.address", true)
+    set_policy("build.sanitizer.undefined", true)
+    set_symbols("debug")
+    set_optimize("fast")
+    add_cxflags("-fno-omit-frame-pointer", "-fno-optimize-sibling-calls",
+        "-fsanitize-address-use-after-scope", "-fno-sanitize-recover=all", {tools = "clang"})
+end
+
 if is_plat("windows") then
     set_toolchains("mingw[llvm]")
     set_runtimes("c++_shared")
 else
     set_toolchains("llvm")
+    if is_plat("linux") then
+        set_runtimes("c++_shared")
+    end
 end
 
 add_cxxflags("-fno-rtti", {tools = "clang"})
