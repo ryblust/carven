@@ -94,7 +94,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build compiler
-        run: .\xmakew.ps1 build -y -vD
+        run: .\xmakew.ps1 build -y
 
       - name: Test all groups
         run: .\xmakew.ps1 test
