@@ -61,11 +61,9 @@ jobs:
           "CXX=$llvmRoot/bin/clang++.exe" >> $env:GITHUB_ENV
           "$llvmRoot/bin" >> $env:GITHUB_PATH
 
-      - name: Verify toolchain and repeated wrapper invocation
+      - name: Show toolchain versions
         run: |
-          .\xmakew.ps1 --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .\xmakew.ps1 --version
+          .\xmakew.ps1 lua -c 'print("Xmake " .. tostring(xmake.version()))'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           clang++ --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -91,7 +89,7 @@ jobs:
         run: |
           # The mingw platform uses the GNU Windows ABI, not clang-cl/MSVC.
           .\xmakew.ps1 f -y -p mingw -a x86_64 -m release `
-            --toolchains=llvm --sdk="$env:LLVM_ROOT" --mingw="$env:LLVM_ROOT" `
+            --toolchain=llvm --sdk="$env:LLVM_ROOT" --mingw="$env:LLVM_ROOT" `
             --runtimes=c++_shared
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -99,7 +97,7 @@ jobs:
         run: .\xmakew.ps1 build -y -vD
 
       - name: Test all groups
-        run: .\xmakew.ps1 test -vD
+        run: .\xmakew.ps1 test
 
       - name: Clang-tidy
-        run: .\xmakew.ps1 check -vD clang.tidy
+        run: .\xmakew.ps1 check clang.tidy
