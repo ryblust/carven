@@ -47,14 +47,15 @@ jobs:
           path: carven-xmake-repo
           persist-credentials: false
 
-      - name: Install official Xmake
-        if: runner.os == 'Linux'
+      - name: Install patch-compatible Xmake
         uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: '3.1.1'
 
-      - name: Install toolchain on macOS
+      - name: Install LLVM on macOS
         if: runner.os == 'macOS'
         run: |
-          brew install llvm xmake
+          brew install llvm
           llvm_root="$(brew --prefix llvm)"
           echo "$llvm_root/bin" >> "$GITHUB_PATH"
 
@@ -89,7 +90,7 @@ jobs:
         run: ./xmakew format-check
 
       - name: Clang-tidy
-        run: ./xmakew check -vD clang.tidy
+        run: ./xmakew check clang.tidy
 
   windows:
     name: Windows / LLVM-MinGW / Release
@@ -134,13 +135,11 @@ jobs:
           }
           Expand-Archive -LiteralPath $archive -DestinationPath $env:RUNNER_TEMP
           $llvmRoot = Join-Path $env:RUNNER_TEMP "llvm-mingw-$env:LLVM_MINGW_RELEASE-ucrt-x86_64"
-          "LLVM_MINGW_ROOT=$llvmRoot" >> $env:GITHUB_ENV
-          "CXX=$llvmRoot/bin/clang++.exe" >> $env:GITHUB_ENV
           "$llvmRoot/bin" >> $env:GITHUB_PATH
 
       - name: Show toolchain versions
         run: |
-          .\xmakew.ps1 lua -c 'print("Xmake " .. tostring(xmake.version()))'
+          .\xmakew.ps1 --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           clang++ --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -149,23 +148,8 @@ jobs:
           clang-tidy --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Verify patched Xmake module rules
-        run: |
-          $check = @'
-          local root = os.programdir()
-          print("Xmake runtime: " .. root)
-          assert(os.isfile(path.join(root, "modules/private/action/build/content_depend.lua")), "Carven content-dependency adapter is missing")
-          local rules = io.readfile(path.join(root, "rules/c++/modules/xmake.lua"))
-          assert(rules:find('before_build_files("builder.build_module_pipeline"', 1, true), "Carven module pipeline is not registered")
-          print("Carven module-pipeline overlay verified")
-          '@
-          .\xmakew.ps1 lua -c $check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
       - name: Configure Release
-        run: |
-          .\xmakew.ps1 f -y -m release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        run: .\xmakew.ps1 f -y -m release
 
       - name: Show detected toolchain
         run: .\xmakew.ps1 show -t carven
@@ -227,8 +211,10 @@ jobs:
           path: carven-xmake-repo
           persist-credentials: false
 
-      - name: Install official Xmake
+      - name: Install patch-compatible Xmake
         uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: '3.1.1'
 
       - name: Install LLVM
         run: |

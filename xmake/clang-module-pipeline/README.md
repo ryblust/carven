@@ -111,10 +111,11 @@ Use the repository wrapper for local build commands:
 ```
 
 On Windows, use `.\xmakew.ps1` with the same arguments. The project selects
-LLVM-MinGW and shared libc++ for the default Windows platform. Set
-`LLVM_MINGW_ROOT` to the SDK directory, or make the installation discoverable
-through Xmake's PATH search; no `--toolchain`, `-p mingw`, or `--sdk` argument
-is needed when the SDK is found. CI supplies `LLVM_MINGW_ROOT` explicitly.
+LLVM-MinGW and shared libc++ for the default Windows platform. Add the
+LLVM-MinGW installation's `bin` directory to PATH so Xmake can discover it;
+CI uses the same approach. No `--toolchain`, `-p mingw`, or `--sdk` argument
+is needed when the SDK is found. If an installation is not discoverable through
+PATH, set `LLVM_MINGW_ROOT` to its SDK directory.
 
 For an unexpected compiler, module, or dependency-order failure, clean and
 rebuild before diagnosing the implementation:
@@ -141,9 +142,10 @@ xmake build
 
 ## Overlay and compatibility
 
-The patch targets Xmake `v3.1.1+20260827`. The wrapper creates an overlay of the
-installed Xmake program directory under the platform temporary directory and
-selects it through `XMAKE_PROGRAM_DIR`. Its cache key includes the program
+The patch targets Xmake `v3.1.1+20260827`; CI pins Xmake 3.1.1 on every platform.
+The wrapper creates an overlay of the installed Xmake program directory under
+the platform temporary directory and selects it through `XMAKE_PROGRAM_DIR`.
+Its cache key includes the program
 directory, Xmake version, patched Lua files, and patch contents. A patch
 application failure stops the wrapper.
 
@@ -151,9 +153,10 @@ The POSIX wrapper attempts an APFS clone on macOS or a reflink on Linux, with a
 regular copy as fallback. Windows uses `robocopy`. Each wrapper prepares a
 staging directory before publishing the overlay. The POSIX wrapper requires
 `patch` and either `shasum` or `sha256sum`; the PowerShell wrapper requires Git
-for Windows. It normalizes CRLF to LF in staged patch inputs and restores
-`XMAKE_PROGRAM_DIR` after each invocation so repeated calls in one PowerShell
-session start from the original Xmake installation.
+for Windows. The repository's `.gitattributes` keeps the patch in LF format;
+`git apply --ignore-space-change` accepts CRLF context in the installed Xmake
+scripts. The PowerShell wrapper restores `XMAKE_PROGRAM_DIR` after each invocation
+so repeated calls in one session start from the original Xmake installation.
 
 The content-based path requires `clang-scan-deps` from the configured toolchain.
 Scan errors stop the build. Generated headers must exist before scanning, for

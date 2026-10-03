@@ -61,29 +61,12 @@ try {
             throw "Failed to copy the Xmake program directory (robocopy exit code $robocopyStatus)."
         }
 
-        # Git checkout and Windows packages can independently use CRLF. Normalize
-        # only the staged copies, keeping the installed Xmake files untouched.
-        $utf8 = [System.Text.UTF8Encoding]::new($false)
-        foreach ($relativePath in $patchedPaths) {
-            $file = Join-Path $staging $relativePath
-            $content = [System.IO.File]::ReadAllText($file).Replace("`r`n", "`n")
-            [System.IO.File]::WriteAllText($file, $content, $utf8)
-        }
-        $stagedPatch = Join-Path $staging ".carven-module-pipeline.patch"
-        $content = [System.IO.File]::ReadAllText($patchFile).Replace("`r`n", "`n")
-        [System.IO.File]::WriteAllText($stagedPatch, $content, $utf8)
-
+        # The repository patch uses LF; allow CRLF context in Windows Xmake packages.
         $git = (Get-Command git.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-        & $git -C $staging apply --check $stagedPatch
+        & $git -C $staging apply --ignore-space-change $patchFile
         if ($LASTEXITCODE -ne 0) {
             throw "The module-pipeline patch does not match the installed Xmake program files: $sourceProgramDir. Run the same command with xmake to use the stock pipeline."
         }
-        & $git -C $staging apply $stagedPatch
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to apply the module-pipeline patch."
-        }
-
-        Remove-Item -LiteralPath $stagedPatch
 
         try {
             [System.IO.Directory]::Move($staging, $overlay)
