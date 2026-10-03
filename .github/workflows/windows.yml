@@ -114,7 +114,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test all groups
+        id: tests
         run: .\xmakew.ps1 test
+
+      - name: Diagnose internal test failures
+        if: failure() && steps.tests.outcome == 'failure'
+        run: .\xmakew.ps1 test -v 'carven-test-internal/internal' 'graver-test-internal/graver'
 
       - name: Clang-tidy
         run: .\xmakew.ps1 check clang.tidy
