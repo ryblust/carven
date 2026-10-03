@@ -43,6 +43,12 @@ Deliberately unformatted Graver inputs and the three lexical/syntax rejection fi
 See [C++ conventions](../docs/development/conventions.md) for source conventions and
 [Testing](../docs/development/testing.md) for test responsibilities and validation workflow.
 
+On Windows, the `carven-host-stack` rule reserves 16 MiB of stack for Carven,
+Graver, and their internal test executables. Recursive parsing of nested input
+can exhaust the default 1 MiB reserve. The rule sets the executable's reserve
+without changing the initial committed stack or the settings of generated
+programs. It applies to both MinGW and the Windows/MSVC linker interface.
+
 The root build copies `.clang-tidy` into each target's generated directory and
 `generated.clang-tidy` into its `rules/` subdirectory. The latter inherits the
 parent configuration and adjusts parameter, borrow, and embedded-NUL checks

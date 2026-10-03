@@ -145,5 +145,16 @@ jobs:
           Write-Output "Isolated internal cases: $($cases.Count) total, $failed failed"
           if ($failed -ne 0) { exit 1 }
 
+      - name: Verify host stack reserve
+        run: |
+          foreach ($target in @("carven", "graver", "carven-test-internal", "graver-test-internal")) {
+            $headers = llvm-readobj --file-headers "build/mingw/x86_64/release/$target.exe"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if (-not ($headers -match 'SizeOfStackReserve: 16777216\s*$')) {
+              throw "$target does not reserve the required 16 MiB stack"
+            }
+            Write-Output "${target}: 16 MiB stack reserve verified"
+          }
+
       - name: Clang-tidy
         run: .\xmakew.ps1 check clang.tidy
