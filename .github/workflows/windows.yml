@@ -121,5 +121,29 @@ jobs:
         if: failure() && steps.tests.outcome == 'failure'
         run: .\xmakew.ps1 test -v 'carven-test-internal/internal' 'graver-test-internal/graver'
 
+      - name: Locate crashing internal cases
+        if: failure() && steps.tests.outcome == 'failure'
+        run: |
+          $binary = (Resolve-Path 'build/mingw/x86_64/release/carven-test-internal.exe').Path
+          $headers = llvm-readobj --file-headers $binary
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $headers | Select-String 'SizeOfStackReserve:|SizeOfStackCommit:'
+          $cases = @(& $binary --list-tests --exclude 'Static specialization budgets:*')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($cases.Count -eq 0) { throw 'No internal test cases were listed' }
+          $failed = 0
+          foreach ($case in $cases) {
+            $output = & $binary --test $case 2>&1
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+              $failed++
+              Write-Output "::group::Failed case: $case (exit $code)"
+              $output | Write-Output
+              Write-Output '::endgroup::'
+            }
+          }
+          Write-Output "Isolated internal cases: $($cases.Count) total, $failed failed"
+          if ($failed -ne 0) { exit 1 }
+
       - name: Clang-tidy
         run: .\xmakew.ps1 check clang.tidy
