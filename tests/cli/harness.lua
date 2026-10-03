@@ -144,11 +144,11 @@ function main(target, opt, case_specs, execution)
             os.cp(program, step_program)
             os.cp(path.join(os.projectdir(), "crafts", "carven"), path.join(prefix, "crafts", "carven"))
             for _, source in ipairs(step.installed_inputs or {}) do
-                table.insert(args, path.join(prefix, "crafts", source))
+                table.insert(args, (path.join(prefix, "crafts", source):gsub("\\", "/")))
             end
         end
         for _, source in ipairs(step.absolute_inputs or {}) do
-            table.insert(args, path.join(work_dir, source))
+            table.insert(args, (path.join(work_dir, source):gsub("\\", "/")))
         end
         local exit_code, run_error = os.execv(step_program, args, {
             try = true, timeout = 30000, curdir = work_dir,

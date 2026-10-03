@@ -145,6 +145,10 @@ for _, mode in ipairs({
         add_rules("@carven/carven")
         set_languages(mode.standard)
         set_exceptions("cxx")
+        if is_plat("mingw") then
+            -- DLL-internal allocations cannot use this executable's replacement operator new.
+            set_runtimes("c++_static")
+        end
         add_includedirs(crafts_dir, interop_dir)
         add_files(path.join(interop_dir, "exceptions", "terminate.cpp"))
         add_files(path.join(interop_dir, "exceptions", "precomputed.cv"))
