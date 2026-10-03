@@ -3,7 +3,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 $scriptDir = $PSScriptRoot
 $patchFile = Join-Path $scriptDir "xmake-3.1.1.patch"
-$baseXmake = (Get-Command xmake.exe -CommandType Application -ErrorAction Stop).Source
+$baseXmake = (Get-Command xmake.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 
 $sourceProfile = $env:XMAKE_PROFILE
 try {
@@ -73,7 +73,7 @@ try {
         $content = [System.IO.File]::ReadAllText($patchFile).Replace("`r`n", "`n")
         [System.IO.File]::WriteAllText($stagedPatch, $content, $utf8)
 
-        $git = (Get-Command git.exe -CommandType Application -ErrorAction Stop).Source
+        $git = (Get-Command git.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
         & $git -C $staging apply --check $stagedPatch
         if ($LASTEXITCODE -ne 0) {
             throw "The module-pipeline patch does not match the installed Xmake program files: $sourceProgramDir. Run the same command with xmake to use the stock pipeline."
