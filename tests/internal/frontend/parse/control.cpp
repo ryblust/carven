@@ -243,13 +243,40 @@ const ct::Suite tests([] static noexcept {
     ct::test(
         "Parser control: outer parentheses do not change nested block boundaries",
         [] static noexcept {
-            auto expression = std::string("1");
-            for (auto depth = 0uz; depth < 60uz; ++depth) {
-                expression.insert(0, "if ready { (");
-                expression += ") } else { 2 }";
+            static constexpr auto text = std::string_view(
+                "fn nested(ready) => (if ready { (if ready { (if ready { 1 } else { 2 }) }"
+                " else { 3 }) } else { 4 });"
+            );
+            const auto result = parse_valid(text);
+            const auto ast = result.view();
+            ct::require_equal(root(result).items.size(), 1uz);
+            const auto& implementation = get<ASTFunctionBody>(function(result).implementation);
+            ct::require(is<ASTExpressionBody>(implementation.body));
+            auto expression = get<ASTExpressionBody>(implementation.body).expression;
+            for (auto level = 0uz; level < 3uz; ++level) {
+                ct::require(is<ASTGroupExpr>(ast.expression(expression)));
+                expression = get<ASTGroupExpr>(ast.expression(expression)).expression;
+                ct::require(is<ASTIfForm>(ast.expression(expression)));
+                const auto& conditional = get<ASTIfForm>(ast.expression(expression));
+                ct::require_equal(conditional.branches.size(), 1uz);
+                ct::expect_equal(
+                    slice(text, ast.expression(conditional.branches[0].condition).span),
+                    std::string_view("ready")
+                );
+                const auto& branch = ast.branch_block(conditional.branches[0].body);
+                ct::expect(branch.statements.empty());
+                ct::require(branch.result.has_value());
+                ct::require(conditional.else_branch.has_value());
+                const auto& fallback = ast.branch_block(*conditional.else_branch);
+                ct::expect(fallback.statements.empty());
+                ct::require(fallback.result.has_value());
+                ct::expect_equal(
+                    slice(text, ast.expression(*fallback.result).span),
+                    std::to_string(4uz - level)
+                );
+                expression = *branch.result;
             }
-            const auto result = parse_valid("fn nested(ready) => (" + expression + ");");
-            ct::expect_equal(root(result).items.size(), 1uz);
+            ct::expect_equal(slice(text, ast.expression(expression).span), std::string_view("1"));
             check_invalid("fn nested(ready) => (if ready { (if ready { 1 } else 2) } else { 3 });");
             static_cast<void>(
                 parse_valid("fn nested() => (if (Flag { true }).value { 1 } else { 2 });")

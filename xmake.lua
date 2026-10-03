@@ -38,18 +38,6 @@ add_requires(carven_repository .. "@carven", {
     configs = {rules_only = true},
 })
 
-rule("carven-host-stack")
-    on_load(function (target)
-        -- Recursive parsing needs more than the default 1 MiB Windows stack.
-        -- Reserve address space without increasing the initial committed stack.
-        if target:is_plat("mingw") then
-            target:add("ldflags", "-Wl,--stack,16777216", {force = true})
-        elseif target:is_plat("windows") then
-            target:add("ldflags", "/STACK:16777216", {force = true})
-        end
-    end)
-rule_end()
-
 rule("generated-clang-tidy")
     on_config(function (target)
         os.cp(path.join(os.projectdir(), ".clang-tidy"),
@@ -69,7 +57,6 @@ target("carven-modules")
 target_end()
 
 target("carven")
-    add_rules("carven-host-stack")
     if is_mode("release") then
         set_policy("build.optimization.lto", true)
     end

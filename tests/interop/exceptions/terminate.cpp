@@ -65,6 +65,10 @@ private:
 } // namespace
 
 // Allocation failure is enabled only by the selected isolated scenario.
+// Match libc++'s workaround for Apple replacement-new lookup (rdar://109234844).
+#if defined(__APPLE__)
+__attribute__((weak))
+#endif
 auto operator new(std::size_t size) -> void* {
     if (fail_allocation) {
         throw std::bad_alloc();

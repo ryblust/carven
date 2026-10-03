@@ -1,5 +1,4 @@
 target("carven-test-internal")
-    add_rules("carven-host-stack")
     set_default(false)
     add_deps("carven-modules", "carven-test-support")
 
