@@ -89,13 +89,7 @@ jobs:
         run: ./xmakew format-check
 
       - name: Clang-tidy
-        run: |
-          if ! ./xmakew check -vD clang.tidy; then
-            # Xmake generates this database in quiet mode before starting tidy.
-            # Repeat visibly on failure so setup errors are not lost.
-            ./xmakew project -vD -k compile_commands --lsp=clangd build/clang-tidy-diagnostics
-            exit 1
-          fi
+        run: ./xmakew check -vD clang.tidy
 
   windows:
     name: Windows / LLVM-MinGW / Release
