@@ -148,6 +148,8 @@ for _, mode in ipairs({
         if is_plat("mingw") then
             -- DLL-internal allocations cannot use this executable's replacement operator new.
             set_runtimes("c++_static")
+            -- Keep the link static even if Xmake's runtime flag probe rejects the driver option.
+            add_ldflags("-static-libstdc++", {force = true})
         end
         add_includedirs(crafts_dir, interop_dir)
         add_files(path.join(interop_dir, "exceptions", "terminate.cpp"))

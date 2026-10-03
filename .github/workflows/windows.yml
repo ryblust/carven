@@ -96,6 +96,23 @@ jobs:
       - name: Build compiler
         run: .\xmakew.ps1 build -y
 
+      - name: Verify allocation-failure fixtures
+        run: |
+          foreach ($target in @("carven-test-interop-exception-boundary", "carven-test-interop-exception-boundary-cxx23")) {
+            .\xmakew.ps1 build -y -v $target
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $binary = "build/mingw/x86_64/release/$target.exe"
+            $imports = llvm-readobj --coff-imports $binary
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Write-Output "$target imported DLLs:"
+            $imports | Select-String '^\s+Name:'
+            if ($imports -match '(?i)Name: libc\+\+(abi)?\.dll') {
+              throw "$target still imports libc++; allocation-failure injection requires static libc++"
+            }
+          }
+          .\xmakew.ps1 test 'carven-test-interop-exception-boundary*/*'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Test all groups
         run: .\xmakew.ps1 test
 
