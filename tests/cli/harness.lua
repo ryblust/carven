@@ -128,6 +128,8 @@ function main(target, opt, case_specs, execution)
         end
     end
 
+    -- Compiler CLI steps may also compile and link native C++; prebuilt fixtures only execute.
+    local timeout = execution and 30000 or 120000
     local failures = {}
     local streams = {stdout = {}, stderr = {}}
     local program = path.absolute(execution and target:targetfile()
@@ -151,7 +153,7 @@ function main(target, opt, case_specs, execution)
             table.insert(args, (path.join(work_dir, source):gsub("\\", "/")))
         end
         local exit_code, run_error = os.execv(step_program, args, {
-            try = true, timeout = 30000, curdir = work_dir,
+            try = true, timeout = timeout, curdir = work_dir,
             stdout = stdout_file, stderr = stderr_file,
         })
         local stdout = normalize_newlines(os.isfile(stdout_file) and io.readfile(stdout_file) or "")
