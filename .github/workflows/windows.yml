@@ -89,7 +89,7 @@ jobs:
         run: |
           # The mingw platform uses the GNU Windows ABI, not clang-cl/MSVC.
           .\xmakew.ps1 f -y -p mingw -a x86_64 -m release `
-            --toolchain=llvm --sdk="$env:LLVM_ROOT" --mingw="$env:LLVM_ROOT" `
+            --toolchain="mingw[llvm]" --sdk="$env:LLVM_ROOT" `
             --runtimes=c++_shared
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
