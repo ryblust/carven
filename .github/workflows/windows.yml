@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   llvm-mingw:
-    name: Windows / LLVM-MinGW 23 / Release
+    name: Windows 2025 / LLVM-MinGW 23 / Release
     runs-on: windows-2025
     timeout-minutes: 60
     defaults:

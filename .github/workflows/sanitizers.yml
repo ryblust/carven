@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   sanitizers:
-    name: Ubuntu 26.04 / ASan + UBSan
+    name: Ubuntu 26.04 / LLVM 23 / ASan + UBSan
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     defaults:

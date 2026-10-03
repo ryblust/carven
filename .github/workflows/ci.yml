@@ -15,11 +15,17 @@ concurrency:
 
 jobs:
   build:
-    name: ${{ matrix.os }} / Release
+    name: ${{ matrix.platform }} / ${{ matrix.toolchain }} / Release
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-26, ubuntu-26.04]
+        include:
+          - os: macos-26
+            platform: macOS 26
+            toolchain: LLVM
+          - os: ubuntu-26.04
+            platform: Ubuntu 26.04
+            toolchain: LLVM 23
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
