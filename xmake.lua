@@ -26,12 +26,13 @@ if has_config("sanitizers") then
 end
 
 if is_plat("windows") then
-    set_toolchains("mingw[llvm]")
+    set_toolchains("mingw[clang]")
     set_runtimes("c++_shared")
 else
     set_toolchains("llvm")
     if is_plat("linux") then
         set_runtimes("c++_shared")
+        add_syslinks("c++abi")
     end
 end
 
