@@ -258,7 +258,8 @@ Process harnesses bound execution time. The CLI harness records stdout and
 stderr for each step, preserves failed fixtures, and removes successful temporary
 directories. CLI scenario tables reject unknown fields, ignored top-level step
 fields, and workflows with no executable steps; failure reports identify the
-step and command.
+step and command. Steps default to a 30-second timeout; steps that invoke native
+C++ compilation explicitly set `run_timeout` to 120 seconds.
 
 Fixtures whose exact source bytes are part of the assertion use `.cv.fixture`
 and the CLI `fixtures` mapping to copy them to a `.cv` input. This keeps source
@@ -302,6 +303,10 @@ generated-program tests.
 Test runtime exception boundaries in isolated C++ consumer processes. Require the
 throwing operation to execute and reach the installed termination handler. Catch
 exceptions outside the runtime call and report escaped exceptions as test failures.
+Allocation-failure injection uses separate executables so ordinary exception tests
+retain the configured runtime and allocator. On MinGW, only injection targets link
+libc++ statically: allocations inside its DLL do not use the executable's replacement
+`operator new`.
 
 CLI execution cases cover the shared top-level language surface, analysis-time
 output, `const` blocks and static tests, native argument forwarding, interpreter

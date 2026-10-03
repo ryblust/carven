@@ -135,53 +135,64 @@ target("carven-test-interop-rejections")
         return true
     end)
 target_end()
-for _, mode in ipairs({
-    {standard = "c++20", suffix = ""},
-    {standard = "c++23", suffix = "-cxx23"},
-}) do
-    target("carven-test-interop-exception-boundary" .. mode.suffix)
-        set_default(false)
-        set_kind("binary")
-        add_rules("@carven/carven")
-        set_languages(mode.standard)
-        set_exceptions("cxx")
-        if is_plat("mingw") then
-            -- DLL-internal allocations cannot use this executable's replacement operator new.
-            set_runtimes("c++_static")
-            -- Keep the link static even if Xmake's runtime flag probe rejects the driver option.
-            add_ldflags("-static-libstdc++", {force = true})
-        end
-        add_includedirs(crafts_dir, interop_dir)
-        add_files(path.join(interop_dir, "exceptions", "terminate.cpp"))
-        add_files(path.join(interop_dir, "exceptions", "precomputed.cv"))
-        for _, operation in ipairs({
+for _, fixture in ipairs({
+    {
+        name = "exception-boundary", source = "terminate.cpp",
+        operations = {
             "copy", "move", "failure", "function", "object",
-            "string-allocate", "string-copy",
-            "format-width", "format-throw", "format-utf8", "format-allocate",
-            "precomputed-format-allocate", "mixed-format-allocate",
+            "format-width", "format-throw", "format-utf8",
             "format-character-utf8", "format-locale-utf8",
-            "append-format-throw", "append-format-utf8", "append-format-allocate",
-            "append-precomputed-allocate", "append-format-width",
-            "print-inner-allocate", "print-inner-throw", "print-inner-utf8", "print-later-throw"
-        }) do
-            if mode.standard == "c++20" or operation:startswith("print-") then
-                add_tests(operation, {group = "interop"})
+            "append-format-throw", "append-format-utf8", "append-format-width",
+            "print-inner-throw", "print-inner-utf8", "print-later-throw",
+        },
+    },
+    {
+        name = "allocation-failure", source = "allocation.cpp", allocation = true,
+        operations = {
+            "string-allocate", "string-copy", "format-allocate",
+            "precomputed-format-allocate", "mixed-format-allocate",
+            "append-format-allocate", "append-precomputed-allocate", "print-inner-allocate",
+        },
+    },
+}) do
+    for _, mode in ipairs({
+        {standard = "c++20", suffix = ""},
+        {standard = "c++23", suffix = "-cxx23"},
+    }) do
+        target("carven-test-interop-" .. fixture.name .. mode.suffix)
+            set_default(false)
+            set_kind("binary")
+            add_rules("@carven/carven")
+            set_languages(mode.standard)
+            set_exceptions("cxx")
+            if fixture.allocation and is_plat("mingw") then
+                -- DLL-internal allocations cannot use this executable's replacement operator new.
+                set_runtimes("c++_static")
+                -- Xmake's flag probe rejects this supported LLVM-MinGW driver option.
+                add_ldflags("-static-libstdc++", {force = true})
             end
-        end
-        on_test(function (target, opt)
-            local operation = opt.name:match("([^/]+)$")
-            local prefixes = {
-                ["print-inner-allocate"] = "",
-                ["print-inner-throw"] = "",
-                ["print-inner-utf8"] = "",
-                ["print-later-throw"] = "42 ",
-            }
-            import("harness.process", {rootdir = interop_dir})(
-                target, {operation}, 73, operation, prefixes[operation])
-            return true
-        end)
-    target_end()
-
+            add_includedirs(crafts_dir, interop_dir)
+            add_files(path.join(interop_dir, "exceptions", fixture.source))
+            add_files(path.join(interop_dir, "exceptions", "precomputed.cv"))
+            for _, operation in ipairs(fixture.operations) do
+                if mode.standard == "c++20" or operation:startswith("print-") then
+                    add_tests(operation, {group = "interop"})
+                end
+            end
+            on_test(function (target, opt)
+                local operation = opt.name:match("([^/]+)$")
+                local prefixes = {
+                    ["print-inner-allocate"] = "",
+                    ["print-inner-throw"] = "",
+                    ["print-inner-utf8"] = "",
+                    ["print-later-throw"] = "42 ",
+                }
+                import("harness.process", {rootdir = interop_dir})(
+                    target, {operation}, 73, operation, prefixes[operation])
+                return true
+            end)
+        target_end()
+    end
 end
 
 target("carven-test-interop-print")

@@ -24,7 +24,7 @@ local case_specs = {
         inputs = {"input.cv", "failure.cv", "helper.cv"},
         steps = {
             {args = {"interpret", "input.cv", "helper.cv"}, stdout = "stdout.txt"},
-            {args = {"input.cv", "helper.cv"}, stdout = "stdout.txt"},
+            {args = {"input.cv", "helper.cv"}, run_timeout = 120000, stdout = "stdout.txt"},
             {args = {"check", "failure.cv"}, exit_code = 1,
                 stderr_contains = {'actual: [\n        12,\n    ]', 'expected: [\n        15,\n    ]',
                     'true: <not evaluated>', 'condition: 1 > 2'},
@@ -379,7 +379,7 @@ case_specs["commands/native_crafts"] = {
     steps = {
         {
             installed_toolchain = true,
-            args = {"input.cv", "./input.cv", "crafts/demo/api.cv", "--", "--timings"},
+            args = {"input.cv", "./input.cv", "crafts/demo/api.cv", "--", "--timings"}, run_timeout = 120000,
             stdout = "stdout.txt",
             absent_files = {"input.cpp", "program", ".carven", ".xmake"},
         },
@@ -395,6 +395,7 @@ case_specs["commands/native_execution"] = {
     steps = {
         {
             args = {"--timings", "input.cv", "--", "--timings", "--help", "space argument", "; echo injected", "", 'a"b', "trailing\\", 'slash\\"quote'},
+            run_timeout = 120000,
             exit_code = 1,
             stdout = "stdout.txt",
             stderr_ordered = {"carven: run exited with code 1 in ", "Native compilation", "Execution"},
@@ -537,7 +538,7 @@ case_specs["commands/test_report"] = {
     steps = {
         {args = {"interpret", "--tests", "input.cv"}, exit_code = 1,
             stdout = "stdout.txt", stderr = "stderr.txt"},
-        {args = {"--tests", "input.cv"}, exit_code = 1,
+        {args = {"--tests", "input.cv"}, run_timeout = 120000, exit_code = 1,
             stdout = "stdout.txt", stderr = "stderr.txt"},
     },
 }
@@ -583,7 +584,7 @@ case_specs["commands/entry_failure"] = {
         ["implicit.cv.fixture"] = "implicit.cv",
     },
     steps = {
-        {args = {"explicit.cv"}, exit_code = 1,
+        {args = {"explicit.cv"}, run_timeout = 120000, exit_code = 1,
             stdout_contains = {"before"}, stderr = "explicit.txt"},
         {args = {"interpret", "explicit.cv"}, exit_code = 1,
             stdout_contains = {"before"}, stderr = "explicit.interpret.txt"},
@@ -605,7 +606,7 @@ case_specs["commands/runtime_traps"] = {
     },
     steps = {
         -- Keep one native CLI trap to verify subprocess termination is forwarded.
-        {args = {"divide_entry.cv", "divide.cv", "abort.cv"}, exit_code = 86,
+        {args = {"divide_entry.cv", "divide.cv", "abort.cv"}, run_timeout = 120000, exit_code = 86,
             stderr = "divide.txt"},
         {args = {"interpret", "divide_entry.cv", "divide.cv"}, exit_code = 1,
             stderr_contains = {"division by zero", "divide.cv:2:17"}},
@@ -655,6 +656,7 @@ for _, selection in ipairs({
     end
     table.insert(case_specs["commands/execution_modes"].steps, {
         args = args,
+        run_timeout = mode == "native" and 120000 or nil,
         stdout_ordered = output,
         stdout_not_contains = mode == "compile" and {"runtime test", "runtime output"}
             or {tests and "runtime output" or "runtime test"},

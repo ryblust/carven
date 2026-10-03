@@ -96,54 +96,24 @@ jobs:
       - name: Build compiler
         run: .\xmakew.ps1 build -y
 
-      - name: Verify allocation-failure fixtures
-        run: |
-          foreach ($target in @("carven-test-interop-exception-boundary", "carven-test-interop-exception-boundary-cxx23")) {
-            .\xmakew.ps1 build -y -v $target
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $binary = "build/mingw/x86_64/release/$target.exe"
-            $imports = llvm-readobj --coff-imports $binary
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            Write-Output "$target imported DLLs:"
-            $imports | Select-String '^\s+Name:'
-            if ($imports -match '(?i)Name: libc\+\+(abi)?\.dll') {
-              throw "$target still imports libc++; allocation-failure injection requires static libc++"
-            }
-          }
-          .\xmakew.ps1 test 'carven-test-interop-exception-boundary*/*'
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
       - name: Test all groups
-        id: tests
         run: .\xmakew.ps1 test
 
-      - name: Diagnose internal test failures
-        if: failure() && steps.tests.outcome == 'failure'
-        run: .\xmakew.ps1 test -v 'carven-test-internal/internal' 'graver-test-internal/graver'
-
-      - name: Locate crashing internal cases
-        if: failure() && steps.tests.outcome == 'failure'
+      - name: Verify fixture runtime linkage
         run: |
-          $binary = (Resolve-Path 'build/mingw/x86_64/release/carven-test-internal.exe').Path
-          $headers = llvm-readobj --file-headers $binary
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $headers | Select-String 'SizeOfStackReserve:|SizeOfStackCommit:'
-          $cases = @(& $binary --list-tests --exclude 'Static specialization budgets:*')
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($cases.Count -eq 0) { throw 'No internal test cases were listed' }
-          $failed = 0
-          foreach ($case in $cases) {
-            $output = & $binary --test $case 2>&1
-            $code = $LASTEXITCODE
-            if ($code -ne 0) {
-              $failed++
-              Write-Output "::group::Failed case: $case (exit $code)"
-              $output | Write-Output
-              Write-Output '::endgroup::'
+          foreach ($fixture in @("exception-boundary", "allocation-failure")) {
+            foreach ($suffix in @("", "-cxx23")) {
+              $target = "carven-test-interop-$fixture$suffix"
+              $imports = llvm-readobj --coff-imports "build/mingw/x86_64/release/$target.exe"
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              $shared = [bool]($imports -match '(?i)Name: libc\+\+(abi)?\.dll')
+              $expectedShared = $fixture -eq "exception-boundary"
+              if ($shared -ne $expectedShared) {
+                throw "$target has unexpected libc++ linkage (shared=$shared, expected=$expectedShared)"
+              }
+              Write-Output "$target libc++ linkage verified (shared=$shared)"
             }
           }
-          Write-Output "Isolated internal cases: $($cases.Count) total, $failed failed"
-          if ($failed -ne 0) { exit 1 }
 
       - name: Clang-tidy
         run: .\xmakew.ps1 check clang.tidy

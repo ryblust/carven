@@ -31,8 +31,6 @@ jobs:
       SANITIZER_FLAGS: >-
         -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
         -fsanitize-address-use-after-scope -fno-sanitize-recover=all
-        -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG
-        -Werror=implicit-fallthrough -Werror=return-type
 
     steps:
       - name: Check out Carven

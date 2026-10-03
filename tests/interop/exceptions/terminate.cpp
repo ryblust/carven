@@ -18,14 +18,11 @@
 #include <exception>
 #include <limits>
 #include <locale>
-#include <new>
 #include <string>
 #include <string_view>
 #include <utility>
 
 namespace {
-
-bool fail_allocation = false;
 
 auto aborted(int signal) noexcept -> void {
     std::_Exit(signal == SIGABRT ? 73 : 74);
@@ -63,25 +60,6 @@ private:
 };
 
 } // namespace
-
-// Allocation failure is enabled only by the selected isolated scenario.
-// Match libc++'s workaround for Apple replacement-new lookup (rdar://109234844).
-#if defined(__APPLE__)
-__attribute__((weak))
-#endif
-auto operator new(std::size_t size) -> void* {
-    if (fail_allocation) {
-        throw std::bad_alloc();
-    }
-    if (auto* memory = std::malloc(size == 0 ? 1 : size)) {
-        return memory;
-    }
-    throw std::bad_alloc();
-}
-
-auto operator delete(void* memory) noexcept -> void {
-    std::free(memory);
-}
 
 // This process is built with C++ exceptions enabled to test the protocol boundary.
 // NOLINTNEXTLINE(misc-const-correctness): Keep the standard C++ main signature.
@@ -122,15 +100,6 @@ auto main(int argc, char** argv) -> int try {
         static_cast<void>(carven::runtime::format("{:>{}}", 1, -1));
     } else if (operation == "format-throw" || operation == "format-utf8") {
         static_cast<void>(carven::runtime::format("{}", FormatProbe {operation == "format-utf8"}));
-    } else if (operation == "format-allocate") {
-        fail_allocation = true;
-        static_cast<void>(carven::runtime::format("{:4096}", 1));
-    } else if (operation == "precomputed-format-allocate") {
-        fail_allocation = true;
-        carven::api::tests::interop::exceptions::precomputed::discard_precomputed();
-    } else if (operation == "mixed-format-allocate") {
-        fail_allocation = true;
-        carven::api::tests::interop::exceptions::precomputed::discard_mixed(7);
     } else if (operation == "format-character-utf8") {
         // Stay within char's range so formatting succeeds before UTF-8 validation fails.
         constexpr auto byte = std::numeric_limits<char>::is_signed ? -1 : 255;
@@ -144,35 +113,14 @@ auto main(int argc, char** argv) -> int try {
         carven::api::tests::interop::exceptions::precomputed::append_native_failure(
             operation == "append-format-utf8"
         );
-    } else if (operation == "append-format-allocate") {
-        fail_allocation = true;
-        carven::api::tests::interop::exceptions::precomputed::append_dynamic(7);
-    } else if (operation == "append-precomputed-allocate") {
-        fail_allocation = true;
-        carven::api::tests::interop::exceptions::precomputed::append_precomputed();
     } else if (operation == "append-format-width") {
         carven::api::tests::interop::exceptions::precomputed::append_width(-1);
-    } else if (operation == "print-inner-allocate") {
-        fail_allocation = true;
-        carven::api::tests::interop::exceptions::precomputed::print_precomputed();
     } else if (operation == "print-inner-throw" || operation == "print-inner-utf8") {
         carven::api::tests::interop::exceptions::precomputed::print_native_failure(
             operation == "print-inner-utf8"
         );
     } else if (operation == "print-later-throw") {
         carven::runtime::println(std::string_view("42"), FormatProbe {.invalid_utf8 = false});
-    } else if (operation == "string-allocate" || operation == "string-copy") {
-        const auto input = std::string(4096, 'x');
-        if (operation == "string-allocate") {
-            fail_allocation = true;
-            static_cast<void>(carven::runtime::String::from_str(input));
-        } else {
-            const auto source = carven::runtime::String::from_str(input);
-            fail_allocation = true;
-            // NOLINTNEXTLINE(performance-unnecessary-copy-initialization): Exercise copy allocation failure.
-            const auto copy = source;
-            static_cast<void>(copy);
-        }
     }
     return 2;
 } catch (...) {
