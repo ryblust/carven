@@ -27,6 +27,7 @@ import :semantic.semir.structured;
 import :semantic.semir.type;
 import :source.cpp.identifier;
 import :support.invariant;
+import :support.unique_indirect;
 import :support.visit;
 import std;
 
@@ -57,13 +58,13 @@ auto BodyElaborator::dereference_expression(const ASTPrefixExpr& source, Span sp
         co_return std::unexpected(value.error());
     }
     co_return BuiltExpression {
-        .storage = active_builder().make_place(
+        .storage = UniqueIndirect {BodyExpressionStorage {active_builder().make_place(
             std::nullopt,
             pointer->access == PointerAccess::Write ? AccessMode::Write : AccessMode::Read,
             pointer->target,
             SemDereference {.source = UniqueIndirect(std::move(*value)), .origin = origin(span)},
             origin(span)
-        ),
+        )}},
         .pending_failures = std::move(pending),
         .takeable = false,
         .completes = operand->completes,
@@ -117,9 +118,9 @@ auto BodyExprSite::finish_index(
     if (!subscript) {
         return std::unexpected(subscript.error());
     }
-    if (auto* place = std::get_if<PlaceExpression>(&receiver.storage); array && place != nullptr) {
+    if (auto* place = std::get_if<PlaceExpression>(&*receiver.storage); array && place != nullptr) {
         return Value {
-            .storage = body.active_builder().make_place(
+            .storage = UniqueIndirect {BodyExpressionStorage {body.active_builder().make_place(
                 place->root,
                 place->access,
                 type,
@@ -129,7 +130,7 @@ auto BodyExprSite::finish_index(
                     bounds
                 },
                 body.origin(span)
-            ),
+            )}},
             .pending_failures = std::move(state.pending),
             .takeable = true,
             .completes = state.completes
@@ -155,7 +156,7 @@ auto BodyExprSite::finish_index(
         );
         place.expression.constant = known;
         return Value {
-            .storage = std::move(place),
+            .storage = UniqueIndirect {BodyExpressionStorage {std::move(place)}},
             .pending_failures = std::move(state.pending),
             .takeable = false,
             .completes = state.completes
@@ -177,15 +178,15 @@ auto BodyExprSite::finish_field(
     Span span
 ) noexcept -> ExpressionResult<Value> {
     const auto known = field_constant(draft(), receiver.constant(), field.field_index);
-    if (auto* place = std::get_if<PlaceExpression>(&receiver.storage)) {
+    if (auto* place = std::get_if<PlaceExpression>(&*receiver.storage)) {
         return Value {
-            .storage = body.active_builder().make_place(
+            .storage = UniqueIndirect {BodyExpressionStorage {body.active_builder().make_place(
                 place->root,
                 place->access,
                 type,
                 SemField {UniqueIndirect(std::move(place->expression)), field},
                 body.origin(span)
-            ),
+            )}},
             .pending_failures = take_pending_failures(receiver),
             .takeable = true,
             .completes = receiver.completes

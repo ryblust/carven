@@ -11,6 +11,7 @@ import :semantic.semir.structured;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :support.invariant;
+import :support.unique_indirect;
 import :support.visit;
 import std;
 
@@ -46,7 +47,7 @@ auto BodyElaborator::cpp_result_type(
 }
 
 auto BodyElaborator::materialize_selection(
-    SelectedExpression selected,
+    SelectedExpression&& selected,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisResult<BuiltExpression> {
     if (auto* built = std::get_if<BuiltExpression>(&selected)) {
@@ -95,7 +96,7 @@ auto BodyElaborator::cpp_projection(
     if (concrete == nullptr) {
         invariant_violation("external projection requires a concrete receiver type");
     }
-    auto* place = std::get_if<PlaceExpression>(&receiver.storage);
+    auto* place = std::get_if<PlaceExpression>(&*receiver.storage);
     inputs.push_back(
         {.type = *concrete, .access = place != nullptr ? place->access : AccessMode::Read}
     );
@@ -113,13 +114,13 @@ auto BodyElaborator::cpp_projection(
     const auto type = cpp_result_type(operation, inputs);
     if (place != nullptr) {
         return BuiltExpression {
-            .storage = active_builder().cpp_place(
+            .storage = UniqueIndirect {BodyExpressionStorage {active_builder().cpp_place(
                 std::move(*place),
                 type,
                 std::move(operation),
                 std::move(operands),
                 origin(span)
-            ),
+            )}},
 
             .pending_failures = std::move(receiver.pending_failures),
             .takeable = false,
@@ -200,7 +201,7 @@ auto BodyElaborator::cpp_expression(
         SemCpp {.operation = std::move(operation), .operands = std::move(operands)}
     );
     return BuiltExpression {
-        .storage = std::move(value),
+        .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},
 
         .pending_failures = {},
         .takeable = true,
@@ -302,7 +303,7 @@ auto BodyElaborator::cpp_call(
         if (!consumed.has_value()) {
             return std::unexpected(consumed.error());
         }
-        if (auto* place = std::get_if<PlaceExpression>(&built.storage)) {
+        if (auto* place = std::get_if<PlaceExpression>(&*built.storage)) {
             const auto access = place->access;
             return Operand {
                 .access = access,
@@ -377,7 +378,7 @@ auto BodyElaborator::cpp_call(
         active_builder()
             .make_expression(type, active_builder().lifetime(), origin(span), std::move(call));
     co_return BuiltExpression {
-        .storage = std::move(value),
+        .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},
 
         .pending_failures = {},
         .takeable = true,

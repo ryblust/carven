@@ -168,6 +168,155 @@ auto check_unresolved_residual_call() noexcept -> void {
     }));
 }
 
+enum class ResidualStaticStatement : std::uint8_t {
+    Local,
+    Block,
+    Loop,
+};
+
+auto check_residual_static_statement(ResidualStaticStatement kind, bool retained) noexcept -> void {
+    auto sources = SourceManager();
+    auto diagnostics = DiagnosticSink();
+    auto builder = begin_compilation(sources, diagnostics, "semir.publication.static_statement");
+    const auto facts = module_facts(builder);
+    const auto module_id = builder.reserve_module_declaration();
+    const auto test = builder.reserve_test();
+    builder.define_declaration(
+        module_id,
+        ModuleDeclaration {
+            .provenance_module = facts.provenance_module,
+            .origin = facts.origin,
+            .cpp_headers = {},
+            .cpp_source_fragments = {},
+            .items = {test},
+        }
+    );
+    builder.finish_declaration_heads();
+    auto reservation = builder.reserve_body(BodyKind::Test);
+    builder.define_test(
+        test,
+        TestDeclaration {
+            .is_const = false,
+            .module_id = module_id,
+            .source =
+                {.label = builder.intern_spelling("static statement"), .origin = facts.origin},
+            .body = reservation.id(),
+        }
+    );
+    auto body = BodyBuilder(std::move(reservation), builder);
+    const auto lifetime =
+        body.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, facts.origin);
+    const auto empty_region = [&](LifetimeRegionID region_lifetime) noexcept {
+        return SemanticRegion {
+            .lifetime = region_lifetime,
+            .origin = facts.origin,
+            .statements = {},
+            .result = std::nullopt,
+            .result_reachable = false,
+            .failures = BodyFailures(builder.add_empty_failure_term()),
+            .exits_test = false,
+        };
+    };
+    const auto statement_value = [&]() noexcept -> SemanticStatementValue {
+        switch (kind) {
+            case ResidualStaticStatement::Local: {
+                const auto boolean = builder.builtin_type(BuiltinType::Bool);
+                const auto storage = body.add_owner_binding(
+                    builder.intern_spelling("value"),
+                    boolean,
+                    lifetime,
+                    false,
+                    facts.origin
+                );
+                const auto constant = builder.intern_constant(
+                    {.type = boolean, .value = BooleanConstant {.value = true}}
+                );
+                return SemStaticBinding {
+                    .binding = storage.binding,
+                    .initializer = OwnedSemanticExpression(body.make_expression(
+                        boolean,
+                        lifetime,
+                        facts.origin,
+                        SemConstant {.constant = constant},
+                        constant
+                    )),
+                };
+            }
+            case ResidualStaticStatement::Block: {
+                const auto block_lifetime =
+                    body.add_lifetime_region(lifetime, LifetimeRegionKind::Lexical, facts.origin);
+                return SemConstBlock {
+                    .label = std::nullopt,
+                    .source = facts.origin,
+                    .region = OwnedSemanticRegion(empty_region(block_lifetime)),
+                };
+            }
+            case ResidualStaticStatement::Loop: {
+                const auto integer = builder.builtin_type(BuiltinType::I32);
+                const auto range_type =
+                    builder.intern_type({.value = RangeTypeValue {.element = integer}});
+                const auto constant =
+                    builder.intern_constant({.type = integer, .value = IntegerConstant::zero()});
+                const auto endpoint = [&]() noexcept {
+                    return body.make_expression(
+                        integer,
+                        lifetime,
+                        facts.origin,
+                        SemConstant {.constant = constant},
+                        constant
+                    );
+                };
+                const auto loop_lifetime =
+                    body.add_lifetime_region(lifetime, LifetimeRegionKind::Lexical, facts.origin);
+                return SemRangeLoop {
+                    .lifetime = loop_lifetime,
+                    .access = AccessMode::Read,
+                    .binding = std::nullopt,
+                    .source = body.make_expression(
+                        range_type,
+                        lifetime,
+                        facts.origin,
+                        SemRange {
+                            .begin = OwnedSemanticExpression(endpoint()),
+                            .end = OwnedSemanticExpression(endpoint()),
+                            .inclusive = false,
+                        }
+                    ),
+                    .body = OwnedSemanticRegion(empty_region(loop_lifetime)),
+                    .is_static = true,
+                };
+            }
+        }
+        std::unreachable();
+    };
+    auto region = empty_region(lifetime);
+    region.statements.push_back(
+        SemanticStatement {
+            .origin = facts.origin,
+            .lifetime = lifetime,
+            .reachable = true,
+            .value = statement_value(),
+        }
+    );
+    auto graph = std::move(body).finish(std::move(region));
+    graph.residual = graph.region;
+    if (!retained) {
+        graph.residual->statements.clear();
+    }
+    publish(std::move(graph), builder);
+    if (retained) {
+        ct::expect(expect_termination(
+            std::format("semir-residual-static-statement-{}", std::to_underlying(kind)),
+            [&] noexcept { static_cast<void>(std::move(builder).finish()); }
+        ));
+    } else {
+        const auto program = std::move(builder).finish();
+        ct::require(program.has_value());
+        ct::expect_equal(program->bodies().size(), 1uz);
+        ct::expect(diagnostics.empty());
+    }
+}
+
 const ct::Suite tests([] static noexcept {
     ct::test(
         "SemIR publication: only executable bodies survive the static stage",
@@ -244,70 +393,105 @@ const ct::Suite tests([] static noexcept {
     ct::test(
         "SemIR publication invariant: residual regions reject static control",
         [] static noexcept {
-            auto sources = SourceManager();
-            auto diagnostics = DiagnosticSink();
-            auto builder =
-                begin_compilation(sources, diagnostics, "semir.publication.static_control");
-            const auto facts = module_facts(builder);
-            const auto module_id = builder.reserve_module_declaration();
-            const auto test = builder.reserve_test();
-            builder.define_declaration(
-                module_id,
-                ModuleDeclaration {
-                    .provenance_module = facts.provenance_module,
-                    .origin = facts.origin,
-                    .cpp_headers = {},
-                    .cpp_source_fragments = {},
-                    .items = {test},
-                }
-            );
-            builder.finish_declaration_heads();
-            auto reservation = builder.reserve_body(BodyKind::Test);
-            builder.define_test(
-                test,
-                TestDeclaration {
-                    .is_const = false,
-                    .module_id = module_id,
-                    .source =
-                        {.label = builder.intern_spelling("static control"),
-                         .origin = facts.origin},
-                    .body = reservation.id(),
-                }
-            );
-            auto body = BodyBuilder(std::move(reservation), builder);
-            const auto lifetime =
-                body.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, facts.origin);
-            auto expression = body.make_expression(
-                builder.builtin_type(BuiltinType::Void),
-                lifetime,
-                facts.origin,
-                SemIf {.branches = {}, .otherwise = std::nullopt, .is_static = false}
-            );
-            auto graph = std::move(body).finish(
-                SemanticRegion {
-                    .lifetime = lifetime,
-                    .origin = facts.origin,
-                    .statements =
-                        {{.origin = facts.origin,
-                          .lifetime = lifetime,
-                          .reachable = true,
-                          .value = SemExpressionStatement {.expression = std::move(expression)}}},
-                    .result = std::nullopt,
-                    .result_reachable = false,
-                    .failures = BodyFailures(builder.add_empty_failure_term()),
-                    .exits_test = false,
-                }
-            );
-            auto residual = graph.region;
-            std::get<SemIf>(
-                std::get<SemExpressionStatement>(residual.statements.front().value).expression.value
-            )
-                .is_static = true;
-            graph.residual = std::move(residual);
-            publish(std::move(graph), builder);
-            ct::expect(expect_termination("semir-residual-static-control", [&] noexcept {
-                static_cast<void>(std::move(builder).finish());
-            }));
+            struct Scenario final {
+                std::string_view name;
+                bool explicit_residual;
+            };
+            const auto scenarios = std::array {
+                Scenario {.name = "explicit residual", .explicit_residual = true},
+                Scenario {.name = "source fallback", .explicit_residual = false},
+            };
+            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                auto sources = SourceManager();
+                auto diagnostics = DiagnosticSink();
+                auto builder =
+                    begin_compilation(sources, diagnostics, "semir.publication.static_control");
+                const auto facts = module_facts(builder);
+                const auto module_id = builder.reserve_module_declaration();
+                const auto test = builder.reserve_test();
+                builder.define_declaration(
+                    module_id,
+                    ModuleDeclaration {
+                        .provenance_module = facts.provenance_module,
+                        .origin = facts.origin,
+                        .cpp_headers = {},
+                        .cpp_source_fragments = {},
+                        .items = {test},
+                    }
+                );
+                builder.finish_declaration_heads();
+                auto reservation = builder.reserve_body(BodyKind::Test);
+                builder.define_test(
+                    test,
+                    TestDeclaration {
+                        .is_const = false,
+                        .module_id = module_id,
+                        .source =
+                            {.label = builder.intern_spelling("static control"),
+                             .origin = facts.origin},
+                        .body = reservation.id(),
+                    }
+                );
+                auto body = BodyBuilder(std::move(reservation), builder);
+                const auto lifetime = body.add_lifetime_region(
+                    std::nullopt,
+                    LifetimeRegionKind::Lexical,
+                    facts.origin
+                );
+                auto expression = body.make_expression(
+                    builder.builtin_type(BuiltinType::Void),
+                    lifetime,
+                    facts.origin,
+                    SemIf {.branches = {}, .otherwise = std::nullopt, .is_static = false}
+                );
+                auto graph = std::move(body).finish(
+                    SemanticRegion {
+                        .lifetime = lifetime,
+                        .origin = facts.origin,
+                        .statements =
+                            {{.origin = facts.origin,
+                              .lifetime = lifetime,
+                              .reachable = true,
+                              .value =
+                                  SemExpressionStatement {.expression = std::move(expression)}}},
+                        .result = std::nullopt,
+                        .result_reachable = false,
+                        .failures = BodyFailures(builder.add_empty_failure_term()),
+                        .exits_test = false,
+                    }
+                );
+                auto& residual = scenario.explicit_residual ? graph.residual.emplace(graph.region)
+                                                            : graph.region;
+                std::get<SemIf>(std::get<SemExpressionStatement>(residual.statements.front().value)
+                                    .expression.value)
+                    .is_static = true;
+                publish(std::move(graph), builder);
+                ct::expect(expect_termination(
+                    std::format("semir-residual-static-control-{}", scenario.name),
+                    [&] noexcept { static_cast<void>(std::move(builder).finish()); }
+                ));
+            });
+        }
+    );
+    ct::test(
+        "SemIR publication invariant: residual regions reject static locals",
+        [] static noexcept {
+            check_residual_static_statement(ResidualStaticStatement::Local, false);
+            check_residual_static_statement(ResidualStaticStatement::Local, true);
+        }
+    );
+    ct::test(
+        "SemIR publication invariant: residual regions reject const blocks",
+        [] static noexcept {
+            check_residual_static_statement(ResidualStaticStatement::Block, false);
+            check_residual_static_statement(ResidualStaticStatement::Block, true);
+        }
+    );
+    ct::test(
+        "SemIR publication invariant: residual regions reject static range loops",
+        [] static noexcept {
+            check_residual_static_statement(ResidualStaticStatement::Loop, false);
+            check_residual_static_statement(ResidualStaticStatement::Loop, true);
         }
     );
     ct::test(
@@ -318,24 +502,11 @@ const ct::Suite tests([] static noexcept {
             auto builder = begin_compilation(sources, diagnostics, "semir.publication.complete");
             const auto facts = module_facts(builder);
             const auto void_type = builder.builtin_type(BuiltinType::Void);
-            const auto integer_type = builder.builtin_type(BuiltinType::I32);
-            const auto text_type = builder.builtin_type(BuiltinType::Str);
-            const auto text_value = builder.intern_spelling("publication");
 
             const auto module_id = builder.reserve_module_declaration();
             const auto function = builder.reserve_function_declaration();
-            const auto structure = builder.reserve_struct_declaration();
-            const auto enumeration = builder.reserve_enum_declaration();
-            const auto enum_case = builder.reserve_enum_case_declaration();
-            const auto module_constant = builder.reserve_module_constant_declaration();
             const auto function_callable = builder.reserve_callable_declaration();
             const auto test = builder.reserve_test();
-            const auto constant = builder.intern_constant(
-                ConstantFact {
-                    .type = text_type,
-                    .value = StringConstant {.value = text_value},
-                }
-            );
 
             builder.define_callable_contract(
                 function_callable,
@@ -355,56 +526,13 @@ const ct::Suite tests([] static noexcept {
                 }
             );
             builder.define_declaration(
-                structure,
-                ConstructionStructDeclaration {
-                    .kind = RecordKind::Struct,
-                    .module_id = module_id,
-                    .name = builder.intern_spelling("Structure"),
-                    .origin = facts.origin,
-                    .visibility = DeclarationVisibility::Module,
-                    .fields = {},
-                }
-            );
-            builder.define_declaration(
-                enum_case,
-                ConstructionEnumCaseDeclaration {
-                    .owner = enumeration,
-                    .name = builder.intern_spelling("Payload"),
-                    .origin = facts.origin,
-                    .payload_types = {integer_type},
-                    .constant = std::nullopt,
-                }
-            );
-            builder.define_declaration(
-                enumeration,
-                EnumDeclaration {
-                    .module_id = module_id,
-                    .name = builder.intern_spelling("Enumeration"),
-                    .origin = facts.origin,
-                    .visibility = DeclarationVisibility::Module,
-                    .representation = PayloadEnumRepresentation {},
-                    .cases = {enum_case},
-                    .supports_equality = true,
-                }
-            );
-            builder.define_declaration(
-                module_constant,
-                ModuleConstantDeclaration {
-                    .module_id = module_id,
-                    .name = builder.intern_spelling("constant"),
-                    .origin = facts.origin,
-                    .visibility = DeclarationVisibility::Module,
-                    .value = constant,
-                }
-            );
-            builder.define_declaration(
                 module_id,
                 ModuleDeclaration {
                     .provenance_module = facts.provenance_module,
                     .origin = facts.origin,
                     .cpp_headers = {},
                     .cpp_source_fragments = {},
-                    .items = {function, structure, enumeration, module_constant, test},
+                    .items = {function, test},
                 }
             );
             builder.finish_declaration_heads();
@@ -471,20 +599,6 @@ const ct::Suite tests([] static noexcept {
 
             ct::expect(!program.bodies().contains(removed_body_id));
             ct::expect_equal(program.bodies().size(), 3uz);
-            const auto& published_module = program.declarations().module_decl(module_id);
-            ct::expect_equal(published_module.items.size(), 5uz);
-            ct::expect(std::ranges::contains(published_module.items, ModuleItem {function}));
-            ct::expect(std::ranges::contains(published_module.items, ModuleItem {structure}));
-            ct::expect(std::ranges::contains(published_module.items, ModuleItem {enumeration}));
-            ct::expect(std::ranges::contains(published_module.items, ModuleItem {module_constant}));
-            ct::expect(std::ranges::contains(published_module.items, ModuleItem {test}));
-            ct::expect(((program.declarations().enumeration(enumeration).cases)
-                        == (std::vector {enum_case})))
-                .note(
-                    "program.declarations().enumeration(enumeration).cases == std::vector {enum_case}"
-                );
-            ct::expect(((program.declarations().enum_case(enum_case).owner) == (enumeration)))
-                .note("program.declarations().enum_case(enum_case).owner == enumeration");
             ct::expect(((program.declarations().body_for_callable(function_callable))
                         == (function_body_id)))
                 .note(

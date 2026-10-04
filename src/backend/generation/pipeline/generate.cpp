@@ -8,14 +8,17 @@ import :backend.generation.request;
 import :backend.lower;
 import :semantic.semir.decl;
 import :source.provenance;
+import :support.timing;
 import :support.visit;
 import std;
 
 auto generate_artifacts(
     SemIRProgram semantic,
     const TargetPlanningRequest& request,
-    std::optional<std::span<const CanonicalModulePath>> selected_modules
+    std::optional<std::span<const CanonicalModulePath>> selected_modules,
+    const TimingOutput& timings
 ) noexcept -> GeneratedArtifactSet {
+    const auto scope = TimingScope(timings, TimingStage::CppGeneration);
     const auto compilation = PlannedCompilation::build(std::move(semantic), request);
     const auto selected = [&](ModuleID id) noexcept {
         const auto& program = compilation.semantic();

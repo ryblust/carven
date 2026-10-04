@@ -12,27 +12,28 @@ auto SemanticExecutor::region(
     const SemanticRegion& source,
     bool cleanup
 ) noexcept -> ExecutionTask<ExecutionCompletion> {
-    const auto execute = [&]() noexcept -> ExecutionTask<ExecutionCompletion> {
-        if (auto checked = step(source.origin); !checked) {
-            co_return std::unexpected(std::move(checked.error()));
+    const auto finish = [&](ExecutionResult<ExecutionCompletion> result) noexcept {
+        if (cleanup) {
+            release_region(frame, source.lifetime);
         }
-        for (const auto& child : source.statements) {
-            auto result = (co_await statement(frame, child));
-            if (!result || result->flow != ExecutionFlow::Normal) {
-                co_return result;
-            }
+        return result;
+    };
+    if (auto checked = step(source.origin); !checked) {
+        co_return finish(std::unexpected(std::move(checked.error())));
+    }
+    for (const auto& child : source.statements) {
+        auto result = (co_await statement(frame, child));
+        if (!result || result->flow != ExecutionFlow::Normal) {
+            co_return finish(std::move(result));
         }
-        co_return source.result
+    }
+    co_return finish(
+        source.result
             ? (co_await expression(frame, *source.result))
             : ExecutionResult<ExecutionCompletion>(
                   ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}}
-              );
-    };
-    auto result = (co_await execute());
-    if (cleanup) {
-        release_region(frame, source.lifetime);
-    }
-    co_return result;
+              )
+    );
 }
 
 auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement& source) noexcept
@@ -56,7 +57,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
         [&](const auto& operation) noexcept -> ExecutionTask<ExecutionCompletion> {
             using Operation = std::remove_cvref_t<decltype(operation)>;
             if constexpr (std::same_as<Operation, SemReturn>) {
-                auto result = operation.value ? (co_await value(frame, *operation.value))
+                auto result = operation.value ? (co_await this->value(frame, *operation.value))
                                               : ExecutionResult<ExecutionValue>(ExecutionVoid {});
                 if (!result) {
                     co_return std::unexpected(std::move(result.error()));
@@ -66,7 +67,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                     .value = std::move(*result)
                 };
             } else if constexpr (std::same_as<Operation, SemThrow>) {
-                auto payload = (co_await value(frame, operation.value));
+                auto payload = (co_await this->value(frame, operation.value));
                 if (!payload) {
                     co_return std::unexpected(std::move(payload.error()));
                 }
@@ -108,7 +109,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                 }
                 co_return result;
             } else if constexpr (std::same_as<Operation, SemInitialize>) {
-                auto result = co_await value(frame, operation.initializer);
+                auto result = (co_await this->value(frame, operation.initializer));
                 if (!result) {
                     co_return std::unexpected(std::move(result.error()));
                 }
@@ -123,7 +124,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                 };
             } else if constexpr (std::same_as<Operation, SemStaticBinding>) {
                 // A constant is a static root: no handler receives its failure.
-                auto result = co_await value(frame, *operation.initializer);
+                auto result = (co_await this->value(frame, *operation.initializer));
                 if (!result) {
                     co_return std::unexpected(escaped(std::move(result.error())));
                 }
@@ -179,7 +180,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                     }
                     prior = std::move(*snapshot);
                 }
-                auto right = (co_await value(frame, operation.value));
+                auto right = (co_await this->value(frame, operation.value));
                 if (!right) {
                     co_return std::unexpected(std::move(right.error()));
                 }
@@ -285,7 +286,7 @@ auto SemanticExecutor::loop(
         }
         if (source.condition) {
             const auto temporaries = frame.temporaries.size();
-            auto condition = (co_await value(frame, *source.condition));
+            auto condition = (co_await this->value(frame, *source.condition));
             release_temporaries(frame, temporaries);
             if (!condition) {
                 co_return std::unexpected(std::move(condition.error()));
@@ -329,7 +330,7 @@ auto SemanticExecutor::range_loop(
     }
     const auto canonical = values.type_copy(*sequence_type);
     if (const auto* range_type = std::get_if<RangeTypeValue>(&canonical.value)) {
-        auto evaluated = (co_await value(frame, source.source));
+        auto evaluated = (co_await this->value(frame, source.source));
         if (!evaluated) {
             co_return std::unexpected(std::move(evaluated.error()));
         }
@@ -445,7 +446,7 @@ auto SemanticExecutor::report(
                 .explanation = &explanation
             };
         }
-        auto condition = (co_await value(frame, **operation.condition));
+        auto condition = (co_await this->value(frame, **operation.condition));
         condition_observation = previous;
         if (!condition) {
             co_return std::unexpected(std::move(condition.error()));
@@ -458,7 +459,7 @@ auto SemanticExecutor::report(
     }
     auto message = std::string();
     if (operation.message && !passed) {
-        auto argument = (co_await value(frame, **operation.message));
+        auto argument = (co_await this->value(frame, **operation.message));
         if (!argument) {
             co_return std::unexpected(std::move(argument.error()));
         }

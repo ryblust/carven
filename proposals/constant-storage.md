@@ -17,21 +17,36 @@ admission and retained results for future library containers and class operation
 
 Public containers belong to standard or user crafts. They need generic type
 declarations, encapsulated storage, and defined access, lifetime, mutation, and
-failure behavior. [Generics](generics.md) owns parameterized declarations; ordinary
-[class encapsulation](../docs/language/aggregates.md#ordinary-value-classes) is implemented.
+failure behavior. Ordinary class encapsulation is implemented.
 Generic classes remain unimplemented. A selected container also needs its
 construction, access, mutation, calls, and cleanup admitted to constant execution.
+
+Construction-destination, partial-initialization, and native lifetime contracts
+establish the ordinary behavior to admit into constant execution. Evaluate storage
+candidates for both runtime and constant execution; define admission from the
+selected source behavior.
 
 Semantic analysis resolves an operation's contract, constant execution implements
 its admitted behavior, and lowering selects native support. Craft-specific
 implementation stays with the craft; shared storage primitives belong to the
-owning language/runtime facility. A native call alone does not provide constant
-execution.
+owning language/runtime facility.
 
 Intermediate values keep their source types. Each owner needs an explicit
 retained-result contract preserving element eligibility and backing lifetimes.
 The existing String-to-str freeze rule does not recursively replace fields
 inside nominal containers.
+
+For each storage candidate:
+
+- Define constant-execution behavior for empty, partially initialized, live, and
+  consumed destinations, including identity and cleanup.
+- Validate reads and completion assertions against modeled initialization state.
+  Keep host uninitialized memory inaccessible to evaluation.
+- Test admission and unsupported-operation diagnostics.
+- Decide whether raw addresses or unfinished storage are eligible retained results.
+  Require eligible types and valid backing for completed retained contents.
+
+The evaluator representation remains open.
 
 ## Follow-up: growable library containers
 
@@ -50,15 +65,14 @@ The proposed work is:
 1. Define the ordinary container contract: construction, append, indexing, length,
    read-only views, copying and Take, including borrow invalidation and state on
    failure. Identify the generic and encapsulation facilities needed to express
-   the owner; the first generic functions and structs alone do not establish them.
+   the owner.
 2. Supply the required storage operations through semantic analysis, lowering,
    and native support. Craft-specific implementation stays with the craft;
    shared language storage primitives belong to runtime. The same admitted
    operations need bounded constant-execution behavior.
 3. Define the retained-result boundary. A completed sequence retained as static
    `[T]` is a candidate that reuses the current slice representation. Select the
-   source operation or conversion explicitly; existing array freezing does not
-   imply a conversion for arbitrary nominal owners. Element types and valid
+   source operation or conversion explicitly. Element types and valid
    backing must survive freezing. An ordinary runtime view continues to borrow
    its owner.
 4. Build a table whose entries are appended conditionally, so execution determines
@@ -69,10 +83,8 @@ The proposed work is:
 
 This experiment is complete when one source-defined container works through
 ordinary execution and required constant execution under those contracts,
-without a caller-supplied compile-time capacity. Fixed-array construction alone
-does not satisfy that criterion. Reflection and dynamic polymorphism are not
-required by this consumer; retaining an owning Vector value is a separate
-result contract from retaining `[T]`.
+without a caller-supplied compile-time capacity. Define separate result contracts
+for retaining an owning Vector value and retaining `[T]`.
 
 ## Integration with generics and capabilities
 
@@ -89,8 +101,7 @@ separate source contracts.
 
 Constant scalar traversal through `.chars`, any additional execution admission
 needed by UTF conversion, and user-library constant-context diagnostics remain
-operation candidates. The [constant execution reference](../docs/language/constants.md)
-defines current admission and result boundaries.
+operation candidates.
 
 Typed memory access requires concrete conversion and lifetime contracts. Activate
 each candidate around a real algorithm; define ordinary and constant behavior and

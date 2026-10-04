@@ -3,7 +3,6 @@
 [Language](README.md)
 
 This page defines operand evaluation, branches, loops, and pattern selection.
-Typed failure transfer is defined in [Failure contracts](failures.md).
 
 - [Operators and evaluation](#operators-and-evaluation)
 - [Control flow and loops](#control-flow-and-loops)
@@ -57,7 +56,7 @@ of `if`, `&&`, `||`, `match`, and a loop with a condition, whether the condition
 is a runtime value, a literal, or a `const`: `if false { ... }` and
 `while true { ... }` retain both paths. A loop is known not to end by itself
 only when it has no condition, written `while { ... }`; it then ends through
-`break`. [`const if`](functions.md#static-control) selects the arm that executes
+`break`. `const if` selects the arm that executes
 and is generated; its arms follow the same analysis.
 
 `while` evaluates its condition before each iteration; without a condition it

@@ -10,10 +10,15 @@ import :semantic.analysis.program;
 import :semantic.analyze;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
+import :support.timing;
 import std;
 
-auto analyze(SyntaxProgram syntax, const ExecutionOutput& output) noexcept
-    -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
+auto analyze(
+    SyntaxProgram syntax,
+    const ExecutionOutput& output,
+    const TimingOutput& timings
+) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
+    const auto scope = TimingScope(timings, TimingStage::SemanticAnalysis);
     auto diagnostics = DiagnosticSink();
     auto draft = ProgramDraft::begin(std::move(syntax), diagnostics, output);
 

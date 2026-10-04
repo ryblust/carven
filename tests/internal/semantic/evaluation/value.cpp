@@ -1,5 +1,6 @@
 module carven:test.internal.semantic.evaluation.value;
 
+import :semantic.evaluation.admission;
 import :semantic.evaluation.value;
 import :semantic.semir.delegation;
 import :semantic.semir.type;
@@ -16,6 +17,92 @@ namespace {
 namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Execution type admission: root permissions and views retain their storage boundaries",
+        [] static noexcept {
+            auto fixture = ConstantEvaluationFixture();
+            auto& values = fixture.compilation;
+            const auto empty = values.builtin_type(BuiltinType::Void);
+            const auto opaque = values.builtin_type(BuiltinType::StrCharsView);
+            const auto empty_array =
+                values.intern_type({.value = ArrayTypeValue {.element = empty, .extent = 1u}});
+            const auto opaque_array =
+                values.intern_type({.value = ArrayTypeValue {.element = opaque, .extent = 1u}});
+            const auto pointer = values.intern_type(
+                {.value = PointerTypeValue {.target = opaque, .access = PointerAccess::Read}}
+            );
+            const auto slice = values.intern_type({.value = SliceTypeValue {.element = opaque}});
+            const auto construction = values.append_construction_type(
+                {.value = ConstructionArrayTypeValue {
+                     .element = values.builtin_type(BuiltinType::I32),
+                     .extent = 1u,
+                 }}
+            );
+            struct Scenario final {
+                std::string_view name;
+                ConstructionTypeRef type;
+                bool allow_void;
+                bool supported;
+            };
+            const auto scenarios = std::array {
+                Scenario {
+                    .name = "void requires root permission",
+                    .type = empty,
+                    .allow_void = false,
+                    .supported = false
+                },
+                Scenario {
+                    .name = "void root permission",
+                    .type = empty,
+                    .allow_void = true,
+                    .supported = true
+                },
+                Scenario {
+                    .name = "root permission does not reach owned array element",
+                    .type = empty_array,
+                    .allow_void = true,
+                    .supported = false
+                },
+                Scenario {
+                    .name = "unsupported owned root",
+                    .type = opaque,
+                    .allow_void = false,
+                    .supported = false
+                },
+                Scenario {
+                    .name = "unsupported owned array element",
+                    .type = opaque_array,
+                    .allow_void = false,
+                    .supported = false
+                },
+                Scenario {
+                    .name = "pointer does not own target storage",
+                    .type = pointer,
+                    .allow_void = false,
+                    .supported = true
+                },
+                Scenario {
+                    .name = "slice does not own element storage",
+                    .type = slice,
+                    .allow_void = false,
+                    .supported = true
+                },
+                Scenario {
+                    .name = "unresolved construction is not canonical admission",
+                    .type = construction,
+                    .allow_void = true,
+                    .supported = false
+                },
+            };
+            ct::each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
+                ct::expect_equal(
+                    supported_execution_type(values, scenario.type, scenario.allow_void),
+                    scenario.supported
+                );
+            });
+        }
+    );
+
     ct::test(
         "Constant values: text observation and equality are independent of storage representation",
         [] static noexcept {

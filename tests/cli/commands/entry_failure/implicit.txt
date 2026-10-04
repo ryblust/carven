@@ -1,4 +1,0 @@
-implicit.cv:5:1: error: failure 'implicit.Missing' escaped the program entry
-  failure: Missing {}
-  note: program exited with a failure status
-

@@ -98,20 +98,19 @@ task_end()
 
 task("bench")
     set_menu({
-        usage = "xmake bench [options] <name>",
+        usage = "xmake bench [options] <name> [options]",
         description = "Build the compiler and run a Carven benchmark",
         options = {
-            {nil, "samples", "kv", nil, "Number of measured runs (default: 3)"},
-            {nil, "warmups", "kv", "1", "Number of warmup runs"},
-            {nil, "compiler", "kv", nil, "Use another Carven executable without building"},
+            function ()
+                return import("xmake.benchmark.options", {rootdir = os.projectdir()}).definitions()
+            end,
             {nil, "name", "v", nil, "Benchmark to run", values = {"compile", "incremental"}},
+            {nil, "arguments", "vs", nil, "Benchmark options after the name"},
         },
     })
     on_run(function ()
-        import("core.base.option")
-        local name = option.get("name")
-        assert(name == "compile" or name == "incremental",
-            "select compile or incremental: ./xmakew bench <name>")
-        import("xmake." .. name .. "_bench").main()
+        local settings = import("xmake.benchmark.options", {rootdir = os.projectdir()}).configure()
+        if not settings then return end
+        import("xmake.benchmark." .. settings.name, {rootdir = os.projectdir()}).main(settings)
     end)
 task_end()

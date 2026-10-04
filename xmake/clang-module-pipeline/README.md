@@ -77,6 +77,12 @@ jobs are reconstructed on each invocation, with a module-name index for edge
 lookup. Provider graph publication precedes consumer graph construction. Disk
 records also serve project generation.
 
+Module DAG inputs and isolated modules use sorted source keys. Together with
+sorted dependency names, this gives equivalent module graphs a stable topological
+order and keeps their object lists independent of Lua table insertion order.
+This controls one source of link-layout variation; it does not guarantee identical
+binaries across different toolchains, flags, or other build inputs.
+
 After prerequisites finish, each BMI and object job compares source, header,
 scan-record and imported BMI contents, compiler identity, flags, and output
 contents with its dependency record. Archive and link jobs compare their recorded inputs,

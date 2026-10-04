@@ -20,18 +20,18 @@ auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state
             break;
         }
         auto selected = (co_await region(branch.body, remaining->state));
-        join_normal_ownership(result.normal, selected.normal);
+        join_normal_ownership(result.normal, std::move(selected.normal));
 
         append_ownership_exits(result, selected);
     }
     if (remaining.has_value()) {
         if (value.otherwise.has_value()) {
             auto selected = (co_await region(**value.otherwise, std::move(remaining->state)));
-            join_normal_ownership(result.normal, selected.normal);
+            join_normal_ownership(result.normal, std::move(selected.normal));
 
             append_ownership_exits(result, selected);
         } else {
-            join_normal_ownership(result.normal, remaining);
+            join_normal_ownership(result.normal, std::move(remaining));
         }
     }
     co_return result;
@@ -86,6 +86,10 @@ auto OwnershipBodyAnalyzer::pattern_condition(
     const auto evaluate = [&](const SemanticExpression& bound, OwnershipState input) noexcept {
         return complete_expression(bound, std::move(input));
     };
+    const auto join = [](std::optional<OwnershipNormal>& destination,
+                         const std::optional<OwnershipNormal>& source) static noexcept {
+        join_normal_ownership(destination, source);
+    };
     co_return (co_await analyze_pattern_condition(
         program,
         body,
@@ -94,7 +98,7 @@ auto OwnershipBodyAnalyzer::pattern_condition(
         std::move(state),
         initial,
         evaluate,
-        join_normal_ownership
+        join
     ));
 }
 
@@ -114,7 +118,7 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
         if (!arm.reachable || !remaining.has_value()) {
             continue;
         }
-        auto selected = *remaining;
+        auto selected = std::move(*remaining);
         bind_pattern(selected.state, arm.pattern, subject_value);
         const auto previous_access = accesses.size();
         for (const auto& place : subject_places) {
@@ -145,7 +149,7 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
         }
         if (accepted.has_value()) {
             auto branch = (co_await region(arm.body, std::move(accepted->state)));
-            join_normal_ownership(result.normal, branch.normal);
+            join_normal_ownership(result.normal, std::move(branch.normal));
 
             append_ownership_exits(result, branch);
         }
@@ -232,7 +236,7 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
             }
             if (accepted.has_value()) {
                 auto handled = (co_await region(arm.body, std::move(accepted->state)));
-                join_normal_ownership(result.normal, handled.normal);
+                join_normal_ownership(result.normal, std::move(handled.normal));
 
                 append_ownership_exits(result, handled);
             }
@@ -264,7 +268,7 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     if (!result.normal.has_value()) {
         co_return result;
     }
-    const auto entry = result.normal->state;
+    const auto entry = std::move(result.normal->state);
     auto header = entry;
     const auto iterate = [&](OwnershipState input) noexcept -> ContinuationTask<OwnershipFlow> {
         auto pass =
@@ -284,7 +288,10 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
         auto steps = std::move(child.normal);
         for (auto& exit : child.exits) {
             if (std::holds_alternative<OwnershipContinue>(exit.payload)) {
-                join_normal_ownership(steps, std::optional(OwnershipNormal {exit.state, {}, {}}));
+                join_normal_ownership(
+                    steps,
+                    std::optional(OwnershipNormal {std::move(exit.state), {}, {}})
+                );
             } else {
                 iteration.exits.push_back(std::move(exit));
             }
@@ -305,10 +312,13 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
         if (pass.normal.has_value()) {
             join_ownership_state(next, pass.normal->state);
         }
-        if (next == header) {
+        const auto converged = next == header;
+        // Semantic equality excludes diagnostic origins. Retain the witnesses
+        // selected by this join even when no semantic fact changed.
+        header = std::move(next);
+        if (converged) {
             break;
         }
-        header = std::move(next);
     }
     diagnosing = previous;
     if (diagnosing) {
@@ -319,7 +329,7 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
         if (std::holds_alternative<OwnershipBreak>(exit.payload)) {
             join_normal_ownership(
                 result.normal,
-                std::optional(OwnershipNormal {exit.state, {}, {}})
+                std::optional(OwnershipNormal {std::move(exit.state), {}, {}})
             );
         } else {
             result.exits.push_back(std::move(exit));
@@ -378,7 +388,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
                && !elements.empty()) {
         selected_storage.emplace(*value.binding, elements);
     }
-    const auto entry = result.normal->state;
+    const auto entry = std::move(result.normal->state);
     auto header = entry;
     auto initial_elements = OwnershipRelationships {};
     if (slice_value) {
@@ -430,10 +440,11 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
                 join_ownership_state(next, exit.state);
             }
         }
-        if (next == header) {
+        const auto converged = next == header;
+        header = std::move(next);
+        if (converged) {
             break;
         }
-        header = std::move(next);
     }
     diagnosing = previous_diagnosing;
     if (diagnosing) {
@@ -444,7 +455,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
         if (std::holds_alternative<OwnershipBreak>(exit.payload)) {
             join_normal_ownership(
                 result.normal,
-                std::optional(OwnershipNormal {exit.state, {}, {}})
+                std::optional(OwnershipNormal {std::move(exit.state), {}, {}})
             );
         } else if (!std::holds_alternative<OwnershipContinue>(exit.payload)) {
             result.exits.push_back(std::move(exit));

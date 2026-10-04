@@ -11,6 +11,7 @@ import :frontend.literal;
 import :source.identifier;
 import :source.text;
 import :support.invariant;
+import :support.timing;
 import :support.utf8;
 import std;
 
@@ -656,6 +657,7 @@ auto Lexer::scan_cpp_source_fragment() noexcept -> void {
 
 } // namespace
 
-auto lex(SourceView source) noexcept -> Diagnosed<TokenBuffer> {
+auto lex(SourceView source, const TimingOutput& timings) noexcept -> Diagnosed<TokenBuffer> {
+    const auto scope = TimingScope(timings, TimingStage::Lexing);
     return Lexer(source).run();
 }

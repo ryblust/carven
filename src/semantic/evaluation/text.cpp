@@ -76,7 +76,7 @@ auto SemanticExecutor::text_intrinsic(
     const auto intrinsic = std::get<TextIntrinsic>(operation.operation);
     switch (intrinsic) {
         case TextIntrinsic::FromU32Unchecked: {
-            auto operand = (co_await value(frame, operation.operands[0].expression));
+            auto operand = (co_await this->value(frame, operation.operands[0].expression));
             if (!operand) {
                 co_return std::unexpected(std::move(operand.error()));
             }
@@ -121,7 +121,7 @@ auto SemanticExecutor::text_intrinsic(
                 **target = ExecutionOwnedText(std::string());
                 co_return ExecutionVoid {};
             }
-            auto operand = (co_await value(frame, operation.operands[1].expression));
+            auto operand = (co_await this->value(frame, operation.operands[1].expression));
             if (!operand) {
                 co_return std::unexpected(std::move(operand.error()));
             }

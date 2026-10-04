@@ -100,9 +100,10 @@ assignment, and Take during static execution. Freezing preserves their
 bytes and pointer type, including in supported aggregates. Each emitted pointer
 refers to program-lifetime storage; pointer identity across translation units is unspecified.
 
-Printing follows the text rules in [Printing](execution.md#printing). Static execution and
-interpretation read retained C string bytes for display and default text
-formatting. Reading unknown native memory, comparing C string pointers, and
+Printing treats C strings as text: top-level bytes are verbatim, while nested
+text is quoted and escaped. Static execution and interpretation read retained
+C string bytes for display and default text formatting. Reading unknown native
+memory, comparing C string pointers, and
 observing their addresses are outside the evaluator's supported operations.
 C string literal patterns are rejected.
 

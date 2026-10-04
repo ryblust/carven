@@ -4,10 +4,12 @@ import :backend.generation.linkage;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
+import :backend.target;
 import :backend.target.expr;
+import :backend.target.name;
+import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.traversal;
-import :backend.target;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
@@ -111,6 +113,95 @@ const ct::Suite tests([] static noexcept {
                         .note("scenario.expression: ", scenario.expression);
                 }
             );
+        }
+    );
+
+    ct::test("Generation: precomputed formatting retains effects", [] static noexcept {
+        const auto compilation = PlannedCompilation::build(
+            analyze_test_program(
+                "fn touch() -> bool { return true; }\n"
+                "fn known() -> String { const version = 42; return f\"build-{version:04}\"; }\n"
+                "fn effects() { f\"{touch() && false}\"; }\n"
+            ),
+            {.test_mode = TestGenerationMode::None,
+             .linkage_domain = *LinkageDomain::explicit_value("precomputed_format")}
+        );
+
+        struct Query final {
+            std::size_t formats;
+            std::size_t effects;
+
+            auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                -> bool {
+                if (const auto* name = std::get_if<TargetIntrinsicNameExpr>(&expression.value)) {
+                    formats += name->symbol == TargetSymbol::RuntimeFormat
+                        || name->symbol == TargetSymbol::RuntimeFormatValidUTF8;
+                }
+                if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                    if (const auto* name = std::get_if<TargetNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        )) {
+                        effects += name->name.components().back().spelling() == "touch";
+                    }
+                }
+                return true;
+            }
+        };
+
+        auto query = Query {.formats = 0uz, .effects = 0uz};
+        for (const auto artifact : compilation.target().artifacts()) {
+            const auto unit = lower_artifact(compilation, artifact.id);
+            ct::expect(traverse_target_unit(unit.sections(), query));
+        }
+        ct::expect_equal(query.formats, 0uz);
+        ct::expect_equal(query.effects, 1uz);
+    });
+
+    ct::test(
+        "Generation: mixed formatting passes only residual values after required effects",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "fn touch() -> bool { return true; } "
+                    "fn format(value: f64, width: i32, precision: i32) -> String { "
+                    "return f\"{42:04}/{touch() && false}/{value:{width}.{precision}f}/{7}\"; }"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("mixed_format")}
+            );
+
+            struct Query final {
+                std::size_t formats;
+                std::size_t effects;
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    const auto* call = std::get_if<TargetCallExpr>(&expression.value);
+                    if (call == nullptr) {
+                        return true;
+                    }
+                    if (const auto* name = std::get_if<TargetNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        )) {
+                        effects += name->name.components().back().spelling() == "touch";
+                    }
+                    if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        );
+                        intrinsic != nullptr && intrinsic->symbol == TargetSymbol::RuntimeFormat) {
+                        ++formats;
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query {.formats = 0uz, .effects = 0uz};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                ct::expect(traverse_target_unit(unit.sections(), query));
+            }
+            ct::expect(query.formats == 1uz);
+            ct::expect(query.effects == 1uz);
         }
     );
 });

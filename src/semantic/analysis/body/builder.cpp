@@ -44,7 +44,7 @@ auto BodyBuilder::make_expression(
     ConstructionTypeRef type,
     LifetimeRegionID lifetime,
     ProgramOriginID origin,
-    SemanticExpressionValue value,
+    SemanticExpressionValue&& value,
     std::optional<ConstantID> constant
 ) noexcept -> SemanticExpression {
     if (const auto* known = std::get_if<SemConstant>(&value)) {
@@ -253,7 +253,7 @@ auto BodyBuilder::make_place(
     std::optional<LocalBindingID> root,
     AccessMode access,
     ConstructionTypeRef type,
-    SemanticExpressionValue value,
+    SemanticExpressionValue&& value,
     ProgramOriginID origin
 ) noexcept -> PlaceExpression {
     auto expression = make_expression(type, lifetime(), origin, std::move(value));

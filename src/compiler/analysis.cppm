@@ -13,5 +13,5 @@ auto analyze_compilation(
     const SourceManager& sources,
     SourceBatch batch,
     const ExecutionOutput& output = {},
-    TimingRecorder* timings = nullptr
+    const TimingOutput& timings = {}
 ) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics>;

@@ -8,80 +8,6 @@ import :semantic.semir.initialization;
 import :support.utf8;
 import std;
 
-auto BodyContractVerifier::verify_computations(const SemanticRegion& region) const noexcept
-    -> void {
-    visit_semantic_nodes(region, [&](const SemanticExpression& source) noexcept {
-        const auto check_result = [&](const OperatorDecision& decision, TypeID operand) noexcept {
-            if (!decision.has_value()) {
-                invariant_violation("invalid semantic operator");
-            }
-            const auto* builtin = std::get_if<BuiltinTypeValue>(&require_type(operand).value);
-            const auto result = operator_result_builtin(
-                *decision,
-                builtin ? std::optional(builtin->kind) : std::nullopt
-            );
-            const auto valid = *decision == OperatorResult::Operand
-                ? source.type.resolved() == operand
-                : result
-                    && require_type(source.type.resolved()).value
-                        == CanonicalTypeValue {BuiltinTypeValue {.kind = *result}};
-            if (!valid) {
-                invariant_violation("semantic operator has an incompatible result");
-            }
-        };
-        source.value.visit(
-            Overloaded {
-                [&](const SemUnary& value) noexcept {
-                    check_result(
-                        decide_unary_operator(
-                            program.types(),
-                            value.operation,
-                            value.operand->type.resolved()
-                        ),
-                        value.operand->type.resolved()
-                    );
-                },
-                [&](const SemBinary& value) noexcept {
-                    check_result(
-                        decide_binary_operator(
-                            program.types(),
-                            value.operation,
-                            value.left->type.resolved(),
-                            value.right->type.resolved(),
-                            true,
-                            type_supports_equality(
-                                program.types(),
-                                program.declarations(),
-                                value.left->type.resolved()
-                            )
-                        ),
-                        value.left->type.resolved()
-                    );
-                },
-                [&](const SemCast& value) noexcept {
-                    const auto& type = require_type(value.operand->type.resolved());
-                    const auto* enumeration = std::get_if<EnumTypeValue>(&type.value);
-                    const auto numeric_enum =
-                        enumeration != nullptr
-                        && std::holds_alternative<NumericEnumRepresentation>(
-                            require_enumeration(enumeration->enumeration).representation
-                        );
-                    const auto decision = decide_cast(
-                        program.types(),
-                        value.operand->type.resolved(),
-                        source.type.resolved(),
-                        numeric_enum
-                    );
-                    if (!decision.has_value() || *decision != value.kind) {
-                        invariant_violation("semantic cast has an incompatible kind");
-                    }
-                },
-                [](const auto&) static noexcept {},
-            }
-        );
-    });
-}
-
 auto BodyContractVerifier::verify_expression(
     const SemanticExpression& source,
     bool residual
@@ -96,8 +22,70 @@ auto BodyContractVerifier::verify_expression(
     if (!body.lifetime_regions().contains(source.lifetime)) {
         invariant_violation("semantic expression has foreign lifetime");
     }
+    const auto check_result = [&](const OperatorDecision& decision, TypeID operand) noexcept {
+        if (!decision.has_value()) {
+            invariant_violation("invalid semantic operator");
+        }
+        const auto* builtin = std::get_if<BuiltinTypeValue>(&require_type(operand).value);
+        const auto result = operator_result_builtin(
+            *decision,
+            builtin ? std::optional(builtin->kind) : std::nullopt
+        );
+        const auto valid = *decision == OperatorResult::Operand ? source.type.resolved() == operand
+                                                                : result
+                && require_type(source.type.resolved()).value
+                    == CanonicalTypeValue {BuiltinTypeValue {.kind = *result}};
+        if (!valid) {
+            invariant_violation("semantic operator has an incompatible result");
+        }
+    };
     source.value.visit(
         Overloaded {
+            [&](const SemUnary& value) noexcept {
+                check_result(
+                    decide_unary_operator(
+                        program.types(),
+                        value.operation,
+                        value.operand->type.resolved()
+                    ),
+                    value.operand->type.resolved()
+                );
+            },
+            [&](const SemBinary& value) noexcept {
+                check_result(
+                    decide_binary_operator(
+                        program.types(),
+                        value.operation,
+                        value.left->type.resolved(),
+                        value.right->type.resolved(),
+                        true,
+                        type_supports_equality(
+                            program.types(),
+                            program.declarations(),
+                            value.left->type.resolved()
+                        )
+                    ),
+                    value.left->type.resolved()
+                );
+            },
+            [&](const SemCast& value) noexcept {
+                const auto& type = require_type(value.operand->type.resolved());
+                const auto* enumeration = std::get_if<EnumTypeValue>(&type.value);
+                const auto numeric_enum =
+                    enumeration != nullptr
+                    && std::holds_alternative<NumericEnumRepresentation>(
+                        require_enumeration(enumeration->enumeration).representation
+                    );
+                const auto decision = decide_cast(
+                    program.types(),
+                    value.operand->type.resolved(),
+                    source.type.resolved(),
+                    numeric_enum
+                );
+                if (!decision.has_value() || *decision != value.kind) {
+                    invariant_violation("semantic cast has an incompatible kind");
+                }
+            },
             [&](const SemDefault&) noexcept {
                 if (default_initialization(program, source.type.resolved())
                     == DefaultInitialization::Unavailable) {

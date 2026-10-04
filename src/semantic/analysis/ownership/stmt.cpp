@@ -157,7 +157,8 @@ auto OwnershipBodyAnalyzer::statement(
                 (co_await evaluate(value.value));
                 accesses.resize(previous);
                 if (result.normal) {
-                    if (targets.empty()
+                    if (diagnosing
+                        && targets.empty()
                         && tracked_borrows(result.normal->value, result.normal->state)) {
                         diagnose(
                             DiagnosticCode::TypeCallableViewEscape,

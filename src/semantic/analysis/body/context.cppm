@@ -28,6 +28,7 @@ import :semantic.semir.structured;
 import :semantic.semir.type;
 import :source.text;
 import :support.invariant;
+import :support.unique_indirect;
 import :support.visit;
 import std;
 
@@ -59,7 +60,9 @@ using BodyExpressionStorage = std::variant<SemanticExpression, PlaceExpression>;
 using BodyPendingFailureTerms = std::vector<FailureTermID>;
 
 struct BuiltExpression final {
-    BodyExpressionStorage storage;
+    // Moving this construction owner ends its borrows. Consuming the inner
+    // expression leaves its storage and BuiltExpression metadata alive.
+    UniqueIndirect<BodyExpressionStorage> storage;
     BodyPendingFailureTerms pending_failures;
     bool takeable;
     bool completes;
@@ -325,7 +328,7 @@ private:
     auto take_built(BuiltExpression& value, Span span) noexcept -> SemanticExpression;
     auto make_built(
         ConstructionTypeRef type,
-        SemanticExpressionValue value,
+        SemanticExpressionValue&& value,
         Span span,
         BodyPendingFailureTerms pending = {},
         std::optional<ConstantID> constant = std::nullopt
@@ -402,7 +405,7 @@ private:
         bool allow_pointer_narrowing = true
     ) noexcept -> AnalysisTask<SelectedExpression>;
     auto materialize_selection(
-        SelectedExpression selected,
+        SelectedExpression&& selected,
         std::optional<ConstructionTypeRef> expected = std::nullopt
     ) noexcept -> AnalysisResult<BuiltExpression>;
     auto cpp_projection(

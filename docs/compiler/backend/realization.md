@@ -1,9 +1,10 @@
 # Body realization
 
 Body realization composes prepared semantic operations into target expressions,
-statements, storage, and control exits. [Representation](representation.md)
-defines native types and ABI; [preparation](preparation.md) supplies operation
-plans and operand demands.
+statements, storage, and control exits. Representation defines native types and
+ABI; preparation supplies operation plans and operand demands. Realization
+preserves evaluation order, storage observations, constructor capabilities,
+control exits, and cleanup.
 
 Body lowering queries one published semantic body by BodyID. Preparation
 summarizes its executable region; realization uses its binding, parameter,
@@ -208,11 +209,14 @@ at its controlling operation, after earlier owners, preserving source execution
 and reverse cleanup order. Statement chunks splice in constant time and become
 vectors at completed target statement boundaries.
 
-One `ContinuationTask` chain covers recursive expression, region, loop, report,
+Traversal uses one `ContinuationTask` chain for expression, region, loop, report,
 and pattern construction. The body entry drives the chain; completed fragments
 use synchronous storage and operand operations. `realize_operation` consumes
 prepared operands. Cleanup-frame links share retained declarations across
 operations with the same source lifetime.
+
+Validate stack use and growth on deep and wide structured bodies, and check
+evaluation order and cleanup through behavior and lifetime tests.
 
 Composition uses execution and storage-read facts with C++ sequencing guarantees.
 Storage access preserves Read value snapshots and Read aliases to owned storage.

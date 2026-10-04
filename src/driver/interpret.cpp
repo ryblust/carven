@@ -61,6 +61,11 @@ auto report_execution_error(
     if (entry && !calls.empty()) {
         calls = calls.subspan(1);
     }
+    auto call_sites =
+        calls | std::views::reverse | std::views::filter([&error](ProgramOriginID origin) noexcept {
+            return origin != error.origin;
+        });
+    const auto omitted_calls = std::max<std::ptrdiff_t>(0, std::ranges::distance(call_sites) - 8);
     auto context = std::string();
     if (test_id) {
         const auto& test = program.tests().test(*test_id);
@@ -91,16 +96,23 @@ auto report_execution_error(
             std::print(std::cerr, "{}", text);
         }
         std::println(std::cerr);
-        for (const auto origin : calls | std::views::reverse | std::views::take(8)) {
-            if (origin != error.origin) {
-                const auto call = provenance.source_origin(origin);
-                std::println(
-                    std::cerr,
-                    "  called from: {}:{}",
-                    provenance.source_snapshot(call.source_id).display_origin(),
-                    provenance.location(origin)
-                );
-            }
+        for (const auto origin : call_sites | std::views::take(8)) {
+            const auto call = provenance.source_origin(origin);
+            std::println(
+                std::cerr,
+                "  called from: {}:{}",
+                provenance.source_snapshot(call.source_id).display_origin(),
+                provenance.location(origin)
+            );
+        }
+        if (omitted_calls > 0) {
+            std::println(
+                std::cerr,
+                "  {} {} additional call site{} omitted",
+                styler.bold_cyan("note:"),
+                omitted_calls,
+                omitted_calls == 1 ? "" : "s"
+            );
         }
         if (error.termination() == ExecutionTermination::Abort) {
             std::println(std::cerr, "  {} execution aborted", styler.bold_cyan("note:"));
@@ -118,10 +130,17 @@ auto report_execution_error(
         execution_message(error) + context
     );
     diagnostic.primary(span(error.origin));
-    for (const auto origin : calls | std::views::reverse | std::views::take(8)) {
-        if (origin != error.origin) {
-            diagnostic.related(span(origin), "while interpreting this function call");
-        }
+    for (const auto origin : call_sites | std::views::take(8)) {
+        diagnostic.related(span(origin), "while interpreting this function call");
+    }
+    if (omitted_calls > 0) {
+        diagnostic.note(
+            std::format(
+                "{} additional call site{} omitted",
+                omitted_calls,
+                omitted_calls == 1 ? "" : "s"
+            )
+        );
     }
     std::print(
         std::cerr,
@@ -214,11 +233,11 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
         ExecutionOutput([](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
         });
-    const auto sources = collect_command_sources(executable, paths, timings.recorder());
+    const auto sources = collect_command_sources(executable, paths, timings.output());
     if (!sources) {
         return emit_driver_error(sources.error());
     }
-    const auto program = load_and_analyze_sources(sources->carven, output, timings.recorder());
+    const auto program = load_and_analyze_sources(sources->carven, output, timings.output());
     if (!program) {
         return 1;
     }
@@ -234,7 +253,7 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
     }
     if (!sources->native.empty()) {
         return emit_driver_error(
-            "native C++ source files are not supported by the interpreter",
+            std::format("cannot interpret native C++ source '{}'", sources->native.front()),
             {},
             "run without 'interpret' to compile and execute native sources"
         );
@@ -266,7 +285,7 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
     options.report = [&](std::optional<TestID> id, const ExecutionEvent& event) noexcept {
         report_execution_error(*program, event, diagnostic_sources, !tests, id);
     };
-    auto execution = TimingScope(timings.recorder(), TimingStage::Execution);
+    auto execution = TimingScope(timings.output(), TimingStage::Execution);
     if (tests) {
         const auto results = interpret_tests(*program, output, options);
         execution.stop();

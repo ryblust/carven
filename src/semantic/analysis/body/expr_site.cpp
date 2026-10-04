@@ -14,6 +14,7 @@ import :semantic.analysis.program;
 import :semantic.semir.constant;
 import :semantic.semir.structured;
 import :support.invariant;
+import :support.unique_indirect;
 import std;
 
 BodyExprSite::BodyExprSite(BodyElaborator& body, bool allow_pointer_narrowing) noexcept
@@ -380,8 +381,7 @@ auto BodyExprSite::enum_constructor(
         SemEnumConstructor {.enum_case = selected.id}
     );
     return BuiltExpression {
-        .storage = std::move(value),
-
+        .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},
         .pending_failures = {},
         .takeable = false,
         .completes = true,
@@ -431,7 +431,7 @@ auto BodyExprSite::call(const ASTCallExpr& source, Span span) noexcept -> Expres
 
 auto BodyExprSite::finish(
     ConstructionTypeRef type,
-    SemanticExpressionValue value,
+    SemanticExpressionValue&& value,
     std::optional<ConstantID> known,
     Span span,
     BodyPendingFailureTerms pending,
@@ -440,7 +440,7 @@ auto BodyExprSite::finish(
     auto result = body.make_built(type, std::move(value), span, std::move(pending), known);
     result.completes = completes;
     if (!body.static_stage()) {
-        auto* expression = std::get_if<SemanticExpression>(&result.storage);
+        auto* expression = std::get_if<SemanticExpression>(&*result.storage);
         if (!expression) {
             invariant_violation("constructed expression is not a value");
         }

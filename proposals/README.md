@@ -6,7 +6,8 @@ Current language and compiler contracts belong in `docs/`.
 ## Contents
 
 - [TEMPLATE.md](TEMPLATE.md): proposal structure and field guidance.
-- [roadmap.md](roadmap.md): design dependencies and deferred candidates.
+- [roadmap.md](roadmap.md): design dependencies and deferred candidates, including
+  multi-field consuming decomposition, richer failure payloads, and infrastructure.
 - Other Markdown files: one design domain's unfinished work, keeping related
   syntax, semantics, compiler representation, and lowering together.
 
@@ -18,15 +19,14 @@ Current language and compiler contracts belong in `docs/`.
 | [Operators](operators.md) | Mapping existing tokens to checked operations; consumes generic evidence |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
 | [Constant storage](constant-storage.md) | Library storage operations during constant execution and retained results |
+| [Uninitialized storage](uninitialized-storage.md) | Construction destinations, partial initialization, cleanup, native object lifetime, and caller validity obligations |
 | [Formatting](formatting.md) | Capacity and composition across text/output observation boundaries |
 | [Async](async.md) | Suspension, cancellation, and structured operation lifetime |
 | [Concurrency](concurrency.md) | Cross-thread values, memory ordering, threads, and synchronization |
 | [Documentation comments](doc-comments.md) | Source attachment, retained content, and its artifact consumer |
 
-The roadmap holds [multi-field consuming decomposition](roadmap.md#multi-field-consuming-decomposition),
-[richer failure payloads](roadmap.md#richer-failure-payloads), and
-[deferred infrastructure](roadmap.md#deferred-infrastructure).
-Each rule stays with its owning design; dependent proposals reference that contract.
+Each rule stays with its owning design; dependent proposals state the contracts
+they consume.
 
 ## Status
 

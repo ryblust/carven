@@ -3,7 +3,6 @@
 [Language](README.md)
 
 This page defines classes, structures, arrays, enums, and their construction.
-Expected types follow [Type context and inference](types.md#type-context-and-inference).
 
 - [Ordinary value classes](#ordinary-value-classes)
 - [Contextual construction](#contextual-construction)

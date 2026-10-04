@@ -10,8 +10,7 @@
 Complete and partial builtin interpolation precomputation, builtin writer
 formatting, proved UTF-8 adoption, explicit formatted append, and known scalar
 output are implemented. The writer handles admitted integer, text, bool, char,
-and floating fields with bounded destination planning, as described in the
-[builtin implementation reference](../docs/compiler/backend/builtins.md).
+and floating fields with bounded destination planning.
 The candidates below concern broader reservation policies, composition across
 observation boundaries, and runtime replacement.
 

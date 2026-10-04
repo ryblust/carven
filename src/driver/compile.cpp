@@ -1,7 +1,7 @@
 module carven:driver.compile.impl;
 
-import :artifacts.materialize;
 import :artifacts;
+import :artifacts.materialize;
 import :backend.generate;
 import :backend.generation.request;
 import :driver.analysis;
@@ -13,8 +13,8 @@ import :driver.timings;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :source.module_path;
-import :support.path;
 import :support.invariant;
+import :support.path;
 import :support.timing;
 import :support.visit;
 import std;
@@ -109,7 +109,7 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
     }
 
     const auto sources =
-        collect_command_sources(executable, request->input_paths, timings.recorder());
+        collect_command_sources(executable, request->input_paths, timings.output());
     if (!sources) {
         return emit_driver_error(sources.error());
     }
@@ -120,7 +120,7 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
                 || std::holds_alternative<StandardOutputArtifactDestination>(request->destination);
             std::print(to_error ? std::cerr : std::cout, "{}", bytes);
         },
-        timings.recorder()
+        timings.output()
     );
     if (!semantic) {
         return 1;
@@ -143,18 +143,17 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
         }
         selection = displayed_modules;
     }
-    auto generation = TimingScope(timings.recorder(), TimingStage::CppGeneration);
     const auto artifacts = generate_artifacts(
         std::move(*semantic),
         TargetPlanningRequest {
             .test_mode = request->test_mode,
             .linkage_domain = std::move(*linkage_domain),
         },
-        selection
+        selection,
+        timings.output()
     );
 
-    generation.stop();
-    auto writing = TimingScope(timings.recorder(), TimingStage::ArtifactWriting);
+    auto writing = TimingScope(timings.output(), TimingStage::ArtifactWriting);
     const auto written = request->destination.visit(
         Overloaded {
             [&](const DirectoryArtifactDestination& destination) noexcept {

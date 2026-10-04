@@ -26,8 +26,10 @@ behavior.
 source identities and canonical module paths.
 `compiler.analysis` sequences parsing and semantic analysis through
 `analyze_compilation`, returning a published program and structured diagnostics.
-`compiler.compile` calls this entry and generates artifacts. Execution output is
-delivered synchronously to the supplied recipient.
+`compiler.compile` calls this entry and then `generate_artifacts` to consume the
+published program and produce C++ artifacts. CLI compile and native-run commands
+use the same stages. Execution output is delivered synchronously to the supplied
+recipient.
 
 `driver/` owns command options, file loading, diagnostic presentation, artifact
 output, and native process execution. `driver.process` owns POSIX/Windows
@@ -49,10 +51,12 @@ Compile and run commands send the program to the backend; interpret sends it to
 the interpreter. Check completes after successful analysis without invoking a
 backend or interpreter. Dump commands consume lexical or syntax results directly.
 
-The driver owns optional timing measurements and their report. `support.timing`
-uses a monotonic clock; parsing and analysis accumulate durations through a
-borrowed recorder. Disabled scopes do not read the clock. Reporting follows
-command-resource cleanup.
+The driver owns optional timing accumulation, command totals, and reporting.
+`support.timing` supplies a synchronous interval recipient and monotonic-clock
+scopes. The `lex`, `parse`, `analyze`, and `generate_artifacts` entries measure
+their own execution; composition forwards the recipient. The driver measures
+filesystem and process stages. Empty recipients do not read the clock. Reporting
+follows command-resource cleanup.
 
 ```text
 SourceBatch → SyntaxProgram → ProgramDraft → SemIRProgram
@@ -87,8 +91,7 @@ support uses standard-library numerical conversion.
 
 Semantic facts retain the identity and scope of the operation or storage they
 describe. Ownership, nullability, normal-completion constants, and slice extents
-have distinct propagation rules, defined by [semantic representation](analysis/semir.md) and
-[ownership analysis](analysis/ownership.md).
+have distinct propagation rules.
 Optional analyses define their fact domains, invalidation rules, and stopping
 conditions; unknown facts retain the ordinary operation.
 
@@ -151,9 +154,8 @@ terms, solved failure sets, and control-flow completion name separate facts.
 
 ## Publication gates
 
-[Construction](analysis/construction.md#completion-requests) owns declaration and body
-completion before these publication gates. [Semantic representation](analysis/semir.md)
-defines the resolved facts and query contracts that the gates establish.
+Construction completes declarations and bodies before publication. The gates
+establish the resolved facts and query contracts consumed by later stages.
 
 `ProgramDraft` owns pending function heads. A complete callable contract includes
 its result. Declaration-head completion closes the nominal tables; solving requires

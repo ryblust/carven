@@ -1,9 +1,9 @@
 # Semantic execution
 
 This reference describes the shared semantic executor, static roots,
-execution storage, freezing, and interpreted execution. [Construction](construction.md)
-owns source admission and completion requests; [semantic representation](semir.md)
-defines the operations and canonical facts consumed here.
+execution storage, freezing, and interpreted execution. Construction owns source
+admission and completion requests; execution consumes typed semantic operations
+and canonical facts.
 
 ## Execution interfaces
 
@@ -23,6 +23,16 @@ for work; optional preparation uses runtime formatting on failure.
 execution state, with `expr`, `control`, and `text` implementation slices.
 `memory` owns addressable objects and resolves their projections. `limits`
 names resource bounds.
+
+Value and structured control contexts share operation execution, step accounting,
+and capability checks. Value contexts receive normal-completion values; structured
+control contexts also carry return, break, and continue to their enclosing
+boundaries. Value-form controls obey the language's transfer boundary and cannot
+transfer control out of an operand.
+Call arguments and unsupported-operation inputs retain their storage or value
+demands during acquisition. Native Read preserves exact storage borrows; Carven
+Read follows the type's snapshot rules. Value initialization and captures retain
+their copying and transfer rules.
 
 `semantic.semir.constant_access` defines `ConstantValueReader` queries and their
 execution-specific extension, `ExecutionValueAccess`. `ProgramDraft` supplies

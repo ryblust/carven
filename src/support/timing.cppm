@@ -15,34 +15,21 @@ enum class TimingStage {
     Count,
 };
 
-// Invocation-owned measurements, accumulated across source files. No global state.
-class TimingRecorder final {
-public:
-    TimingRecorder() noexcept;
-    auto add(TimingStage stage, std::chrono::steady_clock::duration elapsed) noexcept -> void;
-    auto duration(TimingStage stage) const noexcept
-        -> std::optional<std::chrono::steady_clock::duration>;
-    auto elapsed() const noexcept -> std::chrono::steady_clock::duration;
+// Receives completed intervals synchronously, including stages that return errors.
+using TimingOutput = std::function<void(TimingStage, std::chrono::steady_clock::duration)>;
 
-private:
-    std::chrono::steady_clock::time_point started;
-    std::array<
-        std::optional<std::chrono::steady_clock::duration>,
-        static_cast<std::size_t>(TimingStage::Count)>
-        durations {};
-};
-
-// A null recorder performs no clock reads. The recorder outlives all its scopes.
+// An empty recipient performs no clock reads. The recipient outlives its scopes.
 class TimingScope final {
 public:
-    TimingScope(TimingRecorder* recorder, TimingStage stage) noexcept;
+    TimingScope(const TimingOutput& output, TimingStage stage) noexcept;
+    TimingScope(const TimingOutput&& output, TimingStage stage) = delete;
     TimingScope(const TimingScope&) = delete;
     auto operator=(const TimingScope&) -> TimingScope& = delete;
     ~TimingScope();
     auto stop() noexcept -> void;
 
 private:
-    TimingRecorder* recorder;
+    const TimingOutput* output;
     TimingStage stage;
     std::chrono::steady_clock::time_point started;
 };

@@ -10,5 +10,5 @@ import std;
 auto parse_program(
     const SourceManager& sources,
     SourceBatch batch,
-    TimingRecorder* timings = nullptr
+    const TimingOutput& timings = {}
 ) noexcept -> std::expected<SyntaxProgram, Diagnostics>;

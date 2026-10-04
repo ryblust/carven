@@ -6,15 +6,13 @@ import std;
 
 OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
     OwnershipBatchAnalyzer& analysis,
-    const OwnershipCallInput& input,
-    bool diagnosing
+    const OwnershipCallInput& input
 ) noexcept
     : analysis(analysis),
       input(input),
       body(analysis.body(input.body_id)),
       program(analysis.program),
       facts(analysis.facts_for_body(input.body_id)),
-      diagnosing(diagnosing),
       accesses(input.accesses),
       storage_readers(input.storage_readers) {
     const auto bind = [&](std::span<const LocalBindingID> bindings,
@@ -52,6 +50,13 @@ auto OwnershipBodyAnalyzer::object_origin(std::size_t object) const noexcept -> 
                                          : facts.locals[object - input.objects.size()].origin;
 }
 
+auto OwnershipBodyAnalyzer::diagnosis_record() noexcept -> OwnershipDiagnosisRecord& {
+    if (!diagnosis) {
+        diagnosis = std::make_unique<OwnershipDiagnosisRecord>();
+    }
+    return *diagnosis;
+}
+
 auto OwnershipBodyAnalyzer::diagnose(
     DiagnosticCode code,
     std::string message,
@@ -60,15 +65,19 @@ auto OwnershipBodyAnalyzer::diagnose(
     std::string related_label,
     std::string help
 ) noexcept -> void {
-    if (diagnosing) {
-        analysis.diagnose(
-            code,
-            std::move(message),
-            origin,
-            related,
-            std::move(related_label),
-            std::move(help)
-        );
+    if (!diagnosing) {
+        return;
+    }
+    auto& record = diagnosis_record();
+    if (!record.error.has_value()) {
+        record.error = OwnershipRecordedError {
+            .code = code,
+            .message = std::move(message),
+            .origin = origin,
+            .related = related,
+            .related_label = std::move(related_label),
+            .help = std::move(help)
+        };
     }
 }
 
@@ -102,7 +111,7 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
     };
     const auto check = [&](const OwnershipRelationships& value,
                            const OwnershipState& state) noexcept {
-        for (const auto& loan : value.storage_loans) {
+        for (const auto& loan : value.view().storage_loans) {
             if (!state.objects[loan.backing.object].available) {
                 diagnose(
                     DiagnosticCode::AccessBorrowConflict,
@@ -115,15 +124,19 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
     };
     if (flow.normal.has_value()) {
         release(flow.normal->state);
-        check(flow.normal->value, flow.normal->state);
+        if (diagnosing) {
+            check(flow.normal->value, flow.normal->state);
+        }
     }
     for (auto& exit : flow.exits) {
         release(exit.state);
-        exit.payload.visit([&](const auto& payload) noexcept {
-            if constexpr (requires { payload.value; }) {
-                check(payload.value, exit.state);
-            }
-        });
+        if (diagnosing) {
+            exit.payload.visit([&](const auto& payload) noexcept {
+                if constexpr (requires { payload.value; }) {
+                    check(payload.value, exit.state);
+                }
+            });
+        }
     }
 }
 
@@ -161,16 +174,16 @@ auto OwnershipBodyAnalyzer::references(
     while (!pending.empty()) {
         auto& current = pending.back();
         auto target = std::optional<OwnershipPlace>();
-        if (current.capture < current.value.captures.size()) {
-            const auto& capture = current.value.captures[current.capture++];
+        if (current.capture < current.value.view().captures.size()) {
+            const auto& capture = current.value.view().captures[current.capture++];
             if (!std::ranges::contains(result, capture)) {
                 result.push_back(capture);
             }
             target = capture.target;
-        } else if (current.loan < current.value.callable_loans.size()) {
-            target = current.value.callable_loans[current.loan++].backing;
-        } else if (current.storage < current.value.storage_loans.size()) {
-            target = current.value.storage_loans[current.storage++].backing;
+        } else if (current.loan < current.value.view().callable_loans.size()) {
+            target = current.value.view().callable_loans[current.loan++].backing;
+        } else if (current.storage < current.value.view().storage_loans.size()) {
+            target = current.value.view().storage_loans[current.storage++].backing;
         } else {
             pending.pop_back();
             continue;
@@ -196,10 +209,10 @@ auto OwnershipBodyAnalyzer::tracked_borrows(
     while (!pending.empty()) {
         const auto current = std::move(pending.back());
         pending.pop_back();
-        if (!current.callable_loans.empty() || !current.captures.empty()) {
+        if (!current.view().callable_loans.empty() || !current.view().captures.empty()) {
             return true;
         }
-        for (const auto& loan : current.storage_loans) {
+        for (const auto& loan : current.view().storage_loans) {
             if (visited.insert(loan.backing).second) {
                 pending.push_back(project_relationships(
                     state.objects[loan.backing.object].relationships,
@@ -217,7 +230,10 @@ auto OwnershipBodyAnalyzer::use(
     ProgramOriginID origin,
     bool direct
 ) noexcept -> void {
-    for (const auto& loan : relationships.storage_loans) {
+    if (!diagnosing) {
+        return;
+    }
+    for (const auto& loan : relationships.view().storage_loans) {
         if (!state.objects[loan.backing.object].available) {
             diagnose(
                 DiagnosticCode::AccessBorrowConflict,
@@ -227,7 +243,7 @@ auto OwnershipBodyAnalyzer::use(
             );
         }
     }
-    for (const auto& loan : relationships.callable_loans) {
+    for (const auto& loan : relationships.view().callable_loans) {
         if (loan.backing.has_value() && !state.objects[loan.backing->object].available) {
             diagnose(
                 DiagnosticCode::AccessBorrowConflict,
@@ -263,36 +279,40 @@ auto OwnershipBodyAnalyzer::store(
     ProgramOriginID origin,
     bool definite
 ) noexcept -> void {
-    use(relationships, state, origin);
-    check_storage_write(state, target, origin);
-    for (const auto& loan : relationships.storage_loans) {
-        if (loan.backing.object == target.object || !outlives(loan.backing.object, target.object)) {
-            diagnose(
-                DiagnosticCode::AccessBorrowConflict,
-                "view holder outlives its backing or creates a self reference",
-                origin,
-                loan.origin
-            );
+    // Loop convergence still updates storage while diagnostic scans are suspended.
+    if (diagnosing) {
+        use(relationships, state, origin);
+        check_storage_write(state, target, origin);
+        for (const auto& loan : relationships.view().storage_loans) {
+            if (loan.backing.object == target.object
+                || !outlives(loan.backing.object, target.object)) {
+                diagnose(
+                    DiagnosticCode::AccessBorrowConflict,
+                    "view holder outlives its backing or creates a self reference",
+                    origin,
+                    loan.origin
+                );
+            }
         }
-    }
-    for (const auto& loan : relationships.callable_loans) {
-        if (loan.backing.has_value() && !outlives(loan.backing->object, target.object)) {
-            diagnose(
-                DiagnosticCode::TypeCallableViewEscape,
-                "callable storage outlives its backing",
-                origin,
-                loan.origin
-            );
+        for (const auto& loan : relationships.view().callable_loans) {
+            if (loan.backing.has_value() && !outlives(loan.backing->object, target.object)) {
+                diagnose(
+                    DiagnosticCode::TypeCallableViewEscape,
+                    "callable storage outlives its backing",
+                    origin,
+                    loan.origin
+                );
+            }
         }
-    }
-    for (const auto& capture : references(relationships, state)) {
-        if (!outlives(capture.target.object, target.object)) {
-            diagnose(
-                DiagnosticCode::AccessBorrowConflict,
-                "closure storage outlives its Write capture",
-                origin,
-                capture.origin
-            );
+        for (const auto& capture : references(relationships, state)) {
+            if (!outlives(capture.target.object, target.object)) {
+                diagnose(
+                    DiagnosticCode::AccessBorrowConflict,
+                    "closure storage outlives its Write capture",
+                    origin,
+                    capture.origin
+                );
+            }
         }
     }
     auto& destination = state.objects[target.object];
@@ -315,9 +335,11 @@ auto OwnershipBodyAnalyzer::store(
             return row.holder.size() >= target.path.size()
                 && std::equal(target.path.begin(), target.path.end(), row.holder.begin());
         };
-        std::erase_if(destination.relationships.callable_loans, replaced);
-        std::erase_if(destination.relationships.captures, replaced);
-        std::erase_if(destination.relationships.storage_loans, replaced);
+        if (auto* rows = destination.relationships.edit_existing()) {
+            std::erase_if(rows->callable_loans, replaced);
+            std::erase_if(rows->captures, replaced);
+            std::erase_if(rows->storage_loans, replaced);
+        }
     }
     merge_relationships(destination.relationships, nest_relationships(relationships, target.path));
 }
@@ -337,7 +359,7 @@ auto OwnershipBodyAnalyzer::binding_places(
         const auto value =
             project_relationships(state.objects[holder.object].relationships, holder.path);
         auto result = std::vector<OwnershipPlace>();
-        for (const auto& capture : value.captures) {
+        for (const auto& capture : value.view().captures) {
             if (capture.holder.empty()) {
                 result.push_back(capture.target);
             }
@@ -370,6 +392,9 @@ auto OwnershipBodyAnalyzer::write_access(
     const OwnershipPlace& target,
     ProgramOriginID origin
 ) noexcept -> void {
+    if (!diagnosing) {
+        return;
+    }
     for (const auto& access : accesses) {
         if (access.stable && overlaps(access.place, target)) {
             diagnose(
@@ -387,7 +412,7 @@ auto OwnershipBodyAnalyzer::require_available(
     const OwnershipPlace& target,
     ProgramOriginID origin
 ) noexcept -> void {
-    if (!state.objects[target.object].available) {
+    if (diagnosing && !state.objects[target.object].available) {
         diagnose(
             DiagnosticCode::AccessUnavailable,
             "binding is unavailable before initialization or after Take",
@@ -409,8 +434,11 @@ auto OwnershipBodyAnalyzer::constant_index(const SemanticExpression& source) con
 }
 
 auto OwnershipBodyAnalyzer::protect_storage(const OwnershipRelationships& value) noexcept -> void {
-    storage_readers
-        .insert(storage_readers.end(), value.storage_loans.begin(), value.storage_loans.end());
+    storage_readers.insert(
+        storage_readers.end(),
+        value.view().storage_loans.begin(),
+        value.view().storage_loans.end()
+    );
 }
 
 auto OwnershipBodyAnalyzer::restore_storage_readers(std::size_t count) noexcept -> void {
@@ -441,7 +469,11 @@ auto OwnershipBodyAnalyzer::observe_returned_copy(
     const auto target = binding_place(binding->binding);
     const auto transferable =
         state.objects[target.object].available && !take_conflict(state, target).has_value();
-    analysis.observe_returned_copy(source.origin, transferable);
+    const auto [found, inserted] =
+        diagnosis_record().returned_copies.emplace(source.origin, transferable);
+    if (!inserted) {
+        found->second = found->second && transferable;
+    }
 }
 
 auto OwnershipBodyAnalyzer::take_conflict(
@@ -456,7 +488,7 @@ auto OwnershipBodyAnalyzer::take_conflict(
         };
     }
     for (const auto& holder : state.objects) {
-        for (const auto& loan : holder.relationships.callable_loans) {
+        for (const auto& loan : holder.relationships.view().callable_loans) {
             if (loan.backing.has_value() && overlaps(*loan.backing, target)) {
                 return TakeConflict {
                     .code = DiagnosticCode::AccessBorrowConflict,
@@ -507,7 +539,7 @@ auto OwnershipBodyAnalyzer::storage_write_conflict(
         return loan;
     }
     for (const auto& object : state.objects) {
-        if (const auto loan = conflict(object.relationships.storage_loans)) {
+        if (const auto loan = conflict(object.relationships.view().storage_loans)) {
             return loan;
         }
     }
@@ -519,6 +551,9 @@ auto OwnershipBodyAnalyzer::check_storage_write(
     const OwnershipPlace& target,
     ProgramOriginID origin
 ) noexcept -> void {
+    if (!diagnosing) {
+        return;
+    }
     if (const auto loan = storage_write_conflict(state, target)) {
         diagnose(
             DiagnosticCode::AccessBorrowConflict,

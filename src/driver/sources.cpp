@@ -139,7 +139,7 @@ auto collect_crafts_sources(
 auto collect_command_sources(
     std::string_view executable,
     std::span<const std::string_view> inputs,
-    TimingRecorder* timings
+    const TimingOutput& timings
 ) noexcept -> std::expected<CommandSources, std::string> {
     const auto collection = TimingScope(timings, TimingStage::SourceCollection);
     const auto crafts = find_crafts_directory(executable);

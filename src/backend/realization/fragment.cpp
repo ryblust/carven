@@ -444,7 +444,7 @@ auto BodyRealizer::ExpressionBuilder::build(
         }
         co_return finish_fragment(std::move(fragment));
     }
-    auto inputs = value.operands;
+    auto& inputs = fragment.preparation.operands;
     for (auto& input : inputs) {
         if (input.use == PreparedUse::ProjectionPlace) {
             input.use =
@@ -502,6 +502,15 @@ auto BodyRealizer::ExpressionBuilder::build(
     const auto* binary = std::get_if<SemBinary>(&value.operation.value);
     const auto* arithmetic = std::get_if<PreparedBinary>(value.preparation.get());
     const auto typed_arithmetic = arithmetic != nullptr && arithmetic->target_typed_operands;
+    const auto operand_literal = [&](PreparedUse use) noexcept {
+        if (use == PreparedUse::OperandValue) {
+            return typed_arithmetic ? ConstantLiteralContext::TargetTyped
+                                    : ConstantLiteralContext::Exact;
+        }
+        return std::holds_alternative<SemArray>(value.operation.value)
+            ? ConstantLiteralContext::TargetTyped
+            : ConstantLiteralContext::Exact;
+    };
     // Construct later fragments first so the storage demand of an earlier
     // source occurrence is known before its residual tree is constructed.
     // Only the following forward pass adopts statements and reservations.
@@ -522,12 +531,7 @@ auto BodyRealizer::ExpressionBuilder::build(
                 && ((input_source.requires_execution && (later_effect || later_read))
                     || (input_source.reads_storage && later_effect)));
         const auto keep = input.demand == PreparedDemand::Value;
-        const auto child_literal = input.use == PreparedUse::OperandValue
-            ? (typed_arithmetic ? ConstantLiteralContext::TargetTyped
-                                : ConstantLiteralContext::Exact)
-            : std::holds_alternative<SemArray>(value.operation.value)
-            ? ConstantLiteralContext::TargetTyped
-            : ConstantLiteralContext::Exact;
+        const auto child_literal = operand_literal(input.use);
         auto child = co_await build(
             *input.expression,
             {.demand = keep && (result_needed || value.executes_operation) ? ResultDemand::Value
@@ -608,16 +612,16 @@ auto BodyRealizer::ExpressionBuilder::build(
         fragment.observes |= has_storage_read(child);
     }
     auto operands = std::vector<TargetExpr>();
+    operands.reserve(
+        static_cast<std::size_t>(
+            std::ranges::count(inputs, PreparedDemand::Value, &PreparedOperand::demand)
+        )
+    );
     for (auto index = 0uz; index < inputs.size(); ++index) {
         if (inputs[index].demand != PreparedDemand::Value) {
             continue;
         }
-        const auto child_literal = inputs[index].use == PreparedUse::OperandValue
-            ? (typed_arithmetic ? ConstantLiteralContext::TargetTyped
-                                : ConstantLiteralContext::Exact)
-            : std::holds_alternative<SemArray>(value.operation.value)
-            ? ConstantLiteralContext::TargetTyped
-            : ConstantLiteralContext::Exact;
+        const auto child_literal = operand_literal(inputs[index].use);
         // Carven calls have exact parameter types and member access selects no
         // overload, so a const operand there needs no const cast.
         const auto exact = (std::holds_alternative<SemCall>(value.operation.value)

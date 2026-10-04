@@ -229,7 +229,7 @@ public:
 private:
     auto finish(
         ConstructionTypeRef type,
-        SemanticExpressionValue value,
+        SemanticExpressionValue&& value,
         std::optional<ConstantID> known,
         Span span,
         BodyPendingFailureTerms pending,

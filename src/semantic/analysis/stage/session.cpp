@@ -244,23 +244,32 @@ auto StaticExecutionContext::report(const ExecutionEvent& event) noexcept -> voi
         DiagnosticBuilder(static_execution_code(event.reason()), execution_message(event));
     diagnostic.primary(draft.source_span(event.origin));
     auto shown = 0uz;
+    auto omitted = 0uz;
     for (const auto call : event.calls | std::views::reverse) {
         if (call == event.origin) {
             continue;
         }
-        diagnostic.related(draft.source_span(call), "while evaluating this const function call");
-        if (++shown == 8uz) {
-            break;
+        if (shown == 8uz) {
+            ++omitted;
+            continue;
         }
+        diagnostic.related(draft.source_span(call), "while evaluating this const function call");
+        ++shown;
     }
     for (const auto call : stage.path() | std::views::reverse) {
-        if (shown == 8uz) {
-            break;
-        }
         if (call != event.origin && !std::ranges::contains(event.calls, call)) {
+            if (shown == 8uz) {
+                ++omitted;
+                continue;
+            }
             diagnostic.related(draft.source_span(call), "while specializing this call");
             ++shown;
         }
+    }
+    if (omitted > 0) {
+        diagnostic.note(
+            std::format("{} additional call site{} omitted", omitted, omitted == 1 ? "" : "s")
+        );
     }
     if (root) {
         auto message = std::format("while evaluating this {}", root->kind);

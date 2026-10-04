@@ -1,9 +1,9 @@
 # C++ representation
 
 This reference defines how published types, constants, parameter access, and
-callable contracts select native representations. [Realization](realization.md)
-owns operand sequencing and result storage; [artifact construction](artifacts.md)
-places their declarations and dependencies.
+callable contracts select native representations. Realization owns operand
+sequencing and result storage; artifact construction places their declarations
+and dependencies.
 
 ## Representation
 
@@ -129,8 +129,7 @@ widening reconstruct the active payload through the same transfer operation,
 including success payloads inside their wrapper. Widening requires construction
 only for the source alternatives; newly admitted failure types need no transfer.
 
-The [parameter policy](#parameters-and-access) is shared by declarations, definitions,
-and callable signatures.
+The parameter policy is shared by declarations, definitions, and callable signatures.
 C++ imports and export façades use this same parameter policy, type realization,
 and failure ABI. Export Take parameters are forwarded through `transfer`; import
 Take parameters use the native rvalue category. Read and Write retain their
@@ -199,8 +198,7 @@ Native export façades remove `TestStopped` from the result carrier, preserving
 success and every declared failure. An escaping test stop terminates. Arbitrary
 C++ callbacks do not participate in Carven propagation.
 
-[Control realization](realization.md#failure-dispatch-and-transport) applies these
-carriers at calls, handlers, returns, and test exits.
+Control realization applies these carriers at calls, handlers, returns, and test exits.
 
 ## External result types
 
@@ -216,8 +214,8 @@ their decoded bytes as a narrow C++ string literal converted to a pointer, so
 calls and deduction receive the declared pointer type with program-lifetime storage.
 Ordinary string literals retain `std::string_view` realization.
 
-[Artifact-local query aliases](artifacts.md#external-query-aliases) name shared
-queries without changing their type or value category.
+Artifact-local query aliases name shared queries without changing their type or
+value category.
 
 ### Native construction results
 
@@ -228,8 +226,8 @@ that constant in both the query and executed construction. Their original
 expressions retain all evaluation and cleanup obligations. Other arguments retain
 their access-qualified type queries and ordinary value delivery.
 
-[Native construction preparation](preparation.md#native-construction-operands)
-maps query arguments to the retained operands used for execution.
+Native construction preparation maps query arguments to the retained operands
+used for execution.
 
 The shared argument lowering preserves constant-expression narrowing and native
 overload selection. Later indexing, members, and storage use the construction's

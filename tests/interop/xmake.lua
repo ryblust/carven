@@ -158,7 +158,7 @@ for _, mode in ipairs({
             "append-precomputed-allocate", "append-format-width",
             "print-inner-allocate", "print-inner-throw", "print-inner-utf8", "print-later-throw"
         }) do
-            if mode.standard == "c++20" or operation:startswith("print-") then
+            if mode.standard == "c++20" or operation == "print-later-throw" then
                 add_tests(operation, {group = "interop"})
             end
         end

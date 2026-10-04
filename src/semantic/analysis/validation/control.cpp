@@ -35,6 +35,20 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source, bool resi
         Overloaded {
             [&](const SemanticExpression& expression) noexcept {
                 verify_expression(expression, residual);
+                if (residual) {
+                    if (const auto* call = std::get_if<SemCall>(&expression.value);
+                        call && call->target) {
+                        if (program.callable_signatures()
+                                .signature(program.declarations().callable(*call->target).signature)
+                                .has_static_parameters()) {
+                            invariant_violation("realized body retains an unresolved static call");
+                        }
+                    }
+                    if (const auto* conditional = std::get_if<SemIf>(&expression.value);
+                        conditional && conditional->is_static) {
+                        invariant_violation("realized body retains a static conditional");
+                    }
+                }
             },
             [&](const SemanticStatement& statement) noexcept {
                 require_origin(statement.origin);
@@ -109,6 +123,18 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source, bool resi
                         [](const auto&) static noexcept {},
                     }
                 );
+                if (residual) {
+                    if (std::holds_alternative<SemStaticBinding>(statement.value)) {
+                        invariant_violation("realized body retains a static local");
+                    }
+                    if (std::holds_alternative<SemConstBlock>(statement.value)) {
+                        invariant_violation("realized body retains a const block");
+                    }
+                    if (const auto* loop = std::get_if<SemRangeLoop>(&statement.value);
+                        loop && loop->is_static) {
+                        invariant_violation("realized body retains a static loop");
+                    }
+                }
             },
         }
     );
@@ -123,44 +149,11 @@ auto BodyContractVerifier::verify() noexcept -> void {
     verify_rows();
     // An instance body has only its executable region.
     if (!body.specialized()) {
-        verify_computations(body.region());
         verify_region(body.region());
     }
     if (program.executes(body.id())) {
         const auto& residual = body.realized_region();
-        verify_computations(residual);
         verify_region(residual, true);
-        visit_semantic_nodes(
-            residual,
-            Overloaded {
-                [&](const SemanticExpression& expression) noexcept {
-                    if (const auto* call = std::get_if<SemCall>(&expression.value);
-                        call && call->target) {
-                        if (program.callable_signatures()
-                                .signature(program.declarations().callable(*call->target).signature)
-                                .has_static_parameters()) {
-                            invariant_violation("realized body retains an unresolved static call");
-                        }
-                    }
-                    if (const auto* conditional = std::get_if<SemIf>(&expression.value);
-                        conditional && conditional->is_static) {
-                        invariant_violation("realized body retains a static conditional");
-                    }
-                },
-                [](const SemanticStatement& statement) static noexcept {
-                    if (std::holds_alternative<SemStaticBinding>(statement.value)) {
-                        invariant_violation("realized body retains a static local");
-                    }
-                    if (std::holds_alternative<SemConstBlock>(statement.value)) {
-                        invariant_violation("realized body retains a const block");
-                    }
-                    if (const auto* loop = std::get_if<SemRangeLoop>(&statement.value);
-                        loop && loop->is_static) {
-                        invariant_violation("realized body retains a static loop");
-                    }
-                }
-            }
-        );
     }
     if (!require_failure_set(body.region().failures.resolved()).members.empty()) {
         require_body_failure_set(body.region().failures.resolved());

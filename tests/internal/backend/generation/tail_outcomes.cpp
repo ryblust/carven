@@ -4,9 +4,13 @@ import :backend.generation.linkage;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
-import :backend.target.name;
-import :backend.target.traversal;
 import :backend.target;
+import :backend.target.expr;
+import :backend.target.name;
+import :backend.target.stmt;
+import :backend.target.symbol;
+import :backend.target.traversal;
+import :backend.target.type;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
@@ -124,6 +128,117 @@ const ct::Suite tests([] static noexcept {
             ct::expect(query.propagation == 1uz);
             ct::expect(query.returned_propagation == 1uz);
             ct::expect(query.success_projection == 0uz);
+        }
+    );
+
+    ct::test(
+        "Generation: discarded failing calls check success without projecting a payload",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "enum Error { Failed, }\n"
+                    "fn produce(flag: bool) -> i32 throw Error {\n"
+                    "  if flag { return 7; } else { throw Error::Failed; }\n"
+                    "}\n"
+                    "fn discard(flag: bool) throw Error { produce(flag)?; }\n"
+                    "fn discard_wrapped(flag: bool) throw Error { (produce(flag)? as i32) == 0; }\n"
+                    "fn discard_selected(flag: bool) throw Error { flag && (produce(flag)? == 0); }\n"
+                    "fn deliver(flag: bool) -> i32 throw Error { return produce(flag)? + 1; }\n"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("result_consumption")}
+            );
+
+            struct Query final {
+                std::size_t payloads;
+                std::size_t success_checks;
+                std::size_t saved_successes;
+
+                static auto is_success(const TargetExpr& expression) noexcept -> bool {
+                    const auto* call = std::get_if<TargetCallExpr>(&expression.value);
+                    if (call == nullptr) {
+                        return false;
+                    }
+                    const auto* member = std::get_if<TargetMemberExpr>(
+                        &template_primary_expression(*call->callee).value
+                    );
+                    if (member == nullptr) {
+                        return false;
+                    }
+                    const auto* name = std::get_if<TargetIdentifier>(&member->name);
+                    return name != nullptr && name->spelling() == "success_if";
+                }
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    success_checks += is_success(expression);
+                    if (const auto* member = std::get_if<TargetMemberExpr>(&expression.value)) {
+                        const auto* name = std::get_if<TargetIdentifier>(&member->name);
+                        payloads += name != nullptr && name->spelling() == "value";
+                    }
+                    return true;
+                }
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    ct::expect(!(std::holds_alternative<TargetDiscardStmt>(statement.value)));
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        saved_successes += is_success(variable->initializer);
+                    }
+                    return true;
+                }
+            };
+
+            auto query = Query {.payloads = 0uz, .success_checks = 0uz, .saved_successes = 0uz};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                ct::expect(traverse_target_unit(unit.sections(), query));
+            }
+            ct::expect(query.success_checks == 4uz);
+            ct::expect(query.saved_successes == 1uz);
+            ct::expect(query.payloads == 1uz);
+        }
+    );
+
+    ct::test(
+        "Generation: a sole failure needs no type selection in its handler or dispatch",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
+            struct Failure {}
+            fn source() -> i32 throw Failure { throw Failure {}; }
+            fn recover() -> i32 => try { source()? } catch { Failure(_) => 7, };
+        )"),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("sole_failure")}
+            );
+
+            struct Query final {
+                const TargetUnit& unit;
+                std::size_t branches = 0;
+
+                auto visit_type(TargetTypeID id) const noexcept -> bool {
+                    if (const auto* type = std::get_if<TargetIntrinsicType>(&unit.type(id).value)) {
+                        ct::expect(type->symbol != TargetSymbol::StdVariant);
+                    }
+                    return visit_target_type_children(unit.type(id).value, *this);
+                }
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    branches += std::holds_alternative<TargetIfStmt>(statement.value);
+                    return true;
+                }
+            };
+
+            auto branches = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+                branches += query.branches;
+            }
+            ct::expect(branches == 1uz); // The call's success/failure distinction remains.
         }
     );
 });

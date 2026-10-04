@@ -13,7 +13,7 @@ import std;
 auto load_and_analyze_sources(
     std::span<const SourceInput> inputs,
     const ExecutionOutput& output,
-    TimingRecorder* timings
+    const TimingOutput& timings
 ) noexcept -> std::optional<SemIRProgram> {
     auto loading = TimingScope(timings, TimingStage::SourceLoading);
     auto has_error = false;

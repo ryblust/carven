@@ -19,29 +19,36 @@ const ct::Suite tests([] static noexcept {
                 static_cast<void>(id);
                 const auto origin = body.region().origin;
                 const auto backing = OwnershipPlace {0uz, {}};
-                const auto source = OwnershipRelationships {
-                    .callable_loans =
-                        {{{0uz}, backing, std::nullopt, origin, false},
-                         {{1uz}, backing, std::nullopt, origin, false}},
-                    .captures = {{{0uz}, backing, origin}, {{1uz}, backing, origin}},
-                    .storage_loans = {{{0uz}, backing, origin}, {{1uz}, backing, origin}}
-                };
+                const auto source = OwnershipRelationships(
+                    OwnershipRelationshipRows {
+                        .callable_loans =
+                            {{{0uz}, backing, std::nullopt, origin, false},
+                             {{1uz}, backing, std::nullopt, origin, false}},
+                        .captures = {{{0uz}, backing, origin}, {{1uz}, backing, origin}},
+                        .storage_loans = {{{0uz}, backing, origin}, {{1uz}, backing, origin}}
+                    }
+                );
                 const auto result = project_relationships(source, {std::nullopt});
-                if (!ct::expect(result.callable_loans.size() == 1uz)) {
+                if (!ct::expect(result.view().callable_loans.size() == 1uz)) {
                     return;
                 }
-                if (!ct::expect(result.captures.size() == 1uz)) {
+                if (!ct::expect(result.view().captures.size() == 1uz)) {
                     return;
                 }
-                if (!ct::expect(result.storage_loans.size() == 1uz)) {
+                if (!ct::expect(result.view().storage_loans.size() == 1uz)) {
                     return;
                 }
-                ct::expect(result.storage_loans.front().holder.empty());
-                ct::expect(result.callable_loans.front().holder.empty());
-                ct::expect(result.captures.front().holder.empty());
+                ct::expect(result.view().storage_loans.front().holder.empty());
+                ct::expect(result.view().callable_loans.front().holder.empty());
+                ct::expect(result.view().captures.front().holder.empty());
                 auto merged = result;
                 merge_relationships(merged, result);
                 ct::expect(merged == result);
+                merged.edit().storage_loans.front().backing.object = 1uz;
+                ct::expect_equal(
+                    result.view().storage_loans.front().backing.object,
+                    backing.object
+                );
             }
         }
     );
@@ -60,37 +67,39 @@ const ct::Suite tests([] static noexcept {
             }
             std::ranges::sort(origins);
             const auto backing = OwnershipPlace {0uz, {}};
-            auto first = OwnershipRelationships {
-                .callable_loans =
-                    {{{}, backing, std::nullopt, origins[1], true},
-                     {{}, backing, std::nullopt, origins[0], false}},
-                .captures = {{{}, backing, origins[1]}, {{}, backing, origins[0]}},
-                .storage_loans = {{{}, backing, origins[1]}, {{}, backing, origins[0]}}
-            };
-            for (auto& loan : first.callable_loans) {
+            auto first = OwnershipRelationships(
+                OwnershipRelationshipRows {
+                    .callable_loans =
+                        {{{}, backing, std::nullopt, origins[1], true},
+                         {{}, backing, std::nullopt, origins[0], false}},
+                    .captures = {{{}, backing, origins[1]}, {{}, backing, origins[0]}},
+                    .storage_loans = {{{}, backing, origins[1]}, {{}, backing, origins[0]}}
+                }
+            );
+            for (auto& loan : first.edit().callable_loans) {
                 loan.direct_only = false;
             }
             auto second = first;
-            std::ranges::reverse(second.callable_loans);
-            std::ranges::reverse(second.captures);
-            std::ranges::reverse(second.storage_loans);
+            std::ranges::reverse(second.edit().callable_loans);
+            std::ranges::reverse(second.edit().captures);
+            std::ranges::reverse(second.edit().storage_loans);
             normalize_relationships(first);
             normalize_relationships(second);
             ct::expect(first == second);
-            if (!ct::expect(first.callable_loans.size() == 1uz)) {
+            if (!ct::expect(first.view().callable_loans.size() == 1uz)) {
                 return;
             }
-            if (!ct::expect(first.captures.size() == 1uz)) {
+            if (!ct::expect(first.view().captures.size() == 1uz)) {
                 return;
             }
-            if (!ct::expect(first.storage_loans.size() == 1uz)) {
+            if (!ct::expect(first.view().storage_loans.size() == 1uz)) {
                 return;
             }
-            ct::expect(first.storage_loans.front().origin == origins.front());
-            ct::expect(first.callable_loans.front().origin == origins.front());
-            ct::expect(second.callable_loans.front().origin == origins.front());
-            ct::expect(first.captures.front().origin == origins.front());
-            ct::expect(second.captures.front().origin == origins.front());
+            ct::expect(first.view().storage_loans.front().origin == origins.front());
+            ct::expect(first.view().callable_loans.front().origin == origins.front());
+            ct::expect(second.view().callable_loans.front().origin == origins.front());
+            ct::expect(first.view().captures.front().origin == origins.front());
+            ct::expect(second.view().captures.front().origin == origins.front());
         }
     );
 });

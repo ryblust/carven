@@ -26,7 +26,7 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
             "Sources include the fixed toolchain and working-directory Crafts roots.\n"
             "No entry point is required.\n"
             "Runtime code is checked without execution; no C++ files are generated.\n"
-            "Delegated native operations are checked by the C++ compiler.\n"
+            "Validation of delegated native operations requires a separate C++ build.\n"
         );
         return 0;
     }
@@ -47,7 +47,7 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
         return emit_driver_error("check requires at least one source file", "carven check");
     }
     auto timings = CommandTimings(show_timings, "check");
-    const auto sources = collect_command_sources(executable, paths, timings.recorder());
+    const auto sources = collect_command_sources(executable, paths, timings.output());
     if (!sources) {
         return emit_driver_error(sources.error());
     }
@@ -56,7 +56,7 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
         [](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
         },
-        timings.recorder()
+        timings.output()
     );
     if (program) {
         timings.set_outcome("passed");

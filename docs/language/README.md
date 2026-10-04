@@ -1,8 +1,8 @@
 # Language
 
 This directory covers writing Carven programs, their syntax, and their validity
-and observable behavior for the current checkout. The [Tutorial](tutorial.md)
-introduces the language in learning order; [Grammar](grammar.md) defines its
+and observable behavior for the current checkout. The tutorial
+introduces the language in learning order; the grammar defines its
 spelling and parsing. Topic references define the rules for each language feature.
 
 ## Find a document
@@ -27,34 +27,24 @@ spelling and parsing. Topic references define the rules for each language featur
 ## Reading across topics
 
 Start with the page for the operation you are using. Each page includes its
-local validity, evaluation, and lifetime rules. For shared concepts, consult
-[type context](types.md#type-context-and-inference),
-[Read/Write/Take access](ownership.md), and
-[evaluation order](control-flow.md#operators-and-evaluation).
+local validity, evaluation, and lifetime rules. Shared concepts include type
+context, Read/Write/Take access, and evaluation order.
 
 Some tasks cross a specific boundary:
 
-- For `const fn`, read [static execution](constants.md#static-execution-of-functions)
-  alongside the ordinary [call rules](functions.md#functions-and-calls).
-  For `const test`, the same executor subset applies, while
-  [test ordering and assertions](execution.md#entry-points-and-tests) define the test behavior.
-- For slices, [runtime views](types.md#read-only-slices) borrow live backing;
-  [frozen constant slices](constants.md#frozen-constant-slices) define publication
-  with program-lifetime backing.
-- For pointers, read the [local non-null checks](pointers.md#local-non-null-checks)
-  and [native responsibility](pointers.md#native-representation-and-responsibility)
-  together. Pointer target access does not establish general target liveness.
-- For output, [interpolation](text.md#string-interpolation) constructs formatted
-  text; [printing](execution.md#printing) defines direct output and structural display.
+- `const fn` follows ordinary call rules and static-execution admission.
+  `const test` uses the same executor subset with test ordering and assertions.
+- Runtime slices borrow live backing; frozen constant slices have program-lifetime
+  backing.
+- Pointer access combines local non-null checks with native target-lifetime
+  obligations.
+- Interpolation constructs formatted text; printing performs direct output and
+  structural display.
 
 ## Reference boundaries
 
 Language-visible rules remain here even when they involve C++.
-[Compiler](../compiler/README.md) describes analysis and semantic publication;
-[Backend](../compiler/backend/README.md) describes their C++ realization.
-[CLI](../toolchain/cli.md) and [Toolchain](../toolchain/artifacts.md) cover invocation and native
-integration. Repository test placement and validation belong to
-[Testing](../development/testing.md).
-
-Each complete rule has one topic owner. Links identify shared rules and
-stage-specific requirements.
+[Compiler](../compiler/README.md) covers analysis, semantic publication, and C++
+generation. [Toolchain](../toolchain/README.md) covers invocation and native
+integration. [Development](../development/README.md) covers repository conventions,
+test placement, and validation.

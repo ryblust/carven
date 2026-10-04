@@ -13,9 +13,12 @@ configuration.
 | [`clang-module-pipeline/`](clang-module-pipeline/README.md) | Versioned Xmake patch and wrappers for Clang module compilation and incremental dependency checks |
 | [`format.lua`](format.lua) | C++ and Carven formatting and formatting checks |
 | [`generated.clang-tidy`](generated.clang-tidy) | clang-tidy overrides for generated C++ |
-| [`incremental_bench.lua`](incremental_bench.lua) | Incremental build timings, C++ rebuild counts, and artifact checks |
-| [`compile_bench.lua`](compile_bench.lua) | Module-batch and structured source-to-C++ compiler timings |
-| [`benchmark.lua`](benchmark.lua) | Shared compiler selection, sampling, medians, and temporary-directory cleanup |
+| [`benchmark/incremental.lua`](benchmark/incremental.lua) | Incremental build timings, C++ object changes, and artifact checks |
+| [`benchmark/compile.lua`](benchmark/compile.lua) | Module-batch and structured source-to-C++ compiler timings |
+| [`benchmark/runner.lua`](benchmark/runner.lua) | Shared compiler selection, sampling, medians, and temporary-directory cleanup |
+| [`benchmark/options.lua`](benchmark/options.lua) | Benchmark option parsing and validation |
+| [`benchmark/report.lua`](benchmark/report.lua) | Shared sample progress and result tables |
+| [`benchmark/timings.lua`](benchmark/timings.lua) | Carven timing reports, rounded durations, and bounds |
 
 ## Build and maintenance commands
 
@@ -80,17 +83,36 @@ when a benchmark fails.
 | `--compiler=<path>` | Use an existing compiler executable | Current `carven` target output |
 | `--samples=<count>` | Positive number of measured runs | 3 for both benchmarks |
 | `--warmups=<count>` | Nonnegative number of warmup runs | 1 |
-| `--verbose` | Show individual samples, case identifiers or changed object paths | Off |
+| `--verbose` | Show individual samples, warmups, and changed object paths | Off |
+| `--list` | List stable case identifiers and input sizes without building | Off |
+| `--case=<id>` | Run one exact case identifier | All cases |
+| `--output=<path>` | Save run metadata, inputs, raw samples, and summaries as JSON | No file |
+| `--timings` | Include observed Carven stage timings in samples | Off |
 
 For example, `./xmakew bench --samples=2 --warmups=0 incremental` performs two
 measured runs per scenario. `./xmakew bench --help` lists the available options.
-Output identifies the compiler, build mode, and sampling settings, and reports
-median wall time in milliseconds for each scenario. Timings are observations,
-with no performance pass/fail threshold.
+Benchmark options work before or after the topic; long options with values use
+`--key=value`. Listing cases and rejecting an unknown case happen before compiler
+selection or building:
+
+```shell
+./xmakew bench compile --list
+./xmakew bench compile --case=independent_16 --samples=7 --warmups=2 --verbose
+./xmakew bench compile --case=independent_16 --timings --output=build/bench/compile.json
+./xmakew bench incremental --case=private_function_edit --output=build/bench/incremental.json
+./xmakew bench incremental --case=private_function_edit --timings --output=build/bench/incremental-stages.json
+```
+
+Output shows case progress and wall-time summaries. The result table lists valid sample
+counts, medians, minima, and maxima, with time columns in milliseconds. Incremental
+cases also report changed and unrelated object counts. Failed or incomplete cases
+are identified separately; missing measurements appear as `-`. Verbose output
+includes individual samples, warmup measurements, and case details. Timings have no performance
+pass/fail threshold.
 
 ### Incremental build
 
-`incremental_bench.lua` uses a small `library -> facade -> app` dependency chain
+`benchmark/incremental.lua` uses a small `library -> facade -> app` dependency chain
 alongside an unchanged, independent `unrelated` module in the same target:
 
 | Scenario | Operation |
@@ -111,15 +133,15 @@ are outside the timed region. Timings include Xmake startup, Carven generation,
 native compilation, and linking as required by that build.
 
 Each row reports the median build time and the number of new or timestamp-changed
-C++ object files. If counts differ across measured runs, the output shows their
-minimum and maximum. Counts include any cached object files that change; deleted
-objects are not counted as rebuilt. The fixture crosses a whole-second timestamp
-boundary before each operation so fast rebuilds remain observable. Module add
-and remove operations also check that generated headers and sources appear and
-disappear as expected. These small scenarios observe build locality, not large
-project scaling.
+C++ object files in the `Changed objects` column. If counts differ across measured
+runs, the output shows their minimum and maximum. Counts include any cached object
+files that change; deleted objects are not counted. The fixture crosses a
+whole-second timestamp boundary before each operation so fast rebuilds remain
+observable. Module add and remove operations also check that generated headers
+and sources appear and disappear as expected. These small scenarios observe build
+locality, not large project scaling.
 
-The `Unrelated` column reports rebuilt objects for the independent module.
+The `Unrelated objects` column reports changed objects for the independent module.
 Counts have no pass/fail threshold. Identical rewrites change the source timestamp
 while preserving content and source locations.
 
@@ -129,7 +151,7 @@ also supports local rule repositories used in dual-repository checkouts.
 
 ### Compile
 
-`compile_bench.lua` measures source-to-C++ compilation, including process
+`benchmark/compile.lua` measures source-to-C++ compilation, including process
 startup, parsing, analysis, and generation. Native C++ compilation and linking
 are excluded.
 
@@ -145,7 +167,9 @@ C++ inspection output to the null device.
 | Shared dependencies | Repeated nominal field dependencies and native result-type queries |
 | Pattern coverage | Wide enums with one arm per case; boolean payloads with one independently constrained field per arm and a wildcard fallback |
 | Constants | Repeated values and distinct values |
+| Constant execution | A 1000-iteration scalar loop and repeated SIMD table construction, with static result checks |
 | Nested loops | Loop nesting with explicit `break` exits |
+| Mutable loop state | 512 live locals updated across a loop, then read after the loop |
 | Wide argument lists | Reads alone and reads interleaved with side effects |
 | Fallible calls | Repeated calls that propagate typed failures |
 | Nested expressions | Nested function-call expressions |
@@ -156,7 +180,7 @@ sizes to observe timing growth. The payload workload increases both field and ar
 counts; its source size grows quadratically because each arm lists every field.
 
 The output reports input sizes; workload definitions live in
-[`compile_bench.lua`](compile_bench.lua). Timings include process startup, which
+[`benchmark/compile.lua`](benchmark/compile.lua). Timings include process startup, which
 can dominate small inputs.
 
 ### Comparing results
@@ -165,3 +189,22 @@ Use the same machine, compiler build mode, inputs, linkage domain, and flags.
 Record the compiler revision and local source changes with the results.
 For comparisons between two compiler builds, preserve both executables, warm
 each one, and alternate measured runs.
+
+`--output` saves compiler and environment metadata, fixture inputs, command
+records, samples, and summaries as JSON. Command records retain captured stdout
+and stderr. Warmups and failed samples are excluded from summary statistics;
+caught failures retain completed samples and the failure status. Serialization
+happens outside the measured intervals. External compiler build modes are
+reported as unknown.
+
+`--timings` shows the valid sample closest to each case's median wall time,
+identified by sample number. Its Carven invocations appear separately, with stage
+durations and reported percentages of invocation total time. These are the selected
+sample's measurements, not stage medians. Add `--verbose` to show every measured
+sample's timing reports. JSON retains all samples and stores
+each report's label, total duration, and stages in `timings.reports`; stage
+`share_raw` retains a reported percentage when available. `timings.status` is
+`reported` or `unreported`. `unreported` means no report was captured. Durations
+are rounded; `<0.1 ms` is an upper bound. Incremental benchmarks enable the rule's
+`timings` option for initial, baseline-restoration, and measured builds. Reused
+generation emits no report. Compare runs with the same timing setting.

@@ -45,7 +45,6 @@ The design must preserve these existing or accepted constraints:
   coherence, module-domain locality, anchored heads, and associated normalization.
   Those facilities are not implemented.
 
-Generics owns the evidence model; this proposal maps tokens to its operations.
 C++ export eligibility and concurrency guarantees require separate contracts.
 
 ## Goals and non-goals

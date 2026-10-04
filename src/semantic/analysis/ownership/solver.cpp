@@ -10,11 +10,10 @@ OwnershipBatchAnalyzer::OwnershipBatchAnalyzer(
 ) noexcept
     : program(program),
       diagnostics(diagnostics),
-      bodies(program.bodies()),
-      recursion_components(ownership_recursion_components(program)) {
-    for (const auto [id, body] : bodies.entries()) {
-        body_facts.emplace(id, prepare_ownership_body_facts(body, program));
-    }
+      bodies(program.bodies()) {
+    auto preparation = prepare_ownership_analysis(program);
+    body_facts = std::move(preparation.body_facts);
+    recursion_components = std::move(preparation.recursion_components);
 }
 
 auto OwnershipBatchAnalyzer::facts_for_body(BodyID id) const noexcept -> const OwnershipBodyFacts& {
@@ -51,13 +50,39 @@ auto OwnershipBatchAnalyzer::diagnose(
     failure = diagnostics.error(diagnostic.build());
 }
 
-auto OwnershipBatchAnalyzer::observe_returned_copy(
-    ProgramOriginID origin,
-    bool transferable
+auto OwnershipBatchAnalyzer::commit_diagnosis(
+    std::unique_ptr<OwnershipDiagnosisRecord> diagnosis,
+    const OwnershipEscape* escape
 ) noexcept -> void {
-    const auto [found, inserted] = returned_copies.emplace(origin, transferable);
-    if (!inserted) {
-        found->second = found->second && transferable;
+    if (diagnosis) {
+        // A return copy is reported only when every diagnosed context admits Take.
+        for (const auto [origin, transferable] : diagnosis->returned_copies) {
+            const auto [found, inserted] = returned_copies.emplace(origin, transferable);
+            if (!inserted) {
+                found->second = found->second && transferable;
+            }
+        }
+        if (diagnosis->error.has_value()) {
+            auto& error = *diagnosis->error;
+            diagnose(
+                error.code,
+                std::move(error.message),
+                error.origin,
+                error.related,
+                std::move(error.related_label),
+                std::move(error.help)
+            );
+        }
+    }
+    if (escape != nullptr && !failure.has_value()) {
+        diagnose(
+            DiagnosticCode::AccessBorrowConflict,
+            escape->message,
+            escape->origin,
+            escape->related,
+            "related storage or access",
+            {}
+        );
     }
 }
 
@@ -110,14 +135,16 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
     if (found != candidates.end()) {
         index = *found;
     } else {
-        if (queries_sealed) {
-            invariant_violation("ownership diagnosis discovered an unsolved call input");
-        }
         candidates.push_back(index);
         queries.push_back(
-            std::make_unique<OwnershipCallQuery>(
-                OwnershipCallQuery {std::move(input), {}, {}, false}
-            )
+            std::make_unique<OwnershipCallQuery>(OwnershipCallQuery {
+                .input = std::move(input),
+                .answer = {},
+                .consumers = {},
+                .queued = false,
+                .evaluation_matches_answer = false,
+                .diagnosis = nullptr
+            })
         );
         enqueue(index);
     }
@@ -141,7 +168,9 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
         }
         const auto value = program.types().type(type).value;
         if (std::holds_alternative<CallableViewTypeValue>(value)) {
-            relationships.callable_loans.push_back({{}, std::nullopt, std::nullopt, origin, false});
+            relationships.edit().callable_loans.push_back(
+                {{}, std::nullopt, std::nullopt, origin, false}
+            );
         } else if (const auto* closure = std::get_if<ClosureTypeValue>(&value)) {
             const auto& target = body(*program.declarations().body_for_callable(closure->callable));
             for (const auto [index, id] : std::views::enumerate(target.inputs().captures)) {
@@ -159,7 +188,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                          {.body = source.id(), .slot = object, .input = true},
                          false}
                     );
-                    relationships.captures.push_back(
+                    relationships.edit().captures.push_back(
                         {OwnershipProjectionPath {index},
                          OwnershipPlace {object, {}},
                          capture.origin}
@@ -194,7 +223,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                  {.body = source.id(), .slot = backing, .input = true},
                  false}
             );
-            relationships.storage_loans.push_back({{}, {backing, {}}, origin});
+            relationships.edit().storage_loans.push_back({{}, {backing, {}}, origin});
         }
         if (const auto* structure = std::get_if<StructTypeValue>(&value)) {
             for (const auto& [index, field] : std::views::enumerate(
@@ -270,7 +299,7 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
             continue;
         }
         auto input = root_input(source);
-        OwnershipBodyAnalyzer(*this, input, true).check_contracts();
+        commit_diagnosis(OwnershipBodyAnalyzer(*this, input).check_contracts());
         static_cast<void>(query(std::move(input)));
     }
     if (failure.has_value()) {
@@ -285,26 +314,17 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
         query.queued = false;
         active_query = index;
         ++evaluation_count;
-        auto answer = OwnershipBodyAnalyzer(*this, query.input, false).run();
+        auto result = OwnershipBodyAnalyzer(*this, query.input).run();
         active_query.reset();
-        if (!answer.has_value()) {
-            // Replay this invalid completion with diagnostics enabled so the
-            // transfer that first violated a lifetime keeps its precise witness.
-            static_cast<void>(OwnershipBodyAnalyzer(*this, query.input, true).run());
-            if (!failure.has_value()) {
-                const auto& escape = answer.error();
-                diagnose(
-                    DiagnosticCode::AccessBorrowConflict,
-                    escape.message,
-                    escape.origin,
-                    escape.related,
-                    "related storage or access",
-                    {}
-                );
-            }
+        if (!result.answer.has_value()) {
+            // An invalid completion keeps priority over every deferred query.
+            commit_diagnosis(std::move(result.diagnosis), std::addressof(result.answer.error()));
             return std::unexpected(*failure);
         }
+        query.diagnosis = std::move(result.diagnosis);
+        const auto& answer = result.answer;
         if (*answer == query.answer) {
+            query.evaluation_matches_answer = true;
             continue;
         }
         auto joined = query.answer;
@@ -323,6 +343,7 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
         std::ranges::sort(joined, {}, [](const auto& completion) static noexcept {
             return std::pair(completion.test_stopped, completion.failure);
         });
+        query.evaluation_matches_answer = *answer == joined;
         if (joined != query.answer) {
             query.answer = std::move(joined);
             for (const auto consumer : query.consumers) {
@@ -330,25 +351,17 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
             }
         }
     }
-    queries_sealed = true;
     for (const auto& query : queries) {
-        const auto answer = OwnershipBodyAnalyzer(*this, query->input, true).run();
-        if (!answer.has_value()) {
-            const auto& escape = answer.error();
-            diagnose(
-                DiagnosticCode::AccessBorrowConflict,
-                escape.message,
-                escape.origin,
-                escape.related,
-                "related storage or access",
-                {}
-            );
+        if (!query->evaluation_matches_answer) {
+            invariant_violation("final ownership evaluation disagrees with a solved call answer");
         }
+    }
+    // Every changed answer schedules its readers. With no pending query,
+    // each retained diagnosis observes the final answers it consumed.
+    for (const auto& query : queries) {
+        commit_diagnosis(std::move(query->diagnosis));
         if (failure.has_value()) {
             return std::unexpected(*failure);
-        }
-        if (*answer != query->answer) {
-            invariant_violation("ownership diagnosis changed a solved call answer");
         }
     }
     for (const auto [origin, transferable] : returned_copies) {

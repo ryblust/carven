@@ -368,7 +368,7 @@ const ct::Suite tests([] static noexcept {
         }));
     });
 
-    ct::test("SemIR body: unary operations reject incompatible result types", [] static noexcept {
+    ct::test("SemIR body: unary negation rejects nonnumeric operands", [] static noexcept {
         ct::expect(rejects_expression(
             "structured-unary-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
@@ -383,7 +383,7 @@ const ct::Suite tests([] static noexcept {
         ));
     });
 
-    ct::test("SemIR body: binary operations reject incompatible operand types", [] static noexcept {
+    ct::test("SemIR body: binary arithmetic rejects nonnumeric operands", [] static noexcept {
         ct::expect(rejects_expression(
             "structured-binary-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
@@ -400,7 +400,59 @@ const ct::Suite tests([] static noexcept {
         ));
     });
 
-    ct::test("SemIR body: casts reject incompatible operand types", [] static noexcept {
+    ct::test("SemIR body: unary results must match the legal operand type", [] static noexcept {
+        ct::expect(rejects_expression(
+            "structured-unary-result-contract",
+            [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
+                const auto integer = prepared.builder.builtin_type(BuiltinType::I32);
+                const auto constant = prepared.builder.intern_constant(
+                    {.type = integer, .value = IntegerConstant::zero()}
+                );
+                auto operand = body.builder.make_expression(
+                    integer,
+                    body.lifetime,
+                    prepared.origin,
+                    SemConstant {.constant = constant}
+                );
+                auto result = boolean_expression(prepared, body);
+                result.value = SemUnary {
+                    .operation = UnaryOperator::Negate,
+                    .operand = OwnedSemanticExpression(std::move(operand)),
+                };
+                return result;
+            }
+        ));
+    });
+
+    ct::test("SemIR body: comparisons require their Boolean result type", [] static noexcept {
+        ct::expect(rejects_expression(
+            "structured-binary-result-contract",
+            [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
+                const auto integer = prepared.builder.builtin_type(BuiltinType::I32);
+                const auto constant = prepared.builder.intern_constant(
+                    {.type = integer, .value = IntegerConstant::zero()}
+                );
+                const auto operand = [&]() noexcept {
+                    return body.builder.make_expression(
+                        integer,
+                        body.lifetime,
+                        prepared.origin,
+                        SemConstant {.constant = constant}
+                    );
+                };
+                auto result = boolean_expression(prepared, body);
+                result.type = BodyType(integer);
+                result.value = SemBinary {
+                    .left = OwnedSemanticExpression(operand()),
+                    .operation = BinaryOperator::Less,
+                    .right = OwnedSemanticExpression(operand()),
+                };
+                return result;
+            }
+        ));
+    });
+
+    ct::test("SemIR body: casts reject a mismatched conversion kind", [] static noexcept {
         ct::expect(rejects_expression(
             "structured-cast-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {

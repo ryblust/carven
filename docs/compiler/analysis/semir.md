@@ -1,9 +1,8 @@
 # Semantic representation
 
 This reference defines identity, canonical data, structured operations, and facts
-available to semantic-program consumers. The [compiler overview](../README.md) defines
-owner lifetimes and publication order; [construction](construction.md) establishes
-the facts described here.
+available to semantic-program consumers. Construction establishes these facts
+before publication.
 
 ## Ownership and identity
 

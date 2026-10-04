@@ -98,6 +98,21 @@ auto interpret_enum_case(
 }
 
 template<typename Site>
+auto interpret_contextual_enum_case(
+    Site& site,
+    const ASTContextualCaseExpr& source,
+    Span span,
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> ExpressionTask<typename Site::Value> {
+    auto type = expected_expression_enum(site, expected, source.name_span);
+    if (!type.has_value()) {
+        co_return std::unexpected(type.error());
+    }
+    const auto name = site.spelling(source.name_span);
+    co_return (co_await interpret_enum_case(site, *type, name, source.name_span, {}, span, false));
+}
+
+template<typename Site>
 auto interpret_text(
     Site& site,
     TextIntrinsic intrinsic,

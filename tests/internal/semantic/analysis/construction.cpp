@@ -8,19 +8,24 @@ import :semantic.analysis.catalog;
 import :semantic.analysis.construction;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
+import :semantic.analyze;
 import :semantic.semir.body;
+import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.semir.structured;
+import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.provenance.ids;
 import :source.text;
+import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.harness.death;
+import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
@@ -69,6 +74,168 @@ auto function_named(AnalysisCatalogView catalog, std::string_view name) noexcept
 namespace {
 
 const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Program construction: grouped contextual enum names retain Body and Static case identity",
+        [] static noexcept {
+            constexpr auto case_name =
+                std::string_view("ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage");
+            ct::expect_equal(case_name.size(), 51uz);
+            const auto program = analyze_test_program(R"(
+        enum Choice { ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage, Other }
+        const selected: Choice = (((.ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage)));
+        const matches = selected == Choice::ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage;
+        fn body_value() -> Choice => (((.ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage)));
+    )");
+            auto expected = std::optional<ConstantID>();
+            for (const auto [id, declaration] : program.declarations().enum_cases()) {
+                static_cast<void>(id);
+                if (program.provenance().spelling(declaration.name) == case_name) {
+                    expected = declaration.constant;
+                }
+            }
+            if (!ct::expect(expected.has_value())) {
+                return;
+            }
+            auto saw_selected = false;
+            auto saw_matches = false;
+            for (const auto [id, declaration] : program.declarations().module_constants()) {
+                static_cast<void>(id);
+                const auto name = program.provenance().spelling(declaration.name);
+                if (name == "selected") {
+                    ct::expect(declaration.value == *expected)
+                        .note("Static selected case identity");
+                    saw_selected = true;
+                } else if (name == "matches") {
+                    const auto* value = std::get_if<BooleanConstant>(
+                        &program.constants().constant(declaration.value).value
+                    );
+                    if (!ct::expect(value != nullptr)) {
+                        return;
+                    }
+                    ct::expect_equal(value->value, true);
+                    saw_matches = true;
+                }
+            }
+            ct::expect_equal(saw_selected, true);
+            ct::expect_equal(saw_matches, true);
+            auto body_constants = 0uz;
+            for (const auto [id, declaration] : program.declarations().functions()) {
+                static_cast<void>(id);
+                if (program.provenance().spelling(declaration.name) != "body_value") {
+                    continue;
+                }
+                const auto body = program.declarations().body_for_callable(declaration.callable);
+                if (!ct::expect(body.has_value())) {
+                    return;
+                }
+                visit_semantic_nodes(
+                    program.bodies().body(*body).region(),
+                    [&](const SemanticExpression& expression) noexcept {
+                        const auto* constant = std::get_if<SemConstant>(&expression.value);
+                        if (constant == nullptr) {
+                            return;
+                        }
+                        ct::expect(constant->constant == *expected)
+                            .note("Body selected case identity");
+                        ++body_constants;
+                    }
+                );
+            }
+            ct::expect_equal(body_constants, 1uz);
+        }
+    );
+
+    ct::test(
+        "Program construction: contextual enum diagnostics retain prerequisite order and name spans",
+        [] static noexcept {
+            struct Scenario final {
+                std::string_view name;
+                std::string_view source;
+                DiagnosticCode expected;
+                DiagnosticCode excluded;
+                std::string_view primary;
+            };
+            const auto cases = std::to_array<Scenario>({
+                {
+                    .name = "Body nonenum context precedes missing case lookup",
+                    .source =
+                        "fn invalid() { let value: i32 = .ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage; }",
+                    .expected = DiagnosticCode::TypeEnumContext,
+                    .excluded = DiagnosticCode::TypeMemberUnresolved,
+                    .primary = "ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage",
+                },
+                {
+                    .name = "Static nonenum context precedes missing case lookup",
+                    .source =
+                        "const invalid: i32 = .ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage;",
+                    .expected = DiagnosticCode::TypeEnumContext,
+                    .excluded = DiagnosticCode::TypeMemberUnresolved,
+                    .primary = "ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage",
+                },
+                {
+                    .name = "Body enum context diagnoses its missing case",
+                    .source =
+                        "enum Choice { Existing }\nfn invalid() { let value: Choice = .ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage; }",
+                    .expected = DiagnosticCode::TypeMemberUnresolved,
+                    .excluded = DiagnosticCode::TypeEnumContext,
+                    .primary = "ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage",
+                },
+                {
+                    .name = "Static enum context diagnoses its missing case",
+                    .source =
+                        "enum Choice { Existing }\nconst invalid: Choice = .ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage;",
+                    .expected = DiagnosticCode::TypeMemberUnresolved,
+                    .excluded = DiagnosticCode::TypeEnumContext,
+                    .primary = "ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage",
+                },
+                {
+                    .name = "Static owner validity precedes missing case lookup",
+                    .source =
+                        "const invalid = Empty::ThisIsAnEnumCaseNameLongEnoughToUseOwnedHeapStorage;\nenum Empty {}",
+                    .expected = DiagnosticCode::TypeEnumEmpty,
+                    .excluded = DiagnosticCode::TypeMemberUnresolved,
+                    .primary = "Empty",
+                },
+            });
+            ct::each(cases, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                auto sources = SourceManager();
+                const auto source =
+                    sources.append_virtual("analysis.cv", std::string(scenario.source));
+                ct::require(source.has_value());
+                const auto input = SourceModuleInput {
+                    .source_id = *source,
+                    .module_path = semantic_test_module_path(),
+                };
+                auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
+                ct::require(parsed.has_value());
+                const auto analyzed = analyze(std::move(*parsed));
+                if (!ct::expect(!analyzed.has_value())) {
+                    return;
+                }
+                ct::expect_diagnostic(analyzed.error(), scenario.expected);
+                ct::expect_no_diagnostic(analyzed.error(), scenario.excluded);
+                const auto* diagnostic = ct::find_diagnostic(analyzed.error(), scenario.expected);
+                if (!ct::expect(diagnostic != nullptr)) {
+                    return;
+                }
+                ct::expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
+                if (!ct::expect(diagnostic->attachment.primary.has_value())) {
+                    return;
+                }
+                ct::expect_equal(
+                    sources.slice(diagnostic->attachment.primary->span),
+                    scenario.primary
+                );
+                const auto start = scenario.source.rfind(scenario.primary);
+                ct::require(start != std::string_view::npos);
+                ct::expect_equal(
+                    diagnostic->attachment.primary->span.span.start(),
+                    static_cast<std::uint32_t>(start)
+                );
+            });
+        }
+    );
+
     ct::test(
         "Program construction: demand bodies reuse completion and keep stable references",
         [] static noexcept {

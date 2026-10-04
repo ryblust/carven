@@ -24,6 +24,7 @@ import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
+import :support.unique_indirect;
 import :support.visit;
 import std;
 
@@ -53,14 +54,16 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                 ));
             }
             co_return BuiltExpression {
-                .storage = std::move(**value),
+                .storage = UniqueIndirect {BodyExpressionStorage {std::move(**value)}},
                 .pending_failures = {},
                 .takeable = false,
                 .completes = true,
             };
         }
         co_return BuiltExpression {
-            .storage = active_builder().binding_expression(binding),
+            .storage = UniqueIndirect {BodyExpressionStorage {
+                active_builder().binding_expression(binding)
+            }},
             .pending_failures = {},
             .takeable = local->takeable,
             .completes = true,
@@ -118,7 +121,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                 }
                 auto value = active_builder().callable_expression(function.callable, origin(span));
                 co_return BuiltExpression {
-                    .storage = std::move(value),
+                    .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},
                     .pending_failures = {},
                     .takeable = true,
                     .completes = true,
@@ -134,7 +137,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                     SemConstant {.constant = declaration.value}
                 );
                 co_return BuiltExpression {
-                    .storage = std::move(value),
+                    .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},
 
                     .pending_failures = {},
                     .takeable = false,
@@ -380,12 +383,12 @@ auto BodyElaborator::builtin_callable(
     draft().add_body_draft(std::move(body));
     const auto type = draft().intern_type({.value = ClosureTypeValue {.callable = callable}});
     return BuiltExpression {
-        .storage = active_builder().make_expression(
+        .storage = UniqueIndirect {BodyExpressionStorage {active_builder().make_expression(
             type,
             active_builder().lifetime(),
             site,
             SemClosure {.callable = callable, .captures = {}}
-        ),
+        )}},
         .pending_failures = {},
         .takeable = true,
         .completes = true,

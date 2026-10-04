@@ -9,6 +9,7 @@ import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.structured;
+import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
@@ -145,6 +146,73 @@ const ct::Suite tests([] static noexcept {
                     ct::expect(expression.constant.has_value() == (position == 0uz));
                 });
             }
+        }
+    );
+
+    ct::test(
+        "Semantic pointers: aggregate snapshots and Take retain local null proofs",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+                struct PointerSnapshot { pointer: ptr<&i32> }
+                fn probe(p: ptr<&i32>) -> i32 {
+                    if p == nullptr { return 0; }
+                    let indexed = [p][0usize];
+                    let field = (PointerSnapshot { pointer: indexed }).pointer;
+                    let narrowed: ptr<i32> = field;
+                    let transferred = &&narrowed;
+                    return *transferred;
+                }
+            )");
+            const auto callables = test_function_callables(program);
+            if (!ct::expect_equal(callables.size(), 1uz)) {
+                return;
+            }
+            const auto body_id =
+                callable_body_id(program.declarations().callable(callables.front()));
+            if (!ct::expect(body_id.has_value())) {
+                return;
+            }
+            auto observed_value_index = false;
+            visit_semantic_nodes(
+                program.bodies().body(*body_id).region(),
+                [&](const SemanticExpression& expression) noexcept {
+                    const auto* index = std::get_if<SemIndex>(&expression.value);
+                    if (index == nullptr
+                        || !std::holds_alternative<SemArray>(index->source->value)) {
+                        return;
+                    }
+                    observed_value_index = true;
+                    ct::expect(index->source->category == SemanticValueCategory::Value);
+                    if (!ct::expect(index->index->constant.has_value())) {
+                        return;
+                    }
+                    const auto* integer = std::get_if<IntegerConstant>(
+                        &program.constants().constant(*index->index->constant).value
+                    );
+                    if (!ct::expect(integer != nullptr)) {
+                        return;
+                    }
+                    const auto position = integer->as_unsigned();
+                    if (ct::expect(position.has_value())) {
+                        ct::expect_equal(*position, 0u);
+                    }
+                }
+            );
+            ct::expect_equal(observed_value_index, true);
+
+            ct::expect_diagnostic(
+                analyze_test_errors(R"(
+                    struct PointerSnapshot { pointer: ptr<&i32> }
+                    fn probe(p: ptr<&i32>) -> i32 {
+                        let indexed = [p][0usize];
+                        let field = (PointerSnapshot { pointer: indexed }).pointer;
+                        let narrowed: ptr<i32> = field;
+                        let transferred = &&narrowed;
+                        return *transferred;
+                    }
+                )"),
+                DiagnosticCode::PointerNonNull
+            );
         }
     );
 

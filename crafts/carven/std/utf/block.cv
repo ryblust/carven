@@ -43,8 +43,9 @@ private const fn current_high_flags(nibble: u8) -> u8 {
 // Ordinary constant construction keeps the table's meaning beside its values.
 private const fn classification_table(part: usize) -> u8x32 {
     var entries: [u8; 32] = {};
-    for index in 0usize..32 {
-        let nibble = (index % 16) as u8;
+    // Both lookup lanes use the same 16 nibble classifications.
+    for index in 0usize..16 {
+        let nibble = index as u8;
         if part == 0 {
             entries[index] = previous_high_flags(nibble);
         } else if part == 1 {
@@ -52,6 +53,7 @@ private const fn classification_table(part: usize) -> u8x32 {
         } else {
             entries[index] = current_high_flags(nibble);
         }
+        entries[index + 16] = entries[index];
     }
     return u8x32::from_array(entries);
 }

@@ -6,16 +6,20 @@ import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.ownership.context;
+import :semantic.analysis.program;
 import :semantic.analyze;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.contents;
 import :semantic.semir.decl;
 import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
+import :source.text;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.harness.death;
@@ -499,6 +503,54 @@ const ct::Suite tests([] static noexcept {
         }
     );
 
+    ct::test(
+        "Semantic calls: normal and failure completions restore separate callable loans",
+        [] static noexcept {
+            const auto declarations = std::string(R"(
+        struct Failure {}
+        fn empty() -> i32 => 0;
+        fn replace(&selected: fn() -> i32, replacement: fn() -> i32, stop: bool) throw Failure {
+            if stop {
+                selected = replacement;
+                throw Failure {};
+            }
+            selected = empty;
+        }
+    )");
+            // Normal completion releases the old loan. Failure keeps the
+            // replacement owner live and callable in the catch branch.
+            static_cast<void>(analyze_test_program(declarations + R"(
+        fn valid(flag: bool) {
+            let value = 1;
+            let owner = [value]() => value;
+            var selected: fn() -> i32 = owner;
+            try {
+                replace(&selected, owner, flag)?;
+                let moved = &&owner;
+                let observed = selected();
+            } catch {
+                Failure(_) => { let observed = selected(); },
+            }
+        }
+    )"));
+            // That retained failure-path loan prevents taking its backing,
+            // independently of the normal-path state from the same call.
+            const auto diagnostics = analyze_test_errors(declarations + R"(
+        fn invalid(flag: bool) {
+            let value = 1;
+            let owner = [value]() => value;
+            var selected: fn() -> i32 = empty;
+            try {
+                replace(&selected, owner, flag)?;
+            } catch {
+                Failure(_) => { let moved = &&owner; },
+            }
+        }
+    )");
+            ct::expect_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict);
+        }
+    );
+
     ct::test("Semantic ownership: definite aliases preserve ordered loan replacement", [] static noexcept {
         static_cast<void>(analyze_test_program(
             "fn empty() -> i32 => 0;\n"
@@ -740,7 +792,7 @@ const ct::Suite tests([] static noexcept {
         fn leaf() {}
         fn caller() { apply(leaf); }
     )");
-            const auto components = ownership_recursion_components(program);
+            const auto components = prepare_ownership_analysis(program).recursion_components;
             const auto callables = test_function_callables(program);
             if (!ct::expect_equal(callables.size(), 4uz)) {
                 return;
@@ -766,7 +818,7 @@ const ct::Suite tests([] static noexcept {
         fn leaf() {}
         fn caller() { []() { apply(leaf); }(); }
     )");
-            const auto components = ownership_recursion_components(program);
+            const auto components = prepare_ownership_analysis(program).recursion_components;
             auto distinct = std::flat_set<std::uint32_t>();
             for (const auto& [body, component] : components) {
                 static_cast<void>(body);
@@ -776,6 +828,577 @@ const ct::Suite tests([] static noexcept {
                 return;
             }
             ct::expect_equal(distinct.size(), components.size());
+        }
+    );
+
+    ct::test(
+        "Semantic ownership: constant array backing permits immediate views but rejects holders",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+        const owned = [1, 2];
+        fn view_of(values: [i32; 2]) -> [i32] => values;
+        fn valid() -> usize { return view_of(owned).len(); }
+    )");
+            auto constant_arguments = 0uz;
+            for (const auto [id, declaration] : program.declarations().functions()) {
+                static_cast<void>(id);
+                if (program.provenance().spelling(declaration.name) != "valid") {
+                    continue;
+                }
+                const auto body = program.declarations().body_for_callable(declaration.callable);
+                ct::require(body.has_value());
+                visit_semantic_nodes(
+                    program.bodies().body(*body).region(),
+                    [&](const SemanticExpression& expression) noexcept {
+                        const auto* call = std::get_if<SemCall>(&expression.value);
+                        if (call == nullptr) {
+                            return;
+                        }
+                        if (!ct::expect_equal(call->arguments.size(), 1uz)) {
+                            return;
+                        }
+                        const auto& argument = call->arguments.front();
+                        ct::expect_equal(argument.access, AccessMode::Read);
+                        ct::expect_equal(
+                            argument.expression.category,
+                            SemanticValueCategory::Value
+                        );
+                        const auto* constant = std::get_if<SemConstant>(&argument.expression.value);
+                        if (!ct::expect(constant != nullptr)) {
+                            return;
+                        }
+                        const auto* type = std::get_if<ArrayTypeValue>(
+                            &program.types().type(argument.expression.type.resolved()).value
+                        );
+                        if (!ct::expect(type != nullptr)) {
+                            return;
+                        }
+                        ct::expect_equal(type->extent, 2ull);
+                        const auto* element = std::get_if<BuiltinTypeValue>(
+                            &program.types().type(type->element).value
+                        );
+                        if (!ct::expect(element != nullptr)) {
+                            return;
+                        }
+                        ct::expect_equal(element->kind, BuiltinType::I32);
+                        const auto* values = std::get_if<ArrayConstant>(
+                            &program.constants().constant(constant->constant).value
+                        );
+                        if (!ct::expect(values != nullptr)) {
+                            return;
+                        }
+                        ct::expect_equal(values->elements.size(), 2uz);
+                        ++constant_arguments;
+                    }
+                );
+            }
+            ct::expect_equal(constant_arguments, 1uz);
+
+            auto sources = SourceManager();
+            const auto source_id = sources.append_virtual("analysis.cv", R"(
+        const owned = [1, 2];
+        fn view_of(values: [i32; 2]) -> [i32] => values;
+        fn invalid() {
+            let escaped = view_of(owned);
+            let length = escaped.len();
+        }
+    )");
+            ct::require(source_id.has_value());
+            const auto input = SourceModuleInput {
+                .source_id = *source_id,
+                .module_path = semantic_test_module_path(),
+            };
+            auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
+            ct::require(parsed.has_value());
+            const auto result = analyze(std::move(*parsed));
+            if (!ct::expect(!result.has_value())) {
+                return;
+            }
+            const auto* diagnostic =
+                ct::find_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
+            ct::expect_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
+            if (diagnostic == nullptr) {
+                return;
+            }
+            ct::expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
+            if (!ct::expect(diagnostic->attachment.primary.has_value())) {
+                return;
+            }
+            ct::expect_equal(
+                sources.slice(diagnostic->attachment.primary->span),
+                "let escaped = view_of(owned)"
+            );
+        }
+    );
+    ct::test(
+        "Semantic ownership: caller diagnosis observes completed dependency answers",
+        [] static noexcept {
+            static_cast<void>(analyze_test_program(R"(fn valid() {
+    let owner: String = "text";
+    var view = owner.as_str();
+    forward(&view);
+    let moved = &&owner;
+}
+fn forward(&view: str) { release(&view); }
+fn release(&view: str) { view = ""; }
+)"));
+            const auto diagnostics = analyze_test_errors(R"(fn invalid(flag: bool) {
+    let owner: String = "text";
+    var view = owner.as_str();
+    forward(&view, flag);
+    let moved = &&owner;
+}
+fn forward(&view: str, flag: bool) { release(&view, flag); }
+fn release(&view: str, flag: bool) { if flag { view = ""; } }
+)");
+            ct::expect_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict);
+        }
+    );
+
+    ct::test(
+        "Semantic ownership: diagnosis publication follows query order and invalid completion",
+        [] static noexcept {
+            struct Scenario final {
+                std::string_view name;
+                std::string_view source;
+                DiagnosticCode code;
+                std::string_view primary_range;
+            };
+            const auto scenarios = std::array {
+                Scenario {
+                    .name = "earlier query precedes an independently solved error",
+                    .source = R"(fn plain() -> i32 => 1;
+fn earlier() {
+    let x = 1;
+    let moved = &&x;
+    let observed = x;
+    let result = plain();
+}
+fn later() {
+    let y = 2;
+    let moved = &&y;
+    let observed = y;
+}
+)",
+                    .code = DiagnosticCode::AccessUnavailable,
+                    .primary_range = "let observed = x;",
+                },
+                Scenario {
+                    .name = "invalid completion precedes earlier deferred error",
+                    .source = R"(fn copied(&&text: String) -> String => text;
+fn earlier() {
+    let owner = 1;
+    let moved = &&owner;
+    let observed = owner;
+}
+fn escaping() {
+    let factory = []() {
+        var local = 1;
+        return [&local]() { local += 1; };
+    };
+}
+)",
+                    .code = DiagnosticCode::AccessBorrowConflict,
+                    .primary_range = "",
+                },
+            };
+            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                auto sources = SourceManager();
+                const auto source_id =
+                    sources.append_virtual("analysis.cv", std::string(scenario.source));
+                ct::require(source_id.has_value());
+                const auto input = SourceModuleInput {
+                    .source_id = *source_id,
+                    .module_path = semantic_test_module_path(),
+                };
+                auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
+                ct::require(parsed.has_value());
+                const auto result = analyze(std::move(*parsed));
+                if (!ct::expect(!result.has_value())) {
+                    return;
+                }
+                const auto* diagnostic = ct::find_diagnostic(result.error(), scenario.code);
+                if (!ct::expect_diagnostic(result.error(), scenario.code)
+                    || diagnostic == nullptr
+                    || !ct::expect(diagnostic->attachment.primary.has_value())) {
+                    return;
+                }
+                const auto& primary = diagnostic->attachment.primary->span;
+                ct::expect(primary.source_id == *source_id);
+                const auto first = scenario.source.find(scenario.primary_range);
+                ct::require(first != std::string_view::npos);
+                ct::expect_greater_equal(primary.span.start(), first);
+                if (scenario.code == DiagnosticCode::AccessUnavailable) {
+                    ct::expect_less(primary.span.start(), first + scenario.primary_range.size());
+                } else {
+                    ct::expect_equal(primary.span.start(), 0u);
+                    ct::expect_greater(primary.span.end(), scenario.source.find("return [&local]"));
+                    if (!ct::expect(!diagnostic->attachment.related.empty())) {
+                        return;
+                    }
+                    const auto& related = diagnostic->attachment.related.front().span;
+                    ct::expect(related.source_id == *source_id);
+                    ct::expect_equal(sources.slice(related), "[&local]() { local += 1; }");
+                    ct::expect_no_diagnostic(result.error(), DiagnosticCode::AccessUnavailable);
+                }
+                ct::expect_no_diagnostic(result.error(), DiagnosticCode::LintReturnCopy);
+            });
+        }
+    );
+
+    ct::test(
+        "Semantic availability: converged states preserve direct Take witnesses",
+        [] static noexcept {
+            struct Scenario final {
+                std::string_view name;
+                std::string_view source;
+            };
+            const auto scenarios = std::array {
+                Scenario {
+                    .name = "loop backedge observes its Take",
+                    .source = R"(struct Payload { value: i32 }
+fn invalid(flag: bool) {
+    let payload = Payload { value: 1 };
+    while flag { let moved = &&payload; }
+}
+)",
+                },
+                Scenario {
+                    .name = "branch joins keep the earliest Take",
+                    .source = R"(struct Payload { value: i32 }
+fn invalid(flag: bool) {
+    let payload = Payload { value: 1 };
+    if flag { let first = &&payload; }
+    else { let second = &&payload; }
+    let observed = payload.value;
+}
+)",
+                },
+            };
+            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                auto sources = SourceManager();
+                const auto source_id =
+                    sources.append_virtual("analysis.cv", std::string(scenario.source));
+                ct::require(source_id.has_value());
+                const auto input = SourceModuleInput {
+                    .source_id = *source_id,
+                    .module_path = semantic_test_module_path(),
+                };
+                auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
+                ct::require(parsed.has_value());
+                const auto result = analyze(std::move(*parsed));
+                if (!ct::expect(!result.has_value())) {
+                    return;
+                }
+                const auto* diagnostic =
+                    ct::find_diagnostic(result.error(), DiagnosticCode::AccessUnavailable);
+                if (!ct::expect_diagnostic(result.error(), DiagnosticCode::AccessUnavailable)
+                    || diagnostic == nullptr
+                    || !ct::expect(diagnostic->attachment.primary.has_value())
+                    || !ct::expect(!diagnostic->attachment.related.empty())) {
+                    return;
+                }
+                const auto& primary = diagnostic->attachment.primary->span;
+                const auto& related = diagnostic->attachment.related.front().span;
+                ct::expect(primary.source_id == *source_id);
+                ct::expect(related.source_id == *source_id);
+                const auto declaration = scenario.source.find("let payload") + 4uz;
+                ct::expect_equal(primary.span.start(), declaration);
+                ct::expect_equal(sources.slice(primary), "payload");
+                ct::expect_equal(sources.slice(related), "&&");
+                ct::expect_equal(related.span.start(), scenario.source.find("&&payload"));
+            });
+        }
+    );
+
+    ct::test(
+        "Semantic ownership: return-copy observations deduplicate across borrowed inputs",
+        [] static noexcept {
+            auto sources = SourceManager();
+            const auto source_id = sources.append_virtual(
+                "analysis.cv",
+                R"(fn copied(&&copied_text: String, tokens: [i32]) -> String => copied_text;
+fn blocked(&&blocked_text: String, tokens: [i32]) -> String {
+    let held = blocked_text.as_str();
+    let length = held.len();
+    return blocked_text;
+}
+fn forward_copied(&&text: String, tokens: [i32]) -> String => copied(&&text, tokens);
+fn forward_blocked(&&text: String, tokens: [i32]) -> String => blocked(&&text, tokens);
+fn invoke() {
+    let first: String = "first";
+    let second: String = "second";
+    let values = [1, 2];
+    let copied_value = forward_copied(&&first, values);
+    let blocked_value = forward_blocked(&&second, values);
+}
+)"
+            );
+            ct::require(source_id.has_value());
+            const auto input = SourceModuleInput {
+                .source_id = *source_id,
+                .module_path = semantic_test_module_path(),
+            };
+            auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
+            ct::require(parsed.has_value());
+            const auto result = analyze(std::move(*parsed));
+            if (!ct::expect(result.has_value())) {
+                return;
+            }
+            auto returned = std::vector<std::string_view>();
+            for (const auto& diagnostic : result->diagnostics) {
+                if (diagnostic.finding.code != DiagnosticCode::LintReturnCopy) {
+                    continue;
+                }
+                if (!ct::expect(diagnostic.attachment.primary.has_value())) {
+                    return;
+                }
+                ct::expect(diagnostic.attachment.primary->span.source_id == *source_id);
+                returned.push_back(sources.slice(diagnostic.attachment.primary->span));
+            }
+            ct::expect(returned == std::vector<std::string_view> {"copied_text"});
+        }
+    );
+
+    ct::test(
+        "Semantic ownership: direct enum values retain caller backing and reject local escape",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(enum Values { Borrowed([i32]), Empty }
+fn pack(values: [i32]) -> Values => Values::Borrowed(values);
+fn valid(values: [i32]) -> usize {
+    let wrapped = pack(values);
+    return match wrapped { .Borrowed(items) => items.len(), .Empty => 0usize };
+}
+)");
+            auto constructors = 0uz;
+            for (const auto [id, declaration] : program.declarations().functions()) {
+                static_cast<void>(id);
+                if (program.provenance().spelling(declaration.name) != "pack") {
+                    continue;
+                }
+                const auto body = program.declarations().body_for_callable(declaration.callable);
+                ct::require(body.has_value());
+                visit_semantic_nodes(
+                    program.bodies().body(*body).region(),
+                    [&](const SemanticExpression& expression) noexcept {
+                        ct::expect_equal(std::holds_alternative<SemCall>(expression.value), false);
+                        const auto* value = std::get_if<SemEnumCase>(&expression.value);
+                        if (value == nullptr) {
+                            return;
+                        }
+                        ++constructors;
+                        if (!ct::expect_equal(value->payload.size(), 1uz)) {
+                            return;
+                        }
+                        ct::expect_equal(
+                            std::holds_alternative<SliceTypeValue>(
+                                program.types().type(value->payload.front().type.resolved()).value
+                            ),
+                            true
+                        );
+                    }
+                );
+            }
+            ct::expect_equal(constructors, 1uz);
+            const auto diagnostics = analyze_test_errors(R"(enum Values { Borrowed([i32]), Empty }
+fn invalid() -> Values {
+    let values = [1, 2];
+    return Values::Borrowed(values);
+}
+)");
+            ct::expect_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict);
+        }
+    );
+
+    ct::test(
+        "Semantic callable views: a known native target keeps its view representation",
+        [] static noexcept {
+            const auto program =
+                analyze_test_program(R"(private import(cpp) fn native_step(value: i32) -> i32;
+fn known_view(value: i32) -> i32 {
+    let view: fn(i32) -> i32 = native_step;
+    return view(value);
+}
+)");
+            auto calls = 0uz;
+            for (const auto [id, declaration] : program.declarations().functions()) {
+                static_cast<void>(id);
+                if (program.provenance().spelling(declaration.name) != "known_view") {
+                    continue;
+                }
+                const auto body = program.declarations().body_for_callable(declaration.callable);
+                ct::require(body.has_value());
+                visit_semantic_nodes(
+                    program.bodies().body(*body).region(),
+                    [&](const SemanticExpression& expression) noexcept {
+                        const auto* call = std::get_if<SemCall>(&expression.value);
+                        if (call == nullptr) {
+                            return;
+                        }
+                        ct::expect_equal(
+                            std::holds_alternative<CallableViewTypeValue>(
+                                program.types().type(call->callee->type.resolved()).value
+                            ),
+                            true
+                        );
+                        if (!ct::expect(call->target.has_value())) {
+                            return;
+                        }
+                        ct::expect_equal(
+                            std::holds_alternative<CppImportImplementation>(
+                                program.declarations().callable(*call->target).implementation
+                            ),
+                            true
+                        );
+                        ++calls;
+                    }
+                );
+            }
+            ct::expect_equal(calls, 1uz);
+        }
+    );
+
+    ct::test(
+        "Semantic stable selection: native Write respects the protected selector",
+        [] static noexcept {
+            static_cast<void>(
+                analyze_test_program(R"(private import(cpp) fn native_write(&value: i32) -> bool;
+fn valid() {
+    var selected = 1;
+    var other = 1;
+    match selected { _ if native_write(&other) => {}, _ => {} }
+}
+)")
+            );
+            const auto diagnostics =
+                analyze_test_errors(R"(private import(cpp) fn native_write(&value: i32) -> bool;
+fn invalid() {
+    var selected = 1;
+    match selected { _ if native_write(&selected) => {}, _ => {} }
+}
+)");
+            ct::expect_diagnostic(diagnostics, DiagnosticCode::AccessOperationConflict);
+        }
+    );
+
+    ct::test(
+        "Semantic ownership: binary operands protect a view until the right operand finishes",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(fn valid() {
+    var owner: String = "abc";
+    var view = owner.as_str();
+    let compared = view == "";
+    view = "";
+    owner.clear();
+}
+)");
+            auto comparisons = 0uz;
+            for (const auto [id, declaration] : program.declarations().functions()) {
+                static_cast<void>(id);
+                if (program.provenance().spelling(declaration.name) != "valid") {
+                    continue;
+                }
+                const auto body = program.declarations().body_for_callable(declaration.callable);
+                ct::require(body.has_value());
+                visit_semantic_nodes(
+                    program.bodies().body(*body).region(),
+                    [&](const SemanticExpression& expression) noexcept {
+                        const auto* comparison = std::get_if<SemBinary>(&expression.value);
+                        if (comparison == nullptr) {
+                            return;
+                        }
+                        ct::expect_equal(
+                            std::holds_alternative<SemBinding>(comparison->left->value),
+                            true
+                        );
+                        ct::expect_equal(
+                            std::holds_alternative<SemConstant>(comparison->right->value),
+                            true
+                        );
+                        ++comparisons;
+                    }
+                );
+            }
+            ct::expect_equal(comparisons, 1uz);
+
+            auto sources = SourceManager();
+            const auto source_id = sources.append_virtual("analysis.cv", R"(fn invalid() {
+    var owner: String = "abc";
+    var view = owner.as_str();
+    let compared = view == (if true {
+        view = "";
+        owner.clear();
+        ""
+    } else { "" });
+}
+)");
+            ct::require(source_id.has_value());
+            const auto input = SourceModuleInput {
+                .source_id = *source_id,
+                .module_path = semantic_test_module_path(),
+            };
+            auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
+            ct::require(parsed.has_value());
+            const auto result = analyze(std::move(*parsed));
+            if (!ct::expect(!result.has_value())) {
+                return;
+            }
+            const auto* diagnostic =
+                ct::find_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
+            if (!ct::expect_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict)
+                || diagnostic == nullptr
+                || !ct::expect(diagnostic->attachment.primary.has_value())
+                || !ct::expect(!diagnostic->attachment.related.empty())) {
+                return;
+            }
+            const auto& primary = diagnostic->attachment.primary->span;
+            const auto& related = diagnostic->attachment.related.front().span;
+            ct::expect(primary.source_id == *source_id);
+            ct::expect(related.source_id == *source_id);
+            ct::expect_equal(sources.slice(primary), "owner.clear()");
+            ct::expect_equal(sources.slice(related), "owner.as_str()");
+        }
+    );
+
+    ct::test(
+        "Semantic availability: a failing binary left operand skips its unavailable right binding",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(struct Failure {}
+fn stop() -> i32 throw Failure { throw Failure {}; }
+fn valid() -> i32 throw Failure {
+    let value = 1;
+    let moved = &&value;
+    return stop()? + value;
+}
+)");
+            auto additions = 0uz;
+            for (const auto [id, declaration] : program.declarations().functions()) {
+                static_cast<void>(id);
+                if (program.provenance().spelling(declaration.name) != "valid") {
+                    continue;
+                }
+                const auto body = program.declarations().body_for_callable(declaration.callable);
+                ct::require(body.has_value());
+                visit_semantic_nodes(
+                    program.bodies().body(*body).region(),
+                    [&](const SemanticExpression& expression) noexcept {
+                        const auto* addition = std::get_if<SemBinary>(&expression.value);
+                        if (addition == nullptr) {
+                            return;
+                        }
+                        ct::expect_equal(
+                            std::holds_alternative<SemPropagate>(addition->left->value),
+                            true
+                        );
+                        ct::expect_equal(
+                            std::holds_alternative<SemBinding>(addition->right->value),
+                            true
+                        );
+                        ++additions;
+                    }
+                );
+            }
+            ct::expect_equal(additions, 1uz);
         }
     );
 });

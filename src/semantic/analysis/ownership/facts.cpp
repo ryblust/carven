@@ -4,8 +4,13 @@ import :semantic.analysis.coverage;
 import :semantic.analysis.ownership.context;
 import std;
 
-auto prepare_ownership_body_facts(const SemIRBody& body, const SemIRProgram& program) noexcept
-    -> OwnershipBodyFacts {
+namespace {
+
+auto prepare_ownership_body_facts(
+    const SemIRBody& body,
+    const SemIRProgram& program,
+    OwnershipRecursionBuilder& recursion
+) noexcept -> OwnershipBodyFacts {
     auto facts = OwnershipBodyFacts {};
     const auto add = [&](TypeID type, ProgramOriginID origin, LifetimeRegionID lifetime) noexcept {
         const auto index = facts.locals.size();
@@ -19,7 +24,9 @@ auto prepare_ownership_body_facts(const SemIRBody& body, const SemIRProgram& pro
         }
         add(binding.type, binding.origin, binding.lifetime);
     }
+    recursion.begin_body(body.id());
     visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
+        recursion.observe(expression);
         const auto contents = program.type_contents(expression.type.resolved());
         if (!expression.selects_storage()
             && (contents.contains_closure_owner
@@ -75,4 +82,16 @@ auto prepare_ownership_body_facts(const SemIRBody& body, const SemIRProgram& pro
         }
     });
     return facts;
+}
+
+} // namespace
+
+auto prepare_ownership_analysis(const SemIRProgram& program) noexcept -> OwnershipPreparation {
+    auto result = OwnershipPreparation {};
+    auto recursion = OwnershipRecursionBuilder(program);
+    for (const auto [id, body] : program.bodies().entries()) {
+        result.body_facts.emplace(id, prepare_ownership_body_facts(body, program, recursion));
+    }
+    result.recursion_components = std::move(recursion).finish();
+    return result;
 }

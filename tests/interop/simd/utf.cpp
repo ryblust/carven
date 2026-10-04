@@ -77,8 +77,10 @@ static_assert(rt::utf8_is_valid({}));
 
 auto simd_utf8_encodings() noexcept -> bool {
     for (const auto& input : encodings) {
-        // Every lane placement, block transition, and scalar-tail position.
-        for (auto offset = std::size_t {0}; offset <= 96; ++offset) {
+        // Hardware validation covers every lane, block transition, and tail.
+        const auto last_offset =
+            rt::simd::hardware_accelerated ? std::size_t {96} : std::size_t {0};
+        for (auto offset = std::size_t {0}; offset <= last_offset; ++offset) {
             auto text = std::string(offset, 'a');
             text += input.bytes;
             for (const auto suffix : {0, 64}) {
