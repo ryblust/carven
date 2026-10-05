@@ -14,109 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ubuntu:
-    name: Ubuntu / LLVM / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [release, debug]
-    runs-on: ubuntu-26.04
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: bash
-        working-directory: carven
-    env:
-      CARVEN_XMAKE_REPO_DIR: ${{ github.workspace }}/carven-xmake-repo
-      # Exit directly so expected-SIGABRT fixtures cannot swallow ASan failures.
-      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1:abort_on_error=0:exitcode=86' || '' }}
-      UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'halt_on_error=1:print_stacktrace=1' || '' }}
-      # Match the project sanitizers option for native compilation outside Xmake.
-      SANITIZER_FLAGS: >-
-        -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
-        -fsanitize-address-use-after-scope -fno-sanitize-recover=all
-
-    steps:
-      - name: Check out Carven
-        uses: actions/checkout@v7
-        with:
-          path: carven
-          persist-credentials: false
-
-      - name: Check out build rules
-        uses: actions/checkout@v7
-        with:
-          repository: ryblust/carven-xmake-repo
-          path: carven-xmake-repo
-          persist-credentials: false
-
-      - name: Install patch-compatible Xmake
-        uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          xmake-version: '3.1.1'
-
-      - name: Install LLVM on Ubuntu
-        run: |
-          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
-          sudo bash "$RUNNER_TEMP/llvm.sh" 23 all
-          echo "/usr/lib/llvm-23/bin" >> "$GITHUB_PATH"
-
-      - name: Show toolchain versions
-        run: |
-          ./xmakew --version
-          clang --version
-          llvm-symbolizer --version
-          clang-tidy --version
-          clang-format --version
-
-      - name: Configure build
-        run: ./xmakew f -y -m ${{ matrix.mode }} --sanitizers=${{ matrix.mode == 'debug' && 'y' || 'n' }}
-
-      - name: Configure native execution checks
-        if: matrix.mode == 'debug'
-        run: |
-          # `carven run` invokes CXX directly, outside Xmake's target flags.
-          cat > "$RUNNER_TEMP/carven-sanitizer-clang++" <<'EOF'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          read -r -a flags <<< "$SANITIZER_FLAGS"
-          exec clang++ -stdlib=libc++ \
-            -fsanitize=address,undefined "${flags[@]}" "$@"
-          EOF
-          chmod +x "$RUNNER_TEMP/carven-sanitizer-clang++"
-          echo "CXX=$RUNNER_TEMP/carven-sanitizer-clang++" >> "$GITHUB_ENV"
-
-      - name: Verify sanitizer runtimes
-        if: matrix.mode == 'debug'
-        run: |
-          source="$RUNNER_TEMP/sanitizer-smoke.cpp"
-          binary="$RUNNER_TEMP/sanitizer-smoke"
-          echo 'int main() { int* p = new int[1]; delete[] p; return *static_cast<volatile int*>(p); }' > "$source"
-          "$CXX" "$source" -o "$binary"
-          status=0
-          "$binary" > "$RUNNER_TEMP/sanitizer-smoke.log" 2>&1 || status=$?
-          test "$status" -eq 86
-          grep -q 'AddressSanitizer: heap-use-after-free' "$RUNNER_TEMP/sanitizer-smoke.log"
-          echo 'int main() { volatile int value = 2147483647; return value + 1; }' > "$source"
-          "$CXX" "$source" -o "$binary"
-          status=0
-          "$binary" > "$RUNNER_TEMP/sanitizer-smoke.log" 2>&1 || status=$?
-          test "$status" -ne 0
-          grep -q 'runtime error: signed integer overflow' "$RUNNER_TEMP/sanitizer-smoke.log"
-
-      - name: Show detected toolchain
-        run: ./xmakew show -t carven
-
-      - name: Build compiler
-        run: ./xmakew build -y
-
-      - name: Test all groups
-        run: ./xmakew test
-
-      - name: Clang-tidy
-        if: matrix.mode == 'release'
-        run: ./xmakew check clang.tidy
-
   macos:
     name: macOS / LLVM / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
     strategy:
@@ -218,6 +115,109 @@ jobs:
       - name: Check formatting
         if: matrix.mode == 'release'
         run: ./xmakew format-check
+
+      - name: Clang-tidy
+        if: matrix.mode == 'release'
+        run: ./xmakew check clang.tidy
+
+  ubuntu:
+    name: Ubuntu / LLVM / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [release, debug]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: carven
+    env:
+      CARVEN_XMAKE_REPO_DIR: ${{ github.workspace }}/carven-xmake-repo
+      # Exit directly so expected-SIGABRT fixtures cannot swallow ASan failures.
+      ASAN_OPTIONS: ${{ matrix.mode == 'debug' && 'detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1:abort_on_error=0:exitcode=86' || '' }}
+      UBSAN_OPTIONS: ${{ matrix.mode == 'debug' && 'halt_on_error=1:print_stacktrace=1' || '' }}
+      # Match the project sanitizers option for native compilation outside Xmake.
+      SANITIZER_FLAGS: >-
+        -O1 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
+        -fsanitize-address-use-after-scope -fno-sanitize-recover=all
+
+    steps:
+      - name: Check out Carven
+        uses: actions/checkout@v7
+        with:
+          path: carven
+          persist-credentials: false
+
+      - name: Check out build rules
+        uses: actions/checkout@v7
+        with:
+          repository: ryblust/carven-xmake-repo
+          path: carven-xmake-repo
+          persist-credentials: false
+
+      - name: Install patch-compatible Xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: '3.1.1'
+
+      - name: Install LLVM on Ubuntu
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+          sudo bash "$RUNNER_TEMP/llvm.sh" 23 all
+          echo "/usr/lib/llvm-23/bin" >> "$GITHUB_PATH"
+
+      - name: Show toolchain versions
+        run: |
+          ./xmakew --version
+          clang --version
+          llvm-symbolizer --version
+          clang-tidy --version
+          clang-format --version
+
+      - name: Configure build
+        run: ./xmakew f -y -m ${{ matrix.mode }} --sanitizers=${{ matrix.mode == 'debug' && 'y' || 'n' }}
+
+      - name: Configure native execution checks
+        if: matrix.mode == 'debug'
+        run: |
+          # `carven run` invokes CXX directly, outside Xmake's target flags.
+          cat > "$RUNNER_TEMP/carven-sanitizer-clang++" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          read -r -a flags <<< "$SANITIZER_FLAGS"
+          exec clang++ -stdlib=libc++ \
+            -fsanitize=address,undefined "${flags[@]}" "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/carven-sanitizer-clang++"
+          echo "CXX=$RUNNER_TEMP/carven-sanitizer-clang++" >> "$GITHUB_ENV"
+
+      - name: Verify sanitizer runtimes
+        if: matrix.mode == 'debug'
+        run: |
+          source="$RUNNER_TEMP/sanitizer-smoke.cpp"
+          binary="$RUNNER_TEMP/sanitizer-smoke"
+          echo 'int main() { int* p = new int[1]; delete[] p; return *static_cast<volatile int*>(p); }' > "$source"
+          "$CXX" "$source" -o "$binary"
+          status=0
+          "$binary" > "$RUNNER_TEMP/sanitizer-smoke.log" 2>&1 || status=$?
+          test "$status" -eq 86
+          grep -q 'AddressSanitizer: heap-use-after-free' "$RUNNER_TEMP/sanitizer-smoke.log"
+          echo 'int main() { volatile int value = 2147483647; return value + 1; }' > "$source"
+          "$CXX" "$source" -o "$binary"
+          status=0
+          "$binary" > "$RUNNER_TEMP/sanitizer-smoke.log" 2>&1 || status=$?
+          test "$status" -ne 0
+          grep -q 'runtime error: signed integer overflow' "$RUNNER_TEMP/sanitizer-smoke.log"
+
+      - name: Show detected toolchain
+        run: ./xmakew show -t carven
+
+      - name: Build compiler
+        run: ./xmakew build -y
+
+      - name: Test all groups
+        run: ./xmakew test
 
       - name: Clang-tidy
         if: matrix.mode == 'release'
