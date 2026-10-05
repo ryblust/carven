@@ -13,6 +13,6 @@ auto compile(
     const SourceManager& sources,
     SourceBatch batch,
     const TargetPlanningRequest& generation,
-    const ExecutionOutput& output = {},
-    const TimingOutput& timings = {}
+    ExecutionOutput output = {},
+    TimingOutput timings = {}
 ) noexcept -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics>;

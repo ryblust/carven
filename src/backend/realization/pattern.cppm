@@ -7,6 +7,7 @@ import :backend.target.expr;
 import :semantic.semir.completion;
 import :semantic.semir.ids;
 import :semantic.semir.structured;
+import :support.function_ref;
 import :support.task;
 import std;
 
@@ -30,8 +31,9 @@ struct PatternSelection final {
 
 // The caller keeps the subject storage alive through matching and selected
 // binding construction. Alternatives join only distinct realized sources.
-using PatternBoundRealizer = std::function<
-    ContinuationTask<std::optional<TargetExpr>>(PatternID, bool, LoweringStmtBuilder&)>;
+// The bound callable outlives the realizer and its outstanding matching tasks.
+using PatternBoundRealizer = FunctionRef<
+    ContinuationTask<std::optional<TargetExpr>>(PatternID, bool, LoweringStmtBuilder&) noexcept>;
 
 class PatternRealizer final {
 public:

@@ -11,5 +11,5 @@ import std;
 auto parse(
     const SourceManager& sources,
     const TokenBuffer& tokens,
-    const TimingOutput& timings = {}
+    TimingOutput timings = {}
 ) noexcept -> std::expected<SyntaxTree, Diagnostics>;

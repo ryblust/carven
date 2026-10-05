@@ -8,6 +8,7 @@ import :semantic.semir.stage;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :semantic.visibility;
+import :support.function_ref;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -107,7 +108,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         (test ? tests : production)[callable.index()] = 1;
     };
 
-    auto visit_callable = std::function<void(ModuleID, CallableID, bool)>();
+    auto visit_callable = FunctionRef<void(ModuleID, CallableID, bool) noexcept>();
     const auto visit_closure = [&](ModuleID module_id, CallableID closure, bool test) noexcept {
         record(module_id, closure, test);
         auto& scanned = (test ? scanned_tests : scanned_production)[closure.index()];
@@ -116,11 +117,13 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
             visit_callable(module_id, closure, test);
         }
     };
-    visit_callable = [&](ModuleID module_id, CallableID callable, bool test) noexcept {
-        for (const auto closure : semantic.callable_surface(callable).closures) {
-            visit_closure(module_id, closure, test);
-        }
-    };
+    const auto visit_callable_body =
+        [&](ModuleID module_id, CallableID callable, bool test) noexcept {
+            for (const auto closure : semantic.callable_surface(callable).closures) {
+                visit_closure(module_id, closure, test);
+            }
+        };
+    visit_callable = visit_callable_body;
     const auto visit_body = [&](ModuleID module_id, BodyID body_id, bool test) noexcept {
         visit_semantic_nodes(
             semantic.bodies().body(body_id).region(),
@@ -232,8 +235,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
     auto test_order = std::vector<std::vector<CallableID>>(module_count);
     auto state = std::vector<std::uint8_t>(callable_count);
     auto definition_order = std::vector<CallableID>();
-    auto order = std::function<void(CallableID, bool)>();
-    order = [&](CallableID callable, bool test) noexcept {
+    const auto order = [&](this const auto& self, CallableID callable, bool test) noexcept -> void {
         if (state[callable.index()] == 2) {
             return;
         }
@@ -247,7 +249,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                 invariant_violation("closure target type depends on an unowned closure");
             }
             if (production[dependency.index()] != 0 || (test && tests[dependency.index()] != 0)) {
-                order(dependency, test && production[dependency.index()] == 0);
+                self(dependency, test && production[dependency.index()] == 0);
             }
         }
         state[callable.index()] = 2;

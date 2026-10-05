@@ -15,9 +15,9 @@ borrowed by these local allocators. `ModuleLowering::field_identifier` derives
 nominal member names from their semantic identity and planned enclosing name.
 Source encoding is injective: reserved C++ names and source spellings in its escape
 domain are encoded. The plan also owns encoded public namespace and function names
-shared by API headers and export façades. Artifact paths retain canonical source names. Closure types are
-numbered by their discovery order within the owner module, so other modules
-cannot renumber them.
+shared by API headers and export façades. Artifact paths retain canonical source names.
+Closure types are numbered by their discovery order within the owner module, so other
+modules cannot renumber them.
 
 Semantic visibility and C++ definition requirements determine interface
 artifacts. Declaration-only dependencies use forward declarations. Complete
@@ -156,9 +156,9 @@ boundary; command links and explicit choice frames share the remaining work. Bin
 preserves the expression tree using C++ precedence and associativity. Nested
 comparisons on either side receive explicit parentheses to make their grouping
 visible. An `else` body that contains only a generated conditional renders as
-`else if`; realization composes two-way conditionals. Semantic inference and target syntax construction finish
-before rendering. Artifact collection checks logical paths, uniqueness, and prefix
-safety.
+`else if`; realization composes two-way conditionals. Semantic inference and
+target syntax construction finish before rendering. Artifact collection checks
+logical paths, uniqueness, and prefix safety.
 
 Continuation indentation is bounded by half the configured line width, keeping
 whitespace proportional to syntax size. Child-before-parent width summaries

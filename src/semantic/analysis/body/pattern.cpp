@@ -488,6 +488,9 @@ auto BodyElaborator::build_pattern(
 
 auto BodyElaborator::resolve_pattern_constraint(const ASTConstraintOperand& operand) noexcept
     -> AnalysisTask<ConstructionTypeRef> {
+    const auto resolve_extent = [&](ASTExprID extent) noexcept {
+        return resolve_array_extent(extent);
+    };
     co_return (co_await resolve_source_constraint_type(
         draft(),
         catalog(),
@@ -495,7 +498,7 @@ auto BodyElaborator::resolve_pattern_constraint(const ASTConstraintOperand& oper
         source_module_id,
         ast,
         operand,
-        [&](ASTExprID extent) noexcept { return resolve_array_extent(extent); }
+        resolve_extent
     ));
 }
 

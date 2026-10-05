@@ -10,14 +10,18 @@ namespace {
 
 auto describe_diagnostics(std::ostream& output, std::span<const Diagnostic> diagnostics) noexcept
     -> void {
-    output << "\n  actual diagnostics:";
+    std::print(output, "\n  actual diagnostics:");
     if (diagnostics.empty()) {
-        output << " (none)";
+        std::print(output, " (none)");
         return;
     }
     for (const auto& diagnostic : diagnostics) {
-        output << "\n    " << diagnostic_code_info(diagnostic.finding.code).name << ": "
-               << diagnostic.finding.message;
+        std::print(
+            output,
+            "\n    {}: {}",
+            diagnostic_code_info(diagnostic.finding.code).name,
+            diagnostic.finding.message
+        );
     }
 }
 
@@ -42,7 +46,7 @@ auto expect_diagnostic(
         false,
         location,
         [&](std::ostream& output) noexcept {
-            output << "\n  expected diagnostic: " << diagnostic_code_info(code).name;
+            std::print(output, "\n  expected diagnostic: {}", diagnostic_code_info(code).name);
             describe_diagnostics(output, diagnostics);
         }
     );
@@ -58,7 +62,7 @@ auto expect_no_diagnostic(
         false,
         location,
         [&](std::ostream& output) noexcept {
-            output << "\n  unexpected diagnostic: " << diagnostic_code_info(code).name;
+            std::print(output, "\n  unexpected diagnostic: {}", diagnostic_code_info(code).name);
             describe_diagnostics(output, diagnostics);
         }
     );

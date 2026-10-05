@@ -109,8 +109,8 @@ equality within the input without recording which ancestor allocated them.
 Recursion components are strongly connected components of direct call targets;
 a call without a concrete target conservatively reaches every body that is used
 as a callable value outside an immediate call. A summary that may represent
-multiple objects retains that property through subsequent calls. Exact inline traversal stops at
-slice backing and ambiguous or unknown-index targets. The semantic restrictions
+multiple objects retains that property through subsequent calls. Exact inline traversal
+stops at slice backing and ambiguous or unknown-index targets. The semantic restrictions
 on callable-view storage in nominal types and captures bound inline callable
 chains. Allocation identity is separate from diagnostic provenance.
 
@@ -152,9 +152,9 @@ after every query succeeds. Solver and diagnosis state remain private to analysi
 ### Control flow and diagnostics
 
 Unfinished calls retain direct place and borrowed-target accesses. Array iteration
-retains its source owner. Match guards
-additionally require stable subject storage. Branches merge only real successors; loops include entry,
-backedges, and exits. Diagnostic witnesses do not distinguish execution states.
+retains its source owner. Match guards additionally require stable subject storage.
+Branches merge only real successors; loops include entry, backedges, and exits.
+Diagnostic witnesses do not distinguish execution states.
 Return, failure, and test-stop states have separate transfer paths. Test stop
 propagates through Carven calls to the active test body.
 Equal callable-view copies retain their target relationships rather than borrowing

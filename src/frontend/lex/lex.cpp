@@ -657,7 +657,7 @@ auto Lexer::scan_cpp_source_fragment() noexcept -> void {
 
 } // namespace
 
-auto lex(SourceView source, const TimingOutput& timings) noexcept -> Diagnosed<TokenBuffer> {
+auto lex(SourceView source, TimingOutput timings) noexcept -> Diagnosed<TokenBuffer> {
     const auto scope = TimingScope(timings, TimingStage::Lexing);
     return Lexer(source).run();
 }

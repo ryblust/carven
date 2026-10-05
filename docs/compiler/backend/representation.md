@@ -48,10 +48,10 @@ Generated names distinguish linkage domains and source modules; artifacts can
 materialize the same planned backing independently. Storage remains in its source
 module's C++ namespace so user types resolve in the same scope. Empty values use
 the same representation. Elements are reconstructed from their canonical constants,
-preserving the slice's element type. Private type definitions precede slice backing, followed by function
-bodies; dependencies request complete element definitions for that storage.
-Target variable declarations participate in ordinary traversal, verification,
-dependency collection, and emission. The runtime slice supplies the
+preserving the slice's element type. Private type definitions precede slice backing,
+followed by function bodies; dependencies request complete element definitions for
+that storage. Target variable declarations participate in ordinary traversal,
+verification, dependency collection, and emission. The runtime slice supplies the
 read-only access and bounds operations.
 
 `const` blocks have already executed during semantic analysis. A module-scope

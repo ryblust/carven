@@ -134,11 +134,11 @@ control in a runtime body retains its runtime semantics and static roots.
 bodies, and failed body realization results. `ProgramDraft` owns instance
 reservations and their pending, completed, or failed state. Static roots always
 enter the executor; optional normal-completion facts do not bypass execution.
-Ordinary expression construction uses one operation-folding dispatcher. C++ type queries use that
-dispatcher after type-time static reads to retain scalar witnesses without
-discarding operand effects. Substituting static values
-into runtime code does not eagerly evaluate the resulting arithmetic: a trap
-behind runtime control remains a runtime operation.
+Ordinary expression construction uses one operation-folding dispatcher. C++ type
+queries use that dispatcher after type-time static reads to retain scalar witnesses
+without discarding operand effects. Substituting static values into runtime code
+does not eagerly evaluate the resulting arithmetic: a trap behind runtime control
+remains a runtime operation.
 
 ### Execution values and storage
 
@@ -188,8 +188,8 @@ preserves its object identity; Take and scope exit end it. Text backing has its
 own lifetime, separate from the String owner slot. Read operands use the
 expression's storage-selection fact. The shared type-contents query selects delayed
 Read observation for array and String storage, including aggregate fields.
-Other admitted values capture their value at the source position. Constant and runtime constructors share array shape rules
-and struct initializer selection in `analysis.operations`.
+Other admitted values capture their value at the source position. Constant and runtime
+constructors share array shape rules and struct initializer selection in `analysis.operations`.
 
 ### Resource limits
 
@@ -221,12 +221,12 @@ types; compound constants reference already interned children.
 
 At a constant initializer, an explicit slice destination or `as_slice()` can
 produce an execution-local slice and retain it through `analysis.constant.freeze`.
-The selected freeze preserves each element's type. `SliceConstant` records ordered canonical element IDs under
-a `SliceTypeValue`; it contains no host address, allocator state, or capacity.
-Store construction checks child identity and availability; publication checks the
-slice type and exact child types. Initializer slice queries operate on retained
-inputs or execution-local contents without intermediate freezing. During static
-execution, slices borrow live backing objects; copies and chained slices keep
+The selected freeze preserves each element's type. `SliceConstant` records ordered
+canonical element IDs under a `SliceTypeValue`; it contains no host address,
+allocator state, or capacity. Store construction checks child identity and availability;
+publication checks the slice type and exact child types. Initializer slice queries
+operate on retained inputs or execution-local contents without intermediate freezing.
+During static execution, slices borrow live backing objects; copies and chained slices keep
 their selected element identity. Only a completed static root detaches the
 selected values into `SliceConstant` before releasing the backing. Runtime views
 retain ordinary ownership checks.

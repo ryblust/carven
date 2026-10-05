@@ -37,12 +37,15 @@ CommandTimings::CommandTimings(bool enabled, std::string_view command) noexcept
     : command(command) {
     if (enabled) {
         started = std::chrono::steady_clock::now();
-        recipient =
-            [this](TimingStage stage, std::chrono::steady_clock::duration elapsed) noexcept {
-                auto& value = durations[static_cast<std::size_t>(stage)];
-                value = value.value_or(std::chrono::steady_clock::duration::zero()) + elapsed;
-            };
     }
+}
+
+auto CommandTimings::operator()(
+    TimingStage stage,
+    std::chrono::steady_clock::duration elapsed
+) noexcept -> void {
+    auto& value = durations[static_cast<std::size_t>(stage)];
+    value = value.value_or(std::chrono::steady_clock::duration::zero()) + elapsed;
 }
 
 CommandTimings::~CommandTimings() {
@@ -79,8 +82,8 @@ CommandTimings::~CommandTimings() {
     }
 }
 
-auto CommandTimings::output() const noexcept -> const TimingOutput& {
-    return recipient;
+auto CommandTimings::output() noexcept -> TimingOutput {
+    return started ? TimingOutput(*this) : TimingOutput();
 }
 
 auto CommandTimings::set_outcome(std::string_view value) noexcept -> void {

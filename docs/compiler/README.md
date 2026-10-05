@@ -128,6 +128,12 @@ facts.
 
 ## Ownership and identity
 
+`FunctionRef<R(Args...) noexcept>` copies function pointers and borrows lvalue
+callable objects. Borrowed objects must outlive all invocations, including those
+made after coroutine suspension. Empty views represent optional recipients;
+invoking an empty view violates an internal invariant. Exceptions escaping a
+callback terminate at the invocation boundary.
+
 `SyntaxProgram` owns source provenance, syntax trees, and resolved imports.
 `ProgramDraft` consumes it and owns mutable declarations, canonical interning,
 construction types, failure constraints, and body construction. Canonical type

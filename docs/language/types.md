@@ -31,8 +31,8 @@ Their operators, memory contracts, and native backends are documented in the
 
 Structures and enums are nominal: identity comes from the declaration, not
 from structural similarity. Arrays are identified by both element type and
-extent. Slices are identified by their element type. Function-view types include parameter access, parameter types, success
-result, and failure set.
+extent. Slices are identified by their element type. Function-view types
+include parameter access, parameter types, success result, and failure set.
 
 For Carven types, ordinary compatibility requires the same canonical type.
 Contextual conversions are defined for numbers, slices,

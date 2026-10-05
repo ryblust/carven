@@ -8,8 +8,5 @@ import :semantic.semir.program;
 import :support.timing;
 import std;
 
-auto analyze(
-    SyntaxProgram syntax,
-    const ExecutionOutput& output = {},
-    const TimingOutput& timings = {}
-) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics>;
+auto analyze(SyntaxProgram syntax, ExecutionOutput output = {}, TimingOutput timings = {}) noexcept
+    -> std::expected<Diagnosed<SemIRProgram>, Diagnostics>;

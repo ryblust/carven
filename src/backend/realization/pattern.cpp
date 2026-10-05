@@ -533,4 +533,4 @@ PatternRealizer::PatternRealizer(
           },
           bounds
       ),
-      bound(std::move(bound)) {}
+      bound(bound) {}
