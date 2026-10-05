@@ -180,8 +180,10 @@ binaries through `carven-test-support`. Tests import the framework and fixture
 partitions they use. Shared harness types use test-domain names such as
 `TestSuite` and `TestAssertion`; the partitions belong to the compiler's `carven`
 module and do not introduce a named C++ namespace. File-private helpers and suite
-objects remain in anonymous namespaces. A file-local `TestSuite suite` supplies
-case declarations during collection:
+objects remain in anonymous namespaces. Product suites exercise this
+infrastructure; do not add self-tests for the shared runner or its process
+fixtures. A file-local `TestSuite suite` supplies case declarations during
+collection:
 
 ```cpp
 const TestSuite suite([] static noexcept {
