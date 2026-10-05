@@ -52,6 +52,7 @@ public:
         std::shared_ptr<EditorQueryCounts> counts
     ) noexcept;
     auto matches_documents(const DocumentMap& documents) const noexcept -> bool;
+    auto matches_modules(std::span<const EditorProjectModule> modules) const noexcept -> bool;
     auto result() noexcept -> std::shared_ptr<const EditorSemanticAnalysis>;
 
 private:
@@ -59,9 +60,6 @@ private:
     std::shared_ptr<EditorQueryCounts> work_counts;
     std::shared_ptr<const EditorSemanticAnalysis> cached_result;
 };
-
-using ProjectKey = std::vector<std::pair<std::string, std::string>>;
-using ProjectCache = std::map<ProjectKey, std::shared_ptr<CachedProject>>;
 
 } // namespace
 
@@ -73,7 +71,7 @@ class EditorWorkspaceQueries final {
 
     struct RecentRequest final {
         std::vector<EditorProjectModule> modules;
-        ResolvedProject result;
+        std::vector<EditorDocumentVersion> versions;
     };
 
 public:
@@ -81,7 +79,7 @@ public:
         DocumentMap inputs,
         std::shared_ptr<EditorQueryCounts> counts,
         std::shared_ptr<const WorkspaceIndex> previous_index,
-        ProjectCache project_cache
+        std::shared_ptr<CachedProject> cached_project
     ) noexcept;
     auto document(std::string_view key) const noexcept -> std::optional<DocumentEntry>;
     auto documents() const noexcept -> DocumentMap;
@@ -89,14 +87,14 @@ public:
     auto index_baseline() const noexcept -> std::shared_ptr<const WorkspaceIndex>;
     auto symbols() noexcept -> std::shared_ptr<const EditorWorkspaceSymbolList>;
     auto semantic(std::span<const EditorProjectModule> project) noexcept -> ResolvedProject;
-    auto project_cache() const noexcept -> ProjectCache;
+    auto project_baseline() const noexcept -> std::shared_ptr<CachedProject>;
 
 private:
     DocumentMap inputs;
     std::shared_ptr<EditorQueryCounts> work_counts;
     std::shared_ptr<const WorkspaceIndex> previous_index;
     std::shared_ptr<const WorkspaceIndex> cached_index;
-    ProjectCache cached_projects;
+    std::shared_ptr<CachedProject> cached_project;
     // A single recent request avoids canonical sorting on repeated UI queries.
     std::optional<RecentRequest> recent;
 };
@@ -154,17 +152,16 @@ EditorWorkspaceQueries::EditorWorkspaceQueries(
     DocumentMap inputs,
     std::shared_ptr<EditorQueryCounts> counts,
     std::shared_ptr<const WorkspaceIndex> previous_index,
-    ProjectCache project_cache
+    std::shared_ptr<CachedProject> cached_project
 ) noexcept
     : inputs(std::move(inputs)),
       work_counts(std::move(counts)),
       previous_index(std::move(previous_index)),
-      cached_projects(std::move(project_cache)) {
-    // Inherit only content-valid nodes. Old snapshots keep their own nodes;
-    // abandoned requests must not keep removed or superseded sources alive.
-    std::erase_if(cached_projects, [this](const auto& entry) noexcept {
-        return !entry.second->matches_documents(this->inputs);
-    });
+      cached_project(std::move(cached_project)) {
+    // Old snapshots keep their nodes; this snapshot inherits only valid inputs.
+    if (this->cached_project && !this->cached_project->matches_documents(this->inputs)) {
+        this->cached_project.reset();
+    }
 }
 
 auto EditorWorkspaceQueries::document(std::string_view key) const noexcept
@@ -244,6 +241,17 @@ auto CachedProject::matches_documents(const DocumentMap& documents) const noexce
     });
 }
 
+auto CachedProject::matches_modules(std::span<const EditorProjectModule> modules) const noexcept
+    -> bool {
+    return std::ranges::equal(
+        inputs,
+        modules,
+        [](const EditorSemanticInput& input, const EditorProjectModule& module) static noexcept {
+            return input.module == module;
+        }
+    );
+}
+
 auto CachedProject::result() noexcept -> std::shared_ptr<const EditorSemanticAnalysis> {
     if (!cached_result) {
         ++work_counts->semantic;
@@ -255,7 +263,7 @@ auto CachedProject::result() noexcept -> std::shared_ptr<const EditorSemanticAna
 auto EditorWorkspaceQueries::semantic(std::span<const EditorProjectModule> project) noexcept
     -> ResolvedProject {
     if (recent && std::ranges::equal(project, recent->modules)) {
-        return recent->result;
+        return {.node = cached_project, .versions = recent->versions};
     }
     auto versions = std::map<std::string, std::int64_t>();
     for (const auto& module : project) {
@@ -275,15 +283,7 @@ auto EditorWorkspaceQueries::semantic(std::span<const EditorProjectModule> proje
                 < std::pair(right.module_path.value(), std::string_view(right.document));
         }
     );
-    auto key = ProjectKey();
-    for (const auto& module : modules) {
-        key.emplace_back(module.document, module.module_path.value());
-    }
-    auto node = std::shared_ptr<CachedProject>();
-    const auto previous = cached_projects.find(key);
-    if (previous != cached_projects.end()) {
-        node = previous->second;
-    } else {
+    if (!cached_project || !cached_project->matches_modules(modules)) {
         auto resolved = std::vector<EditorSemanticInput>();
         for (const auto& module : modules) {
             const auto entry = document(module.document);
@@ -291,21 +291,19 @@ auto EditorWorkspaceQueries::semantic(std::span<const EditorProjectModule> proje
                 {.module = module, .source = entry ? entry->queries->source_owner() : nullptr}
             );
         }
-        node = std::make_shared<CachedProject>(std::move(resolved), work_counts);
-        cached_projects.emplace(std::move(key), node);
+        cached_project = std::make_shared<CachedProject>(std::move(resolved), work_counts);
     }
     recent.emplace(
         RecentRequest {
             .modules = std::vector<EditorProjectModule>(project.begin(), project.end()),
-            .result =
-                ResolvedProject {.node = std::move(node), .versions = std::move(document_versions)}
+            .versions = std::move(document_versions)
         }
     );
-    return recent->result;
+    return {.node = cached_project, .versions = recent->versions};
 }
 
-auto EditorWorkspaceQueries::project_cache() const noexcept -> ProjectCache {
-    return cached_projects;
+auto EditorWorkspaceQueries::project_baseline() const noexcept -> std::shared_ptr<CachedProject> {
+    return cached_project;
 }
 
 EditorAnalysis::EditorAnalysis(std::shared_ptr<EditorWorkspaceQueries> queries) noexcept
@@ -417,7 +415,7 @@ EditorAnalysisHost::EditorAnalysisHost() noexcept
                   .semantic = 0uz
               }),
               nullptr,
-              ProjectCache()
+              nullptr
           )
       ) {}
 
@@ -462,7 +460,7 @@ auto EditorAnalysisHost::update(
         std::move(inputs),
         queries->counts(),
         queries->index_baseline(),
-        queries->project_cache()
+        queries->project_baseline()
     );
     return change;
 }
@@ -477,7 +475,7 @@ auto EditorAnalysisHost::remove(std::string_view document) noexcept -> bool {
         std::move(inputs),
         queries->counts(),
         queries->index_baseline(),
-        queries->project_cache()
+        queries->project_baseline()
     );
     return true;
 }

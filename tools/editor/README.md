@@ -2,7 +2,8 @@
 
 `tools/editor` provides document revisions, snapshots, and cached source queries
 on top of compiler analysis. The compiler retains its full compilation path and
-has no dependency on this library.
+has no dependency on this library. The [analyzer](../analyzer/README.md)
+consumes these queries in a resident process.
 
 ## Inputs and ownership
 
@@ -69,15 +70,17 @@ declarations nor repairs a broken function internally.
 ## Cache and invalidation
 
 Syntax and symbols are lazy per document. Equal symbol values, including source
-ranges, reuse the derived result and workspace index. Semantic cache keys are
-order-independent explicit module selections and mappings. Version-only and
-unselected edits reuse content results while attaching current snapshot versions.
+ranges, reuse the derived result and workspace index. Each snapshot caches its
+most recently queried semantic module selection with order-independent mappings.
+Repeated requests avoid sorting the selection again. Version-only and unselected
+edits reuse content results while attaching current snapshot versions.
 
-Changing or removing selected content evicts invalid nodes from the new snapshot;
-retained snapshots and returned query owners keep their earlier results alive.
-The next semantic query analyzes the whole selected module set. Host updates copy
-document maps and cached project records. Distinct content-valid selections remain
-cached until their inputs change or the host is destroyed; cache size is unbounded.
+A query with a different selection replaces the cached project. Changing or
+removing selected content drops the invalid project from the new snapshot before
+another query. Retained snapshots and returned query owners keep their earlier
+results alive. The next uncached semantic query analyzes the whole selected module
+set. Host updates copy document maps and inherit the current project when its
+inputs remain valid.
 
 ## Validation and measurement
 

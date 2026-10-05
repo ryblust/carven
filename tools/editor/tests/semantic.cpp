@@ -158,8 +158,10 @@ const TestSuite tests([] static noexcept {
             expect(invalid.result->program() == nullptr);
             expect_diagnostic(invalid.result->diagnostics(), DiagnosticCode::ImportResolution);
             expect(snapshot.semantic(renamed).result == invalid.result);
-            expect(snapshot.semantic(modules).result == valid.result);
-            expect_equal(snapshot.counts().semantic, 2uz);
+            const auto restored = snapshot.semantic(modules);
+            expect(restored.result->program() != nullptr);
+            expect(restored.result->diagnostics().empty());
+            expect_equal(snapshot.counts().semantic, 3uz);
         };
 
     "Editor analysis: invalid project selections cache structured input diagnostics"_test =

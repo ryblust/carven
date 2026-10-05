@@ -190,7 +190,7 @@ const TestSuite tests([] static noexcept {
                 expect(!failed.result);
                 expect(!broken.hover(project, "caller.cv", call).result);
                 expect(broken.semantic(project).result == failed.analysis.result);
-                expect_definition(original.definition(modules, "caller.cv", call), "lib.cv", 1);
+                expect_definition(before, "lib.cv", 1);
                 expect_equal(broken.counts().semantic, 2uz);
                 update(host, "lib.cv", 3, library);
                 update(host, "caller.cv", 3, caller);
@@ -200,9 +200,8 @@ const TestSuite tests([] static noexcept {
                 expect(after.analysis.result != failed.analysis.result);
                 expect(failed.analysis.result->program() == nullptr);
                 expect(!failed.analysis.result->diagnostics().empty());
-                const auto reused_project = scenario.change == Change::OmitModule;
-                expect_equal(repaired.counts().semantic, reused_project ? 2uz : 3uz);
-                expect((after.analysis.result == before.analysis.result) == reused_project);
+                expect_equal(repaired.counts().semantic, 3uz);
+                expect(after.analysis.result != before.analysis.result);
             });
         };
 
@@ -234,6 +233,46 @@ const TestSuite tests([] static noexcept {
             expect(refreshed.analysis.result != first.analysis.result);
             expect_equal(host.snapshot().counts().semantic, 2uz);
             expect_definition(first, "lib.cv", 1);
+        };
+
+    "Editor analysis: module selections retain only the current project or explicit owners"_test =
+        [] static noexcept {
+            auto host = EditorAnalysisHost();
+            update(host, "a.cv", 1, "fn a() {}");
+            update(host, "b.cv", 1, "fn b() {}");
+            const auto first = std::array {project_module("a.cv", "a")};
+            const auto second = std::array {project_module("b.cv", "b")};
+            const auto both = std::array {first[0], second[0]};
+            struct Selection final {
+                std::string_view name;
+                std::span<const EditorProjectModule> modules;
+            };
+            const auto selections = std::array {
+                Selection {.name = "first", .modules = first},
+                Selection {.name = "second", .modules = second},
+                Selection {.name = "both", .modules = both}
+            };
+            auto previous = std::weak_ptr<const EditorSemanticAnalysis>();
+            each(selections, &Selection::name, [&](const Selection& selected) noexcept {
+                const auto query = host.snapshot().semantic(selected.modules);
+                expect(query.result->program() != nullptr);
+                expect(previous.expired());
+                expect(host.snapshot().semantic(selected.modules).result == query.result);
+                previous = query.result;
+            });
+            expect(!previous.expired());
+            expect_equal(host.snapshot().counts().semantic, selections.size());
+            auto snapshot = std::optional(host.snapshot());
+            auto held = std::optional(snapshot->semantic(both));
+            update(host, "unselected.cv", 1, "fn unselected() {}");
+            const auto current = host.snapshot().semantic(first);
+            expect(current.result != held->result);
+            expect(!previous.expired());
+            snapshot.reset();
+            expect(!previous.expired());
+            expect(held->result->source("b.cv").has_value());
+            held.reset();
+            expect(previous.expired());
         };
 
     "Editor analysis: replacing selected content releases unobserved semantic generations"_test =

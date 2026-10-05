@@ -6,7 +6,9 @@ import :semantic.semir.decl;
 import :semantic.semir.delegation;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
+import :semantic.semir.program;
 import :semantic.semir.type;
+import :source.provenance;
 import :support.visit;
 import std;
 
@@ -73,30 +75,59 @@ auto callable_name(const Parameters& parameters, std::string_view result, const 
     return text;
 }
 
-auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::string {
+template<typename Owner>
+auto canonical_name(const Owner& owner, TypeID type) noexcept -> std::string {
     const auto name = [&](TypeID nested) noexcept {
-        return canonical_name(draft, nested);
+        return canonical_name(owner, nested);
     };
     const auto contract = [&](CallableID callable) noexcept {
-        const auto value = draft.construction_callable_contract_copy(callable);
-        return callable_name(
-            value.parameters,
-            type_display_name(draft, value.result),
-            [&](ConstructionTypeRef nested) noexcept { return type_display_name(draft, nested); }
-        );
+        if constexpr (std::same_as<Owner, ProgramDraft>) {
+            const auto value = owner.construction_callable_contract_copy(callable);
+            return callable_name(
+                value.parameters,
+                type_display_name(owner, value.result),
+                [&](ConstructionTypeRef nested) noexcept {
+                    return type_display_name(owner, nested);
+                }
+            );
+        } else {
+            const auto& value = owner.callable_signatures().signature(
+                owner.declarations().callable(callable).signature
+            );
+            return callable_name(value.parameters, name(value.result), name);
+        }
     };
-    return draft.type_copy(type).value.visit(
+    const auto& canonical = [&]() noexcept -> decltype(auto) {
+        if constexpr (std::same_as<Owner, ProgramDraft>) {
+            return owner.type_copy(type);
+        } else {
+            return owner.types().type(type);
+        }
+    }();
+    return canonical.value.visit(
         Overloaded {
             [](const BuiltinTypeValue& value) static noexcept {
                 return std::string(builtin_name(value.kind));
             },
             [&](const StructTypeValue& value) noexcept {
-                return draft.spelling_copy(
-                    draft.construction_struct_declaration_copy(value.structure).name
-                );
+                if constexpr (std::same_as<Owner, ProgramDraft>) {
+                    return owner.spelling_copy(
+                        owner.construction_struct_declaration_copy(value.structure).name
+                    );
+                } else {
+                    return std::string(owner.provenance().spelling(
+                        owner.declarations().structure(value.structure).name
+                    ));
+                }
             },
             [&](const EnumTypeValue& value) noexcept {
-                return draft.spelling_copy(draft.enum_declaration_copy(value.enumeration).name);
+                if constexpr (std::same_as<Owner, ProgramDraft>) {
+                    return owner.spelling_copy(owner.enum_declaration_copy(value.enumeration).name);
+                } else {
+                    return std::string(owner.provenance().spelling(
+                        owner.declarations().enumeration(value.enumeration).name
+                    ));
+                }
             },
             [&](const ArrayTypeValue& value) noexcept {
                 return std::format("[{}; {}]", name(value.element), value.extent);
@@ -117,7 +148,13 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
             [&](const FunctionTypeValue& value) noexcept { return contract(value.callable); },
             [&](const ClosureTypeValue& value) noexcept { return contract(value.callable); },
             [&](const CallableViewTypeValue& value) noexcept {
-                const auto signature = draft.callable_signature_copy(value.signature);
+                const auto& signature = [&]() noexcept -> decltype(auto) {
+                    if constexpr (std::same_as<Owner, ProgramDraft>) {
+                        return owner.callable_signature_copy(value.signature);
+                    } else {
+                        return owner.callable_signatures().signature(value.signature);
+                    }
+                }();
                 return callable_name(signature.parameters, name(signature.result), name);
             },
             [](const CppTypeValue& value) static noexcept {
@@ -162,4 +199,12 @@ auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noex
                 }
             }
         );
+}
+
+auto type_display_name(const SemIRProgram& program, TypeID type) noexcept -> std::string {
+    return canonical_name(program, type);
+}
+
+auto type_display_name(BuiltinType type) noexcept -> std::string {
+    return std::string(builtin_name(type));
 }

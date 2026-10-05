@@ -89,6 +89,7 @@ includes("tests/internal")
 includes("tests/language")
 includes("tools/graver")
 includes("tools/editor")
+includes("tools/analyzer")
 
 task("bench")
     set_menu({
