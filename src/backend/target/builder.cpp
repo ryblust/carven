@@ -52,7 +52,7 @@ auto TypeLookup::key(const TargetType& type) noexcept -> std::size_t {
                 mix(value.const_qualified);
                 mix(value.rvalue);
             },
-            [](const TargetFunctionType&) static noexcept {},
+            [](const TargetFunctionRefType&) static noexcept {},
             [](const TargetPointerType&) static noexcept {},
             [](const TargetDecltypeType&) static noexcept {},
         }

@@ -209,10 +209,13 @@ representation selection. Restricted query shapes have structural equality for
 type interning; general target expressions remain move-only and have no equality
 protocol.
 
-C string constants have an intrinsic external `const char*` type. Lowering emits
-their decoded bytes as a narrow C++ string literal converted to a pointer, so
-calls and deduction receive the declared pointer type with program-lifetime storage.
-Ordinary string literals retain `std::string_view` realization.
+C string constants have an intrinsic external `const char*` type. Their complete
+contents select linkage-domain backing: a content-named `inline constexpr` array
+constructed by `std::to_array` from a narrow C++ literal, including its trailing
+NUL. Lowering refers to its `.data()`, preserving pointer type in calls and
+deduction. The same domain and contents select one address across generated
+modules and artifacts. Ordinary string literals retain `std::string_view`
+realization.
 
 Artifact-local query aliases name shared queries without changing their type or
 value category.

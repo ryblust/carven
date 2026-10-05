@@ -6,6 +6,7 @@ import :frontend.ast.storage;
 import :frontend.literal;
 import :semantic.analysis.program;
 import :semantic.semir.body;
+import :semantic.semir.decl;
 import :semantic.semir.initialization;
 import :semantic.semir.program;
 import :semantic.semir.type;
@@ -88,12 +89,16 @@ auto select_contextual_numeric_type(
 
 auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool;
 auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::optional<PointerTypeValue>;
+    -> std::optional<ConstructionPointerTypeValue>;
 auto pointer_narrows(
     const ProgramDraft& draft,
     ConstructionTypeRef source,
     ConstructionTypeRef target
 ) noexcept -> bool;
+
+// Adapts a closed signature to construction failure terms without solving pending facts.
+auto construct_callable_view_contract(ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<ConstructionCallableContract>;
 
 auto type_shapes_compatible(
     const ProgramDraft& draft,
@@ -127,6 +132,13 @@ auto decide_binary_operator(
     bool operands_compatible,
     bool equality_capable
 ) noexcept -> OperatorDecision;
+
+// Selects the owner of an explicit cast, independently of its validity.
+auto cast_uses_cpp(
+    const ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target
+) noexcept -> bool;
 
 auto decide_cast(
     const ProgramDraft& draft,

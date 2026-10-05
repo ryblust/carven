@@ -7,16 +7,21 @@ import :backend.target.decl;
 import :support.invariant;
 import std;
 
-ConstantStorage::ConstantStorage(const TargetNamePlan& names, ModuleID module_id) noexcept
+ConstantStorage::ConstantStorage(const TargetNamePlan& names, TargetName scope) noexcept
     : target_names(names),
-      module_id(module_id) {}
+      scope(
+          TargetName::globally_qualified(
+              std::vector<TargetIdentifier>(scope.components().begin(), scope.components().end())
+          )
+      ) {}
 
 auto ConstantStorage::find(ConstantID id) const noexcept -> std::optional<TargetName> {
-    return materialized.contains(id)
-        ? std::optional(
-              target_names.module_support_name(module_id, target_names.constant_identifier(id))
-          )
-        : std::nullopt;
+    if (!materialized.contains(id)) {
+        return std::nullopt;
+    }
+    auto name = scope;
+    name.append(target_names.constant_identifier(id));
+    return name;
 }
 
 auto ConstantStorage::empty() const noexcept -> bool {
@@ -26,10 +31,11 @@ auto ConstantStorage::empty() const noexcept -> bool {
 auto ConstantStorage::append(ConstantID id, TargetTypeID type, TargetExpr initializer) noexcept
     -> TargetName {
     if (!materialized.insert(id).second) {
-        invariant_violation("constant storage was materialized more than once in a module");
+        invariant_violation("constant storage was materialized more than once in a target scope");
     }
     const auto identifier = target_names.constant_identifier(id);
-    auto name = target_names.module_support_name(module_id, identifier);
+    auto name = scope;
+    name.append(identifier);
     items.push_back(target_lowering_item(
         TargetDecl {TargetVariableDecl {
             .name = identifier,

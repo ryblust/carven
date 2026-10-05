@@ -613,7 +613,7 @@ auto TargetNamePlan::constant_identifier(ConstantID constant) const noexcept
         "target constant name used an unknown constant"
     );
     if (!name) {
-        invariant_violation("target constant name requires frozen slice backing");
+        invariant_violation("target constant name requires persistent backing");
     }
     return *name;
 }

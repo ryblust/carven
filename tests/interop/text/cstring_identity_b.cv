@@ -1,0 +1,1 @@
+export const fn second_address() -> ptr<void> => c"shared C string" as ptr<void>;

@@ -1,0 +1,11 @@
+const fn display_element() {
+    let values = [1, 2];
+    let pointer = addressof(values[0]) as ptr<void>;
+    println(f"element={pointer:p}");
+}
+
+const {
+    display_element();
+}
+
+display_element();

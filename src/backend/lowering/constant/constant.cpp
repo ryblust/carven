@@ -245,15 +245,21 @@ auto constant_expression(
                 );
             },
             [&](const CStringConstant& value) noexcept {
-                return TargetExpr {
-                    .value = TargetStaticCastExpr {
-                        .type = context.lower_type(fact.type),
-                        .operand = target_child(string_expression(
-                            std::string(context.semantic().provenance().spelling(value.value)),
-                            TargetStringLiteralKind::String
-                        ))
-                    }
-                };
+                auto storage = context.cstring_storage().find(id);
+                if (!storage) {
+                    storage = context.cstring_storage().append(
+                        id,
+                        context.intrinsic_type(TargetSymbol::Auto),
+                        call_expression(
+                            intrinsic_expression(TargetSymbol::StdToArray),
+                            target_expressions(string_expression(
+                                std::string(context.semantic().provenance().spelling(value.value)),
+                                TargetStringLiteralKind::String
+                            ))
+                        )
+                    );
+                }
+                return call_member(name_expression(std::move(*storage)), "data", {});
             },
             [&](const F32Constant& value) noexcept -> TargetExpr {
                 return floating_expression(context, value.value, fact.type);

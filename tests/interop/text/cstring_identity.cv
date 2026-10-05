@@ -1,0 +1,23 @@
+import .cstring_identity_a using first_address;
+import .cstring_identity_b using second_address;
+
+const fn shared_storage() -> bool {
+    let local = c"shared C string";
+    let copy = local;
+    let address = local as ptr<void>;
+    let different = c"different C string" as ptr<void>;
+    return address
+        == (copy as ptr<void>)
+        && address == (c"shared C string" as ptr<void>)
+        && address == first_address()
+        && address == second_address()
+        && address != different;
+}
+
+const test "C strings: content identifies program storage across modules" {
+    check(shared_storage());
+}
+
+test "C strings: content identifies native storage across artifacts" {
+    check(shared_storage());
+}

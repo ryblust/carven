@@ -69,8 +69,10 @@ not identify cached semantic values. Content keys encode a local node graph with
 bounded-stack traversal; repeated dependencies reuse their node definitions.
 Slice backing arrays are
 module-owned `inline constexpr` objects named by content. Their initializers use
-the same module context as their references. Structural display uses runtime
-scalar, sequence, and range emitters, plus a content-named helper per nominal
+the same module context as their references. C string backing instead uses the
+linkage-domain namespace, so identical contents share storage across modules and
+artifacts without exposing private source-module names. Structural display uses
+runtime scalar, sequence, and range emitters, plus a content-named helper per nominal
 type. Module lowering caches emitter types separately from expressions referring
 to their `stateless_value` instances. Helper records precede their function
 definitions so instance constraints see complete types. Display calls pass depth

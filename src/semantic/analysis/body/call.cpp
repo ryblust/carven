@@ -33,6 +33,9 @@ import std;
 
 auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noexcept
     -> AnalysisResult<ConstructionCallableContract> {
+    if (auto view = construct_callable_view_contract(draft(), type)) {
+        return *view;
+    }
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         const auto canonical = draft().type_copy(*concrete);
         auto callable = std::optional<CallableID>();
@@ -58,17 +61,6 @@ auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noex
         );
         if (callable.has_value()) {
             return draft().construction_callable_contract_copy(*callable);
-        }
-    } else {
-        const auto construction = draft().construction_type_copy(std::get<TypeTermID>(type));
-        if (const auto* view =
-                std::get_if<ConstructionCallableViewTypeValue>(&construction.value)) {
-            return ConstructionCallableContract {
-                .parameters = view->parameters,
-                .result = view->result,
-                .failures = view->failures,
-                .policy = FailureContractPolicy::Declared,
-            };
         }
     }
     return std::unexpected(
@@ -139,7 +131,8 @@ auto BodyElaborator::bind_call_argument(
         if (!place.has_value()) {
             return std::unexpected(place.error());
         }
-        if (place->expression.type.construction() != type) {
+        if (place->expression.type.construction() != type
+            && (is_cpp_type(place->expression.type.construction()) || is_cpp_type(type))) {
             *place = active_builder().cpp_place(
                 std::move(*place),
                 type,
@@ -154,10 +147,10 @@ auto BodyElaborator::bind_call_argument(
             .completes = built.completes,
         };
     }
-    if (access_mode == AccessMode::Take && pointer_shape(draft(), type) && built.type() != type) {
-        return std::unexpected(
-            fail(span, DiagnosticCode::TypeMismatch, "Take requires the same complete ptr type")
-        );
+    if (access_mode == AccessMode::Take && pointer_shape(draft(), type)) {
+        if (auto checked = require_invariant_type(built.type(), type, span); !checked) {
+            return std::unexpected(checked.error());
+        }
     }
     // Declaration references acquire callable storage during conversion.
     if (access_mode == AccessMode::Take && !built.is_function_reference()) {
@@ -271,21 +264,17 @@ auto BodyElaborator::call_expression(
                     "addressof Write requires writable storage"
                 ));
             }
-            const auto* target = std::get_if<TypeID>(&place->expression.type.construction());
-            if (target == nullptr) {
-                co_return std::unexpected(fail(
-                    ast.expression(argument_id).span,
-                    DiagnosticCode::TypeUnresolved,
-                    "addressof target requires a concrete type"
-                ));
-            }
-            const auto pointer = draft().intern_type(
-                {.value = PointerTypeValue {
-                     .target = *target,
-                     .access = selected.access == AccessMode::Write ? PointerAccess::Write
-                                                                    : PointerAccess::Read
-                 }}
-            );
+            const auto target = place->expression.type.construction();
+            const auto access =
+                selected.access == AccessMode::Write ? PointerAccess::Write : PointerAccess::Read;
+            const auto* concrete = std::get_if<TypeID>(&target);
+            const auto pointer = concrete
+                ? ConstructionTypeRef {draft().intern_type(
+                      {.value = PointerTypeValue {.target = *concrete, .access = access}}
+                  )}
+                : ConstructionTypeRef {draft().append_construction_type(
+                      {.value = ConstructionPointerTypeValue {.target = target, .access = access}}
+                  )};
             auto result = make_built(
                 pointer,
                 SemAddressOf {.source = UniqueIndirect(std::move(place->expression))},

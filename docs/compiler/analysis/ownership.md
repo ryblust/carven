@@ -96,6 +96,13 @@ normalization preserves reachable storage, aliasing, access, and relative
 lifetimes. Diagnostic provenance selects a deterministic witness without becoming
 part of semantic identity.
 
+Callable values read through indirect storage retain opaque target descriptions
+when no tracked target is available. Unknown calls contribute normal completion
+and declared failure paths; callable results retain opaque target descriptions.
+Known capture relationships at a join continue through body analysis alongside
+the opaque alternative. These descriptions supply neither backing storage nor
+capture aliases; creating a new callable borrow still requires tracked backing.
+
 ### Recursive storage
 
 Recursive storage uses direct backing edges. Call normalization preserves exact

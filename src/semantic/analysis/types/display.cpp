@@ -151,6 +151,13 @@ auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noex
     return draft.construction_type_copy(std::get<TypeTermID>(type))
         .value.visit(
             Overloaded {
+                [&](const ConstructionPointerTypeValue& value) noexcept {
+                    return std::format(
+                        "ptr<{}{}>",
+                        value.access == PointerAccess::Write ? "&" : "",
+                        name(value.target)
+                    );
+                },
                 [&](const ConstructionArrayTypeValue& value) noexcept {
                     return std::format("[{}; {}]", name(value.element), value.extent);
                 },

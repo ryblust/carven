@@ -80,34 +80,7 @@ auto ConstFunctionValidator::supported_type(
     ConstructionTypeRef type,
     bool allow_void
 ) const noexcept -> bool {
-    auto pending = std::vector<std::pair<ConstructionTypeRef, bool>> {{type, allow_void}};
-    auto visited = std::set<TypeTermID>();
-    while (!pending.empty()) {
-        const auto [next, void_allowed] = pending.back();
-        pending.pop_back();
-        if (std::holds_alternative<TypeID>(next)) {
-            if (!supported_execution_type(draft, next, void_allowed)) {
-                return false;
-            }
-            continue;
-        }
-        const auto term = std::get<TypeTermID>(next);
-        if (!visited.insert(term).second) {
-            continue;
-        }
-        const auto construction = draft.construction_type_copy(term);
-        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
-            pending.emplace_back(array->element, false);
-        } else if (std::holds_alternative<ConstructionSliceTypeValue>(construction.value)
-                   || std::holds_alternative<ConstructionCallableViewTypeValue>(
-                       construction.value
-                   )) {
-            // Views do not contain their targets' storage.
-        } else {
-            return false;
-        }
-    }
-    return true;
+    return supported_execution_type(draft, type, allow_void);
 }
 
 auto ConstFunctionValidator::check_function(FunctionID function) noexcept -> void {

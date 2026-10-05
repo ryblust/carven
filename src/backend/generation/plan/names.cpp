@@ -547,7 +547,8 @@ auto plan_names(
         }
     }
     for (const auto constant : semantic.constants().entries()) {
-        if (std::holds_alternative<SliceConstant>(constant.value.value)) {
+        if (std::holds_alternative<SliceConstant>(constant.value.value)
+            || std::holds_alternative<CStringConstant>(constant.value.value)) {
             request_name(
                 "carven_constant_",
                 constant_content_key(semantic, constant.id),

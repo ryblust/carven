@@ -451,8 +451,10 @@ auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID
     };
     type.value.visit([&](const auto& value) noexcept {
         using Value = std::remove_cvref_t<decltype(value)>;
-        if constexpr (std::same_as<Value, ConstructionArrayTypeValue>
-                      || std::same_as<Value, ConstructionSliceTypeValue>) {
+        if constexpr (std::same_as<Value, ConstructionPointerTypeValue>) {
+            validate_ref(value.target);
+        } else if constexpr (std::same_as<Value, ConstructionArrayTypeValue>
+                             || std::same_as<Value, ConstructionSliceTypeValue>) {
             validate_ref(value.element);
         } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
             for (const auto& parameter : value.parameters) {
@@ -508,10 +510,3 @@ auto TypeResolution::resolve(ConstructionTypeRef reference) const noexcept -> Ty
 TypeResolution::TypeResolution(ProgramIdentity identity, std::vector<TypeID> types) noexcept
     : program_identity(identity),
       resolved_types(std::move(types)) {}
-
-auto pointer_narrows(const PointerTypeValue& source, const PointerTypeValue& target) noexcept
-    -> bool {
-    return source.target == target.target
-        && source.access == PointerAccess::Write
-        && target.access == PointerAccess::Read;
-}

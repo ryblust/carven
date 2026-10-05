@@ -324,12 +324,11 @@ auto SemanticExecutor::range_loop(
     const SemRangeLoop& source,
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionCompletion> {
-    auto sequence_type = type(source.source.type.construction(), origin);
-    if (!sequence_type) {
-        co_return std::unexpected(std::move(sequence_type.error()));
-    }
-    const auto canonical = values.type_copy(*sequence_type);
-    if (const auto* range_type = std::get_if<RangeTypeValue>(&canonical.value)) {
+    const auto reference = source.source.type.construction();
+    const auto* concrete = std::get_if<TypeID>(&reference);
+    const auto canonical = concrete ? std::optional(values.type_copy(*concrete)) : std::nullopt;
+    if (const auto* range_type =
+            canonical ? std::get_if<RangeTypeValue>(&canonical->value) : nullptr) {
         auto evaluated = (co_await this->value(frame, source.source));
         if (!evaluated) {
             co_return std::unexpected(std::move(evaluated.error()));
@@ -377,11 +376,7 @@ auto SemanticExecutor::range_loop(
         const auto extent = sequence->extent;
         auto borrow_element = source.access == AccessMode::Write;
         if (source.binding) {
-            auto element_type = type(frame.body->binding_type(*source.binding), origin);
-            if (!element_type) {
-                co_return std::unexpected(std::move(element_type.error()));
-            }
-            borrow_element |= read_borrows_storage(*element_type);
+            borrow_element |= read_borrows_storage(frame.body->binding_type(*source.binding));
         }
         for (auto index = 0uz; index < extent; ++index) {
             if (auto checked = step(origin); !checked) {

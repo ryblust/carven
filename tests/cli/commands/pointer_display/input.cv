@@ -1,0 +1,27 @@
+struct Pair {
+    first: i32,
+    second: i32
+}
+
+const fn display() {
+    let pair = Pair {
+        first: 1,
+        second: 2
+    };
+    let whole = addressof(pair) as ptr<void>;
+    let first = addressof(pair.first) as ptr<void>;
+    assert(whole == first);
+    assert(f"{whole:p}" == f"{first:p}");
+    println(f"local={whole:p}");
+    let text = c"123";
+    println(f"cstring={text as ptr<void>:p}");
+    println(text);
+    let absent: ptr<i32> = nullptr;
+    println(f"null={absent as ptr<void>:p}");
+}
+
+const {
+    display();
+}
+
+display();

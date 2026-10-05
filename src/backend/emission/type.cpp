@@ -72,20 +72,20 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                     concat({text("::std::array"), delimited_list(arguments, "<", ">")});
                 return {.inline_qualified = result, .wrapping = result};
             },
-            [&](const TargetFunctionType& function) noexcept -> SyntaxLayouts {
-                const auto result = render_type(function.result);
+            [&](const TargetFunctionRefType& function_ref) noexcept -> SyntaxLayouts {
+                const auto result = render_type(function_ref.result);
                 auto parameters = std::vector<LayoutNodeID> {};
-                for (const auto parameter : function.parameters) {
+                for (const auto parameter : function_ref.parameters) {
                     parameters.push_back(render_type(parameter));
                 }
                 const auto signature =
                     concat({result, delimited_list(parameters, "(", ")"), text(" noexcept")});
                 const auto arguments = std::array {signature};
-                const auto function_ref = concat(
+                const auto representation = concat(
                     {text(target_symbol_info(TargetSymbol::RuntimeFunctionRef).spelling),
                      delimited_list(arguments, "<", ">")}
                 );
-                return {.inline_qualified = function_ref, .wrapping = function_ref};
+                return {.inline_qualified = representation, .wrapping = representation};
             },
             [&](const TargetPointerType& pointer) noexcept -> SyntaxLayouts {
                 const auto pointee = render_type_layouts(pointer.pointee);

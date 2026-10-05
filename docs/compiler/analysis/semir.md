@@ -16,8 +16,11 @@ occurrence; projections own their receiver and index. Function names construct
 callable occurrences directly.
 Construction results read types and constants from their owned expressions.
 `BodyType` and `BodyFailures` store construction or resolved facts; their accessors
-explicitly select the required stage. Published bodies expose only const access to
-the completed tree.
+explicitly select the required stage. Closed declared callable shapes become
+canonical types during source type resolution. Construction pointers retain a
+pending pointee type and its access when inference requires later completion;
+publication resolves the wrapper after ordinary type and failure completion.
+Published bodies expose only const access to the completed tree.
 
 Provenance resolves an origin directly to `ProgramSourceID` and `Span`.
 Only diagnostic transport converts that identity to the source manager domain.

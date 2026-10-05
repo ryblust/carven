@@ -29,11 +29,18 @@ auto interpret_literal(
     LiteralSign sign = LiteralSign::Positive
 ) noexcept -> ExpressionResult<typename Site::Value> {
     if (std::holds_alternative<NullPointerLiteralValue>(source.value)) {
-        const auto* type = expected ? std::get_if<TypeID>(&*expected) : nullptr;
-        if (type == nullptr
-            || !std::holds_alternative<PointerTypeValue>(site.draft().type_copy(*type).value)) {
+        if (!expected || !pointer_shape(site.draft(), *expected)) {
             return std::unexpected(
                 site.fail(span, DiagnosticCode::TypeMismatch, "nullptr requires a ptr type context")
+            );
+        }
+        if (std::holds_alternative<TypeTermID>(*expected) && sign == LiteralSign::Positive) {
+            return site.finish_constructed(
+                *expected,
+                SemDefault {},
+                Site::operand_state(),
+                span,
+                std::nullopt
             );
         }
     }
@@ -262,6 +269,18 @@ auto interpret_binary(
     if (site.external(site.type(*left)) || site.external(site.type(*right))) {
         co_return site.external_binary(operation, std::move(*left), std::move(*right), span);
     }
+    if (left_pointer
+        && right_pointer
+        && type_shapes_compatible(site.draft(), left_pointer->target, right_pointer->target)) {
+        if (auto checked = site.require_invariant_storage(
+                left_pointer->target,
+                right_pointer->target,
+                source.operator_span
+            );
+            !checked) {
+            co_return std::unexpected(checked.error());
+        }
+    }
     const auto pointer_equality =
         (operation == BinaryOperator::Equal || operation == BinaryOperator::NotEqual)
         && (pointer_narrows(site.draft(), site.type(*left), site.type(*right))
@@ -402,7 +421,7 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
     if (!target.has_value()) {
         co_return std::unexpected(target.error());
     }
-    if (site.external(site.type(*operand)) || site.external(*target)) {
+    if (cast_uses_cpp(site.draft(), site.type(*operand), *target)) {
         co_return site.external_cast(*target, std::move(*operand), span);
     }
     if (site.type(*operand) == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::Str))

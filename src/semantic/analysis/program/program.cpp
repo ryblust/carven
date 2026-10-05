@@ -78,8 +78,12 @@ auto ProgramDraft::canonicalize_declared_type(ConstructionTypeRef type) noexcept
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         return *concrete;
     }
+    return canonicalize_declared_type(construction_type_copy(std::get<TypeTermID>(type)));
+}
+
+auto ProgramDraft::canonicalize_declared_type(const ConstructionType& type) noexcept -> TypeID {
     return ConstructionTypeStore::canonicalize_type(
-        construction_type_copy(std::get<TypeTermID>(type)),
+        type,
         storage.types,
         storage.callable_signatures,
         [&](ConstructionTypeRef child) noexcept { return canonicalize_declared_type(child); },
@@ -115,6 +119,10 @@ auto ProgramDraft::constant(ConstantID constant) const noexcept -> const Constan
 
 auto ProgramDraft::intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID {
     return storage.failure_sets.intern(std::move(members));
+}
+
+auto ProgramDraft::failure_set_copy(FailureSetID id) const noexcept -> FailureSet {
+    return storage.failure_sets.copy(id);
 }
 
 auto ProgramDraft::empty_failure_set() noexcept -> FailureSetID {

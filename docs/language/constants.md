@@ -293,6 +293,18 @@ lifetime across calls and scopes. A pointer to an object after its scope exits
 or after Take fails on dereference with `CV-CONST-EVALUATION`, even if that
 storage is assigned again. An ordinary assignment to a live object preserves
 its identity. Non-null local pointers cannot become published constant values.
+Erased pointer formatting in static execution produces the fixed text
+`const@nonnull` or `const@null`. Its result can be returned, queried, and frozen
+through ordinary text operations. Pointer display does not change the publication
+of other values. Non-null erased pointers themselves cannot become published
+constant values, including erased C string pointers.
+
+Static and interpreted execution support direct function-to-view adaptation and
+copies of the same callable-view type. Widening a live existing view, including
+array elements, requires a callable-target borrow that execution values do not
+represent. Empty arrays require no target borrow. Adaptation to a view with no
+failures preserves an inferred view's type because its failure set cannot widen.
+An adaptation whose type identity remains unresolved produces a diagnostic.
 
 Native operations, calls through callable values without an executable Carven
 body, text character iteration, and unchecked borrowed text construction remain outside

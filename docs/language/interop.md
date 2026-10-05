@@ -97,20 +97,26 @@ character array or a Carven `str`. Copies retain access to program-lifetime stor
 
 C strings support constant initialization, function calls, local copies,
 assignment, and Take during static execution. Freezing preserves their
-bytes and pointer type, including in supported aggregates. Each emitted pointer
-refers to program-lifetime storage; pointer identity across translation units is unspecified.
+bytes and pointer type, including in supported aggregates. Identical complete
+byte contents share immutable program-lifetime backing within one linkage domain,
+including across generated modules and artifacts. Copies and repeated literals
+therefore preserve the same
+address. Imported C++ pointers retain their provider's storage contract.
 
 Printing treats C strings as text: top-level bytes are verbatim, while nested
 text is quoted and escaped. Static execution and interpretation read retained
 C string bytes for display and default text formatting. Reading unknown native
-memory, comparing C string pointers, and
-observing their addresses are outside the evaluator's supported operations.
+memory and directly comparing external C string pointers remain outside the
+evaluator's supported operations. A known C string can explicitly convert to
+`ptr<void>` for ordinary pointer comparison and display; see
+[Pointer values](pointers.md#erasure-comparison-and-display).
 C string literal patterns are rejected.
 
 Native interpolation uses the C++ string formatter. Address formatting requires
 an explicit conversion to a pointer type with a pointer formatter, such as
-`const void*`. Contextual typing preserves the external `const char*` type;
-conversions follow the external conversion rules below.
+`const void*`. Contextual typing preserves the external `const char*` type.
+Known C string erasure follows the Carven pointer rule; other conversions follow
+the external conversion rules below.
 
 ```carven
 import <cstdio> using std::printf;

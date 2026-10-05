@@ -81,6 +81,7 @@ public:
     auto intern_type(const CanonicalType& type) noexcept -> TypeID;
     auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
     auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
+    auto canonicalize_declared_type(const ConstructionType& type) noexcept -> TypeID;
     auto type_copy(TypeID type) const noexcept -> CanonicalType override;
     auto read_borrows_storage(TypeID type) const noexcept -> bool override;
     auto intern_constant(ConstantFact fact) noexcept -> ConstantID;
@@ -92,8 +93,9 @@ public:
     auto constant(ConstantID constant) const noexcept -> const ConstantFact& override;
     auto intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID;
     auto empty_failure_set() noexcept -> FailureSetID;
+    auto failure_set_copy(FailureSetID id) const noexcept -> FailureSet override;
     auto append_construction_type(ConstructionType type) noexcept -> TypeTermID;
-    auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType;
+    auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType override;
     auto reserve_module_declaration() noexcept -> ModuleID;
     auto reserve_function_declaration() noexcept -> FunctionID;
     auto reserve_struct_declaration() noexcept -> StructID;
@@ -133,7 +135,8 @@ public:
         -> ModuleConstantDeclaration;
     auto construction_callable_contract_copy(CallableID id) const noexcept
         -> ConstructionCallableContract;
-    auto callable_signature_copy(CallableSignatureID id) const noexcept -> CallableSignature;
+    auto callable_signature_copy(CallableSignatureID id) const noexcept
+        -> CallableSignature override;
     auto construction_failure_term_copy(FailureTermID failures) const noexcept -> FailureTerm;
     auto module_declaration_count() const noexcept -> std::size_t;
     auto function_declaration_count() const noexcept -> std::size_t;

@@ -59,7 +59,8 @@ auto DeclResolver::resolve_equality_support(std::span<const ConstructionTypeRef>
             if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
                 depend(array->element);
             } else {
-                supported[index] = false;
+                supported[index] =
+                    std::holds_alternative<ConstructionPointerTypeValue>(construction.value);
             }
             continue;
         }

@@ -130,8 +130,15 @@ auto DeclResolver::prepare_type_dependencies(
                         prepared
                     ));
                 } else {
+                    const auto child = [&]() noexcept -> ConstructionTypeRef {
+                        if constexpr (std::same_as<Value, ConstructionPointerTypeValue>) {
+                            return value.target;
+                        } else {
+                            return value.element;
+                        }
+                    }();
                     co_return (co_await prepare_type_dependencies(
-                        value.element,
+                        child,
                         requester,
                         span,
                         visiting,
@@ -197,6 +204,28 @@ auto DeclResolver::prepare_type_dependencies(
                 }
                 prepared.push_back(id);
                 co_return {};
+            },
+            [&](const CallableViewTypeValue& value) noexcept -> AnalysisTask<void> {
+                const auto signature = draft.callable_signature_copy(value.signature);
+                for (const auto& parameter : signature.parameters) {
+                    auto completed = (co_await prepare_type_dependencies(
+                        parameter.type,
+                        requester,
+                        span,
+                        visiting,
+                        prepared
+                    ));
+                    if (!completed) {
+                        co_return completed;
+                    }
+                }
+                co_return (co_await prepare_type_dependencies(
+                    signature.result,
+                    requester,
+                    span,
+                    visiting,
+                    prepared
+                ));
             },
             [&](const ArrayTypeValue& value) noexcept {
                 return prepare_type_dependencies(

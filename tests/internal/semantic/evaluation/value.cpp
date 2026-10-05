@@ -35,6 +35,28 @@ const TestSuite suite([] static noexcept {
                      .extent = 1u,
                  }}
             );
+            const auto construction_opaque_array = values.append_construction_type(
+                {.value = ConstructionArrayTypeValue {.element = opaque, .extent = 1u}}
+            );
+            const auto construction_void_array = values.append_construction_type(
+                {.value = ConstructionArrayTypeValue {.element = empty, .extent = 1u}}
+            );
+            const auto construction_pointer = values.append_construction_type(
+                {.value = ConstructionPointerTypeValue {
+                     .target = construction_opaque_array,
+                     .access = PointerAccess::Read,
+                 }}
+            );
+            const auto construction_slice = values.append_construction_type(
+                {.value = ConstructionSliceTypeValue {.element = opaque}}
+            );
+            const auto construction_callable = values.append_construction_type(
+                {.value = ConstructionCallableViewTypeValue {
+                     .parameters = {},
+                     .result = opaque,
+                     .failures = values.add_empty_failure_term(),
+                 }}
+            );
             struct Scenario final {
                 std::string_view name;
                 ConstructionTypeRef type;
@@ -85,10 +107,40 @@ const TestSuite suite([] static noexcept {
                     .supported = true
                 },
                 Scenario {
-                    .name = "unresolved construction is not canonical admission",
+                    .name = "construction array admits supported owned elements",
                     .type = construction,
+                    .allow_void = false,
+                    .supported = true
+                },
+                Scenario {
+                    .name = "construction array rejects unsupported owned elements",
+                    .type = construction_opaque_array,
+                    .allow_void = false,
+                    .supported = false
+                },
+                Scenario {
+                    .name = "construction array cannot propagate root void permission",
+                    .type = construction_void_array,
                     .allow_void = true,
                     .supported = false
+                },
+                Scenario {
+                    .name = "construction pointer does not own its pending target storage",
+                    .type = construction_pointer,
+                    .allow_void = false,
+                    .supported = true
+                },
+                Scenario {
+                    .name = "construction slice does not own unsupported element storage",
+                    .type = construction_slice,
+                    .allow_void = false,
+                    .supported = true
+                },
+                Scenario {
+                    .name = "construction callable does not own its result storage",
+                    .type = construction_callable,
+                    .allow_void = false,
+                    .supported = true
                 },
             };
             each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {

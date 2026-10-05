@@ -261,6 +261,7 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
         case TargetSymbol::StdReferenceWrapper:
             return symbol_info("::std::reference_wrapper", "functional");
         case TargetSymbol::StdAddressof: return symbol_info("::std::addressof", "memory");
+        case TargetSymbol::StdToArray:   return symbol_info("::std::to_array", "array");
         case TargetSymbol::StdGetIf:     return symbol_info("::std::get_if", "variant");
         case TargetSymbol::StdDeclval:   return symbol_info("::std::declval", "utility");
         case TargetSymbol::StdForward:   return symbol_info("::std::forward", "utility");

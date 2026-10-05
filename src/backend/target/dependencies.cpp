@@ -59,7 +59,7 @@ auto TargetDependencyCollector::collect() noexcept -> std::vector<TargetDirectiv
                     visit_symbol(intrinsic.symbol);
                 },
                 [&](const TargetArrayType&) noexcept { include("array"); },
-                [&](const TargetFunctionType&) noexcept {
+                [&](const TargetFunctionRefType&) noexcept {
                     visit_symbol(TargetSymbol::RuntimeFunctionRef);
                 },
                 [](const TargetPointerType&) static noexcept {},

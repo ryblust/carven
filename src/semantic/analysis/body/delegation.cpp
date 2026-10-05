@@ -7,6 +7,7 @@ import :semantic.analysis.body.context;
 import :semantic.analysis.constant.fold;
 import :semantic.analysis.expr.operand;
 import :semantic.analysis.names;
+import :semantic.analysis.operations;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
@@ -54,17 +55,10 @@ auto BodyElaborator::materialize_selection(
         return std::move(*built);
     }
     if (const auto* builtin = std::get_if<BuiltinSelection>(&selected)) {
-        if (expected) {
-            if (const auto* term = std::get_if<TypeTermID>(&*expected)) {
-                const auto type = draft().construction_type_copy(*term);
-                if (const auto* view =
-                        std::get_if<ConstructionCallableViewTypeValue>(&type.value)) {
-                    if (view->result
-                        == ConstructionTypeRef(draft().builtin_type(BuiltinType::Void))) {
-                        return builtin_callable(*builtin, view->parameters);
-                    }
-                }
-            }
+        const auto view =
+            expected ? construct_callable_view_contract(draft(), *expected) : std::nullopt;
+        if (view && view->result == ConstructionTypeRef(draft().builtin_type(BuiltinType::Void))) {
+            return builtin_callable(*builtin, view->parameters);
         }
         return std::unexpected(fail(
             builtin->span,

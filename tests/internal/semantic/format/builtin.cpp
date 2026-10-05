@@ -9,6 +9,27 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Builtin formatting: pointer display respects byte limits and format specifications"_test =
+        [] static noexcept {
+            const auto representation = std::string_view("test-address");
+            const auto pointer = BuiltinPointerDisplay {.representation = representation};
+            const auto formatted = format_builtin_value(pointer, "p", representation.size());
+            if (!expect(formatted.has_value())) {
+                return;
+            }
+            expect_equal(*formatted, representation);
+            const auto limited = format_builtin_value(pointer, "p", representation.size() - 1uz);
+            if (!expect(!limited.has_value())) {
+                return;
+            }
+            expect(limited.error() == BuiltinFormatFailureKind::Limit);
+            const auto integer = format_builtin_value(pointer, "x", 128uz);
+            if (!expect(!integer.has_value())) {
+                return;
+            }
+            expect(integer.error() == BuiltinFormatFailureKind::Unsupported);
+        };
+
     "Builtin formatting: integer bytes agree with native standard formatting"_test =
         [] static noexcept {
             const auto numbers = std::to_array<std::int64_t>({

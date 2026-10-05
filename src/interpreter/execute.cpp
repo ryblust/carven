@@ -24,6 +24,7 @@ public:
         const ExecutionOutput& output,
         const InterpreterOptions& options
     ) noexcept;
+    auto stage() const noexcept -> ExecutionStage override;
     auto run(FunctionID entry) noexcept -> std::expected<void, ExecutionHalt>;
     auto run_tests() noexcept -> std::expected<std::vector<InterpreterTestResult>, ExecutionHalt>;
     auto function_for_callable(CallableID callable) const noexcept
@@ -54,6 +55,10 @@ Interpreter::Interpreter(
       output(output),
       options(options),
       values(program) {}
+
+auto Interpreter::stage() const noexcept -> ExecutionStage {
+    return ExecutionStage::Interpreted;
+}
 
 auto Interpreter::reject(ProgramOriginID origin, std::string_view message) noexcept
     -> ExecutionHalt {

@@ -143,7 +143,7 @@ auto lower_module(
             module_namespace(schedule.module_id, std::move(lowered.nominal_declarations))
         );
     }
-    append_items(root, context.take_module_support());
+    append_items(root, context.take_support());
     if (!lowered.private_declarations.empty()) {
         root.push_back(module_namespace(
             schedule.module_id,

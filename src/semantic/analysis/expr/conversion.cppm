@@ -94,9 +94,10 @@ auto convert_intrinsic_argument(
     if (pointer_narrows(site.draft(), source, target)) {
         auto known = std::optional<ConstantID>();
         if constexpr (Site::mode == ExpressionMode::Body) {
-            if (site.known(value)) {
+            if (const auto* concrete = std::get_if<TypeID>(&target);
+                concrete && site.known(value)) {
                 known = site.draft().intern_constant(
-                    {.type = std::get<TypeID>(target), .value = NullPointerConstant {}}
+                    {.type = *concrete, .value = NullPointerConstant {}}
                 );
             }
         }

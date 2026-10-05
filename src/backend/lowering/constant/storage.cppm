@@ -8,11 +8,11 @@ import :backend.target.type;
 import :semantic.semir.ids;
 import std;
 
-// One module owns content-named backing storage within an artifact. The
-// initializer and every reference use that module context.
+// Owns materialized content-named backing in one target namespace. Initializers
+// and references use the same scope.
 class ConstantStorage final {
 public:
-    ConstantStorage(const TargetNamePlan& names, ModuleID module_id) noexcept;
+    ConstantStorage(const TargetNamePlan& names, TargetName scope) noexcept;
     ConstantStorage(const ConstantStorage&) = delete;
     ConstantStorage(ConstantStorage&&) = default;
     auto operator=(const ConstantStorage&) -> ConstantStorage& = delete;
@@ -23,7 +23,7 @@ public:
 
 private:
     const TargetNamePlan& target_names;
-    ModuleID module_id;
+    TargetName scope;
     std::set<ConstantID> materialized;
     std::vector<TargetItem> items;
 };

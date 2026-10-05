@@ -38,7 +38,7 @@ public:
     // Contexts live until finish(); map growth does not invalidate borrows.
     auto module_context(ModuleID id) noexcept -> ModuleLowering&;
     auto next_definition() noexcept -> std::optional<CallableID>;
-    auto take_module_support() noexcept -> std::vector<TargetItem>;
+    auto take_support() noexcept -> std::vector<TargetItem>;
     auto require_cpp_environment(ModuleID provider, CppEnvironmentRequirement requirement) noexcept
         -> void;
     // The definitions placed at their uses that the definition of `id` named.
@@ -52,6 +52,7 @@ private:
     const PlannedCompilation& planned_compilation;
     TargetArtifactID artifact_id;
     TargetUnitBuilder target_builder;
+    ConstantStorage cstrings;
     std::flat_set<TargetArtifactID> lowering_dependencies;
     std::flat_map<ModuleID, CppEnvironmentRequirement> cpp_environments;
     std::set<CallableID> required_definitions;
@@ -98,6 +99,7 @@ public:
     auto require_callable(CallableID id) noexcept -> void;
     auto payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames&;
     auto constant_storage() noexcept -> ConstantStorage&;
+    auto cstring_storage() noexcept -> ConstantStorage&;
     auto make_callable_name_allocator() const noexcept -> TargetNameAllocator;
     auto intrinsic_type(TargetSymbol symbol, bool constant = false) noexcept -> TargetTypeID;
     auto named_type(TargetName name, bool constant = false) noexcept -> TargetTypeID;
@@ -138,8 +140,11 @@ private:
 
     using TypeState = std::variant<Resolving, TargetTypeID>;
 
-    auto function_type(CallableSignatureID signature, bool stops_test, TypeNameScope scope) noexcept
-        -> TargetType;
+    auto function_ref_type(
+        CallableSignatureID signature,
+        bool stops_test,
+        TypeNameScope scope
+    ) noexcept -> TargetType;
     auto cpp_type_query(const CppQueryType& query, TypeNameScope scope) noexcept -> TargetExpr;
 
     ArtifactLowering& artifact_lowering;
