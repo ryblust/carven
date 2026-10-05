@@ -218,12 +218,21 @@ auto DeclResolver::resolve_function(
     if (!head_boundary.has_value()) {
         co_return std::unexpected(head_boundary.error());
     }
+    const auto declaration_origin = declaration_source_origin(draft, symbol.module_id, item_span);
+    if (auto* source = draft.source_analysis()) {
+        source->declare(
+            declaration_origin,
+            locate(declaration_source_id(draft, symbol.module_id), function.name_span),
+            std::nullopt,
+            std::nullopt
+        );
+    }
     draft.define_declaration(
         form.function,
         FunctionDeclaration {
             .module_id = module_declaration(symbol.module_id),
             .name = draft.intern_spelling(symbol.name),
-            .origin = declaration_source_origin(draft, symbol.module_id, item_span),
+            .origin = declaration_origin,
             .visibility = symbol.visibility,
             .callable = form.callable,
             .entry_point = entry ? std::optional(

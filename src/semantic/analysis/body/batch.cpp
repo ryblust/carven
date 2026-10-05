@@ -156,6 +156,9 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
     }
     collect_unused_locals(frames.front());
     regions.front().failures = BodyFailures(outward_failure_term_id);
+    if (observe_sources) {
+        draft().source_analysis()->add_body(std::move(source_occurrences));
+    }
     co_return std::move(body_builder).finish(std::move(regions.front()));
 }
 
@@ -422,6 +425,7 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
         policy != FailureContractPolicy::UndeclaredExplicit,
         false
     );
+    elaborator.observe_sources = draft->source_analysis() != nullptr && !draft->staged_function(id);
     elaborator.lexical_class =
         symbol.class_operation ? std::optional(symbol.class_operation->owner) : std::nullopt;
     for (auto index = 0uz; index < function.parameters.size(); ++index) {

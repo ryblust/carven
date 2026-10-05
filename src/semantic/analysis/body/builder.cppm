@@ -58,6 +58,7 @@ public:
     auto completion_patterns() const noexcept -> CompletionPatterns;
     auto pattern_table() const noexcept -> const MutableBodyTable<ElaboratedPattern, PatternID>&;
     auto binding_expression(LocalBindingID) noexcept -> PlaceExpression;
+    auto binding_origin(LocalBindingID) const noexcept -> ProgramOriginID;
     auto remember_initializer(LocalBindingID, const SemanticExpression&) noexcept -> void;
     auto known_callable(const SemanticExpression&) const noexcept -> std::optional<CallableID>;
     auto known_sequence_extent(const SemanticExpression&) const noexcept

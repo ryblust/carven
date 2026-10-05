@@ -17,20 +17,23 @@ import std;
 auto ProgramDraft::begin(
     SyntaxProgram&& syntax,
     DiagnosticSink& sink,
-    ExecutionOutput output
+    ExecutionOutput output,
+    SourceAnalysisBuilder* source_analysis
 ) noexcept -> ProgramDraft {
-    return ProgramDraft(std::move(syntax).decompose(), sink, std::move(output));
+    return ProgramDraft(std::move(syntax).decompose(), sink, std::move(output), source_analysis);
 }
 
 ProgramDraft::ProgramDraft(
     SyntaxProgramParts parts,
     DiagnosticSink& sink,
-    ExecutionOutput output
+    ExecutionOutput output,
+    SourceAnalysisBuilder* source_analysis
 ) noexcept
     : program_identity(ProgramIdentity::fresh()),
       provenance_appender(std::move(parts.provenance)),
       analysis_diagnostics(sink),
       output(std::move(output)),
+      source_observer(source_analysis),
       state(State::Declarations),
       storage(
           program_identity,
@@ -38,6 +41,10 @@ ProgramDraft::ProgramDraft(
           std::move(parts.syntax_by_module),
           std::move(parts.resolved_import_graph)
       ) {}
+
+auto ProgramDraft::source_analysis() const noexcept -> SourceAnalysisBuilder* {
+    return source_observer;
+}
 
 auto ProgramDraft::syntax_tree(ProgramModuleID id) const noexcept -> const SyntaxTree& {
     if (!owns(id)) {

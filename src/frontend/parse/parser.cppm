@@ -1,6 +1,7 @@
 module carven:frontend.parse.parser;
 
 import :diagnostics.code;
+import :diagnostics.diagnosed;
 import :diagnostics.diagnostic;
 import :frontend.ast.control;
 import :frontend.ast.decl;
@@ -22,7 +23,7 @@ import std;
 class Parser final {
 public:
     Parser(SourceView source_view, const TokenBuffer& token_buffer) noexcept;
-    auto run() noexcept -> std::expected<SyntaxTree, Diagnostics>;
+    auto run() noexcept -> Diagnosed<std::optional<SyntaxTree>>;
 
 private:
     struct ParseFailure final {

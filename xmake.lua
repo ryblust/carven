@@ -73,6 +73,7 @@ includes("tests/crafts")
 includes("tests/interop")
 includes("tests/cli")
 includes("tools/graver")
+includes("tools/editor")
 
 task("format")
     set_menu({

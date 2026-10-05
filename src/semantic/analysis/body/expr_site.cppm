@@ -212,6 +212,8 @@ public:
         Value index,
         Span span
     ) noexcept -> ExpressionResult<Value>;
+    auto observe_field(ProgramOriginID declaration, Span name, ConstructionTypeRef type) noexcept
+        -> void;
     auto finish_field(
         ConstructionTypeRef type,
         FieldProjection field,

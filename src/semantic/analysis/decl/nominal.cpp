@@ -60,10 +60,26 @@ auto DeclResolver::resolve_struct(
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
         }
+        const auto field_origin = declaration_source_origin(draft, symbol.module_id, field.span);
+        if (auto* source = draft.source_analysis()) {
+            auto builtin = std::optional<BuiltinType>();
+            if (const auto* concrete = std::get_if<TypeID>(&*type)) {
+                const auto canonical = draft.type_copy(*concrete);
+                if (const auto* value = std::get_if<BuiltinTypeValue>(&canonical.value)) {
+                    builtin = value->kind;
+                }
+            }
+            source->declare(
+                field_origin,
+                locate(declaration_source_id(draft, symbol.module_id), field.name_span),
+                *type,
+                builtin
+            );
+        }
         fields.push_back({
             .name = draft.intern_spelling(name),
             .type = *type,
-            .origin = declaration_source_origin(draft, symbol.module_id, field.span),
+            .origin = field_origin,
         });
     }
     if (form.structure.index() >= structures.size()) {

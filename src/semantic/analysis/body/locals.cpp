@@ -85,6 +85,7 @@ auto BodyElaborator::bind_local(
             std::format("local name '{}' is already defined in this scope", name)
         ));
     }
+    observe_source(name_span, locate(ast.source_id(), name_span), storage.type);
     return {};
 }
 

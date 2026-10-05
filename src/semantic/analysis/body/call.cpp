@@ -534,6 +534,13 @@ auto BodyElaborator::class_operation(
             .takeable = false,
             .completes = true
         };
+        if (observe_sources) {
+            observe_source(
+                span,
+                draft().source_analysis()->definition(declaration.origin),
+                callee.type()
+            );
+        }
         co_return callee;
     }
     co_return std::unexpected(fail(

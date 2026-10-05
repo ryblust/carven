@@ -66,11 +66,35 @@ SourceBatch → SyntaxProgram → ProgramDraft → SemIRProgram
 provides node storage and read-only views. `frontend.ast.topology` supplies
 structural traversal for syntax construction and validation.
 
+`parse_recovering` exposes complete top-level syntax items retained after parser
+recovery, together with error diagnostics. Delimiter preflight and initial import
+failures provide no tree. The `parse` entry remains strict and rejects these
+recovered results when diagnostics are present; recovery does not admit incomplete
+source into compilation. Editor queries can consume retained declarations while
+keeping the source and tree owners alive.
+
 `parse_program` parses the closed source batch and resolves module imports.
 `analyze` constructs declarations and typed structured bodies, solves types and
 failure sets, validates contracts, checks ownership and callable loans, and
 publishes an immutable semantic program. Errors prevent delivery; warnings accompany
 a successful result.
+
+`semantic.analysis.source` defines `SourceOccurrence` and its optional synchronous
+recipient, `SourceAnalysisOutput`. Analysis records source occurrences at identity
+resolution sites. Declaration and nominal gates control delivery of declaration
+names; each successfully constructed body contributes its own observations.
+Type occurrences use direct AST token spans rather than enclosing expression
+ranges. Locations and definitions can survive an unrelated body error. After successful
+publication, types use `TypeID` values owned by the same semantic program. Failed
+analysis retains only known `BuiltinType` values. Observation records contain no
+draft identities or borrows, and do not establish solved failure or ownership
+contracts. An empty recipient performs no recording. The analysis entry delivers
+one observation batch at completion; publication gates remain unchanged.
+
+`tools/editor` owns document revisions, retained snapshots, lazy source queries,
+and content caching. Its provider analyzes an explicit closed module set in full
+when selected content changes. See [Editor analysis](../../tools/editor/README.md)
+for ownership, query contracts, invalidation, and measurement commands.
 
 ## Design considerations
 

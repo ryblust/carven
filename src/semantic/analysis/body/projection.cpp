@@ -171,6 +171,16 @@ auto BodyExprSite::finish_index(
     );
 }
 
+auto BodyExprSite::observe_field(
+    ProgramOriginID declaration,
+    Span name,
+    ConstructionTypeRef type
+) noexcept -> void {
+    if (body.observe_sources) {
+        body.observe_source(name, draft().source_analysis()->definition(declaration), type);
+    }
+}
+
 auto BodyExprSite::finish_field(
     ConstructionTypeRef type,
     FieldProjection field,

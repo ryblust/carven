@@ -273,6 +273,11 @@ public:
 
 private:
     auto draft() const noexcept -> ProgramDraft&;
+    auto observe_source(
+        Span location,
+        std::optional<SourceSpan> definition,
+        std::optional<ConstructionTypeRef> type
+    ) noexcept -> void;
     auto catalog() const noexcept -> AnalysisCatalogView;
     auto import_usage() const noexcept -> ImportUsage&;
     auto origin(Span span) noexcept -> ProgramOriginID;
@@ -611,6 +616,8 @@ private:
     // The frame count at entry to each enclosing const block. A local of an
     // earlier frame is visible inside the block only when it is static.
     std::vector<std::size_t> const_block_frames;
+    bool observe_sources = false;
+    std::vector<SourceOccurrenceDraft> source_occurrences;
     bool static_body = false;
     std::optional<LifetimeRegionID> active_full_expression;
     bool reachable;

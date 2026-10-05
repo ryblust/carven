@@ -34,6 +34,9 @@ auto ProgramConstruction::construct() noexcept -> AnalysisTask<void> {
     if (const auto failure = draft.diagnostics().failure()) {
         co_return std::unexpected(*failure);
     }
+    if (auto* source = draft.source_analysis()) {
+        source->begin_bodies();
+    }
     co_return (co_await bodies.run());
 }
 

@@ -73,6 +73,31 @@ BodyElaborator::BodyElaborator(
     failure_contexts.push_back({outward_failure_term_id, accepts_catch_residual});
 }
 
+auto BodyElaborator::observe_source(
+    Span location,
+    std::optional<SourceSpan> definition,
+    std::optional<ConstructionTypeRef> type
+) noexcept -> void {
+    if (!observe_sources || location.empty()) {
+        return;
+    }
+    auto builtin = std::optional<BuiltinType>();
+    if (type) {
+        if (const auto* concrete = std::get_if<TypeID>(&*type)) {
+            const auto canonical = draft().type_copy(*concrete);
+            if (const auto* value = std::get_if<BuiltinTypeValue>(&canonical.value)) {
+                builtin = value->kind;
+            }
+        }
+    }
+    source_occurrences.push_back(
+        {.location = locate(ast.source_id(), location),
+         .definition = definition,
+         .type = type,
+         .builtin_type = builtin}
+    );
+}
+
 auto BodyElaborator::draft() const noexcept -> ProgramDraft& {
     return *batch->draft;
 }
@@ -321,6 +346,7 @@ auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
         co_return std::optional<TypeID>();
     }
     const auto text = spelling(name->name_span);
+    observe_source(name->name_span, std::nullopt, std::nullopt);
     if (const auto builtin = source_builtin_type(text)) {
         co_return std::optional(draft().builtin_type(*builtin));
     }

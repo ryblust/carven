@@ -29,6 +29,40 @@ import :support.unique_indirect;
 import :support.visit;
 import std;
 
+namespace {
+
+auto source_type_anchor(ASTView syntax, ASTExprID id) noexcept -> std::optional<Span> {
+    while (const auto* group = std::get_if<ASTGroupExpr>(&syntax.expression(id).value)) {
+        id = group->expression;
+    }
+    // A result type belongs to the operation's own source token. It does not
+    // describe arbitrary offsets inside its operands, bodies, or annotations.
+    return syntax.expression(id).value.visit(
+        [](const auto& form) static noexcept -> std::optional<Span> {
+            using Form = std::remove_cvref_t<decltype(form)>;
+            if constexpr (std::same_as<Form, ASTLiteral>) {
+                return form.span;
+            } else if constexpr (requires { form.name_span; }) {
+                return form.name_span;
+            } else if constexpr (requires { form.operator_span; }) {
+                return form.operator_span;
+            } else if constexpr (std::same_as<Form, ASTAccessExpr>) {
+                return form.marker_span;
+            } else if constexpr (std::same_as<Form, ASTIfForm>) {
+                return form.branches.front().keyword_span;
+            } else if constexpr (std::same_as<Form, ASTMatchForm>) {
+                return form.keyword_span;
+            } else if constexpr (std::same_as<Form, ASTTryForm>) {
+                return form.try_span;
+            } else {
+                return std::nullopt;
+            }
+        }
+    );
+}
+
+} // namespace
+
 auto BodyElaborator::conditional_expression(
     const ASTIfForm& source,
     Span span,
@@ -378,6 +412,11 @@ auto BodyElaborator::expression(
             : dispatches_before_children ? entry_reachable
                                          : reachable && reference_path_reachable;
         reachable = was_reachable && result->completes;
+        if (observe_sources) {
+            if (const auto anchor = source_type_anchor(ast, id)) {
+                observe_source(*anchor, std::nullopt, result->type());
+            }
+        }
     }
     co_return result;
 }

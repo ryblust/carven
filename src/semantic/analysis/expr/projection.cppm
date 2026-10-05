@@ -123,6 +123,9 @@ auto construct_member_expression(
             ));
         }
         const auto index = static_cast<std::uint32_t>(field - declaration.fields.begin());
+        if constexpr (Site::mode == ExpressionMode::Body) {
+            site.observe_field(field->origin, source.name_span, field->type);
+        }
         return site.finish_field(
             field->type,
             FieldProjection {.owner = structure->structure, .field_index = index},

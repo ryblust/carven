@@ -1,6 +1,7 @@
 module carven:compiler.analysis;
 
 import :diagnostics.diagnosed;
+import :semantic.analysis.source;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :source.batch;
@@ -13,5 +14,6 @@ auto analyze_compilation(
     const SourceManager& sources,
     SourceBatch batch,
     const ExecutionOutput& output = {},
-    const TimingOutput& timings = {}
+    const TimingOutput& timings = {},
+    const SourceAnalysisOutput& source_output = {}
 ) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics>;

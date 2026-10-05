@@ -159,6 +159,10 @@ auto BodyBuilder::make_expression(
     };
 }
 
+auto BodyBuilder::binding_origin(LocalBindingID id) const noexcept -> ProgramOriginID {
+    return bindings.copy(id).origin;
+}
+
 auto BodyBuilder::binding_expression(LocalBindingID id) noexcept -> PlaceExpression {
     const auto binding = bindings.copy(id);
     auto expression =

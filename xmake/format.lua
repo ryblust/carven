@@ -26,7 +26,7 @@ function main(check)
     assert(program, "clang-format is required; install llvm on macOS or add clang-format to PATH")
 
     local files = {}
-    for _, root in ipairs({"src", "tests", "crafts", "examples", "tools/graver/src", "tools/graver/tests"}) do
+    for _, root in ipairs({"src", "tests", "crafts", "examples", "tools/graver/src", "tools/graver/tests", "tools/editor/src", "tools/editor/tests", "tools/editor/benchmarks"}) do
         for _, extension in ipairs({"cpp", "cppm", "h", "hpp"}) do
             table.join2(files, os.files(path.join(os.projectdir(), root, "**." .. extension)))
         end

@@ -153,6 +153,9 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
     const auto resolved_types =
         std::move(input.construction_types)
             .canonicalize(*failures, input.types, input.callable_signatures);
+    if (source_observer != nullptr) {
+        source_observer->resolve_types(resolved_types);
+    }
     finalize_callable_signatures(resolved_types, *failures);
     auto declarations = std::move(input.declarations).seal(resolved_types);
     auto types = std::move(input.types).seal();

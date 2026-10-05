@@ -5,6 +5,7 @@ import :frontend.ast.tree;
 import :frontend.program;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.failure;
+import :semantic.analysis.source.builder;
 import :semantic.evaluation.output;
 import :semantic.semir.constant_access;
 import :semantic.semir.program;
@@ -45,7 +46,8 @@ public:
     static auto begin(
         SyntaxProgram&& syntax,
         DiagnosticSink& sink,
-        ExecutionOutput output = {}
+        ExecutionOutput output = {},
+        SourceAnalysisBuilder* source_analysis = nullptr
     ) noexcept -> ProgramDraft;
     ProgramDraft(const ProgramDraft&) = delete;
     ProgramDraft(ProgramDraft&&) = default;
@@ -53,6 +55,7 @@ public:
     auto operator=(const ProgramDraft&) -> ProgramDraft& = delete;
     auto operator=(ProgramDraft&&) -> ProgramDraft& = delete;
     auto identity() const noexcept -> ProgramIdentity override;
+    auto source_analysis() const noexcept -> SourceAnalysisBuilder*;
     auto provenance_identity() const noexcept -> ProvenanceIdentity;
     auto diagnostics() const noexcept -> AnalysisDiagnostics;
     auto write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept -> void;
@@ -229,7 +232,12 @@ private:
         Bodies,
     };
 
-    ProgramDraft(SyntaxProgramParts parts, DiagnosticSink& sink, ExecutionOutput output) noexcept;
+    ProgramDraft(
+        SyntaxProgramParts parts,
+        DiagnosticSink& sink,
+        ExecutionOutput output,
+        SourceAnalysisBuilder* source_analysis
+    ) noexcept;
     auto resolve() && noexcept -> AnalysisResult<SemIRProgram>;
     auto finalize_callable_signatures(
         const TypeResolution& types,
@@ -249,6 +257,7 @@ private:
     CompilationProvenanceAppender provenance_appender;
     AnalysisDiagnostics analysis_diagnostics;
     ExecutionOutput output;
+    SourceAnalysisBuilder* source_observer;
     State state;
 
     struct ConstructionStorage final {

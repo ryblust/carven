@@ -1,6 +1,7 @@
 module carven:frontend.parse.parser.impl;
 
 import :diagnostics.builder;
+import :diagnostics.diagnosed;
 import :diagnostics.diagnostic;
 import :frontend.ast.control;
 import :frontend.ast.decl;
@@ -17,6 +18,29 @@ import :frontend.parse.builder;
 import :frontend.parse.parser;
 import :source.text;
 import std;
+
+namespace {
+
+auto closing_delimiter(TokenKind kind) noexcept -> TokenKind {
+    switch (kind) {
+        case TokenKind::InterpolationStart: return TokenKind::InterpolationEnd;
+        case TokenKind::InterpolationOpen:  return TokenKind::InterpolationClose;
+        case TokenKind::LeftParen:          return TokenKind::RightParen;
+        case TokenKind::LeftBracket:        return TokenKind::RightBracket;
+        case TokenKind::LeftBrace:          return TokenKind::RightBrace;
+        default:                            return TokenKind::Invalid;
+    }
+}
+
+auto is_closing_delimiter(TokenKind kind) noexcept -> bool {
+    return kind == TokenKind::RightParen
+        || kind == TokenKind::RightBracket
+        || kind == TokenKind::RightBrace
+        || kind == TokenKind::InterpolationEnd
+        || kind == TokenKind::InterpolationClose;
+}
+
+} // namespace
 
 Parser::Parser(SourceView source_view, const TokenBuffer& token_buffer) noexcept
     : source(source_view.text),
@@ -47,9 +71,9 @@ auto Parser::enter_depth(std::uint32_t& depth) noexcept -> DepthGuard {
     return set_depth(depth, depth + 1);
 }
 
-auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
+auto Parser::run() noexcept -> Diagnosed<std::optional<SyntaxTree>> {
     if (!preflight_delimiter_nesting()) {
-        return std::unexpected(std::move(diagnostics));
+        return {.value = std::nullopt, .diagnostics = std::move(diagnostics)};
     }
 
     auto module_imports = std::vector<ASTModuleImportID> {};
@@ -65,6 +89,12 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
         } else {
             module_imports.push_back(parse_module_import());
         }
+    }
+
+    // Initial imports have no atomic recovery boundary. Never publish their
+    // partially constructed records when import parsing has failed.
+    if (failed) {
+        return {.value = std::nullopt, .diagnostics = std::move(diagnostics)};
     }
 
     while (!failed && !at_end()) {
@@ -89,11 +119,14 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
         auto item = std::optional<ASTItemID>();
         if (is_declaration) {
             item = parse_top_level_item();
-        } else if (const auto statement = parse_statement()) {
-            statements.push_back(*statement);
-            continue;
+        } else {
+            const auto statement = parse_statement();
+            if (statement && !failed) {
+                statements.push_back(*statement);
+                continue;
+            }
         }
-        if (item.has_value()) {
+        if (item && !failed) {
             items.push_back(*item);
             continue;
         }
@@ -112,16 +145,6 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
         builder.rewind(checkpoint);
         failed = false;
         synchronize_top_level_item(item_start);
-    }
-
-    if (failed || !diagnostics.empty()) {
-        if (diagnostics.empty() && furthest_speculative_failure.has_value()) {
-            const auto& failure = *furthest_speculative_failure;
-            diagnostics.push_back(DiagnosticBuilder(failure.code, failure.message)
-                                      .primary(locate(source_id, failure.span))
-                                      .build());
-        }
-        return std::unexpected(std::move(diagnostics));
     }
 
     if (!statements.empty()) {
@@ -160,18 +183,25 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
         .cpp_source_fragments = std::move(cpp_source_fragments),
         .items = std::move(items),
     };
-    return std::move(builder).finish(std::move(ast_module));
+    return {
+        .value = std::move(builder).finish(std::move(ast_module)),
+        .diagnostics = std::move(diagnostics),
+    };
 }
 
 auto Parser::synchronize_top_level_item(std::size_t item_start) noexcept -> void {
-    auto brace_depth = 0uz;
+    // Preflight has checked delimiter pairing. Retain its complete lexical
+    // nesting boundary so recovery never promotes a nested declaration.
+    auto delimiter_depth = 0uz;
+    const auto advance_depth = [&](TokenKind kind) noexcept {
+        if (closing_delimiter(kind) != TokenKind::Invalid) {
+            ++delimiter_depth;
+        } else if (is_closing_delimiter(kind) && delimiter_depth != 0) {
+            --delimiter_depth;
+        }
+    };
     for (auto index = item_start; index < cursor && index < tokens.size(); ++index) {
-        if (tokens[index].kind == TokenKind::LeftBrace) {
-            ++brace_depth;
-        }
-        if (tokens[index].kind == TokenKind::RightBrace && brace_depth != 0) {
-            --brace_depth;
-        }
+        advance_depth(tokens[index].kind);
     }
     const auto starts_item = [](TokenKind kind) static noexcept -> bool {
         return kind == TokenKind::Private
@@ -186,16 +216,10 @@ auto Parser::synchronize_top_level_item(std::size_t item_start) noexcept -> void
             || kind == TokenKind::CppSourceFragment;
     };
     while (!at_end()) {
-        if (brace_depth == 0 && starts_item(current().kind)) {
+        if (delimiter_depth == 0 && starts_item(current().kind)) {
             return;
         }
-        const auto token = consume();
-        if (token.kind == TokenKind::LeftBrace) {
-            ++brace_depth;
-        }
-        if (token.kind == TokenKind::RightBrace && brace_depth != 0) {
-            --brace_depth;
-        }
+        advance_depth(consume().kind);
     }
 }
 
@@ -334,23 +358,9 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
             default:                      return "";
         }
     };
-    const auto closing = [](TokenKind kind) static noexcept -> TokenKind {
-        switch (kind) {
-            case TokenKind::InterpolationStart: return TokenKind::InterpolationEnd;
-            case TokenKind::InterpolationOpen:  return TokenKind::InterpolationClose;
-            case TokenKind::LeftParen:          return TokenKind::RightParen;
-            case TokenKind::LeftBracket:        return TokenKind::RightBracket;
-            case TokenKind::LeftBrace:          return TokenKind::RightBrace;
-            default:                            return TokenKind::Invalid;
-        }
-    };
 
     for (const auto& token : tokens) {
-        const auto opening = token.kind == TokenKind::LeftParen
-            || token.kind == TokenKind::LeftBracket
-            || token.kind == TokenKind::LeftBrace
-            || token.kind == TokenKind::InterpolationStart
-            || token.kind == TokenKind::InterpolationOpen;
+        const auto opening = closing_delimiter(token.kind) != TokenKind::Invalid;
         if (opening) {
             if (delimiters.size() == maximum_syntax_nesting) {
                 fail(
@@ -364,12 +374,7 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
             continue;
         }
 
-        const auto closing_token = token.kind == TokenKind::RightParen
-            || token.kind == TokenKind::RightBracket
-            || token.kind == TokenKind::RightBrace
-            || token.kind == TokenKind::InterpolationEnd
-            || token.kind == TokenKind::InterpolationClose;
-        if (!closing_token) {
+        if (!is_closing_delimiter(token.kind)) {
             continue;
         }
         if (delimiters.empty()) {
@@ -379,7 +384,7 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
             );
             return false;
         }
-        const auto expected = closing(delimiters.back().kind);
+        const auto expected = closing_delimiter(delimiters.back().kind);
         if (token.kind == expected) {
             delimiters.pop_back();
             continue;
@@ -400,7 +405,7 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
             std::format(
                 "unclosed delimiter '{}'; expected '{}'",
                 spelling(delimiter.kind),
-                spelling(closing(delimiter.kind))
+                spelling(closing_delimiter(delimiter.kind))
             ),
             delimiter.span
         );

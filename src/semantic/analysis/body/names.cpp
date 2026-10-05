@@ -31,6 +31,7 @@ import std;
 auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
     -> AnalysisTask<SelectedExpression> {
     const auto text = spelling(name.name_span);
+    observe_source(name.name_span, std::nullopt, std::nullopt);
     if (const auto* local = use_local(text)) {
         if (runtime_local_outside_block(text)) {
             co_return std::unexpected(fail(
@@ -41,6 +42,13 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
         }
         const auto binding = local->storage.binding;
         const auto foreign = binding.owner() != active_builder().identity();
+        if (observe_sources && !foreign) {
+            observe_source(
+                name.name_span,
+                draft().source_span(active_builder().binding_origin(binding)),
+                local->type
+            );
+        }
         if (foreign || local->static_source || local->role == BodyLocalRole::RangeRead) {
             auto value = co_await read_local(*local, span);
             if (!value) {
@@ -120,6 +128,14 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                     co_return std::unexpected(completed.error());
                 }
                 auto value = active_builder().callable_expression(function.callable, origin(span));
+                if (observe_sources) {
+                    const auto declaration = draft().function_declaration_copy(function.function);
+                    observe_source(
+                        name.name_span,
+                        draft().source_analysis()->definition(declaration.origin),
+                        value.type.construction()
+                    );
+                }
                 co_return BuiltExpression {
                     .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},
                     .pending_failures = {},
