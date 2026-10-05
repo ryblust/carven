@@ -9,6 +9,17 @@ target("carven-test-internal")
 
     add_tests("internal", {group = "internal", run_timeout = 60000,
         runargs = {"--exclude", "Static specialization budgets:*"}})
-    add_tests("specialization-budgets", {group = "internal", run_timeout = 60000,
-        runargs = {"--filter", "Static specialization budgets:*"}})
+    -- Each production-budget contract gets its own result and timeout. Combining
+    -- them makes sanitizer overhead accumulate and hides which case is slow.
+    for _, budget in ipairs({
+        {name = "iteration", test = "default iteration boundary"},
+        {name = "instance", test = "default instance boundary is independent per root"},
+        {name = "nesting", test = "default nesting boundary"},
+        {name = "node", test = "default node limit counts copied operations"},
+    }) do
+        add_tests("specialization-" .. budget.name .. "-budget", {
+            group = "internal", run_timeout = 60000,
+            runargs = {"--test", "Static specialization budgets: " .. budget.test},
+        })
+    end
 target_end()

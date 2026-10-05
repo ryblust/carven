@@ -111,9 +111,13 @@ defaults to check diagnostics, source locations, and call traces. Large inputs s
 scale-dependent contracts such as stack depth or retained-storage growth.
 Semantic resource-limit cases stop after analysis and publication. Backend tests
 cover generation of the corresponding operations with representative inputs.
-The internal runner registers static-specialization budgets separately from its
-other cases, using complementary filters on the same executable. Both selections
-belong to the `internal` group and run in the full suite.
+The internal runner excludes static-specialization budgets from its ordinary
+selection and registers each iteration, instance, nesting, and node budget
+contract separately on the same executable. Every selection belongs to the
+`internal` group and runs in the full suite. Each budget contract has its own
+result, elapsed time, and 60-second timeout, so instrumentation overhead does not
+accumulate across unrelated cases. These source-level cases exercise
+production-size default limits; they are not performance checks.
 
 Language tests use local Carven state for counters and execution traces.
 A language fixture may use a same-stem C++ provider header for observations that
