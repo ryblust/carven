@@ -20,6 +20,7 @@ semantic publication and C++ realization.
 | Static capabilities and associated types | Generic algorithms requiring explicit operations | Definition-site checking and coherent evidence |
 | Operator capabilities | User-defined operations for existing tokens | [Operators](operators.md) signature and result rules |
 | Multi-field consuming decomposition | Independent owners extracted from one class | [Ownership contract below](#multi-field-consuming-decomposition) |
+| Uninitialized storage and construction | Native output adapters, buffers, containers, and memory pools | [Destination ownership and completion contracts](uninitialized-storage.md#open-decisions) |
 
 Generic implementation is blocked by the scope and finite-instance decisions
 below. Generic classes, constant admission for selected library operations,
@@ -84,10 +85,9 @@ capabilities that require their own source contracts and concrete consumers.
 
 ## Failure extension edges
 
-The [failure reference](../docs/language/failures.md) defines the implemented
-copyable nominal payload contract, including owning String and tracked borrowed
-text. [C++ interoperation](#c-interoperation-track) owns public failure mapping;
-[async](async.md) owns suspension, cancellation, and completion transport.
+Typed failures use copyable nominal payloads, including owning String and tracked
+borrowed text. C++ interoperation owns public failure mapping; async owns
+suspension, cancellation, and completion transport.
 
 ### Richer failure payloads
 
@@ -129,6 +129,15 @@ borrow/frame admission. A timer or I/O consumer can activate same-thread work.
 Migration and cross-thread completion additionally require concurrency contracts.
 
 ## C++ interoperation track
+
+The uninitialized-storage proposal develops explicit construction destinations,
+partial cleanup, and caller-provided validity contracts. Its public surface and
+checking rules remain open. Concrete synchronous native adapters can establish
+the requirements under the C++20
+baseline; byte adoption is deferred. The selected surface determines its generic
+prerequisites. [Constant storage](constant-storage.md) owns constant-execution
+admission; async, concurrency, and dynamic values own their consumers' additional
+contracts.
 
 C++ interoperation is opt-in through header imports, top-level C++ source
 fragments, and explicit `import(cpp)` and `export(cpp)` declarations. Explicit

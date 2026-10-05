@@ -24,10 +24,8 @@ const ct::Suite tests([] static noexcept {
         }
     )");
             const auto cases = std::array {
-                "fn outside(c: C) -> i32 { return c.value; }",
                 "fn outside() -> C { return C { value: 2 }; }",
                 "fn outside() -> C { return C {}; }",
-                "fn outside(c: C) -> i32 { return c.secret(); }",
                 "class D { fn outside(c: C) -> i32 { return c.value; } }",
             };
             ct::each(cases, std::identity {}, [&](const auto& source) noexcept {

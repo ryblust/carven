@@ -32,9 +32,8 @@ and referenced-parameter facts.
 
 `BodyPreparation` borrows the published body's occurrences; the semantic program
 outlives preparation and realization. Each realized fragment owns its operation
-preparation. [Preparation](preparation.md) defines the summaries, operand demands,
-and plans that connect these stages. `BodyRealizer` composes the published
-structured regions and preserves their evaluation, storage, and exit contracts.
+preparation. `BodyRealizer` composes the published structured regions and preserves
+their evaluation, storage, and exit contracts.
 
 Within `realization/`, `expr` owns cleanup-frame entry and result delivery;
 `fragment` builds and composes completed operands, and `writer` handles repeated
@@ -59,9 +58,11 @@ establishes binding stability; realization owns C++ cleanup scopes and failure
 receivers; semantic analysis publishes residual pattern coverage. Native operations
 retain their delegated C++ access and lifetime contracts.
 
-Structural generation tests check these choices. Behavior and lifetime tests check
-their execution and observations. [Testing](../../development/testing.md) defines
-the evidence and measurement boundaries.
+Changes preserve source effects, observations, cleanup, and delegated native
+capabilities. Derive reusable facts at their owning stage and consume them
+downstream. Structural tests check target properties; behavior and lifetime tests
+check execution and observations. Follow [Testing](../../development/testing.md)
+for test placement and performance measurement.
 
 ## Static instances
 
@@ -79,9 +80,8 @@ Module contexts track materialized constant identities; callable-local allocator
 reserve names for locals and labels. Artifact caches use canonical semantic
 identities. Content digests select preferred spellings;
 naming compares full content when those spellings coincide. Shared bodies reference
-module-owned support names. Provider artifacts are independent of the instances selected by their callers;
-[Artifacts](artifacts.md#staged-bodies) defines their callable surface and definition
-ordering.
+module-owned support names. Provider artifacts are independent of the instances
+selected by their callers.
 
 Source-template bodies have been discarded before planning. Published closure
 construction order supplies stable names and dependency discovery without
@@ -102,12 +102,6 @@ continue, return, and failure handling still apply.
 | Place interfaces, collect dependencies, construct target syntax, or render artifacts | [Artifacts](artifacts.md) |
 | Implement String, formatting, printing, assertions, or test reports | [Builtins](builtins.md) |
 
-[Compiler architecture](../README.md) owns semantic construction and
-publication. [Language reference](../../language/README.md) owns program validity
-and observable behavior. [Toolchain artifacts](../../toolchain/artifacts.md)
-defines native compilation and artifact consumption; [CLI](../../toolchain/cli.md)
-owns filesystem output policy.
-
 ## Extending operations
 
 Semantic analysis publishes the operation's type, evaluation and lifetime contracts.
@@ -124,9 +118,6 @@ contracts. Scheduling, storage and cleanup consume those contracts. New control
 scopes, ownership modes or partial-object lifetimes require design and checks at
 their owning boundaries.
 
-Use [operation preparation](preparation.md#operation-preparation) for selected
-implementations and operand mappings, and [evaluation and values](realization.md#evaluation-and-values)
-for storage and delivery. Aggregate changes also need the
-[sequencing and partial-object boundary](realization.md#aggregate-sequencing).
-Text and report operations use these same contracts through the
-[builtin implementations](builtins.md).
+Aggregate changes preserve initializer sequencing and partial-object cleanup.
+Text and report operations use the same preparation, storage, and delivery
+contracts as other operations.

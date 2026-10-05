@@ -23,6 +23,7 @@ import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
+import :support.unique_indirect;
 import :support.visit;
 import std;
 
@@ -61,7 +62,7 @@ auto BodyElaborator::empty_region(Span span) noexcept -> SemanticRegion {
 auto BodyElaborator::take_built(BuiltExpression& expression, Span span) noexcept
     -> SemanticExpression {
     auto& built = expression;
-    auto result = built.storage.visit(
+    auto result = built.storage->visit(
         Overloaded {
             [&](SemanticExpression& value) noexcept { return std::move(value); },
             [&](PlaceExpression& place) noexcept {
@@ -77,7 +78,7 @@ auto BodyElaborator::take_built(BuiltExpression& expression, Span span) noexcept
 
 auto BodyElaborator::make_built(
     ConstructionTypeRef type,
-    SemanticExpressionValue value,
+    SemanticExpressionValue&& value,
     Span span,
     BodyPendingFailureTerms pending,
     std::optional<ConstantID> constant
@@ -93,7 +94,7 @@ auto BodyElaborator::make_built(
         draft().add_failure_contribution(expression.failures.term(), term);
     }
     return BuiltExpression {
-        .storage = std::move(expression),
+        .storage = UniqueIndirect {BodyExpressionStorage {std::move(expression)}},
 
         .pending_failures = std::move(pending),
         .takeable = true,

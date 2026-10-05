@@ -461,7 +461,7 @@ auto SemanticExecutor::place(ExecutionFrame& frame, const SemanticExpression& ex
         co_return std::unexpected(std::move(unavailable.error()));
     }
     if (const auto* dereference = std::get_if<SemDereference>(&expression.value)) {
-        auto pointer = (co_await value(frame, *dereference->source));
+        auto pointer = (co_await this->value(frame, *dereference->source));
         if (!pointer) {
             co_return std::unexpected(std::move(pointer.error()));
         }
@@ -498,7 +498,7 @@ auto SemanticExecutor::place(ExecutionFrame& frame, const SemanticExpression& ex
         if (!sequence) {
             co_return std::unexpected(std::move(sequence.error()));
         }
-        auto subscript = (co_await value(frame, *index->index));
+        auto subscript = (co_await this->value(frame, *index->index));
         if (!subscript) {
             co_return std::unexpected(std::move(subscript.error()));
         }
@@ -536,7 +536,7 @@ auto SemanticExecutor::sequence_view(
         }
         selected = std::move(*source);
     } else {
-        auto evaluated = (co_await value(frame, expression));
+        auto evaluated = (co_await this->value(frame, expression));
         if (!evaluated) {
             co_return std::unexpected(std::move(evaluated.error()));
         }
@@ -741,11 +741,58 @@ auto SemanticExecutor::read_operand(
         }
         co_return std::move(*selected);
     }
-    auto result = (co_await value(frame, expression));
+    auto result = (co_await this->value(frame, expression));
     if (!result) {
         co_return std::unexpected(std::move(result.error()));
     }
     co_return std::move(*result);
+}
+
+auto SemanticExecutor::argument_use(AccessMode access) noexcept -> OperandUse {
+    switch (access) {
+        case AccessMode::Read:  return OperandUse::Read;
+        case AccessMode::Write: return OperandUse::Write;
+        case AccessMode::Take:  return OperandUse::Value;
+    }
+    std::unreachable();
+}
+
+auto SemanticExecutor::operand(
+    ExecutionFrame& frame,
+    const SemanticExpression& expression,
+    OperandUse use,
+    ProgramOriginID origin
+) noexcept -> ExecutionTask<ExecutionOperand> {
+    if (use == OperandUse::Write || (use == OperandUse::Borrow && expression.selects_storage())) {
+        auto selected = (co_await place(frame, expression));
+        if (!selected) {
+            co_return std::unexpected(std::move(selected.error()));
+        }
+        co_return std::move(*selected);
+    }
+    if (use == OperandUse::Value) {
+        auto evaluated = (co_await value(frame, expression));
+        if (!evaluated) {
+            co_return std::unexpected(std::move(evaluated.error()));
+        }
+        co_return std::move(*evaluated);
+    }
+    auto evaluated = (co_await read_operand(frame, expression));
+    if (!evaluated) {
+        co_return std::unexpected(std::move(evaluated.error()));
+    }
+    if (auto* temporary = std::get_if<ExecutionValue>(&*evaluated); temporary
+        && (use == OperandUse::Borrow
+            || read_borrows_storage(execution_value_type(values, *temporary)))) {
+        auto owned = own_storage(std::move(*temporary), origin);
+        if (!owned) {
+            co_return std::unexpected(std::move(owned.error()));
+        }
+        auto selected = memory.create(std::move(*owned));
+        frame.temporaries.push_back(selected);
+        *evaluated = std::move(selected);
+    }
+    co_return evaluated;
 }
 
 auto SemanticExecutor::materialize(ExecutionOperand operand, ProgramOriginID origin) noexcept
@@ -884,7 +931,7 @@ auto SemanticExecutor::evaluate_root(const SemanticExpression& source) noexcept
     -> ExecutionTask<ExecutionValue> {
     auto frame =
         ExecutionFrame {.body = std::nullopt, .slots = {}, .caught = {}, .temporaries = {}};
-    auto result = (co_await value(frame, source));
+    auto result = (co_await this->value(frame, source));
     if (result) {
         result = detach_views(std::move(*result), source.origin);
     }

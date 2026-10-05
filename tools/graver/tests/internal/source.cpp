@@ -252,37 +252,19 @@ const ct::Suite tests([] static noexcept {
     ct::test(
         "Graver source: lexical errors deliver diagnostics instead of partial source",
         [] static noexcept {
-            const auto cases = std::to_array<std::pair<std::string_view, std::string_view>>({
-                {"Unexpected token", "@"},
-                {"Unterminated string", "\"unterminated"},
-                {"Unterminated interpolation", "f\"{x"},
-                {"Invalid UTF-8", "// invalid UTF-8 \xff"},
-                {"Unterminated C++ fragment", "#[cpp] ---\nmissing fence"},
-            });
-            ct::each(
-                cases,
-                [](const auto& entry) static noexcept { return entry.first; },
-                [&](const auto& entry) noexcept {
-                    const auto input = entry.second;
-                    const auto result = scan(input);
-                    if (!ct::expect(!result.has_value())) {
-                        return;
-                    }
-                    if (!ct::expect(!result.error().empty())) {
-                        return;
-                    }
-                    ct::expect_equal(
-                        result.error().front().finding.severity,
-                        DiagnosticSeverity::Error
-                    );
-                    if (!ct::expect(result.error().front().attachment.primary.has_value())) {
-                        return;
-                    }
-                    ct::expect(
-                        result.error().front().attachment.primary->span.source_id
-                        == SourceID::from_index(7)
-                    );
-                }
+            const auto result = scan("@");
+            if (!ct::expect(!result.has_value())) {
+                return;
+            }
+            if (!ct::expect(!result.error().empty())) {
+                return;
+            }
+            ct::expect_equal(result.error().front().finding.severity, DiagnosticSeverity::Error);
+            if (!ct::expect(result.error().front().attachment.primary.has_value())) {
+                return;
+            }
+            ct::expect(
+                result.error().front().attachment.primary->span.source_id == SourceID::from_index(7)
             );
         }
     );

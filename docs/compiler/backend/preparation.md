@@ -1,19 +1,25 @@
 # Body and operation preparation
 
 Preparation derives implementation choices and operand demands from a published
-semantic body. [Realization](realization.md) consumes those choices without
+semantic body. Realization consumes those choices without
 changing the published evaluation and lifetime contracts.
 
 ## Body summaries and storage observations
 
-`BodyPreparation` borrows semantic expression occurrences, stores subtree execution
-and storage-observation summaries, and prepares operand demands and operation plans
-on request. Each fragment owns its operation preparation. SemIR owns types,
-lifetimes, origins, constants, effects, patterns, and structured control flow.
+`BodyPreparation` borrows semantic expression occurrences, stores operation and
+subtree execution requirements and storage-observation summaries, and prepares
+operand demands and operation plans on request. Each fragment owns its operation
+preparation. SemIR owns types, lifetimes, origins, constants, effects, patterns,
+and structured control flow.
 Realization chooses ordinary or deferred storage from the C++ scope that owns
 the source cleanup.
 Propagation markers select their operand operation. Summary queries require an
 occurrence from the prepared body. The published program outlives realization.
+
+Preparation classifies each occurrence once and stores operation execution and
+subtree execution separately. Later requests reuse the operation fact. Operand
+calls retain their execution requirements when a known arithmetic result replaces
+the arithmetic operation.
 
 Preparation proves stability for bindings whose type has Read value-snapshot
 semantics. Read parameters own immutable copies. Owners and Take parameters are
@@ -115,11 +121,11 @@ implementations from published source facts and local operation contracts.
 operand index or a borrowed constant argument from its result query. Operand demands and final argument
 delivery consume this mapping.
 
-The [native construction result contract](representation.md#native-construction-results)
-retains type, access, and known scalar facts for both queries and execution.
+Native construction retains type, access, and known scalar facts for both queries
+and execution.
 
 ## Callable adaptation plans
 
 `PreparedCallableAdaptation` retains the shared semantic adaptation classification
-and the array delivery form. [Callable adaptation](realization.md#callable-adaptation)
-uses that plan with ordinary operand storage and backing retention.
+and the array delivery form. Realization uses that plan with ordinary operand
+storage and backing retention.

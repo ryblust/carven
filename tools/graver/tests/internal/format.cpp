@@ -230,41 +230,30 @@ const ct::Suite tests([] static noexcept {
     ct::test(
         "Graver format: import trailing commas follow layout and preserve comments",
         [] static noexcept {
-            const auto prefixes = std::to_array<std::string_view>({
-                "import <print> using std::{",
-                "import \"provider.hpp\" using {",
-                "import math using {",
+            const auto cases = std::to_array<std::pair<std::string_view, std::string_view>>({
+                {"import math using {first, second,};", "import math using { first, second };\n"},
+                {"import math using {\nfirst,\nsecond,\n};",
+                 "import math using { first, second };\n"},
+                {"import math using {first // last name\n};",
+                 "import math using {\n    first, // last name\n};\n"},
+                {"import math using {first, // last comma\n};",
+                 "import math using {\n    first, // last comma\n};\n"},
+                {"import math using {first // before comma\n, // after comma\n};",
+                 "import math using {\n    first // before comma\n    , // after comma\n};\n"},
+                {"import math using {first\n\n};", "import math using { first };\n"},
             });
             ct::each(
-                prefixes,
-                [](std::string_view prefix) static noexcept { return prefix; },
-                [&](std::string_view prefix) noexcept {
-                    check_format(
-                        std::string(prefix) + "first, second,};",
-                        std::string(prefix) + " first, second };\n"
-                    );
-                    check_format(
-                        std::string(prefix) + "\nfirst,\nsecond,\n};",
-                        std::string(prefix) + " first, second };\n"
-                    );
-                    check_format(
-                        std::string(prefix) + "first // last name\n};",
-                        std::string(prefix) + "\n    first, // last name\n};\n"
-                    );
-                    check_format(
-                        std::string(prefix) + "first, // last comma\n};",
-                        std::string(prefix) + "\n    first, // last comma\n};\n"
-                    );
-                    check_format(
-                        std::string(prefix) + "first // before comma\n, // after comma\n};",
-                        std::string(prefix)
-                            + "\n    first // before comma\n    , // after comma\n};\n"
-                    );
-                    check_format(
-                        std::string(prefix) + "first\n\n};",
-                        std::string(prefix) + " first };\n"
-                    );
-                }
+                cases,
+                [](const auto& input) static noexcept { return input.first; },
+                [](const auto& input) static noexcept { check_format(input.first, input.second); }
+            );
+            check_format(
+                "import <print> using std::{first, second,};",
+                "import <print> using std::{ first, second };\n"
+            );
+            check_format(
+                "import \"provider.hpp\" using {first, second,};",
+                "import \"provider.hpp\" using { first, second };\n"
             );
             check_format(
                 "import math using {first,}; fn f(){call(1,);}",

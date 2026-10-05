@@ -6,8 +6,7 @@ requirements for consuming its output.
 
 | Task | Reference |
 | --- | --- |
-| Run, check, interpret, or inspect a program | [Command-line interface](cli.md): invocation, source collection, options, and exit status |
-| Generate C++ and select output or test modes | [CLI artifact destinations](cli.md#artifact-destinations), [test emission](cli.md#test-emission), and [linkage domains](cli.md#linkage-domain) |
+| Run, check, interpret, inspect, or generate C++ | [Command-line interface](cli.md): invocation, source collection, output and test modes, linkage domains, and exit status |
 | Compile and link generated code | [Artifacts](artifacts.md): native requirements, generated paths, build integration, and support headers |
 
 See [Language](../language/README.md) for source rules and

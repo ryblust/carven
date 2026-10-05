@@ -6,9 +6,9 @@ import :frontend.ast.decl;
 import :frontend.ast.storage;
 import :frontend.lex;
 import :frontend.parse;
+import :frontend.program;
 import :frontend.program.parse;
 import :frontend.program.verify;
-import :frontend.program;
 import :source.batch;
 import :source.provenance;
 import :support.invariant;
@@ -249,7 +249,7 @@ auto validate_inputs(
 auto parse_program(
     const SourceManager& sources,
     SourceBatch batch,
-    TimingRecorder* timings
+    const TimingOutput& timings
 ) noexcept -> std::expected<SyntaxProgram, Diagnostics> {
     const auto inputs = batch.modules;
     auto input_diagnostics = validate_inputs(sources, inputs);
@@ -286,9 +286,7 @@ auto parse_program(
     auto syntax_trees = std::vector<SyntaxTree>();
     syntax_trees.reserve(ordered_inputs.size());
     for (const auto* input : ordered_inputs) {
-        auto lexing = TimingScope(timings, TimingStage::Lexing);
-        auto lexical = lex(sources.view(input->source_id));
-        lexing.stop();
+        auto lexical = lex(sources.view(input->source_id), timings);
         const auto lexical_has_errors = has_errors(lexical);
         for (auto& diagnostic : lexical.diagnostics) {
             diagnostics.emit(std::move(diagnostic));
@@ -297,9 +295,7 @@ auto parse_program(
             continue;
         }
 
-        auto parsing = TimingScope(timings, TimingStage::Parsing);
-        auto syntax_tree = ::parse(sources, lexical.value);
-        parsing.stop();
+        auto syntax_tree = ::parse(sources, lexical.value, timings);
         if (!syntax_tree.has_value()) {
             for (auto& diagnostic : syntax_tree.error()) {
                 diagnostics.emit(std::move(diagnostic));

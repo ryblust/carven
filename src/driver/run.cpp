@@ -1,7 +1,7 @@
 module carven:driver.run.impl;
 
-import :artifacts.materialize;
 import :artifacts;
+import :artifacts.materialize;
 import :backend.generate;
 import :backend.generation.request;
 import :driver.analysis;
@@ -77,7 +77,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         return emit_driver_error("running a program requires at least one source file", "carven");
     }
     auto timings = CommandTimings(show_timings, "run");
-    const auto sources = collect_command_sources(executable, input_paths, timings.recorder());
+    const auto sources = collect_command_sources(executable, input_paths, timings.output());
     if (!sources) {
         return emit_driver_error(sources.error());
     }
@@ -86,7 +86,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         [](ExecutionOutputStream stream, std::string_view bytes) static noexcept {
             std::print(stream == ExecutionOutputStream::Error ? std::cerr : std::cout, "{}", bytes);
         },
-        timings.recorder()
+        timings.output()
     );
     if (!semantic) {
         return 1;
@@ -105,16 +105,16 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     if (!tests && !has_entry) {
         return emit_missing_entry_error();
     }
-    auto generation = TimingScope(timings.recorder(), TimingStage::CppGeneration);
     const auto artifacts = generate_artifacts(
         std::move(*semantic),
         TargetPlanningRequest {
             .test_mode = tests ? TestGenerationMode::RunnerEntryPoint : TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("carven.run"),
-        }
+        },
+        std::nullopt,
+        timings.output()
     );
-    generation.stop();
-    auto writing = TimingScope(timings.recorder(), TimingStage::ArtifactWriting);
+    auto writing = TimingScope(timings.output(), TimingStage::ArtifactWriting);
     const auto directory = create_run_directory();
     if (!directory) {
         return emit_driver_error(directory.error());
@@ -125,7 +125,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         return emit_driver_error(written.error());
     }
     writing.stop();
-    auto compilation = TimingScope(timings.recorder(), TimingStage::NativeCompilation);
+    auto compilation = TimingScope(timings.output(), TimingStage::NativeCompilation);
 #ifdef _WIN32
     const auto binary = path_to_generic_utf8(*directory / "program.exe");
 #else
@@ -189,6 +189,14 @@ auto run_native_command(std::string_view executable, std::span<const char* const
                 return emit_driver_error(compiled.error());
             }
             if (*compiled != 0) {
+                emit_driver_error(
+                    std::format(
+                        "native compilation of '{}' failed: '{}' exited with code {}",
+                        native_sources[index],
+                        compiler,
+                        *compiled
+                    )
+                );
                 return *compiled;
             }
             native_args.push_back(object);
@@ -207,6 +215,14 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         return emit_driver_error(compiled.error());
     }
     if (*compiled != 0) {
+        emit_driver_error(
+            std::format(
+                "native {} failed: '{}' exited with code {}",
+                msvc ? "linking" : "compilation and linking",
+                compiler,
+                *compiled
+            )
+        );
         return *compiled;
     }
     compilation.stop();
@@ -216,7 +232,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
             program_args.emplace_back(argument);
         }
     }
-    auto execution = TimingScope(timings.recorder(), TimingStage::Execution);
+    auto execution = TimingScope(timings.output(), TimingStage::Execution);
     const auto executed = run_process(std::move(program_args));
     execution.stop();
     if (executed) {

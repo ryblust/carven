@@ -52,11 +52,32 @@ struct OwnershipStorageLoan final {
     auto operator==(const OwnershipStorageLoan& other) const noexcept -> bool;
 };
 
-struct OwnershipRelationships final {
+struct OwnershipRelationshipRows final {
     std::vector<OwnershipCallableLoan> callable_loans;
     std::vector<OwnershipCapture> captures;
     std::vector<OwnershipStorageLoan> storage_loans;
-    auto operator==(const OwnershipRelationships&) const noexcept -> bool = default;
+    auto operator==(const OwnershipRelationshipRows&) const noexcept -> bool = default;
+};
+
+// Absent storage represents an empty value, not unknown backing. Mutating,
+// assigning, or consuming an owner ends its outstanding row borrows.
+class OwnershipRelationships final {
+public:
+    OwnershipRelationships() = default;
+    explicit OwnershipRelationships(OwnershipRelationshipRows rows) noexcept;
+    OwnershipRelationships(const OwnershipRelationships& other) noexcept;
+    OwnershipRelationships(OwnershipRelationships&&) = default;
+    auto operator=(const OwnershipRelationships& other) noexcept -> OwnershipRelationships&;
+    auto operator=(OwnershipRelationships&&) -> OwnershipRelationships& = default;
+    ~OwnershipRelationships() = default;
+    auto view() const noexcept -> const OwnershipRelationshipRows&;
+    auto edit_existing() noexcept -> OwnershipRelationshipRows*;
+    auto edit() noexcept -> OwnershipRelationshipRows&;
+    auto empty() const noexcept -> bool;
+    auto operator==(const OwnershipRelationships& other) const noexcept -> bool;
+
+private:
+    std::unique_ptr<OwnershipRelationshipRows> rows;
 };
 
 struct OwnershipObjectState final {
@@ -170,11 +191,30 @@ struct OwnershipCallCompletion final {
     auto operator==(const OwnershipCallCompletion&) const noexcept -> bool = default;
 };
 
+// Owned first-error fields defer publication without caching source text or a
+// diagnosed token. Origin IDs stay valid throughout this immutable program batch.
+struct OwnershipRecordedError final {
+    DiagnosticCode code;
+    std::string message;
+    ProgramOriginID origin;
+    std::optional<ProgramOriginID> related;
+    std::string related_label;
+    std::string help;
+};
+
+struct OwnershipDiagnosisRecord final {
+    std::optional<OwnershipRecordedError> error;
+    std::map<ProgramOriginID, bool> returned_copies;
+};
+
 struct OwnershipCallQuery final {
     OwnershipCallInput input;
     std::vector<OwnershipCallCompletion> answer;
     std::flat_set<std::size_t> consumers;
     bool queued;
+    // The last evaluation's transfer agrees with the accumulated answer.
+    bool evaluation_matches_answer;
+    std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
 };
 
 struct OwnershipLocalObject final {
@@ -195,8 +235,30 @@ struct OwnershipBodyFacts final {
     std::flat_map<const SemCatchArm*, std::flat_map<TypeID, OwnershipCatchAcceptance>> catches;
 };
 
-auto prepare_ownership_body_facts(const SemIRBody& body, const SemIRProgram& program) noexcept
-    -> OwnershipBodyFacts;
+struct OwnershipPreparation final {
+    std::flat_map<BodyID, OwnershipBodyFacts> body_facts;
+    std::flat_map<BodyID, std::uint32_t> recursion_components;
+};
+
+// Both results observe the same complete body traversal before the solver runs.
+auto prepare_ownership_analysis(const SemIRProgram& program) noexcept -> OwnershipPreparation;
+
+class OwnershipRecursionBuilder final {
+public:
+    explicit OwnershipRecursionBuilder(const SemIRProgram& program) noexcept;
+    // Starts one body before its expressions are observed in preorder.
+    auto begin_body(BodyID body) noexcept -> void;
+    auto observe(const SemanticExpression& expression) noexcept -> void;
+    auto finish() && noexcept -> std::flat_map<BodyID, std::uint32_t>;
+
+private:
+    auto body_ordinal(CallableID callable) const noexcept -> std::optional<std::uint32_t>;
+    const SemIRProgram& program;
+    std::flat_map<BodyID, std::uint32_t> ordinals;
+    std::vector<std::vector<std::uint32_t>> adjacency;
+    std::uint32_t caller = 0u;
+    std::flat_set<const SemanticExpression*> direct_callees;
+};
 
 auto select_element_storage(
     const CanonicalTypeStore& types,
@@ -229,11 +291,11 @@ auto join_normal_ownership(
     std::optional<OwnershipNormal>& destination,
     const std::optional<OwnershipNormal>& source
 ) noexcept -> void;
+auto join_normal_ownership(
+    std::optional<OwnershipNormal>& destination,
+    std::optional<OwnershipNormal>&& source
+) noexcept -> void;
 auto append_ownership_exits(OwnershipFlow& destination, OwnershipFlow& source) noexcept -> void;
-// Bodies share a component when analysis may enter one from the other and return.
-auto ownership_recursion_components(const SemIRProgram& program) noexcept
-    -> std::flat_map<BodyID, std::uint32_t>;
-
 class OwnershipBatchAnalyzer;
 
 struct OwnershipEscape final {
@@ -242,17 +304,23 @@ struct OwnershipEscape final {
     ProgramOriginID related;
 };
 
+struct OwnershipBodyResult final {
+    std::expected<std::vector<OwnershipCallCompletion>, OwnershipEscape> answer;
+    // Events are owned by this evaluation and do not affect its transfer answer.
+    std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
+};
+
 class OwnershipBodyAnalyzer final {
 public:
     OwnershipBodyAnalyzer(
         OwnershipBatchAnalyzer& analysis,
-        const OwnershipCallInput& input,
-        bool diagnosing
+        const OwnershipCallInput& input
     ) noexcept;
-    auto run() noexcept -> std::expected<std::vector<OwnershipCallCompletion>, OwnershipEscape>;
-    auto check_contracts() noexcept -> void;
+    auto run() noexcept -> OwnershipBodyResult;
+    auto check_contracts() noexcept -> std::unique_ptr<OwnershipDiagnosisRecord>;
 
 private:
+    auto diagnosis_record() noexcept -> OwnershipDiagnosisRecord&;
     auto diagnose(
         DiagnosticCode code,
         std::string message,
@@ -327,8 +395,24 @@ private:
     ) noexcept -> void;
     auto constant_index(const SemanticExpression& source) const noexcept
         -> std::optional<std::uint64_t>;
+    auto complete_place(
+        const SemanticExpression& source,
+        OwnershipNormal& normal,
+        bool read
+    ) noexcept -> void;
     auto place(const SemanticExpression& source, OwnershipState state, bool read = true) noexcept
         -> ContinuationTask<OwnershipFlow>;
+    static auto is_leaf_expression(const SemanticExpression& source) noexcept -> bool;
+    auto finish_expression(
+        const SemanticExpression& source,
+        OwnershipNormal& normal,
+        bool direct
+    ) noexcept -> void;
+    auto complete_leaf_expression(
+        const SemanticExpression& source,
+        OwnershipNormal& normal,
+        bool direct
+    ) noexcept -> void;
     auto expression(
         const SemanticExpression& source,
         OwnershipState state,
@@ -376,7 +460,8 @@ private:
     const SemIRBody& body;
     const SemIRProgram& program;
     const OwnershipBodyFacts& facts;
-    bool diagnosing;
+    bool diagnosing = true;
+    std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
     std::flat_map<LocalBindingID, OwnershipPlace> aliases;
     std::flat_map<LocalBindingID, OwnershipPlace> capture_holders;
     // Bindings can select several possible objects after a join.
@@ -389,7 +474,7 @@ private:
 
 struct OwnershipAnalysisSummary final {
     std::size_t query_count;
-    // Worklist evaluations only; excludes contract checks and diagnostic replay.
+    // Worklist evaluations only; excludes contract checks.
     std::size_t evaluation_count;
 };
 
@@ -402,6 +487,16 @@ public:
     auto contents(TypeID type) const noexcept -> TypeContents;
     // Answers are borrowed during body evaluation, before the solver updates them.
     auto query(OwnershipCallInput input) noexcept -> std::span<const OwnershipCallCompletion>;
+
+    const SemIRProgram& program;
+
+private:
+    auto root_input(const SemIRBody& body) const noexcept -> OwnershipCallInput;
+    auto enqueue(std::size_t query) noexcept -> void;
+    auto commit_diagnosis(
+        std::unique_ptr<OwnershipDiagnosisRecord> diagnosis,
+        const OwnershipEscape* escape = nullptr
+    ) noexcept -> void;
     // An empty help adds no advice.
     auto diagnose(
         DiagnosticCode code,
@@ -411,14 +506,7 @@ public:
         std::string related_label,
         std::string help
     ) noexcept -> void;
-    // A return copy is reported only when every diagnosed context admits Take.
-    auto observe_returned_copy(ProgramOriginID origin, bool transferable) noexcept -> void;
 
-    const SemIRProgram& program;
-
-private:
-    auto root_input(const SemIRBody& body) const noexcept -> OwnershipCallInput;
-    auto enqueue(std::size_t query) noexcept -> void;
     AnalysisDiagnostics diagnostics;
     const BodyStore& bodies;
     std::flat_map<BodyID, OwnershipBodyFacts> body_facts;
@@ -427,7 +515,6 @@ private:
     std::flat_map<BodyID, std::vector<std::size_t>> body_queries;
     std::deque<std::size_t> pending_queries;
     std::optional<std::size_t> active_query;
-    bool queries_sealed = false;
     std::optional<AnalysisFailure> failure;
     std::map<ProgramOriginID, bool> returned_copies;
 };

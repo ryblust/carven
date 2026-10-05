@@ -65,14 +65,14 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
     auto flow =
         NullFlow {.normal = NullNormal {.state = std::move(state), .value = {}}, .exits = {}};
     const auto evaluate =
-        [&](const SemanticExpression& child) noexcept -> ContinuationTask<NullValue> {
+        [&](const SemanticExpression& child) noexcept -> ContinuationTask<std::monostate> {
         if (!flow.normal) {
             co_return {};
         }
         auto next = (co_await expression(child, std::move(flow.normal->state)));
         append_null_exits(flow.exits, std::move(next.exits));
         flow.normal = std::move(next.normal);
-        co_return flow.normal ? flow.normal->value : NullValue();
+        co_return {};
     };
     const auto set_value = [&](NullValue value) noexcept {
         if (flow.normal) {
@@ -82,8 +82,11 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
     const auto aggregate = [&](const SemanticExpression& child,
                                std::uint64_t index,
                                NullValue& target) noexcept -> ContinuationTask<std::monostate> {
-        const auto facts = (co_await evaluate(child));
-        for (const auto& [path, fact] : facts) {
+        (co_await evaluate(child));
+        if (!flow.normal) {
+            co_return {};
+        }
+        for (const auto& [path, fact] : flow.normal->value) {
             auto nested = NullPath {index};
             nested.append_range(path);
             target.emplace(std::move(nested), fact);
@@ -176,11 +179,11 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 co_return {};
             },
             [&](const SemArrayAdopt& value) noexcept -> ContinuationTask<std::monostate> {
-                set_value((co_await evaluate(*value.source)));
+                (co_await evaluate(*value.source));
                 co_return {};
             },
             [&](const SemCast& value) noexcept -> ContinuationTask<std::monostate> {
-                set_value((co_await evaluate(*value.operand)));
+                (co_await evaluate(*value.operand));
                 co_return {};
             },
             [&](const SemBorrowCallable& value) noexcept -> ContinuationTask<std::monostate> {
@@ -189,7 +192,7 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 co_return {};
             },
             [&](const SemPropagate& value) noexcept -> ContinuationTask<std::monostate> {
-                set_value((co_await evaluate(*value.operand)));
+                (co_await evaluate(*value.operand));
                 co_return {};
             },
             [&](const SemUnary& value) noexcept -> ContinuationTask<std::monostate> {
@@ -212,9 +215,9 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 co_return {};
             },
             [&](const SemDereference& value) noexcept -> ContinuationTask<std::monostate> {
-                const auto pointer = (co_await evaluate(*value.source));
+                (co_await evaluate(*value.source));
                 if (flow.normal) {
-                    require_nonnull(value.origin, pointer);
+                    require_nonnull(value.origin, flow.normal->value);
                 }
                 set_value({});
                 co_return {};
@@ -227,19 +230,20 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 co_return {};
             },
             [&](const SemField& value) noexcept -> ContinuationTask<std::monostate> {
-                const auto target = (co_await evaluate(*value.source));
+                (co_await evaluate(*value.source));
                 if (!flow.normal) {
                     co_return {};
                 }
                 if (const auto place = location(source)) {
                     set_value(value_at(flow.normal->state, *place));
                 } else {
-                    set_value(project_null_value(target, value.field.field_index));
+                    set_value(project_null_value(flow.normal->value, value.field.field_index));
                 }
                 co_return {};
             },
             [&](const SemIndex& value) noexcept -> ContinuationTask<std::monostate> {
-                const auto target = (co_await evaluate(*value.source));
+                (co_await evaluate(*value.source));
+                const auto target = flow.normal ? std::move(flow.normal->value) : NullValue();
                 static_cast<void>((co_await evaluate(*value.index)));
                 if (!flow.normal) {
                     co_return {};
@@ -329,11 +333,10 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 );
             },
             [&](const SemTake& value) noexcept -> ContinuationTask<std::monostate> {
-                auto taken = (co_await evaluate(*value.place));
+                (co_await evaluate(*value.place));
                 if (flow.normal) {
                     invalidate(flow.normal->state, location(*value.place, true));
                 }
-                set_value(std::move(taken));
                 co_return {};
             },
             [&](const SemClosure& value) noexcept -> ContinuationTask<std::monostate> {

@@ -1,9 +1,8 @@
 # Ownership analysis
 
 This reference describes ownership flow, backing relationships, interprocedural
-queries, and local pointer nullability. These analyses consume resolved semantic facts defined
-by [semantic representation](semir.md); the [compiler overview](../README.md#publication-gates)
-places these checks in the publication sequence.
+queries, and local pointer nullability. These analyses consume resolved semantic
+facts and run before semantic publication.
 
 ## Ownership and backing relationships
 
@@ -126,16 +125,29 @@ all possible source objects. Summarized relationships restore all possible
 backing alternatives. Ambiguous same-site summaries retain possible loans;
 exact replacement requires a definite singleton target.
 
-The ownership solver tracks dependencies between call queries. Recursive calls
-read the current answer; changed answers trigger dependent analysis. Internal
-query and worklist counts measure solver growth, excluding contract checks and
-diagnostic replay. Normal,
-typed-failure and test-stop answers join monotonically. The finite source sites,
-inline paths, distinguished roles, and graph relations bound query identity.
-An escaping callee-local relationship produces an invalid completion, stops
-solving, and replays the offending input with diagnostics enabled to retain
-the original access and lifetime witness. Diagnosis reads sealed answers without
-creating queries or mutating results. This state remains private to analysis.
+The ownership solver records a dependency whenever an active query reads a call
+answer. Recursive calls read the current answer; changed semantic answers schedule
+their readers again. Normal, typed-failure and test-stop answers join monotonically.
+The finite source sites, inline paths, distinguished roles, and graph relations
+bound query identity. Internal query and worklist evaluation counts measure solver
+growth; evaluation counts exclude contract checks and do not count individual loop
+iterations.
+
+Each evaluation returns its transfer answer, local errors, and return-copy
+observations. Diagnostic checks preserve transfers, including access and lifetime
+witnesses. A query retains its latest diagnosis while the solver accumulates its
+answer. When the worklist is empty, each diagnosis observes the final semantic
+answers it consumed, and its evaluation's transfer must agree with the accumulated
+answer under semantic equality.
+Semantic equality excludes diagnostic origins and locations witnessing a Take.
+Loops retain the witnesses selected by the converged join even when no semantic
+fact changes.
+
+Contract diagnostics follow source-body order; solved query order determines
+execution-state diagnostic publication. An escaping callee-local relationship
+stops solving and publishes the offending input's diagnosis. Return-copy
+observations combine across successful contexts; warnings are published only
+after every query succeeds. Solver and diagnosis state remain private to analysis.
 
 ### Control flow and diagnostics
 

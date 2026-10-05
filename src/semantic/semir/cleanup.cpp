@@ -39,6 +39,9 @@ auto clear_tree(Value& value) noexcept -> void {
         }
     };
     visit_semantic_edges(value, add);
+    if (pending.empty()) {
+        return;
+    }
     while (!pending.empty()) {
         const auto event = pending.back();
         pending.pop_back();

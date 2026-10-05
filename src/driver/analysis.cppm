@@ -10,5 +10,5 @@ import std;
 auto load_and_analyze_sources(
     std::span<const SourceInput> inputs,
     const ExecutionOutput& output,
-    TimingRecorder* timings = nullptr
+    const TimingOutput& timings = {}
 ) noexcept -> std::optional<SemIRProgram>;

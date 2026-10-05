@@ -17,6 +17,50 @@ namespace {
 namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
+    ct::test("Diagnostic report: long lines keep the marked location visible", [] static noexcept {
+        const auto positions = std::array {0u, 200u, 399u};
+        ct::each(
+            positions,
+            [](auto position) static noexcept { return std::to_string(position); },
+            [](auto position) static noexcept {
+                auto text = std::string(400, 'a');
+                text[position] = '!';
+                const auto diagnostic = make_diagnostic(
+                    "long line",
+                    {
+                        .span =
+                            {.source_id = SourceID::from_index(0),
+                             .span = Span::from_bounds(position, position + 1)},
+                        .message = {},
+                    }
+                );
+                const auto output = render_diagnostic(
+                    diagnostic,
+                    {
+                        .source_id = SourceID::from_index(0),
+                        .text = text,
+                        .origin = "long.cv",
+                    }
+                );
+                const auto source_begin = output.find("1 | ");
+                if (!ct::expect_not_equal(source_begin, std::string::npos)) {
+                    return;
+                }
+                const auto source_end = output.find('\n', source_begin);
+                const auto marker_end = output.find('\n', source_end + 1);
+                const auto source_line =
+                    std::string_view(output).substr(source_begin, source_end - source_begin);
+                const auto marker_line =
+                    std::string_view(output).substr(source_end + 1, marker_end - source_end - 1);
+                ct::expect(source_line.size() < text.size());
+                ct::expect(source_line.contains("..."));
+                ct::expect_not_equal(source_line.find('!'), std::string_view::npos);
+                ct::expect_equal(source_line.find('!'), marker_line.find('^'));
+                ct::expect(output.contains(std::format("long.cv:1:{}", position + 1)));
+            }
+        );
+    });
+
     ct::test("Diagnostic report: tabs expand at fixed stops", [] static noexcept {
         static constexpr auto source = SourceView {
             .source_id = SourceID::from_index(0),

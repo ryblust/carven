@@ -16,9 +16,8 @@ Execution context (`OPEN-01`) and suspension, borrow, and frame rules (`OPEN-02`
 block implementation. Provider selection, lowering, and explicit C++ async
 bridges remain deferred under `DEFER-08`.
 
-The same-thread core is independent of the cross-thread concurrency proposal.
-That dependency applies when operations, frames, captures, or completions may
-cross threads.
+Cross-thread value admission and synchronization are prerequisites when operations,
+frames, captures, or completions may cross threads.
 
 ## Context
 
@@ -708,15 +707,13 @@ runtime ownership. Ownerless work remains invalid; `OWN-05` is the phase-one aut
 - **Reactivation condition:** Repeated resource APIs require one reusable disposal contract and can state
   failure, cancellation, ordering, and scope-exit behavior.
 
-This direction owns any generic async resource-disposal construct.
-
 ### DEFER-07 — Cross-thread async and scheduler surface
 
 - **Reason deferred:** Same-thread async can be designed independently; migration introduces value movement,
   sharing, happens-before, synchronization, affinity, and shutdown obligations.
 - **Depends on:** Cross-thread concurrency
-- **Reactivation condition:** The concurrency proposal defines a concrete cross-thread value and synchronization contract
-  for an actual executor or provider use case.
+- **Reactivation condition:** A concrete cross-thread value and synchronization
+  contract is defined for an actual executor or provider use case.
 
 This direction includes cross-thread resume, physical parallel execution, Send/Sync-like capability,
 scheduler/executor source APIs, source-visible scheduler hops, thread affinity, priority, fairness, and

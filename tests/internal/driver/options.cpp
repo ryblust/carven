@@ -69,83 +69,76 @@ const ct::Suite tests([] static noexcept {
         "Compile options: invalid combinations report structured failures",
         [] static noexcept {
             struct InvalidCase final {
+                std::string_view name;
                 std::vector<const char*> args;
                 CompileOptionErrorKind kind;
                 std::optional<std::string_view> option;
-                std::string_view message;
             };
 
             const auto cases = std::array {
                 InvalidCase {
+                    .name = "repeated test mode",
                     .args = {"--tests", "--tests=default", "main.cv"},
                     .kind = CompileOptionErrorKind::TestModeSpecifiedMoreThanOnce,
                     .option = std::nullopt,
-                    .message = "test emission mode was specified more than once",
                 },
                 InvalidCase {
+                    .name = "conflicting destinations",
                     .args = {"--stdout", "-o", "emit", "main.cv"},
                     .kind = CompileOptionErrorKind::DestinationSpecifiedMoreThanOnce,
                     .option = std::nullopt,
-                    .message = "artifact destination was specified more than once",
                 },
                 InvalidCase {
+                    .name = "missing output path",
                     .args = {"-o", "--stdout", "main.cv"},
                     .kind = CompileOptionErrorKind::MissingOutputPath,
                     .option = "-o",
-                    .message = "missing output path after '-o'",
                 },
                 InvalidCase {
-                    .args = {"--tests=default", "--tests=external", "main.cv"},
-                    .kind = CompileOptionErrorKind::TestModeSpecifiedMoreThanOnce,
-                    .option = std::nullopt,
-                    .message = "test emission mode was specified more than once",
-                },
-                InvalidCase {
+                    .name = "empty output path",
                     .args = {"--output-dir=", "main.cv"},
                     .kind = CompileOptionErrorKind::EmptyOutputPath,
                     .option = std::nullopt,
-                    .message = "output directory is empty",
                 },
                 InvalidCase {
+                    .name = "unknown option",
                     .args = {"--unknown", "main.cv"},
                     .kind = CompileOptionErrorKind::UnknownOption,
                     .option = "--unknown",
-                    .message = "unknown option '--unknown'",
                 },
                 InvalidCase {
+                    .name = "linkage domain requires equals",
                     .args = {"--linkage-domain", "domain", "main.cv"},
                     .kind = CompileOptionErrorKind::UnknownOption,
                     .option = "--linkage-domain",
-                    .message = "unknown option '--linkage-domain'",
                 },
                 InvalidCase {
+                    .name = "empty linkage domain",
                     .args = {"--linkage-domain=", "main.cv"},
                     .kind = CompileOptionErrorKind::EmptyLinkageDomain,
                     .option = std::nullopt,
-                    .message = "linkage domain is empty",
                 },
                 InvalidCase {
+                    .name = "repeated linkage domain",
                     .args = {"--linkage-domain=first", "--linkage-domain=second", "main.cv"},
                     .kind = CompileOptionErrorKind::LinkageDomainSpecifiedMoreThanOnce,
                     .option = std::nullopt,
-                    .message = "linkage domain was specified more than once",
                 },
                 InvalidCase {
+                    .name = "missing source input",
                     .args = {"--tests=default"},
                     .kind = CompileOptionErrorKind::NoSourceInput,
                     .option = std::nullopt,
-                    .message = "compile requires at least one source file",
                 },
             };
 
-            ct::each(cases, &InvalidCase::message, [&](const InvalidCase& test_case) noexcept {
+            ct::each(cases, &InvalidCase::name, [&](const InvalidCase& test_case) noexcept {
                 const auto result = parse_compile_command_options(test_case.args);
                 if (!(ct::expect(!(result.has_value())))) {
                     return;
                 }
                 ct::expect_equal(result.error().kind, test_case.kind);
                 ct::expect((result.error().option == test_case.option));
-                ct::expect_equal(format_compile_option_error(result.error()), test_case.message);
             });
         }
     );

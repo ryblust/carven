@@ -23,10 +23,10 @@ cycle. A declaration without a body defaults to `void` when no result type is wr
 unique. A call requires the exact
 arity, access marker, and compatible argument type declared by the callable.
 At runtime, the callee is evaluated first, then runtime arguments are evaluated
-once from left to right. [Static parameters](#static-parameters) specify the
-separate static inputs. A concrete closure selects its object identity; a callable view selects
-its target description. Invocation reads that target's current captures after
-argument evaluation. An explicit closure copy requests a capture-value snapshot.
+once from left to right. A concrete closure selects its object identity;
+a callable view selects its target description. Invocation reads that target's
+current captures after argument evaluation. An explicit closure copy requests a
+capture-value snapshot.
 
 A bare `return;` is valid only for `void`. A return operand must have a successful
 result compatible with the callable result, including `void`: `return action();`
@@ -164,8 +164,6 @@ implicit runtime substitute.
 
 Unselected `const if` arms, iterations after a static `break`, and statements after
 a static exit are checked in the source body and omitted from specialization.
-The [compiler's specialization model](../compiler/analysis/construction.md#static-specialization)
-defines the resulting semantic representation.
 
 ## Lambdas and callable views
 

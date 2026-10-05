@@ -6,11 +6,13 @@ import :semantic.analysis.construction;
 import :semantic.analysis.stage.session;
 import :semantic.evaluation.display;
 import :semantic.evaluation.execution;
+import :semantic.evaluation.value;
 import :semantic.semir.constant_access;
 import :semantic.semir.decl;
 import :semantic.semir.program;
 import :source.batch;
 import :source.text;
+import :support.task;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import :test.internal.semantic.evaluation.fixture;
@@ -19,6 +21,54 @@ import std;
 namespace {
 
 namespace ct = carven::testing;
+
+auto task_failure_type(ProgramDraft& draft, ProgramOriginID origin) noexcept -> TypeID {
+    const auto module = draft.reserve_module_declaration();
+    const auto structure = draft.reserve_struct_declaration();
+    draft.define_declaration(
+        module,
+        ModuleDeclaration {
+            .provenance_module = draft.provenance_module_at(0uz),
+            .origin = origin,
+            .cpp_headers = {},
+            .cpp_source_fragments = {},
+            .items = {structure},
+        }
+    );
+    draft.define_declaration(
+        structure,
+        ConstructionStructDeclaration {
+            .kind = RecordKind::Struct,
+            .module_id = module,
+            .name = draft.intern_spelling("TaskFailure"),
+            .origin = origin,
+            .visibility = DeclarationVisibility::Module,
+            .fields = {{
+                .name = draft.intern_spelling("message"),
+                .type = draft.builtin_type(BuiltinType::String),
+                .origin = origin,
+            }},
+        }
+    );
+    draft.finish_declaration_heads();
+    return draft.intern_type({.value = StructTypeValue {.structure = structure}});
+}
+
+auto owned_text_task(ExecutionText& borrowed) noexcept -> ExecutionTask<ExecutionValue> {
+    auto owner = ExecutionOwnedText("transport");
+    borrowed = owner.borrow();
+    co_return owner;
+}
+
+auto source_failure_task(ExecutionSourceFailure failure) noexcept -> ExecutionTask<ExecutionValue> {
+    co_return std::unexpected(ExecutionFailure(std::move(failure)));
+}
+
+auto forward_value_task(ExecutionTask<ExecutionValue> child) noexcept
+    -> ExecutionTask<ExecutionValue> {
+    auto result = co_await std::move(child);
+    co_return result;
+}
 
 class BodyExecutionContext final : public SemanticExecutionContext {
 public:
@@ -212,6 +262,224 @@ auto check_integer(
 namespace {
 
 const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Semantic execution: unsupported operations preserve operand storage and copy costs",
+        [] static noexcept {
+            struct Scenario final {
+                std::string_view name;
+                std::string_view source;
+                std::size_t text_work;
+                std::size_t aggregate_work;
+                ExecutionReason reason;
+            };
+            const auto scenarios = std::array {
+                Scenario {
+                    .name = "text Read borrows String storage",
+                    .source = R"(test { let text: String = "ab"; text.chars; })",
+                    .text_work = 2uz,
+                    .aggregate_work = 0uz,
+                    .reason = ExecutionReason::Admission,
+                },
+                Scenario {
+                    .name = "native Read borrows aggregate storage",
+                    .source = R"(struct Payload { number: i32 }
+test { let owner = Payload { number: 1 }; ::native(owner); })",
+                    .text_work = 0uz,
+                    .aggregate_work = 1uz,
+                    .reason = ExecutionReason::Admission,
+                },
+                Scenario {
+                    .name = "native Write selects String storage",
+                    .source = R"(test { var text: String = "ab"; ::native(&text); })",
+                    .text_work = 2uz,
+                    .aggregate_work = 0uz,
+                    .reason = ExecutionReason::Admission,
+                },
+                Scenario {
+                    .name = "native Take transfers String storage",
+                    .source = R"(test { let text: String = "ab"; ::native(&&text); })",
+                    .text_work = 2uz,
+                    .aggregate_work = 0uz,
+                    .reason = ExecutionReason::Admission,
+                },
+                Scenario {
+                    .name = "Write capture selects String storage",
+                    .source = R"(test { var text: String = "ab"; let closure = [&text]() {}; })",
+                    .text_work = 2uz,
+                    .aggregate_work = 0uz,
+                    .reason = ExecutionReason::Admission,
+                },
+                Scenario {
+                    .name = "value capture exhausts its copy budget",
+                    .source = R"(test { let text: String = "ab"; let closure = [text]() {}; })",
+                    .text_work = 3uz,
+                    .aggregate_work = 0uz,
+                    .reason = ExecutionReason::Limit,
+                },
+                Scenario {
+                    .name = "value capture pays for its String copy",
+                    .source = R"(test { let text: String = "ab"; let closure = [text]() {}; })",
+                    .text_work = 4uz,
+                    .aggregate_work = 0uz,
+                    .reason = ExecutionReason::Admission,
+                },
+            };
+            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                const auto program = analyze_test_program(std::string(scenario.source));
+                auto context = BodyExecutionContext(program);
+                const auto values = PublishedConstantValues(program);
+                const auto tests = program.tests().entries();
+                if (!ct::expect(!std::ranges::empty(tests))) {
+                    return;
+                }
+                const auto test = *tests.begin();
+                if (!ct::expect(test.value.body.has_value())) {
+                    return;
+                }
+                const auto result = execute_body(
+                                        values,
+                                        context,
+                                        ExecutionBody(program.bodies().body(*test.value.body)),
+                                        {.steps = maximum_constant_steps,
+                                         .text_work = scenario.text_work,
+                                         .aggregate_work = scenario.aggregate_work}
+                )
+                                        .run();
+                if (!ct::expect(!result.has_value())
+                    || !ct::expect_equal(context.reports.size(), 1uz)) {
+                    return;
+                }
+                const auto& event = context.reports.front();
+                ct::expect(event.reason() == scenario.reason);
+                const auto* halt = std::get_if<ExecutionHalt>(&result.error());
+                if (!ct::expect(halt != nullptr)) {
+                    return;
+                }
+                ct::expect(halt->event.reason() == scenario.reason);
+                ct::expect(halt->event.origin == event.origin);
+                ct::expect(context.output.empty());
+            });
+        }
+    );
+
+    ct::test(
+        "Semantic execution: operand failure precedes native admission and later operands",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(test {
+    var zero = 0;
+    var negative = -1;
+    ::native(
+        if true { println("first"); 10 / zero } else { 0 },
+        if true { println("second"); 1 << negative } else { 0 }
+    );
+})");
+            auto context = BodyExecutionContext(program);
+            const auto values = PublishedConstantValues(program);
+            const auto tests = program.tests().entries();
+            if (!ct::expect(!std::ranges::empty(tests))) {
+                return;
+            }
+            const auto test = *tests.begin();
+            if (!ct::expect(test.value.body.has_value())) {
+                return;
+            }
+            const auto result = execute_body(
+                                    values,
+                                    context,
+                                    ExecutionBody(program.bodies().body(*test.value.body))
+            )
+                                    .run();
+            if (!ct::expect(!result.has_value())
+                || !ct::expect_equal(context.reports.size(), 1uz)) {
+                return;
+            }
+            ct::expect(context.reports.front().reason() == ExecutionReason::DivideByZero);
+            ct::expect_equal(context.output, std::string("first\n"));
+        }
+    );
+
+    ct::test(
+        "Execution tasks: String owners survive child frames and expire with the result",
+        [] static noexcept {
+            auto borrowed = ExecutionText(std::string());
+            {
+                auto result =
+                    forward_value_task(forward_value_task(owned_text_task(borrowed))).run();
+                if (!ct::expect(result.has_value())) {
+                    return;
+                }
+                const auto* owner = std::get_if<ExecutionOwnedText>(&*result);
+                if (!ct::expect(owner != nullptr)) {
+                    return;
+                }
+                ct::expect_equal(owner->bytes(), std::string_view("transport"));
+                const auto observed = borrowed.bytes();
+                if (!ct::expect(observed.has_value())) {
+                    return;
+                }
+                ct::expect_equal(*observed, std::string_view("transport"));
+            }
+            ct::expect_equal(borrowed.bytes().has_value(), false);
+        }
+    );
+
+    ct::test(
+        "Execution tasks: source failures retain their immutable payload through forwarding",
+        [] static noexcept {
+            auto fixture = ConstantEvaluationFixture();
+            auto& draft = fixture.compilation;
+            const auto module_id = draft.provenance_module_at(0uz);
+            const auto origin =
+                draft.append_source_origin(draft.module_source(module_id), Span::at(0u));
+            const auto call =
+                draft.append_source_origin(draft.module_source(module_id), Span::at(0u));
+            const auto type = task_failure_type(draft, origin);
+            auto owner = ExecutionOwnedText("failure");
+            const auto borrowed = owner.borrow();
+            auto fields = std::vector<ExecutionValue>();
+            fields.emplace_back(std::move(owner));
+            auto payload = std::make_shared<const ExecutionValue>(ExecutionAggregateValue {
+                .type = type,
+                .elements = std::move(fields),
+            });
+            const auto* identity = payload.get();
+            const auto lifetime = std::weak_ptr<const ExecutionValue>(payload);
+            {
+                auto failure = ExecutionSourceFailure {
+                    .type = type,
+                    .payload = std::move(payload),
+                    .origin = origin,
+                    .calls = {call},
+                };
+                auto result =
+                    forward_value_task(forward_value_task(source_failure_task(std::move(failure))))
+                        .run();
+                if (!ct::expect_equal(result.has_value(), false)) {
+                    return;
+                }
+                const auto* source = std::get_if<ExecutionSourceFailure>(&result.error());
+                if (!ct::expect(source != nullptr)) {
+                    return;
+                }
+                ct::expect(source->type == type);
+                ct::expect(source->origin == origin);
+                ct::expect_equal(source->payload.get(), identity);
+                if (!ct::expect_equal(source->calls.size(), 1uz)) {
+                    return;
+                }
+                ct::expect(source->calls.front() == call);
+                ct::expect_equal(lifetime.expired(), false);
+                const auto observed = borrowed.bytes();
+                if (!ct::expect(observed.has_value())) {
+                    return;
+                }
+                ct::expect_equal(*observed, std::string_view("failure"));
+            }
+            ct::expect_equal(lifetime.expired(), true);
+            ct::expect_equal(borrowed.bytes().has_value(), false);
+        }
+    );
+
     ct::test(
         "Semantic execution: checks complete and halts own the synchronously reported cause",
         [] static noexcept {
@@ -549,10 +817,13 @@ const ct::Suite tests([] static noexcept {
                 R"(
         const data = [[1, 2], [3, 4]];
         const fn leaf() -> i32 => 1;
+        const fn binding() -> i32 { let value = 1; return value; }
         const fn run() -> i32 => leaf() + leaf();
         const fn equal() -> bool => data == data;
     )",
-                [](ProgramDraft&, ExecutionContext& context, const auto& evaluate) static noexcept {
+                [](ProgramDraft& draft,
+                   ExecutionContext& context,
+                   const auto& evaluate) static noexcept {
                     ct::expect(!(evaluate(
                                      "leaf",
                                      {.steps = 0uz,
@@ -579,6 +850,25 @@ const ct::Suite tests([] static noexcept {
                         )
                                        .has_value());
                     }
+                    ct::expect(!(evaluate(
+                                     "binding",
+                                     {.steps = 7uz,
+                                      .text_work = 8uz * maximum_constant_text_bytes,
+                                      .aggregate_work = maximum_constant_aggregate_work}
+                    )
+                                     .has_value()));
+                    check_limit(context, "steps");
+                    const auto binding = evaluate(
+                        "binding",
+                        {.steps = 8uz,
+                         .text_work = 8uz * maximum_constant_text_bytes,
+                         .aggregate_work = maximum_constant_aggregate_work}
+                    );
+                    if (!ct::expect(binding.has_value())) {
+                        return;
+                    }
+                    check_integer(draft, *binding, 1);
+                    ct::expect(context.reports.empty());
                     ct::expect(!(evaluate(
                                      "run",
                                      {.steps = 17uz,
@@ -845,6 +1135,345 @@ const ct::Suite tests([] static noexcept {
                     }
                     ct::expect(children->size() == 2uz);
                     ct::expect(context.reports.empty());
+                }
+            );
+        }
+    );
+
+    ct::test(
+        "Static execution: mixed arithmetic trees preserve exact step limits at increasing depths",
+        [] static noexcept {
+            with_execution(
+                "const fn unused() -> i32 => 0;",
+                [](ProgramDraft& draft, ExecutionContext& context, const auto&) static noexcept {
+                    const auto module_id = draft.provenance_module_at(0uz);
+                    const auto source = draft.module_source(module_id);
+                    const auto origin = [&]() noexcept {
+                        return draft.append_source_origin(source, Span::at(0u));
+                    };
+                    const auto integer = draft.builtin_type(BuiltinType::I32);
+                    for (const auto nodes : {3uz, 65uz, 1025uz}) {
+                        auto builder = BodyBuilder(draft.reserve_body(BodyKind::Test), draft);
+                        const auto lifetime = builder.add_lifetime_region(
+                            std::nullopt,
+                            LifetimeRegionKind::Lexical,
+                            origin()
+                        );
+                        const auto last_origin = origin();
+                        auto root = builder.make_expression(
+                            integer,
+                            lifetime,
+                            origin(),
+                            SemBinary {
+                                .left = OwnedSemanticExpression(builder.make_expression(
+                                    integer,
+                                    lifetime,
+                                    origin(),
+                                    SemConstant {draft.intern_constant(
+                                        constant_test_integer_fact(integer, 1)
+                                    )}
+                                )),
+                                .operation = BinaryOperator::Add,
+                                .right = OwnedSemanticExpression(builder.make_expression(
+                                    integer,
+                                    lifetime,
+                                    last_origin,
+                                    SemConstant {draft.intern_constant(
+                                        constant_test_integer_fact(integer, 2)
+                                    )}
+                                )),
+                            }
+                        );
+                        auto expected = 3;
+                        for (auto node = 3uz; node < nodes; ++node) {
+                            if (node % 2uz == 0uz) {
+                                root = builder.make_expression(
+                                    integer,
+                                    lifetime,
+                                    origin(),
+                                    SemUnary {
+                                        .operation = UnaryOperator::Negate,
+                                        .operand = OwnedSemanticExpression(std::move(root)),
+                                    }
+                                );
+                                expected = -expected;
+                            } else {
+                                root = builder.make_expression(
+                                    integer,
+                                    lifetime,
+                                    origin(),
+                                    SemCast {
+                                        .operand = OwnedSemanticExpression(std::move(root)),
+                                        .kind = CastKind::Identity,
+                                    }
+                                );
+                            }
+                        }
+                        // Direct construction retains executable operations rather than folding them.
+                        ct::expect(!root.constant.has_value());
+                        auto limits = static_execution_limits();
+                        limits.steps = nodes - 1uz;
+                        context.reports.clear();
+                        const auto limited =
+                            execute_static_root(draft, context, root, limits).run();
+                        ct::expect(!limited.has_value()).note("nodes = ", nodes);
+                        check_limit(context, "steps");
+                        if (!ct::expect_equal(context.reports.size(), 1uz)) {
+                            return;
+                        }
+                        ct::expect(context.reports.front().origin == last_origin);
+                        context.reports.clear();
+                        limits.steps = nodes;
+                        const auto completed =
+                            execute_static_root(draft, context, root, limits).run();
+                        if (!ct::expect(completed.has_value()).note("nodes = ", nodes)) {
+                            return;
+                        }
+                        check_integer(draft, *completed, expected);
+                        ct::expect(context.reports.empty());
+                    }
+                }
+            );
+        }
+    );
+
+    ct::test(
+        "Static execution: arithmetic operands preserve first failure and its origin",
+        [] static noexcept {
+            with_execution(
+                "const fn unused() -> i32 => 0;",
+                [](ProgramDraft& draft, ExecutionContext& context, const auto&) static noexcept {
+                    const auto module_id = draft.provenance_module_at(0uz);
+                    const auto source = draft.module_source(module_id);
+                    const auto origin = [&]() noexcept {
+                        return draft.append_source_origin(source, Span::at(0u));
+                    };
+                    const auto integer = draft.builtin_type(BuiltinType::I32);
+                    for (const auto left_fails : {true, false}) {
+                        auto builder = BodyBuilder(draft.reserve_body(BodyKind::Test), draft);
+                        const auto lifetime = builder.add_lifetime_region(
+                            std::nullopt,
+                            LifetimeRegionKind::Lexical,
+                            origin()
+                        );
+                        const auto left_origin = origin();
+                        const auto right_origin = origin();
+                        const auto left_last = origin();
+                        const auto right_last = origin();
+                        const auto literal = [&](std::int64_t value, ProgramOriginID at) noexcept {
+                            return builder.make_expression(
+                                integer,
+                                lifetime,
+                                at,
+                                SemConstant {draft.intern_constant(
+                                    constant_test_integer_fact(integer, value)
+                                )}
+                            );
+                        };
+                        const auto root = builder.make_expression(
+                            integer,
+                            lifetime,
+                            origin(),
+                            SemBinary {
+                                .left = OwnedSemanticExpression(builder.make_expression(
+                                    integer,
+                                    lifetime,
+                                    left_origin,
+                                    SemBinary {
+                                        .left = OwnedSemanticExpression(literal(6, origin())),
+                                        .operation = BinaryOperator::Divide,
+                                        .right = OwnedSemanticExpression(
+                                            literal(left_fails ? 0 : 2, left_last)
+                                        ),
+                                    }
+                                )),
+                                .operation = BinaryOperator::Add,
+                                .right = OwnedSemanticExpression(builder.make_expression(
+                                    integer,
+                                    lifetime,
+                                    right_origin,
+                                    SemBinary {
+                                        .left = OwnedSemanticExpression(literal(1, origin())),
+                                        .operation = BinaryOperator::LeftShift,
+                                        .right = OwnedSemanticExpression(literal(-1, right_last)),
+                                    }
+                                )),
+                            }
+                        );
+                        auto limits = static_execution_limits();
+                        limits.steps = left_fails ? 3uz : 6uz;
+                        context.reports.clear();
+                        const auto limited =
+                            execute_static_root(draft, context, root, limits).run();
+                        ct::expect(!limited.has_value());
+                        check_limit(context, "steps");
+                        if (!ct::expect_equal(context.reports.size(), 1uz)) {
+                            return;
+                        }
+                        ct::expect(
+                            context.reports.front().origin == (left_fails ? left_last : right_last)
+                        );
+                        ++limits.steps;
+                        context.reports.clear();
+                        const auto failed = execute_static_root(draft, context, root, limits).run();
+                        ct::expect(!failed.has_value());
+                        if (!ct::expect_equal(context.reports.size(), 1uz)) {
+                            return;
+                        }
+                        const auto& report = context.reports.front();
+                        ct::expect(
+                            report.reason()
+                            == (left_fails ? ExecutionReason::DivideByZero
+                                           : ExecutionReason::ShiftOutOfRange)
+                        );
+                        ct::expect(report.origin == (left_fails ? left_origin : right_origin));
+                    }
+                }
+            );
+        }
+    );
+
+    ct::test(
+        "Static execution: comparisons preserve operand observations and binding copy budgets",
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+                test {
+                    var left = 1;
+                    var right = 2;
+                    check(left == right);
+                    check(left > right);
+                }
+            )");
+            auto context = BodyExecutionContext(program);
+            const auto values = PublishedConstantValues(program);
+            const auto tests = program.tests().entries();
+            ct::require(!std::ranges::empty(tests));
+            const auto test = *tests.begin();
+            ct::require(test.value.body.has_value());
+            const auto body = ExecutionBody(program.bodies().body(*test.value.body));
+            auto comparisons = 0uz;
+            for (const auto& statement : body.region().statements) {
+                const auto* expression = std::get_if<SemExpressionStatement>(&statement.value);
+                if (expression == nullptr) {
+                    continue;
+                }
+                const auto* report = std::get_if<SemReport>(&expression->expression.value);
+                if (report == nullptr || !report->condition) {
+                    continue;
+                }
+                const auto* comparison = std::get_if<SemBinary>(&(**report->condition).value);
+                if (!ct::expect(comparison != nullptr)) {
+                    return;
+                }
+                ct::expect(std::holds_alternative<SemBinding>(comparison->left->value));
+                ct::expect(std::holds_alternative<SemBinding>(comparison->right->value));
+                ++comparisons;
+            }
+            ct::expect_equal(comparisons, 2uz);
+            const auto completed = execute_body(values, context, body).run();
+            ct::expect(completed.has_value());
+            if (!ct::expect_equal(context.reports.size(), 2uz)) {
+                return;
+            }
+            for (const auto& report : context.reports) {
+                ct::expect(report.reason() == ExecutionReason::Test);
+                const auto operands = std::ranges::find(
+                    report.fields,
+                    std::string_view("operands:"),
+                    &ExecutionReportField::label
+                );
+                if (!ct::expect(operands != report.fields.end())) {
+                    return;
+                }
+                ct::expect_equal(operands->text, std::string("left: 1\nright: 2\n"));
+            }
+            with_execution(
+                R"(const fn run() -> bool {
+                    let text: String = "ab";
+                    return text == text;
+                })",
+                [](ProgramDraft& draft,
+                   ExecutionContext& context,
+                   const auto& evaluate) static noexcept {
+                    auto limits = static_execution_limits();
+                    // Two produced bytes, then two independent binding reads of two bytes each.
+                    limits.text_work = 5uz;
+                    ct::expect(!evaluate("run", limits).has_value());
+                    check_limit(context, "text");
+                    limits.text_work = 6uz;
+                    const auto result = evaluate("run", limits);
+                    if (!ct::expect(result.has_value())) {
+                        return;
+                    }
+                    const auto atom = execution_atom(draft, *result);
+                    if (!ct::expect(atom.has_value())) {
+                        return;
+                    }
+                    ct::expect(std::get<BooleanConstant>(atom->value).value);
+                    ct::expect(context.reports.empty());
+                }
+            );
+        }
+    );
+
+    ct::test(
+        "Static execution: root tasks defer source observation and execution until resumed",
+        [] static noexcept {
+            with_execution(
+                "const fn unused() -> i32 => 0;",
+                [](ProgramDraft& draft, ExecutionContext& context, const auto&) static noexcept {
+                    const auto module_id = draft.provenance_module_at(0uz);
+                    const auto source = draft.module_source(module_id);
+                    const auto origin = draft.append_source_origin(source, Span::at(0u));
+                    const auto changed_origin = draft.append_source_origin(source, Span::at(0u));
+                    const auto integer = draft.builtin_type(BuiltinType::I32);
+                    auto builder = BodyBuilder(draft.reserve_body(BodyKind::Test), draft);
+                    const auto lifetime = builder.add_lifetime_region(
+                        std::nullopt,
+                        LifetimeRegionKind::Lexical,
+                        origin
+                    );
+                    auto root = builder.make_expression(
+                        integer,
+                        lifetime,
+                        origin,
+                        SemUnary {
+                            .operation = UnaryOperator::Negate,
+                            .operand = OwnedSemanticExpression(builder.make_expression(
+                                integer,
+                                lifetime,
+                                origin,
+                                SemConstant {
+                                    draft.intern_constant(constant_test_integer_fact(integer, 1))
+                                }
+                            )),
+                        }
+                    );
+                    auto limits = static_execution_limits();
+                    limits.steps = 0uz;
+                    {
+                        [[maybe_unused]] const auto cancelled =
+                            execute_static_root(draft, context, root, limits);
+                        ct::expect(context.reports.empty());
+                        ct::expect(context.output.empty());
+                    }
+                    ct::expect(context.reports.empty());
+                    limits.steps = 1uz;
+                    auto task = execute_static_root(draft, context, root, limits);
+                    ct::expect(context.reports.empty());
+                    root = builder.make_expression(
+                        integer,
+                        lifetime,
+                        changed_origin,
+                        SemConstant {draft.intern_constant(constant_test_integer_fact(integer, 42))}
+                    );
+                    const auto result = std::move(task).run();
+                    if (!ct::expect(result.has_value())) {
+                        return;
+                    }
+                    check_integer(draft, *result, 42);
+                    ct::expect(context.reports.empty());
+                    ct::expect(context.output.empty());
                 }
             );
         }

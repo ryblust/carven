@@ -1,33 +1,4 @@
-import("xmake.benchmark", {rootdir = os.projectdir()})
-
-function batch(compiler, count, samples, warmups)
-    return benchmark.temporary(function (root)
-        local inputs = {}
-        for index = 0, count - 1 do
-            local filename = string.format("module_%03d.cv", index)
-            io.writefile(path.join(root, filename), string.format("export struct Value%03d { value: i32, }\n", index))
-            table.insert(inputs, filename)
-        end
-        return benchmark.measure(samples, warmups, function (ordinal)
-            os.iorunv(compiler, table.join({"compile", "--output-dir", "out-" .. ordinal,
-                "--linkage-domain=benchmark:compile:" .. count}, inputs), {curdir = root})
-        end)
-    end)
-end
-
-function result_header()
-    print("%-7s %-27s %-16s %12s", "Run", "Scenario", "Size", "Median (ms)")
-end
-
-function start_result(index, total, label, size)
-    io.write(string.format("[%2d/%2d] %-27s %-16s ", index, total, label, size))
-    io.flush()
-end
-
-function finish_result(results)
-    print("%12.2f", benchmark.median(results))
-    io.flush()
-end
+import("xmake.benchmark.runner", {alias = "benchmark", rootdir = os.projectdir()})
 
 function workloads()
     local groups = {}
@@ -147,6 +118,20 @@ function workloads()
                 .. " }\nfn main() { var x = 0; probe(false, &x); }\n"})
     end
     do
+        local count = 512
+        local declarations, updates, reads = {}, {}, {}
+        for index = 0, count - 1 do
+            table.insert(declarations, string.format("    var local_%d: i32 = %d;", index, index))
+            table.insert(updates, string.format("        local_%d += value;", index))
+            table.insert(reads, string.format("    value += local_%d;", index))
+        end
+        table.insert(cases, {name = "ownership_locals_" .. count, label = "Mutable loop state",
+            size = count .. " locals",
+            source = "fn ownership_large(&value: i32) {\n" .. table.concat(declarations, "\n")
+                .. "\n    for iteration in 0usize..8 {\n" .. table.concat(updates, "\n")
+                .. "\n    }\n" .. table.concat(reads, "\n") .. "\n}\n"})
+    end
+    do
         local count = 128
         local parameters, reads, effects, calls = {}, {}, {}, {}
         for index = 1, count do
@@ -178,45 +163,85 @@ function workloads()
     return groups
 end
 
-function main()
-    local compiler, samples, warmups = benchmark.settings("compile", 3)
-    local groups = workloads()
-    local batches = {16, 128}
-    local total = #batches
-    for _, group in ipairs(groups) do total = total + #group.cases end
-    print("Includes process startup, analysis and C++ generation; excludes native C++ compilation.")
-    print("Module batches write fresh files; structured cases send inspection output to the null device.")
-    print("\nModule batches")
-    result_header()
-    for index, count in ipairs(batches) do
-        start_result(index, total, "Independent modules", count .. " modules")
-        local results = batch(compiler, count, samples, warmups)
-        finish_result(results)
-        benchmark.details("modules_" .. count, results)
+-- Stable identifiers cover module batches and structured inputs in one selection.
+function cases()
+    local result = {}
+    for _, count in ipairs({16, 128}) do
+        table.insert(result, {id = "modules_" .. count, label = "Independent modules",
+            size = count .. " modules", group = "Module batches", count = count})
     end
-    benchmark.temporary(function (root)
-        local errors = path.join(root, "stderr.txt")
-        local ordinal = #batches
-        for _, group in ipairs(groups) do
-            print("\n%s", group.title)
-            result_header()
-            for _, case in ipairs(group.cases) do
-                ordinal = ordinal + 1
-                start_result(ordinal, total, case.label, case.size)
-                local filename = case.name .. ".cv"
-                io.writefile(path.join(root, filename), case.source)
-                local results = benchmark.measure(samples, warmups, function ()
-                    local status = os.execv(compiler, {"compile", "--stdout", "--linkage-domain=benchmark:compile", filename}, {
-                        curdir = root, stdout = os.nuldev(), stderr = errors, timeout = 60000, try = true,
-                    })
-                    if status ~= 0 then
-                        raise("%s: %s", case.name, io.readfile(errors) or "compiler failed")
-                    end
-                end)
-                finish_result(results)
-                benchmark.details(case.name, results)
+    for _, group in ipairs(workloads()) do
+        for _, case in ipairs(group.cases) do
+            case.id, case.group = case.name, group.title
+            table.insert(result, case)
+        end
+    end
+    table.insert(result, {id = "const_scalar_1000", label = "Constant scalar loop", size = "1000 iterations",
+        group = "Constant execution", source = [[private const fn profile_bits() -> u32 {
+    var result: u32 = 0;
+    for index in 0usize..1000 {
+        result = ((result << 1) | (result >> 31)) ^ (index as u32);
+    }
+    return result;
+}
+private const bits_result = profile_bits();
+const test { check(bits_result == 118072920); }
+]]})
+    table.insert(result, {id = "const_simd_tables_32", label = "Constant SIMD tables", size = "32 x 32 lanes",
+        group = "Constant execution", source = [[private const fn make_table(seed: u8) -> u8x32 {
+    var entries: [u8; 32] = {};
+    for index in 0usize..32 { entries[index] = (index as u8) ^ seed; }
+    return u8x32::from_array(entries);
+}
+private const fn profile_tables() -> u8x32 {
+    var result = u8x32::splat(0);
+    for index in 0usize..32 { result = make_table(index as u8); }
+    return result;
+}
+private const table_result = profile_tables();
+const test { check(table_result.lane(0) == 31 && table_result.lane(31) == 0); }
+]]})
+    return result
+end
+
+function main(options)
+    local selected = benchmark.select(cases(), options)
+    if not selected then return end
+    local session = benchmark.session("compile", options, {
+        description = {
+            "Includes process startup, analysis and C++ generation; excludes native C++ compilation.",
+            "Module batches write fresh artifacts; structured cases send inspection output to the null device.",
+        },
+    })
+    benchmark.run(session, selected, function (session, record, case, root)
+        local inputs, paths = {}, {}
+        if case.count then
+            for module = 0, case.count - 1 do
+                local filename = string.format("module_%03d.cv", module)
+                inputs[filename] = string.format("export struct Value%03d { value: i32, }\n", module)
+                table.insert(paths, filename)
             end
+        else
+            local filename = case.id .. ".cv"
+            inputs[filename] = case.source
+            table.insert(paths, filename)
+        end
+        for filename, source in pairs(inputs) do io.writefile(path.join(root, filename), source) end
+        local domain = "benchmark:compile" .. (case.count and ":" .. case.count or "")
+        record.inputs, record.linkage_domain = inputs, domain
+        record.output_mode = case.count and "fresh-artifacts" or "inspection-to-null"
+        return function (ordinal)
+            local args = {"compile"}
+            if options.timings then table.insert(args, "--timings") end
+            if case.count then
+                table.join2(args, {"--output-dir", "out-" .. ordinal})
+            else
+                table.insert(args, "--stdout")
+            end
+            table.insert(args, "--linkage-domain=" .. domain)
+            table.join2(args, paths)
+            return benchmark.command(session.compiler, args, root,
+                {timings = options.timings, capture_stdout = case.count ~= nil})
         end
     end)
-    print("\nComplete. Use --verbose to show individual samples and case identifiers.")
 end

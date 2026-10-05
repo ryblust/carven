@@ -73,7 +73,7 @@ auto SemanticExecutor::simd(
         auto offset = std::uint64_t(0);
         auto fill = Lane {};
         for (auto index = 1uz; index < operation.operands.size(); ++index) {
-            auto input = co_await value(frame, operation.operands[index].expression);
+            auto input = (co_await this->value(frame, operation.operands[index].expression));
             if (!input) {
                 co_return std::unexpected(std::move(input.error()));
             }
@@ -114,7 +114,7 @@ auto SemanticExecutor::simd(
     }
     auto inputs = std::vector<ConstantFact>();
     for (const auto& operand : operation.operands) {
-        auto input = co_await value(frame, operand.expression);
+        auto input = (co_await this->value(frame, operand.expression));
         if (!input) {
             co_return std::unexpected(std::move(input.error()));
         }

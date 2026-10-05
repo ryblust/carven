@@ -107,6 +107,9 @@ auto finish_unused_declarations(
     std::vector<TargetStmt>& statements,
     const std::flat_map<TargetLocalID, UnusedInitializer>& candidates
 ) noexcept -> void {
+    if (candidates.empty()) {
+        return;
+    }
     auto declarations =
         DeclarationInitializers {.candidates = candidates, .initializers = {}, .references = {}};
     if (!traverse_target_statements(statements, declarations)) {
@@ -130,6 +133,9 @@ auto finish_unused_declarations(
             && !traverse_target_expression(*found->second, uses)) {
             invariant_violation("initializer reference traversal did not complete");
         }
+    }
+    if (unused.empty()) {
+        return;
     }
     const auto completed = UnusedDeclarations {.unused = unused, .candidates = candidates};
     completed.finish(statements);
@@ -336,11 +342,13 @@ auto finish_body_declarations(
     if (!traverse_target_statements(statements, references)) {
         invariant_violation("jump reference traversal did not complete");
     }
-    const auto structured = ExitStructuring {.references = references};
-    if (!traverse_target_statements(statements, structured)) {
-        invariant_violation("exit structuring traversal did not complete");
+    if (references.has_transfer) {
+        const auto structured = ExitStructuring {.references = references};
+        if (!traverse_target_statements(statements, structured)) {
+            invariant_violation("exit structuring traversal did not complete");
+        }
+        structured.list(statements);
     }
-    structured.list(statements);
     auto uses = LocalUses();
     auto declarations = DeclarationUses {.uses = uses, .mutable_owners = mutable_owners};
     if (!traverse_target_statements(statements, uses)

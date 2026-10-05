@@ -6,6 +6,7 @@ import :backend.generation.request;
 import :backend.lower;
 import :backend.target;
 import :backend.target.decl;
+import :backend.target.expr;
 import :backend.target.name;
 import :backend.target.stmt;
 import :backend.target.symbol;
@@ -186,6 +187,349 @@ const ct::Suite tests([] static noexcept {
                 );
                 ct::expect_equal(summary.deferred, 0uz);
             });
+        }
+    );
+
+    ct::test(
+        "Generation: independent root calls initialize Outcomes without deferred storage",
+        [] static noexcept {
+            struct Case final {
+                std::string_view name;
+                std::string_view body;
+            };
+            constexpr auto cases = std::array {
+                Case {.name = "discard", .body = "produce(flag)?;"},
+                Case {.name = "binding", .body = "let value = produce(flag)?; observe(value);"},
+                Case {
+                    .name = "conditional argument",
+                    .body = "produce(if flag { true } else { false })?;"
+                },
+                Case {
+                    .name = "statement argument",
+                    .body = "produce(if flag { observe(1); true } else { observe(2); false })?;"
+                },
+            };
+            ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+                const auto compilation = PlannedCompilation::build(
+                    analyze_test_program(
+                        std::format(
+                            "enum Error {{ Failed, }} "
+                            "fn produce(flag: bool) -> i32 throw Error {{ if flag {{ return 7; }} throw Error::Failed; }} "
+                            "fn observe(value: i32) {{}} "
+                            "fn probe(flag: bool) throw Error {{ {} }}",
+                            input.body
+                        )
+                    ),
+                    {.test_mode = TestGenerationMode::None,
+                     .linkage_domain = *LinkageDomain::explicit_value("root_outcome")}
+                );
+
+                struct Query final {
+                    const TargetUnit& unit;
+                    std::size_t direct;
+                    std::size_t deferred;
+
+                    auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                        const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+                        if (variable == nullptr) {
+                            return true;
+                        }
+                        const auto* type =
+                            std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value);
+                        if (type == nullptr) {
+                            return true;
+                        }
+                        if (type->symbol == TargetSymbol::RuntimeOutcome) {
+                            ++direct;
+                            ct::expect(
+                                std::holds_alternative<TargetCallExpr>(variable->initializer.value)
+                            );
+                        }
+                        if (type->symbol == TargetSymbol::RuntimeDeferredResult) {
+                            if (!ct::expect(type->type_argument_ids.size() == 1uz)) {
+                                return false;
+                            }
+                            const auto* result = std::get_if<TargetIntrinsicType>(
+                                &unit.type(type->type_argument_ids.front()).value
+                            );
+                            deferred +=
+                                result != nullptr && result->symbol == TargetSymbol::RuntimeOutcome;
+                        }
+                        return true;
+                    }
+                };
+
+                auto direct = 0uz;
+                auto deferred = 0uz;
+                for (const auto artifact : compilation.target().artifacts()) {
+                    const auto unit = lower_artifact(compilation, artifact.id);
+                    auto query = Query {.unit = unit, .direct = 0uz, .deferred = 0uz};
+                    ct::expect(traverse_target_unit(unit.sections(), query));
+                    direct += query.direct;
+                    deferred += query.deferred;
+                }
+                ct::expect_equal(direct, 1uz);
+                ct::expect_equal(deferred, 0uz);
+            });
+        }
+    );
+
+    ct::test(
+        "Generation: scalar predecessors in a full expression need no deferred storage",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "fn first() -> i32 { return 1; } "
+                    "fn second() -> i32 { return 2; } "
+                    "fn pair(a: i32, b: i32) -> i32 { return a * 10 + b; } "
+                    "fn probe() -> i32 { return pair(first(), second()); }"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("scalar_predecessors")}
+            );
+
+            struct Query final {
+                const TargetUnit& unit;
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        if (const auto* type = std::get_if<TargetIntrinsicType>(
+                                &unit.type(variable->type).value
+                            )) {
+                            ct::expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                ct::expect(traverse_target_unit(unit.sections(), query));
+            }
+        }
+    );
+
+    ct::test(
+        "Generation: local storage follows retained access rather than source write permission",
+        [] static noexcept {
+            struct Case final {
+                std::string_view name;
+                std::string_view source;
+                TargetVariableBinding expected;
+            };
+
+            const auto cases = std::array {
+                Case {
+                    .name = "read-only var",
+                    .source =
+                        "fn probe(value: i32) -> i32 { var storage = value; return storage; }",
+                    .expected = TargetVariableBinding::ConstValue
+                },
+                Case {
+                    .name = "assignment",
+                    .source =
+                        "fn probe(value: i32) -> i32 { var storage = value; storage += 1; return storage; }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "Write argument",
+                    .source = "fn write(&value: i32) { value = 2; } "
+                              "fn probe(value: i32) { var storage = value; write(&storage); }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "Write capture",
+                    .source =
+                        "fn probe(value: i32) -> i32 { var storage = value; "
+                        "let read = [&storage]() -> i32 { return storage; }; return read(); }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "let transfer",
+                    .source =
+                        "fn probe(value: String) -> String { let storage = value; return &&storage; }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "read field",
+                    .source =
+                        "struct Box { value: i32 } "
+                        "fn probe(value: i32) -> i32 { var storage = Box { value }; return storage.value; }",
+                    .expected = TargetVariableBinding::ConstValue
+                },
+                Case {
+                    .name = "write field",
+                    .source =
+                        "struct Box { value: i32 } "
+                        "fn probe(value: i32) { var storage = Box { value }; storage.value = 2; }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "read element",
+                    .source =
+                        "fn probe(value: i32) -> i32 { var storage = [value]; return storage[0]; }",
+                    .expected = TargetVariableBinding::ConstValue
+                },
+                Case {
+                    .name = "write element",
+                    .source = "fn probe(value: i32) { var storage = [value]; storage[0] = 2; }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "write iteration",
+                    .source =
+                        "fn probe(value: i32) { var storage = [value]; for &element in storage { element += 1; } }",
+                    .expected = TargetVariableBinding::MutableValue
+                },
+                Case {
+                    .name = "write pointee",
+                    .source =
+                        "fn probe(pointer: ptr<&i32>) { var storage = pointer; if storage != nullptr { *storage = 2; } }",
+                    .expected = TargetVariableBinding::ConstValue
+                },
+                Case {
+                    .name = "unreachable write does not require mutable storage",
+                    .source =
+                        "fn probe(value: i32) -> i32 { var storage = value; if false { storage = 2; } return storage; }",
+                    .expected = TargetVariableBinding::ConstValue
+                },
+            };
+            ct::each(cases, &Case::name, [](const Case& scenario) static noexcept {
+                const auto compilation = PlannedCompilation::build(
+                    analyze_test_program(std::string(scenario.source)),
+                    {.test_mode = TestGenerationMode::None,
+                     .linkage_domain = *LinkageDomain::explicit_value("local_storage")}
+                );
+
+                struct Query final {
+                    const TargetUnit& unit;
+                    TargetVariableBinding expected;
+                    std::size_t owners;
+
+                    auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                        const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+                        if (variable != nullptr
+                            && unit.local_name(variable->local).spelling() == "storage") {
+                            ++owners;
+                            ct::expect(variable->binding == expected);
+                        }
+                        return true;
+                    }
+                };
+
+                auto owners = 0uz;
+                for (const auto artifact : compilation.target().artifacts()) {
+                    const auto unit = lower_artifact(compilation, artifact.id);
+                    auto query = Query {
+                        .unit = unit,
+                        .expected = scenario.expected,
+                        .owners = 0uz,
+                    };
+                    if (!(ct::expect(traverse_target_unit(unit.sections(), query)))) {
+                        return;
+                    }
+                    owners += query.owners;
+                }
+                ct::expect(owners == 1uz);
+            });
+        }
+    );
+
+    ct::test(
+        "Generation: a folded short circuit does not defer later argument storage",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    "import <string> using std::string; "
+                    "fn probe() -> bool { return true; } "
+                    "fn show() { println(false && probe(), "
+                    "string { c\"first\" }, string { c\"second\" }); }"
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("folded_short_circuit")}
+            );
+
+            struct Query final {
+                const TargetUnit& unit;
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
+                        if (const auto* type = std::get_if<TargetIntrinsicType>(
+                                &unit.type(variable->type).value
+                            )) {
+                            ct::expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                        }
+                    }
+                    return true;
+                }
+            };
+
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                ct::expect(traverse_target_unit(unit.sections(), query));
+            }
+        }
+    );
+
+    ct::test(
+        "Generation: independent expression and region results use automatic outcome storage",
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
+            struct Failure {}
+            fn source(flag: bool) -> i32 throw Failure {
+                if flag { throw Failure {}; }
+                return 7;
+            }
+            fn recover(flag: bool) -> i32 => try {
+                let value = source(flag)?;
+                value
+            } catch { Failure(_) => 0, };
+            fn tail(flag: bool) -> i32 => try { source(flag)? } catch { Failure(_) => 0, };
+            fn selected(flag: bool) -> i32 => if flag {
+                (try { source(flag)? } catch { Failure(_) => 0, })
+            } else { 0 };
+        )"),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("nested_full_expression")}
+            );
+
+            struct Query final {
+                const TargetUnit& unit;
+                std::size_t outcomes = 0;
+
+                auto visit_variable(const TargetVariableStmt& variable) noexcept -> bool {
+                    const auto* type =
+                        std::get_if<TargetIntrinsicType>(&unit.type(variable.type).value);
+                    if (type != nullptr && type->symbol == TargetSymbol::RuntimeOutcome) {
+                        ++outcomes;
+                    }
+                    if (type != nullptr && type->symbol == TargetSymbol::RuntimeDeferredResult) {
+                        const auto* contained = std::get_if<TargetIntrinsicType>(
+                            &unit.type(type->type_argument_ids.front()).value
+                        );
+                        if (!ct::expect(contained != nullptr)) {
+                            return false;
+                        }
+                        ct::expect(contained->symbol != TargetSymbol::RuntimeOutcome);
+                    }
+                    return true;
+                }
+            };
+
+            auto outcomes = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {.unit = unit};
+                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+                outcomes += query.outcomes;
+            }
+            ct::expect(outcomes == 3uz);
         }
     );
 });

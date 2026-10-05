@@ -169,23 +169,63 @@ auto append_source_line(
     const auto displayed = display_line(raw);
     const auto number = std::to_string(line_number);
 
-    if (show_source) {
-        output.append(gutter_width - number.size(), ' ');
-        output += number;
-        output += " | ";
-        output += displayed.text;
-        output += '\n';
-    }
-
     const auto relative_begin = std::min(marker_begin - line.start(), raw.size());
     const auto relative_end = std::min(marker_end - line.start(), raw.size());
     const auto first_column = displayed.columns[relative_begin];
     const auto last_column = displayed.columns[std::max(relative_begin, relative_end)];
+    auto excerpt = std::string_view(displayed.text);
+    auto left_column = 0uz;
+    auto right_column = displayed.columns.back();
+    const auto clipped = right_column > 120uz;
+    if (clipped) {
+        const auto start =
+            std::min(first_column > 40uz ? first_column - 40uz : 0uz, right_column - 120uz);
+        auto begin = 0uz;
+        auto end = excerpt.size();
+        auto column = 0uz;
+        for (auto index = 0uz; index < excerpt.size();) {
+            const auto sequence = UTF8Decoder::decode(excerpt, index);
+            const auto width = terminal_columns(sequence.scalar);
+            // Keep zero-width suffixes with the preceding displayed character.
+            if (width > 0) {
+                if (column <= start) {
+                    begin = index;
+                    left_column = column;
+                }
+                if (column >= start + 120uz) {
+                    end = index;
+                    right_column = column;
+                    break;
+                }
+            }
+            column += width;
+            index += sequence.width;
+        }
+        excerpt = excerpt.substr(begin, end - begin);
+    }
+    const auto prefix_width = left_column > 0 ? 4uz : 0uz;
+
+    if (show_source || clipped) {
+        output.append(gutter_width - number.size(), ' ');
+        output += number;
+        output += " | ";
+        if (prefix_width > 0) {
+            output += "... ";
+        }
+        output += excerpt;
+        if (right_column < displayed.columns.back()) {
+            output += " ...";
+        }
+        output += '\n';
+    }
 
     output.append(gutter_width, ' ');
     output += " | ";
-    output.append(first_column, ' ');
-    output.append(std::max<std::size_t>(1, last_column - first_column), marker);
+    output.append(prefix_width + first_column - left_column, ' ');
+    output.append(
+        std::max<std::size_t>(1, std::min(last_column, right_column) - first_column),
+        marker
+    );
     if (!message.empty()) {
         output += ' ';
         output += message;

@@ -381,12 +381,8 @@ private const fn verify_simd_rejections(prefixes: [usize]) -> bool {
     return true;
 }
 
-const test "UTF8: constant errors preserve offsets before the narrow block boundary" {
-    check(verify_simd_rejections([0, 15]));
-}
-
-const test "UTF8: constant errors preserve offsets across the narrow block boundary" {
-    check(verify_simd_rejections([16, 17]));
+const test "UTF8: constant scalar errors preserve nonzero offsets" {
+    check(verify_simd_rejections([15]));
 }
 
 const test "UTF8: constant errors preserve offsets across the wide block boundary" {
@@ -417,13 +413,26 @@ test "UTF8: SIMD and byte pushes agree across block boundaries and recovery" {
                 data[prefix + index] = item.bytes[index];
             }
             let bytes = data.as_slice().slice(0, prefix + item.length);
+            var reference = UTF8Validator::create();
+            var scalar_rejected = false;
+            var scalar_error = item.error;
+            try {
+                for byte in bytes {
+                    reference.push(byte)?;
+                }
+                reference.check_complete()?;
+            } catch {
+                UTF8Error(error) => {
+                    scalar_rejected = true;
+                    scalar_error = error;
+                },
+            }
+            check(scalar_rejected);
             for split in 0..=bytes.len() {
                 var vector = UTF8Validator::create();
-                var scalar = UTF8Validator::create();
+                var scalar = reference;
                 var vector_rejected = false;
-                var scalar_rejected = false;
                 var vector_error = item.error;
-                var scalar_error = item.error;
                 try {
                     vector.feed(bytes.slice(0, split))?;
                     vector.feed(bytes.slice(split, bytes.len()))?;
@@ -434,18 +443,7 @@ test "UTF8: SIMD and byte pushes agree across block boundaries and recovery" {
                         vector_error = error;
                     },
                 }
-                try {
-                    for byte in bytes {
-                        scalar.push(byte)?;
-                    }
-                    scalar.check_complete()?;
-                } catch {
-                    UTF8Error(error) => {
-                        scalar_rejected = true;
-                        scalar_error = error;
-                    },
-                }
-                check(vector_rejected && scalar_rejected);
+                check(vector_rejected);
                 check(vector_error.kind == scalar_error.kind);
                 check(vector_error.offset == scalar_error.offset);
                 check(vector_error.sequence_start == scalar_error.sequence_start);

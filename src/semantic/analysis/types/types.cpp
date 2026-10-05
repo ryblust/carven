@@ -38,7 +38,7 @@ auto source_builtin_type(std::string_view name) noexcept -> std::optional<Builti
         std::pair {std::string_view("f32x4"), BuiltinType::F32x4},
         std::pair {std::string_view("mask4"), BuiltinType::Mask4},
     };
-    const auto* found = std::ranges::find(names, name, [](const auto& entry) static noexcept {
+    const auto found = std::ranges::find(names, name, [](const auto& entry) static noexcept {
         return entry.first;
     });
     return found == names.end() ? std::nullopt : std::optional(found->second);

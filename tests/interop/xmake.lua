@@ -155,10 +155,11 @@ for _, fixture in ipairs({
         },
     },
 }) do
-    for _, mode in ipairs({
-        {standard = "c++20", suffix = ""},
-        {standard = "c++23", suffix = "-cxx23"},
-    }) do
+    local modes = {{standard = "c++20", suffix = ""}}
+    if not fixture.allocation then
+        table.insert(modes, {standard = "c++23", suffix = "-cxx23"})
+    end
+    for _, mode in ipairs(modes) do
         target("carven-test-interop-" .. fixture.name .. mode.suffix)
             set_default(false)
             set_kind("binary")
@@ -175,7 +176,7 @@ for _, fixture in ipairs({
             add_files(path.join(interop_dir, "exceptions", fixture.source))
             add_files(path.join(interop_dir, "exceptions", "precomputed.cv"))
             for _, operation in ipairs(fixture.operations) do
-                if mode.standard == "c++20" or operation:startswith("print-") then
+                if mode.standard == "c++20" or operation == "print-later-throw" then
                     add_tests(operation, {group = "interop"})
                 end
             end

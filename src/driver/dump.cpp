@@ -94,7 +94,7 @@ auto run_dump_command(std::span<const char* const> args) noexcept -> int {
 
     auto timings = CommandTimings(request->timings, "dump");
     auto sources = SourceManager();
-    auto loading = TimingScope(timings.recorder(), TimingStage::SourceLoading);
+    auto loading = TimingScope(timings.output(), TimingStage::SourceLoading);
     const auto source_id = sources.append_file(request->input_path);
     loading.stop();
     if (!source_id) {
@@ -103,9 +103,7 @@ auto run_dump_command(std::span<const char* const> args) noexcept -> int {
         );
     }
 
-    auto lexing = TimingScope(timings.recorder(), TimingStage::Lexing);
-    const auto lexical = lex(sources.view(*source_id));
-    lexing.stop();
+    const auto lexical = lex(sources.view(*source_id), timings.output());
     if (request->kind != DumpKind::AST) {
         if (request->kind == DumpKind::All) {
             std::println("==> Tokens <==");
@@ -121,9 +119,7 @@ auto run_dump_command(std::span<const char* const> args) noexcept -> int {
         return 0;
     }
 
-    auto parsing = TimingScope(timings.recorder(), TimingStage::Parsing);
-    const auto parsed = parse(sources, lexical.value);
-    parsing.stop();
+    const auto parsed = parse(sources, lexical.value, timings.output());
     if (!parsed) {
         emit_source_diagnostics(parsed.error(), sources);
         return 1;

@@ -1,8 +1,7 @@
 # Builtin realization
 
-These implementations use the common [preparation](preparation.md),
-[operand sequencing and storage](realization.md), and
-[representation](representation.md) contracts. Format plans and their budgets
+These implementations use common preparation, operand sequencing, storage, and
+representation contracts. Format plans and their budgets
 belong to preparation; this reference describes runtime and target operations
 that consume those plans.
 
@@ -142,9 +141,8 @@ lowered inside the failure branch, including construction, effects, and cleanup.
 `Assert` calls the nonreturning runtime assertion reporter; `Require` and `Fail`
 use test-stop transport.
 
-[Failure and test-stop ABI](representation.md#failure-and-test-stop-abi) defines
-the result carrier; [transport realization](realization.md#failure-dispatch-and-transport)
-propagates a test stop with normal scope cleanup.
+Test-stop transport uses the function's result carrier and performs normal scope
+cleanup during propagation.
 
 Prepared scalar print operands pass their known text to the ordinary runtime
 printing entry. Preparation retains the original operand's execution under its
@@ -162,10 +160,8 @@ selects an emitter type from published semantic types; scalar, sequence, and
 range emitters compose child types, while `realization.display` generates nominal
 field accesses and enum selection. An enum's closed case set makes the final
 alternative unconditional; a single-case enum needs no selection. Module lowering shares a content-named
-nominal helper across its use sites. Helper placement is defined by
-[artifacts](artifacts.md#staged-bodies). Type-selected emitters
-use the shared `stateless_value` instance described in
-[representation](representation.md#callables-and-native-boundaries).
+nominal helper across its use sites. Type-selected emitters use the shared
+`stateless_value` instance.
 
 Emitters take `(writer, value, depth)`. Each displayed root starts at depth zero;
 children receive `depth + 1`. Indentation uses that absolute depth. The writer

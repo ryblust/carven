@@ -27,6 +27,7 @@ import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
+import :support.unique_indirect;
 import :support.visit;
 import std;
 
@@ -164,7 +165,7 @@ auto BodyElaborator::bind_call_argument(
         if (!taken) {
             return std::unexpected(taken.error());
         }
-        built.storage = std::move(*taken);
+        *built.storage = std::move(*taken);
     }
     auto coerced = coerce_to(built, type, span);
     if (!coerced.has_value()) {
@@ -369,7 +370,7 @@ auto BodyElaborator::call_expression(
             operation.operation_reachable = report_condition_completes;
         }
         co_return BuiltExpression {
-            .storage = std::move(operation),
+            .storage = UniqueIndirect {BodyExpressionStorage {std::move(operation)}},
             .pending_failures = std::move(pending),
             .takeable = true,
             .completes = completes && builtin->function != BuiltinFunction::Fail
@@ -483,7 +484,7 @@ auto BodyElaborator::call_expression(
         }
     );
     co_return BuiltExpression {
-        .storage = std::move(result),
+        .storage = UniqueIndirect {BodyExpressionStorage {std::move(result)}},
 
         .pending_failures = std::move(pending_failures),
         .takeable = true,
@@ -526,7 +527,9 @@ auto BodyElaborator::class_operation(
         }
         const auto declaration = draft().function_declaration_copy(function);
         auto callee = BuiltExpression {
-            .storage = active_builder().callable_expression(declaration.callable, origin(span)),
+            .storage = UniqueIndirect {BodyExpressionStorage {
+                active_builder().callable_expression(declaration.callable, origin(span))
+            }},
             .pending_failures = {},
             .takeable = false,
             .completes = true

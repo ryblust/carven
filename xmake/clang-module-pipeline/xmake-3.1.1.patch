@@ -636,6 +636,23 @@
                  end
              end
          end
+@@ -771,6 +805,6 @@
+         -- feed the dag
+         local nodes = {}
+-        for node, module in pairs(modules) do
++        for node, module in table.orderpairs(modules) do
+             table.insert(nodes, module.headerunit and node or module.sourcefile)
+         end
+         -- table.unique(nodes)
+@@ -795,7 +829,7 @@
+             end
+         end
+         local sourcefiles_sorted_set = hashset.from(sourcefiles_sorted)
+-        for sourcefile, _ in pairs(modules) do
++        for sourcefile, _ in table.orderpairs(modules) do
+             if not sourcefiles_sorted_set:has(sourcefile) then
+                 table.insert(sourcefiles_sorted, sourcefile)
+                 sourcefiles_sorted_set:insert(sourcefile)
 --- a/rules/c++/modules/clang/builder.lua
 +++ b/rules/c++/modules/clang/builder.lua
 @@ -31,6 +31,12 @@

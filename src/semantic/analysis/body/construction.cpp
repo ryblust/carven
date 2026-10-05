@@ -31,6 +31,7 @@ import :semantic.semir.structured;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :support.invariant;
+import :support.unique_indirect;
 import :support.visit;
 import std;
 
@@ -142,7 +143,7 @@ auto BodyElaborator::static_expression(
         ));
     }
     co_return BuiltExpression {
-        .storage = std::move(*result),
+        .storage = UniqueIndirect {BodyExpressionStorage {std::move(*result)}},
         .pending_failures = {},
         .takeable = false,
         .completes = true,
@@ -430,15 +431,15 @@ auto BodyElaborator::compatible(ConstructionTypeRef left, ConstructionTypeRef ri
 }
 
 auto BuiltExpression::is_function_reference() const noexcept -> bool {
-    const auto* expression = std::get_if<SemanticExpression>(&storage);
+    const auto* expression = std::get_if<SemanticExpression>(&*storage);
     return expression != nullptr && std::holds_alternative<SemCallable>(expression->value);
 }
 
 auto BuiltExpression::expression() const noexcept -> const SemanticExpression& {
-    if (const auto* value = std::get_if<SemanticExpression>(&storage)) {
+    if (const auto* value = std::get_if<SemanticExpression>(&*storage)) {
         return *value;
     }
-    return std::get<PlaceExpression>(storage).expression;
+    return std::get<PlaceExpression>(*storage).expression;
 }
 
 auto BuiltExpression::type() const noexcept -> const ConstructionTypeRef& {

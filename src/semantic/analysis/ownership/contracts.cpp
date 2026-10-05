@@ -3,7 +3,8 @@ module carven:semantic.analysis.ownership.contracts.impl;
 import :semantic.analysis.ownership.context;
 import std;
 
-auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
+auto OwnershipBodyAnalyzer::check_contracts() noexcept
+    -> std::unique_ptr<OwnershipDiagnosisRecord> {
     const auto root =
         [&](this const auto& self,
             const SemanticExpression& source) noexcept -> std::optional<LocalBindingID> {
@@ -187,4 +188,5 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept -> void {
             },
         }
     );
+    return std::move(diagnosis);
 }

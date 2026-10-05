@@ -143,16 +143,82 @@ private:
         -> ExecutionResult<ExecutionValue*>;
     auto offset(const ExecutionValue& value, std::size_t extent, ProgramOriginID origin) noexcept
         -> ExecutionResult<std::size_t>;
-    auto value(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
-        -> ExecutionTask<ExecutionValue>;
+    auto finish_unary_value(
+        const SemanticExpression& source,
+        UnaryOperator operation,
+        const ExecutionValue& operand
+    ) noexcept -> ExecutionResult<ExecutionValue>;
+    auto finish_cast_value(
+        const SemanticExpression& source,
+        CastKind kind,
+        ExecutionValue&& operand
+    ) noexcept -> ExecutionResult<ExecutionValue>;
+    auto finish_binary_value(
+        const SemanticExpression& source,
+        const SemBinary& operation,
+        const ExecutionValue& left,
+        const ExecutionValue& right
+    ) noexcept -> ExecutionResult<ExecutionValue>;
+    template<typename Result>
+    static auto normal_result(ExecutionResult<ExecutionValue>&& result) noexcept
+        -> std::conditional_t<
+            std::same_as<Result, ExecutionValue>,
+            ExecutionResult<ExecutionValue>&&,
+            ExecutionResult<Result>>;
+    template<typename Result>
+    auto control_result(
+        ExecutionResult<ExecutionCompletion>&& result,
+        ProgramOriginID origin
+    ) noexcept
+        -> std::conditional_t<
+            std::same_as<Result, ExecutionCompletion>,
+            ExecutionResult<ExecutionCompletion>&&,
+            ExecutionResult<Result>>;
     auto read_operand(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
         -> ExecutionTask<ExecutionOperand>;
+    // Read follows Carven's type policy; Borrow retains selected storage regardless of type.
+    enum class OperandUse { Value, Read, Write, Borrow };
+    static auto argument_use(AccessMode access) noexcept -> OperandUse;
+    auto operand(
+        ExecutionFrame& frame,
+        const SemanticExpression& expression,
+        OperandUse use,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionTask<ExecutionOperand>;
     auto materialize(ExecutionOperand operand, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
     // Detaches a value from execution storage and freezes it into a constant.
     auto freeze(ExecutionValue value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ConstantID>;
+    template<typename Result>
+    auto evaluate_expression(ExecutionFrame& frame, const SemanticExpression& source) noexcept
+        -> ExecutionTask<Result>;
+    template<typename Result, typename Operation>
+    auto expression_operation(
+        ExecutionFrame& frame,
+        const SemanticExpression& source,
+        const Operation& operation
+    ) noexcept -> ExecutionTask<Result>;
+    template<typename Operation>
+    auto expression_value(
+        ExecutionFrame& frame,
+        const SemanticExpression& source,
+        const Operation& operation
+    ) noexcept -> ExecutionTask<ExecutionValue>;
+    auto unsupported_expression(
+        ExecutionFrame& frame,
+        const SemanticExpression& source,
+        std::string_view reason
+    ) noexcept -> ExecutionTask<ExecutionCompletion>;
+    auto value(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
+        -> ExecutionTask<ExecutionValue>;
     auto expression(ExecutionFrame& frame, const SemanticExpression& expression) noexcept
+        -> ExecutionTask<ExecutionCompletion>;
+    auto try_expression(ExecutionFrame& frame, const SemTry& attempt) noexcept
+        -> ExecutionTask<ExecutionCompletion>;
+    auto if_expression(ExecutionFrame& frame, const SemIf& conditional) noexcept
+        -> ExecutionTask<ExecutionCompletion>;
+    auto match_expression(ExecutionFrame& frame, const SemMatch& match) noexcept
         -> ExecutionTask<ExecutionCompletion>;
     auto statement(ExecutionFrame& frame, const SemanticStatement& statement) noexcept
         -> ExecutionTask<ExecutionCompletion>;

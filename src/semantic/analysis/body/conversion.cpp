@@ -19,7 +19,7 @@ auto BodyElaborator::consume_place(BuiltExpression& expression, Span span) noexc
     if (!consumed.has_value()) {
         return std::unexpected(consumed.error());
     }
-    auto* place = std::get_if<PlaceExpression>(&expression.storage);
+    auto* place = std::get_if<PlaceExpression>(&*expression.storage);
     if (place == nullptr) {
         return std::unexpected(fail(
             span,
@@ -62,7 +62,7 @@ auto BodyElaborator::consume_value(
             "function declaration requires a callable-value context"
         ));
     }
-    if (auto* value = std::get_if<SemanticExpression>(&built.storage)) {
+    if (auto* value = std::get_if<SemanticExpression>(&*built.storage)) {
         if (access == AccessMode::Write) {
             return std::unexpected(
                 fail(span, DiagnosticCode::AccessWriteArgument, "Write requires a place expression")
@@ -70,7 +70,7 @@ auto BodyElaborator::consume_value(
         }
         return std::move(*value);
     }
-    if (auto* place = std::get_if<PlaceExpression>(&built.storage)) {
+    if (auto* place = std::get_if<PlaceExpression>(&*built.storage)) {
         if (access == AccessMode::Write) {
             return std::unexpected(fail(
                 span,
@@ -335,7 +335,7 @@ auto BodyElaborator::coerce_to(
             return std::unexpected(converted.error());
         }
         converted->completes = built.completes;
-        std::get<SemanticExpression>(converted->storage).operation_reachable = operation_reachable;
+        std::get<SemanticExpression>(*converted->storage).operation_reachable = operation_reachable;
         built = std::move(*converted);
         return {};
     }
@@ -361,7 +361,7 @@ auto BodyElaborator::coerce_to(
             SemArrayAdopt {UniqueIndirect(std::move(source))}
         );
         value.operation_reachable = operation_reachable;
-        built.storage = std::move(value);
+        *built.storage = std::move(value);
         return {};
     }
     const auto* target_term = std::get_if<TypeTermID>(&target);
@@ -383,7 +383,7 @@ auto BodyElaborator::coerce_to(
         SemBorrowCallable {.source = UniqueIndirect(std::move(source))}
     );
     value.operation_reachable = operation_reachable;
-    built.storage = std::move(value);
+    *built.storage = std::move(value);
     return {};
 }
 

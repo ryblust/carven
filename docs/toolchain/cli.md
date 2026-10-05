@@ -90,6 +90,8 @@ Generated files and the executable reside in a unique temporary directory,
 removed when the driver returns after execution or a handled failure. Carven
 returns the native compiler's failure status or the program's exit status. On
 POSIX, termination by signal yields `128 + signal`.
+Native compilation failures identify the failed phase, compiler, and exit status
+after the compiler's own diagnostics.
 
 ## Timing reports
 
@@ -105,15 +107,18 @@ carven --timings main.cv -- argument
 ```
 
 The report shows the outcome, total wall-clock duration, and the stages executed,
-with aligned durations in milliseconds or seconds. Lexing and parsing accumulate
-across sources. Semantic analysis includes compile-time execution and static tests.
+in a table with duration and percentage of total time. Durations use milliseconds
+or seconds; values below display precision use `<0.1 ms` or `<0.1%`.
+Lexing and parsing accumulate across sources. Semantic analysis includes
+compile-time execution and static tests.
 Checking, compilation, and runtime commands also report source collection.
 Native runs report C++ compilation and linking. Native and interpreted runs label
 their runtime phase `Execution`; `compile` ends with C++ artifact output.
 
-Total time includes pipeline setup, diagnostics and command-resource cleanup, so
-it can exceed the sum of stage durations. Failed commands report the stages
-attempted. Native runs report the program's exit code. Invalid command options
+Total time includes pipeline setup, diagnostics and command-resource cleanup.
+Stage percentages use the unrounded durations and may sum to less than 100%.
+Failed commands report the stages attempted. Native runs report the program's
+exit code. Invalid command options
 produce diagnostics without a timing report.
 
 Timing reports use stderr and leave program and artifact streams intact.
@@ -169,6 +174,8 @@ as typed failures. Unsupported operations and exhausted budgets stop the current
 test; later tests still run. An assertion failure or runtime trap aborts execution,
 skips remaining tests, and produces no pass/fail summary. Otherwise the command
 reports failures and a pass/fail summary to stderr. It returns 1 if any test fails.
+Interpreter and compile-time diagnostics show up to eight call sites and report
+the number of additional sites omitted.
 
 The subset supports numeric, bool, char, str, and String locals; supported structs,
 enums, fixed arrays and slices; byte views and iteration; typed failures and

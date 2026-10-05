@@ -220,7 +220,7 @@ auto BodyElaborator::range_for_statement(
                     "iteration over this value is read-only"
                 ));
             }
-            const auto* place = std::get_if<PlaceExpression>(&value->storage);
+            const auto* place = std::get_if<PlaceExpression>(&*value->storage);
             auto stable = false;
             for (const auto& frame : frames) {
                 for (const auto& [name, local] : frame.names) {

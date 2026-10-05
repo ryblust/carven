@@ -48,7 +48,7 @@ auto BodyElaborator::access_expression(const ASTAccessExpr& source, Span span) n
         if (!place.has_value()) {
             co_return std::unexpected(place.error());
         }
-        operand->storage = std::move(*place);
+        *operand->storage = std::move(*place);
         operand->pending_failures = std::move(pending_failures);
         co_return std::move(*operand);
     }
@@ -57,7 +57,7 @@ auto BodyElaborator::access_expression(const ASTAccessExpr& source, Span span) n
     if (!value.has_value()) {
         co_return std::unexpected(value.error());
     }
-    operand->storage = std::move(*value);
+    *operand->storage = std::move(*value);
     operand->pending_failures = std::move(pending_failures);
     co_return std::move(*operand);
 }

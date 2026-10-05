@@ -66,7 +66,7 @@ public:
         std::optional<LocalBindingID>,
         AccessMode,
         ConstructionTypeRef,
-        SemanticExpressionValue,
+        SemanticExpressionValue&&,
         ProgramOriginID
     ) noexcept -> PlaceExpression;
     auto cpp_place(
@@ -81,7 +81,7 @@ public:
         ConstructionTypeRef,
         LifetimeRegionID,
         ProgramOriginID,
-        SemanticExpressionValue,
+        SemanticExpressionValue&&,
         std::optional<ConstantID> = std::nullopt
     ) noexcept -> SemanticExpression;
     auto finish(SemanticRegion) && noexcept -> StructuredBodyDraft;

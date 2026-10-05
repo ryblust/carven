@@ -3,7 +3,7 @@
 [Language](README.md)
 
 This page defines type compatibility, inference, numeric operations, and borrowed
-slices. User-defined data and construction are covered by [Aggregates](aggregates.md).
+slices.
 
 - [Types and compatibility](#types-and-compatibility)
 - [Type context and inference](#type-context-and-inference)
@@ -35,8 +35,8 @@ extent. Slices are identified by their element type. Function-view types include
 result, and failure set.
 
 For Carven types, ordinary compatibility requires the same canonical type.
-Contextual conversions are defined for [numbers](#numeric-types-and-conversions),
-[text](text.md#owning-string-and-text-borrowing), [slices](#read-only-slices),
+Contextual conversions are defined for numbers, slices,
+[text](text.md#owning-string-and-text-borrowing),
 [callable views](functions.md#signatures-and-views), and [pointers](pointers.md).
 There are no general implicit numeric promotions, structural conversions,
 truthiness conversions, or opaque dynamically typed values.
@@ -67,10 +67,8 @@ The following are supported sources of context:
 | Value-control result branch | Expected result type, when supplied |
 | Lambda parameter and result | Expected callable view, subject to explicit annotations |
 
-Grouping passes an existing expected type to its operand. Contextual
-[numeric literals](#numeric-types-and-conversions),
-[string literals](text.md#owning-string-and-text-borrowing), and
-[enum cases](aggregates.md#enums) use that context as specified in those rules.
+Grouping passes an existing expected type to its operand. Numeric and string
+literals and contextual enum cases use that expected type.
 Context does not change a binding's declared type. An admitted value conversion
 can produce the expected type. Context does not supply an omitted call access
 marker or insert a capture.
@@ -98,11 +96,7 @@ a direct contextual operand for sibling selection. Type-context selection
 never changes runtime left-to-right evaluation order.
 
 Without an annotation, a runtime binding takes its initializer's inferred
-type; later uses do not revise it. [Unsuffixed numeric defaults](#numeric-types-and-conversions),
-[array element inference](aggregates.md#structures-and-arrays),
-[lambda signature inference](functions.md#signatures-and-views), and
-[private callable failure inference](failures.md#sets-and-callable-contracts)
-are defined with those operations. There is no general search for a
+type; later uses do not revise it. There is no general search for a
 type that would make all uses succeed. A contextual form without a determining
 context is invalid; spell the type or enum owner explicitly.
 
@@ -145,7 +139,7 @@ Integer negate, add, subtract, multiply, and left shift wrap at the
 Carven type width; compound assignment and increment/decrement inherit the same
 rule. Signed `MIN / -1` returns `MIN`, with remainder zero. Division or remainder
 by zero and a negative or out-of-width shift count terminate at runtime with a
-[trap report](execution.md) and diagnose during static execution. Signed right shift is arithmetic.
+trap report and diagnose during static execution. Signed right shift is arithmetic.
 
 `isize` and `usize` are the signed and unsigned native-model integers. Their
 width is fixed by the supported compilation data model and participates in the

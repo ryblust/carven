@@ -4,8 +4,7 @@ import :semantic.analysis.ownership.context;
 import :semantic.semir.program;
 import std;
 
-auto OwnershipBodyAnalyzer::run() noexcept
-    -> std::expected<std::vector<OwnershipCallCompletion>, OwnershipEscape> {
+auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
     auto state = OwnershipState {
         .objects = std::vector<OwnershipObjectState>(
             input.objects.size() + facts.locals.size(),
@@ -54,7 +53,7 @@ auto OwnershipBodyAnalyzer::run() noexcept
             if (escape.has_value()) {
                 return;
             }
-            for (const auto& capture : relationships.captures) {
+            for (const auto& capture : relationships.view().captures) {
                 if (capture.target.object >= input.objects.size()) {
                     escape = OwnershipEscape {
                         "escaping closure outlives its captured owner",
@@ -64,7 +63,7 @@ auto OwnershipBodyAnalyzer::run() noexcept
                     return;
                 }
             }
-            for (const auto& loan : relationships.storage_loans) {
+            for (const auto& loan : relationships.view().storage_loans) {
                 if (loan.backing.object >= input.objects.size()) {
                     escape = OwnershipEscape {
                         "escaping view outlives its backing",
@@ -74,7 +73,7 @@ auto OwnershipBodyAnalyzer::run() noexcept
                     return;
                 }
             }
-            for (const auto& loan : relationships.callable_loans) {
+            for (const auto& loan : relationships.view().callable_loans) {
                 if (loan.backing.has_value() && loan.backing->object >= input.objects.size()) {
                     escape = OwnershipEscape {
                         "escaping callable storage outlives its backing",
@@ -136,7 +135,10 @@ auto OwnershipBodyAnalyzer::run() noexcept
         );
     }
     if (escape.has_value()) {
-        return std::unexpected(std::move(*escape));
+        return OwnershipBodyResult {
+            .answer = std::unexpected(std::move(*escape)),
+            .diagnosis = std::move(diagnosis)
+        };
     }
     for (auto& completion : result) {
         normalize_relationships(completion.value);
@@ -147,7 +149,7 @@ auto OwnershipBodyAnalyzer::run() noexcept
     std::ranges::sort(result, {}, [](const auto& answer) static noexcept {
         return std::pair(answer.test_stopped, answer.failure);
     });
-    return result;
+    return OwnershipBodyResult {.answer = std::move(result), .diagnosis = std::move(diagnosis)};
 }
 
 auto OwnershipBodyAnalyzer::call(
@@ -192,7 +194,7 @@ auto OwnershipBodyAnalyzer::call(
         auto storage = std::vector<OwnershipPlace>();
         if (std::get<CaptureBindingStorage>(target.binding(id).storage).mode
             == CaptureMode::Write) {
-            for (const auto& capture : value.captures) {
+            for (const auto& capture : value.view().captures) {
                 if (capture.holder.empty()) {
                     storage.push_back(capture.target);
                     write_access(capture.target, origin);
@@ -243,13 +245,13 @@ auto OwnershipBodyAnalyzer::call(
         }
     };
     const auto visit_facts = [&](const OwnershipRelationships& value) noexcept {
-        for (const auto& row : value.captures) {
+        for (const auto& row : value.view().captures) {
             discover(row.target.object);
         }
-        for (const auto& row : value.storage_loans) {
+        for (const auto& row : value.view().storage_loans) {
             discover(row.backing.object);
         }
-        for (const auto& row : value.callable_loans) {
+        for (const auto& row : value.view().callable_loans) {
             if (row.backing) {
                 discover(row.backing->object);
             }
@@ -271,13 +273,13 @@ auto OwnershipBodyAnalyzer::call(
         visit_facts(argument.value);
         // Only an unambiguous direct referent earns a root role. A many node
         // remains many even when a single edge names it.
-        if (argument.value.storage_loans.size() == 1uz
-            && argument.value.storage_loans.front().holder.empty()) {
-            distinguish(argument.value.storage_loans.front().backing.object);
+        if (argument.value.view().storage_loans.size() == 1uz
+            && argument.value.view().storage_loans.front().holder.empty()) {
+            distinguish(argument.value.view().storage_loans.front().backing.object);
         }
-        if (argument.value.callable_loans.size() == 1uz
-            && argument.value.callable_loans.front().backing) {
-            distinguish(argument.value.callable_loans.front().backing->object);
+        if (argument.value.view().callable_loans.size() == 1uz
+            && argument.value.view().callable_loans.front().backing) {
+            distinguish(argument.value.view().callable_loans.front().backing->object);
         }
     };
     for (const auto& argument : parameters) {
@@ -310,10 +312,10 @@ auto OwnershipBodyAnalyzer::call(
                 found->second.reset();
             }
         };
-        for (const auto& row : value.captures) {
+        for (const auto& row : value.view().captures) {
             add(row.holder, row.target.object);
         }
-        for (const auto& row : value.callable_loans) {
+        for (const auto& row : value.view().callable_loans) {
             add(row.holder, row.backing ? std::optional(row.backing->object) : std::nullopt);
         }
         for (const auto& [holder, object] : slots) {
@@ -354,21 +356,23 @@ auto OwnershipBodyAnalyzer::call(
         return place;
     };
     const auto map_facts = [&](OwnershipRelationships value) noexcept {
-        for (auto& row : value.captures) {
-            row.target = map_place(std::move(row.target));
-        }
-        for (auto& row : value.storage_loans) {
-            row.backing = map_place(std::move(row.backing));
-        }
-        for (auto& row : value.callable_loans) {
-            row.direct_only = false;
-            if (row.backing) {
-                row.backing = map_place(std::move(*row.backing));
+        if (auto* rows = value.edit_existing()) {
+            for (auto& row : rows->captures) {
+                row.target = map_place(std::move(row.target));
+            }
+            for (auto& row : rows->storage_loans) {
+                row.backing = map_place(std::move(row.backing));
+            }
+            for (auto& row : rows->callable_loans) {
+                row.direct_only = false;
+                if (row.backing) {
+                    row.backing = map_place(std::move(*row.backing));
+                }
             }
         }
         return value;
     };
-    const auto map_argument = [&](OwnershipCallArgument argument) noexcept {
+    const auto map_argument = [&](OwnershipCallArgument& argument) noexcept -> void {
         if (argument.alias) {
             argument.alias = map_place(std::move(*argument.alias));
         }
@@ -379,14 +383,21 @@ auto OwnershipBodyAnalyzer::call(
             place = map_place(std::move(place));
         }
         argument.value = map_facts(std::move(argument.value));
-        return argument;
     };
-    auto call_input = OwnershipCallInput {target.id(), {}, {}, {}, {}, {}, {}};
-    for (const auto& argument : parameters) {
-        call_input.parameters.push_back(map_argument(argument));
+    auto call_input = OwnershipCallInput {
+        .body_id = target.id(),
+        .parameters = std::move(parameters),
+        .captures = std::move(raw_captures),
+        .objects = {},
+        .outlives = {},
+        .accesses = {},
+        .storage_readers = {}
+    };
+    for (auto& argument : call_input.parameters) {
+        map_argument(argument);
     }
-    for (const auto& argument : raw_captures) {
-        call_input.captures.push_back(map_argument(argument));
+    for (auto& argument : call_input.captures) {
+        map_argument(argument);
     }
     for (const auto& group : sources) {
         const auto first = group.front();
@@ -422,7 +433,7 @@ auto OwnershipBodyAnalyzer::call(
     protect_external(storage_readers);
     for (const auto [holder, object] : std::views::enumerate(state.objects)) {
         if (!normalized.contains(static_cast<std::size_t>(holder))) {
-            protect_external(object.relationships.storage_loans);
+            protect_external(object.relationships.view().storage_loans);
         }
     }
     for (const auto& from : sources) {
@@ -450,28 +461,28 @@ auto OwnershipBodyAnalyzer::call(
     );
     const auto restore_facts = [&](const OwnershipRelationships& value) noexcept {
         auto restored = OwnershipRelationships {};
-        for (const auto& row : value.captures) {
+        for (const auto& row : value.view().captures) {
             for (const auto source : sources[row.target.object]) {
                 auto copy = row;
                 copy.target.object = source;
-                restored.captures.push_back(std::move(copy));
+                restored.edit().captures.push_back(std::move(copy));
             }
         }
-        for (const auto& row : value.storage_loans) {
+        for (const auto& row : value.view().storage_loans) {
             for (const auto source : sources[row.backing.object]) {
                 auto copy = row;
                 copy.backing.object = source;
-                restored.storage_loans.push_back(std::move(copy));
+                restored.edit().storage_loans.push_back(std::move(copy));
             }
         }
-        for (const auto& row : value.callable_loans) {
+        for (const auto& row : value.view().callable_loans) {
             if (!row.backing) {
-                restored.callable_loans.push_back(row);
+                restored.edit().callable_loans.push_back(row);
             } else {
                 for (const auto source : sources[row.backing->object]) {
                     auto copy = row;
                     copy.backing->object = source;
-                    restored.callable_loans.push_back(std::move(copy));
+                    restored.edit().callable_loans.push_back(std::move(copy));
                 }
             }
         }
@@ -482,8 +493,11 @@ auto OwnershipBodyAnalyzer::call(
         | std::views::transform([](const auto& object) static noexcept { return object.many; })
         | std::ranges::to<std::vector>();
     auto result = OwnershipFlow {};
-    for (const auto& answer : analysis.query(std::move(call_input))) {
-        auto returned = state;
+    const auto answers = analysis.query(std::move(call_input));
+    for (const auto [answer_index, answer] : std::views::enumerate(answers)) {
+        // Move only on the final answer; no later iteration can use state.
+        // NOLINTNEXTLINE(bugprone-use-after-move)
+        auto returned = answer_index + 1uz == answers.size() ? std::move(state) : state;
         for (auto index = 0uz; index < sources.size(); ++index) {
             const auto& object = answer.state.objects[index];
             if (!object.modified) {

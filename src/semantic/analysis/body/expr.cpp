@@ -25,6 +25,7 @@ import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
+import :support.unique_indirect;
 import :support.visit;
 import std;
 
@@ -200,13 +201,14 @@ auto BodyElaborator::lambda_expression(
                 "callable views cannot be captured by a lambda"
             ));
         }
-        auto built = BuiltExpression {BuiltExpression {
-            .storage = active_builder().binding_expression(local->storage.binding),
-
+        auto built = BuiltExpression {
+            .storage = UniqueIndirect {BodyExpressionStorage {
+                active_builder().binding_expression(local->storage.binding)
+            }},
             .pending_failures = {},
             .takeable = false,
             .completes = true,
-        }};
+        };
         const auto mode =
             capture.write_marker.has_value() ? CaptureMode::Write : CaptureMode::Value;
         auto operand = std::optional<SemCapture>();
@@ -314,7 +316,7 @@ auto BodyElaborator::lambda_expression(
         SemClosure {.callable = callable, .captures = std::move(operands)}
     );
     co_return BuiltExpression {
-        .storage = std::move(value),
+        .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},
 
         .pending_failures = {},
         .takeable = true,
@@ -353,7 +355,7 @@ auto BodyElaborator::expression(
         && is_void_type(draft(), result->type())) {
         auto node = take_built(*result, source.span);
         node.type = BodyType(*expected);
-        result->storage = std::move(node);
+        *result->storage = std::move(node);
     }
     if (result.has_value()) {
         auto& node = std::visit(
@@ -365,7 +367,7 @@ auto BodyElaborator::expression(
                     return value.expression;
                 },
             },
-            result->storage
+            *result->storage
         );
         const auto dispatches_before_children = std::holds_alternative<SemIf>(node.value)
             || std::holds_alternative<SemMatch>(node.value)

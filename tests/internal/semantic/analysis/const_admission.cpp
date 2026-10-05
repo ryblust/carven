@@ -1,6 +1,13 @@
 module carven:test.internal.semantic.analysis.const_admission;
 
 import :diagnostics.code;
+import :diagnostics.diagnostic;
+import :frontend.program.parse;
+import :semantic.analyze;
+import :source.batch;
+import :source.manager;
+import :source.module_path;
+import :source.text;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
@@ -11,6 +18,74 @@ namespace {
 namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Constant function admission: capability diagnostics preserve evaluation order",
+        [] static noexcept {
+            struct Scenario final {
+                std::string_view name;
+                std::string_view source;
+                std::string_view primary;
+                std::uint32_t start;
+            };
+            const auto scenarios = std::array {
+                Scenario {
+                    .name = "left child is checked before right child",
+                    .source =
+                        "fn first() -> i32 => 1; fn second() -> i32 => 2; const fn invalid() -> i32 => first() + second();\n",
+                    .primary = "first()",
+                    .start = 78u,
+                },
+                Scenario {
+                    .name = "earlier reachable statement is checked before later return",
+                    .source =
+                        "fn first() -> i32 => 1; fn second() -> i32 => 2; const fn invalid() -> i32 { let value = first(); return second(); }\n",
+                    .primary = "first()",
+                    .start = 89u,
+                },
+                Scenario {
+                    .name = "parent call is checked before its argument",
+                    .source =
+                        "fn ordinary(value: i32) -> i32 => value; const fn invalid() -> i32 => ordinary(ordinary(1));\n",
+                    .primary = "ordinary(ordinary(1))",
+                    .start = 70u,
+                },
+            };
+            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                auto sources = SourceManager();
+                const auto source =
+                    sources.append_virtual("analysis.cv", std::string(scenario.source));
+                ct::require(source.has_value());
+                const auto input = SourceModuleInput {
+                    .source_id = *source,
+                    .module_path = semantic_test_module_path(),
+                };
+                auto parsed =
+                    parse_program(sources, SourceBatch {.modules = std::span(&input, 1uz)});
+                ct::require(parsed.has_value());
+                const auto analyzed = analyze(std::move(*parsed));
+                if (!ct::expect(!analyzed.has_value())) {
+                    return;
+                }
+                ct::expect_diagnostic(analyzed.error(), DiagnosticCode::ConstAdmission);
+                const auto* diagnostic =
+                    ct::find_diagnostic(analyzed.error(), DiagnosticCode::ConstAdmission);
+                if (!ct::expect(diagnostic != nullptr)) {
+                    return;
+                }
+                ct::expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
+                if (!ct::expect(diagnostic->attachment.primary.has_value())) {
+                    return;
+                }
+                const auto primary = diagnostic->attachment.primary->span;
+                if (!ct::expect(primary.source_id == *source)) {
+                    return;
+                }
+                ct::expect_equal(sources.slice(primary), scenario.primary);
+                ct::expect_equal(primary.span.start(), scenario.start);
+            });
+        }
+    );
+
     ct::test(
         "Constant function admission: executable bodies are proved at their definitions",
         [] static noexcept {

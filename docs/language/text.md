@@ -3,7 +3,6 @@
 [Language](README.md)
 
 This page defines Unicode values, owning text, borrowing, and interpolation.
-Direct output and structural display are defined in [Printing](execution.md#printing).
 
 - [Unicode text](#unicode-text)
 - [String literals and multiline layout](#string-literals-and-multiline-layout)

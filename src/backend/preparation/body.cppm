@@ -44,6 +44,7 @@ struct PreparedOperation final {
 };
 
 struct ExpressionSummary final {
+    bool executes_operation;
     bool requires_execution;
     bool reads_storage;
 };

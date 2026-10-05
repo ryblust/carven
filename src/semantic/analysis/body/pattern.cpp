@@ -528,7 +528,7 @@ auto BodyElaborator::build_match(
             "void expression cannot be used as a value"
         ));
     }
-    const auto subject_is_place = std::holds_alternative<PlaceExpression>(subject->storage);
+    const auto subject_is_place = std::holds_alternative<PlaceExpression>(*subject->storage);
     auto subject_tree = take_built(*subject, ast.expression(source.subject).span);
     if (source.arms.empty()) {
         co_return std::unexpected(

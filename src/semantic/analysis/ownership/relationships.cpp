@@ -7,6 +7,9 @@ namespace {
 
 template<typename T>
 auto normalize_rows(std::vector<T>& rows) noexcept -> void {
+    if (rows.size() < 2uz) {
+        return;
+    }
     std::ranges::sort(rows, [](const T& left, const T& right) static noexcept {
         const auto order = left <=> right;
         return order < 0 || (order == 0 && left.origin < right.origin);
@@ -16,7 +19,7 @@ auto normalize_rows(std::vector<T>& rows) noexcept -> void {
 
 template<typename T>
 auto merge_rows(std::vector<T>& destination, const std::vector<T>& source) noexcept -> void {
-    if (std::addressof(destination) != std::addressof(source)) {
+    if (!source.empty() && std::addressof(destination) != std::addressof(source)) {
         destination.insert(destination.end(), source.begin(), source.end());
     }
     normalize_rows(destination);
@@ -33,7 +36,7 @@ auto select_element_storage(
 ) noexcept -> std::vector<OwnershipPlace> {
     auto result = std::vector<OwnershipPlace>();
     if (std::holds_alternative<SliceTypeValue>(types.type(sequence).value)) {
-        for (const auto& loan : relationships.storage_loans) {
+        for (const auto& loan : relationships.view().storage_loans) {
             if (loan.holder.empty()) {
                 result.push_back(loan.backing);
             }
@@ -72,18 +75,27 @@ auto normalize_storage_loans(std::vector<OwnershipStorageLoan>& loans) noexcept 
 }
 
 auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void {
-    normalize_rows(relationships.callable_loans);
-    normalize_rows(relationships.captures);
-    normalize_storage_loans(relationships.storage_loans);
+    if (auto* rows = relationships.edit_existing()) {
+        normalize_rows(rows->callable_loans);
+        normalize_rows(rows->captures);
+        normalize_storage_loans(rows->storage_loans);
+    }
 }
 
 auto merge_relationships(
     OwnershipRelationships& destination,
     const OwnershipRelationships& source
 ) noexcept -> void {
-    merge_rows(destination.callable_loans, source.callable_loans);
-    merge_rows(destination.captures, source.captures);
-    merge_rows(destination.storage_loans, source.storage_loans);
+    if (source.empty()) {
+        // Even an empty input canonicalizes facts already held by destination.
+        normalize_relationships(destination);
+        return;
+    }
+    auto& rows = destination.edit();
+    const auto& incoming = source.view();
+    merge_rows(rows.callable_loans, incoming.callable_loans);
+    merge_rows(rows.captures, incoming.captures);
+    merge_rows(rows.storage_loans, incoming.storage_loans);
 }
 
 auto project_relationships(
@@ -91,7 +103,7 @@ auto project_relationships(
     const OwnershipProjectionPath& path
 ) noexcept -> OwnershipRelationships {
     auto result = OwnershipRelationships {};
-    const auto select = [&](const auto& rows, auto& destination) noexcept {
+    const auto select = [&](const auto& rows, auto member) noexcept {
         for (auto row : rows) {
             if (row.holder.size() < path.size() || !overlaps(row.holder, path)) {
                 continue;
@@ -100,26 +112,29 @@ auto project_relationships(
                 row.holder.begin(),
                 row.holder.begin() + static_cast<std::ptrdiff_t>(path.size())
             );
-            destination.push_back(std::move(row));
+            (result.edit().*member).push_back(std::move(row));
         }
     };
-    select(source.callable_loans, result.callable_loans);
-    select(source.captures, result.captures);
-    select(source.storage_loans, result.storage_loans);
+    const auto& rows = source.view();
+    select(rows.callable_loans, &OwnershipRelationshipRows::callable_loans);
+    select(rows.captures, &OwnershipRelationshipRows::captures);
+    select(rows.storage_loans, &OwnershipRelationshipRows::storage_loans);
     normalize_relationships(result);
     return result;
 }
 
 auto nest_relationships(OwnershipRelationships source, const OwnershipProjectionPath& path) noexcept
     -> OwnershipRelationships {
-    for (auto& loan : source.callable_loans) {
-        loan.holder.insert(loan.holder.begin(), path.begin(), path.end());
-    }
-    for (auto& loan : source.storage_loans) {
-        loan.holder.insert(loan.holder.begin(), path.begin(), path.end());
-    }
-    for (auto& capture : source.captures) {
-        capture.holder.insert(capture.holder.begin(), path.begin(), path.end());
+    if (auto* rows = source.edit_existing()) {
+        for (auto& loan : rows->callable_loans) {
+            loan.holder.insert(loan.holder.begin(), path.begin(), path.end());
+        }
+        for (auto& loan : rows->storage_loans) {
+            loan.holder.insert(loan.holder.begin(), path.begin(), path.end());
+        }
+        for (auto& capture : rows->captures) {
+            capture.holder.insert(capture.holder.begin(), path.begin(), path.end());
+        }
     }
     return source;
 }
@@ -152,6 +167,17 @@ auto join_normal_ownership(
     } else {
         join_ownership_state(destination->state, source->state);
         merge_relationships(destination->value, source->value);
+    }
+}
+
+auto join_normal_ownership(
+    std::optional<OwnershipNormal>& destination,
+    std::optional<OwnershipNormal>&& source
+) noexcept -> void {
+    if (!destination.has_value()) {
+        destination = std::move(source);
+    } else {
+        join_normal_ownership(destination, source);
     }
 }
 

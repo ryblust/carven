@@ -810,9 +810,12 @@ public:
 
     template<typename Node>
     auto leave_expression(Node& expression) noexcept -> bool {
-        return enqueue([this, &expression]() noexcept {
-            return leave_target_expression(visitor, expression);
-        });
+        if constexpr (requires { visitor.leave_expression(expression); }) {
+            return enqueue([this, &expression]() noexcept {
+                return leave_target_expression(visitor, expression);
+            });
+        }
+        return true;
     }
 
     template<typename Node>
@@ -822,9 +825,12 @@ public:
 
     template<typename Node>
     auto leave_statement(Node& statement) noexcept -> bool {
-        return enqueue([this, &statement]() noexcept {
-            return leave_target_statement(visitor, statement);
-        });
+        if constexpr (requires { visitor.leave_statement(statement); }) {
+            return enqueue([this, &statement]() noexcept {
+                return leave_target_statement(visitor, statement);
+            });
+        }
+        return true;
     }
 
     auto enter_item(const TargetItem& item) noexcept -> bool {
@@ -832,7 +838,10 @@ public:
     }
 
     auto leave_item(const TargetItem& item) noexcept -> bool {
-        return enqueue([this, &item]() noexcept { return leave_target_item(visitor, item); });
+        if constexpr (requires { visitor.leave_item(item); }) {
+            return enqueue([this, &item]() noexcept { return leave_target_item(visitor, item); });
+        }
+        return true;
     }
 
     auto enter_declaration(const TargetDecl& declaration) noexcept -> bool {
@@ -840,25 +849,42 @@ public:
     }
 
     auto leave_declaration(const TargetDecl& declaration) noexcept -> bool {
-        return enqueue([this, &declaration]() noexcept {
-            return leave_target_declaration(visitor, declaration);
-        });
+        if constexpr (requires { visitor.leave_declaration(declaration); }) {
+            return enqueue([this, &declaration]() noexcept {
+                return leave_target_declaration(visitor, declaration);
+            });
+        }
+        return true;
     }
 
     auto enter_scope(TargetTraversalScope scope) noexcept -> bool {
-        return enqueue([this, scope]() noexcept { return enter_target_scope(visitor, scope); });
+        if constexpr (requires { visitor.enter_scope(scope); }) {
+            return enqueue([this, scope]() noexcept { return enter_target_scope(visitor, scope); });
+        }
+        return true;
     }
 
     auto leave_scope(TargetTraversalScope scope) noexcept -> bool {
-        return enqueue([this, scope]() noexcept { return leave_target_scope(visitor, scope); });
+        if constexpr (requires { visitor.leave_scope(scope); }) {
+            return enqueue([this, scope]() noexcept { return leave_target_scope(visitor, scope); });
+        }
+        return true;
     }
 
     auto visit_type(TargetTypeID type) noexcept -> bool {
-        return enqueue([this, type]() noexcept { return visit_target_type(visitor, type); });
+        if constexpr (requires { visitor.visit_type(type); }) {
+            return enqueue([this, type]() noexcept { return visit_target_type(visitor, type); });
+        }
+        return true;
     }
 
     auto visit_local_parameter(TargetLocalID id) noexcept -> bool {
-        return enqueue([this, id]() noexcept { return visit_target_local_parameter(visitor, id); });
+        if constexpr (requires { visitor.visit_local_parameter(id); }) {
+            return enqueue([this, id]() noexcept {
+                return visit_target_local_parameter(visitor, id);
+            });
+        }
+        return true;
     }
 
     auto visit_parameter_id(std::optional<TargetLocalID> id) noexcept -> bool {
@@ -870,9 +896,12 @@ public:
 
     template<typename Variable>
     auto visit_variable(Variable& variable) noexcept -> bool {
-        return enqueue([this, &variable]() noexcept {
-            return visit_target_variable(visitor, variable);
-        });
+        if constexpr (requires { visitor.visit_variable(variable); }) {
+            return enqueue([this, &variable]() noexcept {
+                return visit_target_variable(visitor, variable);
+            });
+        }
+        return true;
     }
 
 private:

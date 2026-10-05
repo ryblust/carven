@@ -101,7 +101,9 @@ public:
 
         auto final_suspend() const noexcept -> Completion { return {}; }
 
-        auto return_value(Value value) noexcept -> void { result.emplace(std::move(value)); }
+        auto return_value(const Value& value) noexcept -> void { result.emplace(value); }
+
+        auto return_value(Value&& value) noexcept -> void { result.emplace(std::move(value)); }
 
         auto unhandled_exception() const noexcept -> void { std::terminate(); }
 

@@ -1,8 +1,7 @@
 # Semantic construction
 
 This reference describes declaration and expression construction, dependency
-completion, solving, and delegated C++ operations. The [compiler overview](../README.md)
-defines the phase ownership and [publication order](../README.md#publication-gates).
+completion, solving, and delegated C++ operations.
 
 ## Expression construction
 

@@ -20,42 +20,44 @@ auto interpret_expression(
     if (!site.admits(source)) {
         co_return std::unexpected(ExpressionNotAdmitted {});
     }
-    co_return (co_await source.value.visit(
-        [&](const auto& form) noexcept -> ExpressionTask<typename Site::Selection> {
-            using Form = std::remove_cvref_t<decltype(form)>;
-            if constexpr (std::same_as<Form, ASTLiteral>) {
-                co_return interpret_literal(site, form, source.span, expected);
-            } else if constexpr (std::same_as<Form, ASTGroupExpr>) {
-                co_return (co_await interpret_expression(site, form.expression, expected));
-            } else if constexpr (std::same_as<Form, ASTPrefixExpr>) {
-                co_return (co_await interpret_unary(site, form, source.span, expected));
-            } else if constexpr (std::same_as<Form, ASTBinaryExpr>) {
-                co_return (co_await interpret_binary(site, form, source.span, expected));
-            } else if constexpr (std::same_as<Form, ASTRangeExpr>) {
-                co_return (co_await interpret_range(site, form, source.span, expected));
-            } else if constexpr (std::same_as<Form, ASTCastExpr>) {
-                co_return (co_await interpret_cast(site, form, source.span));
-            } else if constexpr (std::same_as<Form, ASTContextualCaseExpr>) {
-                auto type = expected_expression_enum(site, expected, form.name_span);
-                if (!type.has_value()) {
-                    co_return std::unexpected(type.error());
-                }
-                co_return (co_await interpret_enum_case(
-                    site,
-                    *type,
-                    site.spelling(form.name_span),
-                    form.name_span,
-                    {},
-                    source.span,
-                    false
-                ));
-            } else if constexpr (std::same_as<Form, ASTMemberExpr>) {
-                co_return (co_await interpret_member(site, form, source.span));
-            } else if constexpr (std::same_as<Form, ASTCallExpr>) {
-                co_return (co_await interpret_call(site, form, source.span, expected));
-            } else {
-                co_return (co_await site.extension(form, source.span, expected));
-            }
+    if (const auto* form = std::get_if<ASTLiteral>(&source.value)) {
+        co_return interpret_literal(site, *form, source.span, expected);
+    }
+    using ValueTask = ExpressionTask<typename Site::Value>;
+    using SelectionTask = ExpressionTask<typename Site::Selection>;
+    using DispatchedTask = std::variant<ValueTask, SelectionTask>;
+    const auto value_task = [](ValueTask task) static noexcept {
+        return DispatchedTask(std::in_place_index<0>, std::move(task));
+    };
+    const auto selection_task = [](SelectionTask task) static noexcept {
+        return DispatchedTask(std::in_place_index<1>, std::move(task));
+    };
+    auto task = source.value.visit([&](const auto& form) noexcept -> DispatchedTask {
+        using Form = std::remove_cvref_t<decltype(form)>;
+        if constexpr (std::same_as<Form, ASTLiteral>) {
+            std::unreachable();
+        } else if constexpr (std::same_as<Form, ASTGroupExpr>) {
+            return selection_task(interpret_expression(site, form.expression, expected));
+        } else if constexpr (std::same_as<Form, ASTPrefixExpr>) {
+            return value_task(interpret_unary(site, form, source.span, expected));
+        } else if constexpr (std::same_as<Form, ASTBinaryExpr>) {
+            return value_task(interpret_binary(site, form, source.span, expected));
+        } else if constexpr (std::same_as<Form, ASTRangeExpr>) {
+            return value_task(interpret_range(site, form, source.span, expected));
+        } else if constexpr (std::same_as<Form, ASTCastExpr>) {
+            return value_task(interpret_cast(site, form, source.span));
+        } else if constexpr (std::same_as<Form, ASTContextualCaseExpr>) {
+            return value_task(interpret_contextual_enum_case(site, form, source.span, expected));
+        } else if constexpr (std::same_as<Form, ASTMemberExpr>) {
+            return selection_task(interpret_member(site, form, source.span));
+        } else if constexpr (std::same_as<Form, ASTCallExpr>) {
+            return value_task(interpret_call(site, form, source.span, expected));
+        } else {
+            return selection_task(site.extension(form, source.span, expected));
         }
-    ));
+    });
+    if (task.index() == 0uz) {
+        co_return (co_await std::get<0>(std::move(task)));
+    }
+    co_return (co_await std::get<1>(std::move(task)));
 }

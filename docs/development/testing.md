@@ -1,8 +1,8 @@
 # Testing
 
 This document defines test placement, evidence, and the validation workflow.
-Cases specify inputs, conditions, and expected results under the current
-contracts. Target configurations specify supported build and execution modes.
+Test current contracts. Add cases for missing evidence. Keep fixtures focused.
+Accept equivalent implementations that preserve the tested property.
 
 ## Validation
 
@@ -70,13 +70,13 @@ flags. Ordinary compiler and test targets use the project configuration directly
 | `examples` | User-facing programs | Documented program output from the actual example executables |
 | `cli` | Compiler process, native/ interpreted execution, and build integration | Arguments, output, exit status, files, source scheduling, and generation policy |
 
-Place each case in the group that owns the tested boundary. Specify accepted
+Place each case in the group that owns the tested boundary. Assert accepted
 behavior, rejected inputs, and representation invariants from the current contract.
-Reuse fixtures and assertions across the C++ standard modes in the test matrix.
-Each matrix dimension covers a distinct contract or supported execution mode.
+Reuse fixtures and assertions across applicable configurations. Select matrix
+inputs for the evidence each execution boundary adds.
 Merge cases that repeat the same input class, execution path, and observation.
 
-Apply the following C++ modes:
+The current C++ matrix uses the following modes:
 
 | Subject | Compiler mode |
 | --- | --- |
@@ -90,8 +90,8 @@ Apply the following C++ modes:
 
 C++20 is the generated-source baseline. Additional standard modes exercise
 standard-library capability branches; shared semantic contracts run at baseline.
-Declare shared sources once in each group's `xmake.lua` and
-apply the modes listed above. Entry tests cover default
+Declare shared sources once in each group's `xmake.lua` and select the applicable
+modes for the tested boundary. Entry tests cover default
 and explicit entries, success and failure status, reported failures, and cleanup.
 
 Execution-selection tests use valid, terminating operands and assert call counts
@@ -186,7 +186,6 @@ Guard premises before indexing, dereferencing, or reading an error. Assertion
 results convert to Boolean so a failed premise can return from the case or its
 current input. `ct::require` terminates the process; reserve it for fixture
 construction that cannot produce a valid value or other unrecoverable failures.
-The framework's process tests check execution, reporting, and rejected runs.
 
 Diagnostic assertions compare typed codes and report actual findings.
 `ct::find_diagnostic` borrows from the diagnostic collection; source-aware output
@@ -202,14 +201,9 @@ Diagnostic and termination tests assert the expected diagnostic or termination
 contract. Aggregate generated-test targets require a positive passing-case
 summary, so an empty runner cannot pass solely by exiting successfully.
 
-Cases cover acceptance, rejection, results, effects, and lifecycle boundaries.
-Distinct source entry points need additional cases when they exercise different
-paths or contracts. Internal tests check valid representations and malformed
-states at the boundary that owns the invariant, including identity, range,
-ownership, and structural relations.
-
-Limit fixture setup to the inputs required by its assertions. Add cases for
-distinct inputs, interactions, or observations.
+Internal tests check valid representations and malformed states at the boundary
+that owns the invariant, including identity, range, ownership, and structural
+relations.
 
 Language-behavior tests identify the owning semantic section through their
 case name or a focused comment. Captures and views need interaction coverage for
@@ -225,6 +219,8 @@ generated bodies.
 Target structure assertions check a stated property, such as bounded node growth
 or single execution of an operation. Scope cost assertions to the measured
 operation. Accept equivalent representations that preserve the checked property.
+Cover relevant input dimensions, including expression depth, aggregate width,
+and recursive call graphs. State the growth bound each scale test checks.
 
 Lifecycle tests observe construction, transfer, execution, and destruction in
 order, including conditional paths and failure cleanup. Native construction tests
@@ -242,15 +238,16 @@ Prepare and validate fixtures before entering the death-test action. The action
 contains only the production operations whose termination is under test; a test
 assertion inside it can itself abort and falsely satisfy the contract.
 
-For implementation selection, identify the source fact, work removed, and
-obligations preserved. Test semantic and generated-structure contracts at their
-owning boundaries. Measure runtime cost and compilation time separately;
-code size alone establishes neither. Keep measurement logs outside reference
-documents.
+For optimization changes, identify the work removed and test the affected semantic
+and generated-structure contracts at their owning boundaries. Compare representative
+workloads under equal results, effects, and output contracts. Measure affected
+dimensions separately: compiler time and memory, generated-code size, native
+compilation, and runtime work. Report conclusions for the measured dimensions and
+keep measurement logs outside reference documents.
 
 `./xmakew bench compile` measures source-to-C++ compilation for module batches
 and structured workloads. `./xmakew bench incremental` measures build times and
-C++ object rebuild counts in a small module dependency fixture. Both update the
+C++ object changes in a small module dependency fixture. Both update the
 configured compiler before measuring. See [Benchmarks](../../xmake/README.md#benchmarks)
 for workloads, measurement boundaries, and sampling options.
 

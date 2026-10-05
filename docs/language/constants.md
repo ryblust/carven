@@ -7,8 +7,7 @@ freezing. A program has two stages. The static stage executes during
 compilation; the runtime stage is the generated program. `const fn` states that
 a function can execute in the static stage. A `const` declaration, `const if`,
 `const for`, `const { ... }`, and `const test` state that execution happens
-there. A constant is the completed, frozen value such execution produces. Ordinary calls follow [Functions and calls](functions.md#functions-and-calls);
-static test behavior is defined in [Entry points and tests](execution.md#entry-points-and-tests).
+there. A constant is the completed, frozen value such execution produces.
 
 - [Module constants](#module-constants)
 - [Constant expressions](#constant-expressions)
@@ -77,8 +76,7 @@ in an unselected arm, and it requires a value independent of unbound static
 parameters. The declaration still executes in its own stage, and a `const fn`
 result depends only on its arguments, so both yield the same value.
 
-Static values do not guide ordinary control analysis; see
-[Control flow and loops](control-flow.md#control-flow-and-loops). Only
+Static values do not guide ordinary control analysis. Only
 `const if` selects by a static value.
 
 A constant integer cast to an `N`-bit integer reduces the mathematical value
@@ -363,5 +361,3 @@ known contents alone do not extend that storage's lifetime.
 Retaining an array and constructing a constant subslice charge their number of
 element references against the initializer's 524,288-element work budget. The
 source array retains its value-size and nesting limits.
-
-Runtime slice operations and borrowing follow [Read-only slices](types.md#read-only-slices).

@@ -14,8 +14,8 @@ or message-passing use case.
 
 Memory rules and operation contracts are separate sections of one design:
 operations consume the value, data-race, and happens-before rules and identify
-which rules are needed. [Async](async.md) owns suspension and structured operation
-lifetime. Same-thread async is independent; migration requires both contracts.
+which rules are needed. Suspension and structured operation lifetime have separate
+contracts. Same-thread async is independent; migration requires both contracts.
 
 ## Context
 
@@ -48,11 +48,11 @@ Carven semantic guarantee. Any promised reentrancy or thread-compatible value
 shape requires an explicit interoperation contract.
 
 Owner, borrowed, shared, nullable, and erased values, allocators, dispatch tables,
-and failure/control carriers all affect cross-thread validity. The
-[async proposal](async.md) needs this model when operations, frames, captures,
-continuations, or completions can migrate. The thread and synchronization operations below consume its
-value-capability, data-race, and ordering rules. A non-async thread, channel,
-shared owner, or C++ integration use case may also activate this work.
+and failure/control carriers all affect cross-thread validity. Migrating operations,
+frames, captures, continuations, or completions need these rules. Thread and
+synchronization operations consume the value-capability, data-race, and ordering
+rules. A non-async thread, channel, shared owner, or C++ integration use case may
+also activate this work.
 
 ## Design scope
 
@@ -60,9 +60,8 @@ Define the value, data-race, and ordering contracts required by a concrete
 cross-thread operation. Write remains nonexclusive unless a selected contract
 strengthens it.
 
-No atomic or lock API is selected. Async owns suspension lifetime and scheduling.
-This proposal does not select
-capability names or derivation policy, a race detector, borrow checker, lifetime
+No atomic or lock API is selected. This proposal does not select capability names
+or derivation policy, a race detector, borrow checker, lifetime
 annotations, or a C++ library mechanism. Future features require source semantics,
 compiler facts, diagnostics, lowering, interoperation, tests, and documentation.
 

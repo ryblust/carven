@@ -1,8 +1,7 @@
 # C++ artifacts
 
 Artifact planning selects names, interfaces, and definition schedules. Target-unit
-construction owns syntax, dependencies, verification, and emission; the
-[backend pipeline](README.md#pipeline) defines its ownership boundary.
+construction owns syntax, dependencies, verification, and emission.
 
 ## Names and interfaces
 

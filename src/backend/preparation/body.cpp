@@ -175,7 +175,11 @@ BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noex
         }
         summaries.emplace(
             std::addressof(source),
-            ExpressionSummary {.requires_execution = execution, .reads_storage = reads}
+            ExpressionSummary {
+                .executes_operation = rule.action == EvaluationAction::Required,
+                .requires_execution = execution,
+                .reads_storage = reads
+            }
         );
     };
 
@@ -231,8 +235,7 @@ auto BodyPreparation::prepare(const SemanticExpression& input) const noexcept ->
     const auto& effect = summary(source);
     return PreparedOperation {
         .operation = source,
-        .executes_operation =
-            evaluation_rule(semantic, source).action == EvaluationAction::Required,
+        .executes_operation = effect.executes_operation,
         .requires_execution = effect.requires_execution,
         .reads_storage = effect.reads_storage,
         .operands = std::move(inputs),

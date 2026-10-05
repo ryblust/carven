@@ -323,9 +323,17 @@ auto solve_failure_constraints(
     }
 
     auto worklist = std::deque<std::uint32_t>();
-    auto queued = std::vector<std::uint8_t>(terms.size(), 1u);
+    auto queued = std::vector<std::uint8_t>(terms.size(), 0u);
     for (auto index = 0uz; index < terms.size(); ++index) {
-        worklist.push_back(static_cast<std::uint32_t>(index));
+        if (values[index].empty()) {
+            continue;
+        }
+        for (const auto dependent : dependents[index]) {
+            if (queued[dependent] == 0u) {
+                queued[dependent] = 1u;
+                worklist.push_back(dependent);
+            }
+        }
     }
     while (!worklist.empty()) {
         const auto index = worklist.front();

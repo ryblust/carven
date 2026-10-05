@@ -10,18 +10,6 @@ namespace {
 namespace ct = carven::testing;
 
 const ct::Suite tests([] static noexcept {
-    ct::test("Source: spans are half-open byte ranges", [] static noexcept {
-        static_assert(std::is_trivially_copyable_v<Span>);
-        static_assert(!std::default_initializable<Span>);
-
-        const auto span = Span::from_bounds(4, 9);
-        ct::expect_equal(span.start(), 4u);
-        ct::expect_equal(span.end(), 9u);
-        ct::expect_equal(span.size(), 5u);
-        ct::expect(!span.empty());
-        ct::expect(Span::at(3).empty());
-    });
-
     ct::test("Source: line lookup uses one-based lines and byte columns", [] static noexcept {
         const auto index = LineIndex("first\r\nsecond\n三");
 

@@ -9,6 +9,7 @@ import :backend.target.name;
 import :backend.target.origin;
 import :backend.target.stmt;
 import :backend.target.symbol;
+import :backend.target.traversal;
 import :backend.target.type;
 import :backend.target.unit;
 import :backend.target.verify;
@@ -79,6 +80,43 @@ auto function(TargetTypeID result, std::vector<TargetStmt> body) noexcept -> Tar
     };
 }
 
+enum class TraversalObservation { EnterBlock, TrueValue, FalseValue, LeaveBlock };
+
+struct SparseTraversal final {
+    bool stop_at_false;
+    std::vector<TraversalObservation> observations;
+
+    auto enter_scope(TargetTraversalScope scope) noexcept -> bool {
+        ct::expect(scope.kind == TargetTraversalScopeKind::Block);
+        observations.push_back(TraversalObservation::EnterBlock);
+        return true;
+    }
+
+    auto leave_scope(TargetTraversalScope scope) noexcept -> bool {
+        ct::expect(scope.kind == TargetTraversalScopeKind::Block);
+        observations.push_back(TraversalObservation::LeaveBlock);
+        return true;
+    }
+
+    auto enter_expression(TargetExpr& expression, TargetExpressionRole role) noexcept -> bool {
+        ct::expect(role == TargetExpressionRole::Operand);
+        auto* literal = std::get_if<TargetLiteralExpr>(&expression.value);
+        if (!ct::expect(literal != nullptr)) {
+            return false;
+        }
+        auto* value = std::get_if<bool>(&literal->value);
+        if (!ct::expect(value != nullptr)) {
+            return false;
+        }
+        const auto observed = *value;
+        observations.push_back(
+            observed ? TraversalObservation::TrueValue : TraversalObservation::FalseValue
+        );
+        *value = !*value;
+        return observed || !stop_at_false;
+    }
+};
+
 auto require_violation(
     TargetUnitIdentity identity,
     std::span<const TargetType> types,
@@ -119,6 +157,74 @@ static_assert(std::ranges::range<TargetPlanTableEntries<int, TargetArtifactID>>)
 namespace {
 
 const ct::Suite tests([] static noexcept {
+    ct::test(
+        "Target traversal: sparse hooks preserve nested order, mutation, and early stop",
+        [] static noexcept {
+            ct::each(
+                std::array {false, true},
+                [](bool stop) static noexcept { return stop ? "early stop" : "complete"; },
+                [](bool stop) static noexcept {
+                    const auto expression = [](bool value) static noexcept -> TargetStmt {
+                        return {
+                            .value = TargetExprStmt {.expression = literal(value)},
+                            .attribution = attribution(),
+                        };
+                    };
+                    auto nested = one_statement(expression(true));
+                    nested.push_back(expression(false));
+                    auto body = one_statement({
+                        .value = TargetBlockStmt {.statements = std::move(nested)},
+                        .attribution = attribution(),
+                    });
+                    body.push_back(expression(true));
+                    auto visitor = SparseTraversal {.stop_at_false = stop, .observations = {}};
+                    ct::expect_equal(traverse_target_statements(body, visitor), !stop);
+                    auto expected = std::vector {
+                        TraversalObservation::EnterBlock,
+                        TraversalObservation::TrueValue,
+                        TraversalObservation::FalseValue,
+                    };
+                    if (!stop) {
+                        expected.push_back(TraversalObservation::LeaveBlock);
+                        expected.push_back(TraversalObservation::TrueValue);
+                    }
+                    ct::expect(visitor.observations == expected);
+                    const auto boolean =
+                        [](const TargetStmt& statement) static noexcept -> std::optional<bool> {
+                        const auto* expression = std::get_if<TargetExprStmt>(&statement.value);
+                        if (!ct::expect(expression != nullptr)) {
+                            return std::nullopt;
+                        }
+                        const auto* literal =
+                            std::get_if<TargetLiteralExpr>(&expression->expression.value);
+                        if (!ct::expect(literal != nullptr)) {
+                            return std::nullopt;
+                        }
+                        const auto* value = std::get_if<bool>(&literal->value);
+                        if (!ct::expect(value != nullptr)) {
+                            return std::nullopt;
+                        }
+                        return *value;
+                    };
+                    const auto* block = std::get_if<TargetBlockStmt>(&body.front().value);
+                    if (!ct::expect(block != nullptr)
+                        || !ct::expect_equal(block->statements.size(), 2uz)) {
+                        return;
+                    }
+                    const auto first = boolean(block->statements[0]);
+                    const auto second = boolean(block->statements[1]);
+                    const auto last = boolean(body.back());
+                    if (!first || !second || !last) {
+                        return;
+                    }
+                    ct::expect_equal(*first, false);
+                    ct::expect_equal(*second, true);
+                    ct::expect_equal(*last, stop);
+                }
+            );
+        }
+    );
+
     ct::test("Target builder: template query identity retains every argument", [] static noexcept {
         auto builder = TargetTestingFixture::unit_builder();
         const auto type = builder.intern_type(bool_type());
