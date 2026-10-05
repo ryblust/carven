@@ -77,7 +77,7 @@ auto difference(WorkspaceQueryCounts after, WorkspaceQueryCounts before) noexcep
 }
 
 template<typename Action>
-auto measure(WorkspaceAnalysisHost& host, Action action, std::size_t repetitions = 1) noexcept
+auto measure(const WorkspaceAnalysisHost& host, Action action, std::size_t repetitions = 1) noexcept
     -> Sample {
     const auto before = host.snapshot().counts();
     const auto start = Clock::now();
@@ -91,7 +91,7 @@ auto measure(WorkspaceAnalysisHost& host, Action action, std::size_t repetitions
     };
 }
 
-auto query(WorkspaceAnalysisHost& host, const Project& project) noexcept -> void {
+auto query(const WorkspaceAnalysisHost& host, const Project& project) noexcept -> void {
     const auto snapshot = host.snapshot();
     const auto result = snapshot.semantic(project.modules);
     require(result.result->program() != nullptr, "generated project failed semantic analysis");
