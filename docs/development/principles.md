@@ -83,9 +83,11 @@ remain on failure. The application defines recovery and any rollback operation.
 ## Zero-overhead abstractions
 
 Use skilled handwritten C++ with the same evaluation, ownership, lifetime,
-and safety guarantees as the cost baseline. Runtime storage, allocation,
-indirection, checks, and dispatch each serve a required behavior. Static
-facts need runtime representation only when execution uses them.
+and safety guarantees as the cost baseline. Select native implementations that
+meet or improve that baseline without adding runtime work solely to represent
+a language abstraction. Runtime storage, allocation, indirection, checks, and
+dispatch each serve a required behavior. Static facts need runtime representation
+only when execution uses them.
 
 Evaluate Carven compilation time and memory, generated C++ compilation cost,
 artifact size, and program execution time and memory separately. Include storage

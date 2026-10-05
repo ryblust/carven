@@ -147,9 +147,9 @@ for _, mode in ipairs({
             local status = os.execv(target:targetfile(), {}, {
                 try = true, timeout = 30000, stdout = stdout_file, stderr = stderr_file,
             })
-            -- NUL bytes require explicit binary reads instead of encoding detection.
-            local stdout = io.readfile(stdout_file, {encoding = "binary"})
-            local stderr = io.readfile(stderr_file, {encoding = "binary"})
+            -- Preserve NUL bytes while normalizing Windows text-stream line endings.
+            local stdout = io.readfile(stdout_file, {encoding = "binary"}):gsub("\r\n", "\n")
+            local stderr = io.readfile(stderr_file, {encoding = "binary"}):gsub("\r\n", "\n")
             os.tryrm(stdout_file)
             os.tryrm(stderr_file)
             assert(status == 0, "printing failed: " .. tostring(status))

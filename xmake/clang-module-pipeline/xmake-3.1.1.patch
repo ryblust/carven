@@ -935,3 +935,13 @@
 +            return data.decoded_moduleinfo
          end
      end
+diff --git a/modules/private/utils/toolchain.lua b/modules/private/utils/toolchain.lua
+--- a/modules/private/utils/toolchain.lua
++++ b/modules/private/utils/toolchain.lua
+@@ -618,3 +618,5 @@
+     -- add windows ldflags
+-    if target:is_plat("windows") and checkmode == "address" and not target:has_tool("cxx", "cl") then
++    -- LLVM-MinGW uses compiler-rt through the GNU driver, not MSVC runtime flags.
++    if target:is_plat("windows") and not target:toolchain("mingw")
++        and checkmode == "address" and not target:has_tool("cxx", "cl") then
+         assert(target:has_runtime("MD", "MT"), "clang asan only support MD/MT runtime on windows")

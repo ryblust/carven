@@ -209,7 +209,7 @@ auto create_run_directory() noexcept -> std::expected<std::filesystem::path, std
     // CreateDirectory is atomic: a collision never gives us ownership of an existing directory.
     const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
     for (auto attempt = 0u; attempt < 128u; ++attempt) {
-        const auto path =
+        auto path =
             root / std::format("carven-run-{}-{}-{}", GetCurrentProcessId(), nonce, attempt);
         if (CreateDirectoryW(path.c_str(), nullptr)) {
             return path;

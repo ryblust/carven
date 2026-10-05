@@ -1,6 +1,8 @@
 module carven:test.internal.driver.input_path;
 
 import :driver.input_path;
+import :support.path;
+import :test.harness.directory;
 import :test.harness.framework;
 import std;
 
@@ -75,8 +77,10 @@ const ct::Suite tests([] static noexcept {
     ct::test(
         "Input path: installed crafts preserve package-relative module identity",
         [] static noexcept {
-            const auto installed =
-                derive_input_module_path("/opt/toolchain/crafts/carven/std/utf.cv");
+            const auto directory = ct::TempDirectory("installed-crafts");
+            const auto installed = derive_input_module_path(
+                path_to_generic_utf8(directory.path("crafts/carven/std/utf.cv"))
+            );
             const auto local = derive_input_module_path("crafts/carven/std/utf.cv");
             if (!ct::expect(installed.has_value())) {
                 return;
@@ -86,10 +90,13 @@ const ct::Suite tests([] static noexcept {
             }
             ct::expect((*installed == *local));
             ct::expect_equal(installed->value(), std::string_view("crafts.carven.std.utf"));
-            ct::expect(!(derive_input_module_path("/opt/toolchain/other/std/utf.cv").has_value()));
-            ct::expect(
-                !(derive_input_module_path("/opt/toolchain/crafts/../outside.cv").has_value())
+            const auto outside =
+                derive_input_module_path(path_to_generic_utf8(directory.path("other/std/utf.cv")));
+            const auto escaped = derive_input_module_path(
+                path_to_generic_utf8(directory.path("crafts/../outside.cv"))
             );
+            ct::expect(!outside.has_value());
+            ct::expect(!escaped.has_value());
         }
     );
 

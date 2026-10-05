@@ -51,6 +51,20 @@ run `xmake clean -a` and `xmake build`, then use stock Xmake for validation.
 For local build-rule development, set `CARVEN_XMAKE_REPO_DIR` to the rule checkout
 when building.
 
+The `sanitizers` option defaults to off, including in Debug builds. Configure
+`./xmakew f -m debug --sanitizers=y` to enable Xmake's address and undefined-behavior
+sanitizer policies, debug symbols, and light optimization. Clean the build tree
+when switching instrumentation. Use `--sanitizers=n` to disable it again.
+Each platform runs Release tests with clang-tidy and a separate Debug
+ASan/UBSan job with all tests. Sanitizer jobs do not repeat clang-tidy.
+POSIX sanitizer CI supplies a `CXX` adapter for native compilation
+launched by Carven, which runs outside Xmake targets and does not inherit their
+flags. Windows uses a Clang driver configuration in the temporary LLVM-MinGW
+installation for the same purpose. It disables leak detection and adds the
+target SDK runtime directory to PATH for the ASan DLL. Smoke checks verify
+that memory and undefined-behavior errors fail before running the suite.
+Ordinary compiler and test targets use the project configuration directly.
+
 ## Test responsibilities
 
 | Group | Boundary | Evidence |
@@ -97,9 +111,16 @@ defaults to check diagnostics, source locations, and call traces. Large inputs s
 scale-dependent contracts such as stack depth or retained-storage growth.
 Semantic resource-limit cases stop after analysis and publication. Backend tests
 cover generation of the corresponding operations with representative inputs.
-The internal runner registers static-specialization budgets separately from its
-other cases, using complementary filters on the same executable. Both selections
-belong to the `internal` group and run in the full suite.
+The internal runner excludes static-specialization budgets from its ordinary
+selection and registers each iteration, instance, nesting, and node budget
+contract separately on the same executable. Every selection belongs to the
+`internal` group and runs in the full suite. Each budget contract has its own
+result, elapsed time, and timeout, so instrumentation overhead does not accumulate
+across unrelated cases. The compiler's internal selections use a 60-second timeout
+in ordinary builds and 180 seconds with sanitizers on every platform. This leaves
+headroom for instrumentation and runner variability while still stopping stalled
+tests. These source-level cases exercise production-size default limits; they are
+not performance checks.
 
 Language tests use local Carven state for counters and execution traces.
 A language fixture may use a same-stem C++ provider header for observations that
@@ -255,7 +276,8 @@ Process harnesses bound execution time. The CLI harness records stdout and
 stderr for each step, preserves failed fixtures, and removes successful temporary
 directories. CLI scenario tables reject unknown fields, ignored top-level step
 fields, and workflows with no executable steps; failure reports identify the
-step and command.
+step and command. Steps default to a 30-second timeout; steps that invoke native
+C++ compilation explicitly set `run_timeout` to 120 seconds.
 
 Fixtures whose exact source bytes are part of the assertion use `.cv.fixture`
 and the CLI `fixtures` mapping to copy them to a `.cv` input. This keeps source
@@ -299,6 +321,10 @@ generated-program tests.
 Test runtime exception boundaries in isolated C++ consumer processes. Require the
 throwing operation to execute and reach the installed termination handler. Catch
 exceptions outside the runtime call and report escaped exceptions as test failures.
+Allocation-failure injection uses separate executables so ordinary exception tests
+retain the configured runtime and allocator. On Windows with LLVM-MinGW, only
+injection targets link libc++ statically: allocations inside its DLL do not use
+the executable's replacement `operator new`.
 
 CLI execution cases cover the shared top-level language surface, analysis-time
 output, `const` blocks and static tests, native argument forwarding, interpreter

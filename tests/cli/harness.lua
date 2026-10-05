@@ -11,7 +11,7 @@ local function remove_prefix(value, prefix)
 end
 
 local step_fields = {
-    args = true, exit_code = true, installed_toolchain = true,
+    args = true, exit_code = true, run_timeout = true, installed_toolchain = true,
     installed_inputs = true, absolute_inputs = true,
     stdout = true, stdout_contains = true, stdout_ordered = true,
     stdout_unordered = true, stdout_not_contains = true,
@@ -144,14 +144,14 @@ function main(target, opt, case_specs, execution)
             os.cp(program, step_program)
             os.cp(path.join(os.projectdir(), "crafts", "carven"), path.join(prefix, "crafts", "carven"))
             for _, source in ipairs(step.installed_inputs or {}) do
-                table.insert(args, path.join(prefix, "crafts", source))
+                table.insert(args, (path.join(prefix, "crafts", source):gsub("\\", "/")))
             end
         end
         for _, source in ipairs(step.absolute_inputs or {}) do
-            table.insert(args, path.join(work_dir, source))
+            table.insert(args, (path.join(work_dir, source):gsub("\\", "/")))
         end
         local exit_code, run_error = os.execv(step_program, args, {
-            try = true, timeout = 30000, curdir = work_dir,
+            try = true, timeout = step.run_timeout or 30000, curdir = work_dir,
             stdout = stdout_file, stderr = stderr_file,
         })
         local stdout = normalize_newlines(os.isfile(stdout_file) and io.readfile(stdout_file) or "")
