@@ -27,9 +27,7 @@ The graph must include all importers for this classification to be valid.
 
 Compilation databases describe separate BMI and object commands for retained
 module units and source-to-object commands for pruned leaves. Project generation
-uses the same classification without removing existing BMIs. Compilation-database
-preparation covers the targets selected for emission, including non-default targets,
-and generated test targets. It does not require a prior build of each target.
+uses the same classification without removing existing BMIs.
 
 ## Incremental checks
 
@@ -156,10 +154,6 @@ the platform temporary directory and selects it through `XMAKE_PROGRAM_DIR`.
 Its cache key includes the program
 directory, Xmake version, patched Lua files, and patch contents. A patch
 application failure stops the wrapper.
-
-Nested tasks restore their option context before propagating a failure. This
-preserves the caller's diagnostic settings when automatic compilation-database
-generation fails inside a quiet task.
 
 The overlay also corrects Xmake 3.1.1 sanitizer detection for LLVM-MinGW on
 the Windows platform: GNU-driver sanitizer linking bypasses the MSVC-only

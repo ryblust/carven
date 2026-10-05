@@ -66,7 +66,7 @@ private:
         std::optional<SemIRProgram> program,
         Diagnostics diagnostics,
         std::vector<WorkspaceSemanticOutput> output,
-        std::vector<SourceOccurrence> occurrences
+        std::span<const SourceOccurrence> occurrences
     ) noexcept;
 
     auto select(std::string_view document, std::uint32_t offset) const noexcept

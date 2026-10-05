@@ -42,9 +42,9 @@ auto SourceAnalysisBuilder::add(SourceOccurrenceDraft occurrence) noexcept -> vo
     }
 }
 
-auto SourceAnalysisBuilder::add_body(std::vector<SourceOccurrenceDraft> body) noexcept -> void {
-    for (auto& occurrence : body) {
-        add(std::move(occurrence));
+auto SourceAnalysisBuilder::add_body(std::span<const SourceOccurrenceDraft> body) noexcept -> void {
+    for (const auto& occurrence : body) {
+        add(occurrence);
     }
 }
 

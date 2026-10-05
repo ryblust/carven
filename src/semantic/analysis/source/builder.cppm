@@ -25,7 +25,7 @@ public:
     ) noexcept -> void;
     auto definition(ProgramOriginID origin) const noexcept -> std::optional<SourceSpan>;
     auto begin_bodies() noexcept -> void;
-    auto add_body(std::vector<SourceOccurrenceDraft> occurrences) noexcept -> void;
+    auto add_body(std::span<const SourceOccurrenceDraft> occurrences) noexcept -> void;
     auto resolve_types(const TypeResolution& types) noexcept -> void;
     auto finish(bool published) const noexcept -> std::vector<SourceOccurrence>;
 

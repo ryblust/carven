@@ -157,7 +157,7 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
     collect_unused_locals(frames.front());
     regions.front().failures = BodyFailures(outward_failure_term_id);
     if (observe_sources) {
-        draft().source_analysis()->add_body(std::move(source_occurrences));
+        draft().source_analysis()->add_body(source_occurrences);
     }
     co_return std::move(body_builder).finish(std::move(regions.front()));
 }

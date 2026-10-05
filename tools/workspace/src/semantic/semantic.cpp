@@ -20,15 +20,15 @@ WorkspaceSemanticAnalysis::WorkspaceSemanticAnalysis(
     std::optional<SemIRProgram> program,
     Diagnostics diagnostics,
     std::vector<WorkspaceSemanticOutput> output,
-    std::vector<SourceOccurrence> occurrences
+    std::span<const SourceOccurrence> occurrences
 ) noexcept
     : source_manager(std::move(sources)),
       source_ids(std::move(document_sources)),
       semantic_program(std::move(program)),
       findings(std::move(diagnostics)),
       execution_output(std::move(output)) {
-    for (auto& occurrence : occurrences) {
-        source_occurrences[occurrence.location.source_id].push_back(std::move(occurrence));
+    for (const auto& occurrence : occurrences) {
+        source_occurrences[occurrence.location.source_id].push_back(occurrence);
     }
 }
 
@@ -227,6 +227,6 @@ auto analyze_workspace_project(std::span<const WorkspaceSemanticInput> inputs) n
         std::move(program),
         std::move(diagnostics),
         std::move(output),
-        std::move(occurrences)
+        occurrences
     ));
 }

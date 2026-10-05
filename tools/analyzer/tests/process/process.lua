@@ -154,7 +154,7 @@ local function with_service(program, name, run)
     end
     try {
         function ()
-            -- Child stdio blocks; parent endpoints use Xmake's timed scheduler waits.
+            -- Each request has bounded pipe waits in this serial driver.
             pipes.child_in, pipes.parent_in = pipe.openpair("BA")
             pipes.parent_out, pipes.child_out = pipe.openpair("AB")
             child = process.openv(program, {}, {stdin = pipes.child_in, stdout = pipes.child_out, stderr = stderr})
@@ -232,8 +232,7 @@ local function interactive(program)
     end)
 end
 
-function main(target)
-    local program = path.absolute(target:dep("carven-analyzer"):targetfile(), os.projectdir())
+function run(program)
     interactive(program)
     local cases = {
         {name = "frame_boundary_eof", input = frame(update("document", 1, "fn f() {}")),
@@ -261,5 +260,35 @@ function main(target)
         os.rm(prefix .. ".out")
         os.rm(prefix .. ".err")
     end
+    return true
+end
+
+function main(target)
+    local program = path.absolute(target:dep("carven-analyzer"):targetfile(), os.projectdir())
+    if not is_host("windows") then
+        return run(program)
+    end
+    local thread = import("core.base.thread")
+    local scriptdir = path.join(os.projectdir(), "tools", "analyzer", "tests", "process")
+    local resultfile = os.tmpfile()
+    -- Keep blocking pipe I/O off the build scheduler's Windows IOCP poller.
+    -- An internal thread uses a native join rather than a notification pipe.
+    local worker = thread.start_withopt(function (program, scriptdir, resultfile)
+        local failure
+        try {
+            function () import("process", {rootdir = scriptdir}).run(program) end,
+            catch {function (errors) failure = tostring(errors) end}
+        }
+        -- A native join reports completion, so transfer assertion failures explicitly.
+        io.writefile(resultfile, failure or "")
+    end, {name = "analyzer-process", internal = true, argv = {program, scriptdir, resultfile}})
+    worker:wait(60000)
+    assert(worker:is_dead(), "analyzer process test timed out")
+    local failure = io.readfile(resultfile)
+    assert(failure ~= nil, "analyzer process test did not report a result")
+    if failure ~= "" then
+        raise("%s\nprocess test result: %s", failure, resultfile)
+    end
+    os.rm(resultfile)
     return true
 end
