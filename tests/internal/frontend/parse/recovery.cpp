@@ -277,7 +277,7 @@ const TestSuite tests([] static noexcept {
             const auto import_id = ast.ast_module().module_imports.front();
             const auto item_id = ast.ast_module().items.front();
             const auto source_id = ast.source_id();
-            auto moved = std::move(*result.value);
+            const auto moved = std::move(*result.value);
             result.value.reset();
             const auto moved_ast = moved.view();
             expect(moved_ast.source_id() == source_id);

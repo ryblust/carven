@@ -32,7 +32,7 @@ const TestSuite tests([] static noexcept {
         [] static noexcept {
             auto calls = 0uz;
             auto retained = std::vector<SourceOccurrence>();
-            auto moved = [&]() noexcept {
+            const auto moved = [&]() noexcept {
                 auto result = analyze_observed(
                     "fn f(value: i32) -> i32 { let local = value; return local; }",
                     [&](std::span<const SourceOccurrence> occurrences) noexcept {
