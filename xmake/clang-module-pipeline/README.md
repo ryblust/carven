@@ -27,7 +27,9 @@ The graph must include all importers for this classification to be valid.
 
 Compilation databases describe separate BMI and object commands for retained
 module units and source-to-object commands for pruned leaves. Project generation
-uses the same classification without removing existing BMIs.
+uses the same classification without removing existing BMIs. Compilation-database
+preparation covers the targets selected for emission, including non-default targets,
+and generated test targets. It does not require a prior build of each target.
 
 ## Incremental checks
 

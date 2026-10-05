@@ -961,3 +961,19 @@ diff --git a/core/sandbox/modules/import/core/base/task.lua b/core/sandbox/modul
 -    -- restore the previous option context
 -    option.restore()
  end
+diff --git a/plugins/project/clang/compile_commands.lua b/plugins/project/clang/compile_commands.lua
+--- a/plugins/project/clang/compile_commands.lua
++++ b/plugins/project/clang/compile_commands.lua
+@@ -325,5 +325,11 @@
+ -- prepare targets
+ function _prepare_targets()
+-    target_cmds.prepare_targets()
++    local targets = {}
++    for _, target in pairs(target_utils.get_project_targets()) do
++        if not target:is_phony() then
++            table.insert(targets, target)
++        end
++    end
++    target_cmds.prepare_targets(targets)
+     -- https://github.com/xmake-io/xmake/issues/7166
+     target_cmds.prepare_targets(_get_test_targets())

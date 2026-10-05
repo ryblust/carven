@@ -21,6 +21,7 @@ $sourceVersion = $sourceInfo[1]
 
 $patchedPaths = @(
     "core/sandbox/modules/import/core/base/task.lua"
+    "plugins/project/clang/compile_commands.lua"
     "modules/private/action/build/object.lua"
     "modules/private/action/build/link_objects.lua"
     "modules/private/utils/toolchain.lua"
