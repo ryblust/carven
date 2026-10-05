@@ -169,10 +169,11 @@ when later evaluation requires them. Scalar value consumers can use direct local
 storage within an expression frame.
 
 Integer range values use `runtime::Range<T>`, which stores both bounds and an
-upper-bound inclusion flag. Integer loops snapshot that value once and use an
-independent cursor. Known exclusive bounds produce a direct C++ `for`; other
-integer loops check the terminal element before incrementing, including when
-`continue` ends the body. Closed iteration can therefore include the type maximum.
+upper-bound inclusion flag. Integer loops evaluate their source once and snapshot
+its bounds. Ranges known to exclude their upper bound use a direct C++ `for` with
+an independent cursor.
+Other integer ranges use C++ range-for; the runtime iterator checks its terminal
+element before incrementing, so a closed interval can include the type maximum.
 
 Carven evaluation is left to right and exactly once. Temporaries preserve that
 order when a direct C++ expression would not. Short-circuit evaluation remains
@@ -374,9 +375,8 @@ adaptation uses the same construction. A factory may return an immovable prvalue
 Owner transfer, payload extraction, and Outcome widening require the constructors
 used by those operations. Void and discarded regions need no result storage.
 Loops and handlers receive only exits belonging to their own construct. Loops
-without steps, sequence traversal, and exclusive integer ranges use native
-`continue`. Inclusive and dynamic integer ranges complete iteration cleanup
-before their terminal check and cursor increment.
+without steps and range traversal use native `continue`. C++ completes iteration
+cleanup before the direct cursor step or range iterator increment.
 
 Expanded loops realize their ordered iteration regions. Semantic specialization
 publishes distinct binding, pattern, and lifetime identities for each iteration;

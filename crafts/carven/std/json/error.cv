@@ -10,7 +10,7 @@ export enum JSONErrorKind {
     DepthLimit,
 }
 
-// Zero-based byte offset; an EOF error points at the input length.
+// Zero-based byte offset; UnexpectedEnd points at the input length.
 export struct JSONError {
     kind: JSONErrorKind,
     offset: usize,

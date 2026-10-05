@@ -193,8 +193,19 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
         destination.scope(std::move(scope));
         co_return {};
     }
-    if (range != nullptr) {
-        // A range owns bound snapshots, including when the source is a mutable local.
+    const auto exclusive = [&]() noexcept {
+        if (const auto* bounds = std::get_if<SemRange>(&source.value)) {
+            return !bounds->inclusive;
+        }
+        if (source.constant) {
+            const auto& constant = context.semantic().constants().constant(*source.constant);
+            if (const auto* bounds = std::get_if<RangeConstant>(&constant.value)) {
+                return !bounds->inclusive;
+            }
+        }
+        return false;
+    }();
+    if (range != nullptr && exclusive) {
         const auto snapshot = fresh_local(TargetTemporaryNameKind::Operand);
         scope.declare(
             TargetVariableStmt {
@@ -224,40 +235,8 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
             },
             false
         );
-        auto inclusive = std::optional<bool>();
-        if (const auto* bounds = std::get_if<SemRange>(&source.value)) {
-            inclusive = bounds->inclusive;
-        } else if (source.constant) {
-            const auto& constant = context.semantic().constants().constant(*source.constant);
-            if (const auto* bounds = std::get_if<RangeConstant>(&constant.value)) {
-                inclusive = bounds->inclusive;
-            }
-        }
-        const auto exclusive = inclusive == false;
-        auto loop_condition = binary_expression(
-            name_expression(index),
-            inclusive == true ? TargetBinaryOperator::LessEqual : TargetBinaryOperator::Less,
-            member("last")
-        );
-        if (!inclusive.has_value()) {
-            loop_condition = binary_expression(
-                std::move(loop_condition),
-                TargetBinaryOperator::LogicalOr,
-                binary_expression(
-                    member("inclusive"),
-                    TargetBinaryOperator::LogicalAnd,
-                    binary_expression(
-                        name_expression(index),
-                        TargetBinaryOperator::Equal,
-                        member("last")
-                    )
-                )
-            );
-        }
-        const auto step = exclusive ? std::nullopt
-                                    : std::optional(names.fresh(TargetTemporaryNameKind::Continue));
         const auto continuation = LoopContinuation {
-            .step = step,
+            .step = std::nullopt,
             .break_label = std::nullopt,
             .jump_role = TargetJumpRole::ForLoopContinue,
             .expanded = false,
@@ -271,72 +250,32 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
         }
         iteration.append((co_await region(*value.body, LoweringDiscardResult {})));
         current_loop = outer_loop;
-        const auto continued = iteration.exits().contains(continuation.target);
-        const auto run_steps = iteration.continues() || continued;
         auto steps = std::vector<TargetForStep>();
-        auto body = LoweringStmtBuilder();
-        if (exclusive) {
-            body.append(std::move(iteration));
-            if (run_steps) {
-                steps.push_back(
-                    TargetForStep {
-                        .value = TargetUpdateStmt {
-                            .op = TargetUpdateOperator::Increment,
-                            .target = name_expression(index)
-                        }
-                    }
-                );
-            }
-        } else {
-            // Continue closes the iteration's owners before checking an inclusive end.
-            body.scope(std::move(iteration));
-            if (continued) {
-                body.resume(*step, TargetJumpRole::ForLoopContinue, continuation.target);
-            }
-            if (run_steps) {
-                auto terminal = binary_expression(
-                    name_expression(index),
-                    TargetBinaryOperator::Equal,
-                    member("last")
-                );
-                auto done = LoweringStmtBuilder();
-                done.terminate(generated_statement(TargetBreakStmt {}), continuation.break_target);
-                body.record_exits(done.exits());
-                auto branches = std::vector<TargetIfBranch>();
-                branches.push_back(
-                    {.condition = std::move(terminal), .body = std::move(done).finish()}
-                );
-                body.emit(generated_statement(
-                    TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
-                ));
-                body.emit(generated_statement(
-                    TargetUpdateStmt {
+        if (iteration.continues() || iteration.exits().contains(continuation.target)) {
+            steps.push_back(
+                TargetForStep {
+                    .value = TargetUpdateStmt {
                         .op = TargetUpdateOperator::Increment,
                         .target = name_expression(index)
                     }
-                ));
+                }
+            );
+        }
+        static_cast<void>(iteration.consume_exit(continuation.target));
+        static_cast<void>(iteration.consume_exit(continuation.break_target));
+        scope.record_exits(iteration.exits());
+        scope.emit(generated_statement(
+            TargetForStmt {
+                .initializer = std::nullopt,
+                .condition = binary_expression(
+                    name_expression(index),
+                    TargetBinaryOperator::Less,
+                    member("last")
+                ),
+                .steps = std::move(steps),
+                .body = std::move(iteration).finish()
             }
-        }
-        static_cast<void>(body.consume_exit(continuation.target));
-        static_cast<void>(body.consume_exit(continuation.break_target));
-        scope.record_exits(body.exits());
-        if (exclusive) {
-            scope.emit(generated_statement(
-                TargetForStmt {
-                    .initializer = std::nullopt,
-                    .condition = std::move(loop_condition),
-                    .steps = std::move(steps),
-                    .body = std::move(body).finish()
-                }
-            ));
-        } else {
-            scope.emit(generated_statement(
-                TargetWhileStmt {
-                    .condition = std::move(loop_condition),
-                    .body = std::move(body).finish()
-                }
-            ));
-        }
+        ));
         destination.scope(std::move(scope));
         co_return {};
     }

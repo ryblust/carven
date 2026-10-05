@@ -224,6 +224,18 @@ auto body_closure_references(const SemIRProgram& semantic, const SemIRBody& body
             });
         }
     };
+    if (const auto callable = semantic.declarations().callable_for_body(body.id())) {
+        const auto& signature = semantic.callable_signatures().signature(
+            semantic.declarations().callable(*callable).signature
+        );
+        collect_type(signature.result);
+        for (const auto& parameter : signature.parameters) {
+            collect_type(parameter.type);
+        }
+        for (const auto failure : semantic.failure_sets().failure_set(signature.failures).members) {
+            collect_type(failure);
+        }
+    }
     for (const auto parameter : body.inputs().parameters) {
         collect_type(body.binding(parameter).type);
     }

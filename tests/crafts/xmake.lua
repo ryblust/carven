@@ -1,16 +1,16 @@
 -- SIMD scanners and UTF/JSON validation also run with the portable backend.
 for _, variant in ipairs({
     {name = "carven-test-crafts", test = "crafts"},
-    {name = "carven-test-crafts-scalar", test = "crafts-scalar", scalar = true},
+    {name = "carven-test-crafts-portable", test = "crafts-portable", portable = true},
 }) do
     target(variant.name)
         set_default(false)
         set_languages("c++20")
-        if variant.scalar then
-            add_defines("CARVEN_SIMD_FORCE_SCALAR")
+        if variant.portable then
+            add_defines("CARVEN_SIMD_FORCE_PORTABLE")
         end
         add_rules("@carven/carven", {tests = "default"})
-        if variant.scalar then
+        if variant.portable then
             add_files("carven/std/utf/blocks.cv", "carven/std/utf/validation.cv",
                 "carven/std/simd/**.cv", "carven/std/json/**.cv")
         else

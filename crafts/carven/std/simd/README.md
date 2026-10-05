@@ -26,8 +26,8 @@ compiler vector expressions; other compilers evaluate the same operations per
 lane. Its stored values remain byte arrays, and ordinary C++ optimization may
 use machine vector instructions.
 Each translation unit selects one backend at compile time: AArch64 NEON when
-available, x86 AVX2 when the consumer enables it, and otherwise a portable lane
-implementation. All backends share the same lane contracts. There is no runtime
+available, x86 AVX2 when the consumer enables it, and otherwise the portable
+backend. All backends share the same lane contracts. There is no runtime
 dispatch. On x86 with AVX2, wide values use native 256-bit
 registers; narrow operations may use 128-bit registers. On NEON, wide values use
 two 128-bit registers. Logical widths are independent of register width.
@@ -35,9 +35,9 @@ Static execution uses owned lanes and is independent of the compiler host's
 instruction set.
 
 The C++ runtime uses compiler-specific forced inlining for intrinsic wrappers
-and MSVC/Clang `vectorcall` on Windows x86. Its vector and mask carriers are transparent,
-zero-initialized aggregates so MSVC and clang-cl can pass and return vectors in
-SIMD registers. These support-level choices do not expose native register storage
+and MSVC/Clang `vectorcall` on Windows x86. Native vector and mask carriers are
+transparent, zero-initialized aggregates so MSVC and clang-cl can pass and return
+vectors in SIMD registers. These support-level choices do not expose native register storage
 or calling-convention attributes to Carven source.
 
 Consumers select their target's instruction flags. The compiler and consumer
@@ -89,7 +89,8 @@ and `N` its lane count.
 
 Byte vectors expose `.sum() -> usize`, the exact mathematical sum of all lanes.
 The maximum is `N * 255`; the reduction does not wrap. They also expose
-`.lookup(indices)` with a matching byte vector of indices: every index `>= N` yields zero. Lookup uses the entire logical table,
+`.lookup(indices)` with a matching byte vector of indices: every index `>= N`
+yields zero. Lookup uses the entire logical table,
 including indices crossing the 128-bit hardware boundary. This differs from
 AVX2's lane-local byte shuffle instruction. `.shift_left(count)` and
 `.shift_right(count)` shift every byte independently by `0..7` bits, zero-fill,

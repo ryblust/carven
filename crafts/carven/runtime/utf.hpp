@@ -114,7 +114,7 @@ inline auto utf8_blocks_are_valid(std::string_view text) noexcept -> bool {
 } // namespace detail
 
 constexpr auto utf8_is_valid(std::string_view text) noexcept -> bool {
-    if (!std::is_constant_evaluated() && simd::hardware_accelerated && text.size() >= 32) {
+    if (!std::is_constant_evaluated() && simd::uses_native_backend && text.size() >= 32) {
         return detail::utf8_blocks_are_valid(text);
     }
     return detail::utf8_scalar_is_valid(text);

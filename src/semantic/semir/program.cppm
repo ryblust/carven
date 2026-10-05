@@ -81,12 +81,11 @@ enum class DefinitionPlacement {
     Use,
 };
 
-// The source-level references that an inline definition may expose, independent
-// of the static arguments selected by any caller.
 struct CallableSurface final {
+    // Source-template references, independent of callers' static arguments.
     std::vector<TypeID> types;
     std::vector<CallableID> callables;
-    // First-encounter reference order, deduplicated independently of specialization.
+    // First-encounter closure references for this callable, without duplicates.
     std::vector<CallableID> closures;
 };
 

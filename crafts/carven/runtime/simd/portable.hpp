@@ -13,7 +13,7 @@
 #include <type_traits>
 
 namespace carven::runtime::simd {
-inline namespace scalar {
+inline namespace portable {
 namespace backend {
 
 // Float lanes keep their native object representation. Masks are canonical, so
@@ -285,5 +285,5 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL extract(Value<Bytes> a, Value<Bytes> b)
 }
 
 } // namespace backend
-} // namespace scalar
+} // namespace portable
 } // namespace carven::runtime::simd

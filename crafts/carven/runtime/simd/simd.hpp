@@ -4,7 +4,7 @@
 // backend. Translation units sharing these types select the same backend. Inline
 // namespaces give backend-specific types different identities; symbols that
 // encode those types can diagnose some mismatches at link time.
-// CARVEN_SIMD_FORCE_SCALAR selects the portable backend for testing.
+// CARVEN_SIMD_FORCE_PORTABLE selects the portable backend for testing.
 
 #include "../slice.hpp"
 
@@ -34,24 +34,24 @@
 #define CARVEN_SIMD_CALL
 #endif
 
-#if !defined(CARVEN_SIMD_FORCE_SCALAR) && defined(__aarch64__) && defined(__ARM_NEON)
+#if !defined(CARVEN_SIMD_FORCE_PORTABLE) && defined(__aarch64__) && defined(__ARM_NEON)
 #include "neon.hpp"
 #define CARVEN_SIMD_ABI neon
-#define CARVEN_SIMD_ACCELERATED true
-#elif !defined(CARVEN_SIMD_FORCE_SCALAR) && defined(__AVX2__)
+#define CARVEN_SIMD_NATIVE_BACKEND true
+#elif !defined(CARVEN_SIMD_FORCE_PORTABLE) && defined(__AVX2__)
 #include "avx2.hpp"
 #define CARVEN_SIMD_ABI avx2
-#define CARVEN_SIMD_ACCELERATED true
+#define CARVEN_SIMD_NATIVE_BACKEND true
 #else
-#include "scalar.hpp"
-#define CARVEN_SIMD_ABI scalar
-#define CARVEN_SIMD_ACCELERATED false
+#include "portable.hpp"
+#define CARVEN_SIMD_ABI portable
+#define CARVEN_SIMD_NATIVE_BACKEND false
 #endif
 
 namespace carven::runtime::simd {
 inline namespace CARVEN_SIMD_ABI {
 
-inline constexpr auto hardware_accelerated = CARVEN_SIMD_ACCELERATED;
+inline constexpr auto uses_native_backend = CARVEN_SIMD_NATIVE_BACKEND;
 
 template<typename Element, std::size_t Lanes>
 struct Vector final {
@@ -437,7 +437,7 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL operator^(Mask<T, N> a, Mask<T, N> b) n
 } // namespace CARVEN_SIMD_ABI
 } // namespace carven::runtime::simd
 
-#undef CARVEN_SIMD_ACCELERATED
+#undef CARVEN_SIMD_NATIVE_BACKEND
 #undef CARVEN_SIMD_ABI
 #undef CARVEN_SIMD_CALL
 #undef CARVEN_SIMD_INLINE

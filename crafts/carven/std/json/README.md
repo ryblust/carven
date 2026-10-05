@@ -20,9 +20,9 @@ JSON syntax error. Escaped UTF-16 surrogate pairs become Unicode scalars.
 Unpaired surrogates are rejected so decoded text satisfies Carven's scalar
 contract. This is a stricter requirement than JSON's escape grammar.
 
-`JSONError.offset` is a zero-based input byte offset. Truncation points at the
-input length; an unpaired surrogate points at its escape's backslash. The
-validators are `const fn`, subject to ordinary execution budgets.
+`JSONError.offset` is a zero-based input byte offset. `UnexpectedEnd` points at
+the input length; `UnpairedSurrogate` points at the offending escape's backslash.
+The validators are `const fn`, subject to ordinary execution budgets.
 
 `decode_string` requires exactly one quoted string, without surrounding
 whitespace or trailing input. It validates and decodes in one pass, returning an

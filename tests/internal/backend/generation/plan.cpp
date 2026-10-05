@@ -64,6 +64,9 @@ auto analyze_closure_references() noexcept -> SemIRProgram {
         "fn repeated() => [[]() => 7; 2];\n"
         "fn empty() => [[]() => 7; 0];\n"
         "fn nested() => []() { let inner = [[]() => 7; 0]; return 0; };\n"
+        "fn hidden_result() { const if false { return []() => 7; } while {} }\n"
+        "fn hidden_iteration_result() { const for _ in 0..0 { return []() => 7; } while {} }\n"
+        "fn hidden_factory() => []() { const if false { return []() => 7; } while {} };\n"
         "fn selected() { const if true { let chosen = [[]() => 7; 0]; } "
         "else { let removed = [[]() => 9; 0]; } }\n"
     );
@@ -163,9 +166,20 @@ static_assert(!std::is_move_assignable_v<TargetPlan>);
 const TestSuite suite([] static noexcept {
     "Target plan: closure references retain type-only declarations and discard inactive source"_test =
         [] static noexcept {
-            const auto semantic = analyze_closure_references();
+            const auto compilation = PlannedCompilation::build(
+                analyze_closure_references(),
+                request(TestGenerationMode::None, "closure_references")
+            );
+            const auto& semantic = compilation.semantic();
             const auto closures = plan_closures(semantic);
-            for (const auto name : std::array {"repeated", "empty", "nested", "selected"}) {
+            for (const auto name : std::array {
+                     "repeated",
+                     "empty",
+                     "nested",
+                     "selected",
+                     "hidden_result",
+                     "hidden_iteration_result"
+                 }) {
                 const auto function = function_named(semantic, name);
                 const auto callable = semantic.declarations().function(function).callable;
                 expect_equal(semantic.callable_surface(callable).closures.size(), 1uz);
@@ -183,10 +197,27 @@ const TestSuite suite([] static noexcept {
             require(outer_position != closures.definition_order.end());
             require(inner_position != closures.definition_order.end());
             expect(inner_position < outer_position);
-            expect_equal(closures.definition_order.size(), 5uz);
+            const auto factory = semantic.declarations()
+                                     .function(function_named(semantic, "hidden_factory"))
+                                     .callable;
+            const auto& factory_references = semantic.callable_surface(factory).closures;
+            require(factory_references.size() == 2uz);
+            const auto factory_outer = factory_references.front();
+            const auto factory_inner = factory_references.back();
+            const auto factory_outer_position =
+                std::ranges::find(closures.definition_order, factory_outer);
+            const auto factory_inner_position =
+                std::ranges::find(closures.definition_order, factory_inner);
+            require(factory_outer_position != closures.definition_order.end());
+            require(factory_inner_position != closures.definition_order.end());
+            expect(factory_inner_position < factory_outer_position);
+            expect_equal(closures.definition_order.size(), 9uz);
             const auto unique =
                 std::flat_set<CallableID>(std::from_range, closures.definition_order);
             expect_equal(unique.size(), closures.definition_order.size());
+            for (const auto artifact : compilation.target().artifacts()) {
+                static_cast<void>(lower_artifact(compilation, artifact.id));
+            }
         };
 
     "Target plan: failure ABI has one deterministic nominal order"_test = [] static noexcept {

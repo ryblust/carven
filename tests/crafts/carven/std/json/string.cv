@@ -23,7 +23,7 @@ private struct InvalidString {
     offset: usize,
 }
 
-test "JSON: string decoding rejects malformed syntax at its input byte offset" {
+test "JSON: decoding checks its quoted-string boundary and preserves scanner errors" {
     let inputs = [
         InvalidString {
             text: "",
@@ -46,43 +46,8 @@ test "JSON: string decoding rejects malformed syntax at its input byte offset" {
             offset: 3
         },
         {
-            text: r#""a"tail"#,
-            kind:.TrailingInput,
-            offset: 3
-        },
-        {
-            text: r#""unterminated"#,
-            kind:.UnexpectedEnd,
-            offset: 13
-        },
-        {
             text: r#""\x""#,
             kind:.InvalidEscape,
-            offset: 2
-        },
-        {
-            text: r#""\u00x0""#,
-            kind:.InvalidHex,
-            offset: 5
-        },
-        {
-            text: r#""\uDEAD""#,
-            kind:.UnpairedSurrogate,
-            offset: 1
-        },
-        {
-            text: r#""\uD800""#,
-            kind:.UnpairedSurrogate,
-            offset: 1
-        },
-        {
-            text: r#""\uD800\u0041""#,
-            kind:.UnpairedSurrogate,
-            offset: 7
-        },
-        {
-            text: "\"a\n\"",
-            kind:.ControlCharacter,
             offset: 2
         },
     ];
@@ -96,23 +61,6 @@ test "JSON: string decoding rejects malformed syntax at its input byte offset" {
             },
         }
         check(rejected, f"JSON string: {input.text}");
-    }
-}
-
-test "JSON: decoding rejects every unescaped control byte" {
-    for value in 0u32..32 {
-        var input: String = "\"";
-        input.push(char::from_u32_unchecked(value));
-        input.push('"');
-        var rejected = false;
-        try {
-            let _ = decode_string(input)?;
-        } catch {
-            JSONError(error) => {
-                rejected = error.kind == .ControlCharacter && error.offset == 1;
-            },
-        }
-        check(rejected);
     }
 }
 

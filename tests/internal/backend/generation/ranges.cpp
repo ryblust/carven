@@ -16,7 +16,10 @@ namespace {
 
 struct IntegerLoops final {
     std::size_t direct;
-    std::size_t indirect;
+    std::size_t ranges;
+    std::size_t manual;
+    std::size_t continues;
+    std::size_t jumps;
 
     auto enter_statement(const TargetStmt& statement) noexcept -> bool;
 };
@@ -38,8 +41,11 @@ auto IntegerLoops::enter_statement(const TargetStmt& statement) noexcept -> bool
         }
         expect(step->op == TargetUpdateOperator::Increment);
     }
-    indirect += std::holds_alternative<TargetRangeForStmt>(statement.value)
-        || std::holds_alternative<TargetWhileStmt>(statement.value);
+    ranges += std::holds_alternative<TargetRangeForStmt>(statement.value);
+    manual += std::holds_alternative<TargetWhileStmt>(statement.value);
+    continues += std::holds_alternative<TargetContinueStmt>(statement.value);
+    jumps += std::holds_alternative<TargetGotoStmt>(statement.value)
+        || std::holds_alternative<TargetLabelStmt>(statement.value);
     return true;
 }
 
@@ -60,13 +66,64 @@ const TestSuite suite([] static noexcept {
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("integer_range_cursor")}
             );
-            auto loops = IntegerLoops {.direct = 0uz, .indirect = 0uz};
+            auto loops = IntegerLoops {
+                .direct = 0uz,
+                .ranges = 0uz,
+                .manual = 0uz,
+                .continues = 0uz,
+                .jumps = 0uz
+            };
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 expect(traverse_target_unit(unit.sections(), loops));
             }
             expect_equal(loops.direct, 1uz);
-            expect_equal(loops.indirect, 0uz);
+            expect_equal(loops.ranges, 0uz);
+            expect_equal(loops.manual, 0uz);
+            expect_equal(loops.continues, 1uz);
+            expect_equal(loops.jumps, 0uz);
+        };
+
+    "Generation: inclusive and value ranges preserve native iteration and continue"_test =
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
+                    fn count(values: range<u64>, end: u64) -> usize {
+                        var total = 0usize;
+                        for value in 0u64..=end {
+                            total += 1usize;
+                            continue;
+                        }
+                        for value in values {
+                            total += 1usize;
+                            continue;
+                        }
+                        for value in 1u64..=1u64 {
+                            total += 1usize;
+                            continue;
+                        }
+                        return total;
+                    }
+                )"),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("integer_range_iteration")}
+            );
+            auto loops = IntegerLoops {
+                .direct = 0uz,
+                .ranges = 0uz,
+                .manual = 0uz,
+                .continues = 0uz,
+                .jumps = 0uz
+            };
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                expect(traverse_target_unit(unit.sections(), loops));
+            }
+            expect_equal(loops.direct, 0uz);
+            expect_equal(loops.ranges, 3uz);
+            expect_equal(loops.manual, 0uz);
+            expect_equal(loops.continues, 3uz);
+            expect_equal(loops.jumps, 0uz);
         };
 });
 

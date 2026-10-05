@@ -311,7 +311,7 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sum(Value<Bytes> a) noexcept -> std::si
         partial = _mm_add_epi64(_mm256_castsi256_si128(sums), _mm256_extracti128_si256(sums, 1));
     }
     return static_cast<std::size_t>(
-        _mm_cvtsi128_si64(_mm_add_epi64(partial, _mm_srli_si128(partial, 8)))
+        _mm_cvtsi128_si32(_mm_add_epi64(partial, _mm_srli_si128(partial, 8)))
     );
 }
 
