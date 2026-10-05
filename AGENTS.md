@@ -23,7 +23,7 @@ local build, test, static-analysis, and clean commands. Stock Xmake is the local
 fallback when the wrapper cannot apply its versioned patch.
 
 Build or update the local compiler before testing. During implementation, run
-only the tests relevant to the current change.
+relevant test groups or the full test suite.
 
 ```shell
 ./xmakew build
@@ -32,13 +32,7 @@ only the tests relevant to the current change.
 ./xmakew test -g interop
 ./xmakew test -g cli
 ./xmakew test -g examples
-```
-
-After implementation, run the full test suite, then run clang-tidy.
-
-```shell
 ./xmakew test
-./xmakew check clang.tidy
 ```
 
 ## Build-state recovery

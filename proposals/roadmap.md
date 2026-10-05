@@ -1,93 +1,31 @@
-# Proposal Roadmap
+# Design directions
 
-This roadmap records design dependencies and deferred candidates. Individual
-proposals develop the designs; `docs/` describes implemented behavior.
-The current milestone is v0.1.0; allocation of the proposed work to milestones
-remains open.
+This page records candidates without a developed standalone proposal. Each entry
+states the problem, remaining questions, and evidence needed to select a scope.
 
-## Implemented foundation
+## Library consumers
 
-The [language reference](../docs/language/README.md) owns implemented source
-contracts, including ordinary classes, ownership, text, typed failures, and
-constant execution. The [compiler reference](../docs/compiler/README.md) owns
-semantic publication and C++ realization.
+`Option<T>` is a possible generic-enum consumer. If public Option/Result APIs are
+selected, define their value and ownership contracts. Result also needs explicit
+failure capture and a defined relationship to typed control effects.
 
-## Proposed capabilities
+The constant-storage proposal owns growable containers. Iterator and operator
+protocols depend on the selected API. Type computation, structural queries, and
+declaration generation each need a defined source contract.
 
-| Capability | Consumer | Design gate |
-| --- | --- | --- |
-| Parametric functions, structs, and enums | Type-safe reusable values and algorithms | [Generics](generics.md) scope and finite instance rules |
-| Static capabilities and associated types | Generic algorithms requiring explicit operations | Definition-site checking and coherent evidence |
-| Operator capabilities | User-defined operations for existing tokens | [Operators](operators.md) signature and result rules |
-| Multi-field consuming decomposition | Independent owners extracted from one class | [Ownership contract below](#multi-field-consuming-decomposition) |
-| Uninitialized storage and construction | Native output adapters, buffers, containers, and memory pools | [Destination ownership and completion contracts](uninitialized-storage.md#open-decisions) |
+## Multi-field consuming decomposition
 
-Generic implementation is blocked by the scope and finite-instance decisions
-below. Generic classes, constant admission for selected library operations,
-dynamic ownership, and async retain their own design requirements.
+A consumer needing two independent field owners must establish whole-representation
+extraction, with the original owner unavailable, exactly-once field evaluation,
+and deterministic disposition of every field on success, failure, and rejected
+patterns. No usable partially moved object remains. A concrete `build`, `finish`,
+or `into_*` operation can select syntax. Validation covers all field dispositions
+and exits, including unused fields and borrowed backing.
 
-### Generic core: scope decision
-
-Generics `OPEN-01` currently includes generic C++ boundary
-participation, which requires a representative use case. One proposed scope is
-to deliver generics within the closed Carven compilation first, retaining the
-existing concrete scalar C++ boundaries. This choice remains open in the owning
-proposal.
-
-`OPEN-02` covers finite expansion, including recursion, growing arguments,
-by-value storage cycles, and compiler budgets. Candidate validation examples are
-`identity<T>`, a transparent value holder, a payload enum, and a function passing
-through `[T]`. Definition-site checking needs to cover copying, Take, stored
-borrows, and failures.
-
-### Multi-field consuming decomposition
-
-Single-field `(&&owner).field` delivery is implemented. Multi-field extraction
-remains a separate ownership design question. A consumer needing two independent
-field owners must establish whole-representation extraction, with the original
-owner unavailable, exactly-once field evaluation, and deterministic disposition
-of every field on success, failure, and rejected patterns. No usable partially
-moved object remains. Select syntax using a concrete `build`, `finish`, or
-`into_*` operation before implementation. Dynamic values are not a prerequisite.
-
-### Library consumers and independent work
-
-- `Option<T>` is a candidate early generic-enum consumer. Public Option/Result
-  APIs need their own proposal; Result must explain explicit failure capture
-  and its relationship to the existing typed control effect.
-- The [growable-container follow-up](constant-storage.md#follow-up-growable-library-containers)
-  records the `Vector<T>` candidate's dependencies, contract decisions, and
-  validation. Iterator and operator protocols should follow real consumers.
-- [Documentation comments](doc-comments.md) are independent and can be a small
-  separate delivery when a documentation artifact is selected. They do not
-  block classes or generics.
-- The current UTF craft uses checked Carven
-  text borrowing. Broader return-borrow contracts for native calls need a concrete
-  interoperation use case and their own design.
-
-## Text composition and library storage
-
-Current formatting, output, constant functions, compound execution, and static
-slices are implemented foundations described in `docs/`. Remaining
-[formatting and output composition](formatting.md) work concerns broader capacity
-planning and completion/failure boundaries.
-These candidates do not depend on classes or generics.
-
-Constant library storage requires ordinary generic and
-encapsulated declarations, admitted storage operations, and a valid retained
-result. Its growable-container follow-up
-is unimplemented; fixed arrays and struct execution do not complete that scope.
-Additional operation consumers
-need concrete algorithms and their own contracts.
-
-Type computation, structural queries, and declaration generation remain separate
-capabilities that require their own source contracts and concrete consumers.
+The tuple proposal owns builtin product decomposition. This candidate concerns
+nominal records and their field-disposition rules.
 
 ## Failure extension edges
-
-Typed failures use copyable nominal payloads, including owning String and tracked
-borrowed text. C++ interoperation owns public failure mapping; async owns
-suspension, cancellation, and completion transport.
 
 ### Richer failure payloads
 
@@ -106,58 +44,57 @@ candidates. The open decisions are:
    lifetime, continued matching after a rejected guard, handler-produced failure,
    preservation by `rethrow`, and destruction on every exit.
 
-The extension must preserve closed typed failure sets and establish source
-ownership before changing the private carrier. Validation needs accepted and
-rejected examples for construction, propagation, matching, false guards,
-handler-produced failure, rethrow, and cleanup. Invalid transfers and expired
-borrows must be diagnosed.
+Preserve closed typed failure sets and establish source ownership before changing
+private carriers. Validate construction, propagation, matching, false guards,
+handler failures, rethrow, and cleanup, with diagnostics for invalid transfers and
+expired borrows. Public C++ failure mapping requires its own carrier and lifetime
+contract. Async owns suspension and cancellation transport.
 
-## Dynamic values and concurrency
+## C++ interoperation candidates
 
-[Dynamic values](dynamic-values.md) owns erased holding forms, nominal conformance,
-and dispatch. Ordinary class implementation is complete within its documented
-scope. Dynamic ownership begins with a concrete API; it does not block static
-generic declarations or ordinary consuming operations.
+Broader return-borrow contracts need a concrete native interface and explicit
+backing guarantees. Generic providers and construction destinations are covered
+by the generics and uninitialized-storage proposals.
 
-[Concurrency](concurrency.md) owns cross-thread value admission, shared state,
-data races, ordering, and the thread/synchronization operations that use them.
-A concrete scoped thread or message-passing API selects the first slice.
-
-[Async](async.md) independently owns suspension, cancellation, and structured
-operation lifetime. Its next decisions are execution context and suspension/
-borrow/frame admission. A timer or I/O consumer can activate same-thread work.
-Migration and cross-thread completion additionally require concurrency contracts.
-
-## C++ interoperation track
-
-The uninitialized-storage proposal develops explicit construction destinations,
-partial cleanup, and caller-provided validity contracts. Its public surface and
-checking rules remain open. Concrete synchronous native adapters can establish
-the requirements under the C++20
-baseline; byte adoption is deferred. The selected surface determines its generic
-prerequisites. [Constant storage](constant-storage.md) owns constant-execution
-admission; async, concurrency, and dynamic values own their consumers' additional
-contracts.
-
-C++ interoperation is opt-in through header imports, top-level C++ source
-fragments, and explicit `import(cpp)` and `export(cpp)` declarations. Explicit
-function boundaries admit concrete scalar signatures. Generic provider or façade
-surfaces require a concrete use case and a generic instance contract.
-
-Broader ABI stability, precompiled distribution, plugin loading, and open-world
-discovery require separate proposals. Public failure mapping needs explicit
-carrier, ownership, lifetime, and ABI contracts at the C++ boundary.
+Stable binary interfaces, precompiled distribution, plugin loading, and open-world
+discovery each require a consumer and an ABI, ownership, lifetime, and failure
+contract for the selected boundary.
 
 ## Deferred infrastructure
 
-Each direction needs the following evidence before design or implementation.
+A consumer or measured cost problem supplies the evidence for selecting each
+candidate.
 
-| Direction | Reactivation evidence |
+| Direction | Reactivation evidence and retained questions |
 | --- | --- |
-| Query system, incremental analysis, or persistent IDs | Measured compilation behavior or an interactive use case requires stable reusable analysis |
-| Generated C++ module interfaces | A supported consumer use case requires them; BMI orchestration remains a build-system responsibility |
-| Reflection and declaration generation | A concrete consumer and a proposal define the required query surface and bounded generation model |
-| Runtime reflection | A concrete dynamic use case justifies explicit metadata, ownership, and runtime cost |
+| Query system or concurrent queries | Repeated analysis or independent demand justifies it; define unique computation, pending/running/completed/failed states, wait relationships and cycle handling, deterministic identity commit, and fixed-point convergence |
+| Incremental analysis, persistent IDs, or syntax caches | An interactive or measured reuse workload needs them; define content/version/options keys, source identity rebinding, invalidation, and the import-directory contract |
+| Independent execution IR | Dispatch cost, repeated execution, debugger stepping, or pause/resume justifies a separate representation; preserve demand-driven completion, cleanup, failure, and budgets without rejecting unexecuted native branches during preparation |
+| Generated C++ module interfaces | A supported consumer needs them; preserve artifact identity and dependencies while BMI orchestration remains a build-system responsibility |
+| Reflection and declaration generation | A consumer identifies the required query surface and bounded generation model |
+| Runtime reflection | A dynamic API justifies explicit metadata, ownership, and runtime cost |
 
-Deferred work is inactive until its evidence exists; implementation convenience
-alone is not a reactivation condition.
+If queries may wait on one another, define cross-query wait relationships and
+cycle detection or prevention; per-query completion state alone is insufficient.
+Distinguish semantic dependency cycles from scheduling waits and preserve
+diagnostics and events. Test caches across source, option, and dependency changes.
+For an execution IR, measure preparation cost against reuse in one-shot roots and
+repeatedly executed bodies.
+
+## Deferred representation candidates
+
+Packed records, Boolean bit packing, AoS-to-SoA conversion, hot/cold splitting,
+and bytewise comparison are separate possible designs. Select an object workload
+and state addressability, alignment, aliasing, copying, comparison, and native
+interface obligations before choosing a representation. Verify relevant effects
+and measure target-program memory and access costs. The layout proposal covers
+ordinary field ordering and pointer tags.
+
+## References
+
+- [Proposal index](README.md)
+- [Generics](generics.md#open-decisions): parametric declarations and C++ boundaries.
+- [Tuples](tuples.md): builtin product decomposition.
+- [Constant storage](constant-storage.md#growable-library-containers): growable containers.
+- [Uninitialized storage](uninitialized-storage.md): construction destinations.
+- [Layout](layout.md): field ordering and pointer representation.
