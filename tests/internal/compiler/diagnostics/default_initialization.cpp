@@ -7,10 +7,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Defaults: type availability and construction completeness", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Defaults: type availability and construction completeness"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "numeric enum has no implicit selected case",
              .source = "enum Choice { Item } fn f() { let value = Choice {}; }",
@@ -49,7 +47,7 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "Huge {}"},
         });
         check_compiler_errors(cases);
-    });
+    };
 });
 
 } // namespace

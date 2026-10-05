@@ -14,11 +14,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic constant facts: integer folds use the runtime arithmetic contract",
+const TestSuite suite([] static noexcept {
+    "Semantic constant facts: integer folds use the runtime arithmetic contract"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& values = fixture.compilation;
@@ -30,24 +27,22 @@ const ct::Suite tests([] static noexcept {
             const auto one_i8 = values.intern_constant(constant_test_integer_fact(i8, 1));
             const auto wrapped =
                 fold_binary_constant(values, BinaryOperator::Add, maximum, one_i8, i8);
-            if (!ct::expect(wrapped.has_value())) {
+            if (!expect(wrapped.has_value())) {
                 return;
             }
-            ct::expect(
-                std::get<IntegerConstant>(wrapped->value) == IntegerConstant::from_signed(-128)
-            );
+            expect(std::get<IntegerConstant>(wrapped->value) == IntegerConstant::from_signed(-128));
 
             const auto zero_i8 = values.intern_constant(constant_test_integer_fact(i8, 0));
             const auto divide_by_zero =
                 fold_binary_constant(values, BinaryOperator::Divide, one_i8, zero_i8, i8);
-            if (!ct::expect(!(divide_by_zero.has_value()))) {
+            if (!expect(!(divide_by_zero.has_value()))) {
                 return;
             }
-            ct::expect_equal(divide_by_zero.error(), ConstantEvaluationFailure::DivideByZero);
-            if (!ct::expect(constant_evaluation_diagnostic(divide_by_zero.error()).has_value())) {
+            expect_equal(divide_by_zero.error(), ConstantEvaluationFailure::DivideByZero);
+            if (!expect(constant_evaluation_diagnostic(divide_by_zero.error()).has_value())) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 constant_evaluation_diagnostic(divide_by_zero.error())->code,
                 DiagnosticCode::ConstDivideByZero
             );
@@ -66,30 +61,28 @@ const ct::Suite tests([] static noexcept {
             );
             const auto bad_shift =
                 fold_binary_constant(values, BinaryOperator::LeftShift, one_u8, eight_u8, u8);
-            if (!ct::expect(!(bad_shift.has_value()))) {
+            if (!expect(!(bad_shift.has_value()))) {
                 return;
             }
-            ct::expect_equal(bad_shift.error(), ConstantEvaluationFailure::ShiftOutOfRange);
+            expect_equal(bad_shift.error(), ConstantEvaluationFailure::ShiftOutOfRange);
 
             const auto equal =
                 fold_binary_constant(values, BinaryOperator::Equal, one_i8, one_i8, boolean);
-            if (!ct::expect(equal.has_value())) {
+            if (!expect(equal.has_value())) {
                 return;
             }
-            ct::expect(std::get<BooleanConstant>(equal->value).value);
+            expect(std::get<BooleanConstant>(equal->value).value);
 
             const auto absent =
                 fold_unary_constant(values, UnaryOperator::Negate, std::nullopt, i8);
-            if (!ct::expect(!(absent.has_value()))) {
+            if (!expect(!(absent.has_value()))) {
                 return;
             }
-            ct::expect_equal(absent.error(), ConstantEvaluationFailure::OperandNotConstant);
-            ct::expect(!(constant_evaluation_diagnostic(absent.error()).has_value()));
-        }
-    );
+            expect_equal(absent.error(), ConstantEvaluationFailure::OperandNotConstant);
+            expect(!(constant_evaluation_diagnostic(absent.error()).has_value()));
+        };
 
-    ct::test(
-        "Semantic constant facts: casts and text intrinsics return canonical facts",
+    "Semantic constant facts: casts and text intrinsics return canonical facts"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& values = fixture.compilation;
@@ -103,14 +96,14 @@ const ct::Suite tests([] static noexcept {
             const auto negative_one = values.intern_constant(constant_test_integer_fact(i8, -1));
             const auto wrapped =
                 fold_cast_constant(values, CastKind::IntegerToInteger, negative_one, u8);
-            if (!ct::expect(wrapped.has_value())) {
+            if (!expect(wrapped.has_value())) {
                 return;
             }
             const auto wrapped_value = std::get<IntegerConstant>(wrapped->value).as_unsigned();
-            if (!ct::expect(wrapped_value.has_value())) {
+            if (!expect(wrapped_value.has_value())) {
                 return;
             }
-            ct::expect_equal(*wrapped_value, 255u);
+            expect_equal(*wrapped_value, 255u);
 
             const auto narrow_float = values.intern_constant(
                 ConstantFact {
@@ -120,10 +113,10 @@ const ct::Suite tests([] static noexcept {
             );
             const auto widened =
                 fold_cast_constant(values, CastKind::FloatingWiden, narrow_float, f64);
-            if (!ct::expect(widened.has_value())) {
+            if (!expect(widened.has_value())) {
                 return;
             }
-            ct::expect_equal(std::get<F64Constant>(widened->value).value, 1.5);
+            expect_equal(std::get<F64Constant>(widened->value).value, 1.5);
 
             const auto string_id = values.intern_constant(
                 ConstantFact {
@@ -132,40 +125,38 @@ const ct::Suite tests([] static noexcept {
                 }
             );
             const auto string = load_constant_fact(values, string_id);
-            if (!ct::expect(string.has_value())) {
+            if (!expect(string.has_value())) {
                 return;
             }
             const auto length =
                 fold_text_intrinsic_constant(values, TextIntrinsic::Len, string_id, usize);
-            if (!ct::expect(length.has_value())) {
+            if (!expect(length.has_value())) {
                 return;
             }
             const auto length_value = std::get<IntegerConstant>(length->value).as_unsigned();
-            if (!ct::expect(length_value.has_value())) {
+            if (!expect(length_value.has_value())) {
                 return;
             }
-            ct::expect_equal(*length_value, 3u);
+            expect_equal(*length_value, 3u);
             const auto empty =
                 fold_text_intrinsic_constant(values, TextIntrinsic::IsEmpty, string_id, boolean);
-            if (!ct::expect(empty.has_value())) {
+            if (!expect(empty.has_value())) {
                 return;
             }
-            ct::expect(!(std::get<BooleanConstant>(empty->value).value));
+            expect(!(std::get<BooleanConstant>(empty->value).value));
             const auto view = fold_text_intrinsic_constant(
                 values,
                 TextIntrinsic::Bytes,
                 string_id,
                 (*string)->type
             );
-            if (!ct::expect(!(view.has_value()))) {
+            if (!expect(!(view.has_value()))) {
                 return;
             }
-            ct::expect_equal(view.error(), ConstantEvaluationFailure::UnsupportedOperation);
-        }
-    );
+            expect_equal(view.error(), ConstantEvaluationFailure::UnsupportedOperation);
+        };
 
-    ct::test(
-        "Semantic constant facts: operand facts retain program owner evidence",
+    "Semantic constant facts: operand facts retain program owner evidence"_test =
         [] static noexcept {
             const auto first = ConstantEvaluationFixture();
             const auto second = ConstantEvaluationFixture();
@@ -174,7 +165,7 @@ const ct::Suite tests([] static noexcept {
             const auto first_i32 = first_values.builtin_type(BuiltinType::I32);
             const auto second_i32 = second_values.builtin_type(BuiltinType::I32);
             const auto foreign = constant_test_integer_fact(first_i32, 1);
-            ct::expect(expect_termination("semantic-constant-foreign-owner", [&] noexcept {
+            expect(expect_termination("semantic-constant-foreign-owner", [&] noexcept {
                 static_cast<void>(evaluate_unary_constant_value(
                     second_values,
                     UnaryOperator::Negate,
@@ -182,11 +173,9 @@ const ct::Suite tests([] static noexcept {
                     second_i32
                 ));
             }));
-        }
-    );
+        };
 
-    ct::test(
-        "Semantic constants: floating identity preserves signed zero while equality compares values",
+    "Semantic constants: floating identity preserves signed zero while equality compares values"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& values = fixture.compilation;
@@ -197,22 +186,18 @@ const ct::Suite tests([] static noexcept {
                     ConstantFact {.type = type, .value = Floating {.value = -0.0}};
                 const auto positive_id = values.intern_constant(positive);
                 const auto negative_id = values.intern_constant(negative);
-                ct::expect(positive_id != negative_id)
+                expect(positive_id != negative_id)
                     .note("positive and negative constant IDs differ");
-                ct::expect(((values.intern_constant(negative)) == (negative_id)))
+                expect(((values.intern_constant(negative)) == (negative_id)))
                     .note("values.intern_constant(negative) == negative_id");
-                ct::expect(constant_value_equal(values, positive.value, negative.value));
-                ct::expect(
-                    std::signbit(std::get<Floating>(values.constant(negative_id).value).value)
-                );
+                expect(constant_value_equal(values, positive.value, negative.value));
+                expect(std::signbit(std::get<Floating>(values.constant(negative_id).value).value));
             };
             check_zero.operator()<F32Constant>(BuiltinType::F32);
             check_zero.operator()<F64Constant>(BuiltinType::F64);
-        }
-    );
+        };
 
-    ct::test(
-        "Semantic execution: runtime integer arithmetic wraps at the operand width",
+    "Semantic execution: runtime integer arithmetic wraps at the operand width"_test =
         [] static noexcept {
             const auto fixture = ConstantEvaluationFixture();
             const auto& values = fixture.compilation;
@@ -251,7 +236,7 @@ const ct::Suite tests([] static noexcept {
                     std::numeric_limits<std::int64_t>::min()
                 },
             };
-            ct::each(
+            each(
                 scenarios,
                 [](const auto& scenario) static noexcept {
                     return std::format(
@@ -272,10 +257,10 @@ const ct::Suite tests([] static noexcept {
                         type,
                         IntegerArithmetic::Wrapping
                     );
-                    if (!ct::expect(result.has_value())) {
+                    if (!expect(result.has_value())) {
                         return;
                     }
-                    ct::expect(
+                    expect(
                         std::get<IntegerConstant>(result->value)
                         == IntegerConstant::from_signed(scenario.expected)
                     );
@@ -290,12 +275,10 @@ const ct::Suite tests([] static noexcept {
                 i8,
                 IntegerArithmetic::Wrapping
             );
-            if (!ct::expect(negated.has_value())) {
+            if (!expect(negated.has_value())) {
                 return;
             }
-            ct::expect(
-                std::get<IntegerConstant>(negated->value) == IntegerConstant::from_signed(-128)
-            );
+            expect(std::get<IntegerConstant>(negated->value) == IntegerConstant::from_signed(-128));
             const auto checked = evaluate_unary_constant_value(
                 values,
                 UnaryOperator::Negate,
@@ -303,10 +286,10 @@ const ct::Suite tests([] static noexcept {
                 i8,
                 IntegerArithmetic::Checked
             );
-            if (!ct::expect(!(checked.has_value()))) {
+            if (!expect(!(checked.has_value()))) {
                 return;
             }
-            ct::expect(checked.error() == ConstantEvaluationFailure::IntegerOverflow);
+            expect(checked.error() == ConstantEvaluationFailure::IntegerOverflow);
             for (const auto shift : {-1, 8}) {
                 const auto invalid = evaluate_binary_constant_value(
                     values,
@@ -316,10 +299,10 @@ const ct::Suite tests([] static noexcept {
                     i8,
                     IntegerArithmetic::Wrapping
                 );
-                if (!ct::expect(!(invalid.has_value()))) {
+                if (!expect(!(invalid.has_value()))) {
                     return;
                 }
-                ct::expect(invalid.error() == ConstantEvaluationFailure::ShiftOutOfRange);
+                expect(invalid.error() == ConstantEvaluationFailure::ShiftOutOfRange);
             }
             const auto zero = evaluate_binary_constant_value(
                 values,
@@ -329,15 +312,13 @@ const ct::Suite tests([] static noexcept {
                 i8,
                 IntegerArithmetic::Wrapping
             );
-            if (!ct::expect(!(zero.has_value()))) {
+            if (!expect(!(zero.has_value()))) {
                 return;
             }
-            ct::expect(zero.error() == ConstantEvaluationFailure::DivideByZero);
-        }
-    );
+            expect(zero.error() == ConstantEvaluationFailure::DivideByZero);
+        };
 
-    ct::test(
-        "Semantic execution: floating operations preserve native values without runtime folding",
+    "Semantic execution: floating operations preserve native values without runtime folding"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& values = fixture.compilation;
@@ -356,7 +337,7 @@ const ct::Suite tests([] static noexcept {
                     Case {.operation = BinaryOperator::Multiply, .expected = 12.0},
                     Case {.operation = BinaryOperator::Divide, .expected = 3.0},
                 };
-                ct::each(
+                each(
                     cases,
                     [&](const Case& item) noexcept {
                         return std::format(
@@ -373,34 +354,34 @@ const ct::Suite tests([] static noexcept {
                             right,
                             type
                         );
-                        if (!ct::expect(result.has_value())) {
+                        if (!expect(result.has_value())) {
                             return;
                         }
-                        ct::expect(std::get<Floating>(result->value).value == item.expected);
-                        ct::expect(!(fold_binary_constant(
-                                         values,
-                                         item.operation,
-                                         values.intern_constant(left),
-                                         values.intern_constant(right),
-                                         type
+                        expect(std::get<Floating>(result->value).value == item.expected);
+                        expect(!(fold_binary_constant(
+                                     values,
+                                     item.operation,
+                                     values.intern_constant(left),
+                                     values.intern_constant(right),
+                                     type
                         )
-                                         .has_value()));
+                                     .has_value()));
                     }
                 );
                 const auto zero = ConstantFact {.type = type, .value = Floating {.value = 0.0}};
                 const auto negative =
                     evaluate_unary_constant_value(values, UnaryOperator::Negate, zero, type);
-                if (!ct::expect(negative.has_value())) {
+                if (!expect(negative.has_value())) {
                     return;
                 }
-                ct::expect(std::signbit(std::get<Floating>(negative->value).value));
-                ct::expect(!(fold_unary_constant(
-                                 values,
-                                 UnaryOperator::Negate,
-                                 values.intern_constant(zero),
-                                 type
+                expect(std::signbit(std::get<Floating>(negative->value).value));
+                expect(!(fold_unary_constant(
+                             values,
+                             UnaryOperator::Negate,
+                             values.intern_constant(zero),
+                             type
                 )
-                                 .has_value()));
+                             .has_value()));
                 const auto infinity = evaluate_binary_constant_value(
                     values,
                     BinaryOperator::Divide,
@@ -408,10 +389,10 @@ const ct::Suite tests([] static noexcept {
                     zero,
                     type
                 );
-                if (!ct::expect(infinity.has_value())) {
+                if (!expect(infinity.has_value())) {
                     return;
                 }
-                ct::expect(std::isinf(std::get<Floating>(infinity->value).value));
+                expect(std::isinf(std::get<Floating>(infinity->value).value));
                 const auto nan = evaluate_binary_constant_value(
                     values,
                     BinaryOperator::Divide,
@@ -419,10 +400,10 @@ const ct::Suite tests([] static noexcept {
                     zero,
                     type
                 );
-                if (!ct::expect(nan.has_value())) {
+                if (!expect(nan.has_value())) {
                     return;
                 }
-                ct::expect(std::isnan(std::get<Floating>(nan->value).value));
+                expect(std::isnan(std::get<Floating>(nan->value).value));
                 const auto comparisons = std::array {
                     BinaryOperator::Equal,
                     BinaryOperator::Less,
@@ -433,10 +414,10 @@ const ct::Suite tests([] static noexcept {
                 for (const auto operation : comparisons) {
                     const auto result =
                         evaluate_binary_constant_value(values, operation, *nan, right, boolean);
-                    if (!ct::expect(result.has_value())) {
+                    if (!expect(result.has_value())) {
                         return;
                     }
-                    ct::expect(!(std::get<BooleanConstant>(result->value).value));
+                    expect(!(std::get<BooleanConstant>(result->value).value));
                 }
                 const auto unequal = evaluate_binary_constant_value(
                     values,
@@ -445,15 +426,14 @@ const ct::Suite tests([] static noexcept {
                     *nan,
                     boolean
                 );
-                if (!ct::expect(unequal.has_value())) {
+                if (!expect(unequal.has_value())) {
                     return;
                 }
-                ct::expect(std::get<BooleanConstant>(unequal->value).value);
+                expect(std::get<BooleanConstant>(unequal->value).value);
             };
             exercise.operator()<F32Constant>(BuiltinType::F32);
             exercise.operator()<F64Constant>(BuiltinType::F64);
-        }
-    );
+        };
 });
 
 } // namespace

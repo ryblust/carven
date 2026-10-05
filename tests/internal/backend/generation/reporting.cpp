@@ -17,8 +17,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct ReportQuery final {
     const TargetUnit& unit;
     std::size_t branches;
@@ -55,13 +53,8 @@ auto ReportQuery::enter_statement(const TargetStmt& statement) noexcept -> bool 
     return true;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: static reports disappear while runtime conditions retain report work",
+const TestSuite suite([] static noexcept {
+    "Generation: static reports disappear while runtime conditions retain report work"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -85,7 +78,7 @@ const ct::Suite tests([] static noexcept {
                     .assertions = 0uz,
                     .calls = 0uz
                 };
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
                 branches += query.branches;
@@ -93,15 +86,13 @@ const ct::Suite tests([] static noexcept {
                 assertions += query.assertions;
                 calls += query.calls;
             }
-            ct::expect(branches == 1uz);
-            ct::expect(writers == 1uz);
-            ct::expect(assertions == 2uz);
-            ct::expect(calls == 1uz);
-        }
-    );
+            expect(branches == 1uz);
+            expect(writers == 1uz);
+            expect(assertions == 2uz);
+            expect(calls == 1uz);
+        };
 
-    ct::test(
-        "Generation: only potentially failing SIMD controls carry report sites",
+    "Generation: only potentially failing SIMD controls carry report sites"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view name;
@@ -122,7 +113,7 @@ const ct::Suite tests([] static noexcept {
                     .sites = 1uz
                 },
             };
-            ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+            each(cases, &Case::name, [](const Case& input) static noexcept {
                 const auto compilation = PlannedCompilation::build(
                     analyze_test_program(
                         std::format(
@@ -149,14 +140,13 @@ const ct::Suite tests([] static noexcept {
                 auto query = Query {.sites = 0uz};
                 for (const auto artifact : compilation.target().artifacts()) {
                     const auto unit = lower_artifact(compilation, artifact.id);
-                    ct::expect(traverse_target_unit(unit.sections(), query));
+                    expect(traverse_target_unit(unit.sections(), query));
                 }
-                ct::expect_equal(query.sites, input.sites);
+                expect_equal(query.sites, input.sites);
             });
-        }
-    );
+        };
 
-    ct::test("Generation: callable results use executable test-stop effects", [] static noexcept {
+    "Generation: callable results use executable test-stop effects"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_test_program(R"(
                     fn selected() -> i32 {
@@ -187,15 +177,15 @@ const ct::Suite tests([] static noexcept {
                 checked.insert(std::string(name));
                 const auto* result =
                     std::get_if<TargetIntrinsicType>(&unit.type(function->result).value);
-                if (!ct::expect(result != nullptr)) {
+                if (!expect(result != nullptr)) {
                     return false;
                 }
                 if (name != "ordinary") {
-                    ct::expect_equal(result->symbol, TargetSymbol::StdInt32);
+                    expect_equal(result->symbol, TargetSymbol::StdInt32);
                     return true;
                 }
-                ct::expect_equal(result->symbol, TargetSymbol::RuntimeOutcome);
-                ct::expect(std::ranges::any_of(result->type_argument_ids, [&](auto id) noexcept {
+                expect_equal(result->symbol, TargetSymbol::RuntimeOutcome);
+                expect(std::ranges::any_of(result->type_argument_ids, [&](auto id) noexcept {
                     const auto* member = std::get_if<TargetIntrinsicType>(&unit.type(id).value);
                     return member != nullptr && member->symbol == TargetSymbol::RuntimeTestStopped;
                 }));
@@ -206,17 +196,17 @@ const ct::Suite tests([] static noexcept {
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
             auto query = Query {.unit = unit, .checked = {}};
-            if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+            if (!expect(traverse_target_unit(unit.sections(), query))) {
                 return;
             }
             for (const auto& name : query.checked) {
                 checked.insert(name);
             }
         }
-        ct::expect(checked.contains("selected"));
-        ct::expect(checked.contains("wrapper"));
-        ct::expect(checked.contains("ordinary"));
-    });
+        expect(checked.contains("selected"));
+        expect(checked.contains("wrapper"));
+        expect(checked.contains("ordinary"));
+    };
 });
 
 } // namespace

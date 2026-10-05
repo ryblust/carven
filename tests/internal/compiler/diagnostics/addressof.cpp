@@ -12,11 +12,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: addressof requires a live addressable place and matching access",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: addressof requires a live addressable place and matching access"_test =
         [] static noexcept {
             static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "temporary value",
@@ -37,11 +34,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "&&value"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: static pointer targets end at scope exit and Take",
+    "Compiler diagnostics: static pointer targets end at scope exit and Take"_test =
         [] static noexcept {
             static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "temporary array ends after the full expression",
@@ -105,11 +100,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "*address"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler: addressof proves non-null and preserves cross-call aliases on assignment",
+    "Compiler: addressof proves non-null and preserves cross-call aliases on assignment"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto source_id = *sources.append_virtual("addressof.cv", R"(
@@ -154,9 +147,8 @@ const ct::Suite tests([] static noexcept {
                     );
                 }
             }
-            ct::expect(result.has_value()).note(diagnostic_report);
-        }
-    );
+            expect(result.has_value()).note(diagnostic_report);
+        };
 });
 
 } // namespace

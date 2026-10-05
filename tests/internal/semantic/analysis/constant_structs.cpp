@@ -11,11 +11,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Constant structs: field order and nominal types survive array and slice publication",
+const TestSuite suite([] static noexcept {
+    "Constant structs: field order and nominal types survive array and slice publication"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const values: [Entry] = make();
@@ -35,18 +32,18 @@ const ct::Suite tests([] static noexcept {
                 }
                 const auto& fact = program.constants().constant(declaration.value.value);
                 const auto* slice = std::get_if<SliceConstant>(&fact.value);
-                if (!ct::expect(slice != nullptr)) {
+                if (!expect(slice != nullptr)) {
                     return;
                 }
-                if (!ct::expect(slice->elements.size() == 2uz)) {
+                if (!expect(slice->elements.size() == 2uz)) {
                     return;
                 }
                 const auto* type =
                     std::get_if<SliceTypeValue>(&program.types().type(fact.type).value);
-                if (!ct::expect(type != nullptr)) {
+                if (!expect(type != nullptr)) {
                     return;
                 }
-                ct::expect(
+                expect(
                     std::holds_alternative<StructTypeValue>(
                         program.types().type(type->element).value
                     )
@@ -54,22 +51,22 @@ const ct::Suite tests([] static noexcept {
                 const auto keys = std::array {3ll, 9ll};
                 for (auto index = 0uz; index < slice->elements.size(); ++index) {
                     const auto& entry = program.constants().constant(slice->elements[index]);
-                    ct::expect(entry.type == type->element);
+                    expect(entry.type == type->element);
                     const auto* fields = std::get_if<StructConstant>(&entry.value);
-                    if (!ct::expect(fields != nullptr)) {
+                    if (!expect(fields != nullptr)) {
                         return;
                     }
-                    if (!ct::expect(fields->fields.size() == 2uz)) {
+                    if (!expect(fields->fields.size() == 2uz)) {
                         return;
                     }
-                    ct::expect(
+                    expect(
                         std::get<IntegerConstant>(
                             program.constants().constant(fields->fields[0]).value
                         )
                             .as_signed()
                         == keys[index]
                     );
-                    ct::expect(
+                    expect(
                         std::get<BooleanConstant>(
                             program.constants().constant(fields->fields[1]).value
                         )
@@ -78,12 +75,10 @@ const ct::Suite tests([] static noexcept {
                 }
                 inspected = true;
             }
-            ct::expect(inspected);
-        }
-    );
+            expect(inspected);
+        };
 
-    ct::test(
-        "Constant structs: unused functions do not require executable field types",
+    "Constant structs: unused functions do not require executable field types"_test =
         [] static noexcept {
             const auto types = std::to_array<std::string_view>({"ptr<i32>", "[i32]"});
             for (const auto type : types) {
@@ -94,13 +89,11 @@ const ct::Suite tests([] static noexcept {
                         type
                     )
                 );
-                ct::expect(program.declarations().functions().size() == 1uz).note("type = ", type);
+                expect(program.declarations().functions().size() == 1uz).note("type = ", type);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Constant structs: source field errors and nominal mismatches retain their contracts",
+    "Constant structs: source field errors and nominal mismatches retain their contracts"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view source;
@@ -123,17 +116,12 @@ const ct::Suite tests([] static noexcept {
                 {"struct Entry { value: i32 } const table: [Entry] = [Entry { 1 }]; const bad = table[1].value;",
                  DiagnosticCode::ConstIndexBounds},
             });
-            ct::each(cases, &Scenario::source, [&](const auto& scenario) noexcept {
-                ct::expect_diagnostic(
-                    analyze_test_errors(std::string(scenario.source)),
-                    scenario.code
-                );
+            each(cases, &Scenario::source, [&](const auto& scenario) noexcept {
+                expect_diagnostic(analyze_test_errors(std::string(scenario.source)), scenario.code);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant structs: definitions reject use after Take and escaping borrowed fields",
+    "Constant structs: definitions reject use after Take and escaping borrowed fields"_test =
         [] static noexcept {
             const auto moved = analyze_test_errors(R"(
         struct Entry { value: i32 }
@@ -143,8 +131,8 @@ const ct::Suite tests([] static noexcept {
             return entry.value;
         }
     )");
-            ct::expect_diagnostic(moved, DiagnosticCode::AccessUnavailable);
-            ct::expect_no_diagnostic(moved, DiagnosticCode::ConstEvaluation);
+            expect_diagnostic(moved, DiagnosticCode::AccessUnavailable);
+            expect_no_diagnostic(moved, DiagnosticCode::ConstEvaluation);
             const auto borrowed = analyze_test_errors(R"(
         struct Entry { value: str }
         const fn bad() -> Entry {
@@ -152,12 +140,10 @@ const ct::Suite tests([] static noexcept {
             return Entry { text.as_str() };
         }
     )");
-            ct::expect_diagnostic(borrowed, DiagnosticCode::AccessBorrowConflict);
-        }
-    );
+            expect_diagnostic(borrowed, DiagnosticCode::AccessBorrowConflict);
+        };
 
-    ct::test(
-        "Constant structs: unused deep field types do not consume execution budget",
+    "Constant structs: unused deep field types do not consume execution budget"_test =
         [] static noexcept {
             auto nested = std::string("Base");
             for (auto level = 0uz; level < 61uz; ++level) {
@@ -172,8 +158,7 @@ const ct::Suite tests([] static noexcept {
             };
             static_cast<void>(analyze_test_program(source(nested)));
             static_cast<void>(analyze_test_program(source(std::format("[{}; 1]", nested))));
-        }
-    );
+        };
 });
 
 } // namespace

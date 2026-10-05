@@ -18,8 +18,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct ObservationQuery final {
     bool measured;
     std::size_t bodies;
@@ -65,8 +63,8 @@ auto ObservationQuery::enter_expression(const TargetExpr& expression, TargetExpr
     return true;
 }
 
-const ct::Suite tests([] static noexcept {
-    ct::test("Generation: unexposed snapshot owners need no operand storage", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Generation: unexposed snapshot owners need no operand storage"_test = [] static noexcept {
         struct Case final {
             std::string_view name;
             std::string_view source;
@@ -132,7 +130,7 @@ const ct::Suite tests([] static noexcept {
                 .pure_calls = 0uz
             },
         };
-        ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+        each(cases, &Case::name, [](const Case& input) static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
                     "fn pure(input: i32) -> i32 => input; "
@@ -150,64 +148,60 @@ const ct::Suite tests([] static noexcept {
             };
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
             }
-            ct::expect_equal(query.bodies, 1uz);
-            ct::expect_equal(query.locals, input.locals);
-            ct::expect_equal(query.pure_calls, input.pure_calls);
+            expect_equal(query.bodies, 1uz);
+            expect_equal(query.locals, input.locals);
+            expect_equal(query.pure_calls, input.pure_calls);
         });
-    });
+    };
 
-    ct::test(
-        "Generation: builtin pointer observations need no temporary storage",
-        [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(
-                    "fn present(p: ptr<i32>) -> bool { return p != nullptr; }\n"
-                    "fn read(p: ptr<i32>) -> i32 {\n"
-                    "  if p == nullptr { return 0; }\n"
-                    "  return *p;\n"
-                    "}\n"
-                ),
-                {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("pointer_observation")}
-            );
+    "Generation: builtin pointer observations need no temporary storage"_test = [] static noexcept {
+        const auto compilation = PlannedCompilation::build(
+            analyze_test_program(
+                "fn present(p: ptr<i32>) -> bool { return p != nullptr; }\n"
+                "fn read(p: ptr<i32>) -> i32 {\n"
+                "  if p == nullptr { return 0; }\n"
+                "  return *p;\n"
+                "}\n"
+            ),
+            {.test_mode = TestGenerationMode::None,
+             .linkage_domain = *LinkageDomain::explicit_value("pointer_observation")}
+        );
 
-            struct Query final {
-                std::size_t comparisons;
-                std::size_t dereferences;
+        struct Query final {
+            std::size_t comparisons;
+            std::size_t dereferences;
 
-                auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-                    ct::expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
-                    return true;
-                }
-
-                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
-                    -> bool {
-                    ct::expect(!(std::holds_alternative<TargetLambdaExpr>(expression.value)));
-                    if (const auto* binary = std::get_if<TargetBinaryExpr>(&expression.value)) {
-                        comparisons += binary->op == TargetBinaryOperator::Equal
-                            || binary->op == TargetBinaryOperator::NotEqual;
-                    }
-                    if (const auto* prefix = std::get_if<TargetPrefixExpr>(&expression.value)) {
-                        dereferences += prefix->op == TargetPrefixOperator::Dereference;
-                    }
-                    return true;
-                }
-            };
-
-            auto query = Query {.comparisons = 0uz, .dereferences = 0uz};
-            for (const auto artifact : compilation.target().artifacts()) {
-                const auto unit = lower_artifact(compilation, artifact.id);
-                ct::expect(traverse_target_unit(unit.sections(), query));
+            auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
+                expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
+                return true;
             }
-            ct::expect(query.comparisons == 2uz);
-            ct::expect(query.dereferences == 1uz);
-        }
-    );
 
-    ct::test(
-        "Generation: explicit writable source pointers retain their access contract",
+            auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                -> bool {
+                expect(!(std::holds_alternative<TargetLambdaExpr>(expression.value)));
+                if (const auto* binary = std::get_if<TargetBinaryExpr>(&expression.value)) {
+                    comparisons += binary->op == TargetBinaryOperator::Equal
+                        || binary->op == TargetBinaryOperator::NotEqual;
+                }
+                if (const auto* prefix = std::get_if<TargetPrefixExpr>(&expression.value)) {
+                    dereferences += prefix->op == TargetPrefixOperator::Dereference;
+                }
+                return true;
+            }
+        };
+
+        auto query = Query {.comparisons = 0uz, .dereferences = 0uz};
+        for (const auto artifact : compilation.target().artifacts()) {
+            const auto unit = lower_artifact(compilation, artifact.id);
+            expect(traverse_target_unit(unit.sections(), query));
+        }
+        expect(query.comparisons == 2uz);
+        expect(query.dereferences == 1uz);
+    };
+
+    "Generation: explicit writable source pointers retain their access contract"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -227,7 +221,7 @@ const ct::Suite tests([] static noexcept {
                     if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
                         const auto* pointer =
                             std::get_if<TargetPointerType>(&unit.type(variable->type).value);
-                        if (!ct::expect(pointer != nullptr)) {
+                        if (!expect(pointer != nullptr)) {
                             return false;
                         }
                         const auto& pointee = unit.type(pointer->pointee);
@@ -237,7 +231,7 @@ const ct::Suite tests([] static noexcept {
                                 && intrinsic->symbol == TargetSymbol::StdAddConst);
                         writable += !constant;
                         readonly += constant;
-                        ct::expect(variable->binding == TargetVariableBinding::ConstValue);
+                        expect(variable->binding == TargetVariableBinding::ConstValue);
                     }
                     return true;
                 }
@@ -248,17 +242,15 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query {.unit = unit, .writable = 0uz, .readonly = 0uz};
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
                 writable += query.writable;
                 readonly += query.readonly;
             }
-            ct::expect(writable == 1uz);
-            ct::expect(readonly == 1uz);
-        }
-    );
+            expect(writable == 1uz);
+            expect(readonly == 1uz);
+        };
 
-    ct::test(
-        "Generation: builtin Read snapshots use unqualified value factory results",
+    "Generation: builtin Read snapshots use unqualified value factory results"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -287,7 +279,7 @@ const ct::Suite tests([] static noexcept {
                         const auto* type = std::get_if<TargetIntrinsicType>(&result.value);
                         if (type != nullptr && type->symbol == TargetSymbol::StdInt32) {
                             ++scalar_factories;
-                            ct::expect(!(result.const_qualified));
+                            expect(!(result.const_qualified));
                         }
                     }
                     return true;
@@ -298,17 +290,15 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query {.unit = unit, .scalar_factories = 0uz};
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
                 scalar_factories += query.scalar_factories;
             }
-            ct::expect(scalar_factories > 0uz);
-        }
-    );
+            expect(scalar_factories > 0uz);
+        };
 
-    ct::test(
-        "Generation: pure Read arguments need no borrowed temporary storage in match arms",
+    "Generation: pure Read arguments need no borrowed temporary storage in match arms"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -335,7 +325,7 @@ const ct::Suite tests([] static noexcept {
                         if (const auto* type = std::get_if<TargetIntrinsicType>(
                                 &unit.type(variable->type).value
                             )) {
-                            ct::expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                            expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
                         }
                     }
                     return true;
@@ -345,12 +335,11 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query {.unit = unit};
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
             }
-        }
-    );
+        };
 });
 
 } // namespace

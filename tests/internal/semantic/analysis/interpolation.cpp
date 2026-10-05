@@ -8,11 +8,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic interpolation: holes normalize to ordered explicit format arguments",
+const TestSuite suite([] static noexcept {
+    "Semantic interpolation: holes normalize to ordered explicit format arguments"_test =
         [] static noexcept {
             const auto program = analyze_test_program(
                 R"(fn format(value: f64, width: i32, precision: i32) -> String {
@@ -21,7 +18,7 @@ const ct::Suite tests([] static noexcept {
             );
             const auto callable = test_function_callables(program).front();
             const auto body_id = program.declarations().body_for_callable(callable);
-            if (!ct::expect(body_id.has_value())) {
+            if (!expect(body_id.has_value())) {
                 return;
             }
             auto count = 0uz;
@@ -30,10 +27,10 @@ const ct::Suite tests([] static noexcept {
                 [&](const SemanticExpression& expression) noexcept {
                     if (const auto* format = std::get_if<SemFormat>(&expression.value)) {
                         ++count;
-                        if (!ct::expect(format->operands.size() == 3uz)) {
+                        if (!expect(format->operands.size() == 3uz)) {
                             return;
                         }
-                        ct::expect(
+                        expect(
                             std::ranges::all_of(
                                 format->operands,
                                 [](const SemCallArgument& operand) static noexcept {
@@ -41,16 +38,15 @@ const ct::Suite tests([] static noexcept {
                                 }
                             )
                         );
-                        ct::expect(
+                        expect(
                             serialize_format(format->specification)
                             == std::string_view("{{value}}={0:{1}.{2}f}\0", 23)
                         );
                     }
                 }
             );
-            ct::expect(count == 1uz);
-        }
-    );
+            expect(count == 1uz);
+        };
 });
 
 } // namespace

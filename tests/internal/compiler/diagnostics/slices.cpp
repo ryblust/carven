@@ -7,10 +7,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Compiler diagnostics: slices retain storage and nested borrows", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: slices retain storage and nested borrows"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "array mutation",
              .source = "fn bad() { var a = [1, 2]; let v: [i32] = a; a[1] = 3; }",
@@ -165,10 +163,9 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "[[closure]].as_slice()[0]"},
         });
         check_compiler_errors(cases);
-    });
+    };
 
-    ct::test(
-        "Compiler diagnostics: slice methods enforce their operand contracts",
+    "Compiler diagnostics: slice methods enforce their operand contracts"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "array borrowing takes no arguments",
@@ -189,8 +186,7 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "false"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 });
 
 } // namespace

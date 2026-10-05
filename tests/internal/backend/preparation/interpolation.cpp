@@ -10,11 +10,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Format preparation: static contents fold while runtime holes retain source operands",
+const TestSuite suite([] static noexcept {
+    "Format preparation: static contents fold while runtime holes retain source operands"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view body;
@@ -42,7 +39,7 @@ const ct::Suite tests([] static noexcept {
                 {R"(return f"{42:65537}";)", std::nullopt},
                 {R"(return f"x{42:65536}";)", std::nullopt},
             });
-            ct::each(
+            each(
                 scenarios,
                 [](const Scenario& scenario) static noexcept -> std::string_view {
                     return scenario.body;
@@ -64,33 +61,31 @@ const ct::Suite tests([] static noexcept {
                                     return;
                                 }
                                 const auto selected_plan = prepare_operation(program, expression);
-                                if (!(ct::expect(selected_plan != nullptr)
+                                if (!(expect(selected_plan != nullptr)
                                           .note("scenario.body: ", scenario.body))) {
                                     return;
                                 }
                                 const auto& preparation = std::get<PreparedFormat>(*selected_plan);
                                 ++formats;
-                                ct::expect(!(expression.constant.has_value()))
+                                expect(!(expression.constant.has_value()))
                                     .note("scenario.body: ", scenario.body);
                                 const auto* prepared =
                                     std::get_if<PreparedFormatText>(&preparation);
-                                ct::expect((prepared != nullptr) == scenario.contents.has_value())
+                                expect((prepared != nullptr) == scenario.contents.has_value())
                                     .note("scenario.body: ", scenario.body);
                                 if (prepared && scenario.contents) {
-                                    ct::expect(prepared->text == *scenario.contents)
+                                    expect(prepared->text == *scenario.contents)
                                         .note("scenario.body: ", scenario.body);
                                 }
                             }
                         );
                     }
-                    ct::expect(formats == 1uz).note("scenario.body: ", scenario.body);
+                    expect(formats == 1uz).note("scenario.body: ", scenario.body);
                 }
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Format preparation: mixed builtin holes publish an ordered residual format",
+    "Format preparation: mixed builtin holes publish an ordered residual format"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view expression;
@@ -114,7 +109,7 @@ const ct::Suite tests([] static noexcept {
                 {R"(f"{42}{1:65537}/{value}")", "42{0:65537}/{1}", {1uz, 2uz}, 3uz},
                 {R"(f"{1:65536}/{value}")", std::nullopt, {}, 2uz},
             });
-            ct::each(
+            each(
                 scenarios,
                 [](const Scenario& scenario) static noexcept -> std::string_view {
                     return scenario.expression;
@@ -137,24 +132,22 @@ const ct::Suite tests([] static noexcept {
                                     return;
                                 }
                                 const auto selected_plan = prepare_operation(program, expression);
-                                if (!(ct::expect(selected_plan != nullptr)
+                                if (!(expect(selected_plan != nullptr)
                                           .note("scenario.expression: ", scenario.expression))) {
                                     return;
                                 }
                                 const auto& preparation = std::get<PreparedFormat>(*selected_plan);
                                 ++count;
-                                ct::expect(!(expression.constant.has_value()))
+                                expect(!(expression.constant.has_value()))
                                     .note("scenario.expression: ", scenario.expression);
-                                ct::expect(
-                                    !(std::holds_alternative<PreparedFormatText>(preparation))
-                                )
+                                expect(!(std::holds_alternative<PreparedFormatText>(preparation)))
                                     .note("scenario.expression: ", scenario.expression);
-                                ct::expect(format->operands.size() == scenario.operands)
+                                expect(format->operands.size() == scenario.operands)
                                     .note("scenario.expression: ", scenario.expression);
                                 const auto* delegated =
                                     std::get_if<PreparedDelegatedFormat>(&preparation);
                                 const auto indices = prepared_format_operands(preparation);
-                                if (!(ct::expect(
+                                if (!(expect(
                                           (indices.size() < format->operands.size())
                                           == scenario.remainder.has_value()
                                     )
@@ -162,24 +155,22 @@ const ct::Suite tests([] static noexcept {
                                     return;
                                 }
                                 if (scenario.remainder) {
-                                    ct::expect_range_equal(indices, scenario.indices)
+                                    expect_range_equal(indices, scenario.indices)
                                         .note("scenario.expression: ", scenario.expression);
                                     if (delegated != nullptr) {
-                                        ct::expect(delegated->format_string == *scenario.remainder)
+                                        expect(delegated->format_string == *scenario.remainder)
                                             .note("scenario.expression: ", scenario.expression);
                                     }
                                 }
                             }
                         );
                     }
-                    ct::expect(count == 1uz).note("scenario.expression: ", scenario.expression);
+                    expect(count == 1uz).note("scenario.expression: ", scenario.expression);
                 }
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Format preparation: delegated residual byte budgets include escaped braces",
+    "Format preparation: delegated residual byte budgets include escaped braces"_test =
         [] static noexcept {
             for (const auto length : {32765uz, 32766uz}) {
                 const auto braces = std::string(length, '{');
@@ -196,12 +187,12 @@ const ct::Suite tests([] static noexcept {
                         [&](const SemanticExpression& expression) noexcept {
                             if (const auto* format = std::get_if<SemFormat>(&expression.value)) {
                                 const auto selected_plan = prepare_operation(program, expression);
-                                if (!ct::expect(selected_plan != nullptr)) {
+                                if (!expect(selected_plan != nullptr)) {
                                     return;
                                 }
                                 const auto& preparation = std::get<PreparedFormat>(*selected_plan);
                                 ++count;
-                                ct::expect(
+                                expect(
                                     (prepared_format_operands(preparation).size()
                                      < format->operands.size())
                                     == (length == 32765uz)
@@ -210,13 +201,11 @@ const ct::Suite tests([] static noexcept {
                         }
                     );
                 }
-                ct::expect(count == 1uz);
+                expect(count == 1uz);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Format preparation: delegated format strings preserve opaque braces",
+    "Format preparation: delegated format strings preserve opaque braces"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         fn format(value: i32) -> String => f"{42}/{value:\u{7b}}";
@@ -224,7 +213,7 @@ const ct::Suite tests([] static noexcept {
             auto checked = false;
             for (const auto callable : test_function_callables(program)) {
                 const auto body = program.declarations().body_for_callable(callable);
-                if (!ct::expect(body.has_value())) {
+                if (!expect(body.has_value())) {
                     return;
                 }
                 visit_semantic_nodes(
@@ -232,26 +221,25 @@ const ct::Suite tests([] static noexcept {
                     [&](const SemanticExpression& expression) noexcept {
                         if (std::holds_alternative<SemFormat>(expression.value)) {
                             const auto selected_plan = prepare_operation(program, expression);
-                            if (!ct::expect(selected_plan != nullptr)) {
+                            if (!expect(selected_plan != nullptr)) {
                                 return;
                             }
                             const auto& preparation = std::get<PreparedFormat>(*selected_plan);
                             const auto* delegated =
                                 std::get_if<PreparedDelegatedFormat>(&preparation);
-                            if (!ct::expect(delegated != nullptr)) {
+                            if (!expect(delegated != nullptr)) {
                                 return;
                             }
-                            ct::expect(delegated->format_string == "42/{0:{}");
-                            ct::expect(delegated->operand_indices == std::vector<std::size_t> {1});
-                            ct::expect(delegated->encoding == FormatResultEncoding::Unproven);
+                            expect(delegated->format_string == "42/{0:{}");
+                            expect(delegated->operand_indices == std::vector<std::size_t> {1});
+                            expect(delegated->encoding == FormatResultEncoding::Unproven);
                             checked = true;
                         }
                     }
                 );
             }
-            ct::expect(checked);
-        }
-    );
+            expect(checked);
+        };
 });
 
 } // namespace

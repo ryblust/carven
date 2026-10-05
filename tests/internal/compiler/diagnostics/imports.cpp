@@ -16,11 +16,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: unused imports are tracked per import declaration",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: unused imports are tracked per import declaration"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto used_provider = *sources.append_virtual(
@@ -62,27 +59,25 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
             const auto* unused =
-                ct::find_diagnostic(result->diagnostics, DiagnosticCode::LintUnusedImport);
-            if (!ct::expect(unused != nullptr)) {
+                find_diagnostic(result->diagnostics, DiagnosticCode::LintUnusedImport);
+            if (!expect(unused != nullptr)) {
                 return;
             }
-            if (!ct::expect(unused->attachment.primary.has_value())) {
+            if (!expect(unused->attachment.primary.has_value())) {
                 return;
             }
-            ct::expect((unused->attachment.primary->span.source_id == app));
-            ct::expect_equal(
+            expect((unused->attachment.primary->span.source_id == app));
+            expect_equal(
                 sources.slice(unused->attachment.primary->span),
                 std::string_view("import unused_provider using spare;")
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: multiple wildcard providers remain ambiguous at use",
+    "Compiler diagnostics: multiple wildcard providers remain ambiguous at use"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto first =
@@ -119,27 +114,25 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect(!(result.has_value()))) {
+            if (!expect(!(result.has_value()))) {
                 return;
             }
-            if (!ct::expect_equal(result.error().size(), 1u)) {
+            if (!expect_equal(result.error().size(), 1u)) {
                 return;
             }
-            const auto* ambiguous =
-                ct::find_diagnostic(result.error(), DiagnosticCode::NameAmbiguous);
-            if (!ct::expect(ambiguous != nullptr)) {
+            const auto* ambiguous = find_diagnostic(result.error(), DiagnosticCode::NameAmbiguous);
+            if (!expect(ambiguous != nullptr)) {
                 return;
             }
-            if (!ct::expect(ambiguous->attachment.primary.has_value())) {
+            if (!expect(ambiguous->attachment.primary.has_value())) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 sources.slice(ambiguous->attachment.primary->span),
                 std::string_view("value")
             );
-            ct::expect_equal(ambiguous->attachment.related.size(), 2u);
-        }
-    );
+            expect_equal(ambiguous->attachment.related.size(), 2u);
+        };
 });
 
 } // namespace

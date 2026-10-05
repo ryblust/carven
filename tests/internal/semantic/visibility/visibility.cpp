@@ -9,33 +9,26 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto path(std::string_view value) noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value(value);
-    ct::require(result.has_value());
+    require(result.has_value());
     return std::move(*result);
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic visibility: program-module audiences derive from the owned provenance catalog",
+const TestSuite suite([] static noexcept {
+    "Semantic visibility: program-module audiences derive from the owned provenance catalog"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto alpha_api_source = sources.append_virtual("alpha-api.cv", "");
             const auto alpha_main_source = sources.append_virtual("alpha-main.cv", "");
             const auto beta_api_source = sources.append_virtual("beta-api.cv", "");
-            if (!ct::expect(alpha_api_source.has_value())) {
+            if (!expect(alpha_api_source.has_value())) {
                 return;
             }
-            if (!ct::expect(alpha_main_source.has_value())) {
+            if (!expect(alpha_main_source.has_value())) {
                 return;
             }
-            if (!ct::expect(beta_api_source.has_value())) {
+            if (!expect(beta_api_source.has_value())) {
                 return;
             }
 
@@ -63,46 +56,46 @@ const ct::Suite tests([] static noexcept {
             const auto private_audience =
                 declaration_audience(DeclarationVisibility::Module, alpha_api, view);
             const auto* private_module = std::get_if<ModuleAudience>(&private_audience);
-            if (!ct::expect(private_module != nullptr)) {
+            if (!expect(private_module != nullptr)) {
                 return;
             }
-            ct::expect(((private_module->module_id) == (alpha_api)))
+            expect(((private_module->module_id) == (alpha_api)))
                 .note("private_module->module_id == alpha_api");
 
             const auto alpha_audience =
                 declaration_audience(DeclarationVisibility::ModuleDomain, alpha_api, view);
             const auto* alpha_domain = std::get_if<ModuleDomainAudience>(&alpha_audience);
-            if (!ct::expect(alpha_domain != nullptr)) {
+            if (!expect(alpha_domain != nullptr)) {
                 return;
             }
-            if (!ct::expect(alpha_domain->prefix.craft_name().has_value())) {
+            if (!expect(alpha_domain->prefix.craft_name().has_value())) {
                 return;
             }
-            ct::expect_equal(*alpha_domain->prefix.craft_name(), std::string_view("alpha"));
+            expect_equal(*alpha_domain->prefix.craft_name(), std::string_view("alpha"));
 
             const auto compilation_audience =
                 declaration_audience(DeclarationVisibility::Compilation, alpha_api, view);
-            ct::expect(std::holds_alternative<CompilationAudience>(compilation_audience));
+            expect(std::holds_alternative<CompilationAudience>(compilation_audience));
 
-            ct::expect(
+            expect(
                 declaration_visible_to(DeclarationVisibility::Module, alpha_api, alpha_api, view)
             );
-            ct::expect(!(
+            expect(!(
                 declaration_visible_to(DeclarationVisibility::Module, alpha_api, alpha_main, view)
             ));
-            ct::expect(declaration_visible_to(
+            expect(declaration_visible_to(
                 DeclarationVisibility::ModuleDomain,
                 alpha_api,
                 alpha_main,
                 view
             ));
-            ct::expect(!(declaration_visible_to(
+            expect(!(declaration_visible_to(
                 DeclarationVisibility::ModuleDomain,
                 alpha_api,
                 beta_api,
                 view
             )));
-            ct::expect(declaration_visible_to(
+            expect(declaration_visible_to(
                 DeclarationVisibility::Compilation,
                 alpha_api,
                 beta_api,
@@ -113,14 +106,13 @@ const ct::Suite tests([] static noexcept {
                 declaration_audience(DeclarationVisibility::Module, beta_api, view);
             const auto beta_audience =
                 declaration_audience(DeclarationVisibility::ModuleDomain, beta_api, view);
-            ct::expect(audience_subset_of(private_audience, alpha_audience, view));
-            ct::expect(audience_subset_of(private_audience, compilation_audience, view));
-            ct::expect(!(audience_subset_of(beta_private_audience, alpha_audience, view)));
-            ct::expect(audience_subset_of(alpha_audience, compilation_audience, view));
-            ct::expect(!(audience_subset_of(compilation_audience, alpha_audience, view)));
-            ct::expect(!(audience_subset_of(alpha_audience, beta_audience, view)));
-        }
-    );
+            expect(audience_subset_of(private_audience, alpha_audience, view));
+            expect(audience_subset_of(private_audience, compilation_audience, view));
+            expect(!(audience_subset_of(beta_private_audience, alpha_audience, view)));
+            expect(audience_subset_of(alpha_audience, compilation_audience, view));
+            expect(!(audience_subset_of(compilation_audience, alpha_audience, view)));
+            expect(!(audience_subset_of(alpha_audience, beta_audience, view)));
+        };
 });
 
 } // namespace

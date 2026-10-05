@@ -5,11 +5,9 @@ import :test.harness.framework;
 import :test.internal.compiler.diagnostics.fixture;
 import std;
 
-namespace ct = carven::testing;
-
 namespace {
-const ct::Suite simd_diagnostics_tests([] static noexcept {
-    ct::test("Compiler: SIMD checks logical types and static bounds", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Compiler: SIMD checks logical types and static bounds"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "wide byte lane bounds",
              .source = R"(const x = u8x32::splat(7).lane(32);)",
@@ -118,6 +116,6 @@ const ct::Suite simd_diagnostics_tests([] static noexcept {
              .primary_text = "i32"},
         });
         check_compiler_errors(cases);
-    });
+    };
 });
 }

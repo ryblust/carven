@@ -7,11 +7,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Const functions: execution failures identify the operation inside the called body",
+const TestSuite suite([] static noexcept {
+    "Const functions: execution failures identify the operation inside the called body"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "division by a value supplied at the constant call",
@@ -31,10 +28,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = R"(f"{7:0{width}}")"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test("Const functions: definitions obey source ownership contracts without execution", [] static noexcept {
+    "Const functions: definitions obey source ownership contracts without execution"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "view of a local owner cannot escape",
              .source =
@@ -58,10 +54,9 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "text.clear()"},
         });
         check_compiler_errors(cases);
-    });
+    };
 
-    ct::test(
-        "Const functions: static execution cannot observe or publish expired text views",
+    "Const functions: static execution cannot observe or publish expired text views"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "returned text cannot outlive its local owner",
@@ -126,11 +121,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "!="},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Const functions: typed intermediate values cannot corrupt constant publication",
+    "Const functions: typed intermediate values cannot corrupt constant publication"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "owning literal cannot become a borrowed enum constant payload",
@@ -144,8 +137,7 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "E::Value(make())"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 });
 
 } // namespace

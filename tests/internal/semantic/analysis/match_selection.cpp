@@ -11,10 +11,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Match selection: rejection facts follow the remaining domain", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Match selection: rejection facts follow the remaining domain"_test = [] static noexcept {
         struct Case final {
             std::string_view name;
             std::string_view source;
@@ -69,7 +67,7 @@ const ct::Suite tests([] static noexcept {
                 .rejection = {true, false},
             },
         };
-        ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+        each(cases, &Case::name, [](const Case& input) static noexcept {
             const auto program = analyze_test_program(std::string(input.source));
             auto matches = 0uz;
             for (const auto entry : program.bodies().entries()) {
@@ -89,23 +87,23 @@ const ct::Suite tests([] static noexcept {
                                 {.alternatives = {arm.pattern}, .guarded = arm.guard.has_value()}
                             );
                         }
-                        ct::expect(actual == input.rejection);
+                        expect(actual == input.rejection);
                         const auto coverage = compute_pattern_coverage(
                             program,
                             entry.value.pattern_table(),
                             match->subject->type.resolved(),
                             arms
                         );
-                        if (!ct::expect(coverage.has_value())) {
+                        if (!expect(coverage.has_value())) {
                             return;
                         }
-                        ct::expect(coverage->pattern_rejection == actual);
+                        expect(coverage->pattern_rejection == actual);
                     }
                 );
             }
-            ct::expect(matches > 0uz);
+            expect(matches > 0uz);
         });
-    });
+    };
 });
 
 } // namespace

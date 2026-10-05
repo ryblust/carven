@@ -10,42 +10,32 @@ namespace {
 
 constexpr auto site = carven::runtime::SourceSite::native();
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Runtime: nested test contexts restore the caller and isolate failure state",
+const TestSuite suite([] static noexcept {
+    "Runtime: nested test contexts restore the caller and isolate failure state"_test =
         [] static noexcept {
             auto outer = carven::runtime::TestContext();
             auto inner = carven::runtime::TestContext(
                 +[](const carven::runtime::TestFailure&) static noexcept {}
             );
             outer.begin_case("module", "outer");
-            ct::expect(
-                std::addressof(carven::runtime::current_test(site)) == std::addressof(outer)
-            );
-            if (!ct::expect(carven::runtime::active_test_report != nullptr)) {
+            expect(std::addressof(carven::runtime::current_test(site)) == std::addressof(outer));
+            if (!expect(carven::runtime::active_test_report != nullptr)) {
                 return;
             }
-            ct::expect(carven::runtime::active_test_report->case_name == "outer");
+            expect(carven::runtime::active_test_report->case_name == "outer");
             inner.begin_case("module", "inner");
-            ct::expect(carven::runtime::active_test_report->case_name == "inner");
-            ct::expect(
-                std::addressof(carven::runtime::current_test(site)) == std::addressof(inner)
-            );
+            expect(carven::runtime::active_test_report->case_name == "inner");
+            expect(std::addressof(carven::runtime::current_test(site)) == std::addressof(inner));
             carven::runtime::current_test(site)
                 .report_failure({"test.cv", 1, 1}, "check", "false", std::nullopt, {});
             inner.end_case();
-            ct::expect(inner.result() == 1);
-            ct::expect(
-                std::addressof(carven::runtime::current_test(site)) == std::addressof(outer)
-            );
-            ct::expect(carven::runtime::active_test_report->case_name == "outer");
+            expect(inner.result() == 1);
+            expect(std::addressof(carven::runtime::current_test(site)) == std::addressof(outer));
+            expect(carven::runtime::active_test_report->case_name == "outer");
             outer.end_case();
-            ct::expect(carven::runtime::active_test_report == nullptr);
-            ct::expect(outer.result() == 0);
-        }
-    );
+            expect(carven::runtime::active_test_report == nullptr);
+            expect(outer.result() == 0);
+        };
 });
 
 } // namespace

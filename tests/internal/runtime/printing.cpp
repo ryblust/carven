@@ -10,8 +10,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct StatefulEmitter final {
     int offset;
 
@@ -43,45 +41,40 @@ static_assert(!RangeEmitterType<StatefulEmitter>);
 static_assert(StructuralEmitter<StatefulEmitter>);
 static_assert(!StructuralEmitter<decltype([](auto&, int) static noexcept {})>);
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Runtime printing: text arguments retain separators Unicode and NUL",
-        [] static noexcept {
-            const auto stream =
-                std::unique_ptr<std::FILE, decltype(&std::fclose)>(std::tmpfile(), &std::fclose);
-            if (!ct::expect(stream != nullptr)) {
-                return;
-            }
-            carven::runtime::detail::print_values<true>(
-                stream.get(),
-                std::string_view("42"),
-                std::string_view("true"),
-                std::string_view("我"),
-                std::string_view("\0", 1),
-                std::string_view("raw")
-            );
-            std::rewind(stream.get());
-            auto bytes = std::array<char, 64uz>();
-            const auto size = std::fread(bytes.data(), 1uz, bytes.size(), stream.get());
-            ct::expect(
-                std::string_view(bytes.data(), size)
-                == std::string_view("42 true 我 \0 raw\n", 18uz)
-            );
+const TestSuite suite([] static noexcept {
+    "Runtime printing: text arguments retain separators Unicode and NUL"_test = [] static noexcept {
+        const auto stream =
+            std::unique_ptr<std::FILE, decltype(&std::fclose)>(std::tmpfile(), &std::fclose);
+        if (!expect(stream != nullptr)) {
+            return;
         }
-    );
+        carven::runtime::detail::print_values<true>(
+            stream.get(),
+            std::string_view("42"),
+            std::string_view("true"),
+            std::string_view("我"),
+            std::string_view("\0", 1),
+            std::string_view("raw")
+        );
+        std::rewind(stream.get());
+        auto bytes = std::array<char, 64uz>();
+        const auto size = std::fread(bytes.data(), 1uz, bytes.size(), stream.get());
+        expect(
+            std::string_view(bytes.data(), size) == std::string_view("42 true 我 \0 raw\n", 18uz)
+        );
+    };
 
-    ct::test(
-        "Runtime printing: structural display escapes text and bounds sequences and UTF8",
+    "Runtime printing: structural display escapes text and bounds sequences and UTF8"_test =
         [] static noexcept {
             auto writer = carven::runtime::DisplayWriter();
             writer.quoted(std::string_view("a\0\"\\\n", 5));
-            ct::expect(writer.result() == "\"a\\0\\\"\\\\\\n\"");
+            expect(writer.result() == "\"a\\0\\\"\\\\\\n\"");
 
             auto sequence = carven::runtime::DisplayWriter();
             const auto values = std::array<int, 65>();
             sequence.sequence(values, carven::runtime::stateless_value<ScalarEmitter>, 0);
-            ct::expect(sequence.result().starts_with("[\n    0,\n"));
-            ct::expect(sequence.result().ends_with("\n    ...,\n]"));
+            expect(sequence.result().starts_with("[\n    0,\n"));
+            expect(sequence.result().ends_with("\n    ...,\n]"));
 
             auto empty = carven::runtime::DisplayWriter();
             empty.sequence(
@@ -89,51 +82,49 @@ const ct::Suite tests([] static noexcept {
                 carven::runtime::stateless_value<ScalarEmitter>,
                 0
             );
-            ct::expect(empty.result() == "[]");
+            expect(empty.result() == "[]");
 
             auto bounded = carven::runtime::DisplayWriter();
             bounded.text(std::string(16383, 'a'));
             bounded.text("我");
-            ct::expect(bounded.result().size() == 16386uz);
-            ct::expect(bounded.result().ends_with("a..."));
-        }
-    );
-    ct::test("Runtime display: explicit depth bounds each value independently", [] static noexcept {
+            expect(bounded.result().size() == 16386uz);
+            expect(bounded.result().ends_with("a..."));
+        };
+    "Runtime display: explicit depth bounds each value independently"_test = [] static noexcept {
         auto writer = carven::runtime::DisplayWriter();
         writer.scalar(1, 7);
         writer.scalar(2, 8);
         writer.scalar(3, 9);
         writer.line(0);
         writer.scalar(4, 0);
-        ct::expect_equal(writer.result(), "1......\n4");
+        expect_equal(writer.result(), "1......\n4");
 
         auto calls = 0;
         const auto emit = [&](auto& output, int value, std::size_t depth) noexcept {
             ++calls;
-            ct::expect_equal(depth, 8uz);
+            expect_equal(depth, 8uz);
             output.scalar(value, depth);
         };
         auto siblings = carven::runtime::DisplayWriter();
         siblings.range(IntRange {.first = 1, .last = 2, .inclusive = true}, emit, 7);
         siblings.range(IntRange {.first = 3, .last = 4, .inclusive = false}, emit, 8);
         siblings.scalar(5, 0);
-        ct::expect_equal(calls, 2);
-        ct::expect_equal(siblings.result(), ".....=......5");
-    });
-    ct::test("Runtime display: nested sequences indent independent siblings", [] static noexcept {
+        expect_equal(calls, 2);
+        expect_equal(siblings.result(), ".....=......5");
+    };
+    "Runtime display: nested sequences indent independent siblings"_test = [] static noexcept {
         const auto nested = std::array {std::array {1, 2}, std::array {3, 4}};
         using Emit =
             carven::runtime::SequenceDisplay<carven::runtime::SequenceDisplay<ScalarEmitter>>;
         auto writer = carven::runtime::DisplayWriter();
         carven::runtime::stateless_value<Emit>(writer, nested, 0);
         writer.scalar(5, 0);
-        ct::expect_equal(
+        expect_equal(
             writer.result(),
             "[\n    [\n        1,\n        2,\n    ],\n    [\n        3,\n        4,\n    ],\n]5"
         );
-    });
-    ct::test(
-        "Runtime display: callbacks borrow noncopyable state during consumption",
+    };
+    "Runtime display: callbacks borrow noncopyable state during consumption"_test =
         [] static noexcept {
             struct Emitter final {
                 int calls;
@@ -172,12 +163,12 @@ const ct::Suite tests([] static noexcept {
             auto writer = carven::runtime::DisplayWriter();
             writer.sequence(std::array {1, 2}, emit, 0);
             writer.range(IntRange {.first = 3, .last = 4, .inclusive = false}, emit, 0);
-            ct::expect_equal(emit.calls, 4);
-            ct::expect_equal(writer.result(), "[\n    2,\n    4,\n]6..8");
+            expect_equal(emit.calls, 4);
+            expect_equal(writer.result(), "[\n    2,\n    4,\n]6..8");
 
             auto compare = Compare();
             auto report = carven::runtime::DisplayWriter();
-            ct::expect(!carven::runtime::observe_comparison(
+            expect(!carven::runtime::observe_comparison(
                 report,
                 carven::runtime::structural_display(5, emit),
                 carven::runtime::structural_display(6, emit),
@@ -185,18 +176,18 @@ const ct::Suite tests([] static noexcept {
                 "left",
                 "right"
             ));
-            ct::expect_equal(compare.calls, 1);
-            ct::expect_equal(emit.calls, 6);
-            ct::expect_equal(report.result(), "left: 10\nright: 12\n");
+            expect_equal(compare.calls, 1);
+            expect_equal(emit.calls, 6);
+            expect_equal(report.result(), "left: 10\nright: 12\n");
 
-            ct::scenario("temporary callbacks are borrowed as lvalues", [] static noexcept {
+            scenario("temporary callbacks are borrowed as lvalues", [] static noexcept {
                 auto output = carven::runtime::DisplayWriter();
                 output.sequence(std::array {1, 2}, Emitter(), 0);
                 output.range(IntRange {.first = 3, .last = 4, .inclusive = false}, Emitter(), 0);
-                ct::expect_equal(output.result(), "[\n    2,\n    4,\n]4..6");
+                expect_equal(output.result(), "[\n    2,\n    4,\n]4..6");
 
                 auto explanation = carven::runtime::DisplayWriter();
-                ct::expect(!carven::runtime::observe_comparison(
+                expect(!carven::runtime::observe_comparison(
                     explanation,
                     carven::runtime::structural_display(5, Emitter()),
                     carven::runtime::structural_display(6, Emitter()),
@@ -204,12 +195,12 @@ const ct::Suite tests([] static noexcept {
                     "left",
                     "right"
                 ));
-                ct::expect_equal(explanation.result(), "left: 6\nright: 7\n");
+                expect_equal(explanation.result(), "left: 6\nright: 7\n");
             });
 
             const auto stream =
                 std::unique_ptr<std::FILE, decltype(&std::fclose)>(std::tmpfile(), &std::fclose);
-            if (!ct::expect(stream != nullptr)) {
+            if (!expect(stream != nullptr)) {
                 return;
             }
             carven::runtime::detail::print_values<true>(
@@ -219,23 +210,21 @@ const ct::Suite tests([] static noexcept {
             std::rewind(stream.get());
             auto bytes = std::array<char, 8uz>();
             const auto size = std::fread(bytes.data(), 1uz, bytes.size(), stream.get());
-            ct::expect_equal(std::string_view(bytes.data(), size), "8\n");
-        }
-    );
-    ct::test("Runtime display: byte truncation stops sequence callbacks", [] static noexcept {
+            expect_equal(std::string_view(bytes.data(), size), "8\n");
+        };
+    "Runtime display: byte truncation stops sequence callbacks"_test = [] static noexcept {
         auto emissions = 0;
         const auto emit = [&](auto& output, int, std::size_t depth) noexcept {
             ++emissions;
-            ct::expect_equal(depth, 1uz);
+            expect_equal(depth, 1uz);
             output.text(std::string(17000uz, 'a'));
         };
         auto writer = carven::runtime::DisplayWriter();
         writer.sequence(std::array {1, 2}, emit, 0);
-        ct::expect_equal(emissions, 1);
-        ct::expect(writer.result().ends_with("..."));
-    });
-    ct::test(
-        "Runtime reports: repeated operand text is omitted before consuming the report budget",
+        expect_equal(emissions, 1);
+        expect(writer.result().ends_with("..."));
+    };
+    "Runtime reports: repeated operand text is omitted before consuming the report budget"_test =
         [] static noexcept {
             const auto bytes = std::string(10'000uz, 'a');
             const auto source = std::format("\"{}\"", bytes);
@@ -254,7 +243,7 @@ const ct::Suite tests([] static noexcept {
                 return first == second;
             };
             auto writer = carven::runtime::DisplayWriter();
-            ct::expect(!carven::runtime::observe_comparison(
+            expect(!carven::runtime::observe_comparison(
                 writer,
                 carven::runtime::structural_display(left, emit),
                 carven::runtime::structural_display(right, emit),
@@ -262,11 +251,11 @@ const ct::Suite tests([] static noexcept {
                 source,
                 "other"
             ));
-            ct::expect_equal(writer.result(), "other: \"b\"\n");
-            ct::expect_equal(comparisons, 1);
-            ct::expect_equal(emissions, 2);
+            expect_equal(writer.result(), "other: \"b\"\n");
+            expect_equal(comparisons, 1);
+            expect_equal(emissions, 2);
             auto passed = carven::runtime::DisplayWriter();
-            ct::expect(
+            expect(
                 carven::runtime::observe_comparison(
                     passed,
                     carven::runtime::structural_display(left, emit),
@@ -276,11 +265,10 @@ const ct::Suite tests([] static noexcept {
                     source
                 )
             );
-            ct::expect(passed.result().empty());
-            ct::expect_equal(comparisons, 2);
-            ct::expect_equal(emissions, 2);
-        }
-    );
+            expect(passed.result().empty());
+            expect_equal(comparisons, 2);
+            expect_equal(emissions, 2);
+        };
 });
 
 } // namespace

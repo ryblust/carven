@@ -15,11 +15,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: explicit native construction targets need no deduction query",
+const TestSuite suite([] static noexcept {
+    "Generation: explicit native construction targets need no deduction query"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -37,7 +34,7 @@ const ct::Suite tests([] static noexcept {
                 auto visit_type(TargetTypeID id) noexcept -> bool {
                     const auto& type = unit.type(id);
                     if (const auto* deduced = std::get_if<TargetDecltypeType>(&type.value)) {
-                        ct::expect(!(std::holds_alternative<TargetConstructionExpr>(
+                        expect(!(std::holds_alternative<TargetConstructionExpr>(
                             deduced->expression().value
                         )));
                     }
@@ -60,17 +57,15 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query {.unit = unit};
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
                 constructions += query.constructions;
             }
-            ct::expect(constructions == 1uz);
-        }
-    );
+            expect(constructions == 1uz);
+        };
 
-    ct::test(
-        "Generation: explicit pure owner returns permit native return construction",
+    "Generation: explicit pure owner returns permit native return construction"_test =
         [] static noexcept {
             struct Scenario final {
                 const char* name;
@@ -101,7 +96,7 @@ const ct::Suite tests([] static noexcept {
                     .returns_name = false
                 },
             };
-            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+            each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
                 const auto compilation = PlannedCompilation::build(
                     analyze_test_program(scenario.source),
                     {.test_mode = TestGenerationMode::None,
@@ -127,17 +122,16 @@ const ct::Suite tests([] static noexcept {
                 auto query = Query {.returns = 0uz, .named_returns = 0uz};
                 for (const auto artifact : compilation.target().artifacts()) {
                     const auto unit = lower_artifact(compilation, artifact.id);
-                    if (!(ct::expect(traverse_target_unit(unit.sections(), query)))) {
+                    if (!(expect(traverse_target_unit(unit.sections(), query)))) {
                         return;
                     }
                 }
-                if (!(ct::expect_equal(query.returns, 1uz))) {
+                if (!(expect_equal(query.returns, 1uz))) {
                     return;
                 }
-                ct::expect_equal(query.named_returns, scenario.returns_name ? 1uz : 0uz);
+                expect_equal(query.named_returns, scenario.returns_name ? 1uz : 0uz);
             });
-        }
-    );
+        };
 });
 
 } // namespace

@@ -6,8 +6,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct TaskTrace final {
     std::size_t entered;
     std::size_t exited;
@@ -53,45 +51,39 @@ auto dependency(std::size_t depth, bool fail, TaskTrace& trace) noexcept
     co_return *child + 1uz;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Continuation tasks: dependencies preserve one execution and ordered cleanup",
+const TestSuite suite([] static noexcept {
+    "Continuation tasks: dependencies preserve one execution and ordered cleanup"_test =
         [] static noexcept {
             constexpr auto depth = 32768uz;
             const auto outcomes = std::array {false, true};
-            ct::each(
+            each(
                 outcomes,
                 [](bool fail) static noexcept { return fail ? "failure" : "success"; },
                 [=](bool fail) noexcept {
                     auto trace = TaskTrace {.entered = 0uz, .exited = 0uz, .ordered = true};
                     const auto result = dependency(depth, fail, trace).run();
-                    ct::expect_equal(result.has_value(), !fail);
+                    expect_equal(result.has_value(), !fail);
                     if (result) {
-                        ct::expect_equal(*result, depth);
+                        expect_equal(*result, depth);
                     } else {
-                        ct::expect_equal(result.error(), TaskFailure::Leaf);
+                        expect_equal(result.error(), TaskFailure::Leaf);
                     }
-                    ct::expect_equal(trace.entered, depth + 1uz);
-                    ct::expect_equal(trace.exited, trace.entered);
-                    ct::expect(trace.ordered);
+                    expect_equal(trace.entered, depth + 1uz);
+                    expect_equal(trace.exited, trace.entered);
+                    expect(trace.ordered);
                 }
             );
-        }
-    );
+        };
 
-    ct::test("Continuation tasks: unrequested dependencies perform no work", [] static noexcept {
+    "Continuation tasks: unrequested dependencies perform no work"_test = [] static noexcept {
         auto trace = TaskTrace {.entered = 0uz, .exited = 0uz, .ordered = true};
         {
             const auto task = dependency(1uz, false, trace);
-            ct::expect_equal(trace.entered, 0uz);
+            expect_equal(trace.entered, 0uz);
         }
-        ct::expect_equal(trace.entered, 0uz);
-        ct::expect_equal(trace.exited, 0uz);
-    });
+        expect_equal(trace.entered, 0uz);
+        expect_equal(trace.exited, 0uz);
+    };
 });
 
 } // namespace

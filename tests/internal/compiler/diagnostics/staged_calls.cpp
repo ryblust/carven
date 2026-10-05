@@ -8,10 +8,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Compiler: static arguments require an explicit constant source", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Compiler: static arguments require an explicit constant source"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {
                 .name = "let initialized by a literal",
@@ -88,10 +86,9 @@ const ct::Suite tests([] static noexcept {
             },
         });
         check_compiler_errors(cases);
-    });
+    };
 
-    ct::test(
-        "Compiler: static parameters cannot escape as runtime values or cross an open native ABI",
+    "Compiler: static parameters cannot escape as runtime values or cross an open native ABI"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {
@@ -109,10 +106,9 @@ const ct::Suite tests([] static noexcept {
                 },
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test("Compiler: fixed body types and lambda definitions need closed static roots", [] static noexcept {
+    "Compiler: fixed body types and lambda definitions need closed static roots"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "a fixed array type cannot depend on an unbound static parameter",
              .source =
@@ -136,10 +132,9 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "value"},
         });
         check_compiler_errors(cases);
-    });
+    };
 
-    ct::test(
-        "Compiler: a failed static body reports its error once to every requester",
+    "Compiler: a failed static body reports its error once to every requester"_test =
         [] static noexcept {
             const auto cases = std::to_array<std::string_view>({
                 "const fn broken(const d: i32) -> i32 { const x = 1 / d; return x; } "
@@ -154,108 +149,100 @@ const ct::Suite tests([] static noexcept {
             });
             for (const auto source : cases) {
                 with_compiled_source(source, [](const auto&, const auto& result) static noexcept {
-                    ct::require(!result.has_value());
-                    ct::expect_equal(result.error().size(), 1uz);
-                    ct::expect_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
+                    require(!result.has_value());
+                    expect_equal(result.error().size(), 1uz);
+                    expect_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
                 });
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler: static control requires static inputs and integer ranges",
-        [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
-                {
-                    .name = "const for over a runtime range",
-                    .source = R"(fn use(count: i32) { const for index in 0..count {} })",
-                    .code = DiagnosticCode::ConstAdmission,
-                    .primary_text = "0..count",
-                },
-                {
-                    .name = "const for over an array",
-                    .source = R"(fn use() { const for value in [1, 2] {} })",
-                    .code = DiagnosticCode::ConstAdmission,
-                    .primary_text = "const",
-                },
-                {
-                    .name = "a captured static parameter is runtime closure storage",
-                    .source = R"(fn choose(const enabled: bool) -> i32 {
+    "Compiler: static control requires static inputs and integer ranges"_test = [] static noexcept {
+        const auto cases = std::to_array<CompilerErrorExpectation>({
+            {
+                .name = "const for over a runtime range",
+                .source = R"(fn use(count: i32) { const for index in 0..count {} })",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "0..count",
+            },
+            {
+                .name = "const for over an array",
+                .source = R"(fn use() { const for value in [1, 2] {} })",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "const",
+            },
+            {
+                .name = "a captured static parameter is runtime closure storage",
+                .source = R"(fn choose(const enabled: bool) -> i32 {
                     let select = [enabled]() -> i32 {
                         const if enabled { return 1; } else { return 0; }
                     };
                     return select();
                 }
                 fn caller() -> i32 => choose(true);)",
-                    .code = DiagnosticCode::ConstAdmission,
-                    .primary_text = "enabled",
-                },
-                {
-                    .name = "const if with a runtime condition",
-                    .source =
-                        R"(fn use(flag: bool) -> i32 { const if flag { return 1; } return 0; })",
-                    .code = DiagnosticCode::ConstAdmission,
-                    .primary_text = "flag",
-                },
-                {
-                    .name = "const if else-if arm with a runtime condition",
-                    .source = R"(fn use(const enabled: bool, flag: bool) -> i32 {
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "enabled",
+            },
+            {
+                .name = "const if with a runtime condition",
+                .source = R"(fn use(flag: bool) -> i32 { const if flag { return 1; } return 0; })",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "flag",
+            },
+            {
+                .name = "const if else-if arm with a runtime condition",
+                .source = R"(fn use(const enabled: bool, flag: bool) -> i32 {
                     const if enabled { return 1; } else if flag { return 2; }
                     return 0;
                 }
                 fn caller(flag: bool) -> i32 => use(true, flag);)",
-                    .code = DiagnosticCode::ConstAdmission,
-                    .primary_text = "flag",
-                },
-                {
-                    .name = "selected const if arm evaluates its static root",
-                    .source = R"(fn use(const divisor: i32) -> i32 {
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "flag",
+            },
+            {
+                .name = "selected const if arm evaluates its static root",
+                .source = R"(fn use(const divisor: i32) -> i32 {
                     const if divisor != 1 { const factor = 1 / divisor; return factor; }
                     return 1;
                 }
                 fn caller() -> i32 => use(0);)",
-                    .code = DiagnosticCode::ConstDivideByZero,
-                    .primary_text = "/",
-                },
-            });
-            check_compiler_errors(cases);
-        }
-    );
+                .code = DiagnosticCode::ConstDivideByZero,
+                .primary_text = "/",
+            },
+        });
+        check_compiler_errors(cases);
+    };
 
-    ct::test(
-        "Compiler: inactive runtime paths still require local static roots",
-        [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
-                {
-                    .name = "constant local in an unselected branch",
-                    .source = R"(fn use(runtime: i32) {
+    "Compiler: inactive runtime paths still require local static roots"_test = [] static noexcept {
+        const auto cases = std::to_array<CompilerErrorExpectation>({
+            {
+                .name = "constant local in an unselected branch",
+                .source = R"(fn use(runtime: i32) {
                 if false { const required = runtime; }
             })",
-                    .code = DiagnosticCode::ConstInitializer,
-                    .primary_text = "const required = runtime",
-                },
-                {
-                    .name = "constant local after a selected return",
-                    .source = R"(fn use(runtime: i32, const selected: bool) {
+                .code = DiagnosticCode::ConstInitializer,
+                .primary_text = "const required = runtime",
+            },
+            {
+                .name = "constant local after a selected return",
+                .source = R"(fn use(runtime: i32, const selected: bool) {
                 if selected { return; }
                 const required = runtime;
             }
             fn caller() { use(3, true); })",
-                    .code = DiagnosticCode::ConstInitializer,
-                    .primary_text = "const required = runtime",
-                },
-                {
-                    .name = "constant local reads a runtime range index",
-                    .source = R"(fn use(count: i32) {
+                .code = DiagnosticCode::ConstInitializer,
+                .primary_text = "const required = runtime",
+            },
+            {
+                .name = "constant local reads a runtime range index",
+                .source = R"(fn use(count: i32) {
                 for index in 0..count { if false { const required = index; } }
             })",
-                    .code = DiagnosticCode::ConstInitializer,
-                    .primary_text = "const required = index",
-                },
-            });
-            check_compiler_errors(cases);
-        }
-    );
+                .code = DiagnosticCode::ConstInitializer,
+                .primary_text = "const required = index",
+            },
+        });
+        check_compiler_errors(cases);
+    };
 });
 
 } // namespace

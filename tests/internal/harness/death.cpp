@@ -22,8 +22,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 #if defined(_WIN32)
 
 constexpr auto scenario_environment = "CARVEN_INTERNAL_DEATH_SCENARIO";
@@ -152,7 +150,7 @@ auto append_windows_argument(std::wstring& command, std::wstring_view argument) 
 }
 
 auto current_test_case_name() noexcept -> std::optional<std::string_view> {
-    const auto name = ct::current_test_name();
+    const auto name = current_test_name();
     if (name.empty()) {
         return std::nullopt;
     }
@@ -326,7 +324,7 @@ auto run_death_test(
     // Windows replays a selected case from its beginning. A repeated scenario
     // would otherwise observe the first action again instead of the requested one.
     static auto scenarios = std::unordered_map<std::string, std::unordered_set<std::string>>();
-    const auto test_name = ct::current_test_name();
+    const auto test_name = current_test_name();
     if (test_name.empty() || !scenarios[std::string(test_name)].emplace(scenario).second) {
         return false;
     }

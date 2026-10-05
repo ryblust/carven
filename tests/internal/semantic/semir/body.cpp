@@ -25,11 +25,9 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto path(std::string_view value) noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value(value);
-    ct::require(result.has_value());
+    require(result.has_value());
     return std::move(*result);
 }
 
@@ -45,7 +43,7 @@ struct PreparedFunction final {
 auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexcept
     -> PreparedFunction {
     const auto source = sources.append_virtual("semir-function-body.cv", "");
-    ct::require(source.has_value());
+    require(source.has_value());
     const auto inputs = std::array {
         SourceModuleInput {
             .source_id = *source,
@@ -53,7 +51,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
         },
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    ct::require(syntax.has_value());
+    require(syntax.has_value());
     auto builder = ProgramDraft::begin(std::move(*syntax), diagnostics);
     const auto provenance_module = builder.provenance_module_at(0uz);
     const auto source_id = builder.module_source(provenance_module);
@@ -287,89 +285,77 @@ auto check_residual_construction(ResidualConstructionContract contract) noexcept
     graph.residual = std::move(residual);
     prepared.builder.add_body_draft(std::move(graph));
     if (contract == ResidualConstructionContract::AddedFact) {
-        ct::expect(std::move(prepared.builder).finish().has_value());
-        ct::expect(diagnostics.empty());
+        expect(std::move(prepared.builder).finish().has_value());
+        expect(diagnostics.empty());
     } else {
-        ct::expect(expect_termination(
+        expect(expect_termination(
             std::format("semir-residual-construction-{}", std::to_underlying(contract)),
             [&] noexcept { static_cast<void>(std::move(prepared.builder).finish()); }
         ));
     }
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "SemIR body: residual C++ construction can establish additional scalar facts",
-        [] static noexcept { check_residual_construction(ResidualConstructionContract::AddedFact); }
-    );
-    ct::test(
-        "SemIR body: residual C++ construction preserves checked scalar witnesses",
+const TestSuite suite([] static noexcept {
+    "SemIR body: residual C++ construction can establish additional scalar facts"_test =
+        [] static noexcept {
+            check_residual_construction(ResidualConstructionContract::AddedFact);
+        };
+    "SemIR body: residual C++ construction preserves checked scalar witnesses"_test =
         [] static noexcept {
             check_residual_construction(ResidualConstructionContract::ChangedWitness);
-        }
-    );
-    ct::test(
-        "SemIR body: residual C++ construction preserves its checked target",
-        [] static noexcept {
-            check_residual_construction(ResidualConstructionContract::ChangedTarget);
-        }
-    );
-    ct::test("SemIR body: residual C++ construction preserves operand access", [] static noexcept {
+        };
+    "SemIR body: residual C++ construction preserves its checked target"_test = [] static noexcept {
+        check_residual_construction(ResidualConstructionContract::ChangedTarget);
+    };
+    "SemIR body: residual C++ construction preserves operand access"_test = [] static noexcept {
         check_residual_construction(ResidualConstructionContract::ChangedAccess);
-    });
-    ct::test(
-        "SemIR body: publication preserves structured parameters and result",
-        [] static noexcept {
-            auto sources = SourceManager();
-            auto diagnostics = DiagnosticSink();
-            auto prepared = prepare_function(sources, diagnostics);
-            auto body = body_fixture(prepared);
-            const auto parameter = body.parameter;
-            auto result = boolean_expression(prepared, body);
-            result.category = SemanticValueCategory::Place;
-            result.value = SemBinding {.binding = parameter};
-            [[maybe_unused]] const auto resolved =
-                finish_body(prepared, std::move(body), {}, std::move(result));
-            const auto body_id = resolved;
-            auto finished = std::move(prepared.builder).finish();
-            if (!ct::expect(finished.has_value())) {
-                return;
-            }
-            const auto program = std::move(*finished);
-            const auto& published = program.bodies().body(body_id);
-            ct::expect(published.inputs().parameters == std::vector {parameter});
-            if (!ct::expect(published.region().result.has_value())) {
-                return;
-            }
-            const auto* binding = std::get_if<SemBinding>(&published.region().result->value);
-            if (!ct::expect(binding != nullptr)) {
-                return;
-            }
-            ct::expect(((binding->binding) == (parameter))).note("binding->binding == parameter");
-            ct::expect(((program.declarations().body_for_callable(prepared.callable)) == (body_id)))
-                .note("program.declarations().body_for_callable(prepared.callable) == body_id");
-            ct::expect(diagnostics.empty());
+    };
+    "SemIR body: publication preserves structured parameters and result"_test = [] static noexcept {
+        auto sources = SourceManager();
+        auto diagnostics = DiagnosticSink();
+        auto prepared = prepare_function(sources, diagnostics);
+        auto body = body_fixture(prepared);
+        const auto parameter = body.parameter;
+        auto result = boolean_expression(prepared, body);
+        result.category = SemanticValueCategory::Place;
+        result.value = SemBinding {.binding = parameter};
+        [[maybe_unused]] const auto resolved =
+            finish_body(prepared, std::move(body), {}, std::move(result));
+        const auto body_id = resolved;
+        auto finished = std::move(prepared.builder).finish();
+        if (!expect(finished.has_value())) {
+            return;
         }
-    );
+        const auto program = std::move(*finished);
+        const auto& published = program.bodies().body(body_id);
+        expect(published.inputs().parameters == std::vector {parameter});
+        if (!expect(published.region().result.has_value())) {
+            return;
+        }
+        const auto* binding = std::get_if<SemBinding>(&published.region().result->value);
+        if (!expect(binding != nullptr)) {
+            return;
+        }
+        expect(((binding->binding) == (parameter))).note("binding->binding == parameter");
+        expect(((program.declarations().body_for_callable(prepared.callable)) == (body_id)))
+            .note("program.declarations().body_for_callable(prepared.callable) == body_id");
+        expect(diagnostics.empty());
+    };
 
-    ct::test("SemIR body: result agrees with callable contract", [] static noexcept {
+    "SemIR body: result agrees with callable contract"_test = [] static noexcept {
         auto sources = SourceManager();
         auto diagnostics = DiagnosticSink();
         auto prepared = prepare_function(sources, diagnostics);
         auto body = body_fixture(prepared);
         [[maybe_unused]] const auto resolved =
             finish_body(prepared, std::move(body), {}, std::nullopt);
-        ct::expect(expect_termination("structured-result-contract", [&] noexcept {
+        expect(expect_termination("structured-result-contract", [&] noexcept {
             static_cast<void>(std::move(prepared.builder).finish());
         }));
-    });
+    };
 
-    ct::test("SemIR body: unary negation rejects nonnumeric operands", [] static noexcept {
-        ct::expect(rejects_expression(
+    "SemIR body: unary negation rejects nonnumeric operands"_test = [] static noexcept {
+        expect(rejects_expression(
             "structured-unary-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
                 auto operand = boolean_expression(prepared, body);
@@ -381,10 +367,10 @@ const ct::Suite tests([] static noexcept {
                 return result;
             }
         ));
-    });
+    };
 
-    ct::test("SemIR body: binary arithmetic rejects nonnumeric operands", [] static noexcept {
-        ct::expect(rejects_expression(
+    "SemIR body: binary arithmetic rejects nonnumeric operands"_test = [] static noexcept {
+        expect(rejects_expression(
             "structured-binary-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
                 auto left = boolean_expression(prepared, body);
@@ -398,10 +384,10 @@ const ct::Suite tests([] static noexcept {
                 return result;
             }
         ));
-    });
+    };
 
-    ct::test("SemIR body: unary results must match the legal operand type", [] static noexcept {
-        ct::expect(rejects_expression(
+    "SemIR body: unary results must match the legal operand type"_test = [] static noexcept {
+        expect(rejects_expression(
             "structured-unary-result-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
                 const auto integer = prepared.builder.builtin_type(BuiltinType::I32);
@@ -422,10 +408,10 @@ const ct::Suite tests([] static noexcept {
                 return result;
             }
         ));
-    });
+    };
 
-    ct::test("SemIR body: comparisons require their Boolean result type", [] static noexcept {
-        ct::expect(rejects_expression(
+    "SemIR body: comparisons require their Boolean result type"_test = [] static noexcept {
+        expect(rejects_expression(
             "structured-binary-result-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
                 const auto integer = prepared.builder.builtin_type(BuiltinType::I32);
@@ -450,10 +436,10 @@ const ct::Suite tests([] static noexcept {
                 return result;
             }
         ));
-    });
+    };
 
-    ct::test("SemIR body: casts reject a mismatched conversion kind", [] static noexcept {
-        ct::expect(rejects_expression(
+    "SemIR body: casts reject a mismatched conversion kind"_test = [] static noexcept {
+        expect(rejects_expression(
             "structured-cast-contract",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
                 auto operand = boolean_expression(prepared, body);
@@ -465,9 +451,9 @@ const ct::Suite tests([] static noexcept {
                 return result;
             }
         ));
-    });
+    };
 
-    ct::test("SemIR body: body-local references reject foreign owners", [] static noexcept {
+    "SemIR body: body-local references reject foreign owners"_test = [] static noexcept {
         auto first_sources = SourceManager();
         auto second_sources = SourceManager();
         auto first_diagnostics = DiagnosticSink();
@@ -481,13 +467,12 @@ const ct::Suite tests([] static noexcept {
         result.category = SemanticValueCategory::Place;
         [[maybe_unused]] const auto resolved =
             finish_body(first, std::move(first_body), {}, std::move(result));
-        ct::expect(expect_termination("structured-foreign-binding", [&] noexcept {
+        expect(expect_termination("structured-foreign-binding", [&] noexcept {
             static_cast<void>(std::move(first.builder).finish());
         }));
-    });
+    };
 
-    ct::test(
-        "SemIR body: test operations carry an internal exit through ordinary functions",
+    "SemIR body: test operations carry an internal exit through ordinary functions"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -514,15 +499,14 @@ const ct::Suite tests([] static noexcept {
             [[maybe_unused]] const auto resolved =
                 finish_body(prepared, std::move(body), std::move(statements), std::move(result));
             const auto program = std::move(prepared.builder).finish();
-            if (!ct::expect(program.has_value())) {
+            if (!expect(program.has_value())) {
                 return;
             }
-            ct::expect(program->may_stop_test(prepared.callable));
-        }
-    );
+            expect(program->may_stop_test(prepared.callable));
+        };
 
-    ct::test("SemIR body: external calls require their declared result query", [] static noexcept {
-        ct::expect(rejects_expression(
+    "SemIR body: external calls require their declared result query"_test = [] static noexcept {
+        expect(rejects_expression(
             "semir-cpp-call-result",
             [](PreparedFunction& prepared, const BodyFixture& body) static noexcept {
                 auto expression = boolean_expression(prepared, body);
@@ -538,16 +522,16 @@ const ct::Suite tests([] static noexcept {
                 return expression;
             }
         ));
-    });
+    };
 
-    ct::test("SemIR body: every nested fact is resolved before delivery", [] static noexcept {
+    "SemIR body: every nested fact is resolved before delivery"_test = [] static noexcept {
         const auto scenarios = std::array<std::string_view, 4> {
             "completed tree",
             "nested region",
             "catch metadata",
             "expression type"
         };
-        ct::each(scenarios, std::identity {}, [](const auto& scenario) static noexcept {
+        each(scenarios, std::identity {}, [](const auto& scenario) static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
             auto prepared = prepare_function(sources, diagnostics);
@@ -571,7 +555,7 @@ const ct::Suite tests([] static noexcept {
                 .arms = {},
             };
             auto* nested = std::get_if<SemTry>(&attempt.value);
-            if (!ct::expect(nested != nullptr)) {
+            if (!expect(nested != nullptr)) {
                 return;
             }
             if (scenario == "nested region") {
@@ -616,24 +600,23 @@ const ct::Suite tests([] static noexcept {
                 });
             };
             if (scenario != "completed tree") {
-                ct::expect(expect_termination(scenario, [&] noexcept {
+                expect(expect_termination(scenario, [&] noexcept {
                     static_cast<void>(deliver());
                 })).note(scenario);
             } else {
                 const auto finalized = deliver();
-                ct::expect(((finalized.identity()) == (identity)))
+                expect(((finalized.identity()) == (identity)))
                     .note("finalized.identity() == identity", scenario);
             }
         });
-    });
+    };
 
-    ct::test(
-        "SemIR body: normal-completion facts match the expression type and program",
+    "SemIR body: normal-completion facts match the expression type and program"_test =
         [] static noexcept {
             enum class Fact { Missing, Boolean, WrongType, Foreign };
             const auto cases =
                 std::array {Fact::Missing, Fact::Boolean, Fact::WrongType, Fact::Foreign};
-            ct::each(
+            each(
                 cases,
                 [](Fact fact) static noexcept {
                     return std::format("fact {}", std::to_underlying(fact));
@@ -666,22 +649,21 @@ const ct::Suite tests([] static noexcept {
                         return std::move(prepared.builder).finish();
                     };
                     if (scenario == Fact::Missing || scenario == Fact::Boolean) {
-                        ct::expect(publish().has_value())
+                        expect(publish().has_value())
                             .note("scenario = ", static_cast<int>(scenario));
                     } else {
                         const auto death_scenario = scenario == Fact::WrongType
                             ? "expression-fact-wrong-type"
                             : "expression-fact-foreign-program";
-                        ct::expect(expect_termination(death_scenario, publish))
+                        expect(expect_termination(death_scenario, publish))
                             .note("scenario = ", static_cast<int>(scenario));
                     }
                 }
             );
-        }
-    );
+        };
 
-    ct::test("SemIR body: match rejection facts require coverage", [] static noexcept {
-        ct::expect(rejects_expression(
+    "SemIR body: match rejection facts require coverage"_test = [] static noexcept {
+        expect(rejects_expression(
             "match-selection-fact",
             [](PreparedFunction& prepared, BodyFixture& body) static noexcept {
                 auto subject = boolean_expression(prepared, body);
@@ -724,7 +706,7 @@ const ct::Suite tests([] static noexcept {
                 return result;
             }
         ));
-    });
+    };
 });
 
 } // namespace

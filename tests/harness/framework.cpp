@@ -4,7 +4,6 @@ import :support.quote;
 import :test.harness.framework;
 import std;
 
-namespace carven::testing {
 namespace {
 
 struct TestCase final {
@@ -147,7 +146,7 @@ auto collect_tests() noexcept -> bool {
 
 } // namespace
 
-Suite::Suite(TestFunction declare) noexcept {
+TestSuite::TestSuite(TestFunction declare) noexcept {
     auto& runner = runner_state();
     if (runner.phase != Phase::Declaration || declare == nullptr) {
         ++runner.harness_errors;
@@ -157,20 +156,19 @@ Suite::Suite(TestFunction declare) noexcept {
     runner.suites.push_back(declare);
 }
 
-auto test(std::string_view name, TestFunction body, std::source_location location) noexcept
-    -> void {
+auto TestRegistration::operator=(TestBody body) const noexcept -> void {
     auto& runner = runner_state();
     if (runner.phase != Phase::Collection) {
         ++runner.harness_errors;
         std::cerr << "Test declared outside collection: " << name << '\n';
         return;
     }
-    runner.tests.push_back({.name = std::string(name), .body = body, .location = location});
+    runner.tests.push_back(
+        {.name = std::string(name), .body = body.body, .location = body.location}
+    );
 }
 
-namespace detail {
-
-auto write_text_difference(
+auto write_test_text_difference(
     std::ostream& output,
     std::string_view actual,
     std::string_view expected
@@ -201,7 +199,7 @@ auto write_text_difference(
            << "\n  first difference at byte " << offset;
 }
 
-auto record_assertion(bool passed, std::source_location location) noexcept -> bool {
+auto record_test_assertion(bool passed, std::source_location location) noexcept -> bool {
     auto& runner = runner_state();
     const auto outside_test = runner.current_test_name.empty();
     if (outside_test) {
@@ -225,25 +223,23 @@ auto record_assertion(bool passed, std::source_location location) noexcept -> bo
     return false;
 }
 
-auto failure_output() noexcept -> std::ostream& {
+auto test_failure_output() noexcept -> std::ostream& {
     return std::cerr;
 }
 
-ScenarioContext::ScenarioContext(std::string_view name) noexcept {
+TestScenarioContext::TestScenarioContext(std::string_view name) noexcept {
     runner_state().contexts.emplace_back(name);
 }
 
-ScenarioContext::~ScenarioContext() noexcept {
+TestScenarioContext::~TestScenarioContext() noexcept {
     runner_state().contexts.pop_back();
 }
 
-} // namespace detail
-
-Assertion::Assertion(bool condition, bool fatal, std::source_location location) noexcept
-    : passed(detail::record_assertion(condition, location)),
+TestAssertion::TestAssertion(bool condition, bool fatal, std::source_location location) noexcept
+    : passed(record_test_assertion(condition, location)),
       fatal(fatal) {}
 
-Assertion::~Assertion() noexcept {
+TestAssertion::~TestAssertion() noexcept {
     if (!passed) {
         std::cerr << '\n';
         std::cerr.flush();
@@ -253,7 +249,7 @@ Assertion::~Assertion() noexcept {
     }
 }
 
-Assertion::operator bool() const noexcept {
+TestAssertion::operator bool() const noexcept {
     return passed;
 }
 
@@ -261,7 +257,7 @@ auto current_test_name() noexcept -> std::string_view {
     return runner_state().current_test_name;
 }
 
-auto run(int argc, const char* const* argv) noexcept -> int {
+auto run_tests(int argc, const char* const* argv) noexcept -> int {
     const auto options = parse_options(argc, argv);
     if (!options.has_value()) {
         return 2;
@@ -333,5 +329,3 @@ auto run(int argc, const char* const* argv) noexcept -> int {
     }
     return failed_count != 0uz || runner.harness_errors != 0uz ? 1 : 0;
 }
-
-} // namespace carven::testing

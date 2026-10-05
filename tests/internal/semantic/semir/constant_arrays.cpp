@@ -19,20 +19,18 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noexcept
     -> ProgramDraft {
     const auto source = sources.append_virtual("constant-arrays.cv", "");
-    ct::require(source.has_value());
+    require(source.has_value());
     auto path = CanonicalModulePath::from_value("constant.arrays");
-    ct::require(path.has_value());
+    require(path.has_value());
     const auto inputs = std::array {SourceModuleInput {
         .source_id = *source,
         .module_path = std::move(*path),
     }};
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    ct::require(syntax.has_value());
+    require(syntax.has_value());
     auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);
     const auto provenance_module = draft.provenance_module_at(0uz);
     const auto origin =
@@ -56,13 +54,8 @@ auto array_type(ProgramDraft& draft, TypeID element, std::uint64_t extent) noexc
     return draft.intern_type({.value = ArrayTypeValue {.element = element, .extent = extent}});
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "SemIR constants: nested arrays preserve canonical type and value identity",
+const TestSuite suite([] static noexcept {
+    "SemIR constants: nested arrays preserve canonical type and value identity"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -78,30 +71,28 @@ const ct::Suite tests([] static noexcept {
                 .value = ArrayConstant {.elements = {element, element}},
             };
             const auto row_id = draft.intern_constant(row);
-            ct::expect(draft.intern_constant(row) == row_id);
+            expect(draft.intern_constant(row) == row_id);
             const auto nested = ConstantFact {
                 .type = array_type(draft, row_type, 1u),
                 .value = ArrayConstant {.elements = {row_id}},
             };
             const auto nested_id = draft.intern_constant(nested);
-            ct::expect(draft.intern_constant(nested) == nested_id);
-            ct::expect(constant_value_equal(draft, nested.value, nested.value));
+            expect(draft.intern_constant(nested) == nested_id);
+            expect(constant_value_equal(draft, nested.value, nested.value));
             const auto empty_type = array_type(draft, integer, 0u);
             const auto empty = draft.intern_constant({
                 .type = empty_type,
                 .value = ArrayConstant {.elements = {}},
             });
             const auto program = std::move(draft).finish();
-            if (!ct::expect(program.has_value())) {
+            if (!expect(program.has_value())) {
                 return;
             }
-            ct::expect(program->constants().constant(nested_id) == nested);
-            ct::expect(program->constants().constant(empty).type == empty_type);
-        }
-    );
+            expect(program->constants().constant(nested_id) == nested);
+            expect(program->constants().constant(empty).type == empty_type);
+        };
 
-    ct::test(
-        "SemIR publication invariant: array constants match shape and exact element type",
+    "SemIR publication invariant: array constants match shape and exact element type"_test =
         [] static noexcept {
             enum class Malformation { NonArrayType, Extent, ElementType, NestedElementType };
 
@@ -125,11 +116,11 @@ const ct::Suite tests([] static noexcept {
                     .malformation = Malformation::NestedElementType
                 },
             };
-            ct::each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
+            each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
                 auto sources = SourceManager();
                 auto diagnostics = DiagnosticSink();
                 auto draft = begin_compilation(sources, diagnostics);
-                ct::expect(expect_termination(scenario.name, [&] noexcept {
+                expect(expect_termination(scenario.name, [&] noexcept {
                     const auto integer = draft.builtin_type(BuiltinType::I32);
                     const auto boolean = draft.builtin_type(BuiltinType::Bool);
                     auto child = draft.intern_constant({
@@ -158,11 +149,9 @@ const ct::Suite tests([] static noexcept {
                     static_cast<void>(std::move(draft).finish());
                 }));
             });
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR constants: array language equality recursively compares numeric values",
+    "SemIR constants: array language equality recursively compares numeric values"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -172,7 +161,7 @@ const ct::Suite tests([] static noexcept {
                 draft.intern_constant({.type = number, .value = F64Constant {.value = 0.0}});
             const auto negative =
                 draft.intern_constant({.type = number, .value = F64Constant {.value = -0.0}});
-            ct::expect(positive != negative);
+            expect(positive != negative);
             const auto array = array_type(draft, number, 1u);
             const auto left = draft.intern_constant({
                 .type = array,
@@ -182,8 +171,8 @@ const ct::Suite tests([] static noexcept {
                 .type = array,
                 .value = ArrayConstant {.elements = {negative}},
             });
-            ct::expect(left != right);
-            ct::expect(constant_value_equal(
+            expect(left != right);
+            expect(constant_value_equal(
                 draft,
                 ArrayConstant {.elements = {left}},
                 ArrayConstant {.elements = {right}}
@@ -192,19 +181,17 @@ const ct::Suite tests([] static noexcept {
                 .type = number,
                 .value = F64Constant {.value = std::numeric_limits<double>::quiet_NaN()},
             });
-            ct::expect(!(constant_value_equal(
+            expect(!(constant_value_equal(
                 draft,
                 ArrayConstant {.elements = {not_a_number}},
                 ArrayConstant {.elements = {not_a_number}}
             )));
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR constants invariant: array children already belong to the same store",
+    "SemIR constants invariant: array children already belong to the same store"_test =
         [] static noexcept {
             const auto scenarios = std::array {false, true};
-            ct::each(
+            each(
                 scenarios,
                 [](bool foreign) static noexcept -> std::string_view {
                     return foreign ? "foreign child" : "unavailable child";
@@ -224,7 +211,7 @@ const ct::Suite tests([] static noexcept {
                         .type = integer,
                         .value = IntegerConstant::from_signed(1),
                     });
-                    ct::expect(expect_termination(
+                    expect(expect_termination(
                         foreign ? "array-constant-foreign-child"
                                 : "array-constant-unavailable-child",
                         [&] noexcept {
@@ -236,8 +223,7 @@ const ct::Suite tests([] static noexcept {
                     ));
                 }
             );
-        }
-    );
+        };
 });
 
 } // namespace

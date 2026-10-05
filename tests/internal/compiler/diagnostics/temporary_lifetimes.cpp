@@ -7,11 +7,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: condition temporaries and rejected match bindings end",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: condition temporaries and rejected match bindings end"_test =
         [] static noexcept {
             static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "if condition array backing",
@@ -51,11 +48,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "*saved"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: slice element addresses grant only Read access",
+    "Compiler diagnostics: slice element addresses grant only Read access"_test =
         [] static noexcept {
             static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "slice index cannot grant Write pointer",
@@ -113,8 +108,7 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "&view[0][0]"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 });
 
 } // namespace

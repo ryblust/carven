@@ -18,11 +18,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: addressof preserves a place through SemIR and C++ lowering",
+const TestSuite suite([] static noexcept {
+    "Generation: addressof preserves a place through SemIR and C++ lowering"_test =
         [] static noexcept {
             auto semantic = analyze_test_program(
                 "fn writable(&value: i32) -> ptr<&i32> => addressof(&value); "
@@ -38,14 +35,14 @@ const ct::Suite tests([] static noexcept {
                     entry.value.region(),
                     [&](const SemanticExpression& expression) noexcept {
                         if (const auto* address = std::get_if<SemAddressOf>(&expression.value)) {
-                            ct::expect(address->source->category == SemanticValueCategory::Place);
-                            ct::expect(std::holds_alternative<SemBinding>(address->source->value));
+                            expect(address->source->category == SemanticValueCategory::Place);
+                            expect(std::holds_alternative<SemBinding>(address->source->value));
                             ++address_operations;
                         }
                     }
                 );
             }
-            ct::expect(address_operations == 2uz);
+            expect(address_operations == 2uz);
 
             const auto compilation = PlannedCompilation::build(
                 std::move(semantic),
@@ -66,7 +63,7 @@ const ct::Suite tests([] static noexcept {
                         &template_primary_expression(*call->callee).value
                     );
                     if (callee != nullptr && callee->symbol == TargetSymbol::StdAddressof) {
-                        ct::expect(call->arguments.size() == 1uz);
+                        expect(call->arguments.size() == 1uz);
                         ++address_calls;
                     }
                     return true;
@@ -76,14 +73,12 @@ const ct::Suite tests([] static noexcept {
             auto query = Query {};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
             }
-            ct::expect(query.address_calls == 2uz);
-        }
-    );
+            expect(query.address_calls == 2uz);
+        };
 
-    ct::test(
-        "Generation: slice element addresses lower through the borrowed index place",
+    "Generation: slice element addresses lower through the borrowed index place"_test =
         [] static noexcept {
             auto semantic = analyze_test_program(R"(
         fn element(values: [i32; 2]) -> ptr<i32> {
@@ -101,11 +96,11 @@ const ct::Suite tests([] static noexcept {
                             return;
                         }
                         const auto* index = std::get_if<SemIndex>(&address->source->value);
-                        if (!ct::expect(index != nullptr)) {
+                        if (!expect(index != nullptr)) {
                             return;
                         }
-                        ct::expect(address->source->category == SemanticValueCategory::Place);
-                        ct::expect(
+                        expect(address->source->category == SemanticValueCategory::Place);
+                        expect(
                             std::holds_alternative<SliceTypeValue>(
                                 semantic.types().type(index->source->type.resolved()).value
                             )
@@ -114,7 +109,7 @@ const ct::Suite tests([] static noexcept {
                     }
                 );
             }
-            ct::expect(indexed_addresses == 1uz);
+            expect(indexed_addresses == 1uz);
 
             const auto compilation = PlannedCompilation::build(
                 std::move(semantic),
@@ -151,12 +146,11 @@ const ct::Suite tests([] static noexcept {
             auto query = Query {};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
             }
-            ct::expect(query.addresses == 1uz);
-            ct::expect(query.indices >= 1uz);
-        }
-    );
+            expect(query.addresses == 1uz);
+            expect(query.indices >= 1uz);
+        };
 });
 
 } // namespace

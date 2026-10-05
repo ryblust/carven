@@ -14,8 +14,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto compile_constant_program(
     std::string source,
     std::string& output,
@@ -40,13 +38,8 @@ auto compile_constant_program(
     );
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler: static blocks execute local values and controls in source order",
+const TestSuite suite([] static noexcept {
+    "Compiler: static blocks execute local values and controls in source order"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view name;
@@ -67,7 +60,7 @@ const ct::Suite tests([] static noexcept {
                     .suffix = "} } } fn caller() { use(true); use(true); }",
                 },
             };
-            ct::each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
+            each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
                 auto output = std::string();
                 auto errors = std::string();
                 const auto result = compile_constant_program(
@@ -94,22 +87,20 @@ const ct::Suite tests([] static noexcept {
                     output,
                     errors
                 );
-                if (!ct::expect(result.has_value())) {
+                if (!expect(result.has_value())) {
                     if (!result) {
                         for (const auto& diagnostic : result.error()) {
-                            ct::expect(result.has_value()).note(diagnostic.finding.message);
+                            expect(result.has_value()).note(diagnostic.finding.message);
                         }
                     }
                     return;
                 }
-                ct::expect_equal(output, std::string("av2v3i2bv0i0v1i1z"));
-                ct::expect(errors.empty());
+                expect_equal(output, std::string("av2v3i2bv0i0v1i1z"));
+                expect(errors.empty());
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler: selected static statement transfers stop later static roots",
+    "Compiler: selected static statement transfers stop later static roots"_test =
         [] static noexcept {
             const auto sources = std::array<std::string_view, 3uz> {
                 R"(
@@ -152,13 +143,12 @@ const ct::Suite tests([] static noexcept {
                         report += diagnostic.finding.message + "\n";
                     }
                 }
-                ct::expect(result.has_value()).note(source, "\n", report);
-                ct::expect(output.empty());
-                ct::expect(errors.empty());
+                expect(result.has_value()).note(source, "\n", report);
+                expect(output.empty());
+                expect(errors.empty());
             }
-        }
-    );
-    ct::test("Compiler: loop step entry controls static roots", [] static noexcept {
+        };
+    "Compiler: loop step entry controls static roots"_test = [] static noexcept {
         struct Scenario final {
             std::string_view name;
             std::string_view body;
@@ -176,7 +166,7 @@ const ct::Suite tests([] static noexcept {
                 .enters_step = true,
             },
         };
-        ct::each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
+        each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
             auto output = std::string();
             auto errors = std::string();
             const auto result = compile_constant_program(
@@ -193,8 +183,8 @@ const ct::Suite tests([] static noexcept {
                 errors
             );
             if (scenario.enters_step) {
-                if (ct::expect(!result.has_value())) {
-                    ct::expect_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
+                if (expect(!result.has_value())) {
+                    expect_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
                 }
             } else {
                 auto findings = std::string();
@@ -203,14 +193,13 @@ const ct::Suite tests([] static noexcept {
                         findings += diagnostic.finding.message + "\n";
                     }
                 }
-                ct::expect(result.has_value()).note(findings);
+                expect(result.has_value()).note(findings);
             }
-            ct::expect(output.empty());
-            ct::expect(errors.empty());
+            expect(output.empty());
+            expect(errors.empty());
         });
-    });
-    ct::test(
-        "Compiler: pattern completion follows predicate short circuits and failure boundaries",
+    };
+    "Compiler: pattern completion follows predicate short circuits and failure boundaries"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view name;
@@ -334,14 +323,14 @@ const ct::Suite tests([] static noexcept {
                     .completes = false,
                 },
             });
-            ct::each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
+            each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
                 auto output = std::string();
                 auto errors = std::string();
                 const auto result =
                     compile_constant_program(std::string(scenario.source), output, errors);
                 if (scenario.completes) {
-                    if (ct::expect(!result.has_value())) {
-                        ct::expect_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
+                    if (expect(!result.has_value())) {
+                        expect_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
                     }
                 } else {
                     auto findings = std::string();
@@ -350,14 +339,13 @@ const ct::Suite tests([] static noexcept {
                             findings += diagnostic.finding.message + "\n";
                         }
                     }
-                    ct::expect(result.has_value()).note(findings);
+                    expect(result.has_value()).note(findings);
                 }
-                ct::expect(output.empty());
-                ct::expect(errors.empty());
+                expect(output.empty());
+                expect(errors.empty());
             });
-        }
-    );
-    ct::test("Compiler: pattern entries control static roots", [] static noexcept {
+        };
+    "Compiler: pattern entries control static roots"_test = [] static noexcept {
         struct Scenario final {
             std::string_view name;
             std::string_view source;
@@ -428,14 +416,14 @@ const ct::Suite tests([] static noexcept {
                 .enters_bound = true,
             },
         });
-        ct::each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
+        each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
             auto output = std::string();
             auto errors = std::string();
             const auto result =
                 compile_constant_program(std::string(scenario.source), output, errors);
             if (scenario.enters_bound) {
-                if (ct::expect(!result.has_value())) {
-                    ct::expect_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
+                if (expect(!result.has_value())) {
+                    expect_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
                 }
             } else {
                 auto findings = std::string();
@@ -444,13 +432,13 @@ const ct::Suite tests([] static noexcept {
                         findings += diagnostic.finding.message + "\n";
                     }
                 }
-                ct::expect(result.has_value()).note(findings);
+                expect(result.has_value()).note(findings);
             }
-            ct::expect(output.empty());
-            ct::expect(errors.empty());
+            expect(output.empty());
+            expect(errors.empty());
         });
-    });
-    ct::test("Compiler: predicate continuation controls later static roots", [] static noexcept {
+    };
+    "Compiler: predicate continuation controls later static roots"_test = [] static noexcept {
         struct Scenario final {
             std::string_view name;
             std::string_view source;
@@ -554,14 +542,14 @@ const ct::Suite tests([] static noexcept {
                 .enters_root = true,
             },
         });
-        ct::each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
+        each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
             auto output = std::string();
             auto errors = std::string();
             const auto result =
                 compile_constant_program(std::string(scenario.source), output, errors);
             if (scenario.enters_root) {
-                if (ct::expect(!result.has_value())) {
-                    ct::expect_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
+                if (expect(!result.has_value())) {
+                    expect_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
                 }
             } else {
                 auto findings = std::string();
@@ -570,13 +558,13 @@ const ct::Suite tests([] static noexcept {
                         findings += diagnostic.finding.message + "\n";
                     }
                 }
-                ct::expect(result.has_value()).note(findings);
+                expect(result.has_value()).note(findings);
             }
-            ct::expect(output.empty());
-            ct::expect(errors.empty());
+            expect(output.empty());
+            expect(errors.empty());
         });
-    });
-    ct::test("Compiler: print executes only in static roots and const tests", [] static noexcept {
+    };
+    "Compiler: print executes only in static roots and const tests"_test = [] static noexcept {
         auto output = std::string();
         auto errors = std::string();
         const auto result = compile_constant_program(
@@ -608,19 +596,18 @@ const ct::Suite tests([] static noexcept {
                 diagnostic_report += diagnostic.finding.message + "\n";
             }
         }
-        if (!(ct::expect(result.has_value()).note(diagnostic_report))) {
+        if (!(expect(result.has_value()).note(diagnostic_report))) {
             return;
         }
-        ct::expect(
+        expect(
             output
             == std::string("value 2\nvalue 0\nvalue 1\nleftright true 我\n\n0012\na")
                 + std::string("\0b", 2)
         );
-        ct::expect(errors == "error stream\n");
-    });
+        expect(errors == "error stream\n");
+    };
 
-    ct::test(
-        "Compiler: static checks continue and requirements stop nested calls",
+    "Compiler: static checks continue and requirements stop nested calls"_test =
         [] static noexcept {
             auto output = std::string();
             auto errors = std::string();
@@ -640,11 +627,11 @@ const ct::Suite tests([] static noexcept {
                 output,
                 errors
             );
-            if (!ct::expect(!result.has_value())) {
+            if (!expect(!result.has_value())) {
                 return;
             }
-            ct::expect(output == "message;continued;next;");
-            ct::expect(
+            expect(output == "message;continued;next;");
+            expect(
                 std::ranges::count_if(
                     result.error(),
                     [](const auto& diagnostic) static noexcept {
@@ -653,43 +640,36 @@ const ct::Suite tests([] static noexcept {
                 )
                 == 3
             );
-            ct::expect(errors.empty());
-        }
-    );
+            expect(errors.empty());
+        };
 
-    ct::test(
-        "Compiler: static execution rejects an executed native construction",
-        [] static noexcept {
-            const auto cases = std::array {
-                CompilerErrorExpectation {
-                    .name = "native construction in const block",
-                    .source =
-                        "import <vector> using std::vector; const { let v = vector { 1, 2, 3 }; }",
-                    .code = DiagnosticCode::ConstAdmission,
-                    .primary_text = "vector { 1, 2, 3 }"
-                },
-            };
-            check_compiler_errors(cases);
-        }
-    );
+    "Compiler: static execution rejects an executed native construction"_test = [] static noexcept {
+        const auto cases = std::array {
+            CompilerErrorExpectation {
+                .name = "native construction in const block",
+                .source =
+                    "import <vector> using std::vector; const { let v = vector { 1, 2, 3 }; }",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "vector { 1, 2, 3 }"
+            },
+        };
+        check_compiler_errors(cases);
+    };
 
-    ct::test(
-        "Compiler: untaken native calls do not constrain static execution",
-        [] static noexcept {
-            auto output = std::string();
-            auto errors = std::string();
-            const auto result = compile_constant_program(
-                "import(cpp) fn native(); const test \"t\" { if false { native(); } check(true); }",
-                output,
-                errors
-            );
-            ct::expect(result.has_value());
-            ct::expect(output.empty());
-            ct::expect(errors.empty());
-        }
-    );
+    "Compiler: untaken native calls do not constrain static execution"_test = [] static noexcept {
+        auto output = std::string();
+        auto errors = std::string();
+        const auto result = compile_constant_program(
+            "import(cpp) fn native(); const test \"t\" { if false { native(); } check(true); }",
+            output,
+            errors
+        );
+        expect(result.has_value());
+        expect(output.empty());
+        expect(errors.empty());
+    };
 
-    ct::test("Compiler: named callable values execute in constant tests", [] static noexcept {
+    "Compiler: named callable values execute in constant tests"_test = [] static noexcept {
         auto output = std::string();
         auto errors = std::string();
         const auto result = compile_constant_program(
@@ -703,13 +683,12 @@ const ct::Suite tests([] static noexcept {
             output,
             errors
         );
-        ct::expect(result.has_value());
-        ct::expect(output.empty());
-        ct::expect(errors.empty());
-    });
+        expect(result.has_value());
+        expect(output.empty());
+        expect(errors.empty());
+    };
 
-    ct::test(
-        "Compiler: constant calls through callable values require a const target",
+    "Compiler: constant calls through callable values require a const target"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "ordinary function selected through a local callable",
@@ -723,10 +702,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "callback()"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test("Compiler: test reporting needs an active static test", [] static noexcept {
+    "Compiler: test reporting needs an active static test"_test = [] static noexcept {
         auto output = std::string();
         auto errors = std::string();
         const auto result = compile_constant_program(
@@ -737,14 +715,13 @@ const ct::Suite tests([] static noexcept {
             output,
             errors
         );
-        if (!ct::expect(!result.has_value())) {
+        if (!expect(!result.has_value())) {
             return;
         }
-        ct::expect_diagnostic(result.error(), DiagnosticCode::ConstTest);
-    });
+        expect_diagnostic(result.error(), DiagnosticCode::ConstTest);
+    };
 
-    ct::test(
-        "Compiler: static print completes arguments before observing borrowed text",
+    "Compiler: static print completes arguments before observing borrowed text"_test =
         [] static noexcept {
             auto output = std::string();
             auto errors = std::string();
@@ -764,42 +741,37 @@ const ct::Suite tests([] static noexcept {
                 output,
                 errors
             );
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
-            ct::expect(output == "argument;1 ab 2\n");
-        }
-    );
+            expect(output == "argument;1 ab 2\n");
+        };
 
-    ct::test(
-        "Compiler: static failure diagnostics consume the root text budget",
-        [] static noexcept {
-            auto output = std::string();
-            auto errors = std::string();
-            const auto source =
-                std::string("const test \"bounded\" { for index in 0..16 { check(false, \"")
-                + std::string(1024uz * 1024uz - 128uz, 'x')
-                + "\"); } } const test \"next\" { print(\"next\"); }";
-            const auto result = compile_constant_program(source, output, errors);
-            if (!ct::expect(!result.has_value())) {
-                return;
-            }
-            ct::expect_diagnostic(result.error(), DiagnosticCode::ConstLimit);
-            ct::expect(output == "next");
-            ct::expect(
-                std::ranges::count_if(
-                    result.error(),
-                    [](const auto& diagnostic) static noexcept {
-                        return diagnostic.finding.code == DiagnosticCode::ConstTest;
-                    }
-                )
-                < 16
-            );
+    "Compiler: static failure diagnostics consume the root text budget"_test = [] static noexcept {
+        auto output = std::string();
+        auto errors = std::string();
+        const auto source =
+            std::string("const test \"bounded\" { for index in 0..16 { check(false, \"")
+            + std::string(1024uz * 1024uz - 128uz, 'x')
+            + "\"); } } const test \"next\" { print(\"next\"); }";
+        const auto result = compile_constant_program(source, output, errors);
+        if (!expect(!result.has_value())) {
+            return;
         }
-    );
+        expect_diagnostic(result.error(), DiagnosticCode::ConstLimit);
+        expect(output == "next");
+        expect(
+            std::ranges::count_if(
+                result.error(),
+                [](const auto& diagnostic) static noexcept {
+                    return diagnostic.finding.code == DiagnosticCode::ConstTest;
+                }
+            )
+            < 16
+        );
+    };
 
-    ct::test(
-        "Compiler: const blocks execute regardless of runtime control and test selection",
+    "Compiler: const blocks execute regardless of runtime control and test selection"_test =
         [] static noexcept {
             auto output = std::string();
             auto errors = std::string();
@@ -826,7 +798,7 @@ const ct::Suite tests([] static noexcept {
                 output,
                 errors
             );
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
             auto lines = std::vector<std::string>();
@@ -835,15 +807,11 @@ const ct::Suite tests([] static noexcept {
                 lines.push_back(std::move(line));
             }
             std::ranges::sort(lines);
-            ct::expect(
-                lines == std::vector<std::string> {"local 5", "module 3", "nested 9", "test"}
-            );
-            ct::expect(errors == "last\n");
-        }
-    );
+            expect(lines == std::vector<std::string> {"local 5", "module 3", "nested 9", "test"});
+            expect(errors == "last\n");
+        };
 
-    ct::test(
-        "Compiler: const blocks share control flow aggregates text and failure recovery",
+    "Compiler: const blocks share control flow aggregates text and failure recovery"_test =
         [] static noexcept {
             auto output = std::string();
             auto errors = std::string();
@@ -867,16 +835,14 @@ const ct::Suite tests([] static noexcept {
                 output,
                 errors
             );
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
-            ct::expect(output == "7\n1,12,3,\ndone\n");
-            ct::expect(errors.empty());
-        }
-    );
+            expect(output == "7\n1,12,3,\ndone\n");
+            expect(errors.empty());
+        };
 
-    ct::test(
-        "Compiler: const blocks diagnose stage boundaries and execution failures",
+    "Compiler: const blocks diagnose stage boundaries and execution failures"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view source;
@@ -901,66 +867,62 @@ const ct::Suite tests([] static noexcept {
                 },
                 Case {"const equal = c\"x\" == c\"x\";", DiagnosticCode::ConstInitializer},
             };
-            ct::each(cases, &Case::source, [&](const auto& scenario) noexcept {
+            each(cases, &Case::source, [&](const auto& scenario) noexcept {
                 auto output = std::string();
                 auto errors = std::string();
                 const auto result =
                     compile_constant_program(std::string(scenario.source), output, errors);
-                if (!(ct::expect(!result.has_value()))) {
+                if (!(expect(!result.has_value()))) {
                     return;
                 }
-                ct::expect_diagnostic(result.error(), scenario.code);
+                expect_diagnostic(result.error(), scenario.code);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler: const blocks enforce lexical loans and stage isolation",
-        [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
-                {.name = "block loan prevents mutation even without a later read",
-                 .source = R"(const {
+    "Compiler: const blocks enforce lexical loans and stage isolation"_test = [] static noexcept {
+        const auto cases = std::to_array<CompilerErrorExpectation>({
+            {.name = "block loan prevents mutation even without a later read",
+             .source = R"(const {
              var text: String = "local";
              let view = text.as_str();
              text.clear();
          })",
-                 .code = DiagnosticCode::AccessBorrowConflict,
-                 .primary_text = "text.clear()"},
-                {.name = "local block loan prevents mutation even without a later read",
-                 .source = R"(fn unused() { const {
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "text.clear()"},
+            {.name = "local block loan prevents mutation even without a later read",
+             .source = R"(fn unused() { const {
              var text: String = "local";
              let view = text.as_str();
              text.clear();
          } })",
-                 .code = DiagnosticCode::AccessBorrowConflict,
-                 .primary_text = "text.clear()"},
-                {.name = "const block cannot capture an enclosing execution-frame value",
-                 .source =
-                     "fn f(value: i32) { const { let closure = [value]() => value; closure(); } }",
-                 .code = DiagnosticCode::ConstAdmission,
-                 .primary_text = "value"},
-                {.name = "const block cannot write an enclosing runtime local",
-                 .source = "fn f() { var value = 1; const { value = 2; } }",
-                 .code = DiagnosticCode::ConstAdmission,
-                 .primary_text = "value"},
-                {.name = "const block cannot return from its function",
-                 .source = "fn f() -> i32 { const { return 1; } return 2; }",
-                 .code = DiagnosticCode::FlowTransferBoundary,
-                 .primary_text = "return"},
-                {.name = "const block cannot break an enclosing loop",
-                 .source = "fn f() { for index in 0..3 { const { break; } } }",
-                 .code = DiagnosticCode::FlowTransferBoundary,
-                 .primary_text = "break"},
-                {.name = "runtime local shadows a module constant across the stage boundary",
-                 .source = "const value = 1; fn f(value: i32) { const { println(value); } }",
-                 .code = DiagnosticCode::ConstAdmission,
-                 .primary_text = "value"},
-            });
-            check_compiler_errors(cases);
-        }
-    );
+             .code = DiagnosticCode::AccessBorrowConflict,
+             .primary_text = "text.clear()"},
+            {.name = "const block cannot capture an enclosing execution-frame value",
+             .source =
+                 "fn f(value: i32) { const { let closure = [value]() => value; closure(); } }",
+             .code = DiagnosticCode::ConstAdmission,
+             .primary_text = "value"},
+            {.name = "const block cannot write an enclosing runtime local",
+             .source = "fn f() { var value = 1; const { value = 2; } }",
+             .code = DiagnosticCode::ConstAdmission,
+             .primary_text = "value"},
+            {.name = "const block cannot return from its function",
+             .source = "fn f() -> i32 { const { return 1; } return 2; }",
+             .code = DiagnosticCode::FlowTransferBoundary,
+             .primary_text = "return"},
+            {.name = "const block cannot break an enclosing loop",
+             .source = "fn f() { for index in 0..3 { const { break; } } }",
+             .code = DiagnosticCode::FlowTransferBoundary,
+             .primary_text = "break"},
+            {.name = "runtime local shadows a module constant across the stage boundary",
+             .source = "const value = 1; fn f(value: i32) { const { println(value); } }",
+             .code = DiagnosticCode::ConstAdmission,
+             .primary_text = "value"},
+        });
+        check_compiler_errors(cases);
+    };
 
-    ct::test("Compiler: a static stage cannot call the function it belongs to", [] static noexcept {
+    "Compiler: a static stage cannot call the function it belongs to"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "local constant",
              .source = "const fn value() -> i32 { const copy = value(); return 1; } "
@@ -974,10 +936,9 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "value()"},
         });
         check_compiler_errors(cases);
-    });
+    };
 
-    ct::test(
-        "Compiler: a block in a lambda body reads enclosing constants and its own",
+    "Compiler: a block in a lambda body reads enclosing constants and its own"_test =
         [] static noexcept {
             auto output = std::string();
             auto errors = std::string();
@@ -997,20 +958,18 @@ const ct::Suite tests([] static noexcept {
                 output,
                 errors
             );
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
-            ct::expect(output == "7 9\n");
-            ct::expect(errors.empty());
-            if (!ct::expect(result->diagnostics.size() == 1uz)) {
+            expect(output == "7 9\n");
+            expect(errors.empty());
+            if (!expect(result->diagnostics.size() == 1uz)) {
                 return;
             }
-            ct::expect(result->diagnostics.front().finding.code == DiagnosticCode::LintUnusedLocal);
-        }
-    );
+            expect(result->diagnostics.front().finding.code == DiagnosticCode::LintUnusedLocal);
+        };
 
-    ct::test(
-        "Compiler: assertions fail static execution without requiring a test context",
+    "Compiler: assertions fail static execution without requiring a test context"_test =
         [] static noexcept {
             auto output = std::string();
             auto errors = std::string();
@@ -1026,23 +985,19 @@ const ct::Suite tests([] static noexcept {
                 output,
                 errors
             );
-            if (!ct::expect(!result.has_value())) {
+            if (!expect(!result.has_value())) {
                 return;
             }
-            ct::expect(output.empty());
-            ct::expect(errors.empty());
-            ct::expect(
-                std::ranges::any_of(result.error(), [](const auto& diagnostic) static noexcept {
-                    return diagnostic.finding.code == DiagnosticCode::AssertionFailed
-                        && diagnostic.finding.message.contains("value: 1")
-                        && diagnostic.finding.message.contains("constant assertion");
-                })
-            );
-        }
-    );
+            expect(output.empty());
+            expect(errors.empty());
+            expect(std::ranges::any_of(result.error(), [](const auto& diagnostic) static noexcept {
+                return diagnostic.finding.code == DiagnosticCode::AssertionFailed
+                    && diagnostic.finding.message.contains("value: 1")
+                    && diagnostic.finding.message.contains("constant assertion");
+            }));
+        };
 
-    ct::test(
-        "Compiler: const blocks and static tests share labeled diagnostic context",
+    "Compiler: const blocks and static tests share labeled diagnostic context"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view name;
@@ -1070,7 +1025,7 @@ const ct::Suite tests([] static noexcept {
                  "const \"outer\" { const \"inner\" { divide(0); } }",
                  "while evaluating this const block \"inner\""},
             });
-            ct::each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
+            each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
                 auto output = std::string();
                 auto errors = std::string();
                 const auto result = compile_constant_program(
@@ -1079,29 +1034,27 @@ const ct::Suite tests([] static noexcept {
                     output,
                     errors
                 );
-                if (!(ct::expect(!result.has_value()))) {
+                if (!(expect(!result.has_value()))) {
                     return;
                 }
                 const auto* diagnostic =
-                    ct::find_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
-                if (!(ct::expect(diagnostic != nullptr))) {
+                    find_diagnostic(result.error(), DiagnosticCode::ConstDivideByZero);
+                if (!(expect(diagnostic != nullptr))) {
                     return;
                 }
-                if (!(ct::expect_equal(diagnostic->attachment.related.size(), 2uz))) {
+                if (!(expect_equal(diagnostic->attachment.related.size(), 2uz))) {
                     return;
                 }
-                ct::expect_equal(diagnostic->attachment.related.back().message, scenario.context);
-                ct::expect_equal(
+                expect_equal(diagnostic->attachment.related.back().message, scenario.context);
+                expect_equal(
                     diagnostic->attachment.related.front().message,
                     std::string_view("while evaluating this const function call")
                 );
-                ct::expect(output.empty());
-                ct::expect(errors.empty());
+                expect(output.empty());
+                expect(errors.empty());
             });
-        }
-    );
-    ct::test(
-        "Compiler: staged argument roots execute per occurrence and body roots per instance",
+        };
+    "Compiler: staged argument roots execute per occurrence and body roots per instance"_test =
         [] static noexcept {
             auto output = std::string();
             auto errors = std::string();
@@ -1121,20 +1074,19 @@ const ct::Suite tests([] static noexcept {
             );
             if (!result) {
                 for (const auto& diagnostic : result.error()) {
-                    ct::expect(result.has_value()).note(diagnostic.finding.message);
+                    expect(result.has_value()).note(diagnostic.finding.message);
                 }
             }
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
-            ct::expect(std::ranges::count(output, 'A') == 2);
-            ct::expect(std::ranges::count(output, 'R') == 1);
-            ct::expect(output.size() == 3uz);
-            ct::expect(errors.empty());
-        }
-    );
+            expect(std::ranges::count(output, 'A') == 2);
+            expect(std::ranges::count(output, 'R') == 1);
+            expect(output.size() == 3uz);
+            expect(errors.empty());
+        };
 
-    ct::test("Compiler: argument effects follow their execution stage", [] static noexcept {
+    "Compiler: argument effects follow their execution stage"_test = [] static noexcept {
         struct Input final {
             std::string_view name;
             std::string_view source;
@@ -1158,7 +1110,7 @@ const ct::Suite tests([] static noexcept {
                  "fn use() -> i32 => target(runtime_input(1), static_input(1), runtime_input(2), static_input(2));",
              .output = "s1s2s3"},
         });
-        ct::each(cases, &Input::name, [](const auto& input) static noexcept {
+        each(cases, &Input::name, [](const auto& input) static noexcept {
             auto output = std::string();
             auto errors = std::string();
             const auto result = compile_constant_program(
@@ -1174,14 +1126,13 @@ const ct::Suite tests([] static noexcept {
                 output,
                 errors
             );
-            ct::expect(result.has_value());
-            ct::expect_equal(output, std::string(input.output));
-            ct::expect(errors.empty());
+            expect(result.has_value());
+            expect_equal(output, std::string(input.output));
+            expect(errors.empty());
         });
-    });
+    };
 
-    ct::test(
-        "Compiler: local constants freeze owning text at every static occurrence",
+    "Compiler: local constants freeze owning text at every static occurrence"_test =
         [] static noexcept {
             auto output = std::string();
             auto errors = std::string();
@@ -1198,13 +1149,12 @@ const ct::Suite tests([] static noexcept {
                 output,
                 errors
             );
-            ct::expect(result.has_value());
-            ct::expect(output.empty());
-            ct::expect(errors.empty());
-        }
-    );
+            expect(result.has_value());
+            expect(output.empty());
+            expect(errors.empty());
+        };
 
-    ct::test("Compiler: static roots execute once per live instance identity", [] static noexcept {
+    "Compiler: static roots execute once per live instance identity"_test = [] static noexcept {
         struct Input final {
             std::string_view name;
             std::string_view source;
@@ -1388,7 +1338,7 @@ const ct::Suite tests([] static noexcept {
                  R"(const fn use(const count: i32, const amount: i32) { const for index in 0..count { if false && (if true { const value = provider(amount + index); true } else { false }) {} } } const test { use(3, 7); })",
              .output = "root\nroot\nroot\n"},
         });
-        ct::each(cases, &Input::name, [](const auto& input) static noexcept {
+        each(cases, &Input::name, [](const auto& input) static noexcept {
             auto output = std::string();
             auto errors = std::string();
             const auto result = compile_constant_program(
@@ -1399,11 +1349,11 @@ const ct::Suite tests([] static noexcept {
                 output,
                 errors
             );
-            ct::expect(result.has_value());
-            ct::expect_equal(output, std::string(input.output));
-            ct::expect(errors.empty());
+            expect(result.has_value());
+            expect_equal(output, std::string(input.output));
+            expect(errors.empty());
         });
-    });
+    };
 });
 
 } // namespace
