@@ -13,8 +13,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto named_constant(const SemIRProgram& program, std::string_view name) noexcept
     -> const ConstantFact& {
     auto found = std::optional<ConstantID>();
@@ -23,30 +21,25 @@ auto named_constant(const SemIRProgram& program, std::string_view name) noexcept
             found = declaration.value.value;
         }
     }
-    ct::require(found.has_value());
+    require(found.has_value());
     return program.constants().constant(*found);
 }
 
 auto integer(const ConstantFact& fact) noexcept -> std::int64_t {
     const auto* value = std::get_if<IntegerConstant>(&fact.value);
-    ct::require(value != nullptr);
-    ct::require(value->as_signed().has_value());
+    require(value != nullptr);
+    require(value->as_signed().has_value());
     return *value->as_signed();
 }
 
 auto elements(const ConstantFact& fact) noexcept -> std::span<const ConstantID> {
     const auto* array = std::get_if<ArrayConstant>(&fact.value);
-    ct::require(array != nullptr);
+    require(array != nullptr);
     return array->elements;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Constant arrays: nested construction mutation copy and Take retain fixed types",
+const TestSuite suite([] static noexcept {
+    "Constant arrays: nested construction mutation copy and Take retain fixed types"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const result = build(10);
@@ -67,32 +60,30 @@ const ct::Suite tests([] static noexcept {
             const auto& fact = named_constant(program, "result");
             const auto* outer_type =
                 std::get_if<ArrayTypeValue>(&program.types().type(fact.type).value);
-            if (!ct::expect(outer_type != nullptr)) {
+            if (!expect(outer_type != nullptr)) {
                 return;
             }
-            ct::expect(outer_type->extent == 2u);
+            expect(outer_type->extent == 2u);
             const auto rows = elements(fact);
-            if (!ct::expect(rows.size() == 2uz)) {
+            if (!expect(rows.size() == 2uz)) {
                 return;
             }
             const auto& first = elements(program.constants().constant(rows[0]));
             const auto& second = elements(program.constants().constant(rows[1]));
-            if (!ct::expect(first.size() == 2uz)) {
+            if (!expect(first.size() == 2uz)) {
                 return;
             }
-            if (!ct::expect(second.size() == 2uz)) {
+            if (!expect(second.size() == 2uz)) {
                 return;
             }
-            ct::expect(integer(program.constants().constant(first[0])) == 12);
-            ct::expect(integer(program.constants().constant(first[1])) == 12);
-            ct::expect(integer(program.constants().constant(second[0])) == 13);
-            ct::expect(integer(program.constants().constant(second[1])) == 14);
-            ct::expect(elements(named_constant(program, "empty")).empty());
-        }
-    );
+            expect(integer(program.constants().constant(first[0])) == 12);
+            expect(integer(program.constants().constant(first[1])) == 12);
+            expect(integer(program.constants().constant(second[0])) == 13);
+            expect(integer(program.constants().constant(second[1])) == 14);
+            expect(elements(named_constant(program, "empty")).empty());
+        };
 
-    ct::test(
-        "Constant arrays: scalar snapshots and projected Read storage follow operand order",
+    "Constant arrays: scalar snapshots and projected Read storage follow operand order"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const result = run();
@@ -107,12 +98,10 @@ const ct::Suite tests([] static noexcept {
             } else { 0 });
         }
     )");
-            ct::expect(integer(named_constant(program, "result")) == 712);
-        }
-    );
+            expect(integer(named_constant(program, "result")) == 712);
+        };
 
-    ct::test(
-        "Constant arrays: assignment retains its selected element across owner replacement",
+    "Constant arrays: assignment retains its selected element across owner replacement"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const result = run();
@@ -127,12 +116,10 @@ const ct::Suite tests([] static noexcept {
             return values[0][0] + values[0][1] + selections * 100;
         }
     )");
-            ct::expect(integer(named_constant(program, "result")) == 200);
-        }
-    );
+            expect(integer(named_constant(program, "result")) == 200);
+        };
 
-    ct::test(
-        "Constant arrays: match selects an indexed subject once before guards",
+    "Constant arrays: match selects an indexed subject once before guards"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const result = run();
@@ -147,12 +134,10 @@ const ct::Suite tests([] static noexcept {
             return chosen + selections * 10;
         }
     )");
-            ct::expect(integer(named_constant(program, "result")) == 11);
-        }
-    );
+            expect(integer(named_constant(program, "result")) == 11);
+        };
 
-    ct::test(
-        "Constant arrays: text bool and character elements preserve their canonical types",
+    "Constant arrays: text bool and character elements preserve their canonical types"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const text = texts();
@@ -163,38 +148,36 @@ const ct::Suite tests([] static noexcept {
         const fn characters() -> [char; 2] => ['我', '😀'];
     )");
             const auto text = elements(named_constant(program, "text"));
-            if (!ct::expect(text.size() == 2uz)) {
+            if (!expect(text.size() == 2uz)) {
                 return;
             }
             const auto& text_fact = program.constants().constant(text[1]);
-            ct::expect(
+            expect(
                 std::get<BuiltinTypeValue>(program.types().type(text_fact.type).value).kind
                 == BuiltinType::Str
             );
-            ct::expect(
+            expect(
                 program.provenance().spelling(std::get<StringConstant>(text_fact.value).value)
                 == std::string_view("\0😀", 5uz)
             );
             const auto boolean = elements(named_constant(program, "boolean"));
-            if (!ct::expect(boolean.size() == 2uz)) {
+            if (!expect(boolean.size() == 2uz)) {
                 return;
             }
-            ct::expect(
+            expect(
                 !(std::get<BooleanConstant>(program.constants().constant(boolean[1]).value).value)
             );
             const auto character = elements(named_constant(program, "character"));
-            if (!ct::expect(character.size() == 2uz)) {
+            if (!expect(character.size() == 2uz)) {
                 return;
             }
-            ct::expect(
+            expect(
                 std::get<CharacterConstant>(program.constants().constant(character[1]).value).scalar
                 == U'😀'
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Constant arrays: execution diagnoses dynamic negative and upper-bound indices",
+    "Constant arrays: execution diagnoses dynamic negative and upper-bound indices"_test =
         [] static noexcept {
             for (const auto index : {-1, 2}) {
                 const auto source = std::format(
@@ -203,13 +186,11 @@ const ct::Suite tests([] static noexcept {
                     index
                 );
                 const auto diagnostics = analyze_test_errors(source);
-                ct::expect_diagnostic(diagnostics, DiagnosticCode::ConstIndexBounds);
+                expect_diagnostic(diagnostics, DiagnosticCode::ConstIndexBounds);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Constant arrays: equality compares nested values after independent construction",
+    "Constant arrays: equality compares nested values after independent construction"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const result = equal();
@@ -221,26 +202,22 @@ const ct::Suite tests([] static noexcept {
             return before && first != second && ["我", "😀"] == ["我", "😀"];
         }
     )");
-            ct::expect(std::get<BooleanConstant>(named_constant(program, "result").value).value);
-        }
-    );
+            expect(std::get<BooleanConstant>(named_constant(program, "result").value).value);
+        };
 
-    ct::test(
-        "Constant arrays: unused functions do not require executable element types",
+    "Constant arrays: unused functions do not require executable element types"_test =
         [] static noexcept {
             const auto sources = std::to_array<std::string_view>({
                 "fn invalid(value: [ptr<i32>; 1]) -> [ptr<i32>; 1] => value;",
                 "fn invalid(value: [[i32]; 1]) -> [[i32]; 1] => value;",
             });
-            ct::each(sources, std::identity {}, [&](const auto& source) noexcept {
+            each(sources, std::identity {}, [&](const auto& source) noexcept {
                 const auto program = analyze_test_program(std::string(source));
-                ct::expect(program.declarations().functions().size() == 1uz);
+                expect(program.declarations().functions().size() == 1uz);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant arrays: execution preserves the ownership publication gate after Take",
+    "Constant arrays: execution preserves the ownership publication gate after Take"_test =
         [] static noexcept {
             const auto diagnostics = analyze_test_errors(R"(
         const fn moved() -> i32 {
@@ -250,10 +227,9 @@ const ct::Suite tests([] static noexcept {
         }
         const result = moved();
     )");
-            ct::expect_diagnostic(diagnostics, DiagnosticCode::AccessUnavailable);
-            ct::expect_no_diagnostic(diagnostics, DiagnosticCode::ConstEvaluation);
-        }
-    );
+            expect_diagnostic(diagnostics, DiagnosticCode::AccessUnavailable);
+            expect_no_diagnostic(diagnostics, DiagnosticCode::ConstEvaluation);
+        };
 });
 
 } // namespace

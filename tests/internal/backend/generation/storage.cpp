@@ -18,8 +18,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct StorageSummary final {
     std::size_t deferred;
     std::size_t deferred_integers;
@@ -62,7 +60,7 @@ auto StorageQuery::visit_variable(const TargetVariableStmt& variable) noexcept -
     const auto deferred = type->symbol == TargetSymbol::RuntimeDeferredResult;
     summary.deferred += deferred;
     if (deferred) {
-        if (!ct::expect_equal(type->type_argument_ids.size(), 1uz)) {
+        if (!expect_equal(type->type_argument_ids.size(), 1uz)) {
             return false;
         }
         type = std::get_if<TargetIntrinsicType>(&unit.type(type->type_argument_ids.front()).value);
@@ -91,15 +89,14 @@ auto inspect_storage(std::string source) noexcept -> StorageSummary {
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
         auto query = StorageQuery {.unit = unit, .summary = summary, .measured = false};
-        ct::require(traverse_target_unit(unit.sections(), query));
+        require(traverse_target_unit(unit.sections(), query));
     }
-    ct::expect_equal(summary.bodies, 1uz);
+    expect_equal(summary.bodies, 1uz);
     return summary;
 }
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: unconditional objects use ordinary storage before later control",
+const TestSuite suite([] static noexcept {
+    "Generation: unconditional objects use ordinary storage before later control"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view name;
@@ -113,7 +110,7 @@ const ct::Suite tests([] static noexcept {
                 },
                 Case {.name = "always failing call", .operand = "stop()?"},
             };
-            ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+            each(cases, &Case::name, [](const Case& input) static noexcept {
                 const auto summary = inspect_storage(
                     std::format(
                         "enum Error {{ Failed, }} "
@@ -125,14 +122,12 @@ const ct::Suite tests([] static noexcept {
                         input.operand
                     )
                 );
-                ct::expect_equal(summary.deferred, 0uz);
-                ct::expect_equal(summary.deferred_strings, std::vector<bool> {false});
+                expect_equal(summary.deferred, 0uz);
+                expect_equal(summary.deferred_strings, std::vector<bool> {false});
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Generation: conditional reservations retain their position between ordinary owners",
+    "Generation: conditional reservations retain their position between ordinary owners"_test =
         [] static noexcept {
             const auto summary = inspect_storage(
                 "fn observe(text: String) -> bool => true; "
@@ -141,25 +136,20 @@ const ct::Suite tests([] static noexcept {
                 "observe(\"first\" as String), flag && observe(\"selected\" as String), "
                 "\"last\" as String);"
             );
-            ct::expect_equal(summary.deferred, 1uz);
-            ct::expect_equal(summary.deferred_strings, std::vector<bool> {false, true, false});
-        }
-    );
+            expect_equal(summary.deferred, 1uz);
+            expect_equal(summary.deferred_strings, std::vector<bool> {false, true, false});
+        };
 
-    ct::test(
-        "Generation: builtin writer values need no deferred scalar backing",
-        [] static noexcept {
-            const auto summary = inspect_storage(
-                "fn pure(value: i32) -> i32 => value; "
-                "fn probe(flag: bool) -> bool => "
-                "flag && (f\"{pure(1)}/{pure(2)}\".len() > 0);"
-            );
-            ct::expect_equal(summary.deferred_integers, 0uz);
-        }
-    );
+    "Generation: builtin writer values need no deferred scalar backing"_test = [] static noexcept {
+        const auto summary = inspect_storage(
+            "fn pure(value: i32) -> i32 => value; "
+            "fn probe(flag: bool) -> bool => "
+            "flag && (f\"{pure(1)}/{pure(2)}\".len() > 0);"
+        );
+        expect_equal(summary.deferred_integers, 0uz);
+    };
 
-    ct::test(
-        "Generation: native Read scalar backing escapes selected evaluation scopes",
+    "Generation: native Read scalar backing escapes selected evaluation scopes"_test =
         [] static noexcept {
             const auto summary = inspect_storage(
                 "import \"probe.hpp\" using probe::Observer; "
@@ -168,16 +158,14 @@ const ct::Suite tests([] static noexcept {
                 "fn probe(flag: bool) -> bool { let observer = Observer {}; return "
                 "observer.observe(flag && (observer.remember(pure(3), event()) as bool)) as bool; }"
             );
-            ct::expect_equal(summary.deferred_integers, 1uz);
-        }
-    );
+            expect_equal(summary.deferred_integers, 1uz);
+        };
 
-    ct::test(
-        "Generation: unconditional native result queries need no deferred category adapter",
+    "Generation: unconditional native result queries need no deferred category adapter"_test =
         [] static noexcept {
             const auto calls =
                 std::array<std::string_view, 3> {"owner()", "borrow()", "borrow_const()"};
-            ct::each(calls, std::identity {}, [](std::string_view call) static noexcept {
+            each(calls, std::identity {}, [](std::string_view call) static noexcept {
                 const auto summary = inspect_storage(
                     std::format(
                         "import \"probe.hpp\" using probe::{{ owner, borrow, borrow_const, observe }}; "
@@ -185,13 +173,11 @@ const ct::Suite tests([] static noexcept {
                         call
                     )
                 );
-                ct::expect_equal(summary.deferred, 0uz);
+                expect_equal(summary.deferred, 0uz);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Generation: independent root calls initialize Outcomes without deferred storage",
+    "Generation: independent root calls initialize Outcomes without deferred storage"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view name;
@@ -209,7 +195,7 @@ const ct::Suite tests([] static noexcept {
                     .body = "produce(if flag { observe(1); true } else { observe(2); false })?;"
                 },
             };
-            ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+            each(cases, &Case::name, [](const Case& input) static noexcept {
                 const auto compilation = PlannedCompilation::build(
                     analyze_test_program(
                         std::format(
@@ -241,12 +227,12 @@ const ct::Suite tests([] static noexcept {
                         }
                         if (type->symbol == TargetSymbol::RuntimeOutcome) {
                             ++direct;
-                            ct::expect(
+                            expect(
                                 std::holds_alternative<TargetCallExpr>(variable->initializer.value)
                             );
                         }
                         if (type->symbol == TargetSymbol::RuntimeDeferredResult) {
-                            if (!ct::expect(type->type_argument_ids.size() == 1uz)) {
+                            if (!expect(type->type_argument_ids.size() == 1uz)) {
                                 return false;
                             }
                             const auto* result = std::get_if<TargetIntrinsicType>(
@@ -264,18 +250,16 @@ const ct::Suite tests([] static noexcept {
                 for (const auto artifact : compilation.target().artifacts()) {
                     const auto unit = lower_artifact(compilation, artifact.id);
                     auto query = Query {.unit = unit, .direct = 0uz, .deferred = 0uz};
-                    ct::expect(traverse_target_unit(unit.sections(), query));
+                    expect(traverse_target_unit(unit.sections(), query));
                     direct += query.direct;
                     deferred += query.deferred;
                 }
-                ct::expect_equal(direct, 1uz);
-                ct::expect_equal(deferred, 0uz);
+                expect_equal(direct, 1uz);
+                expect_equal(deferred, 0uz);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Generation: scalar predecessors in a full expression need no deferred storage",
+    "Generation: scalar predecessors in a full expression need no deferred storage"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -296,7 +280,7 @@ const ct::Suite tests([] static noexcept {
                         if (const auto* type = std::get_if<TargetIntrinsicType>(
                                 &unit.type(variable->type).value
                             )) {
-                            ct::expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                            expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
                         }
                     }
                     return true;
@@ -306,139 +290,132 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query {.unit = unit};
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Generation: local storage follows retained access rather than source write permission",
-        [] static noexcept {
-            struct Case final {
-                std::string_view name;
-                std::string_view source;
+    "Generation: local storage follows retained access rather than source write permission"_test = [] static noexcept {
+        struct Case final {
+            std::string_view name;
+            std::string_view source;
+            TargetVariableBinding expected;
+        };
+
+        const auto cases = std::array {
+            Case {
+                .name = "read-only var",
+                .source = "fn probe(value: i32) -> i32 { var storage = value; return storage; }",
+                .expected = TargetVariableBinding::ConstValue
+            },
+            Case {
+                .name = "assignment",
+                .source =
+                    "fn probe(value: i32) -> i32 { var storage = value; storage += 1; return storage; }",
+                .expected = TargetVariableBinding::MutableValue
+            },
+            Case {
+                .name = "Write argument",
+                .source = "fn write(&value: i32) { value = 2; } "
+                          "fn probe(value: i32) { var storage = value; write(&storage); }",
+                .expected = TargetVariableBinding::MutableValue
+            },
+            Case {
+                .name = "Write capture",
+                .source = "fn probe(value: i32) -> i32 { var storage = value; "
+                          "let read = [&storage]() -> i32 { return storage; }; return read(); }",
+                .expected = TargetVariableBinding::MutableValue
+            },
+            Case {
+                .name = "let transfer",
+                .source =
+                    "fn probe(value: String) -> String { let storage = value; return &&storage; }",
+                .expected = TargetVariableBinding::MutableValue
+            },
+            Case {
+                .name = "read field",
+                .source =
+                    "struct Box { value: i32 } "
+                    "fn probe(value: i32) -> i32 { var storage = Box { value }; return storage.value; }",
+                .expected = TargetVariableBinding::ConstValue
+            },
+            Case {
+                .name = "write field",
+                .source =
+                    "struct Box { value: i32 } "
+                    "fn probe(value: i32) { var storage = Box { value }; storage.value = 2; }",
+                .expected = TargetVariableBinding::MutableValue
+            },
+            Case {
+                .name = "read element",
+                .source =
+                    "fn probe(value: i32) -> i32 { var storage = [value]; return storage[0]; }",
+                .expected = TargetVariableBinding::ConstValue
+            },
+            Case {
+                .name = "write element",
+                .source = "fn probe(value: i32) { var storage = [value]; storage[0] = 2; }",
+                .expected = TargetVariableBinding::MutableValue
+            },
+            Case {
+                .name = "write iteration",
+                .source =
+                    "fn probe(value: i32) { var storage = [value]; for &element in storage { element += 1; } }",
+                .expected = TargetVariableBinding::MutableValue
+            },
+            Case {
+                .name = "write pointee",
+                .source =
+                    "fn probe(pointer: ptr<&i32>) { var storage = pointer; if storage != nullptr { *storage = 2; } }",
+                .expected = TargetVariableBinding::ConstValue
+            },
+            Case {
+                .name = "unreachable write does not require mutable storage",
+                .source =
+                    "fn probe(value: i32) -> i32 { var storage = value; if false { storage = 2; } return storage; }",
+                .expected = TargetVariableBinding::ConstValue
+            },
+        };
+        each(cases, &Case::name, [](const Case& scenario) static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(std::string(scenario.source)),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("local_storage")}
+            );
+
+            struct Query final {
+                const TargetUnit& unit;
                 TargetVariableBinding expected;
-            };
+                std::size_t owners;
 
-            const auto cases = std::array {
-                Case {
-                    .name = "read-only var",
-                    .source =
-                        "fn probe(value: i32) -> i32 { var storage = value; return storage; }",
-                    .expected = TargetVariableBinding::ConstValue
-                },
-                Case {
-                    .name = "assignment",
-                    .source =
-                        "fn probe(value: i32) -> i32 { var storage = value; storage += 1; return storage; }",
-                    .expected = TargetVariableBinding::MutableValue
-                },
-                Case {
-                    .name = "Write argument",
-                    .source = "fn write(&value: i32) { value = 2; } "
-                              "fn probe(value: i32) { var storage = value; write(&storage); }",
-                    .expected = TargetVariableBinding::MutableValue
-                },
-                Case {
-                    .name = "Write capture",
-                    .source =
-                        "fn probe(value: i32) -> i32 { var storage = value; "
-                        "let read = [&storage]() -> i32 { return storage; }; return read(); }",
-                    .expected = TargetVariableBinding::MutableValue
-                },
-                Case {
-                    .name = "let transfer",
-                    .source =
-                        "fn probe(value: String) -> String { let storage = value; return &&storage; }",
-                    .expected = TargetVariableBinding::MutableValue
-                },
-                Case {
-                    .name = "read field",
-                    .source =
-                        "struct Box { value: i32 } "
-                        "fn probe(value: i32) -> i32 { var storage = Box { value }; return storage.value; }",
-                    .expected = TargetVariableBinding::ConstValue
-                },
-                Case {
-                    .name = "write field",
-                    .source =
-                        "struct Box { value: i32 } "
-                        "fn probe(value: i32) { var storage = Box { value }; storage.value = 2; }",
-                    .expected = TargetVariableBinding::MutableValue
-                },
-                Case {
-                    .name = "read element",
-                    .source =
-                        "fn probe(value: i32) -> i32 { var storage = [value]; return storage[0]; }",
-                    .expected = TargetVariableBinding::ConstValue
-                },
-                Case {
-                    .name = "write element",
-                    .source = "fn probe(value: i32) { var storage = [value]; storage[0] = 2; }",
-                    .expected = TargetVariableBinding::MutableValue
-                },
-                Case {
-                    .name = "write iteration",
-                    .source =
-                        "fn probe(value: i32) { var storage = [value]; for &element in storage { element += 1; } }",
-                    .expected = TargetVariableBinding::MutableValue
-                },
-                Case {
-                    .name = "write pointee",
-                    .source =
-                        "fn probe(pointer: ptr<&i32>) { var storage = pointer; if storage != nullptr { *storage = 2; } }",
-                    .expected = TargetVariableBinding::ConstValue
-                },
-                Case {
-                    .name = "unreachable write does not require mutable storage",
-                    .source =
-                        "fn probe(value: i32) -> i32 { var storage = value; if false { storage = 2; } return storage; }",
-                    .expected = TargetVariableBinding::ConstValue
-                },
-            };
-            ct::each(cases, &Case::name, [](const Case& scenario) static noexcept {
-                const auto compilation = PlannedCompilation::build(
-                    analyze_test_program(std::string(scenario.source)),
-                    {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("local_storage")}
-                );
-
-                struct Query final {
-                    const TargetUnit& unit;
-                    TargetVariableBinding expected;
-                    std::size_t owners;
-
-                    auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                        const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
-                        if (variable != nullptr
-                            && unit.local_name(variable->local).spelling() == "storage") {
-                            ++owners;
-                            ct::expect(variable->binding == expected);
-                        }
-                        return true;
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    const auto* variable = std::get_if<TargetVariableStmt>(&statement.value);
+                    if (variable != nullptr
+                        && unit.local_name(variable->local).spelling() == "storage") {
+                        ++owners;
+                        expect(variable->binding == expected);
                     }
-                };
-
-                auto owners = 0uz;
-                for (const auto artifact : compilation.target().artifacts()) {
-                    const auto unit = lower_artifact(compilation, artifact.id);
-                    auto query = Query {
-                        .unit = unit,
-                        .expected = scenario.expected,
-                        .owners = 0uz,
-                    };
-                    if (!(ct::expect(traverse_target_unit(unit.sections(), query)))) {
-                        return;
-                    }
-                    owners += query.owners;
+                    return true;
                 }
-                ct::expect(owners == 1uz);
-            });
-        }
-    );
+            };
 
-    ct::test(
-        "Generation: a folded short circuit does not defer later argument storage",
+            auto owners = 0uz;
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto query = Query {
+                    .unit = unit,
+                    .expected = scenario.expected,
+                    .owners = 0uz,
+                };
+                if (!(expect(traverse_target_unit(unit.sections(), query)))) {
+                    return;
+                }
+                owners += query.owners;
+            }
+            expect(owners == 1uz);
+        });
+    };
+
+    "Generation: a folded short circuit does not defer later argument storage"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -459,7 +436,7 @@ const ct::Suite tests([] static noexcept {
                         if (const auto* type = std::get_if<TargetIntrinsicType>(
                                 &unit.type(variable->type).value
                             )) {
-                            ct::expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                            expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
                         }
                     }
                     return true;
@@ -469,13 +446,11 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query {.unit = unit};
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Generation: independent expression and region results use automatic outcome storage",
+    "Generation: independent expression and region results use automatic outcome storage"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -511,10 +486,10 @@ const ct::Suite tests([] static noexcept {
                         const auto* contained = std::get_if<TargetIntrinsicType>(
                             &unit.type(type->type_argument_ids.front()).value
                         );
-                        if (!ct::expect(contained != nullptr)) {
+                        if (!expect(contained != nullptr)) {
                             return false;
                         }
-                        ct::expect(contained->symbol != TargetSymbol::RuntimeOutcome);
+                        expect(contained->symbol != TargetSymbol::RuntimeOutcome);
                     }
                     return true;
                 }
@@ -524,14 +499,13 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query {.unit = unit};
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
                 outcomes += query.outcomes;
             }
-            ct::expect(outcomes == 3uz);
-        }
-    );
+            expect(outcomes == 3uz);
+        };
 });
 
 } // namespace

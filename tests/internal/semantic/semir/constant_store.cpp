@@ -6,11 +6,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "SemIR constants: interning growth preserves borrowed facts spellings and floating identity",
+const TestSuite suite([] static noexcept {
+    "SemIR constants: interning growth preserves borrowed facts spellings and floating identity"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& draft = fixture.compilation;
@@ -29,9 +26,9 @@ const ct::Suite tests([] static noexcept {
                     static_cast<void>(draft.intern_spelling(std::to_string(value)));
                 }
             }
-            ct::expect(&draft.constant(first) == fact);
-            ct::expect(draft.spelling(spelling).data() == text.data());
-            ct::expect(
+            expect(&draft.constant(first) == fact);
+            expect(draft.spelling(spelling).data() == text.data());
+            expect(
                 draft.intern_constant({.type = integer, .value = IntegerConstant::zero()}) == first
             );
             const auto floating = draft.builtin_type(BuiltinType::F64);
@@ -48,14 +45,12 @@ const ct::Suite tests([] static noexcept {
                     .value = F64Constant {.value = std::bit_cast<double>(pattern)}
                 };
                 const auto id = draft.intern_constant(value);
-                ct::expect(draft.intern_constant(value) == id);
+                expect(draft.intern_constant(value) == id);
                 identities.insert(id);
             }
-            ct::expect(identities.size() == bits.size());
-        }
-    );
-    ct::test(
-        "SemIR constants: floating SIMD identity preserves each lane bit pattern",
+            expect(identities.size() == bits.size());
+        };
+    "SemIR constants: floating SIMD identity preserves each lane bit pattern"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& draft = fixture.compilation;
@@ -68,20 +63,19 @@ const ct::Suite tests([] static noexcept {
                 value.lanes[2] = pattern;
                 const auto fact = ConstantFact {.type = type, .value = value};
                 const auto id = draft.intern_constant(fact);
-                ct::expect(draft.intern_constant(fact) == id);
+                expect(draft.intern_constant(fact) == id);
                 identities.insert(id);
             }
-            ct::expect(identities.size() == patterns.size());
-        }
-    );
-    ct::test("SemIR constants: SIMD lane encodings follow the owning type", [] static noexcept {
+            expect(identities.size() == patterns.size());
+        };
+    "SemIR constants: SIMD lane encodings follow the owning type"_test = [] static noexcept {
         constexpr auto vectors = std::array {
             BuiltinType::U8x16,
             BuiltinType::U8x32,
             BuiltinType::F32x4,
             BuiltinType::F32x8
         };
-        ct::each(
+        each(
             vectors,
             [](auto type) static noexcept -> std::string_view {
                 switch (type) {
@@ -95,21 +89,21 @@ const ct::Suite tests([] static noexcept {
             [](auto type) static noexcept {
                 const auto layout = *simd_layout(type);
                 auto vector = SIMDConstant {.lanes = std::vector<std::uint32_t>(layout.width)};
-                ct::expect(matches_simd_constant(type, vector));
+                expect(matches_simd_constant(type, vector));
                 vector.lanes.back() = 0xffffffffu;
-                ct::expect_equal(
+                expect_equal(
                     matches_simd_constant(type, vector),
                     layout.element == BuiltinType::F32
                 );
                 vector.lanes.pop_back();
-                ct::expect(!matches_simd_constant(type, vector));
+                expect(!matches_simd_constant(type, vector));
                 auto mask = SIMDConstant {.lanes = std::vector<std::uint32_t>(layout.width, 255u)};
-                ct::expect(matches_simd_constant(layout.mask, mask));
+                expect(matches_simd_constant(layout.mask, mask));
                 mask.lanes.back() = 1u;
-                ct::expect(!matches_simd_constant(layout.mask, mask));
+                expect(!matches_simd_constant(layout.mask, mask));
             }
         );
-    });
+    };
 });
 
 } // namespace

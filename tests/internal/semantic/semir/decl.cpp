@@ -24,18 +24,15 @@ import :test.internal.semantic.format.fixture;
 import :test.internal.semantic.semir.fixture;
 import std;
 
-using namespace semir_test;
-
 namespace {
-
-namespace ct = carven::testing;
 
 auto check_module_item_multiplicity(std::string_view scenario, std::size_t multiplicity) noexcept
     -> void {
     auto sources = SourceManager();
     auto diagnostics = DiagnosticSink();
-    auto builder = begin_compilation(sources, diagnostics, "semir.publication.module_item");
-    const auto facts = module_facts(builder);
+    auto builder =
+        begin_semir_test_compilation(sources, diagnostics, "semir.publication.module_item");
+    const auto module_origin = make_semir_test_module_origin(builder);
     const auto module_id = builder.reserve_module_declaration();
     const auto structure = builder.reserve_struct_declaration();
     builder.define_declaration(
@@ -44,7 +41,7 @@ auto check_module_item_multiplicity(std::string_view scenario, std::size_t multi
             .kind = RecordKind::Struct,
             .module_id = module_id,
             .name = builder.intern_spelling("Structure"),
-            .origin = facts.origin,
+            .origin = module_origin.origin,
             .visibility = DeclarationVisibility::Module,
             .fields = {},
         }
@@ -53,15 +50,15 @@ auto check_module_item_multiplicity(std::string_view scenario, std::size_t multi
     builder.define_declaration(
         module_id,
         ModuleDeclaration {
-            .provenance_module = facts.provenance_module,
-            .origin = facts.origin,
+            .provenance_module = module_origin.provenance_module,
+            .origin = module_origin.origin,
             .cpp_headers = {},
             .cpp_source_fragments = {},
             .items = entries,
         }
     );
     builder.finish_declaration_heads();
-    ct::expect(expect_termination(scenario, [&] noexcept {
+    expect(expect_termination(scenario, [&] noexcept {
         static_cast<void>(std::move(builder).finish());
     }));
 }
@@ -70,8 +67,9 @@ auto check_enum_case_multiplicity(std::string_view scenario, std::size_t multipl
     -> void {
     auto sources = SourceManager();
     auto diagnostics = DiagnosticSink();
-    auto builder = begin_compilation(sources, diagnostics, "semir.publication.enum_case");
-    const auto facts = module_facts(builder);
+    auto builder =
+        begin_semir_test_compilation(sources, diagnostics, "semir.publication.enum_case");
+    const auto module_origin = make_semir_test_module_origin(builder);
     const auto module_id = builder.reserve_module_declaration();
     const auto enumeration = builder.reserve_enum_declaration();
     const auto enum_case = builder.reserve_enum_case_declaration();
@@ -80,7 +78,7 @@ auto check_enum_case_multiplicity(std::string_view scenario, std::size_t multipl
         ConstructionEnumCaseDeclaration {
             .owner = enumeration,
             .name = builder.intern_spelling("Case"),
-            .origin = facts.origin,
+            .origin = module_origin.origin,
             .payload_types = {},
             .constant = std::nullopt,
         }
@@ -91,7 +89,7 @@ auto check_enum_case_multiplicity(std::string_view scenario, std::size_t multipl
         EnumDeclaration {
             .module_id = module_id,
             .name = builder.intern_spelling("Enumeration"),
-            .origin = facts.origin,
+            .origin = module_origin.origin,
             .visibility = DeclarationVisibility::Module,
             .representation = PayloadEnumRepresentation {},
             .cases = entries,
@@ -101,33 +99,26 @@ auto check_enum_case_multiplicity(std::string_view scenario, std::size_t multipl
     builder.define_declaration(
         module_id,
         ModuleDeclaration {
-            .provenance_module = facts.provenance_module,
-            .origin = facts.origin,
+            .provenance_module = module_origin.provenance_module,
+            .origin = module_origin.origin,
             .cpp_headers = {},
             .cpp_source_fragments = {},
             .items = {enumeration},
         }
     );
     builder.finish_declaration_heads();
-    ct::expect(expect_termination(scenario, [&] noexcept {
+    expect(expect_termination(scenario, [&] noexcept {
         static_cast<void>(std::move(builder).finish());
     }));
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "SemIR publication invariant: every named declaration has a module item",
+const TestSuite suite([] static noexcept {
+    "SemIR publication invariant: every named declaration has a module item"_test =
         [] static noexcept {
             check_module_item_multiplicity("semir-publication-orphan-module-item", 0uz);
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR publication invariant: every provenance module has one semantic module",
+    "SemIR publication invariant: every provenance module has one semantic module"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -135,13 +126,13 @@ const ct::Suite tests([] static noexcept {
                 "semir.publication.provenance_first",
                 "semir.publication.provenance_second",
             };
-            auto builder = begin_compilation_batch(sources, diagnostics, module_names);
-            const auto facts = module_facts(builder, 0uz);
+            auto builder = begin_semir_test_compilation_batch(sources, diagnostics, module_names);
+            const auto module_origin = make_semir_test_module_origin(builder, 0uz);
             const auto first_module = builder.reserve_module_declaration();
             const auto second_module = builder.reserve_module_declaration();
             const auto declaration = ModuleDeclaration {
-                .provenance_module = facts.provenance_module,
-                .origin = facts.origin,
+                .provenance_module = module_origin.provenance_module,
+                .origin = module_origin.origin,
                 .cpp_headers = {},
                 .cpp_source_fragments = {},
                 .items = {},
@@ -149,23 +140,19 @@ const ct::Suite tests([] static noexcept {
             builder.define_declaration(first_module, declaration);
             builder.define_declaration(second_module, declaration);
             builder.finish_declaration_heads();
-            ct::expect(
+            expect(
                 expect_termination("semir-publication-duplicate-provenance-module", [&] noexcept {
                     static_cast<void>(std::move(builder).finish());
                 })
             );
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR publication invariant: a named declaration has one module item",
+    "SemIR publication invariant: a named declaration has one module item"_test =
         [] static noexcept {
             check_module_item_multiplicity("semir-publication-duplicate-module-item", 2uz);
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR publication invariant: a module item agrees with its declaration owner",
+    "SemIR publication invariant: a module item agrees with its declaration owner"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -173,9 +160,9 @@ const ct::Suite tests([] static noexcept {
                 "semir.publication.item_owner_first",
                 "semir.publication.item_owner_second",
             };
-            auto builder = begin_compilation_batch(sources, diagnostics, module_names);
-            const auto first_facts = module_facts(builder, 0uz);
-            const auto second_facts = module_facts(builder, 1uz);
+            auto builder = begin_semir_test_compilation_batch(sources, diagnostics, module_names);
+            const auto first_module_origin = make_semir_test_module_origin(builder, 0uz);
+            const auto second_module_origin = make_semir_test_module_origin(builder, 1uz);
             const auto first_module = builder.reserve_module_declaration();
             const auto second_module = builder.reserve_module_declaration();
             const auto structure = builder.reserve_struct_declaration();
@@ -185,7 +172,7 @@ const ct::Suite tests([] static noexcept {
                     .kind = RecordKind::Struct,
                     .module_id = first_module,
                     .name = builder.intern_spelling("Structure"),
-                    .origin = first_facts.origin,
+                    .origin = first_module_origin.origin,
                     .visibility = DeclarationVisibility::Module,
                     .fields = {},
                 }
@@ -193,8 +180,8 @@ const ct::Suite tests([] static noexcept {
             builder.define_declaration(
                 first_module,
                 ModuleDeclaration {
-                    .provenance_module = first_facts.provenance_module,
-                    .origin = first_facts.origin,
+                    .provenance_module = first_module_origin.provenance_module,
+                    .origin = first_module_origin.origin,
                     .cpp_headers = {},
                     .cpp_source_fragments = {},
                     .items = {},
@@ -203,96 +190,91 @@ const ct::Suite tests([] static noexcept {
             builder.define_declaration(
                 second_module,
                 ModuleDeclaration {
-                    .provenance_module = second_facts.provenance_module,
-                    .origin = second_facts.origin,
+                    .provenance_module = second_module_origin.provenance_module,
+                    .origin = second_module_origin.origin,
                     .cpp_headers = {},
                     .cpp_source_fragments = {},
                     .items = {structure},
                 }
             );
             builder.finish_declaration_heads();
-            ct::expect(expect_termination("semir-publication-module-item-owner", [&] noexcept {
+            expect(expect_termination("semir-publication-module-item-owner", [&] noexcept {
                 static_cast<void>(std::move(builder).finish());
             }));
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR publication invariant: enum owner and case list are bidirectional",
+    "SemIR publication invariant: enum owner and case list are bidirectional"_test =
         [] static noexcept {
             check_enum_case_multiplicity("semir-publication-orphan-enum-case", 0uz);
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR publication invariant: an enum case appears once in its owner list",
+    "SemIR publication invariant: an enum case appears once in its owner list"_test =
         [] static noexcept {
             check_enum_case_multiplicity("semir-publication-duplicate-enum-case", 2uz);
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR publication invariant: one callable belongs to one function",
-        [] static noexcept {
-            auto sources = SourceManager();
-            auto diagnostics = DiagnosticSink();
-            auto builder = begin_compilation(sources, diagnostics, "semir.publication.callable");
-            const auto facts = module_facts(builder);
-            const auto module_id = builder.reserve_module_declaration();
-            const auto first = builder.reserve_function_declaration();
-            const auto second = builder.reserve_function_declaration();
-            const auto callable = builder.reserve_callable_declaration();
-            const auto void_type = builder.builtin_type(BuiltinType::Void);
-            builder.define_callable_contract(callable, callable_contract(builder, void_type));
-            const auto function = [&](std::string_view name) noexcept {
-                return FunctionDeclaration {
-                    .module_id = module_id,
-                    .name = builder.intern_spelling(name),
-                    .origin = facts.origin,
-                    .visibility = DeclarationVisibility::Module,
-                    .callable = callable,
-                    .entry_point = std::nullopt,
-                    .cpp_export_origin = std::nullopt,
-                    .is_const = false,
-                };
-            };
-            builder.define_declaration(first, function("first"));
-            builder.define_declaration(second, function("second"));
-            builder.define_declaration(
-                module_id,
-                ModuleDeclaration {
-                    .provenance_module = facts.provenance_module,
-                    .origin = facts.origin,
-                    .cpp_headers = {},
-                    .cpp_source_fragments = {},
-                    .items = {first, second},
-                }
-            );
-            builder.finish_declaration_heads();
-            builder.complete_callable(
-                callable,
-                CppImportImplementation {.form_origin = facts.origin}
-            );
-            ct::expect(
-                expect_termination("semir-publication-duplicate-function-callable", [&] noexcept {
-                    static_cast<void>(std::move(builder).finish());
-                })
-            );
-        }
-    );
-
-    ct::test("SemIR publication invariant: a test has one owning module item", [] static noexcept {
+    "SemIR publication invariant: one callable belongs to one function"_test = [] static noexcept {
         auto sources = SourceManager();
         auto diagnostics = DiagnosticSink();
-        auto builder = begin_compilation(sources, diagnostics, "semir.publication.test_item");
-        const auto facts = module_facts(builder);
+        auto builder =
+            begin_semir_test_compilation(sources, diagnostics, "semir.publication.callable");
+        const auto module_origin = make_semir_test_module_origin(builder);
+        const auto module_id = builder.reserve_module_declaration();
+        const auto first = builder.reserve_function_declaration();
+        const auto second = builder.reserve_function_declaration();
+        const auto callable = builder.reserve_callable_declaration();
+        const auto void_type = builder.builtin_type(BuiltinType::Void);
+        builder.define_callable_contract(
+            callable,
+            make_semir_test_callable_contract(builder, void_type)
+        );
+        const auto function = [&](std::string_view name) noexcept {
+            return FunctionDeclaration {
+                .module_id = module_id,
+                .name = builder.intern_spelling(name),
+                .origin = module_origin.origin,
+                .visibility = DeclarationVisibility::Module,
+                .callable = callable,
+                .entry_point = std::nullopt,
+                .cpp_export_origin = std::nullopt,
+                .is_const = false,
+            };
+        };
+        builder.define_declaration(first, function("first"));
+        builder.define_declaration(second, function("second"));
+        builder.define_declaration(
+            module_id,
+            ModuleDeclaration {
+                .provenance_module = module_origin.provenance_module,
+                .origin = module_origin.origin,
+                .cpp_headers = {},
+                .cpp_source_fragments = {},
+                .items = {first, second},
+            }
+        );
+        builder.finish_declaration_heads();
+        builder.complete_callable(
+            callable,
+            CppImportImplementation {.form_origin = module_origin.origin}
+        );
+        expect(expect_termination("semir-publication-duplicate-function-callable", [&] noexcept {
+            static_cast<void>(std::move(builder).finish());
+        }));
+    };
+
+    "SemIR publication invariant: a test has one owning module item"_test = [] static noexcept {
+        auto sources = SourceManager();
+        auto diagnostics = DiagnosticSink();
+        auto builder =
+            begin_semir_test_compilation(sources, diagnostics, "semir.publication.test_item");
+        const auto module_origin = make_semir_test_module_origin(builder);
         const auto module_id = builder.reserve_module_declaration();
         const auto test = builder.reserve_test();
         builder.define_declaration(
             module_id,
             ModuleDeclaration {
-                .provenance_module = facts.provenance_module,
-                .origin = facts.origin,
+                .provenance_module = module_origin.provenance_module,
+                .origin = module_origin.origin,
                 .cpp_headers = {},
                 .cpp_source_fragments = {},
                 .items = {test, test},
@@ -306,39 +288,42 @@ const ct::Suite tests([] static noexcept {
             TestDeclaration {
                 .is_const = false,
                 .module_id = module_id,
-                .source = {.label = builder.intern_spelling("test"), .origin = facts.origin},
+                .source =
+                    {.label = builder.intern_spelling("test"), .origin = module_origin.origin},
                 .body = body_id,
             }
         );
-        auto graph = minimal_body(std::move(reservation), facts.origin, builder);
-        publish(std::move(graph), builder);
-        ct::expect(expect_termination("semir-publication-duplicate-test-item", [&] noexcept {
+        auto graph = make_semir_test_body(std::move(reservation), module_origin.origin, builder);
+        builder.add_body_draft(std::move(graph));
+        expect(expect_termination("semir-publication-duplicate-test-item", [&] noexcept {
             static_cast<void>(std::move(builder).finish());
         }));
-    });
+    };
 
-    ct::test(
-        "SemIR publication invariant: function declarations use function bodies",
+    "SemIR publication invariant: function declarations use function bodies"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            auto builder = begin_compilation(
+            auto builder = begin_semir_test_compilation(
                 sources,
                 diagnostics,
                 "semir.publication.function_implementation"
             );
-            const auto facts = module_facts(builder);
+            const auto module_origin = make_semir_test_module_origin(builder);
             const auto module_id = builder.reserve_module_declaration();
             const auto function = builder.reserve_function_declaration();
             const auto callable = builder.reserve_callable_declaration();
             const auto void_type = builder.builtin_type(BuiltinType::Void);
-            builder.define_callable_contract(callable, callable_contract(builder, void_type));
+            builder.define_callable_contract(
+                callable,
+                make_semir_test_callable_contract(builder, void_type)
+            );
             builder.define_declaration(
                 function,
                 FunctionDeclaration {
                     .module_id = module_id,
                     .name = builder.intern_spelling("function"),
-                    .origin = facts.origin,
+                    .origin = module_origin.origin,
                     .visibility = DeclarationVisibility::Module,
                     .callable = callable,
                     .entry_point = std::nullopt,
@@ -349,8 +334,8 @@ const ct::Suite tests([] static noexcept {
             builder.define_declaration(
                 module_id,
                 ModuleDeclaration {
-                    .provenance_module = facts.provenance_module,
-                    .origin = facts.origin,
+                    .provenance_module = module_origin.provenance_module,
+                    .origin = module_origin.origin,
                     .cpp_headers = {},
                     .cpp_source_fragments = {},
                     .items = {function},
@@ -360,62 +345,65 @@ const ct::Suite tests([] static noexcept {
             auto reservation = builder.reserve_body(BodyKind::Closure);
             const auto body_id = reservation.id();
             builder.complete_callable(callable, ClosureBodyImplementation {.body = body_id});
-            auto graph = minimal_body(std::move(reservation), facts.origin, builder);
-            publish(std::move(graph), builder);
-            ct::expect(expect_termination("semir-publication-function-closure-body", [&] noexcept {
+            auto graph =
+                make_semir_test_body(std::move(reservation), module_origin.origin, builder);
+            builder.add_body_draft(std::move(graph));
+            expect(expect_termination("semir-publication-function-closure-body", [&] noexcept {
                 static_cast<void>(std::move(builder).finish());
             }));
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR declaration invariant: body ownership is unique and program-local",
+    "SemIR declaration invariant: body ownership is unique and program-local"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            auto builder = begin_compilation(sources, diagnostics, "semir.declaration.body_owner");
+            auto builder =
+                begin_semir_test_compilation(sources, diagnostics, "semir.declaration.body_owner");
             builder.finish_declaration_heads();
             const auto void_type = builder.builtin_type(BuiltinType::Void);
-            const auto first = builder.append_body_callable(callable_contract(builder, void_type));
-            const auto second = builder.append_body_callable(callable_contract(builder, void_type));
+            const auto first =
+                builder.append_body_callable(make_semir_test_callable_contract(builder, void_type));
+            const auto second =
+                builder.append_body_callable(make_semir_test_callable_contract(builder, void_type));
             const auto body = builder.reserve_body(BodyKind::Closure);
             builder.complete_callable(first, ClosureBodyImplementation {.body = body.id()});
-            ct::expect(expect_termination("semir-declaration-duplicate-body-owner", [&] noexcept {
+            expect(expect_termination("semir-declaration-duplicate-body-owner", [&] noexcept {
                 builder.complete_callable(second, ClosureBodyImplementation {.body = body.id()});
             }));
 
             auto foreign_sources = SourceManager();
             auto foreign_diagnostics = DiagnosticSink();
-            auto foreign = begin_compilation(
+            auto foreign = begin_semir_test_compilation(
                 foreign_sources,
                 foreign_diagnostics,
                 "semir.declaration.foreign_body"
             );
             foreign.finish_declaration_heads();
             const auto foreign_body = foreign.reserve_body(BodyKind::Closure);
-            ct::expect(expect_termination("semir-declaration-foreign-body-owner", [&] noexcept {
+            expect(expect_termination("semir-declaration-foreign-body-owner", [&] noexcept {
                 builder.complete_callable(
                     second,
                     ClosureBodyImplementation {.body = foreign_body.id()}
                 );
             }));
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR publication invariant: a closure callable has one closure operation",
+    "SemIR publication invariant: a closure callable has one closure operation"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            auto builder =
-                begin_compilation(sources, diagnostics, "semir.publication.closure_site");
-            const auto facts = module_facts(builder);
+            auto builder = begin_semir_test_compilation(
+                sources,
+                diagnostics,
+                "semir.publication.closure_site"
+            );
+            const auto module_origin = make_semir_test_module_origin(builder);
             const auto module_id = builder.reserve_module_declaration();
             builder.define_declaration(
                 module_id,
                 ModuleDeclaration {
-                    .provenance_module = facts.provenance_module,
-                    .origin = facts.origin,
+                    .provenance_module = module_origin.provenance_module,
+                    .origin = module_origin.origin,
                     .cpp_headers = {},
                     .cpp_source_fragments = {},
                     .items = {},
@@ -424,63 +412,66 @@ const ct::Suite tests([] static noexcept {
             builder.finish_declaration_heads();
             const auto void_type = builder.builtin_type(BuiltinType::Void);
             const auto callable =
-                builder.append_body_callable(callable_contract(builder, void_type));
+                builder.append_body_callable(make_semir_test_callable_contract(builder, void_type));
             auto reservation = builder.reserve_body(BodyKind::Closure);
             const auto body_id = reservation.id();
             builder.complete_callable(callable, ClosureBodyImplementation {.body = body_id});
-            auto graph = minimal_body(std::move(reservation), facts.origin, builder);
-            publish(std::move(graph), builder);
-            ct::expect(expect_termination("semir-publication-orphan-closure", [&] noexcept {
+            auto graph =
+                make_semir_test_body(std::move(reservation), module_origin.origin, builder);
+            builder.add_body_draft(std::move(graph));
+            expect(expect_termination("semir-publication-orphan-closure", [&] noexcept {
                 static_cast<void>(std::move(builder).finish());
             }));
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR declaration invariant: builder rejects cross-program module references",
+    "SemIR declaration invariant: builder rejects cross-program module references"_test =
         [] static noexcept {
             auto first_sources = SourceManager();
             auto second_sources = SourceManager();
             auto first_diagnostics = DiagnosticSink();
             auto second_diagnostics = DiagnosticSink();
-            auto first =
-                begin_compilation(first_sources, first_diagnostics, "semir.publication.first");
-            auto second =
-                begin_compilation(second_sources, second_diagnostics, "semir.publication.second");
-            const auto facts = module_facts(first);
+            auto first = begin_semir_test_compilation(
+                first_sources,
+                first_diagnostics,
+                "semir.publication.first"
+            );
+            auto second = begin_semir_test_compilation(
+                second_sources,
+                second_diagnostics,
+                "semir.publication.second"
+            );
+            const auto module_origin = make_semir_test_module_origin(first);
             const auto foreign_module = second.reserve_module_declaration();
             const auto structure = first.reserve_struct_declaration();
-            ct::expect(expect_termination("semir-publication-cross-program-module", [&] noexcept {
+            expect(expect_termination("semir-publication-cross-program-module", [&] noexcept {
                 first.define_declaration(
                     structure,
                     ConstructionStructDeclaration {
                         .kind = RecordKind::Struct,
                         .module_id = foreign_module,
                         .name = first.intern_spelling("Structure"),
-                        .origin = facts.origin,
+                        .origin = module_origin.origin,
                         .visibility = DeclarationVisibility::Module,
                         .fields = {},
                     }
                 );
             }));
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR publication invariant: external names require valid structured paths",
+    "SemIR publication invariant: external names require valid structured paths"_test =
         [] static noexcept {
             const auto paths = std::vector<std::vector<std::string>> {{}, {"native", "class"}};
             for (const auto& [index, components] : paths | std::views::enumerate) {
                 auto sources = SourceManager();
                 auto diagnostics = DiagnosticSink();
-                auto builder = begin_compilation(sources, diagnostics, "external");
-                const auto facts = module_facts(builder);
+                auto builder = begin_semir_test_compilation(sources, diagnostics, "external");
+                const auto module_origin = make_semir_test_module_origin(builder);
                 const auto module_id = builder.reserve_module_declaration();
                 builder.define_declaration(
                     module_id,
                     ModuleDeclaration {
-                        .provenance_module = facts.provenance_module,
-                        .origin = facts.origin,
+                        .provenance_module = module_origin.provenance_module,
+                        .origin = module_origin.origin,
                         .cpp_headers = {},
                         .cpp_source_fragments = {},
                         .items = {},
@@ -498,13 +489,12 @@ const ct::Suite tests([] static noexcept {
                      }}
                 ));
                 builder.finish_declaration_heads();
-                ct::expect(expect_termination(
+                expect(expect_termination(
                     std::format("semir-external-invalid-path-{}", index),
                     [&] noexcept { static_cast<void>(std::move(builder).finish()); }
                 ));
             }
-        }
-    );
+        };
 });
 
 } // namespace

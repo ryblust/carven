@@ -8,11 +8,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic interpolation: normalization preserves text and depth-first operand order",
+const TestSuite suite([] static noexcept {
+    "Semantic interpolation: normalization preserves text and depth-first operand order"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view expression;
@@ -33,32 +30,31 @@ const ct::Suite tests([] static noexcept {
                     .operands = {"value", "width", "precision", "last"},
                 },
             });
-            ct::each(scenarios, &Scenario::expression, [&](const auto& scenario) noexcept {
+            each(scenarios, &Scenario::expression, [&](const auto& scenario) noexcept {
                 const auto source =
                     std::format("fn source() {{ let text = {}; }}", scenario.expression);
                 const auto tree = parse_valid(source);
                 const auto ast = tree.view();
                 const auto& statement = ast.statement(function_body(tree).statements.front());
                 const auto& binding = get<ASTVariableDecl>(statement);
-                if (!(ct::expect(binding.initializer.has_value()))) {
+                if (!(expect(binding.initializer.has_value()))) {
                     return;
                 }
                 const auto& interpolation =
                     get<ASTInterpolationExpr>(ast.expression(*binding.initializer));
                 const auto normalized = normalize_interpolation(interpolation);
-                ct::expect(serialize_format(normalized.specification) == scenario.format);
-                if (!(ct::expect(normalized.operands.size() == scenario.operands.size()))) {
+                expect(serialize_format(normalized.specification) == scenario.format);
+                if (!(expect(normalized.operands.size() == scenario.operands.size()))) {
                     return;
                 }
                 for (auto index = 0uz; index < normalized.operands.size(); ++index) {
-                    ct::expect(
+                    expect(
                         slice(source, ast.expression(normalized.operands[index]).span)
                         == scenario.operands[index]
                     );
                 }
             });
-        }
-    );
+        };
 });
 
 } // namespace

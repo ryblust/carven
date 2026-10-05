@@ -28,9 +28,7 @@ StagingDirectory::~StagingDirectory() noexcept {
 
 } // namespace
 
-namespace graver {
-
-auto collect_inputs(std::span<const std::string_view> inputs) noexcept
+auto collect_format_paths(std::span<const std::string_view> inputs) noexcept
     -> std::expected<std::vector<std::filesystem::path>, std::string> {
     auto result = std::vector<std::filesystem::path>();
     auto error = std::error_code();
@@ -122,7 +120,7 @@ auto collect_inputs(std::span<const std::string_view> inputs) noexcept
     return unique;
 }
 
-auto replace_file(
+auto replace_formatted_file(
     const std::filesystem::path& path,
     std::string_view original,
     std::string_view formatted
@@ -175,6 +173,4 @@ auto replace_file(
         return std::unexpected(std::format("cannot replace source file: {}", error.message()));
     }
     return {};
-}
-
 }

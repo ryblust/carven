@@ -12,9 +12,8 @@ import .control using Failure;
 import .construction using crossed_step;
 import .outcomes using owned_outcome;
 
-fn short_circuit(flag: bool) -> bool {
-    return (flag && (Owner { 1 }.probe() as bool)) && (matches("1 11 ") as bool);
-}
+fn short_circuit(flag: bool) -> bool => (flag && (Owner { 1 }.probe() as bool))
+    && (matches("1 11 ") as bool);
 
 test "Lifetimes: short circuit temporaries live through the full expression" {
     reset();
@@ -45,10 +44,10 @@ test "Lifetimes: Take completes before later call operands" {
     check(matches("1 101 2 9 -1 -1 "));
 }
 
-fn ordered_short_circuit(flag: bool) -> bool {
-    return (flag && (FixedOwner { 1 }.probe(event(2), event(3)) as bool))
-        && (matches("1 2 3 9 ") as bool);
-}
+fn ordered_short_circuit(flag: bool) -> bool => (
+    flag && (FixedOwner { 1 }.probe(event(2), event(3)) as bool)
+)
+    && (matches("1 2 3 9 ") as bool);
 
 test "Lifetimes: conditional construction survives ordered full expression operands" {
     reset();
@@ -66,12 +65,9 @@ fn observed(value: bool) -> bool {
     return value;
 }
 
-fn nested_owners(flag: bool) -> bool {
-    return observed(
-        (Owner { 1 }.probe() as bool)
-            && (flag && (FixedOwner { 2 }.probe(event(3), event(4)) as bool))
-    );
-}
+fn nested_owners(flag: bool) -> bool => observed(
+    (Owner { 1 }.probe() as bool) && (flag && (FixedOwner { 2 }.probe(event(3), event(4)) as bool))
+);
 
 test "Lifetimes: nested conditional operands destroy owners in reverse construction order" {
     reset();
@@ -96,24 +92,22 @@ test "Lifetimes: discarded short circuit operands execute once and finish before
     check(matches("1 2 3 9 -1 8 "));
 }
 
-fn conditional_outcome(flag: bool) -> bool throw Failure {
-    return (flag && (owned_outcome(true)?.probe() as bool)) && (matches("1 11 ") as bool);
-}
+fn conditional_outcome(flag: bool) -> bool throw Failure => (
+    flag && (owned_outcome(true)?.probe() as bool)
+)
+    && (matches("1 11 ") as bool);
 
-fn conditional_branch_owner(flag: bool) -> bool {
-    return (
-        flag
-            && (
-                (if (flag) { FixedOwner { 3 } } else { FixedOwner { 4 } }).probe(event(5), event(6))
-                    as bool
-            )
-    )
-        && (matches("3 5 6 9 ") as bool);
-}
+fn conditional_branch_owner(flag: bool) -> bool => (
+    flag
+        && (
+            (if (flag) { FixedOwner { 3 } } else { FixedOwner { 4 } }).probe(event(5), event(6))
+                as bool
+        )
+)
+    && (matches("3 5 6 9 ") as bool);
 
-fn conditional_failure(flag: bool) -> bool throw Failure {
-    return (Owner { 1 }.probe() as bool) && (flag && (owned_outcome(false)?.probe() as bool));
-}
+fn conditional_failure(flag: bool) -> bool throw Failure => (Owner { 1 }.probe() as bool)
+    && (flag && (owned_outcome(false)?.probe() as bool));
 
 test "Lifetimes: joined outcomes and branch values retain full expression owners" {
     reset();
@@ -150,17 +144,11 @@ private fn crossed_combine(first: bool, second: bool, third: i32) -> bool {
     return first && second && third > 0;
 }
 
-private fn crossed_run(selected: bool, succeeds: bool) -> bool throw Failure {
-    return crossed_combine(
-        Owner { 1 }.probe() as bool,
-        if selected {
-            FixedOwner { 2 }.probe(crossed_step(3, succeeds)?, 4) as bool
-        } else {
-            false
-        },
-        crossed_step(5, true)?
-    );
-}
+private fn crossed_run(selected: bool, succeeds: bool) -> bool throw Failure => crossed_combine(
+    Owner { 1 }.probe() as bool,
+    if selected { FixedOwner { 2 }.probe(crossed_step(3, succeeds)?, 4) as bool } else { false },
+    crossed_step(5, true)?
+);
 
 test "crossed conditional owners preserve source cleanup order" {
     reset();

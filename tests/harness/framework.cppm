@@ -3,61 +3,90 @@ module carven:test.harness.framework;
 import :support.quote;
 import std;
 
-namespace carven::testing {
-
 using TestFunction = void (*)() noexcept;
 
-class Suite final {
+class TestSuite final {
 public:
-    explicit Suite(TestFunction declare) noexcept;
+    explicit TestSuite(TestFunction declare) noexcept;
 };
 
-auto test(
-    std::string_view name,
-    TestFunction body,
-    std::source_location location = std::source_location::current()
-) noexcept -> void;
+class TestBody final {
+public:
+    // The literal assignment protocol needs implicit conversion to capture the caller's location.
+    template<typename Function>
+        requires std::convertible_to<Function, TestFunction>
+    TestBody(
+        Function body,
+        std::source_location location = std::source_location::current()
+    ) noexcept
+        : body(body),
+          location(location) {}
 
-auto run(int argc, const char* const* argv) noexcept -> int;
+private:
+    friend class TestRegistration;
+
+    TestFunction body;
+    std::source_location location;
+};
+
+class TestRegistration final {
+public:
+    // The name is borrowed until assignment copies it into runner-owned storage.
+    explicit constexpr TestRegistration(std::string_view name) noexcept;
+    auto operator=(TestBody body) const noexcept -> void;
+
+private:
+    const std::string_view name;
+};
+
+constexpr TestRegistration::TestRegistration(std::string_view name) noexcept
+    : name(name) {}
+
+constexpr auto operator""_test(const char* name, std::size_t length) noexcept -> TestRegistration {
+    return TestRegistration(std::string_view(name, length));
+}
+
+auto run_tests(int argc, const char* const* argv) noexcept -> int;
 auto current_test_name() noexcept -> std::string_view;
 
-namespace detail {
+auto record_test_assertion(bool passed, std::source_location location) noexcept -> bool;
+auto test_failure_output() noexcept -> std::ostream&;
 
-auto record_assertion(bool passed, std::source_location location) noexcept -> bool;
-auto failure_output() noexcept -> std::ostream&;
-
-class ScenarioContext final {
+class TestScenarioContext final {
 public:
-    explicit ScenarioContext(std::string_view name) noexcept;
-    ~ScenarioContext() noexcept;
-    ScenarioContext(const ScenarioContext&) = delete;
-    auto operator=(const ScenarioContext&) -> ScenarioContext& = delete;
+    explicit TestScenarioContext(std::string_view name) noexcept;
+    ~TestScenarioContext() noexcept;
+    TestScenarioContext(const TestScenarioContext&) = delete;
+    auto operator=(const TestScenarioContext&) -> TestScenarioContext& = delete;
 };
 
-} // namespace detail
-
-class Assertion final {
+class TestAssertion final {
 public:
-    Assertion(bool condition, bool fatal, std::source_location location) noexcept;
+    TestAssertion(bool condition, bool fatal, std::source_location location) noexcept;
 
     template<typename Describe>
-    Assertion(bool condition, bool fatal, std::source_location location, Describe describe) noexcept
-        : Assertion(condition, fatal, location) {
+    TestAssertion(
+        bool condition,
+        bool fatal,
+        std::source_location location,
+        Describe describe
+    ) noexcept
+        : TestAssertion(condition, fatal, location) {
         if (!passed) {
-            describe(detail::failure_output());
+            describe(test_failure_output());
         }
     }
 
-    ~Assertion() noexcept;
-    Assertion(const Assertion&) = delete;
-    auto operator=(const Assertion&) -> Assertion& = delete;
+    ~TestAssertion() noexcept;
+    TestAssertion(const TestAssertion&) = delete;
+    auto operator=(const TestAssertion&) -> TestAssertion& = delete;
 
     explicit operator bool() const noexcept;
 
     template<typename... Messages>
-    auto note(const Messages&... messages) noexcept -> Assertion& {
+    auto note(const Messages&... messages) noexcept -> TestAssertion& {
         if (!passed) {
-            detail::failure_output() << "\n  note:";
+            test_failure_output() << "\n  note:";
             (write_note(messages), ...);
         }
         return *this;
@@ -66,12 +95,12 @@ public:
 private:
     template<typename Message>
     static auto write_note(const Message& message) noexcept -> void {
-        detail::failure_output() << ' ';
+        test_failure_output() << ' ';
         if constexpr (std::invocable<const Message&>) {
             static_assert(std::is_nothrow_invocable_v<const Message&>);
-            detail::failure_output() << std::invoke(message);
+            test_failure_output() << std::invoke(message);
         } else {
-            detail::failure_output() << message;
+            test_failure_output() << message;
         }
     }
 
@@ -84,8 +113,8 @@ template<typename Condition>
 auto expect(
     const Condition& condition,
     std::source_location location = std::source_location::current()
-) noexcept -> Assertion {
-    return Assertion(static_cast<bool>(condition), false, location);
+) noexcept -> TestAssertion {
+    return TestAssertion(static_cast<bool>(condition), false, location);
 }
 
 template<typename Condition>
@@ -93,18 +122,16 @@ template<typename Condition>
 auto require(
     const Condition& condition,
     std::source_location location = std::source_location::current()
-) noexcept -> Assertion {
-    return Assertion(static_cast<bool>(condition), true, location);
+) noexcept -> TestAssertion {
+    return TestAssertion(static_cast<bool>(condition), true, location);
 }
 
-namespace detail {
+template<typename Value>
+inline constexpr bool is_test_text = std::convertible_to<const Value&, std::string_view>;
 
 template<typename Value>
-inline constexpr bool is_text = std::convertible_to<const Value&, std::string_view>;
-
-template<typename Value>
-    requires is_text<Value>
-auto text_view(const Value& value) noexcept -> std::optional<std::string_view> {
+    requires is_test_text<Value>
+auto test_text_view(const Value& value) noexcept -> std::optional<std::string_view> {
     if constexpr (std::is_pointer_v<Value>) {
         if (value == nullptr) {
             return std::nullopt;
@@ -114,9 +141,9 @@ auto text_view(const Value& value) noexcept -> std::optional<std::string_view> {
 }
 
 template<typename Value>
-auto write_value(std::ostream& output, const Value& value) noexcept -> void {
-    if constexpr (is_text<Value>) {
-        const auto text = text_view(value);
+auto write_test_value(std::ostream& output, const Value& value) noexcept -> void {
+    if constexpr (is_test_text<Value>) {
+        const auto text = test_text_view(value);
         output << (text ? quote_text(*text) : "<null>");
     } else if constexpr (std::integral<Value>
                          && !std::same_as<Value, bool>
@@ -135,56 +162,54 @@ auto write_value(std::ostream& output, const Value& value) noexcept -> void {
     }
 }
 
-auto write_text_difference(
+auto write_test_text_difference(
     std::ostream& output,
     std::string_view actual,
     std::string_view expected
 ) noexcept -> void;
 
 template<typename Left, typename Right, typename Compare>
-auto compare(
+auto compare_test_values(
     const Left& actual,
     const Right& expected,
     Compare operation,
     std::string_view relation,
     bool fatal,
     std::source_location location
-) noexcept -> Assertion {
+) noexcept -> TestAssertion {
     const auto passed = [&] noexcept {
-        if constexpr (is_text<Left> && is_text<Right>) {
-            return operation(text_view(actual), text_view(expected));
+        if constexpr (is_test_text<Left> && is_test_text<Right>) {
+            return operation(test_text_view(actual), test_text_view(expected));
         } else {
             return static_cast<bool>(operation(actual, expected));
         }
     }();
-    return Assertion(passed, fatal, location, [&](std::ostream& output) noexcept {
-        if constexpr (is_text<Left> && is_text<Right>) {
-            const auto actual_text = text_view(actual);
-            const auto expected_text = text_view(expected);
+    return TestAssertion(passed, fatal, location, [&](std::ostream& output) noexcept {
+        if constexpr (is_test_text<Left> && is_test_text<Right>) {
+            const auto actual_text = test_text_view(actual);
+            const auto expected_text = test_text_view(expected);
             if (relation == "==" && actual_text && expected_text) {
-                write_text_difference(output, *actual_text, *expected_text);
+                write_test_text_difference(output, *actual_text, *expected_text);
                 return;
             }
         }
         output << "\n  actual:   ";
-        write_value(output, actual);
+        write_test_value(output, actual);
         output << "\n  expected: ";
-        write_value(output, expected);
+        write_test_value(output, expected);
         if (relation != "==") {
             output << "\n  relation: actual " << relation << " expected";
         }
     });
 }
 
-} // namespace detail
-
 template<typename Left, typename Right>
 auto expect_equal(
     const Left& actual,
     const Right& expected,
     std::source_location location = std::source_location::current()
-) noexcept -> Assertion {
-    return detail::compare(actual, expected, std::equal_to<> {}, "==", false, location);
+) noexcept -> TestAssertion {
+    return compare_test_values(actual, expected, std::equal_to<> {}, "==", false, location);
 }
 
 template<typename Left, typename Right>
@@ -192,8 +217,8 @@ auto expect_not_equal(
     const Left& actual,
     const Right& expected,
     std::source_location location = std::source_location::current()
-) noexcept -> Assertion {
-    return detail::compare(actual, expected, std::not_equal_to<> {}, "!=", false, location);
+) noexcept -> TestAssertion {
+    return compare_test_values(actual, expected, std::not_equal_to<> {}, "!=", false, location);
 }
 
 template<typename Left, typename Right>
@@ -201,8 +226,8 @@ auto expect_less(
     const Left& actual,
     const Right& expected,
     std::source_location location = std::source_location::current()
-) noexcept -> Assertion {
-    return detail::compare(actual, expected, std::less<> {}, "<", false, location);
+) noexcept -> TestAssertion {
+    return compare_test_values(actual, expected, std::less<> {}, "<", false, location);
 }
 
 template<typename Left, typename Right>
@@ -210,8 +235,8 @@ auto expect_less_equal(
     const Left& actual,
     const Right& expected,
     std::source_location location = std::source_location::current()
-) noexcept -> Assertion {
-    return detail::compare(actual, expected, std::less_equal<> {}, "<=", false, location);
+) noexcept -> TestAssertion {
+    return compare_test_values(actual, expected, std::less_equal<> {}, "<=", false, location);
 }
 
 template<typename Left, typename Right>
@@ -219,8 +244,8 @@ auto expect_greater(
     const Left& actual,
     const Right& expected,
     std::source_location location = std::source_location::current()
-) noexcept -> Assertion {
-    return detail::compare(actual, expected, std::greater<> {}, ">", false, location);
+) noexcept -> TestAssertion {
+    return compare_test_values(actual, expected, std::greater<> {}, ">", false, location);
 }
 
 template<typename Left, typename Right>
@@ -228,8 +253,8 @@ auto expect_greater_equal(
     const Left& actual,
     const Right& expected,
     std::source_location location = std::source_location::current()
-) noexcept -> Assertion {
-    return detail::compare(actual, expected, std::greater_equal<> {}, ">=", false, location);
+) noexcept -> TestAssertion {
+    return compare_test_values(actual, expected, std::greater_equal<> {}, ">=", false, location);
 }
 
 template<typename Left, typename Right>
@@ -237,8 +262,8 @@ auto require_equal(
     const Left& actual,
     const Right& expected,
     std::source_location location = std::source_location::current()
-) noexcept -> Assertion {
-    return detail::compare(actual, expected, std::equal_to<> {}, "==", true, location);
+) noexcept -> TestAssertion {
+    return compare_test_values(actual, expected, std::equal_to<> {}, "==", true, location);
 }
 
 template<typename Left, typename Right>
@@ -251,7 +276,7 @@ auto expect_range_equal(
     const Left& actual,
     const Right& expected,
     std::source_location location = std::source_location::current()
-) noexcept -> Assertion {
+) noexcept -> TestAssertion {
     const auto actual_size = std::ranges::size(actual);
     const auto expected_size = std::ranges::size(expected);
     auto actual_it = std::ranges::begin(actual);
@@ -266,16 +291,16 @@ auto expect_range_equal(
     }
     const auto passed =
         actual_it == std::ranges::end(actual) && expected_it == std::ranges::end(expected);
-    return Assertion(passed, false, location, [&](std::ostream& output) noexcept {
+    return TestAssertion(passed, false, location, [&](std::ostream& output) noexcept {
         output << "\n  lengths: actual " << actual_size << ", expected " << expected_size
                << "\n  first difference at index " << index;
         if (actual_it != std::ranges::end(actual)) {
             output << "\n  actual element:   ";
-            detail::write_value(output, *actual_it);
+            write_test_value(output, *actual_it);
         }
         if (expected_it != std::ranges::end(expected)) {
             output << "\n  expected element: ";
-            detail::write_value(output, *expected_it);
+            write_test_value(output, *expected_it);
         }
     });
 }
@@ -283,7 +308,7 @@ auto expect_range_equal(
 template<typename Function>
     requires std::is_nothrow_invocable_v<Function&>
 auto scenario(std::string_view name, Function body) noexcept -> void {
-    const auto context = detail::ScenarioContext(name);
+    const auto context = TestScenarioContext(name);
     static_cast<void>(std::invoke(body));
 }
 
@@ -309,5 +334,3 @@ auto each(
         scenario(std::string_view(name), [&] noexcept { std::invoke(callback, item); });
     }
 }
-
-} // namespace carven::testing

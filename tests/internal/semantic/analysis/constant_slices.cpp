@@ -11,11 +11,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Constant slices: completed arrays freeze without changing their element types",
+const TestSuite suite([] static noexcept {
+    "Constant slices: completed arrays freeze without changing their element types"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const fn build(offset: i32) -> [i32; 4] {
@@ -51,10 +48,10 @@ const ct::Suite tests([] static noexcept {
                 }
                 if (name == "selected" || name == "nested" || name == "length") {
                     const auto* value = std::get_if<IntegerConstant>(&fact.value);
-                    if (!ct::expect(value != nullptr)) {
+                    if (!expect(value != nullptr)) {
                         return;
                     }
-                    ct::expect(
+                    expect(
                         value->as_unsigned()
                         == (name == "selected"     ? 7u
                                 : name == "nested" ? 3u
@@ -63,48 +60,46 @@ const ct::Suite tests([] static noexcept {
                     ++checked;
                 } else if (name == "is_empty" || name == "skipped") {
                     const auto* value = std::get_if<BooleanConstant>(&fact.value);
-                    if (!ct::expect(value != nullptr)) {
+                    if (!expect(value != nullptr)) {
                         return;
                     }
-                    ct::expect(value->value == (name == "is_empty"));
+                    expect(value->value == (name == "is_empty"));
                     ++checked;
                 } else {
                     const auto* value = std::get_if<SliceConstant>(&fact.value);
-                    if (!ct::expect(value != nullptr)) {
+                    if (!expect(value != nullptr)) {
                         return;
                     }
                     const auto* type =
                         std::get_if<SliceTypeValue>(&program.types().type(fact.type).value);
-                    if (!ct::expect(type != nullptr)) {
+                    if (!expect(type != nullptr)) {
                         return;
                     }
                     for (const auto child : value->elements) {
-                        ct::expect(program.constants().constant(child).type == type->element);
+                        expect(program.constants().constant(child).type == type->element);
                     }
                     if (name == "empty" || name == "ending") {
-                        ct::expect(value->elements.empty());
+                        expect(value->elements.empty());
                     }
                     if (name == "rows") {
                         const auto* row =
                             std::get_if<ArrayTypeValue>(&program.types().type(type->element).value);
-                        if (!ct::expect(row != nullptr)) {
+                        if (!expect(row != nullptr)) {
                             return;
                         }
-                        ct::expect(row->extent == 2u);
+                        expect(row->extent == 2u);
                     }
                     ++checked;
                 }
             }
-            if (!ct::expect(table.has_value())) {
+            if (!expect(table.has_value())) {
                 return;
             }
-            ct::expect(table == explicit_view);
-            ct::expect(checked == 12uz);
-        }
-    );
+            expect(table == explicit_view);
+            expect(checked == 12uz);
+        };
 
-    ct::test(
-        "Constant slices: type access and bounds failures remain source diagnostics",
+    "Constant slices: type access and bounds failures remain source diagnostics"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view source;
@@ -153,31 +148,27 @@ const ct::Suite tests([] static noexcept {
                     .code = DiagnosticCode::TypeEqualityUnsupported
                 },
             };
-            ct::each(cases, &Case::source, [&](const auto& item) noexcept {
+            each(cases, &Case::source, [&](const auto& item) noexcept {
                 const auto diagnostics = analyze_test_errors(std::string(item.source));
-                ct::expect_diagnostic(diagnostics, item.code);
+                expect_diagnostic(diagnostics, item.code);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant slices: frozen storage does not extend ordinary local array borrows",
+    "Constant slices: frozen storage does not extend ordinary local array borrows"_test =
         [] static noexcept {
             const auto cases = std::array {
                 "fn bad() { let view = [1, 2].as_slice(); }",
                 "const source: [i32; 2] = [1, 2]; fn bad() { var copy = source; let view = copy.as_slice(); copy[0] = 9; }",
             };
-            ct::each(cases, std::identity {}, [&](const auto& source) noexcept {
-                ct::expect_diagnostic(
+            each(cases, std::identity {}, [&](const auto& source) noexcept {
+                expect_diagnostic(
                     analyze_test_errors(source),
                     DiagnosticCode::AccessBorrowConflict
                 );
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant slices: repeated retained length queries do not consume construction work",
+    "Constant slices: repeated retained length queries do not consume construction work"_test =
         [] static noexcept {
             // Repeated length queries read retained storage without constructing new elements.
             auto source = std::string("const array = [");
@@ -195,13 +186,12 @@ const ct::Suite tests([] static noexcept {
                 static_cast<void>(id);
                 if (program.provenance().spelling(declaration.name) == "count") {
                     const auto& fact = program.constants().constant(declaration.value);
-                    ct::expect(std::get<IntegerConstant>(fact.value).magnitude() == 526336uz);
+                    expect(std::get<IntegerConstant>(fact.value).magnitude() == 526336uz);
                     checked = true;
                 }
             }
-            ct::expect(checked);
-        }
-    );
+            expect(checked);
+        };
 });
 
 } // namespace

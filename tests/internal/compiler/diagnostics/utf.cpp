@@ -15,8 +15,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 class UTFCompilation final {
 public:
     explicit UTFCompilation(std::string_view application) noexcept {
@@ -29,10 +27,10 @@ public:
               std::pair {"simd", "bytes"}}) {
             const auto filename = std::format("crafts/carven/std/{}/{}.cv", directory, name);
             auto input = std::ifstream(filename);
-            ct::require(input.is_open());
+            require(input.is_open());
             auto text = std::string(std::istreambuf_iterator<char>(input), {});
             const auto source = sources.append_virtual(filename, std::move(text));
-            ct::require(source.has_value());
+            require(source.has_value());
             inputs.push_back(
                 {.source_id = *source,
                  .module_path = *CanonicalModulePath::from_value(
@@ -42,7 +40,7 @@ public:
         }
         const auto application_source =
             sources.append_virtual("application.cv", std::string(application));
-        ct::require(application_source.has_value());
+        require(application_source.has_value());
         inputs.push_back(
             {.source_id = *application_source,
              .module_path = *CanonicalModulePath::from_value("application")}
@@ -64,12 +62,8 @@ public:
     std::vector<SourceModuleInput> inputs;
 };
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test("UTF craft: returned text retains input storage", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "UTF craft: returned text retains input storage"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "returned text cannot borrow a local array",
              .source =
@@ -87,7 +81,7 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "let text = from_utf8([65])?"},
 
         });
-        ct::each(cases, &CompilerErrorExpectation::name, [&](const auto& item) noexcept {
+        each(cases, &CompilerErrorExpectation::name, [&](const auto& item) noexcept {
             auto fixture = UTFCompilation(
                 std::string(
                     "import std::utf.text using from_utf8; import std::utf.error using UTF8Error; "
@@ -95,25 +89,24 @@ const ct::Suite tests([] static noexcept {
                 + std::string(item.source)
             );
             const auto result = fixture.run();
-            if (!(ct::expect(!(result.has_value())))) {
+            if (!(expect(!(result.has_value())))) {
                 return;
             }
-            if (!ct::expect_diagnostic(result.error(), item.code)) {
+            if (!expect_diagnostic(result.error(), item.code)) {
                 return;
             }
-            const auto* diagnostic = ct::find_diagnostic(result.error(), item.code);
-            if (!(ct::expect(diagnostic->attachment.primary.has_value()))) {
+            const auto* diagnostic = find_diagnostic(result.error(), item.code);
+            if (!(expect(diagnostic->attachment.primary.has_value()))) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 fixture.sources.slice(diagnostic->attachment.primary->span),
                 item.primary_text
             );
         });
-    });
+    };
 
-    ct::test(
-        "Compiler diagnostics: unchecked text construction checks types and backing",
+    "Compiler diagnostics: unchecked text construction checks types and backing"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "scalar input must be u32",
@@ -140,14 +133,12 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "s.clear()"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Character construction: static execution diagnoses invalid scalar preconditions",
+    "Character construction: static execution diagnoses invalid scalar preconditions"_test =
         [] static noexcept {
             static constexpr auto cases = std::array {0xd800u, 0xdfffu, 0x110000u, 0xffffffffu};
-            ct::each(
+            each(
                 cases,
                 [](auto value) static noexcept { return std::format("value: {}", value); },
                 [](auto value) static noexcept {
@@ -168,8 +159,7 @@ const ct::Suite tests([] static noexcept {
                     );
                 }
             );
-        }
-    );
+        };
 });
 
 } // namespace

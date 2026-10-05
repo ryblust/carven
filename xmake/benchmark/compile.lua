@@ -104,7 +104,7 @@ function workloads()
         local operands = {}
         for _ = 1, count do table.insert(operands, "operand(value)") end
         table.insert(cases, {name = "operand_chain_" .. count, label = "Runtime operand chain", size = count .. " operands",
-            source = "fn operand(value: i32) -> i32 { return value; }\n"
+            source = "fn operand(value: i32) -> i32 => value;\n"
                 .. "fn chain(value: i32) -> i32 { return " .. table.concat(operands, " + ") .. "; }\n"})
     end
     do
@@ -157,7 +157,7 @@ function workloads()
         local expression = "value"
         for _ = 1, depth do expression = "identity(" .. expression .. ")" end
         table.insert(cases, {name = "nested_expression_" .. depth, label = "Nested expressions", size = "depth " .. depth,
-            source = "fn identity(value: i32) -> i32 { return value; }\n"
+            source = "fn identity(value: i32) -> i32 => value;\n"
                 .. "fn probe(value: i32) -> i32 { return " .. expression .. "; }\nfn main() { probe(1); }\n"})
     end
     return groups

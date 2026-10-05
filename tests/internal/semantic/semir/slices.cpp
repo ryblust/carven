@@ -24,15 +24,10 @@ import :test.internal.semantic.format.fixture;
 import :test.internal.semantic.semir.fixture;
 import std;
 
-using namespace semir_test;
-
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "SemIR publication: slice extents describe sequence results and match array types",
+const TestSuite suite([] static noexcept {
+    "SemIR publication: slice extents describe sequence results and match array types"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view name;
@@ -48,18 +43,19 @@ const ct::Suite tests([] static noexcept {
                 {"slice query no sequence extent", std::nullopt, true, true},
                 {"slice query sequence extent", 0u, true, false},
             });
-            ct::each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
+            each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
                 auto sources = SourceManager();
                 auto diagnostics = DiagnosticSink();
-                auto builder = begin_compilation(sources, diagnostics, "semir.publication.slice");
-                const auto facts = module_facts(builder);
+                auto builder =
+                    begin_semir_test_compilation(sources, diagnostics, "semir.publication.slice");
+                const auto module_origin = make_semir_test_module_origin(builder);
                 const auto module_id = builder.reserve_module_declaration();
                 const auto test = builder.reserve_test();
                 builder.define_declaration(
                     module_id,
                     ModuleDeclaration {
-                        .provenance_module = facts.provenance_module,
-                        .origin = facts.origin,
+                        .provenance_module = module_origin.provenance_module,
+                        .origin = module_origin.origin,
                         .cpp_headers = {},
                         .cpp_source_fragments = {},
                         .items = {test},
@@ -81,7 +77,8 @@ const ct::Suite tests([] static noexcept {
                         .is_const = false,
                         .module_id = module_id,
                         .source =
-                            {.label = builder.intern_spelling("slice"), .origin = facts.origin},
+                            {.label = builder.intern_spelling("slice"),
+                             .origin = module_origin.origin},
                         .body = reservation.id(),
                     }
                 );
@@ -89,7 +86,7 @@ const ct::Suite tests([] static noexcept {
                 const auto lifetime = body.add_lifetime_region(
                     std::nullopt,
                     LifetimeRegionKind::Lexical,
-                    facts.origin
+                    module_origin.origin
                 );
                 auto operands = std::vector<SemCallArgument>();
                 operands.push_back({
@@ -97,14 +94,14 @@ const ct::Suite tests([] static noexcept {
                     .expression = body.make_expression(
                         array_type,
                         lifetime,
-                        facts.origin,
+                        module_origin.origin,
                         SemArray {.elements = {}}
                     ),
                 });
                 auto expression = body.make_expression(
                     slice_type,
                     lifetime,
-                    facts.origin,
+                    module_origin.origin,
                     SemIntrinsic {
                         .operation =
                             SliceIntrinsicOperation {
@@ -123,7 +120,7 @@ const ct::Suite tests([] static noexcept {
                     expression = body.make_expression(
                         size_type,
                         lifetime,
-                        facts.origin,
+                        module_origin.origin,
                         SemIntrinsic {
                             .operation =
                                 SliceIntrinsicOperation {
@@ -136,34 +133,32 @@ const ct::Suite tests([] static noexcept {
                 }
                 auto statements = std::vector<SemanticStatement>();
                 statements.push_back({
-                    .origin = facts.origin,
+                    .origin = module_origin.origin,
                     .lifetime = lifetime,
                     .reachable = true,
                     .value = SemExpressionStatement {.expression = std::move(expression)},
                 });
                 const auto publish_slice = [&]() noexcept {
-                    publish(
+                    builder.add_body_draft(
                         std::move(body).finish({
                             .lifetime = lifetime,
-                            .origin = facts.origin,
+                            .origin = module_origin.origin,
                             .statements = std::move(statements),
                             .result = std::nullopt,
                             .result_reachable = false,
                             .failures = BodyFailures(builder.add_empty_failure_term()),
                             .exits_test = false,
-                        }),
-                        builder
+                        })
                     );
                     return std::move(builder).finish();
                 };
                 if (scenario.valid) {
-                    ct::expect(publish_slice().has_value());
+                    expect(publish_slice().has_value());
                 } else {
-                    ct::expect(expect_termination(scenario.name, publish_slice));
+                    expect(expect_termination(scenario.name, publish_slice));
                 }
             });
-        }
-    );
+        };
 });
 
 } // namespace

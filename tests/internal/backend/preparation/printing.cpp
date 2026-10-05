@@ -8,11 +8,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Print preparation: static scalar text preserves ordinary locals and runtime operands",
+const TestSuite suite([] static noexcept {
+    "Print preparation: static scalar text preserves ordinary locals and runtime operands"_test =
         [] static noexcept {
             const auto program = analyze_test_program(
                 "fn touch() -> bool { return true; } "
@@ -41,45 +38,42 @@ const ct::Suite tests([] static noexcept {
                             return;
                         }
                         const auto selected_plan = prepare_operation(program, expression);
-                        if (!ct::expect(selected_plan != nullptr)) {
+                        if (!expect(selected_plan != nullptr)) {
                             return;
                         }
                         const auto& prepared = std::get<PreparedPrint>(*selected_plan);
                         ++count;
-                        if (!ct::expect(print->operands.size() == expected.size())) {
+                        if (!expect(print->operands.size() == expected.size())) {
                             return;
                         }
-                        if (!ct::expect(prepared.operand_text.size() == expected.size())) {
+                        if (!expect(prepared.operand_text.size() == expected.size())) {
                             return;
                         }
                         for (const auto& [index, contents] : std::views::enumerate(expected)) {
                             const auto& text = prepared.operand_text[index];
-                            ct::expect(text.has_value() == contents.has_value())
-                                .note("index: ", index);
+                            expect(text.has_value() == contents.has_value()).note("index: ", index);
                             if (text && contents) {
-                                ct::expect(*text == *contents).note("index: ", index);
+                                expect(*text == *contents).note("index: ", index);
                             }
                         }
-                        ct::expect(
+                        expect(
                             std::holds_alternative<SemBinding>(print->operands[0].expression.value)
                         );
-                        ct::expect(
+                        expect(
                             std::holds_alternative<SemShortCircuit>(
                                 print->operands[3].expression.value
                             )
                         );
-                        ct::expect(
+                        expect(
                             std::holds_alternative<SemFormat>(print->operands[5].expression.value)
                         );
                     }
                 );
             }
-            ct::expect(count == 1uz);
-        }
-    );
+            expect(count == 1uz);
+        };
 
-    ct::test(
-        "Print preparation: dynamic operands and empty calls need no prepared text",
+    "Print preparation: dynamic operands and empty calls need no prepared text"_test =
         [] static noexcept {
             const auto program =
                 analyze_test_program("fn output(value: i32) { println(value); println(); }");
@@ -89,15 +83,14 @@ const ct::Suite tests([] static noexcept {
                     entry.value.region(),
                     [&](const SemanticExpression& expression) noexcept {
                         if (std::holds_alternative<SemPrint>(expression.value)) {
-                            ct::expect(prepare_operation(program, expression) == nullptr);
+                            expect(prepare_operation(program, expression) == nullptr);
                             ++count;
                         }
                     }
                 );
             }
-            ct::expect(count == 2uz);
-        }
-    );
+            expect(count == 2uz);
+        };
 });
 
 } // namespace

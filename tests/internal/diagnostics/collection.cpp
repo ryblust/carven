@@ -8,11 +8,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Diagnostic report: collections preserve order and use one separator",
+const TestSuite suite([] static noexcept {
+    "Diagnostic report: collections preserve order and use one separator"_test =
         [] static noexcept {
             static constexpr auto source = SourceView {
                 .source_id = SourceID::from_index(0),
@@ -44,24 +41,23 @@ const ct::Suite tests([] static noexcept {
                 ),
             };
 
-            ct::expect(render_diagnostics({}, source).empty());
+            expect(render_diagnostics({}, source).empty());
             const auto rendered = render_diagnostics(diagnostics, source);
             const auto first = rendered.find("first");
             const auto second = rendered.find("second");
-            if (!ct::expect(first != std::string::npos)) {
+            if (!expect(first != std::string::npos)) {
                 return;
             }
-            if (!ct::expect(second != std::string::npos)) {
+            if (!expect(second != std::string::npos)) {
                 return;
             }
-            ct::expect(first < second);
+            expect(first < second);
             const auto separator = rendered.find("\n\n", first);
-            if (!ct::expect(separator != std::string::npos)) {
+            if (!expect(separator != std::string::npos)) {
                 return;
             }
-            ct::expect_equal(separator, rendered.rfind("\n\n"));
-        }
-    );
+            expect_equal(separator, rendered.rfind("\n\n"));
+        };
 });
 
 } // namespace

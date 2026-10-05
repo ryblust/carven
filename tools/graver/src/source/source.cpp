@@ -9,9 +9,7 @@ import :source.text;
 import :support.invariant;
 import std;
 
-namespace graver {
-
-Source::Source(std::string text, TokenBuffer tokens) noexcept
+FormattingSource::FormattingSource(std::string text, TokenBuffer tokens) noexcept
     : source_text(std::move(text)),
       lexical_tokens(std::move(tokens)) {
     const auto source_size = static_cast<std::uint32_t>(source_text.size());
@@ -27,28 +25,29 @@ Source::Source(std::string text, TokenBuffer tokens) noexcept
     append_gap(Span::from_bounds(position, source_size));
 }
 
-auto Source::scan(SourceView source) noexcept -> std::expected<Source, Diagnostics> {
+auto FormattingSource::scan(SourceView source) noexcept
+    -> std::expected<FormattingSource, Diagnostics> {
     auto scanned = lex(source);
     if (has_errors(scanned)) {
         return std::unexpected(std::move(scanned.diagnostics));
     }
-    return Source(std::string(source.text), std::move(scanned.value));
+    return FormattingSource(std::string(source.text), std::move(scanned.value));
 }
 
-auto Source::append_gap(Span span) noexcept -> void {
+auto FormattingSource::append_gap(Span span) noexcept -> void {
     const auto first = trivia.size();
     auto position = span.start();
     while (position < span.end()) {
         const auto start = position;
         const auto value = source_text[position];
-        auto kind = TriviaKind::HorizontalWhitespace;
+        auto kind = SourceTriviaKind::HorizontalWhitespace;
         if (value == ' ' || value == '\t') {
             do {
                 ++position;
             } while (position < span.end()
                      && (source_text[position] == ' ' || source_text[position] == '\t'));
         } else if (value == '\n' || value == '\r') {
-            kind = TriviaKind::LineEnding;
+            kind = SourceTriviaKind::LineEnding;
             ++position;
             if (value == '\r' && position < span.end() && source_text[position] == '\n') {
                 ++position;
@@ -56,7 +55,7 @@ auto Source::append_gap(Span span) noexcept -> void {
         } else if (value == '/'
                    && position + 1u < span.end()
                    && source_text[position + 1u] == '/') {
-            kind = TriviaKind::LineComment;
+            kind = SourceTriviaKind::LineComment;
             position += 2u;
             while (position < span.end()
                    && source_text[position] != '\n'
@@ -66,29 +65,28 @@ auto Source::append_gap(Span span) noexcept -> void {
         } else {
             invariant_violation("Graver found non-trivia in a successful lexer's source gap");
         }
-        trivia.push_back(Trivia {.kind = kind, .span = Span::from_bounds(start, position)});
+        trivia.push_back(SourceTrivia {.kind = kind, .span = Span::from_bounds(start, position)});
     }
     gaps.push_back(TriviaRange {.start = first, .count = trivia.size() - first});
 }
 
-auto Source::text() const noexcept -> std::string_view {
+auto FormattingSource::text() const noexcept -> std::string_view {
     return source_text;
 }
 
-auto Source::token_buffer() const noexcept -> const TokenBuffer& {
+auto FormattingSource::token_buffer() const noexcept -> const TokenBuffer& {
     return lexical_tokens;
 }
 
-auto Source::trivia_before(std::size_t token_index) const noexcept -> std::span<const Trivia> {
+auto FormattingSource::trivia_before(std::size_t token_index) const noexcept
+    -> std::span<const SourceTrivia> {
     if (token_index >= gaps.size()) {
         invariant_violation("Graver trivia lookup used an invalid token boundary");
     }
     const auto range = gaps[token_index];
-    return std::span<const Trivia>(trivia).subspan(range.start, range.count);
+    return std::span<const SourceTrivia>(trivia).subspan(range.start, range.count);
 }
 
-auto Source::spelling(Span span) const noexcept -> std::string_view {
+auto FormattingSource::spelling(Span span) const noexcept -> std::string_view {
     return slice(source_text, span);
-}
-
 }

@@ -3,17 +3,15 @@ fn observe(&trace: i32, digit: i32, result: bool) -> bool {
     return result;
 }
 
-fn conjunction(left: bool, right: bool, &trace: i32) -> bool {
-    return observe(&trace, 1, left) && observe(&trace, 2, right);
-}
+fn conjunction(left: bool, right: bool, &trace: i32) -> bool => observe(&trace, 1, left)
+    && observe(&trace, 2, right);
 
-fn disjunction(left: bool, right: bool, &trace: i32) -> bool {
-    return observe(&trace, 1, left) || observe(&trace, 2, right);
-}
+fn disjunction(left: bool, right: bool, &trace: i32) -> bool => observe(&trace, 1, left)
+    || observe(&trace, 2, right);
 
 fn sequenced(left: bool, right: bool, &trace: i32) -> bool {
     return observe(&trace, 1, left)
-        && if (right) {
+        && if right {
             observe(&trace, 2, true);
             observe(&trace, 3, true)
         } else {
@@ -26,13 +24,13 @@ test "Short circuit: only selected operands execute in source order" {
         for right in [false, true] {
             var trace = 0;
             check(conjunction(left, right, &trace) == (left && right));
-            check(trace == (if (left) { 12 } else { 1 }));
+            check(trace == (if left { 12 } else { 1 }));
             trace = 0;
             check(disjunction(left, right, &trace) == (left || right));
-            check(trace == (if (left) { 1 } else { 12 }));
+            check(trace == (if left { 1 } else { 12 }));
             trace = 0;
             check(sequenced(left, right, &trace) == (left && right));
-            check(trace == (if (!left) { 1 } else if (right) { 123 } else { 14 }));
+            check(trace == (if !left { 1 } else if right { 123 } else { 14 }));
         }
     }
 }

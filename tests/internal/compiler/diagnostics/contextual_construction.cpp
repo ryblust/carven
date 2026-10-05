@@ -7,11 +7,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: contextual construction requires a known admissible destination",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: contextual construction requires a known admissible destination"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "no destination",
@@ -44,8 +41,7 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "true"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 });
 
 } // namespace

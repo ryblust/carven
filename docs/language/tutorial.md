@@ -33,9 +33,7 @@ rules for a topic. Each reference can be read independently of this tutorial.
 Save this program as `main.cv`:
 
 ```carven
-fn add(left: i32, right: i32) -> i32 {
-    return left + right;
-}
+fn add(left: i32, right: i32) -> i32 => left + right;
 
 let answer = add(20, 22);
 println(answer);
@@ -44,6 +42,7 @@ println(answer);
 `fn` declares a function. Parameters state their types, and `-> i32` states
 that `add` returns a signed 32-bit integer. Omitting the result type lets the
 compiler infer it from returns; a body with no return operands infers `void`.
+The `=>` body returns its expression directly.
 The top-level statements form an implicit program entry, and `answer` is local
 to that entry. You can instead put those statements inside an explicit `fn main()`;
 a compilation may have only one entry.
@@ -73,9 +72,7 @@ permits forward references to module declarations.
 Imports precede all other items in a source file. Put this function in `math.cv`:
 
 ```carven
-fn answer() -> i32 {
-    return 42;
-}
+fn answer() -> i32 => 42;
 ```
 
 A sibling `main.cv` selects and calls it:
@@ -141,6 +138,10 @@ nested structures recursively default their contents. A structure containing a
 field without a default, such as an enum, requires complete explicit construction.
 Array indices start at zero.
 
+When a destination already supplies the type, omit it from named or empty
+construction: `let point: Point = { x: 20, y: 22 };` or
+`fn origin() -> Point => {};`. Positional construction still needs its type.
+
 ## Enums and matches
 
 An enum lists alternatives, optionally carrying values:
@@ -152,14 +153,12 @@ enum Value {
     Empty,
 }
 
-fn describe(value: Value) -> i32 {
-    return match value {
-        .Number(number) if number > 0 => number,
-        .Number(_) => 0,
-        .Pair(left, right) => left + right,
-        .Empty => -1,
-    };
-}
+fn describe(value: Value) -> i32 => match value {
+    .Number(number) if number > 0 => number,
+    .Number(_) => 0,
+    .Pair(left, right) => left + right,
+    .Empty => -1,
+};
 ```
 
 Construct a case with `Value::Number(42)`, or `.Number(42)` when the surrounding
@@ -253,6 +252,11 @@ for empty text. `text.bytes` and `text.chars` can be traversed in a loop.
 Interpolation such as `f"Count: {quantity}"` produces an owning `String`. A format
 specification follows a colon inside a hole, as in `f"ID: {42:04x}"`.
 
+Raw strings keep backslashes verbatim, for example `r"C:\data\input.cv"`.
+Use hash delimiters when the text contains quotes: `r#"say "hello""#`.
+Triple-quoted ordinary, raw, and interpolated strings support multiline text
+with common source indentation removed; see [text literals](text.md#string-literals-and-multiline-layout).
+
 `_` discards a binding name. Its runtime initializer still executes.
 Use `//` for a line comment.
 
@@ -329,7 +333,7 @@ A contract may list multiple types, such as `throw ReadError + ParseError`.
 Private functions and lambdas may infer their failure sets. Bare and exported
 functions with failures state their contracts. Tests handle every failure.
 `main` may propagate failures through an explicit `throw` contract; an escaping
-failure produces a failure process status without printing its payload. A handler
+failure produces a failure process status and reports its payload on stderr. A handler
 may produce another failure; `rethrow` passes on the caught failure.
 
 ## Closures and callbacks
@@ -409,7 +413,7 @@ An exported interface can return an owner, mutate a caller's owner, or take it:
 ```carven
 export(cpp) fn greeting(name: str) -> String => f"Hello, {name}!";
 export(cpp) fn append_note(&text: String, note: str) => text.append(note);
-export(cpp) fn finish(&&text: String) -> String => text;
+export(cpp) fn finish(&&text: String) -> String => &&text;
 ```
 
 `String` maps to `carven::runtime::String`, and `str` to `std::string_view`.
@@ -577,6 +581,28 @@ Each invocation still checks execution limits and dynamic errors. The same
 function has the same arithmetic and output behavior at runtime.
 Use `carven check source.cv` to evaluate the `const` blocks, initializers, and
 static tests without running the program or ordinary tests.
+
+Use a `const` parameter when an input must select a static specialization.
+`const if` selects an arm and `const for` expands a static integer range:
+
+```carven
+fn scaled_sum(value: i32, const count: i32) -> i32 {
+    const if count == 0 {
+        return 0;
+    } else {
+        var total = 0;
+        const for index in 0..count { total += value + index; }
+        return total;
+    }
+}
+
+println(scaled_sum(10, 3)); // 33
+```
+
+The static parameter is omitted from the runtime signature. Every source arm
+still undergoes semantic checking. Ordinary control inside a `const fn` executes
+in the stage of its call; it does not request specialization. See
+[static parameters and control](functions.md#static-parameters).
 
 ## Structural printing and assertion explanations
 

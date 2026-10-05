@@ -12,8 +12,6 @@ import :test.harness.framework;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct ParseFailure final {
     int offset;
 };
@@ -131,27 +129,23 @@ static_assert(!std::is_move_assignable_v<MoveConstructOnlyFailure>);
 static_assert(std::is_nothrow_move_constructible_v<Reconstructing>);
 static_assert(outcome_constant_evaluation());
 
-} // namespace
 
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Runtime Outcome: value and void successes stay flat", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Runtime Outcome: value and void successes stay flat"_test = [] static noexcept {
         using ValueOutcome = carven::runtime::Outcome<int, int>;
         auto value = ValueOutcome::success_from([]() static noexcept { return 42; });
         const auto* value_success = value.success_if();
-        if (!ct::expect(value_success != nullptr)) {
+        if (!expect(value_success != nullptr)) {
             return;
         }
-        ct::expect_equal(value_success->value, 42);
+        expect_equal(value_success->value, 42);
 
         using VoidOutcome = carven::runtime::Outcome<void, ParseFailure>;
         auto empty = VoidOutcome::success();
-        ct::expect(empty.success_if() != nullptr);
-    });
+        expect(empty.success_if() != nullptr);
+    };
 
-    ct::test(
-        "Runtime Outcome: success factories construct immovable payloads exactly once",
+    "Runtime Outcome: success factories construct immovable payloads exactly once"_test =
         [] static noexcept {
             class Fixed final {
             public:
@@ -178,69 +172,64 @@ const ct::Suite tests([] static noexcept {
                 ++calls;
                 return Fixed(42);
             });
-            if (!ct::expect(result.success_if() != nullptr)) {
+            if (!expect(result.success_if() != nullptr)) {
                 return;
             }
-            ct::expect(result.success_if()->value.get() == 42);
-            ct::expect(calls == 1);
-        }
-    );
+            expect(result.success_if()->value.get() == 42);
+            expect(calls == 1);
+        };
 
-    ct::test(
-        "Runtime Outcome: success and failure may have the same source type",
-        [] static noexcept {
-            using SameTypeOutcome = carven::runtime::Outcome<int, int>;
-            auto failed = SameTypeOutcome::failure<int>(7);
-            ct::expect(failed.success_if() == nullptr);
-            const auto* failure = failed.failure_if<int>();
-            if (!ct::expect(failure != nullptr)) {
-                return;
-            }
-            ct::expect_equal(*failure, 7);
+    "Runtime Outcome: success and failure may have the same source type"_test = [] static noexcept {
+        using SameTypeOutcome = carven::runtime::Outcome<int, int>;
+        auto failed = SameTypeOutcome::failure<int>(7);
+        expect(failed.success_if() == nullptr);
+        const auto* failure = failed.failure_if<int>();
+        if (!expect(failure != nullptr)) {
+            return;
         }
-    );
+        expect_equal(*failure, 7);
+    };
 
-    ct::test("Runtime Outcome: widening preserves success and failure states", [] static noexcept {
+    "Runtime Outcome: widening preserves success and failure states"_test = [] static noexcept {
         auto narrow = Narrow::failure<ParseFailure>(ParseFailure {.offset = 5});
         auto widened = Wide(std::move(narrow));
         const auto* widened_failure = widened.failure_if<ParseFailure>();
-        if (!ct::expect(widened_failure != nullptr)) {
+        if (!expect(widened_failure != nullptr)) {
             return;
         }
-        ct::expect_equal(widened_failure->offset, 5);
+        expect_equal(widened_failure->offset, 5);
 
         auto success = Narrow::success_from([]() static noexcept { return std::string("ready"); });
         auto widened_success = Wide(std::move(success));
         const auto* success_value = widened_success.success_if();
-        if (!ct::expect(success_value != nullptr)) {
+        if (!expect(success_value != nullptr)) {
             return;
         }
-        ct::expect_equal(success_value->value, std::string_view("ready"));
+        expect_equal(success_value->value, std::string_view("ready"));
 
         const auto exact = Wide::failure<NetworkFailure>(NetworkFailure {.status = 503});
         const auto* exact_failure = exact.failure_if<NetworkFailure>();
-        if (!ct::expect(exact_failure != nullptr)) {
+        if (!expect(exact_failure != nullptr)) {
             return;
         }
-        ct::expect_equal(exact_failure->status, 503);
+        expect_equal(exact_failure->status, 503);
 
         auto void_success = VoidNarrow::success();
         auto widened_void_success = VoidWide(std::move(void_success));
-        if (!ct::expect(widened_void_success.success_if() != nullptr)) {
+        if (!expect(widened_void_success.success_if() != nullptr)) {
             return;
         }
 
         auto void_failure = VoidNarrow::failure<ParseFailure>(ParseFailure {.offset = 9});
         auto widened_void_failure = VoidWide(std::move(void_failure));
         const auto* void_failure_value = widened_void_failure.failure_if<ParseFailure>();
-        if (!ct::expect(void_failure_value != nullptr)) {
+        if (!expect(void_failure_value != nullptr)) {
             return;
         }
-        ct::expect_equal(void_failure_value->offset, 9);
-    });
+        expect_equal(void_failure_value->offset, 9);
+    };
 
-    ct::test(
-        "Runtime Outcome: admission requires only the performed construction",
+    "Runtime Outcome: admission requires only the performed construction"_test =
         [] static noexcept {
             struct Observed final {
                 int* copies;
@@ -279,87 +268,83 @@ const ct::Suite tests([] static noexcept {
             static_assert(std::is_nothrow_move_constructible_v<Value>);
             static_assert(!std::is_move_assignable_v<Value>);
             auto success = Value::success_from([&]() noexcept { return Observed(source); });
-            ct::expect_equal(copies, 1);
-            ct::expect_equal(moves, 0);
+            expect_equal(copies, 1);
+            expect_equal(moves, 0);
             auto moved = Value(std::move(success));
-            ct::expect_equal(moves, 1);
+            expect_equal(moves, 1);
             auto widened = Wider(std::move(moved));
-            ct::expect_equal(moves, 2);
-            if (!ct::expect(widened.success_if() != nullptr)) {
+            expect_equal(moves, 2);
+            if (!expect(widened.success_if() != nullptr)) {
                 return;
             }
-            ct::expect_equal(widened.success_if()->value.value, 42);
+            expect_equal(widened.success_if()->value.value, 42);
             const auto failure = Value::failure(source);
-            ct::expect_equal(copies, 2);
-            if (!ct::expect(failure.failure_if<Observed>() != nullptr)) {
+            expect_equal(copies, 2);
+            if (!expect(failure.failure_if<Observed>() != nullptr)) {
                 return;
             }
-            ct::expect_equal(failure.failure_if<Observed>()->value, 42);
+            expect_equal(failure.failure_if<Observed>()->value, 42);
             const auto text = std::string("copied text");
             const auto copied_text =
                 Narrow::success_from([&]() noexcept { return std::string(text); });
-            if (!ct::expect(copied_text.success_if() != nullptr)) {
+            if (!expect(copied_text.success_if() != nullptr)) {
                 return;
             }
-            ct::expect_equal(copied_text.success_if()->value, text);
-        }
-    );
+            expect_equal(copied_text.success_if()->value, text);
+        };
 
-    ct::test(
-        "Runtime Outcome: propagation preserves value void and failure alternatives",
+    "Runtime Outcome: propagation preserves value void and failure alternatives"_test =
         [] static noexcept {
             using Value = carven::runtime::Outcome<int, ParseFailure, NetworkFailure>;
             auto success = Value::success_from([]() static noexcept { return 42; });
             const auto propagated_success = std::move(success).propagate();
-            if (!ct::expect(propagated_success.success_if() != nullptr)) {
+            if (!expect(propagated_success.success_if() != nullptr)) {
                 return;
             }
-            ct::expect_equal(propagated_success.success_if()->value, 42);
+            expect_equal(propagated_success.success_if()->value, 42);
 
             auto parse = Value::failure(ParseFailure {.offset = 7});
             const auto propagated_parse = std::move(parse).propagate();
-            ct::expect(propagated_parse.success_if() == nullptr);
-            if (!ct::expect(propagated_parse.failure_if<ParseFailure>() != nullptr)) {
+            expect(propagated_parse.success_if() == nullptr);
+            if (!expect(propagated_parse.failure_if<ParseFailure>() != nullptr)) {
                 return;
             }
-            ct::expect_equal(propagated_parse.failure_if<ParseFailure>()->offset, 7);
+            expect_equal(propagated_parse.failure_if<ParseFailure>()->offset, 7);
 
             auto network = Value::failure(NetworkFailure {.status = 503});
             const auto propagated_network = std::move(network).propagate();
-            ct::expect(propagated_network.success_if() == nullptr);
-            if (!ct::expect(propagated_network.failure_if<NetworkFailure>() != nullptr)) {
+            expect(propagated_network.success_if() == nullptr);
+            if (!expect(propagated_network.failure_if<NetworkFailure>() != nullptr)) {
                 return;
             }
-            ct::expect_equal(propagated_network.failure_if<NetworkFailure>()->status, 503);
+            expect_equal(propagated_network.failure_if<NetworkFailure>()->status, 503);
 
             auto empty = VoidNarrow::success();
             const auto propagated_empty = std::move(empty).propagate();
-            ct::expect(propagated_empty.success_if() != nullptr);
+            expect(propagated_empty.success_if() != nullptr);
             auto void_failure = VoidNarrow::failure(ParseFailure {.offset = 9});
             const auto propagated_void_failure = std::move(void_failure).propagate();
-            if (!ct::expect(propagated_void_failure.failure_if<ParseFailure>() != nullptr)) {
+            if (!expect(propagated_void_failure.failure_if<ParseFailure>() != nullptr)) {
                 return;
             }
-            ct::expect_equal(propagated_void_failure.failure_if<ParseFailure>()->offset, 9);
+            expect_equal(propagated_void_failure.failure_if<ParseFailure>()->offset, 9);
 
             using SameType = carven::runtime::Outcome<int, int>;
             auto same_success = SameType::success_from([]() static noexcept { return 11; });
             auto same_failure = SameType::failure(13);
             const auto propagated_same_success = std::move(same_success).propagate();
             const auto propagated_same_failure = std::move(same_failure).propagate();
-            if (!ct::expect(propagated_same_success.success_if() != nullptr)) {
+            if (!expect(propagated_same_success.success_if() != nullptr)) {
                 return;
             }
-            ct::expect_equal(propagated_same_success.success_if()->value, 11);
-            if (!ct::expect(propagated_same_failure.failure_if<int>() != nullptr)) {
+            expect_equal(propagated_same_success.success_if()->value, 11);
+            if (!expect(propagated_same_failure.failure_if<int>() != nullptr)) {
                 return;
             }
-            ct::expect_equal(*propagated_same_failure.failure_if<int>(), 13);
-        }
-    );
+            expect_equal(*propagated_same_failure.failure_if<int>(), 13);
+        };
 
-    ct::test(
-        "Runtime Outcome: propagation and widening use the same payload transfer policy",
+    "Runtime Outcome: propagation and widening use the same payload transfer policy"_test =
         [] static noexcept {
             struct CopyTrivial final {
                 int* moves;
@@ -398,17 +383,17 @@ const ct::Suite tests([] static noexcept {
             const auto propagated_success = std::move(source_success).propagate();
             const auto propagated_failure = std::move(source_failure).propagate();
 
-            if (!ct::expect(propagated_success.success_if() != nullptr)) {
+            if (!expect(propagated_success.success_if() != nullptr)) {
                 return;
             }
-            if (!ct::expect(propagated_failure.failure_if<CopyTrivial>() != nullptr)) {
+            if (!expect(propagated_failure.failure_if<CopyTrivial>() != nullptr)) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 propagated_success.success_if()->value.value,
                 expected_success.success_if()->value.value
             );
-            ct::expect_equal(
+            expect_equal(
                 propagated_failure.failure_if<CopyTrivial>()->value,
                 expected_failure.failure_if<CopyTrivial>()->value
             );
@@ -417,20 +402,18 @@ const ct::Suite tests([] static noexcept {
             auto narrow_failure = Value::failure(initial);
             const auto wide_success = WideValue(std::move(narrow_success));
             const auto wide_failure = WideValue(std::move(narrow_failure));
-            if (!ct::expect(wide_success.success_if() != nullptr)) {
+            if (!expect(wide_success.success_if() != nullptr)) {
                 return;
             }
-            ct::expect(wide_success.success_if()->value.value == 42);
-            if (!ct::expect(wide_failure.failure_if<CopyTrivial>() != nullptr)) {
+            expect(wide_success.success_if()->value.value == 42);
+            if (!expect(wide_failure.failure_if<CopyTrivial>() != nullptr)) {
                 return;
             }
-            ct::expect(wide_failure.failure_if<CopyTrivial>()->value == 42);
-            ct::expect_equal(moves, 0);
-        }
-    );
+            expect(wide_failure.failure_if<CopyTrivial>()->value == 42);
+            expect_equal(moves, 0);
+        };
 
-    ct::test(
-        "Runtime Outcome: propagation preserves payload construction identity",
+    "Runtime Outcome: propagation preserves payload construction identity"_test =
         [] static noexcept {
             struct Self final {
                 const Self* construction_address;
@@ -448,19 +431,17 @@ const ct::Suite tests([] static noexcept {
             auto source = Value::success_from([]() static noexcept -> Self { return {}; });
             const auto* source_address = source.success_if()->value.construction_address;
             const auto actual = std::move(source).propagate();
-            if (!ct::expect(actual.success_if() != nullptr)) {
+            if (!expect(actual.success_if() != nullptr)) {
                 return;
             }
-            ct::expect_equal(actual.success_if()->value.construction_address, source_address);
-            ct::expect_not_equal(
+            expect_equal(actual.success_if()->value.construction_address, source_address);
+            expect_not_equal(
                 actual.success_if()->value.construction_address,
                 &actual.success_if()->value
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Runtime Outcome: propagation preserves payload transfer and caller cleanup order",
+    "Runtime Outcome: propagation preserves payload transfer and caller cleanup order"_test =
         [] static noexcept {
             struct Observed final {
                 std::string* events;
@@ -520,14 +501,12 @@ const ct::Suite tests([] static noexcept {
             };
 
             for (const auto failure : {false, true}) {
-                ct::expect_equal(observe(failure), std::string_view("[mrd]bsa"))
+                expect_equal(observe(failure), std::string_view("[mrd]bsa"))
                     .note("failure: ", failure);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Runtime Outcome: widening accepts trivially copied payloads with deleted moves",
+    "Runtime Outcome: widening accepts trivially copied payloads with deleted moves"_test =
         [] static noexcept {
             struct CopyOnly final {
                 CopyOnly() = default;
@@ -543,10 +522,9 @@ const ct::Suite tests([] static noexcept {
             auto failure = Source::failure(value);
             const auto wide_success = Destination(std::move(success));
             const auto wide_failure = Destination(std::move(failure));
-            ct::expect(wide_success.success_if() != nullptr);
-            ct::expect(wide_failure.failure_if<CopyOnly>() != nullptr);
-        }
-    );
+            expect(wide_success.success_if() != nullptr);
+            expect(wide_failure.failure_if<CopyOnly>() != nullptr);
+        };
 });
 
 } // namespace

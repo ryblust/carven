@@ -21,8 +21,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto module_constant(const SemIRProgram& program, std::string_view name) noexcept
     -> const ConstantFact& {
     auto found = std::optional<ConstantID>();
@@ -31,7 +29,7 @@ auto module_constant(const SemIRProgram& program, std::string_view name) noexcep
             found = declaration.value.value;
         }
     }
-    ct::require(found.has_value());
+    require(found.has_value());
     return program.constants().constant(*found);
 }
 
@@ -43,16 +41,16 @@ auto function_body(const SemIRProgram& program, std::string_view name) noexcept
             found = callable_body_id(program.declarations().callable(declaration.value.callable));
         }
     }
-    ct::require(found.has_value());
+    require(found.has_value());
     return program.bodies().body(*found);
 }
 
 auto require_integer(const ConstantFact& fact, std::int64_t expected) noexcept -> void {
     const auto* integer = std::get_if<IntegerConstant>(&fact.value);
-    if (!ct::expect(integer != nullptr)) {
+    if (!expect(integer != nullptr)) {
         return;
     }
-    ct::expect(integer->as_signed() == expected);
+    expect(integer->as_signed() == expected);
 }
 
 auto require_text(
@@ -61,23 +59,19 @@ auto require_text(
     std::string_view expected
 ) noexcept -> void {
     const auto* type = std::get_if<BuiltinTypeValue>(&program.types().type(fact.type).value);
-    if (!ct::expect(type != nullptr)) {
+    if (!expect(type != nullptr)) {
         return;
     }
-    ct::expect(type->kind == BuiltinType::Str);
+    expect(type->kind == BuiltinType::Str);
     const auto* text = std::get_if<StringConstant>(&fact.value);
-    if (!ct::expect(text != nullptr)) {
+    if (!expect(text != nullptr)) {
         return;
     }
-    ct::expect(program.provenance().spelling(text->value) == expected);
+    expect(program.provenance().spelling(text->value) == expected);
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Constant functions: execute for constants and array extents", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Constant functions: execute for constants and array extents"_test = [] static noexcept {
         const auto program = analyze_test_program(R"(
         const answer = increment(41);
         const repeated = increment(8);
@@ -95,37 +89,36 @@ const ct::Suite tests([] static noexcept {
         visit_semantic_nodes(
             function_body(program, "local").realized_region(),
             [&](const SemanticExpression& value) noexcept {
-                ct::expect(!(std::holds_alternative<SemCall>(value.value)));
+                expect(!(std::holds_alternative<SemCall>(value.value)));
                 if (const auto* constant = std::get_if<SemConstant>(&value.value)) {
                     require_integer(program.constants().constant(constant->constant), 5);
                     ++local_constants;
                 }
             }
         );
-        ct::expect(local_constants == 1uz);
+        expect(local_constants == 1uz);
         auto arrays = 0uz;
         visit_semantic_nodes(
             function_body(program, "array").region(),
             [&](const SemanticExpression& value) noexcept {
-                ct::expect(!(std::holds_alternative<SemCall>(value.value)));
+                expect(!(std::holds_alternative<SemCall>(value.value)));
                 if (std::holds_alternative<SemArray>(value.value)) {
                     const auto* type = std::get_if<ArrayTypeValue>(
                         &program.types().type(value.type.resolved()).value
                     );
-                    if (!ct::expect(type != nullptr)) {
+                    if (!expect(type != nullptr)) {
                         return;
                     }
-                    ct::expect(type->extent == 3u);
+                    expect(type->extent == 3u);
                     ++arrays;
                 }
             }
         );
-        ct::expect(arrays == 1uz);
-        ct::expect(program.bodies().size() == 4uz);
-    });
+        expect(arrays == 1uz);
+        expect(program.bodies().size() == 4uz);
+    };
 
-    ct::test(
-        "Constant functions: repeated recursive evaluation owns one typed body per function",
+    "Constant functions: repeated recursive evaluation owns one typed body per function"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const first = factorial(5);
@@ -142,16 +135,16 @@ const ct::Suite tests([] static noexcept {
             require_integer(module_constant(program, "first"), 120);
             require_integer(module_constant(program, "second"), 720);
             require_integer(module_constant(program, "third"), 6);
-            ct::expect(program.declarations().functions().size() == 2uz);
-            ct::expect(program.bodies().size() == 2uz);
+            expect(program.declarations().functions().size() == 2uz);
+            expect(program.bodies().size() == 2uz);
             auto bodies = std::flat_set<BodyID>();
             for (const auto declaration : program.declarations().functions()) {
                 const auto body =
                     callable_body_id(program.declarations().callable(declaration.value.callable));
-                if (!ct::expect(body.has_value())) {
+                if (!expect(body.has_value())) {
                     return;
                 }
-                ct::expect(bodies.insert(*body).second);
+                expect(bodies.insert(*body).second);
             }
             auto calls = 0uz;
             visit_semantic_nodes(
@@ -160,12 +153,10 @@ const ct::Suite tests([] static noexcept {
                     calls += std::holds_alternative<SemCall>(value.value);
                 }
             );
-            ct::expect(calls == 1uz);
-        }
-    );
+            expect(calls == 1uz);
+        };
 
-    ct::test(
-        "Constant functions: owning text freezes at the initializer boundary and runtime calls stay owning",
+    "Constant functions: owning text freezes at the initializer boundary and runtime calls stay owning"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const frozen: str = decorate(make());
@@ -194,20 +185,20 @@ const ct::Suite tests([] static noexcept {
                     const auto* type = std::get_if<BuiltinTypeValue>(
                         &program.types().type(value.type.resolved()).value
                     );
-                    if (!ct::expect(type != nullptr)) {
+                    if (!expect(type != nullptr)) {
                         return;
                     }
-                    ct::expect(type->kind == BuiltinType::String);
-                    ct::expect(!(value.constant.has_value()));
+                    expect(type->kind == BuiltinType::String);
+                    expect(!(value.constant.has_value()));
                     ++calls;
                 }
             );
-            ct::expect(calls == 2uz);
+            expect(calls == 2uz);
             auto frozen_reads = 0uz;
             visit_semantic_nodes(
                 function_body(program, "local_text").realized_region(),
                 [&](const SemanticExpression& value) noexcept {
-                    ct::expect(!(std::holds_alternative<SemCall>(value.value)));
+                    expect(!(std::holds_alternative<SemCall>(value.value)));
                     if (const auto* constant = std::get_if<SemConstant>(&value.value)) {
                         require_text(
                             program,
@@ -218,13 +209,11 @@ const ct::Suite tests([] static noexcept {
                     }
                 }
             );
-            ct::expect(frozen_reads == 1uz);
-            ct::expect(program.bodies().size() == 4uz);
-        }
-    );
+            expect(frozen_reads == 1uz);
+            expect(program.bodies().size() == 4uz);
+        };
 
-    ct::test(
-        "Constant functions: declaration dependency cycles and result inference cycles stay distinct",
+    "Constant functions: declaration dependency cycles and result inference cycles stay distinct"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view source;
@@ -240,29 +229,27 @@ const ct::Suite tests([] static noexcept {
                  DiagnosticCode::TypeResultInferenceCycle,
                  DiagnosticCode::ConstCycle},
             });
-            ct::each(scenarios, &Scenario::source, [&](const auto& scenario) noexcept {
+            each(scenarios, &Scenario::source, [&](const auto& scenario) noexcept {
                 const auto diagnostics = analyze_test_errors(std::string(scenario.source));
-                const auto* finding = ct::find_diagnostic(diagnostics, scenario.expected);
-                if (!(ct::expect(finding != nullptr))) {
+                const auto* finding = find_diagnostic(diagnostics, scenario.expected);
+                if (!(expect(finding != nullptr))) {
                     return;
                 }
-                ct::expect(finding->attachment.primary.has_value());
-                ct::expect_no_diagnostic(diagnostics, scenario.absent);
+                expect(finding->attachment.primary.has_value());
+                expect_no_diagnostic(diagnostics, scenario.absent);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant functions: forward body requests cross the compilation module graph",
+    "Constant functions: forward body requests cross the compilation module graph"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto inputs = std::vector<SourceModuleInput>();
             const auto append = [&](std::string_view name, std::string text) noexcept {
                 const auto source =
                     sources.append_virtual(std::format("{}.cv", name), std::move(text));
-                ct::require(source.has_value());
+                require(source.has_value());
                 const auto path = CanonicalModulePath::from_value(name);
-                ct::require(path.has_value());
+                require(path.has_value());
                 inputs.push_back({.source_id = *source, .module_path = *path});
             };
             append(
@@ -278,33 +265,31 @@ const ct::Suite tests([] static noexcept {
                 "export const seed: i32 = 41; export const fn increment(value: i32) -> i32 => value + 1;"
             );
             auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-            if (!ct::expect(syntax.has_value())) {
+            if (!expect(syntax.has_value())) {
                 return;
             }
             const auto analyzed = analyze(std::move(*syntax));
-            if (!ct::expect(analyzed.has_value())) {
+            if (!expect(analyzed.has_value())) {
                 return;
             }
             const auto& program = analyzed->value;
             require_integer(module_constant(program, "result"), 42);
-            ct::expect(program.bodies().size() == 3uz);
+            expect(program.bodies().size() == 3uz);
             auto reads = 0uz;
             visit_semantic_nodes(
                 function_body(program, "read").region(),
                 [&](const SemanticExpression& value) noexcept {
-                    ct::expect(!(std::holds_alternative<SemCall>(value.value)));
+                    expect(!(std::holds_alternative<SemCall>(value.value)));
                     if (const auto* constant = std::get_if<SemConstant>(&value.value)) {
                         require_integer(program.constants().constant(constant->constant), 42);
                         ++reads;
                     }
                 }
             );
-            ct::expect(reads == 1uz);
-        }
-    );
+            expect(reads == 1uz);
+        };
 
-    ct::test(
-        "Constant text: direct interpolation composes as owning text before final freezing",
+    "Constant text: direct interpolation composes as owning text before final freezing"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const title = f"build-{42:04}";
@@ -327,11 +312,9 @@ const ct::Suite tests([] static noexcept {
             require_text(program, module_constant(program, "copy"), "build-0042");
             require_text(program, module_constant(program, "view"), "build-0042");
             require_text(program, module_constant(program, "empty"), "");
-        }
-    );
+        };
 
-    ct::test(
-        "Constant text: incremental growth and length queries build persistent text",
+    "Constant text: incremental growth and length queries build persistent text"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const fn build() -> String {
@@ -351,11 +334,9 @@ const ct::Suite tests([] static noexcept {
                 expected += "abc7";
             }
             require_text(program, module_constant(program, "result"), expected);
-        }
-    );
+        };
 
-    ct::test(
-        "Constant functions: temporary execution history does not enlarge retained constants",
+    "Constant functions: temporary execution history does not enlarge retained constants"_test =
         [] static noexcept {
             const auto count = [](int iterations) static noexcept {
                 const auto program = analyze_test_program(
@@ -381,12 +362,10 @@ const ct::Suite tests([] static noexcept {
                 require_integer(module_constant(program, "result"), 0);
                 return program.constants().size();
             };
-            ct::expect(count(8) == count(256));
-        }
-    );
+            expect(count(8) == count(256));
+        };
 
-    ct::test(
-        "Constant functions: nested retained children become independent mutable storage",
+    "Constant functions: nested retained children become independent mutable storage"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const row = [1, 2];
@@ -400,11 +379,9 @@ const ct::Suite tests([] static noexcept {
     )");
             require_integer(module_constant(program, "result"), 10);
             require_integer(module_constant(program, "unchanged"), 1);
-        }
-    );
+        };
 
-    ct::test(
-        "Constant functions: floating formatting executes through native conversion",
+    "Constant functions: floating formatting executes through native conversion"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const fn label(value: f64) -> String => f"{value:.2f}";
@@ -412,11 +389,9 @@ const ct::Suite tests([] static noexcept {
         const length = text.len();
     )");
             require_integer(module_constant(program, "length"), 4);
-        }
-    );
+        };
 
-    ct::test(
-        "Constant functions: invalid floating specifications and dimensions are diagnosed",
+    "Constant functions: invalid floating specifications and dimensions are diagnosed"_test =
         [] static noexcept {
             const auto cases = std::to_array<std::string_view>({
                 R"(const text = f"{1.25:.}";)",
@@ -425,21 +400,19 @@ const ct::Suite tests([] static noexcept {
                 R"(const text = f"{1.25:.{true}f}";)",
                 R"(const text = f"{1.25:00}";)",
             });
-            ct::each(cases, std::identity {}, [](std::string_view source) static noexcept {
-                ct::expect_diagnostic(
+            each(cases, std::identity {}, [](std::string_view source) static noexcept {
+                expect_diagnostic(
                     analyze_test_errors(std::string(source)),
                     DiagnosticCode::ConstEvaluation
                 );
             });
-            ct::expect_diagnostic(
+            expect_diagnostic(
                 analyze_test_errors(R"(const text = f"{1.25:.1048577f}";)"),
                 DiagnosticCode::ConstLimit
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Constant failures: root propagation uses inferred contracts and preserves static gates",
+    "Constant failures: root propagation uses inferred contracts and preserves static gates"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         struct Failure { code: i32 }
@@ -489,17 +462,12 @@ const ct::Suite tests([] static noexcept {
                  DiagnosticCode::EffectThrowPublished},
                 {R"(const fn call() { rethrow; })", DiagnosticCode::EffectRethrowContext},
             });
-            ct::each(scenarios, &Scenario::source, [&](const auto& scenario) noexcept {
-                ct::expect_diagnostic(
-                    analyze_test_errors(std::string(scenario.source)),
-                    scenario.code
-                );
+            each(scenarios, &Scenario::source, [&](const auto& scenario) noexcept {
+                expect_diagnostic(analyze_test_errors(std::string(scenario.source)), scenario.code);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant failures: wrapping arithmetic is shared with runtime execution",
+    "Constant failures: wrapping arithmetic is shared with runtime execution"_test =
         [] static noexcept {
             const auto arithmetic = analyze_test_program(R"(
         struct Failure {}
@@ -510,10 +478,9 @@ const ct::Suite tests([] static noexcept {
         const value = recover();
     )");
             require_integer(module_constant(arithmetic, "value"), -2147483648ll);
-        }
-    );
+        };
 
-    ct::test("Constant failures: language recovery cannot catch failed tests", [] static noexcept {
+    "Constant failures: language recovery cannot catch failed tests"_test = [] static noexcept {
         const auto checks = analyze_test_errors(R"(
         struct Failure {}
         const fn fail() throw Failure { check(false); }
@@ -521,11 +488,10 @@ const ct::Suite tests([] static noexcept {
             try { fail()?; } catch { _ => {}, }
         }
     )");
-        ct::expect_diagnostic(checks, DiagnosticCode::ConstTest);
-    });
+        expect_diagnostic(checks, DiagnosticCode::ConstTest);
+    };
 
-    ct::test(
-        "Constant aggregates: owning text executes but does not freeze into nominal str fields",
+    "Constant aggregates: owning text executes but does not freeze into nominal str fields"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         struct Text { value: String }
@@ -547,14 +513,13 @@ const ct::Suite tests([] static noexcept {
             const fn make() -> Text => Text::Owned("one");
             const value = make();)",
             });
-            ct::each(cases, std::identity {}, [](std::string_view source) static noexcept {
-                ct::expect_diagnostic(
+            each(cases, std::identity {}, [](std::string_view source) static noexcept {
+                expect_diagnostic(
                     analyze_test_errors(std::string(source)),
                     DiagnosticCode::ConstInitializer
                 );
             });
-        }
-    );
+        };
 });
 
 } // namespace

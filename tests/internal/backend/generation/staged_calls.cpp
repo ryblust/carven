@@ -27,8 +27,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto instance_names(const PlannedCompilation& compilation, std::string_view source_name) noexcept
     -> std::flat_set<std::string> {
     auto names = std::flat_set<std::string>();
@@ -64,12 +62,12 @@ auto analyze_modules(
         "consumer.cv",
         std::format("import provider using add;\nexport fn use(value: i32) -> i32 => {};\n", calls)
     );
-    ct::require(provider.has_value());
-    ct::require(consumer.has_value());
+    require(provider.has_value());
+    require(consumer.has_value());
     const auto provider_path = CanonicalModulePath::from_value("provider");
     const auto consumer_path = CanonicalModulePath::from_value("consumer");
-    ct::require(provider_path.has_value());
-    ct::require(consumer_path.has_value());
+    require(provider_path.has_value());
+    require(consumer_path.has_value());
     auto inputs = std::vector<SourceModuleInput>();
     if (unrelated) {
         const auto source = sources.append_virtual(
@@ -78,16 +76,16 @@ auto analyze_modules(
             "export fn earlier() -> i32 => ([](x: i32) => x + 1)(values[0].value);"
         );
         const auto path = CanonicalModulePath::from_value("earlier");
-        ct::require(source.has_value());
-        ct::require(path.has_value());
+        require(source.has_value());
+        require(path.has_value());
         inputs.push_back({.source_id = *source, .module_path = *path});
     }
     inputs.push_back({.source_id = *provider, .module_path = *provider_path});
     inputs.push_back({.source_id = *consumer, .module_path = *consumer_path});
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
-    ct::require(parsed.has_value());
+    require(parsed.has_value());
     auto analyzed = analyze(std::move(*parsed));
-    ct::require(analyzed.has_value());
+    require(analyzed.has_value());
     return std::move(analyzed->value);
 }
 
@@ -110,8 +108,8 @@ struct UnitNames final {
             : definitions;
         destination.insert(spelling);
         if (instances.contains(spelling)) {
-            ct::expect_equal(function->parameters.size(), 1uz);
-            ct::expect(!function->static_specifier);
+            expect_equal(function->parameters.size(), 1uz);
+            expect(!function->static_specifier);
             inline_instances += function->inline_specifier;
         }
         return true;
@@ -147,7 +145,7 @@ struct CallFacts final {
         const auto spelling = name->name.components().back().spelling();
         if (instances.contains(std::string(spelling))) {
             ++staged_calls;
-            ct::expect_equal(call->arguments.size(), 1uz);
+            expect_equal(call->arguments.size(), 1uz);
         }
         compile_only_calls += spelling == "index_value";
         return true;
@@ -170,7 +168,7 @@ struct StagedDefinitions final {
             return true;
         }
         ++count;
-        ct::expect_equal(function->parameters.size(), 1uz);
+        expect_equal(function->parameters.size(), 1uz);
 
         struct Literals final {
             std::flat_set<std::uint64_t>& values;
@@ -187,14 +185,13 @@ struct StagedDefinitions final {
             }
         } literals {.values = controls};
 
-        ct::require(traverse_target_statements(definition->body, literals));
+        require(traverse_target_statements(definition->body, literals));
         return true;
     }
 };
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: callers realize cross-module instances in their own artifact",
+const TestSuite suite([] static noexcept {
+    "Generation: callers realize cross-module instances in their own artifact"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_modules(provider_source, "add(value, 3) + add(value, 4)"),
@@ -202,7 +199,7 @@ const ct::Suite tests([] static noexcept {
                  .linkage_domain = *LinkageDomain::explicit_value("cross_module_stages")}
             );
             const auto names_for_add = instance_names(compilation, "add");
-            ct::expect_equal(names_for_add.size(), 2uz);
+            expect_equal(names_for_add.size(), 2uz);
             auto interface = UnitNames {
                 .instances = names_for_add,
                 .declarations = {},
@@ -232,26 +229,25 @@ const ct::Suite tests([] static noexcept {
                                                                       : nullptr;
                 if (facts != nullptr) {
                     const auto unit = lower_artifact(compilation, artifact.id);
-                    ct::require(traverse_target_unit(unit.sections(), *facts));
+                    require(traverse_target_unit(unit.sections(), *facts));
                 }
             }
             // The staged body reaches scale, so the provider publishes it; unused stays private.
-            ct::expect(interface.declarations.contains("scale"));
-            ct::expect(!interface.declarations.contains("unused"));
-            ct::expect(provider.definitions.contains("scale"));
+            expect(interface.declarations.contains("scale"));
+            expect(!interface.declarations.contains("unused"));
+            expect(provider.definitions.contains("scale"));
             for (const auto& name : names_for_add) {
-                ct::expect(!interface.declarations.contains(name));
-                ct::expect(!provider.declarations.contains(name));
-                ct::expect(!provider.definitions.contains(name));
-                ct::expect(!consumer.declarations.contains(name));
-                ct::expect(consumer.definitions.contains(name));
-                ct::expect(consumer.calls.contains(name));
+                expect(!interface.declarations.contains(name));
+                expect(!provider.declarations.contains(name));
+                expect(!provider.definitions.contains(name));
+                expect(!consumer.declarations.contains(name));
+                expect(consumer.definitions.contains(name));
+                expect(consumer.calls.contains(name));
             }
-            ct::expect_equal(consumer.inline_instances, 2uz);
-        }
-    );
+            expect_equal(consumer.inline_instances, 2uz);
+        };
 
-    ct::test("Generation: provider artifacts do not depend on their callers", [] static noexcept {
+    "Generation: provider artifacts do not depend on their callers"_test = [] static noexcept {
         const auto generate = [](std::string_view calls, bool unrelated = false) static noexcept {
             const auto source = std::string("import <vector> using std::vector;\n")
                 + std::string(provider_source) + R"(
@@ -273,19 +269,19 @@ const ct::Suite tests([] static noexcept {
                                 std::string_view path) static noexcept -> std::string {
             const auto entries = artifacts.entries();
             const auto found = std::ranges::find(entries, path, &GeneratedArtifact::logical_path);
-            ct::require(found != entries.end());
+            require(found != entries.end());
             return found->content;
         };
         const auto first = generate("add(value, 3) + add(value, 4)");
         // Caller instances and unrelated types leave provider support and closures stable.
         const auto second = generate("([](x: i32) => x + 1)(add(value, 5))", true);
         for (const auto path : {"provider.cpp", "carven/generated/provider.hpp"}) {
-            ct::expect_equal(content(first, path), content(second, path));
+            expect_equal(content(first, path), content(second, path));
         }
-        ct::expect(content(first, "consumer.cpp") != content(second, "consumer.cpp"));
-    });
+        expect(content(first, "consumer.cpp") != content(second, "consumer.cpp"));
+    };
 
-    ct::test("Generation: shared bodies retain identical module references", [] static noexcept {
+    "Generation: shared bodies retain identical module references"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_modules(
                 R"(
@@ -305,7 +301,7 @@ const ct::Suite tests([] static noexcept {
              .linkage_domain = *LinkageDomain::explicit_value("shared_body_references")}
         );
         const auto names = instance_names(compilation, "add");
-        if (!ct::expect_equal(names.size(), 1uz)) {
+        if (!expect_equal(names.size(), 1uz)) {
             return;
         }
         struct References final {
@@ -354,26 +350,25 @@ const ct::Suite tests([] static noexcept {
                     return true;
                 }
                 auto query = References {.unit = *unit, .names = {}};
-                ct::require(traverse_target_statements(definition->body, query));
+                require(traverse_target_statements(definition->body, query));
                 references.push_back(std::move(query.names));
-                ct::expect(function->inline_specifier);
+                expect(function->inline_specifier);
                 return true;
             }
         } query {.unit = nullptr, .instances = names, .references = {}};
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
             query.unit = &unit;
-            ct::require(traverse_target_unit(unit.sections(), query));
+            require(traverse_target_unit(unit.sections(), query));
         }
-        if (!ct::expect_equal(query.references.size(), 2uz)) {
+        if (!expect_equal(query.references.size(), 2uz)) {
             return;
         }
-        ct::expect(!query.references[0].empty());
-        ct::expect_equal(query.references[0], query.references[1]);
-    });
+        expect(!query.references[0].empty());
+        expect_equal(query.references[0], query.references[1]);
+    };
 
-    ct::test(
-        "Generation: static arguments select deduplicated native instances with runtime-only ABI",
+    "Generation: static arguments select deduplicated native instances with runtime-only ABI"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -385,24 +380,23 @@ const ct::Suite tests([] static noexcept {
                  .linkage_domain = *LinkageDomain::explicit_value("staged_calls")}
             );
             const auto names = instance_names(compilation, "add");
-            ct::expect_equal(names.size(), 2uz);
+            expect_equal(names.size(), 2uz);
             auto definitions = StagedDefinitions {.instances = names, .count = 0uz, .controls = {}};
             auto calls =
                 CallFacts {.instances = names, .staged_calls = 0uz, .compile_only_calls = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                ct::require(traverse_target_unit(unit.sections(), definitions));
-                ct::require(traverse_target_unit(unit.sections(), calls));
+                require(traverse_target_unit(unit.sections(), definitions));
+                require(traverse_target_unit(unit.sections(), calls));
             }
-            ct::expect_equal(definitions.count, 2uz);
-            ct::expect(definitions.controls.contains(3u));
-            ct::expect(definitions.controls.contains(4u));
-            ct::expect_equal(calls.staged_calls, 3uz);
-            ct::expect_equal(calls.compile_only_calls, 0uz);
-        }
-    );
+            expect_equal(definitions.count, 2uz);
+            expect(definitions.controls.contains(3u));
+            expect(definitions.controls.contains(4u));
+            expect_equal(calls.staged_calls, 3uz);
+            expect_equal(calls.compile_only_calls, 0uz);
+        };
 
-    ct::test("Generation: const for expands with outward loop exits", [] static noexcept {
+    "Generation: const for expands with outward loop exits"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_test_program(R"(
             fn add(value: i32, const control: i32) -> i32 => value + control;
@@ -421,7 +415,7 @@ const ct::Suite tests([] static noexcept {
              .linkage_domain = *LinkageDomain::explicit_value("expanded_range")}
         );
         const auto names = instance_names(compilation, "add");
-        ct::expect_equal(names.size(), 3uz);
+        expect_equal(names.size(), 3uz);
 
         struct RangeFacts final {
             const std::flat_set<std::string>& instances;
@@ -444,7 +438,7 @@ const ct::Suite tests([] static noexcept {
                 if (name != nullptr
                     && instances.contains(std::string(name->name.components().back().spelling()))) {
                     ++calls;
-                    ct::expect_equal(call->arguments.size(), 1uz);
+                    expect_equal(call->arguments.size(), 1uz);
                 }
                 return true;
             }
@@ -452,14 +446,13 @@ const ct::Suite tests([] static noexcept {
 
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
-            ct::require(traverse_target_unit(unit.sections(), facts));
+            require(traverse_target_unit(unit.sections(), facts));
         }
-        ct::expect_equal(facts.ranges, 0uz);
-        ct::expect_equal(facts.calls, 3uz);
-    });
+        expect_equal(facts.ranges, 0uz);
+        expect_equal(facts.calls, 3uz);
+    };
 
-    ct::test(
-        "Generation: empty const for emits no native iteration or keyed callee",
+    "Generation: empty const for emits no native iteration or keyed callee"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -472,7 +465,7 @@ const ct::Suite tests([] static noexcept {
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("empty_expanded_range")}
             );
-            ct::expect(instance_names(compilation, "add").empty());
+            expect(instance_names(compilation, "add").empty());
 
             struct Query final {
                 std::size_t ranges;
@@ -499,14 +492,13 @@ const ct::Suite tests([] static noexcept {
 
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                ct::require(traverse_target_unit(unit.sections(), query));
+                require(traverse_target_unit(unit.sections(), query));
             }
-            ct::expect_equal(query.ranges, 0uz);
-            ct::expect_equal(query.calls, 0uz);
-        }
-    );
+            expect_equal(query.ranges, 0uz);
+            expect_equal(query.calls, 0uz);
+        };
 
-    ct::test("Generation: omitted native calls introduce no definition edges", [] static noexcept {
+    "Generation: omitted native calls introduce no definition edges"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_test_program(R"(
                 fn lane(const index: i32) -> i32 => index;
@@ -517,7 +509,7 @@ const ct::Suite tests([] static noexcept {
              .linkage_domain = *LinkageDomain::explicit_value("omitted_native_edges")}
         );
         const auto names = instance_names(compilation, "lane");
-        ct::expect_equal(names.size(), 1uz);
+        expect_equal(names.size(), 1uz);
         auto query = UnitNames {
             .instances = names,
             .declarations = {},
@@ -527,36 +519,33 @@ const ct::Suite tests([] static noexcept {
         };
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
-            ct::require(traverse_target_unit(unit.sections(), query));
+            require(traverse_target_unit(unit.sections(), query));
         }
         for (const auto& name : names) {
-            ct::expect(!query.calls.contains(name));
-            ct::expect(!query.definitions.contains(name));
+            expect(!query.calls.contains(name));
+            expect(!query.definitions.contains(name));
         }
-    });
+    };
 
-    ct::test(
-        "Generation: selected returns terminate recursive static expansion",
-        [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+    "Generation: selected returns terminate recursive static expansion"_test = [] static noexcept {
+        const auto compilation = PlannedCompilation::build(
+            analyze_test_program(R"(
             fn countdown(const remaining: i32) -> i32 {
                 const if remaining == 0 { return 0; }
                 return countdown(remaining - 1);
             }
             fn use() -> i32 => countdown(3);
         )"),
-                {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("terminating_static_recursion")}
-            );
-            ct::expect_equal(instance_names(compilation, "countdown").size(), 4uz);
-            for (const auto artifact : compilation.target().artifacts()) {
-                static_cast<void>(lower_artifact(compilation, artifact.id));
-            }
+            {.test_mode = TestGenerationMode::None,
+             .linkage_domain = *LinkageDomain::explicit_value("terminating_static_recursion")}
+        );
+        expect_equal(instance_names(compilation, "countdown").size(), 4uz);
+        for (const auto artifact : compilation.target().artifacts()) {
+            static_cast<void>(lower_artifact(compilation, artifact.id));
         }
-    );
+    };
 
-    ct::test("Generation: unselected const if arms create no instances", [] static noexcept {
+    "Generation: unselected const if arms create no instances"_test = [] static noexcept {
         struct Input final {
             std::string_view name;
             std::string_view source;
@@ -593,18 +582,18 @@ const ct::Suite tests([] static noexcept {
             }
         )"},
         });
-        ct::each(cases, &Input::name, [](const auto& input) static noexcept {
+        each(cases, &Input::name, [](const auto& input) static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(std::string(input.source)),
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("unselected_static_arm")}
             );
-            ct::expect(instance_names(compilation, "lane").empty());
+            expect(instance_names(compilation, "lane").empty());
             for (const auto artifact : compilation.target().artifacts()) {
                 static_cast<void>(lower_artifact(compilation, artifact.id));
             }
         });
-    });
+    };
 });
 
 } // namespace

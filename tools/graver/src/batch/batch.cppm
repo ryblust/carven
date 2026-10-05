@@ -5,9 +5,7 @@ import :source.manager;
 import :source.text;
 import std;
 
-namespace graver {
-
-struct BatchInput final {
+struct FormattingInput final {
     std::filesystem::path path;
     SourceID source_id;
 };
@@ -37,7 +35,7 @@ private:
 
     friend auto format_batch(
         const SourceManager& sources,
-        std::span<const BatchInput> inputs
+        std::span<const FormattingInput> inputs
     ) noexcept -> std::expected<FormattedBatch, Diagnostics>;
 
     std::vector<FormattedFile> outputs;
@@ -46,16 +44,17 @@ private:
 // Inputs name valid sources. Preserve their order; path collection owns sorting
 // and deduplication. No output or filesystem mutation occurs during formatting.
 // Any failure returns all diagnostics in input order and publishes no batch.
-auto format_batch(const SourceManager& sources, std::span<const BatchInput> inputs) noexcept
+auto format_batch(const SourceManager& sources, std::span<const FormattingInput> inputs) noexcept
     -> std::expected<FormattedBatch, Diagnostics>;
 
 // Pure report construction; directory is the caller's absolute working directory.
-auto check_report(const FormattedBatch& batch, const std::filesystem::path& directory) noexcept
-    -> std::string;
+auto format_check_report(
+    const FormattedBatch& batch,
+    const std::filesystem::path& directory
+) noexcept -> std::string;
 
 // Requires a successfully formatted batch. Reject all non-file destinations
 // before writing, then replace changed files in order. Replacement is per-file,
 // not a transaction: a later I/O failure can leave earlier files updated.
-auto write_batch(const FormattedBatch& batch) noexcept -> std::expected<void, std::string>;
-
-}
+auto write_formatted_batch(const FormattedBatch& batch) noexcept
+    -> std::expected<void, std::string>;

@@ -26,10 +26,8 @@ struct Padding final {
 
 } // namespace
 
-namespace graver {
-
-auto align_array_rows(
-    const Source& source,
+auto align_formatted_array_rows(
+    const FormattingSource& source,
     ASTView syntax,
     std::string output,
     std::size_t width
@@ -80,7 +78,7 @@ auto align_array_rows(
         }
         for (auto index = first + 1uz; index < after; ++index) {
             for (const auto trivia : source.trivia_before(index)) {
-                if (trivia.kind == TriviaKind::LineComment) {
+                if (trivia.kind == SourceTriviaKind::LineComment) {
                     return std::nullopt;
                 }
             }
@@ -89,10 +87,10 @@ auto align_array_rows(
             ? after + 1uz
             : after;
         for (const auto trivia : source.trivia_before(trailing)) {
-            if (trivia.kind == TriviaKind::LineEnding) {
+            if (trivia.kind == SourceTriviaKind::LineEnding) {
                 break;
             }
-            if (trivia.kind == TriviaKind::LineComment) {
+            if (trivia.kind == SourceTriviaKind::LineComment) {
                 return std::nullopt;
             }
         }
@@ -198,6 +196,4 @@ auto align_array_rows(
     }
     aligned.append(output, previous, output.size() - previous);
     return aligned;
-}
-
 }

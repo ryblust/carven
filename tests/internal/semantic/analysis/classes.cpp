@@ -8,11 +8,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic classes: representation authority cannot be acquired through module calls",
+const TestSuite suite([] static noexcept {
+    "Semantic classes: representation authority cannot be acquired through module calls"_test =
         [] static noexcept {
             const auto prelude = std::string(R"(
         class C {
@@ -28,18 +25,16 @@ const ct::Suite tests([] static noexcept {
                 "fn outside() -> C { return C {}; }",
                 "class D { fn outside(c: C) -> i32 { return c.value; } }",
             };
-            ct::each(cases, std::identity {}, [&](const auto& source) noexcept {
+            each(cases, std::identity {}, [&](const auto& source) noexcept {
                 const auto diagnostics = analyze_test_errors(prelude + source);
-                ct::expect_diagnostic(diagnostics, DiagnosticCode::AccessClassPrivate);
+                expect_diagnostic(diagnostics, DiagnosticCode::AccessClassPrivate);
             });
             const auto invalid_write =
                 analyze_test_errors(prelude + "fn outside(c: C) { c.update(); }");
-            ct::expect_diagnostic(invalid_write, DiagnosticCode::AccessImmutable);
-        }
-    );
+            expect_diagnostic(invalid_write, DiagnosticCode::AccessImmutable);
+        };
 
-    ct::test(
-        "Semantic classes: default construction cannot bypass a factory through containers",
+    "Semantic classes: default construction cannot bypass a factory through containers"_test =
         [] static noexcept {
             const auto prelude =
                 std::string("class C { value: i32, fn create() -> C { return { value: 1 }; } } ");
@@ -48,19 +43,17 @@ const ct::Suite tests([] static noexcept {
                 "struct S { values: [C; 2] } fn f() -> S { return S {}; }",
                 "class D { value: C, fn create() -> D { return D {}; } }",
             };
-            ct::each(cases, std::identity {}, [&](const auto& source) noexcept {
+            each(cases, std::identity {}, [&](const auto& source) noexcept {
                 const auto diagnostics = analyze_test_errors(prelude + source);
-                ct::expect_diagnostic(diagnostics, DiagnosticCode::TypeDefaultInitialization);
+                expect_diagnostic(diagnostics, DiagnosticCode::TypeDefaultInitialization);
             });
             const auto program = analyze_test_program(
                 prelude + "struct S { values: [C; 0] } fn f() -> S { return S {}; }"
             );
-            ct::expect(program.declarations().structures().size() == 2uz);
-        }
-    );
+            expect(program.declarations().structures().size() == 2uz);
+        };
 
-    ct::test(
-        "Semantic classes: receivers and member names follow their declared contracts",
+    "Semantic classes: receivers and member names follow their declared contracts"_test =
         [] static noexcept {
             static_cast<void>(analyze_test_program(R"(
         class C {
@@ -76,18 +69,16 @@ const ct::Suite tests([] static noexcept {
                 "fn static_identity(const self: i32) -> i32 { return self; }"
             ));
             const auto unnamed = analyze_test_errors("class C { fn read(value) {} }");
-            ct::expect_diagnostic(unnamed, DiagnosticCode::TypeParameterAnnotation);
+            expect_diagnostic(unnamed, DiagnosticCode::TypeParameterAnnotation);
             const auto explicit_receiver = analyze_test_errors("class C { fn read(self: C) {} }");
-            ct::expect_diagnostic(explicit_receiver, DiagnosticCode::TypeParameterAnnotation);
+            expect_diagnostic(explicit_receiver, DiagnosticCode::TypeParameterAnnotation);
             const auto static_receiver = analyze_test_errors("class C { fn read(const self) {} }");
-            ct::expect_diagnostic(static_receiver, DiagnosticCode::ConstAdmission);
+            expect_diagnostic(static_receiver, DiagnosticCode::ConstAdmission);
             const auto duplicate = analyze_test_errors("class C { value: i32, fn value(self) {} }");
-            ct::expect_diagnostic(duplicate, DiagnosticCode::Catalog);
-        }
-    );
+            expect_diagnostic(duplicate, DiagnosticCode::Catalog);
+        };
 
-    ct::test(
-        "Semantic classes: ordinary function definitions have no static execution gate",
+    "Semantic classes: ordinary function definitions have no static execution gate"_test =
         [] static noexcept {
             static_cast<void>(
                 analyze_test_program("class C {} fn copy(value: C) -> C { return value; }")
@@ -95,11 +86,9 @@ const ct::Suite tests([] static noexcept {
             static_cast<void>(analyze_test_program(
                 "class C {} struct S { value: C } fn copy(value: S) -> S { return value; }"
             ));
-        }
-    );
+        };
 
-    ct::test(
-        "Semantic classes: private storage remains visible to borrow checking",
+    "Semantic classes: private storage remains visible to borrow checking"_test =
         [] static noexcept {
             const auto diagnostics = analyze_test_errors(R"(
         class Label {
@@ -115,12 +104,10 @@ const ct::Suite tests([] static noexcept {
             println(view);
         }
     )");
-            ct::expect_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict);
-        }
-    );
+            expect_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict);
+        };
 
-    ct::test(
-        "Semantic classes: Take consumes the receiver and rejects escaping owned-field borrows",
+    "Semantic classes: Take consumes the receiver and rejects escaping owned-field borrows"_test =
         [] static noexcept {
             const auto prelude = std::string(R"(
         class C {
@@ -133,7 +120,7 @@ const ct::Suite tests([] static noexcept {
             const auto reused = analyze_test_errors(prelude + R"(
         fn use() { let owner = C::create(); let _ = owner.build(); let _ = owner.build(); }
     )");
-            ct::expect_diagnostic(reused, DiagnosticCode::AccessUnavailable);
+            expect_diagnostic(reused, DiagnosticCode::AccessUnavailable);
             const auto borrowed = analyze_test_errors(prelude + R"(
         fn use() {
             let owner = C::create();
@@ -142,23 +129,22 @@ const ct::Suite tests([] static noexcept {
             println(view);
         }
     )");
-            ct::expect_diagnostic(borrowed, DiagnosticCode::AccessBorrowConflict);
+            expect_diagnostic(borrowed, DiagnosticCode::AccessBorrowConflict);
             const auto escaped = analyze_test_errors(R"(
         class C {
             text: String,
             fn bad(&&self) -> str { return (&&self).text.as_str(); }
         }
     )");
-            ct::expect_diagnostic(escaped, DiagnosticCode::AccessBorrowConflict);
+            expect_diagnostic(escaped, DiagnosticCode::AccessBorrowConflict);
             const auto partial = analyze_test_errors(R"(
         class C {
             text: String,
             fn bad(&&self) -> String { return &&self.text; }
         }
     )");
-            ct::expect_diagnostic(partial, DiagnosticCode::AccessTakeOperand);
-        }
-    );
+            expect_diagnostic(partial, DiagnosticCode::AccessTakeOperand);
+        };
 });
 
 } // namespace

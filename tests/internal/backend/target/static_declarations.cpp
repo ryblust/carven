@@ -18,11 +18,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Target static declarations: verification traverses type and initializer",
+const TestSuite suite([] static noexcept {
+    "Target static declarations: verification traverses type and initializer"_test =
         [] static noexcept {
             const auto owner = TargetTestingFixture::unit_identity();
             const auto local = TargetTestingFixture::type_id(owner, 0);
@@ -57,16 +54,14 @@ const ct::Suite tests([] static noexcept {
                 const auto sections =
                     TargetUnitSections {.preamble = {}, .body = std::move(items), .epilogue = {}};
                 const auto checked = TargetTestingFixture::validate_unit(owner, types, sections);
-                if (!ct::expect(!(checked.has_value()))) {
+                if (!expect(!(checked.has_value()))) {
                     return;
                 }
-                ct::expect(checked.error().kind == TargetSealViolationKind::InvalidTypeReference);
+                expect(checked.error().kind == TargetSealViolationKind::InvalidTypeReference);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Target static declarations: intrinsic names provide their own headers",
+    "Target static declarations: intrinsic names provide their own headers"_test =
         [] static noexcept {
             const auto symbols = std::array {
                 std::pair(TargetSymbol::StdNullopt, "optional"),
@@ -97,28 +92,26 @@ const ct::Suite tests([] static noexcept {
                 const auto sections =
                     TargetUnitSections {.preamble = {}, .body = std::move(body), .epilogue = {}};
                 const auto dependencies = collect_target_dependencies(owner, types, sections);
-                if (!(ct::expect(dependencies.size() == 1uz).note("header: ", header))) {
+                if (!(expect(dependencies.size() == 1uz).note("header: ", header))) {
                     return;
                 }
-                ct::expect(dependencies.front().bytes == std::format("#include <{}>", header))
+                expect(dependencies.front().bytes == std::format("#include <{}>", header))
                     .note("header: ", header);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Target type aliases: sealing rejects foreign and out-of-range references",
+    "Target type aliases: sealing rejects foreign and out-of-range references"_test =
         [] static noexcept {
             const auto cases = std::array {
                 std::pair("alias-type-foreign", true),
                 std::pair("alias-type-out-of-range", false),
             };
-            ct::each(
+            each(
                 cases,
                 [](const auto& item) static noexcept -> std::string_view { return item.first; },
                 [](const auto& item) static noexcept {
                     const auto& [scenario, foreign] = item;
-                    ct::expect(expect_termination(scenario, [&] noexcept {
+                    expect(expect_termination(scenario, [&] noexcept {
                         auto builder = TargetUnitBuilder();
                         static_cast<void>(builder.intern_type({
                             .value =
@@ -147,8 +140,7 @@ const ct::Suite tests([] static noexcept {
                     }));
                 }
             );
-        }
-    );
+        };
 });
 
 } // namespace

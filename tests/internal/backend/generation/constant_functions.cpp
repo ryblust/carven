@@ -17,8 +17,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct FunctionFacts final {
     std::size_t label_calls = 0uz;
     std::size_t all_calls = 0uz;
@@ -74,38 +72,33 @@ auto FunctionQuery::enter_declaration(const TargetDecl& declaration) noexcept ->
         return true;
     }
     const auto* result = std::get_if<TargetIntrinsicType>(&unit.type(function->result).value);
-    if (!ct::expect(result != nullptr)) {
+    if (!expect(result != nullptr)) {
         return false;
     }
     auto facts = FunctionFacts();
-    if (!ct::expect(traverse_target_statements(definition->body, facts))) {
+    if (!expect(traverse_target_statements(definition->body, facts))) {
         return false;
     }
     if (name == "ordinary") {
-        ct::expect_equal(result->symbol, TargetSymbol::RuntimeString);
-        ct::expect(facts.label_calls == 1uz);
-        ct::expect(facts.literals.empty());
+        expect_equal(result->symbol, TargetSymbol::RuntimeString);
+        expect(facts.label_calls == 1uz);
+        expect(facts.literals.empty());
         ++ordinary_definitions;
         return true;
     }
-    ct::expect_equal(result->symbol, TargetSymbol::StdStringView);
-    ct::expect(facts.all_calls == 0uz);
-    if (!ct::expect(facts.literals.size() == 1uz)) {
+    expect_equal(result->symbol, TargetSymbol::StdStringView);
+    expect(facts.all_calls == 0uz);
+    if (!expect(facts.literals.size() == 1uz)) {
         return false;
     }
-    ct::expect_equal(facts.literals.front().kind, TargetStringLiteralKind::StringView);
-    ct::expect(facts.literals.front().bytes == std::string_view("我\0😀", 8uz));
+    expect_equal(facts.literals.front().kind, TargetStringLiteralKind::StringView);
+    expect(facts.literals.front().bytes == std::string_view("我\0😀", 8uz));
     ++frozen_definitions;
     return true;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: const function initializers emit static bytes and ordinary calls return owning String",
+const TestSuite suite([] static noexcept {
+    "Generation: const function initializers emit static bytes and ordinary calls return owning String"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -130,16 +123,15 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = FunctionQuery {.unit = unit};
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
                 frozen_definitions += query.frozen_definitions;
                 ordinary_definitions += query.ordinary_definitions;
                 label_definitions += query.label_definitions;
             }
-            ct::expect(frozen_definitions == 3uz);
-            ct::expect(ordinary_definitions == 1uz);
-            ct::expect(label_definitions == 1uz);
-        }
-    );
+            expect(frozen_definitions == 3uz);
+            expect(ordinary_definitions == 1uz);
+            expect(label_definitions == 1uz);
+        };
 });
 
 } // namespace

@@ -107,14 +107,12 @@ fn accept_pattern(accepted: bool) -> bool {
     return accepted;
 }
 
-fn selected_pattern_owner(value: PatternOwners, accepted: bool) -> i32 {
-    return match value {
-        .Pair(chosen, _, 0 | 1, 0 | 1)
-            | .Pair(_, chosen, 2 | 3, 2 | 3)
-            | .Pair(chosen, _, 2 | 4, 2 | 4) if accept_pattern(accepted) => chosen.id as i32,
-        .Pair(_, _, _, _) => -1,
-    };
-}
+fn selected_pattern_owner(value: PatternOwners, accepted: bool) -> i32 => match value {
+    .Pair(chosen, _, 0 | 1, 0 | 1)
+        | .Pair(_, chosen, 2 | 3, 2 | 3)
+        | .Pair(chosen, _, 2 | 4, 2 | 4) if accept_pattern(accepted) => chosen.id as i32,
+    .Pair(_, _, _, _) => -1,
+};
 
 test "Lifetimes: pattern alternatives commit only the selected binding before one guard" {
     let value = PatternOwners::Pair(PatternOwner { 1 }, PatternOwner { 2 }, 2, 2);
@@ -131,13 +129,14 @@ enum NestedPatternOwners {
     Empty,
 }
 
-private fn selected_nested_pattern_owner(value: NestedPatternOwners, accepted: bool) -> i32 {
-    return match value {
-        .Wrapped(.Pair(chosen, _, 0 | 1, 0 | 1)) if accept_pattern(accepted) => chosen.id as i32,
-        .Wrapped(.Pair(_, chosen, _, _)) => chosen.id as i32,
-        .Empty => -1,
-    };
-}
+private fn selected_nested_pattern_owner(
+    value: NestedPatternOwners,
+    accepted: bool
+) -> i32 => match value {
+    .Wrapped(.Pair(chosen, _, 0 | 1, 0 | 1)) if accept_pattern(accepted) => chosen.id as i32,
+    .Wrapped(.Pair(_, chosen, _, _)) => chosen.id as i32,
+    .Empty => -1,
+};
 
 test "Lifetimes: nested payload bindings clean before a rejected guard's successor" {
     let accepted = NestedPatternOwners::Wrapped(

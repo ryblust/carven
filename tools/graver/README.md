@@ -119,7 +119,9 @@ Failed scenarios retain their files and captured streams. Run one scenario with
 
 ## Implementation
 
-Components under `src/` have these responsibilities:
+Graver uses `carven:graver.*` partitions. Shared declarations have domain names
+such as `FormattingSource` and `FormattingDocument`; file-private helpers live
+in anonymous namespaces. Components under `src/` have these responsibilities:
 
 | Component | Responsibility |
 | --- | --- |
@@ -147,22 +149,23 @@ format: source bytes -> lexer + trivia -> parser -> import comma normalization
 
 ### Ownership and output
 
-The CLI loads all sources before formatting. `Source::scan` owns bytes, compiler
-tokens, and trivia; its immutable views remain valid while that object stays in
-place. Token source IDs refer to the source manager used for parsing. The
-formatter normalizes uncommented import-list trailing commas before layout. It
-replaces their bytes with spaces, preserving the original AST offsets. Document
-construction borrows that scanned source and the original AST. After alignment,
-it adds trailing commas to multiline imports. Validation compares against the
-original source, allowing only import-list trailing commas to differ.
+The CLI loads all sources before formatting. `FormattingSource::scan` returns
+an owner of source bytes, compiler tokens, and trivia. Its views end when the owner
+moves or is destroyed. Parsing uses its token buffer with the `SourceManager`
+that retains the matching source. For layout, the formatter replaces uncommented
+import-list trailing commas with spaces in a separate snapshot, preserving the
+original AST offsets. Document construction borrows that snapshot and the
+original AST. After alignment, it adds trailing commas to multiline imports.
+Validation compares against the original source, allowing only import-list
+trailing commas to differ.
 
 `format_batch` runs serially in input order, collects diagnostics from failed
 inputs, and returns a `FormattedBatch` only if every input succeeds. The batch
 owns formatted strings and paths and borrows original bytes from `SourceManager`.
 Keep the manager alive, unmoved, and unchanged through reporting and writing.
-Batch file views end when the batch moves or is destroyed. `write_batch` checks
-every destination before the first replacement; replacements remain per-file,
-with the failure behavior described above.
+Batch file views end when the batch moves or is destroyed.
+`write_formatted_batch` checks every destination before the first replacement;
+replacements remain per-file, with the failure behavior described above.
 
 ### Layout construction
 
@@ -181,8 +184,9 @@ and array-row alignment are applied. Alignment adds spaces without changing line
 breaks and skips groups that would exceed the line width. The final output must
 pass token/comment comparison and parse validation.
 
-`Document` owns text and child IDs in an arena, caches flat widths, and renders
-with an explicit stack. Fit checks include following material such as closing
+`FormattingDocument` owns text and nodes in an arena. `FormattingNodeID` identifies
+a node within that document. The document caches flat widths and renders with an
+explicit stack. Fit checks include following material such as closing
 punctuation. Layout-generated line breaks defer indentation until text is emitted,
 keeping blank lines free of generated spaces. Line breaks within source text do
 not request indentation; splitting a source fragment into document nodes preserves

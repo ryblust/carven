@@ -60,11 +60,11 @@ test "Classes: factories, receivers and lexical access compose ordinary value ru
 private class Label {
     text: String,
 
-    fn create(text: str) -> Label => { text: String::from_str(text) };
-    fn view(self) -> str => self.text.as_str();
+    fn create(text: str) -> Label => { text: text as String };
+    fn view(self) -> str => self.text;
 
     fn replace(&self, text: str) {
-        self.text = String::from_str(text);
+        self.text = text as String;
     }
 }
 
@@ -79,7 +79,7 @@ test "Classes: private owning storage retains ordinary copy and borrow behavior"
 private class TextBuilder {
     text: String,
 
-    fn create() -> TextBuilder => { text: String::from_str("") };
+    fn create() -> TextBuilder => { text: {} };
 
     fn append(&self, text: str) {
         self.text.append(text);

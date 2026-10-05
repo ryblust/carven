@@ -13,11 +13,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Construction types: children must already exist in the owning store",
+const TestSuite suite([] static noexcept {
+    "Construction types: children must already exist in the owning store"_test =
         [] static noexcept {
             const auto program = analyze_test_program("");
             const auto foreign = analyze_test_program("");
@@ -33,13 +30,13 @@ const ct::Suite tests([] static noexcept {
             const auto canonical = CanonicalTypeStoreBuilder(program.identity());
             const auto integer = canonical.builtin_type(BuiltinType::I32);
 
-            ct::expect(expect_termination("type-array-child-must-exist", [&] noexcept {
+            expect(expect_termination("type-array-child-must-exist", [&] noexcept {
                 static_cast<void>(types.append(
                     {.value = ConstructionArrayTypeValue {.element = self, .extent = 1u}}
                 ));
             }));
 
-            ct::expect(expect_termination("type-parameter-child-must-exist", [&] noexcept {
+            expect(expect_termination("type-parameter-child-must-exist", [&] noexcept {
                 static_cast<void>(types.append(
                     {.value = ConstructionCallableViewTypeValue {
                          .parameters =
@@ -51,7 +48,7 @@ const ct::Suite tests([] static noexcept {
                      }}
                 ));
             }));
-            ct::expect(expect_termination("type-result-child-must-share-owner", [&] noexcept {
+            expect(expect_termination("type-result-child-must-share-owner", [&] noexcept {
                 static_cast<void>(types.append(
                     {.value = ConstructionCallableViewTypeValue {
                          .parameters = {},
@@ -60,77 +57,67 @@ const ct::Suite tests([] static noexcept {
                      }}
                 ));
             }));
-        }
-    );
+        };
 
-    ct::test(
-        "Construction types: nested callable shapes retain canonical contracts",
-        [] static noexcept {
-            const auto program = analyze_test_program(
-                "struct Failure {}\n"
-                "fn first(values: [fn(&i32) -> i32 throw Failure; 2]) {}\n"
-                "fn second(values: [fn(&i32) -> i32 throw Failure; 2]) {}\n"
-            );
-            const auto callables = test_function_callables(program);
-            if (!ct::expect_equal(callables.size(), 2uz)) {
-                return;
-            }
-            const auto first = test_callable_signature(program, callables[0]);
-            const auto second = test_callable_signature(program, callables[1]);
-            if (!ct::expect_equal(first.parameters.size(), 1uz)) {
-                return;
-            }
-            if (!ct::expect_equal(second.parameters.size(), 1uz)) {
-                return;
-            }
-            ct::expect(((first.parameters.front().type) == (second.parameters.front().type)))
-                .note("first.parameters.front().type == second.parameters.front().type");
-            const auto& array_type = program.types().type(first.parameters.front().type);
-            const auto* array = std::get_if<ArrayTypeValue>(&array_type.value);
-            if (!ct::expect(array != nullptr)) {
-                return;
-            }
-            ct::expect_equal(array->extent, 2u);
-            const auto* view =
-                std::get_if<CallableViewTypeValue>(&program.types().type(array->element).value);
-            if (!ct::expect(view != nullptr)) {
-                return;
-            }
-            const auto& contract = program.callable_signatures().signature(view->signature);
-            if (!ct::expect_equal(contract.parameters.size(), 1uz)) {
-                return;
-            }
-            ct::expect_equal(contract.parameters.front().access, AccessMode::Write);
-            ct::expect(((contract.parameters.front().type) == (contract.result)))
-                .note("contract.parameters.front().type == contract.result");
-            ct::expect(((program.types().type(contract.result).value)
-                        == (CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::I32}})))
-                .note(
-                    "program.types().type(contract.result).value == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::I32}}"
-                );
-            ct::expect_equal(
-                program.failure_sets().failure_set(contract.failures).members.size(),
-                1uz
-            );
+    "Construction types: nested callable shapes retain canonical contracts"_test = [] static noexcept {
+        const auto program = analyze_test_program(
+            "struct Failure {}\n"
+            "fn first(values: [fn(&i32) -> i32 throw Failure; 2]) {}\n"
+            "fn second(values: [fn(&i32) -> i32 throw Failure; 2]) {}\n"
+        );
+        const auto callables = test_function_callables(program);
+        if (!expect_equal(callables.size(), 2uz)) {
+            return;
         }
-    );
+        const auto first = test_callable_signature(program, callables[0]);
+        const auto second = test_callable_signature(program, callables[1]);
+        if (!expect_equal(first.parameters.size(), 1uz)) {
+            return;
+        }
+        if (!expect_equal(second.parameters.size(), 1uz)) {
+            return;
+        }
+        expect(((first.parameters.front().type) == (second.parameters.front().type)))
+            .note("first.parameters.front().type == second.parameters.front().type");
+        const auto& array_type = program.types().type(first.parameters.front().type);
+        const auto* array = std::get_if<ArrayTypeValue>(&array_type.value);
+        if (!expect(array != nullptr)) {
+            return;
+        }
+        expect_equal(array->extent, 2u);
+        const auto* view =
+            std::get_if<CallableViewTypeValue>(&program.types().type(array->element).value);
+        if (!expect(view != nullptr)) {
+            return;
+        }
+        const auto& contract = program.callable_signatures().signature(view->signature);
+        if (!expect_equal(contract.parameters.size(), 1uz)) {
+            return;
+        }
+        expect_equal(contract.parameters.front().access, AccessMode::Write);
+        expect(((contract.parameters.front().type) == (contract.result)))
+            .note("contract.parameters.front().type == contract.result");
+        expect(((program.types().type(contract.result).value)
+                == (CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::I32}})))
+            .note(
+                "program.types().type(contract.result).value == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::I32}}"
+            );
+        expect_equal(program.failure_sets().failure_set(contract.failures).members.size(), 1uz);
+    };
 
-    ct::test(
-        "External types: C string storage has a closed operand and type contract",
+    "External types: C string storage has a closed operand and type contract"_test =
         [] static noexcept {
             const auto type = CppTypeValue {.form = CppConstCharPointerType {}};
-            ct::expect(valid_cpp_type(type));
-            ct::expect(cpp_type_references(type).empty());
-            ct::expect(cpp_type_name(type) == nullptr);
-            ct::expect(valid_cstring_bytes("abc"));
-            ct::expect(valid_cstring_bytes(""));
-            ct::expect(!(valid_cstring_bytes(std::string("a\0b", 3))));
-            ct::expect(!(valid_cstring_bytes("\xff")));
-        }
-    );
+            expect(valid_cpp_type(type));
+            expect(cpp_type_references(type).empty());
+            expect(cpp_type_name(type) == nullptr);
+            expect(valid_cstring_bytes("abc"));
+            expect(valid_cstring_bytes(""));
+            expect(!(valid_cstring_bytes(std::string("a\0b", 3))));
+            expect(!(valid_cstring_bytes("\xff")));
+        };
 
-    ct::test(
-        "External types: query operand access participates in canonical identity",
+    "External types: query operand access participates in canonical identity"_test =
         [] static noexcept {
             const auto program = analyze_test_program("");
             auto types = CanonicalTypeStoreBuilder(program.identity());
@@ -153,20 +140,18 @@ const ct::Suite tests([] static noexcept {
             const auto read = types.intern(query(AccessMode::Read));
             const auto write = types.intern(query(AccessMode::Write));
             const auto take = types.intern(query(AccessMode::Take));
-            ct::expect(read != write).note("read and write type IDs differ");
-            ct::expect(read != take).note("read and take type IDs differ");
-            ct::expect(write != take).note("write and take type IDs differ");
-            ct::expect(((types.intern(query(AccessMode::Read))) == (read)))
+            expect(read != write).note("read and write type IDs differ");
+            expect(read != take).note("read and take type IDs differ");
+            expect(write != take).note("write and take type IDs differ");
+            expect(((types.intern(query(AccessMode::Read))) == (read)))
                 .note("types.intern(query(AccessMode::Read)) == read");
-            ct::expect(((types.intern(query(AccessMode::Write))) == (write)))
+            expect(((types.intern(query(AccessMode::Write))) == (write)))
                 .note("types.intern(query(AccessMode::Write)) == write");
-            ct::expect(((types.intern(query(AccessMode::Take))) == (take)))
+            expect(((types.intern(query(AccessMode::Take))) == (take)))
                 .note("types.intern(query(AccessMode::Take)) == take");
-        }
-    );
+        };
 
-    ct::test(
-        "Pointer types: nested declared callable contracts have stable identities",
+    "Pointer types: nested declared callable contracts have stable identities"_test =
         [] static noexcept {
             const auto program = analyze_test_program(
                 "struct Failure {}\n"
@@ -175,7 +160,7 @@ const ct::Suite tests([] static noexcept {
                 "fn writer(p: ptr<&ptr<&fn(&i32) -> i32 throw Failure>>) {}\n"
             );
             const auto callables = test_function_callables(program);
-            if (!ct::expect_equal(callables.size(), 3uz)) {
+            if (!expect_equal(callables.size(), 3uz)) {
                 return;
             }
             const auto first =
@@ -184,38 +169,36 @@ const ct::Suite tests([] static noexcept {
                 test_callable_signature(program, callables[1]).parameters.front().type;
             const auto writer =
                 test_callable_signature(program, callables[2]).parameters.front().type;
-            ct::expect(((first) == (second))).note("first == second");
-            ct::expect(first != writer).note("read and write callable IDs differ");
+            expect(((first) == (second))).note("first == second");
+            expect(first != writer).note("read and write callable IDs differ");
             const auto* reader_type =
                 std::get_if<PointerTypeValue>(&program.types().type(first).value);
             const auto* writer_type =
                 std::get_if<PointerTypeValue>(&program.types().type(writer).value);
-            if (!ct::expect(reader_type != nullptr)) {
+            if (!expect(reader_type != nullptr)) {
                 return;
             }
-            if (!ct::expect(writer_type != nullptr)) {
+            if (!expect(writer_type != nullptr)) {
                 return;
             }
-            ct::expect_equal(reader_type->access, PointerAccess::Read);
-            ct::expect_equal(writer_type->access, PointerAccess::Write);
-            ct::expect(((reader_type->target) == (writer_type->target)))
+            expect_equal(reader_type->access, PointerAccess::Read);
+            expect_equal(writer_type->access, PointerAccess::Write);
+            expect(((reader_type->target) == (writer_type->target)))
                 .note("reader_type->target == writer_type->target");
             const auto* inner =
                 std::get_if<PointerTypeValue>(&program.types().type(reader_type->target).value);
-            if (!ct::expect(inner != nullptr)) {
+            if (!expect(inner != nullptr)) {
                 return;
             }
-            ct::expect_equal(inner->access, PointerAccess::Write);
-            ct::expect(
+            expect_equal(inner->access, PointerAccess::Write);
+            expect(
                 std::holds_alternative<CallableViewTypeValue>(
                     program.types().type(inner->target).value
                 )
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Canonical types: builtin queries are complete and stable across publication",
+    "Canonical types: builtin queries are complete and stable across publication"_test =
         [] static noexcept {
             const auto program = analyze_test_program("");
             auto builder = CanonicalTypeStoreBuilder(program.identity());
@@ -223,10 +206,10 @@ const ct::Suite tests([] static noexcept {
             auto identities = std::vector<TypeID>();
             for (const auto kind : builtin_types) {
                 const auto id = reader.builtin_type(kind);
-                ct::expect(
+                expect(
                     reader.copy(id).value == CanonicalTypeValue {BuiltinTypeValue {.kind = kind}}
                 );
-                ct::expect(
+                expect(
                     builder.intern(CanonicalType {.value = BuiltinTypeValue {.kind = kind}}) == id
                 );
                 identities.push_back(id);
@@ -240,16 +223,14 @@ const ct::Suite tests([] static noexcept {
                 }
             );
             const auto store = std::move(builder).seal();
-            ct::expect(store.size() == builtin_types.size() + 1uz);
-            ct::expect(store.contains(compound));
+            expect(store.size() == builtin_types.size() + 1uz);
+            expect(store.contains(compound));
             for (auto index = 0uz; index < builtin_types.size(); ++index) {
-                ct::expect(store.builtin_type(builtin_types[index]) == identities[index]);
+                expect(store.builtin_type(builtin_types[index]) == identities[index]);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Type contents: cyclic slice graphs reach an order-independent fixed point",
+    "Type contents: cyclic slice graphs reach an order-independent fixed point"_test =
         [] static noexcept {
             const auto program = analyze_test_program("struct A { seed: i32 } struct B {}\n");
 
@@ -263,7 +244,7 @@ const ct::Suite tests([] static noexcept {
                 auto contains(FailureTermID id) const noexcept -> bool { return id == term; }
 
                 auto failure_set(FailureTermID id) const noexcept -> FailureSetID {
-                    ct::require(id == term);
+                    require(id == term);
                     return set;
                 }
             };
@@ -278,7 +259,7 @@ const ct::Suite tests([] static noexcept {
                 {.seeded = true, .reverse = false},
                 {.seeded = true, .reverse = true},
             });
-            ct::each(
+            each(
                 scenarios,
                 [](const Scenario& scenario) static noexcept {
                     return std::format("seeded {} reverse {}", scenario.seeded, scenario.reverse);
@@ -409,11 +390,9 @@ const ct::Suite tests([] static noexcept {
                     declarations.define(module_id, program.declarations().module_decl(module_id));
                     static_cast<void>(declarations.finish_heads());
                     for (const auto type : nominal) {
-                        ct::expect(
-                            (query_type_contents(types, declarations.construction_view(), type)
-                                 .contains_callable_view
-                             == seeded)
-                        )
+                        expect((query_type_contents(types, declarations.construction_view(), type)
+                                    .contains_callable_view
+                                == seeded))
                             .note(
                                 "query_type_contents(types, declarations.construction_view(), type)\n                            .contains_callable_vie...",
                                 "seeded = ",
@@ -427,7 +406,7 @@ const ct::Suite tests([] static noexcept {
                     const auto closed_types = std::move(types).seal();
                     const auto contents = compute_type_contents(closed_types, closed_declarations);
                     for (const auto type : {nominal[0], nominal[1], slices[0], slices[1]}) {
-                        ct::expect(((contents[type.index()].contains_callable_view) == (seeded)))
+                        expect(((contents[type.index()].contains_callable_view) == (seeded)))
                             .note(
                                 "contents[type.index()].contains_callable_view == seeded",
                                 "seeded = ",
@@ -435,14 +414,14 @@ const ct::Suite tests([] static noexcept {
                                 "reverse = ",
                                 reverse
                             );
-                        ct::expect(!(contents[type.index()].contains_closure_owner))
+                        expect(!(contents[type.index()].contains_closure_owner))
                             .note("seeded = ", seeded, "reverse = ", reverse);
                     }
-                    ct::expect(contents[native.index()].contains_native_value)
+                    expect(contents[native.index()].contains_native_value)
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(contents[native_array.index()].contains_native_value)
+                    expect(contents[native_array.index()].contains_native_value)
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(((contents[nominal[0].index()].contains_native_value) == (seeded)))
+                    expect(((contents[nominal[0].index()].contains_native_value) == (seeded)))
                         .note(
                             "contents[nominal[0].index()].contains_native_value == seeded",
                             "seeded = ",
@@ -450,9 +429,9 @@ const ct::Suite tests([] static noexcept {
                             "reverse = ",
                             reverse
                         );
-                    ct::expect(!(contents[nominal[1].index()].contains_native_value))
+                    expect(!(contents[nominal[1].index()].contains_native_value))
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(((contents[enum_type.index()].contains_native_value) == (seeded)))
+                    expect(((contents[enum_type.index()].contains_native_value) == (seeded)))
                         .note(
                             "contents[enum_type.index()].contains_native_value == seeded",
                             "seeded = ",
@@ -460,17 +439,17 @@ const ct::Suite tests([] static noexcept {
                             "reverse = ",
                             reverse
                         );
-                    ct::expect(!(contents[native_pointer.index()].contains_native_value))
+                    expect(!(contents[native_pointer.index()].contains_native_value))
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(!(contents[native_slice.index()].contains_native_value))
+                    expect(!(contents[native_slice.index()].contains_native_value))
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(!(contents[pointer.index()].contains_native_value))
+                    expect(!(contents[pointer.index()].contains_native_value))
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(!(contents[slices[0].index()].contains_native_value))
+                    expect(!(contents[slices[0].index()].contains_native_value))
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(!(contents[slices[1].index()].contains_native_value))
+                    expect(!(contents[slices[1].index()].contains_native_value))
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(((contents[nominal[0].index()].contains_storage_owner) == (seeded)))
+                    expect(((contents[nominal[0].index()].contains_storage_owner) == (seeded)))
                         .note(
                             "contents[nominal[0].index()].contains_storage_owner == seeded",
                             "seeded = ",
@@ -478,20 +457,19 @@ const ct::Suite tests([] static noexcept {
                             "reverse = ",
                             reverse
                         );
-                    ct::expect(!(contents[nominal[1].index()].contains_storage_owner))
+                    expect(!(contents[nominal[1].index()].contains_storage_owner))
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(!(contents[slices[0].index()].contains_storage_owner))
+                    expect(!(contents[slices[0].index()].contains_storage_owner))
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(!(contents[slices[1].index()].contains_storage_owner))
+                    expect(!(contents[slices[1].index()].contains_storage_owner))
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(!(contents[pointer.index()].contains_callable_view))
+                    expect(!(contents[pointer.index()].contains_callable_view))
                         .note("seeded = ", seeded, "reverse = ", reverse);
-                    ct::expect(!(contents[pointer.index()].contains_storage_owner))
+                    expect(!(contents[pointer.index()].contains_storage_owner))
                         .note("seeded = ", seeded, "reverse = ", reverse);
                 }
             );
-        }
-    );
+        };
 });
 
 } // namespace

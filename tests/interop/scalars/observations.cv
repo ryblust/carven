@@ -7,13 +7,15 @@ private fn take_owner(input: i32) -> i32 {
     return pair(value + 1, ::observation_probe::take(&&value) as i32);
 }
 
-private fn take_parameter(&&value: i32) -> i32 {
-    return pair(value + 1, ::observation_probe::take(&&value) as i32);
-}
+private fn take_parameter(&&value: i32) -> i32 => pair(
+    value + 1,
+    ::observation_probe::take(&&value) as i32
+);
 
-private fn read_parameter(value: i32, address: ptr<&i32>) -> i32 {
-    return pair(value, ::observation_probe::write(address) as i32);
-}
+private fn read_parameter(value: i32, address: ptr<&i32>) -> i32 => pair(
+    value,
+    ::observation_probe::write(address) as i32
+);
 
 test "Observations: native Take preserves an earlier independent value" {
     check(take_owner(1) == 22);
@@ -71,9 +73,10 @@ private fn failing() -> i32 throw Failure {
     throw Failure {};
 }
 
-private fn effect_before_failure(&value: i32) -> i32 throw Failure {
-    return pair(::observation_probe::write(addressof(&value)) as i32, failing()?);
-}
+private fn effect_before_failure(&value: i32) -> i32 throw Failure => pair(
+    ::observation_probe::write(addressof(&value)) as i32,
+    failing()?
+);
 
 test "Observations: earlier native execution precedes a later failure" {
     var value = 1;

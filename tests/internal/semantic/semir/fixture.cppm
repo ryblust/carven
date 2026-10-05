@@ -5,9 +5,8 @@ import :frontend.program.parse;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.program;
 import :semantic.semir.body;
-import :semantic.semir.constant;
 import :semantic.semir.decl;
-import :semantic.semir.program;
+import :semantic.semir.structured;
 import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
@@ -18,19 +17,15 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-} // namespace
-
-namespace semir_test {
-
-auto path(std::string_view value) noexcept -> CanonicalModulePath {
+auto semir_test_module_path(std::string_view value) noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value(value);
-    ct::require(result.has_value());
+    require(result.has_value());
     return std::move(*result);
 }
 
-auto begin_compilation_batch(
+} // namespace
+
+auto begin_semir_test_compilation_batch(
     SourceManager& sources,
     DiagnosticSink& diagnostics,
     std::span<const std::string_view> module_names
@@ -40,34 +35,35 @@ auto begin_compilation_batch(
     for (auto index = 0uz; index < module_names.size(); ++index) {
         const auto source =
             sources.append_virtual(std::format("semir-publication-{}.cv", index), "");
-        ct::require(source.has_value());
+        require(source.has_value());
         inputs.push_back(
             SourceModuleInput {
                 .source_id = *source,
-                .module_path = path(module_names[index]),
+                .module_path = semir_test_module_path(module_names[index]),
             }
         );
     }
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    ct::require(syntax.has_value());
+    require(syntax.has_value());
     return ProgramDraft::begin(std::move(*syntax), diagnostics);
 }
 
-auto begin_compilation(
+auto begin_semir_test_compilation(
     SourceManager& sources,
     DiagnosticSink& diagnostics,
     std::string_view module_name
 ) noexcept -> ProgramDraft {
     const auto module_names = std::array {module_name};
-    return begin_compilation_batch(sources, diagnostics, module_names);
+    return begin_semir_test_compilation_batch(sources, diagnostics, module_names);
 }
 
-struct ModuleFacts final {
+struct SemIRTestModuleOrigin final {
     ProgramModuleID provenance_module;
     ProgramOriginID origin;
 };
 
-auto module_facts(ProgramDraft& builder, std::size_t index = 0uz) noexcept -> ModuleFacts {
+auto make_semir_test_module_origin(ProgramDraft& builder, std::size_t index = 0uz) noexcept
+    -> SemIRTestModuleOrigin {
     const auto module_id = builder.provenance_module_at(index);
     return {
         .provenance_module = module_id,
@@ -75,7 +71,7 @@ auto module_facts(ProgramDraft& builder, std::size_t index = 0uz) noexcept -> Mo
     };
 }
 
-auto callable_contract(ProgramDraft& builder, TypeID result) noexcept
+auto make_semir_test_callable_contract(ProgramDraft& builder, TypeID result) noexcept
     -> ConstructionCallableContract {
     return {
         .parameters = {},
@@ -85,7 +81,7 @@ auto callable_contract(ProgramDraft& builder, TypeID result) noexcept
     };
 }
 
-auto minimal_body(
+auto make_semir_test_body(
     BodyReservation reservation,
     ProgramOriginID origin,
     ProgramDraft& program
@@ -105,56 +101,3 @@ auto minimal_body(
         }
     );
 }
-
-auto body_with_closure(
-    BodyReservation reservation,
-    ProgramOriginID origin,
-    TypeID closure_type,
-    CallableID closure_callable,
-    ProgramDraft& program
-) noexcept -> StructuredBodyDraft {
-    auto body = BodyBuilder(std::move(reservation), program);
-    const auto lifetime =
-        body.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, origin);
-    auto statements = std::vector<SemanticStatement>();
-    statements.push_back(
-        SemanticStatement {
-            .origin = origin,
-            .lifetime = lifetime,
-            .reachable = true,
-            .value = SemExpressionStatement {
-                .expression = body.make_expression(
-                    closure_type,
-                    lifetime,
-                    origin,
-                    SemClosure {.callable = closure_callable, .captures = {}}
-                ),
-            },
-        }
-    );
-    return std::move(body).finish(
-        SemanticRegion {
-            .lifetime = lifetime,
-            .origin = origin,
-            .statements = std::move(statements),
-            .result = std::nullopt,
-            .result_reachable = false,
-            .failures = BodyFailures(program.add_empty_failure_term()),
-            .exits_test = false,
-        }
-    );
-}
-
-auto publish(std::vector<StructuredBodyDraft> bodies, ProgramDraft& builder) noexcept -> void {
-    for (auto& body : bodies) {
-        builder.add_body_draft(std::move(body));
-    }
-}
-
-auto publish(StructuredBodyDraft body, ProgramDraft& builder) noexcept -> void {
-    auto bodies = std::vector<StructuredBodyDraft>();
-    bodies.push_back(std::move(body));
-    publish(std::move(bodies), builder);
-}
-
-} // namespace semir_test

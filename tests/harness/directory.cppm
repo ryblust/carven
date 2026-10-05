@@ -2,8 +2,6 @@ module carven:test.harness.directory;
 
 import std;
 
-namespace carven::testing {
-
 class TempDirectory final {
 public:
     explicit TempDirectory(std::string_view label = "carven-test") noexcept;
@@ -18,5 +16,3 @@ public:
 private:
     std::filesystem::path directory;
 };
-
-} // namespace carven::testing

@@ -16,72 +16,66 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: interop failures preserve code and precise span"_test = [] static noexcept {
+        static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
+            {
+                .name = "import parameters require value types",
+                .source = "import(cpp) fn invalid(value: void);",
+                .code = DiagnosticCode::TypeValueRequired,
+                .primary_text = "void",
+            },
+            {
+                .name = "import Write requires mutable storage",
+                .source = "import(cpp) fn change(&value: String); "
+                          "fn f() { let value: String = \"text\"; change(&value); }",
+                .code = DiagnosticCode::AccessImmutable,
+                .primary_text = "&value",
+            },
+            {
+                .name = "import Take consumes the source",
+                .source =
+                    "import(cpp) fn consume(&&value: String); "
+                    "fn f() { let value: String = \"text\"; consume(&&value); consume(&&value); }",
+                .code = DiagnosticCode::AccessUnavailable,
+                .primary_text = "value",
+            },
+            {
+                .name = "export signatures obey nominal visibility",
+                .source = "private struct Hidden {} export(cpp) fn leak() => Hidden {};",
+                .code = DiagnosticCode::TypeVisibilityLeak,
+                .primary_text = "export(cpp) fn leak() => Hidden {};",
+            },
+            {
+                .name = "import failures require propagation",
+                .source = "struct Failure {} import(cpp) fn native() throw Failure; "
+                          "private fn f() { native(); }",
+                .code = DiagnosticCode::EffectUnmarked,
+                .primary_text = "native()",
+            },
+            {
+                .name = "unrepresentable std provider name",
+                .source = "private import(cpp) fn std() -> i32;",
+                .code = DiagnosticCode::CppIdentifier,
+                .primary_text = "std",
+            },
+            {
+                .name = "unrepresentable carven provider name",
+                .source = "private import(cpp) fn carven() -> i32;",
+                .code = DiagnosticCode::CppIdentifier,
+                .primary_text = "carven",
+            },
+            {
+                .name = "unrepresentable main provider name",
+                .source = "private import(cpp) fn main() -> i32;",
+                .code = DiagnosticCode::CppIdentifier,
+                .primary_text = "main",
+            },
+        });
+        check_compiler_errors(cases);
+    };
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: interop failures preserve code and precise span",
-        [] static noexcept {
-            static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
-                {
-                    .name = "import parameters require value types",
-                    .source = "import(cpp) fn invalid(value: void);",
-                    .code = DiagnosticCode::TypeValueRequired,
-                    .primary_text = "void",
-                },
-                {
-                    .name = "import Write requires mutable storage",
-                    .source = "import(cpp) fn change(&value: String); "
-                              "fn f() { let value: String = \"text\"; change(&value); }",
-                    .code = DiagnosticCode::AccessImmutable,
-                    .primary_text = "&value",
-                },
-                {
-                    .name = "import Take consumes the source",
-                    .source =
-                        "import(cpp) fn consume(&&value: String); "
-                        "fn f() { let value: String = \"text\"; consume(&&value); consume(&&value); }",
-                    .code = DiagnosticCode::AccessUnavailable,
-                    .primary_text = "value",
-                },
-                {
-                    .name = "export signatures obey nominal visibility",
-                    .source = "private struct Hidden {} export(cpp) fn leak() => Hidden {};",
-                    .code = DiagnosticCode::TypeVisibilityLeak,
-                    .primary_text = "export(cpp) fn leak() => Hidden {};",
-                },
-                {
-                    .name = "import failures require propagation",
-                    .source = "struct Failure {} import(cpp) fn native() throw Failure; "
-                              "private fn f() { native(); }",
-                    .code = DiagnosticCode::EffectUnmarked,
-                    .primary_text = "native()",
-                },
-                {
-                    .name = "unrepresentable std provider name",
-                    .source = "private import(cpp) fn std() -> i32;",
-                    .code = DiagnosticCode::CppIdentifier,
-                    .primary_text = "std",
-                },
-                {
-                    .name = "unrepresentable carven provider name",
-                    .source = "private import(cpp) fn carven() -> i32;",
-                    .code = DiagnosticCode::CppIdentifier,
-                    .primary_text = "carven",
-                },
-                {
-                    .name = "unrepresentable main provider name",
-                    .source = "private import(cpp) fn main() -> i32;",
-                    .code = DiagnosticCode::CppIdentifier,
-                    .primary_text = "main",
-                },
-            });
-            check_compiler_errors(cases);
-        }
-    );
-
-    ct::test(
-        "Compiler diagnostics: C++ API namespace collisions are Carven-owned",
+    "Compiler diagnostics: C++ API namespace collisions are Carven-owned"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto parent_source = *sources.append_virtual(
@@ -110,26 +104,24 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect(!result.has_value())) {
+            if (!expect(!result.has_value())) {
                 return;
             }
             const auto* collision =
-                ct::find_diagnostic(result.error(), DiagnosticCode::CppAPIPathCollision);
-            if (!ct::expect(collision != nullptr)) {
+                find_diagnostic(result.error(), DiagnosticCode::CppAPIPathCollision);
+            if (!expect(collision != nullptr)) {
                 return;
             }
-            if (!ct::expect(collision->attachment.primary.has_value())) {
+            if (!expect(collision->attachment.primary.has_value())) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 sources.slice(collision->attachment.primary->span),
                 std::string_view("export(cpp)")
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: external delegation retains Carven access rules",
+    "Compiler diagnostics: external delegation retains Carven access rules"_test =
         [] static noexcept {
             constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "global keyword expression",
@@ -176,59 +168,54 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "x"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: C++ imports are confined to their owning module",
-        [] static noexcept {
-            struct Case final {
-                std::string_view consumer;
-                DiagnosticCode code;
+    "Compiler diagnostics: C++ imports are confined to their owning module"_test = [] static noexcept {
+        struct Case final {
+            std::string_view consumer;
+            DiagnosticCode code;
+        };
+
+        constexpr auto cases = std::to_array<Case>({
+            {"fn f() { unknown(); }", DiagnosticCode::NameUnresolved},
+            {"import .provider using external; fn f() {}", DiagnosticCode::ImportResolution},
+            {"import .provider using known; import <native> using known; fn f() {}",
+             DiagnosticCode::Catalog},
+        });
+        each(cases, &Case::consumer, [&](const auto& test) noexcept {
+            auto sources = SourceManager();
+            const auto provider = *sources.append_virtual(
+                "provider.cv",
+                "import <native> using native::{ external }; import <native> using native::*; fn known() {}"
+            );
+            const auto consumer =
+                *sources.append_virtual("consumer.cv", std::string(test.consumer));
+            const auto inputs = std::array {
+                SourceModuleInput {
+                    .source_id = provider,
+                    .module_path = *CanonicalModulePath::from_value("provider")
+                },
+                SourceModuleInput {
+                    .source_id = consumer,
+                    .module_path = *CanonicalModulePath::from_value("consumer")
+                },
             };
-
-            constexpr auto cases = std::to_array<Case>({
-                {"fn f() { unknown(); }", DiagnosticCode::NameUnresolved},
-                {"import .provider using external; fn f() {}", DiagnosticCode::ImportResolution},
-                {"import .provider using known; import <native> using known; fn f() {}",
-                 DiagnosticCode::Catalog},
-            });
-            ct::each(cases, &Case::consumer, [&](const auto& test) noexcept {
-                auto sources = SourceManager();
-                const auto provider = *sources.append_virtual(
-                    "provider.cv",
-                    "import <native> using native::{ external }; import <native> using native::*; fn known() {}"
-                );
-                const auto consumer =
-                    *sources.append_virtual("consumer.cv", std::string(test.consumer));
-                const auto inputs = std::array {
-                    SourceModuleInput {
-                        .source_id = provider,
-                        .module_path = *CanonicalModulePath::from_value("provider")
-                    },
-                    SourceModuleInput {
-                        .source_id = consumer,
-                        .module_path = *CanonicalModulePath::from_value("consumer")
-                    },
-                };
-                const auto result = compile(
-                    sources,
-                    SourceBatch {.modules = inputs},
-                    TargetPlanningRequest {
-                        .test_mode = TestGenerationMode::None,
-                        .linkage_domain =
-                            LinkageDomain::explicit_value("test:cpp-isolation").value()
-                    }
-                );
-                if (!(ct::expect(!result.has_value()))) {
-                    return;
+            const auto result = compile(
+                sources,
+                SourceBatch {.modules = inputs},
+                TargetPlanningRequest {
+                    .test_mode = TestGenerationMode::None,
+                    .linkage_domain = LinkageDomain::explicit_value("test:cpp-isolation").value()
                 }
-                ct::expect_diagnostic(result.error(), test.code);
-            });
-        }
-    );
+            );
+            if (!(expect(!result.has_value()))) {
+                return;
+            }
+            expect_diagnostic(result.error(), test.code);
+        });
+    };
 
-    ct::test("Compiler: external validity is delegated to C++", [] static noexcept {
+    "Compiler: external validity is delegated to C++"_test = [] static noexcept {
         struct Case final {
             std::string_view name;
             std::string_view source;
@@ -261,7 +248,7 @@ const ct::Suite tests([] static noexcept {
              .source =
                  "import <native> using native::increment; fn f() { var x = 1; increment(x); }"},
         });
-        ct::each(cases, &Case::name, [&](const auto& test) noexcept {
+        each(cases, &Case::name, [&](const auto& test) noexcept {
             auto sources = SourceManager();
             const auto source_id =
                 *sources.append_virtual("delegation.cv", std::string(test.source));
@@ -277,12 +264,11 @@ const ct::Suite tests([] static noexcept {
                     .linkage_domain = LinkageDomain::explicit_value("test:cpp-delegation").value(),
                 }
             );
-            ct::expect(result.has_value());
+            expect(result.has_value());
         });
-    });
+    };
 
-    ct::test(
-        "Compiler diagnostics: explicit selections and C strings enforce their contracts",
+    "Compiler diagnostics: explicit selections and C strings enforce their contracts"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {"different paths",
@@ -303,8 +289,7 @@ const ct::Suite tests([] static noexcept {
                  R"(c"abc")"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 });
 
 } // namespace

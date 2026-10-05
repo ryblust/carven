@@ -23,8 +23,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct StaticSliceFacts final {
     const TargetUnit& unit;
     std::size_t declarations;
@@ -37,7 +35,7 @@ struct StaticSliceFacts final {
     auto enter_item(const TargetItem& item) noexcept -> bool {
         if (const auto* space = std::get_if<TargetNamespace>(&item.value); space && space->name) {
             const auto name = space->name->components().back().spelling();
-            ct::expect(!(std::ranges::contains(source_names, name)));
+            expect(!(std::ranges::contains(source_names, name)));
         }
         return true;
     }
@@ -51,34 +49,34 @@ struct StaticSliceFacts final {
             }
             return true;
         }
-        ct::expect(!(saw_function_definition));
+        expect(!(saw_function_definition));
         ++declarations;
-        ct::expect(variable->inline_specifier);
-        ct::expect(variable->constexpr_specifier);
+        expect(variable->inline_specifier);
+        expect(variable->constexpr_specifier);
         const auto* declaration_type =
             std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value);
-        if (!ct::expect(declaration_type != nullptr)) {
+        if (!expect(declaration_type != nullptr)) {
             return false;
         }
-        ct::expect_equal(declaration_type->symbol, TargetSymbol::Auto);
+        expect_equal(declaration_type->symbol, TargetSymbol::Auto);
         const auto* array = std::get_if<TargetArrayExpr>(&variable->initializer.value);
-        if (!ct::expect(array != nullptr)) {
+        if (!expect(array != nullptr)) {
             return false;
         }
         const auto& element = unit.type(array->element_type_id).value;
-        ct::expect(
+        expect(
             (std::holds_alternative<TargetIntrinsicType>(element)
              || std::holds_alternative<TargetArrayType>(element))
         );
         const auto* literal = std::get_if<TargetLiteralExpr>(&array->extent->value);
-        if (!ct::expect(literal != nullptr)) {
+        if (!expect(literal != nullptr)) {
             return false;
         }
         const auto* extent = std::get_if<TargetIntegerLiteral>(&literal->value);
-        if (!ct::expect(extent != nullptr)) {
+        if (!expect(extent != nullptr)) {
             return false;
         }
-        ct::expect(extent->magnitude == array->elements.size());
+        expect(extent->magnitude == array->elements.size());
         empty_arrays += extent->magnitude == 0;
         return true;
     }
@@ -111,13 +109,8 @@ struct StaticSliceFacts final {
     }
 };
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: frozen slices reference deduplicated static array declarations",
+const TestSuite suite([] static noexcept {
+    "Generation: frozen slices reference deduplicated static array declarations"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -150,7 +143,7 @@ const ct::Suite tests([] static noexcept {
                     .saw_function_definition = false,
                     .source_names = {}
                 };
-                if (!ct::expect(traverse_target_unit(unit.sections(), facts))) {
+                if (!expect(traverse_target_unit(unit.sections(), facts))) {
                     return;
                 }
                 declarations += facts.declarations;
@@ -161,27 +154,25 @@ const ct::Suite tests([] static noexcept {
                         facts.referenced_names.begin(),
                         facts.referenced_names.end()
                     );
-                    ct::expect(unique.size() == facts.declarations);
-                    ct::expect(facts.slices > facts.declarations);
+                    expect(unique.size() == facts.declarations);
+                    expect(facts.slices > facts.declarations);
                 }
             }
-            ct::expect(declarations == 4uz);
-            ct::expect(slices == 5uz);
-            ct::expect(empty_arrays == 1uz);
-        }
-    );
+            expect(declarations == 4uz);
+            expect(slices == 5uz);
+            expect(empty_arrays == 1uz);
+        };
 
-    ct::test(
-        "Generation: static slice backing names are owned by their context module",
+    "Generation: static slice backing names are owned by their context module"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto inputs = std::vector<SourceModuleInput>();
             const auto append = [&](std::string_view name, std::string source) noexcept {
                 const auto id =
                     sources.append_virtual(std::format("{}.cv", name), std::move(source));
-                ct::require(id.has_value());
+                require(id.has_value());
                 const auto path = CanonicalModulePath::from_value(name);
-                ct::require(path.has_value());
+                require(path.has_value());
                 inputs.push_back({.source_id = *id, .module_path = *path});
             };
             append(
@@ -193,11 +184,11 @@ const ct::Suite tests([] static noexcept {
                 "import provider using numbers; fn consumer_view() -> [i32] => numbers;"
             );
             auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
-            if (!ct::expect(parsed.has_value())) {
+            if (!expect(parsed.has_value())) {
                 return;
             }
             auto analyzed = analyze(std::move(*parsed));
-            if (!ct::expect(analyzed.has_value())) {
+            if (!expect(analyzed.has_value())) {
                 return;
             }
             const auto compilation = PlannedCompilation::build(
@@ -218,18 +209,17 @@ const ct::Suite tests([] static noexcept {
                     .saw_function_definition = false,
                     .source_names = {}
                 };
-                if (!ct::expect(traverse_target_unit(unit.sections(), facts))) {
+                if (!expect(traverse_target_unit(unit.sections(), facts))) {
                     return;
                 }
                 declarations += facts.declarations;
                 for (const auto& name : facts.referenced_names) {
-                    ct::expect(names.insert(name).second);
+                    expect(names.insert(name).second);
                 }
             }
-            ct::expect(declarations == 2uz);
-            ct::expect(names.size() == 2uz);
-        }
-    );
+            expect(declarations == 2uz);
+            expect(names.size() == 2uz);
+        };
 });
 
 } // namespace

@@ -18,8 +18,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct ArrayFacts final {
     std::size_t arrays = 0uz;
     std::size_t calls = 0uz;
@@ -33,19 +31,19 @@ auto ArrayFacts::enter_expression(const TargetExpr& expression, TargetExpression
     if (const auto* array = std::get_if<TargetArrayExpr>(&expression.value)) {
         ++arrays;
         const auto* literal = std::get_if<TargetLiteralExpr>(&array->extent->value);
-        if (!ct::expect(literal != nullptr)) {
+        if (!expect(literal != nullptr)) {
             return false;
         }
         const auto* extent = std::get_if<TargetIntegerLiteral>(&literal->value);
-        if (!ct::expect(extent != nullptr)) {
+        if (!expect(extent != nullptr)) {
             return false;
         }
-        ct::expect(extent->magnitude == array->elements.size());
+        expect(extent->magnitude == array->elements.size());
     }
     calls += std::holds_alternative<TargetCallExpr>(expression.value);
     if (const auto* literal = std::get_if<TargetLiteralExpr>(&expression.value)) {
         if (const auto* text = std::get_if<TargetStringLiteral>(&literal->value)) {
-            ct::expect(text->kind == TargetStringLiteralKind::StringView);
+            expect(text->kind == TargetStringLiteralKind::StringView);
             texts.push_back(text->bytes);
         }
     }
@@ -74,44 +72,39 @@ auto FunctionQuery::enter_declaration(const TargetDecl& declaration) noexcept ->
         return true;
     }
     auto facts = ArrayFacts();
-    if (!ct::expect(traverse_target_statements(definition->body, facts))) {
+    if (!expect(traverse_target_statements(definition->body, facts))) {
         return false;
     }
     const auto* result = std::get_if<TargetArrayType>(&unit.type(function->result).value);
-    if (!ct::expect(result != nullptr)) {
+    if (!expect(result != nullptr)) {
         return false;
     }
     if (name == "ordinary") {
-        ct::expect(facts.calls == 1uz);
-        ct::expect(facts.arrays == 0uz);
+        expect(facts.calls == 1uz);
+        expect(facts.arrays == 0uz);
         ++ordinary;
         return true;
     }
-    ct::expect(facts.calls == 0uz);
-    ct::expect(facts.arrays == (name == "frozen_nested" ? 3uz : 1uz));
+    expect(facts.calls == 0uz);
+    expect(facts.arrays == (name == "frozen_nested" ? 3uz : 1uz));
     if (name == "frozen_text") {
         const auto* element =
             std::get_if<TargetIntrinsicType>(&unit.type(result->element_type_id).value);
-        if (!ct::expect(element != nullptr)) {
+        if (!expect(element != nullptr)) {
             return false;
         }
-        ct::expect_equal(element->symbol, TargetSymbol::StdStringView);
-        ct::expect(facts.texts == std::vector<std::string> {std::string("我\0", 4uz), "😀"});
+        expect_equal(element->symbol, TargetSymbol::StdStringView);
+        expect(facts.texts == std::vector<std::string> {std::string("我\0", 4uz), "😀"});
     }
     if (name == "frozen_empty") {
-        ct::expect(result->extent.magnitude == 0u);
+        expect(result->extent.magnitude == 0u);
     }
     ++frozen;
     return true;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: frozen arrays realize typed aggregates without construction calls",
+const TestSuite suite([] static noexcept {
+    "Generation: frozen arrays realize typed aggregates without construction calls"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -138,17 +131,15 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = FunctionQuery {.unit = unit};
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
                 frozen += query.frozen;
                 ordinary += query.ordinary;
             }
-            ct::expect(frozen == 6uz);
-            ct::expect(ordinary == 1uz);
-        }
-    );
+            expect(frozen == 6uz);
+            expect(ordinary == 1uz);
+        };
 
-    ct::test(
-        "Generation: array loops use established types and direct stable storage",
+    "Generation: array loops use established types and direct stable storage"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -172,8 +163,8 @@ const ct::Suite tests([] static noexcept {
                     }
                     if (const auto* range = std::get_if<TargetRangeForStmt>(&statement.value)) {
                         ++ranges;
-                        ct::expect(std::holds_alternative<TargetLocalExpr>(range->range.value));
-                        ct::expect(range->binding == TargetVariableBinding::MutableReference);
+                        expect(std::holds_alternative<TargetLocalExpr>(range->range.value));
+                        expect(range->binding == TargetVariableBinding::MutableReference);
                     }
                     return true;
                 }
@@ -184,14 +175,13 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query();
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
                 locals += query.locals;
                 ranges += query.ranges;
             }
-            ct::expect(locals <= 1uz);
-            ct::expect(ranges <= 1uz);
-        }
-    );
+            expect(locals <= 1uz);
+            expect(ranges <= 1uz);
+        };
 });
 
 } // namespace

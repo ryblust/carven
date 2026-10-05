@@ -18,26 +18,19 @@ the enclosing construct.
 
 ## Static computation and specialization
 
-Use established types, values, structure, access, lifetimes, and failure contracts
-to select native implementations. Format structure, extents, and result uses can
-resolve work before it becomes C++ calls and temporary objects. For each operation,
-identify the available facts, the work they remove, and the native operations
-that consume them.
+Established types, values, structure, access, lifetimes, and failure contracts
+inform native implementation selection. Specialization depends on the available
+facts, the work they remove, and the native operations that consume them.
 
 An operation can combine complete precomputation, preparation of known parts,
 and specialized runtime calls. Use general runtime work where available facts
 or the operation's contract do not justify specialization. Dynamic values can
-still have known structure, conversion choices, or output sizes. Formatting, for
-example, can prepare literal segments and conversion instructions while leaving
-value conversion and destination management to runtime.
+still have known structure, conversion choices, or output sizes.
 
 Semantic analysis publishes validated facts; lowering selects their realization;
-runtime performs the remaining work. Pass useful facts through data, constants,
-concrete types, or template arguments without requiring source code to restate
-its structure. Constant arguments expose choices when visible to the native
-optimizer; template arguments preserve static choices across function boundaries.
-Runtime APIs should consume prepared facts directly. Use access and lifetime
-facts to guide storage, snapshots, and native argument passing.
+runtime performs the remaining work. Published facts remain available to their
+consumers without requiring source code to restate its structure. Access and
+lifetime facts inform storage, snapshots, and native argument passing.
 
 Facts identify their subject and validity domain. Writes and calls invalidate
 assumptions they may change; a control-flow join retains facts established on
@@ -89,11 +82,11 @@ a language abstraction. Runtime storage, allocation, indirection, checks, and
 dispatch each serve a required behavior. Static facts need runtime representation
 only when execution uses them.
 
-Evaluate Carven compilation time and memory, generated C++ compilation cost,
-artifact size, and program execution time and memory separately. Include storage
-lifetime and reuse, and small and large inputs where relevant. Choose defaults
-from end-to-end workload costs, the size of gains or losses, and explicit
-resource constraints.
+Carven compilation, generated C++ compilation, artifact size, and program execution
+have distinct costs. Evaluate the dimensions affected by a design and its
+performance claims, including storage lifetime, reuse, and input scale where
+relevant. Choose defaults from end-to-end workload costs, the size of gains or
+losses, and explicit resource constraints.
 
 Performance claims identify the comparison implementation, workload, and
 measurement method. Evaluate generated readability and machine-code performance

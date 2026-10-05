@@ -10,11 +10,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Constant arrays: initializer queries compose literals and typed function results",
+const TestSuite suite([] static noexcept {
+    "Constant arrays: initializer queries compose literals and typed function results"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const texts: [str; 1] = [String::from_str("hi")];
@@ -37,10 +34,10 @@ const ct::Suite tests([] static noexcept {
                 const auto& fact = program.constants().constant(declaration.value);
                 if (name == "selected" || name == "direct") {
                     const auto* integer = std::get_if<IntegerConstant>(&fact.value);
-                    if (!ct::expect(integer != nullptr)) {
+                    if (!expect(integer != nullptr)) {
                         return;
                     }
-                    ct::expect(integer->as_signed() == (name == "selected" ? 8 : 5));
+                    expect(integer->as_signed() == (name == "selected" ? 8 : 5));
                     ++checked;
                 } else if (name == "equal"
                            || name == "converted"
@@ -48,19 +45,17 @@ const ct::Suite tests([] static noexcept {
                            || name == "skipped"
                            || name == "skipped_literal") {
                     const auto* boolean = std::get_if<BooleanConstant>(&fact.value);
-                    if (!ct::expect(boolean != nullptr)) {
+                    if (!expect(boolean != nullptr)) {
                         return;
                     }
-                    ct::expect(boolean->value == (name != "skipped" && name != "skipped_literal"));
+                    expect(boolean->value == (name != "skipped" && name != "skipped_literal"));
                     ++checked;
                 }
             }
-            ct::expect(checked == 7uz);
-        }
-    );
+            expect(checked == 7uz);
+        };
 
-    ct::test(
-        "Constant arrays: literal context and indexing retain source diagnostics",
+    "Constant arrays: literal context and indexing retain source diagnostics"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view source;
@@ -90,15 +85,13 @@ const ct::Suite tests([] static noexcept {
                     .code = DiagnosticCode::ConstInitializer
                 },
             };
-            ct::each(cases, &Case::source, [&](const auto& item) noexcept {
+            each(cases, &Case::source, [&](const auto& item) noexcept {
                 const auto diagnostics = analyze_test_errors(std::string(item.source));
-                ct::expect_diagnostic(diagnostics, item.code);
+                expect_diagnostic(diagnostics, item.code);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant arrays: repeated constant children still count toward the complete value budget",
+    "Constant arrays: repeated constant children still count toward the complete value budget"_test =
         [] static noexcept {
             auto source = std::string("const row = [");
             for (auto index = 0uz; index < 260uz; ++index) {
@@ -110,9 +103,8 @@ const ct::Suite tests([] static noexcept {
             }
             source += "];";
             const auto diagnostics = analyze_test_errors(std::move(source));
-            ct::expect_diagnostic(diagnostics, DiagnosticCode::ConstLimit);
-        }
-    );
+            expect_diagnostic(diagnostics, DiagnosticCode::ConstLimit);
+        };
 });
 
 } // namespace

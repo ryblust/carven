@@ -18,8 +18,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct ReceiverQuery final {
     const TargetUnit& unit;
     std::size_t slots;
@@ -77,8 +75,8 @@ auto ReceiverQuery::enter_expression(const TargetExpr& expression, TargetExpress
     return true;
 }
 
-const ct::Suite tests([] static noexcept {
-    ct::test("Generation: failure receivers use sources or necessary joins", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Generation: failure receivers use sources or necessary joins"_test = [] static noexcept {
         struct Case final {
             std::string_view name;
             std::string_view body;
@@ -156,7 +154,7 @@ const ct::Suite tests([] static noexcept {
                 .outcomes = 1uz
             },
         };
-        ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+        each(cases, &Case::name, [](const Case& input) static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
                     std::format(
@@ -194,7 +192,7 @@ const ct::Suite tests([] static noexcept {
                     .bodies = 0uz,
                     .measured = false
                 };
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
                 slots += query.slots;
@@ -203,16 +201,15 @@ const ct::Suite tests([] static noexcept {
                 handlers += query.handlers;
                 bodies += query.bodies;
             }
-            ct::expect_equal(bodies, 1uz);
-            ct::expect_equal(slots, input.slots);
-            ct::expect_equal(outcomes, input.outcomes);
-            ct::expect_equal(deferred, 0uz);
-            ct::expect_equal(handlers, 1uz);
+            expect_equal(bodies, 1uz);
+            expect_equal(slots, input.slots);
+            expect_equal(outcomes, input.outcomes);
+            expect_equal(deferred, 0uz);
+            expect_equal(handlers, 1uz);
         });
-    });
+    };
 
-    ct::test(
-        "Generation: unused direct failure payloads retain execution without storage",
+    "Generation: unused direct failure payloads retain execution without storage"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -244,16 +241,15 @@ const ct::Suite tests([] static noexcept {
                     .bodies = 0uz,
                     .measured = false
                 };
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
                 locals += query.locals;
                 handlers += query.handlers;
                 bodies += query.bodies;
             }
-            ct::expect_equal(bodies, 1uz);
-            ct::expect_equal(locals, 0uz);
-            ct::expect_equal(handlers, 1uz);
-        }
-    );
+            expect_equal(bodies, 1uz);
+            expect_equal(locals, 0uz);
+            expect_equal(handlers, 1uz);
+        };
 });
 
 } // namespace

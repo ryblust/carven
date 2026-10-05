@@ -9,11 +9,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: constant resource limits retain source locations and bounded call traces",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: constant resource limits retain source locations and bounded call traces"_test =
         [] static noexcept {
             auto retained = std::string("const values = [0");
             for (auto index = 1uz; index < 2048uz; ++index) {
@@ -40,7 +37,7 @@ const ct::Suite tests([] static noexcept {
                             LinkageDomain::explicit_value("test:constant-view-limit").value(),
                     }
                 );
-                ct::expect(result.has_value());
+                expect(result.has_value());
             }
 
             auto copied = std::string("const fn exhaust() -> i32 { let values = [0");
@@ -72,7 +69,7 @@ const ct::Suite tests([] static noexcept {
             return text;
         } const result = grow();)",
             });
-            ct::each(cases, std::identity {}, [&](const auto& source) noexcept {
+            each(cases, std::identity {}, [&](const auto& source) noexcept {
                 auto sources = SourceManager();
                 const auto source_id =
                     *sources.append_virtual("constant-limit.cv", std::string(source));
@@ -89,37 +86,35 @@ const ct::Suite tests([] static noexcept {
                             LinkageDomain::explicit_value("test:constant-limit").value(),
                     }
                 );
-                ct::expect(!(result.has_value())).note([&] noexcept {
+                expect(!(result.has_value())).note([&] noexcept {
                     return std::format("source.substr(0, 80): {}", source.substr(0, 80));
                 });
                 if (result.has_value()) {
                     return;
                 }
                 const auto* diagnostic =
-                    ct::find_diagnostic(result.error(), DiagnosticCode::ConstLimit);
-                ct::expect(diagnostic != nullptr).note([&] noexcept {
+                    find_diagnostic(result.error(), DiagnosticCode::ConstLimit);
+                expect(diagnostic != nullptr).note([&] noexcept {
                     return std::format("source.substr(0, 80): {}", source.substr(0, 80));
                 });
                 if (diagnostic == nullptr) {
                     return;
                 }
-                ct::expect(diagnostic->attachment.primary.has_value()).note([&] noexcept {
+                expect(diagnostic->attachment.primary.has_value()).note([&] noexcept {
                     return std::format("source.substr(0, 80): {}", source.substr(0, 80));
                 });
                 if (!diagnostic->attachment.primary.has_value()) {
                     return;
                 }
-                ct::expect(!(sources.slice(diagnostic->attachment.primary->span).empty()))
+                expect(!(sources.slice(diagnostic->attachment.primary->span).empty()))
                     .note([&] noexcept {
                         return std::format("source.substr(0, 80): {}", source.substr(0, 80));
                     });
-                ct::expect_less_equal(diagnostic->attachment.related.size(), 8uz)
-                    .note([&] noexcept {
-                        return std::format("source.substr(0, 80): {}", source.substr(0, 80));
-                    });
+                expect_less_equal(diagnostic->attachment.related.size(), 8uz).note([&] noexcept {
+                    return std::format("source.substr(0, 80): {}", source.substr(0, 80));
+                });
             });
-        }
-    );
+        };
 });
 
 } // namespace

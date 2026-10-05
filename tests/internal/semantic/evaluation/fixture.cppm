@@ -11,22 +11,16 @@ import :source.module_path;
 import :test.harness.framework;
 import std;
 
-namespace {
-
-namespace ct = carven::testing;
-
-} // namespace
-
 auto constant_test_module_path(std::string_view value) noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value(value);
-    ct::require(result.has_value());
+    require(result.has_value());
     return std::move(*result);
 }
 
 auto begin_constant_test_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noexcept
     -> ProgramDraft {
     const auto source = sources.append_virtual("constant-evaluate.cv", "");
-    ct::require(source.has_value());
+    require(source.has_value());
     const auto inputs = std::array {
         SourceModuleInput {
             .source_id = *source,
@@ -34,7 +28,7 @@ auto begin_constant_test_compilation(SourceManager& sources, DiagnosticSink& dia
         },
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    ct::require(syntax.has_value());
+    require(syntax.has_value());
     return ProgramDraft::begin(std::move(*syntax), diagnostics);
 }
 

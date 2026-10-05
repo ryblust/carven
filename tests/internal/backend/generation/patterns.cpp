@@ -17,8 +17,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct PatternQuery final {
     std::size_t comparisons;
     std::size_t unreachable;
@@ -49,8 +47,8 @@ auto PatternQuery::enter_statement(const TargetStmt& statement) noexcept -> bool
     return true;
 }
 
-const ct::Suite tests([] static noexcept {
-    ct::test("Generation: matches omit proven residual comparisons", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Generation: matches omit proven residual comparisons"_test = [] static noexcept {
         struct Case final {
             std::string_view name;
             std::string_view source;
@@ -95,7 +93,7 @@ const ct::Suite tests([] static noexcept {
                 .comparisons = 0uz,
             },
         };
-        ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+        each(cases, &Case::name, [](const Case& input) static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(std::string(input.source)),
                 {.test_mode = TestGenerationMode::None,
@@ -104,43 +102,39 @@ const ct::Suite tests([] static noexcept {
             auto query = PatternQuery {.comparisons = 0uz, .unreachable = 0uz, .bound_calls = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
             }
-            ct::expect_equal(query.comparisons, input.comparisons);
-            ct::expect_equal(query.unreachable, 0uz);
+            expect_equal(query.comparisons, input.comparisons);
+            expect_equal(query.unreachable, 0uz);
         });
-    });
+    };
 
-    ct::test(
-        "Generation: exhaustive selection retains dynamic bound evaluation",
-        [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+    "Generation: exhaustive selection retains dynamic bound evaluation"_test = [] static noexcept {
+        const auto compilation = PlannedCompilation::build(
+            analyze_test_program(R"(
                 fn bound(&calls: i32) -> i32 { calls += 1; return 0; }
                 fn select(value: i32, &calls: i32) -> i32 => match value {
                     (bound(&calls))..10 => 1,
                     _ => 2,
                 };
             )"),
-                {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("pattern_bound")}
-            );
-            auto query = PatternQuery {.comparisons = 0uz, .unreachable = 0uz, .bound_calls = 0uz};
-            for (const auto artifact : compilation.target().artifacts()) {
-                const auto unit = lower_artifact(compilation, artifact.id);
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
-                    return;
-                }
+            {.test_mode = TestGenerationMode::None,
+             .linkage_domain = *LinkageDomain::explicit_value("pattern_bound")}
+        );
+        auto query = PatternQuery {.comparisons = 0uz, .unreachable = 0uz, .bound_calls = 0uz};
+        for (const auto artifact : compilation.target().artifacts()) {
+            const auto unit = lower_artifact(compilation, artifact.id);
+            if (!expect(traverse_target_unit(unit.sections(), query))) {
+                return;
             }
-            ct::expect_equal(query.bound_calls, 1uz);
-            ct::expect_equal(query.unreachable, 0uz);
         }
-    );
+        expect_equal(query.bound_calls, 1uz);
+        expect_equal(query.unreachable, 0uz);
+    };
 
-    ct::test(
-        "Generation: independent nested pattern alternatives keep target size proportional",
+    "Generation: independent nested pattern alternatives keep target size proportional"_test =
         [] static noexcept {
             auto counts = std::vector<std::size_t>();
             for (const auto width : {2uz, 4uz, 8uz}) {
@@ -186,23 +180,21 @@ const ct::Suite tests([] static noexcept {
                 auto query = Query {.nodes = 0uz};
                 for (const auto artifact : compilation.target().artifacts()) {
                     const auto unit = lower_artifact(compilation, artifact.id);
-                    ct::expect(traverse_target_unit(unit.sections(), query));
+                    expect(traverse_target_unit(unit.sections(), query));
                 }
                 counts.push_back(query.nodes);
             }
-            if (!ct::expect(counts.front() > 0uz)) {
+            if (!expect(counts.front() > 0uz)) {
                 return;
             }
             for (auto index = 1uz; index < counts.size(); ++index) {
                 // Doubling independent choices must not expand their Cartesian product.
                 // Leave room for target scaffolding without fixing names or exact counts.
-                ct::expect(counts[index] <= 3uz * counts[index - 1uz]);
+                expect(counts[index] <= 3uz * counts[index - 1uz]);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Generation: simple patterns use predicates without mutable match state",
+    "Generation: simple patterns use predicates without mutable match state"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -238,16 +230,14 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query {.unit = unit, .mutable_booleans = 0uz};
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
-                ct::expect(query.mutable_booleans == 0uz);
+                expect(query.mutable_booleans == 0uz);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Generation: payload patterns retain only used immutable selection storage",
+    "Generation: payload patterns retain only used immutable selection storage"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view name;
@@ -303,7 +293,7 @@ const ct::Suite tests([] static noexcept {
             }
         )"},
             };
-            ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+            each(cases, &Case::name, [](const Case& input) static noexcept {
                 const auto compilation = PlannedCompilation::build(
                     analyze_test_program(std::string(input.source)),
                     {.test_mode = TestGenerationMode::None,
@@ -351,22 +341,20 @@ const ct::Suite tests([] static noexcept {
                         .mutable_pointers = 0uz,
                         .mutable_booleans = 0uz
                     };
-                    if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                    if (!expect(traverse_target_unit(unit.sections(), query))) {
                         return;
                     }
                     // Each retained projection serves a tag test, payload read, or binding.
                     for (const auto local : query.pointers) {
-                        ct::expect(query.references.contains(local));
+                        expect(query.references.contains(local));
                     }
-                    ct::expect_equal(query.mutable_pointers, 0uz);
-                    ct::expect_equal(query.mutable_booleans, 0uz);
+                    expect_equal(query.mutable_pointers, 0uz);
+                    expect_equal(query.mutable_booleans, 0uz);
                 }
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Generation: unconditional pattern binding uses direct value initialization",
+    "Generation: unconditional pattern binding uses direct value initialization"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -380,10 +368,10 @@ const ct::Suite tests([] static noexcept {
                 const TargetUnit& unit;
 
                 auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-                    ct::expect(!(std::holds_alternative<TargetAssignmentStmt>(statement.value)));
-                    ct::expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetAssignmentStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
                     if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                        ct::expect(!(std::holds_alternative<TargetPointerType>(
+                        expect(!(std::holds_alternative<TargetPointerType>(
                             unit.type(variable->type).value
                         )));
                     }
@@ -394,14 +382,13 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 const auto query = Query {.unit = unit};
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
             }
-        }
-    );
+        };
 
-    ct::test("Generation: runtime match predicates retain required calls", [] static noexcept {
+    "Generation: runtime match predicates retain required calls"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_test_program(R"(
             fn effect() -> bool => true;
@@ -424,7 +411,7 @@ const ct::Suite tests([] static noexcept {
                     if (const auto* name = std::get_if<TargetNameExpr>(
                             &template_primary_expression(*call->callee).value
                         )) {
-                        ct::expect(name->name.components().back().spelling() == "effect");
+                        expect(name->name.components().back().spelling() == "effect");
                         ++effects;
                     }
                 }
@@ -435,12 +422,12 @@ const ct::Suite tests([] static noexcept {
         auto query = Query();
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
-            if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+            if (!expect(traverse_target_unit(unit.sections(), query))) {
                 return;
             }
         }
-        ct::expect(query.effects == 2uz);
-    });
+        expect(query.effects == 2uz);
+    };
 });
 
 } // namespace

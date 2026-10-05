@@ -11,11 +11,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Format preparation: encoding proof uses types and static specifications without a value budget",
+const TestSuite suite([] static noexcept {
+    "Format preparation: encoding proof uses types and static specifications without a value budget"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view expression;
@@ -41,7 +38,7 @@ const ct::Suite tests([] static noexcept {
                 {.expression = R"(f"{flag:d}")", .proven = false},
                 {.expression = R"(f"{real}")", .proven = true},
             });
-            ct::each(
+            each(
                 scenarios,
                 [](const Scenario& scenario) static noexcept -> std::string_view {
                     return scenario.expression;
@@ -63,7 +60,7 @@ const ct::Suite tests([] static noexcept {
                                     const auto selected_plan =
                                         prepare_operation(program, expression);
                                     if (!(
-                                            ct::expect(selected_plan != nullptr)
+                                            expect(selected_plan != nullptr)
                                                 .note("scenario.expression: ", scenario.expression)
                                         )) {
                                         return;
@@ -71,7 +68,7 @@ const ct::Suite tests([] static noexcept {
                                     const auto& preparation =
                                         std::get<PreparedFormat>(*selected_plan);
                                     ++formats;
-                                    ct::expect(
+                                    expect(
                                         (!std::holds_alternative<PreparedDelegatedFormat>(
                                              preparation
                                          )
@@ -80,20 +77,18 @@ const ct::Suite tests([] static noexcept {
                                         == scenario.proven
                                     )
                                         .note("scenario.expression: ", scenario.expression);
-                                    ct::expect(!(expression.constant.has_value()))
+                                    expect(!(expression.constant.has_value()))
                                         .note("scenario.expression: ", scenario.expression);
                                 }
                             }
                         );
                     }
-                    ct::expect(formats == 1uz).note("scenario.expression: ", scenario.expression);
+                    expect(formats == 1uz).note("scenario.expression: ", scenario.expression);
                 }
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Format preparation: encoding proof rejects malformed normalized formats and unknown boundaries",
+    "Format preparation: encoding proof rejects malformed normalized formats and unknown boundaries"_test =
         [] static noexcept {
             struct Scenario final {
                 FormatSpec format;
@@ -144,13 +139,13 @@ const ct::Suite tests([] static noexcept {
                  .types = {BuiltinType::I32},
                  .proven = false},
             });
-            ct::each(
+            each(
                 scenarios,
                 [](const Scenario& scenario) static noexcept -> std::string {
                     return quote_text(serialize_format(scenario.format));
                 },
                 [](const Scenario& scenario) static noexcept {
-                    ct::expect(
+                    expect(
                         format_preserves_utf8(scenario.format, scenario.types) == scenario.proven
                     )
                         .note([&] noexcept {
@@ -161,8 +156,7 @@ const ct::Suite tests([] static noexcept {
                         });
                 }
             );
-        }
-    );
+        };
 });
 
 } // namespace
