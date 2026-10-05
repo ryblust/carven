@@ -136,7 +136,7 @@ const fn operands() -> i32 {
     let formatted = try {
         f"before {read(false)?} after"
     } catch {
-        ReadError(_) => String::from_str("caught"),
+        ReadError(_) => "caught",
     };
     return value + caught + index + (formatted.len() as i32);
 }

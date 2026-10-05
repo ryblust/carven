@@ -36,6 +36,7 @@ source_key=$(
         hash_sha256 \
             "$source_program_dir/modules/private/action/build/object.lua" \
             "$source_program_dir/modules/private/action/build/link_objects.lua" \
+            "$source_program_dir/modules/private/utils/toolchain.lua" \
             "$source_program_dir/rules/c++/modules/clang/builder.lua" \
             "$source_program_dir/rules/c++/modules/clang/scanner.lua" \
             "$source_program_dir/rules/c++/modules/builder.lua" \

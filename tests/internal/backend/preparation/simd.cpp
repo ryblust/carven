@@ -9,11 +9,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "SIMD preparation: only proven in-range controls omit runtime checks",
+const TestSuite suite([] static noexcept {
+    "SIMD preparation: only proven in-range controls omit runtime checks"_test =
         [] static noexcept {
             const auto program = analyze_test_program(
                 "fn probe(v: u8x16, f: f32x8, index: usize) {"
@@ -43,24 +40,23 @@ const ct::Suite tests([] static noexcept {
                             || !std::holds_alternative<SIMDIntrinsic>(intrinsic->operation)) {
                             return;
                         }
-                        if (!ct::expect(count < expected.size())) {
+                        if (!expect(count < expected.size())) {
                             return;
                         }
                         const auto prepared = prepare_operation(program, expression);
                         const auto* control = std::get_if<PreparedSIMDLane>(prepared.get());
-                        ct::expect_equal(control != nullptr, expected[count].has_value())
+                        expect_equal(control != nullptr, expected[count].has_value())
                             .note("operation: ", count);
                         if (control != nullptr && expected[count]) {
-                            ct::expect_equal(control->index, *expected[count])
+                            expect_equal(control->index, *expected[count])
                                 .note("operation: ", count);
                         }
                         ++count;
                     }
                 );
             }
-            ct::expect_equal(count, expected.size());
-        }
-    );
+            expect_equal(count, expected.size());
+        };
 });
 
 } // namespace

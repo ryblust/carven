@@ -14,15 +14,13 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 template<typename Check>
 auto with_specialization(std::string_view source, Check check) noexcept -> void {
     auto sources = SourceManager();
     const auto source_id = sources.append_virtual("specialization.cv", std::string(source));
-    ct::require(source_id.has_value());
+    require(source_id.has_value());
     const auto module_path = CanonicalModulePath::from_value("specialization");
-    ct::require(module_path.has_value());
+    require(module_path.has_value());
     const auto input = SourceModuleInput {
         .source_id = *source_id,
         .module_path = *module_path,
@@ -34,26 +32,26 @@ auto with_specialization(std::string_view source, Check check) noexcept -> void 
 
 auto check_specialization_accepts(std::string_view source) noexcept -> void {
     with_specialization(source, [](const auto&, const auto& result) static noexcept {
-        ct::expect(result.has_value());
+        expect(result.has_value());
     });
 }
 
 auto check_specialization_limit(std::string_view source, std::string_view primary_text) noexcept
     -> void {
     with_specialization(source, [&](const auto& sources, const auto& result) noexcept {
-        if (!ct::expect(!result.has_value())) {
+        if (!expect(!result.has_value())) {
             return;
         }
-        const auto* diagnostic = ct::find_diagnostic(result.error(), DiagnosticCode::ConstLimit);
-        ct::expect_diagnostic(result.error(), DiagnosticCode::ConstLimit);
+        const auto* diagnostic = find_diagnostic(result.error(), DiagnosticCode::ConstLimit);
+        expect_diagnostic(result.error(), DiagnosticCode::ConstLimit);
         if (diagnostic == nullptr) {
             return;
         }
-        ct::expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
-        if (!ct::expect(diagnostic->attachment.primary.has_value())) {
+        expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
+        if (!expect(diagnostic->attachment.primary.has_value())) {
             return;
         }
-        ct::expect_equal(sources.slice(diagnostic->attachment.primary->span), primary_text);
+        expect_equal(sources.slice(diagnostic->attachment.primary->span), primary_text);
     });
 }
 
@@ -84,62 +82,58 @@ auto node_source(std::size_t count) noexcept -> std::string {
     return std::format("fn use(value: i32) {{ const for index in 0..{} {{ {} }} }}", count, body);
 }
 
-const ct::Suite tests([] static noexcept {
-    ct::test("Static specialization budgets: default iteration boundary", [] static noexcept {
-        ct::scenario("100000 iterations are accepted", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Static specialization budgets: default iteration boundary"_test = [] static noexcept {
+        scenario("100000 iterations are accepted", [] static noexcept {
             check_specialization_accepts("fn use() { const for index in 0..100000 {} }");
         });
-        ct::scenario("100001 iterations are rejected at the loop", [] static noexcept {
+        scenario("100001 iterations are rejected at the loop", [] static noexcept {
             check_specialization_limit(
                 "fn use() { const for index in 0..100001 {} }",
                 "const for index in 0..100001 {}"
             );
         });
-    });
+    };
 
-    ct::test(
-        "Static specialization budgets: default instance boundary is independent per root",
+    "Static specialization budgets: default instance boundary is independent per root"_test =
         [] static noexcept {
-            ct::scenario("two roots each accept 4096 distinct instances", [] static noexcept {
+            scenario("two roots each accept 4096 distinct instances", [] static noexcept {
                 with_specialization(
                     "fn lane(const index: i32) -> i32 => index; "
                     "fn first() { const for index in 0..4096 { lane(index); } } "
                     "fn second() { const for index in 4096..8192 { lane(index); } }",
                     [](const auto&, const auto& result) static noexcept {
-                        if (!ct::expect(result.has_value())) {
+                        if (!expect(result.has_value())) {
                             return;
                         }
-                        ct::expect_equal(result->value.static_instances().size(), 8192uz);
+                        expect_equal(result->value.static_instances().size(), 8192uz);
                     }
                 );
             });
-            ct::scenario("one root rejects its 4097th instance at the call", [] static noexcept {
+            scenario("one root rejects its 4097th instance at the call", [] static noexcept {
                 check_specialization_limit(instance_source(4097uz), "lane(index)");
             });
-        }
-    );
+        };
 
-    ct::test("Static specialization budgets: default nesting boundary", [] static noexcept {
-        ct::scenario("128 roots including the body root are accepted", [] static noexcept {
+    "Static specialization budgets: default nesting boundary"_test = [] static noexcept {
+        scenario("128 roots including the body root are accepted", [] static noexcept {
             check_specialization_accepts(nesting_source(126uz));
         });
-        ct::scenario("the next nested root is rejected at the recursive call", [] static noexcept {
+        scenario("the next nested root is rejected at the recursive call", [] static noexcept {
             check_specialization_limit(nesting_source(127uz), "count(index + 1)");
         });
-    });
+    };
 
-    ct::test(
-        "Static specialization budgets: default node limit counts copied operations",
+    "Static specialization budgets: default node limit counts copied operations"_test =
         [] static noexcept {
-            ct::scenario(
+            scenario(
                 "copied statements and expressions are accepted below the limit",
                 [] static noexcept { check_specialization_accepts(node_source(1000uz)); }
             );
-            ct::scenario("expanded operations exceed the default node budget", [] static noexcept {
+            scenario("expanded operations exceed the default node budget", [] static noexcept {
                 check_specialization_limit(node_source(8192uz), "value");
             });
-        }
-    );
+        };
 });
 
 } // namespace

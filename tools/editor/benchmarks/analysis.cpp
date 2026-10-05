@@ -14,13 +14,13 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 struct Project final {
-    std::vector<editor::ProjectModule> modules;
+    std::vector<EditorProjectModule> modules;
     std::vector<std::string> texts;
 };
 
 struct Sample final {
     double microseconds;
-    editor::QueryCounts counts;
+    EditorQueryCounts counts;
 };
 
 using Timings = std::map<std::string, std::vector<Sample>>;
@@ -48,7 +48,7 @@ auto make_project(std::size_t size) noexcept -> Project {
 }
 
 auto update(
-    editor::AnalysisHost& host,
+    EditorAnalysisHost& host,
     std::string_view document,
     std::int64_t version,
     std::string_view text
@@ -59,15 +59,14 @@ auto update(
     );
 }
 
-auto populate(editor::AnalysisHost& host, const Project& project) noexcept -> void {
+auto populate(EditorAnalysisHost& host, const Project& project) noexcept -> void {
     for (auto index = 0uz; index < project.modules.size(); ++index) {
         update(host, project.modules[index].document, 1, project.texts[index]);
     }
     update(host, "untitled:unselected", 1, "fn outside() {}");
 }
 
-auto difference(editor::QueryCounts after, editor::QueryCounts before) noexcept
-    -> editor::QueryCounts {
+auto difference(EditorQueryCounts after, EditorQueryCounts before) noexcept -> EditorQueryCounts {
     return {
         .syntax = after.syntax - before.syntax,
         .document_symbols = after.document_symbols - before.document_symbols,
@@ -77,7 +76,7 @@ auto difference(editor::QueryCounts after, editor::QueryCounts before) noexcept
 }
 
 template<typename Action>
-auto measure(editor::AnalysisHost& host, Action action, std::size_t repetitions = 1) noexcept
+auto measure(EditorAnalysisHost& host, Action action, std::size_t repetitions = 1) noexcept
     -> Sample {
     const auto before = host.snapshot().counts();
     const auto start = Clock::now();
@@ -91,7 +90,7 @@ auto measure(editor::AnalysisHost& host, Action action, std::size_t repetitions 
     };
 }
 
-auto query(editor::AnalysisHost& host, const Project& project) noexcept -> void {
+auto query(EditorAnalysisHost& host, const Project& project) noexcept -> void {
     const auto snapshot = host.snapshot();
     const auto result = snapshot.semantic(project.modules);
     require(result.result->program() != nullptr, "generated project failed semantic analysis");
@@ -105,7 +104,7 @@ auto query(editor::AnalysisHost& host, const Project& project) noexcept -> void 
 }
 
 auto run_round(const Project& project, Timings& timings) noexcept -> void {
-    auto host = editor::AnalysisHost();
+    auto host = EditorAnalysisHost();
     const auto record = [&](std::string name, auto action, std::size_t repetitions = 1) noexcept {
         timings[std::move(name)].push_back(measure(host, action, repetitions));
     };
@@ -195,7 +194,7 @@ struct Retention final {
 };
 
 auto retention(const Project& project, bool retain_snapshot) noexcept -> Retention {
-    auto host = editor::AnalysisHost();
+    auto host = EditorAnalysisHost();
     populate(host, project);
     auto snapshot = std::optional(host.snapshot());
     const auto old_semantic = std::weak_ptr(snapshot->semantic(project.modules).result);

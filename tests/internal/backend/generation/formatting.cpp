@@ -16,8 +16,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct FormatQuery final {
     struct Entry final {
         TargetSymbol symbol;
@@ -45,13 +43,8 @@ auto FormatQuery::enter_expression(const TargetExpr& expression, TargetExpressio
     return true;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: only proved formatting selects UTF-8 storage adoption including residual and discarded results",
+const TestSuite suite([] static noexcept {
+    "Generation: only proved formatting selects UTF-8 storage adoption including residual and discarded results"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view expression;
@@ -74,7 +67,7 @@ const ct::Suite tests([] static noexcept {
                  .entry = TargetSymbol::RuntimeFormat,
                  .arguments = 3uz},
             });
-            ct::each(
+            each(
                 scenarios,
                 [](const Scenario& scenario) static noexcept -> std::string_view {
                     return scenario.expression;
@@ -93,30 +86,29 @@ const ct::Suite tests([] static noexcept {
                     auto query = FormatQuery();
                     for (const auto artifact : compilation.target().artifacts()) {
                         const auto unit = lower_artifact(compilation, artifact.id);
-                        if (!(ct::expect(traverse_target_unit(unit.sections(), query))
+                        if (!(expect(traverse_target_unit(unit.sections(), query))
                                   .note("scenario.expression: ", scenario.expression))) {
                             return;
                         }
                     }
                     if (!scenario.entry) {
-                        ct::expect(query.entries.empty())
+                        expect(query.entries.empty())
                             .note("scenario.expression: ", scenario.expression);
                         return;
                     }
-                    if (!(ct::expect(query.entries.size() == 1uz)
+                    if (!(expect(query.entries.size() == 1uz)
                               .note("scenario.expression: ", scenario.expression))) {
                         return;
                     }
-                    ct::expect(query.entries.front().symbol == *scenario.entry)
+                    expect(query.entries.front().symbol == *scenario.entry)
                         .note("scenario.expression: ", scenario.expression);
-                    ct::expect(query.entries.front().argument_count == scenario.arguments)
+                    expect(query.entries.front().argument_count == scenario.arguments)
                         .note("scenario.expression: ", scenario.expression);
                 }
             );
-        }
-    );
+        };
 
-    ct::test("Generation: precomputed formatting retains effects", [] static noexcept {
+    "Generation: precomputed formatting retains effects"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_test_program(
                 "fn touch() -> bool { return true; }\n"
@@ -151,14 +143,13 @@ const ct::Suite tests([] static noexcept {
         auto query = Query {.formats = 0uz, .effects = 0uz};
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
-            ct::expect(traverse_target_unit(unit.sections(), query));
+            expect(traverse_target_unit(unit.sections(), query));
         }
-        ct::expect_equal(query.formats, 0uz);
-        ct::expect_equal(query.effects, 1uz);
-    });
+        expect_equal(query.formats, 0uz);
+        expect_equal(query.effects, 1uz);
+    };
 
-    ct::test(
-        "Generation: mixed formatting passes only residual values after required effects",
+    "Generation: mixed formatting passes only residual values after required effects"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -198,12 +189,11 @@ const ct::Suite tests([] static noexcept {
             auto query = Query {.formats = 0uz, .effects = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
             }
-            ct::expect(query.formats == 1uz);
-            ct::expect(query.effects == 1uz);
-        }
-    );
+            expect(query.formats == 1uz);
+            expect(query.effects == 1uz);
+        };
 });
 
 } // namespace

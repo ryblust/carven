@@ -7,26 +7,24 @@ import :source.manager;
 import :source.text;
 import std;
 
-namespace editor {
-
-class DocumentSource final {
+class EditorDocumentSource final {
 public:
     static auto create(std::string document, std::string text) noexcept
-        -> std::expected<std::shared_ptr<const DocumentSource>, SourceLoadError>;
+        -> std::expected<std::shared_ptr<const EditorDocumentSource>, SourceLoadError>;
     auto source() const noexcept -> SourceView;
     auto sources() const noexcept -> const SourceManager&;
 
 private:
-    DocumentSource(SourceManager sources, SourceID id) noexcept;
+    EditorDocumentSource(SourceManager sources, SourceID id) noexcept;
 
     SourceManager source_manager;
     SourceID source_id;
 };
 
-class DocumentSyntax final {
+class EditorDocumentSyntax final {
 public:
-    DocumentSyntax(
-        std::shared_ptr<const DocumentSource> source,
+    EditorDocumentSyntax(
+        std::shared_ptr<const EditorDocumentSource> source,
         std::optional<SyntaxTree> syntax,
         Diagnostics diagnostics
     ) noexcept;
@@ -41,12 +39,10 @@ public:
 
 private:
     // The source owner remains alive for all AST and diagnostic source identities.
-    std::shared_ptr<const DocumentSource> input;
+    std::shared_ptr<const EditorDocumentSource> input;
     std::optional<SyntaxTree> tree;
     Diagnostics findings;
 };
 
-auto parse_document(std::shared_ptr<const DocumentSource> source) noexcept
-    -> std::shared_ptr<const DocumentSyntax>;
-
-} // namespace editor
+auto parse_editor_document(std::shared_ptr<const EditorDocumentSource> source) noexcept
+    -> std::shared_ptr<const EditorDocumentSyntax>;

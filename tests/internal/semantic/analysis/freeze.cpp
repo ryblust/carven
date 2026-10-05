@@ -14,35 +14,32 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Constant freezing: completed text survives program publication", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Constant freezing: completed text survives program publication"_test = [] static noexcept {
         auto fixture = ConstantEvaluationFixture();
         auto& draft = fixture.compilation;
         const auto catalog = build_analysis_catalog(draft);
-        if (!ct::expect(catalog.has_value())) {
+        if (!expect(catalog.has_value())) {
             return;
         }
         auto usage = ImportUsage(catalog->view().imports().size());
-        if (!ct::expect(ProgramConstruction(draft, catalog->view(), usage).run().has_value())) {
+        if (!expect(ProgramConstruction(draft, catalog->view(), usage).run().has_value())) {
             return;
         }
         const auto frozen = freeze_constant_value(draft, ExecutionText(std::string("retained")));
-        if (!ct::expect(frozen.has_value())) {
+        if (!expect(frozen.has_value())) {
             return;
         }
-        ct::expect(freeze_constant_value(draft, *frozen) == frozen);
+        expect(freeze_constant_value(draft, *frozen) == frozen);
         const auto program = std::move(draft).finish();
-        if (!ct::expect(program.has_value())) {
+        if (!expect(program.has_value())) {
             return;
         }
         const auto reader = PublishedConstantValues(*program);
-        ct::expect(execution_text(reader, *frozen) == "retained");
-    });
+        expect(execution_text(reader, *frozen) == "retained");
+    };
 
-    ct::test(
-        "Constant freezing invariant: retained constants belong to the receiving program",
+    "Constant freezing invariant: retained constants belong to the receiving program"_test =
         [] static noexcept {
             auto first = ConstantEvaluationFixture();
             auto second = ConstantEvaluationFixture();
@@ -50,11 +47,10 @@ const ct::Suite tests([] static noexcept {
                 .type = second.compilation.builtin_type(BuiltinType::Bool),
                 .value = BooleanConstant {.value = true},
             });
-            ct::expect(expect_termination("freeze-foreign-retained-constant", [&]() noexcept {
+            expect(expect_termination("freeze-foreign-retained-constant", [&]() noexcept {
                 static_cast<void>(freeze_constant_value(first.compilation, foreign));
             }));
-        }
-    );
+        };
 });
 
 } // namespace

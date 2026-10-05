@@ -134,9 +134,13 @@ const fn record_argument(&trace: i32, digit: i32) -> i32 {
     return digit;
 }
 
-const fn mixed_arguments(before: i32, const mark: i32, first: i32, second: i32, after: i32) -> i32 {
-    return before * 10000 + mark * 1000 + first * 100 + second * 10 + after;
-}
+const fn mixed_arguments(
+    before: i32,
+    const mark: i32,
+    first: i32,
+    second: i32,
+    after: i32
+) -> i32 => before * 10000 + mark * 1000 + first * 100 + second * 10 + after;
 
 const fn verify_mixed_arguments() -> bool {
     var trace = 0;
@@ -238,9 +242,8 @@ test "Staged calls: unselected const if arms are not specialized" {
     check(unselected_static_root(5) == 20);
 }
 
-const fn short_static_control(value: i32, const enabled: bool, const offset: i32) -> bool {
-    return enabled && add_control(value, offset) > 0;
-}
+const fn short_static_control(value: i32, const enabled: bool, const offset: i32) -> bool => enabled
+    && add_control(value, offset) > 0;
 
 const fn partial_static_control(value: i32, const enabled: bool, const offset: i32) -> i32 {
     if value < 0 { return -1; } else if enabled { return add_control(value, offset); }

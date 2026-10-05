@@ -10,92 +10,89 @@ import :test.harness.framework;
 import std;
 
 namespace {
-namespace ct = carven::testing;
-
-auto project_module(std::string document, std::string_view path) noexcept -> editor::ProjectModule {
+auto project_module(std::string document, std::string_view path) noexcept -> EditorProjectModule {
     auto canonical = CanonicalModulePath::from_value(path);
-    ct::require(canonical.has_value());
+    require(canonical.has_value());
     return {.document = std::move(document), .module_path = std::move(*canonical)};
 }
 
 auto update(
-    editor::AnalysisHost& host,
+    EditorAnalysisHost& host,
     std::string_view document,
     std::int64_t version,
     std::string_view text
 ) noexcept -> void {
-    ct::require(host.update(std::string(document), version, std::string(text)).has_value());
+    require(host.update(std::string(document), version, std::string(text)).has_value());
 }
 
 auto offset(std::string_view text, std::string_view needle, bool last = false) noexcept
     -> std::uint32_t {
     const auto position = last ? text.rfind(needle) : text.find(needle);
-    ct::require(position != std::string_view::npos);
+    require(position != std::string_view::npos);
     return static_cast<std::uint32_t>(position);
 }
 
-auto expect_type(const editor::HoverQuery& query, BuiltinType type) noexcept -> void {
+auto expect_type(const EditorHoverQuery& query, BuiltinType type) noexcept -> void {
     const auto* program = query.analysis.result->program();
-    if (!ct::expect(program != nullptr && query.result.has_value())) {
+    if (!expect(program != nullptr && query.result.has_value())) {
         return;
     }
     const auto* published = std::get_if<TypeID>(&query.result->type);
-    ct::expect(published != nullptr && *published == program->types().builtin_type(type));
+    expect(published != nullptr && *published == program->types().builtin_type(type));
 }
 
 auto expect_target(
-    const editor::DefinitionQuery& query,
+    const EditorDefinitionQuery& query,
     std::string_view document,
     std::int64_t version,
     std::uint32_t start,
     std::string_view name
 ) noexcept -> void {
-    if (!ct::expect(query.result.has_value())) {
+    if (!expect(query.result.has_value())) {
         return;
     }
-    ct::expect_equal(query.result->document, document);
-    ct::expect_equal(query.result->version, version);
-    ct::expect_equal(query.result->range.start(), start);
+    expect_equal(query.result->document, document);
+    expect_equal(query.result->version, version);
+    expect_equal(query.result->range.start(), start);
     const auto source = query.analysis.result->source(document);
-    if (!ct::expect(source.has_value())) {
+    if (!expect(source.has_value())) {
         return;
     }
-    ct::expect_equal(slice(source->text, query.result->range), name);
+    expect_equal(slice(source->text, query.result->range), name);
 }
 
 auto expect_references(
-    const editor::ReferencesQuery& query,
+    const EditorReferencesQuery& query,
     std::string_view document,
     std::int64_t version,
     std::span<const std::uint32_t> starts,
     std::string_view name
 ) noexcept -> void {
-    if (!ct::expect(query.result.has_value())) {
+    if (!expect(query.result.has_value())) {
         return;
     }
-    if (!ct::expect_equal(query.result->size(), starts.size())) {
+    if (!expect_equal(query.result->size(), starts.size())) {
         return;
     }
     for (auto index = 0uz; index < starts.size(); ++index) {
         const auto& location = (*query.result)[index];
-        ct::expect_equal(location.document, document);
-        ct::expect_equal(location.version, version);
-        ct::expect_equal(location.range.start(), starts[index]);
+        expect_equal(location.document, document);
+        expect_equal(location.version, version);
+        expect_equal(location.range.start(), starts[index]);
         const auto source = query.analysis.result->source(location.document);
-        if (ct::expect(source.has_value())) {
-            ct::expect_equal(slice(source->text, location.range), name);
+        if (expect(source.has_value())) {
+            expect_equal(slice(source->text, location.range), name);
         }
     }
 }
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Editor analysis: navigation resolves local shadowing by semantic identity",
+const TestSuite tests([] static noexcept {
+    "Editor analysis: navigation resolves local shadowing by semantic identity"_test =
         [] static noexcept {
             constexpr auto text = std::string_view(
                 "fn f(value: i32) -> i32 { let outer = value; if true { let value: i64 = 2; let inner = value; } return value; }"
             );
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "a.cv", 1, text);
             const auto modules = std::array {project_module("a.cv", "main")};
             const auto snapshot = host.snapshot();
@@ -142,18 +139,16 @@ const ct::Suite tests([] static noexcept {
                 std::array {local, inner_use},
                 "value"
             );
-            ct::expect_equal(snapshot.counts().semantic, 1uz);
-        }
-    );
+            expect_equal(snapshot.counts().semantic, 1uz);
+        };
 
-    ct::test(
-        "Editor analysis: cross-file definitions use snapshot versions while reusing content",
+    "Editor analysis: cross-file definitions use snapshot versions while reusing content"_test =
         [] static noexcept {
             constexpr auto library = std::string_view("export fn answer() -> i32 { return 42; }");
             constexpr auto caller = std::string_view(
                 "import lib using answer; fn f() -> i32 { let v = answer(); return v; }"
             );
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "lib.cv", 1, library);
             update(host, "app.cv", 4, caller);
             const auto modules =
@@ -178,35 +173,33 @@ const ct::Suite tests([] static noexcept {
                 "answer"
             );
             const auto references = after.references(modules, "app.cv", call);
-            ct::require(references.result.has_value());
-            ct::require(references.result->size() == 2uz);
-            ct::expect_equal((*references.result)[0].document, "app.cv");
-            ct::expect_equal((*references.result)[0].version, 4ll);
-            ct::expect_equal((*references.result)[0].range.start(), call);
-            ct::expect_equal((*references.result)[1].document, "lib.cv");
-            ct::expect_equal((*references.result)[1].version, 2ll);
-            ct::expect_equal((*references.result)[1].range.start(), offset(library, "answer"));
+            require(references.result.has_value());
+            require(references.result->size() == 2uz);
+            expect_equal((*references.result)[0].document, "app.cv");
+            expect_equal((*references.result)[0].version, 4ll);
+            expect_equal((*references.result)[0].range.start(), call);
+            expect_equal((*references.result)[1].document, "lib.cv");
+            expect_equal((*references.result)[1].version, 2ll);
+            expect_equal((*references.result)[1].range.start(), offset(library, "answer"));
             const auto old_references = before.references(modules, "app.cv", call);
-            ct::require(old_references.result.has_value());
-            ct::require(old_references.result->size() == 2uz);
-            ct::expect_equal((*old_references.result)[1].version, 1ll);
-            ct::expect(current.analysis.result == original.analysis.result);
-            ct::expect_equal(after.counts().semantic, 1uz);
+            require(old_references.result.has_value());
+            require(old_references.result->size() == 2uz);
+            expect_equal((*old_references.result)[1].version, 1ll);
+            expect(current.analysis.result == original.analysis.result);
+            expect_equal(after.counts().semantic, 1uz);
             update(host, "lib.cv", 3, "// moved\nexport fn answer() -> i32 { return 43; }");
             const auto edited = host.snapshot().definition(modules, "app.cv", call);
             expect_target(edited, "lib.cv", 3, offset(library, "answer") + 9u, "answer");
-            ct::expect(edited.analysis.result != original.analysis.result);
+            expect(edited.analysis.result != original.analysis.result);
             expect_target(original, "lib.cv", 1, offset(library, "answer"), "answer");
-        }
-    );
+        };
 
-    ct::test(
-        "Editor analysis: function definitions ignore same-name export prefix tokens",
+    "Editor analysis: function definitions ignore same-name export prefix tokens"_test =
         [] static noexcept {
             constexpr auto text = std::string_view(
                 "export(cpp) fn cpp() -> i32 { return 42; } fn caller() -> i32 { return cpp(); }"
             );
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "a.cv", 1, text);
             const auto modules = std::array {project_module("a.cv", "main")};
             expect_target(
@@ -216,45 +209,40 @@ const ct::Suite tests([] static noexcept {
                 offset(text, "cpp()"),
                 "cpp"
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Editor analysis: field navigation selects the actual member token",
-        [] static noexcept {
-            constexpr auto text = std::string_view(
-                "struct Pair { value: i32, } fn f(p: Pair) -> i32 { return p.value; }"
-            );
-            auto host = editor::AnalysisHost();
-            update(host, "a.cv", 7, text);
-            const auto modules = std::array {project_module("a.cv", "main")};
-            const auto snapshot = host.snapshot();
-            const auto use = offset(text, "value", true);
-            const auto hover = snapshot.hover(modules, "a.cv", use);
-            expect_type(hover, BuiltinType::I32);
-            if (ct::expect(hover.result.has_value())) {
-                ct::expect_equal(hover.result->location.range.start(), use);
-                ct::expect_equal(hover.result->location.range.end(), use + 5u);
-            }
-            expect_target(
-                snapshot.definition(modules, "a.cv", use),
-                "a.cv",
-                7,
-                offset(text, "value"),
-                "value"
-            );
-            ct::expect(!snapshot.definition(modules, "a.cv", use + 5u).result);
+    "Editor analysis: field navigation selects the actual member token"_test = [] static noexcept {
+        constexpr auto text = std::string_view(
+            "struct Pair { value: i32, } fn f(p: Pair) -> i32 { return p.value; }"
+        );
+        auto host = EditorAnalysisHost();
+        update(host, "a.cv", 7, text);
+        const auto modules = std::array {project_module("a.cv", "main")};
+        const auto snapshot = host.snapshot();
+        const auto use = offset(text, "value", true);
+        const auto hover = snapshot.hover(modules, "a.cv", use);
+        expect_type(hover, BuiltinType::I32);
+        if (expect(hover.result.has_value())) {
+            expect_equal(hover.result->location.range.start(), use);
+            expect_equal(hover.result->location.range.end(), use + 5u);
         }
-    );
+        expect_target(
+            snapshot.definition(modules, "a.cv", use),
+            "a.cv",
+            7,
+            offset(text, "value"),
+            "value"
+        );
+        expect(!snapshot.definition(modules, "a.cv", use + 5u).result);
+    };
 
-    ct::test(
-        "Editor analysis: changed inferred types retain independent owning results",
+    "Editor analysis: changed inferred types retain independent owning results"_test =
         [] static noexcept {
             constexpr auto first =
                 std::string_view("fn f() -> i32 { let value = 1; return value; }");
             constexpr auto second =
                 std::string_view("fn f() -> i64 { let value: i64 = 1; return value; }");
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "a.cv", 1, first);
             const auto modules = std::array {project_module("a.cv", "main")};
             const auto old = host.snapshot().hover(modules, "a.cv", offset(first, "value", true));
@@ -263,7 +251,7 @@ const ct::Suite tests([] static noexcept {
             update(host, "a.cv", 2, second);
             const auto current =
                 host.snapshot().hover(modules, "a.cv", offset(second, "value", true));
-            ct::expect(host.remove("a.cv"));
+            expect(host.remove("a.cv"));
             expect_references(
                 retained_references,
                 "a.cv",
@@ -273,19 +261,17 @@ const ct::Suite tests([] static noexcept {
             );
             expect_type(old, BuiltinType::I32);
             expect_type(current, BuiltinType::I64);
-            ct::expect(old.analysis.result != current.analysis.result);
-            ct::expect_equal(old.analysis.result->source("a.cv")->text, first);
-            ct::expect_equal(current.analysis.result->source("a.cv")->text, second);
-        }
-    );
+            expect(old.analysis.result != current.analysis.result);
+            expect_equal(old.analysis.result->source("a.cv")->text, first);
+            expect_equal(current.analysis.result->source("a.cv")->text, second);
+        };
 
-    ct::test(
-        "Editor analysis: published source types include nominal array and callable bindings",
+    "Editor analysis: published source types include nominal array and callable bindings"_test =
         [] static noexcept {
             constexpr auto text = std::string_view(
                 "struct Pair { value: i32, } fn f(record: Pair, values: [i32; 2], callback: fn() -> i32) { let first = record; let copied = values; let cb = callback; }"
             );
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "types.cv", 1, text);
             const auto modules = std::array {project_module("types.cv", "main")};
             const auto snapshot = host.snapshot();
@@ -299,27 +285,27 @@ const ct::Suite tests([] static noexcept {
                 Scenario {.name = "values", .shape = Shape::Array},
                 Scenario {.name = "callback", .shape = Shape::Callable},
             };
-            ct::each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
+            each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
                 const auto use = offset(text, scenario.name, true);
                 const auto query = snapshot.hover(modules, "types.cv", use);
-                ct::require(query.result.has_value());
+                require(query.result.has_value());
                 const auto* program = query.analysis.result->program();
-                ct::require(program != nullptr);
+                require(program != nullptr);
                 const auto* type = std::get_if<TypeID>(&query.result->type);
-                ct::require(type != nullptr);
+                require(type != nullptr);
                 const auto& canonical = program->types().type(*type);
                 switch (scenario.shape) {
                     case Shape::Structure:
-                        ct::expect(std::holds_alternative<StructTypeValue>(canonical.value));
+                        expect(std::holds_alternative<StructTypeValue>(canonical.value));
                         break;
                     case Shape::Array:
-                        ct::expect(std::holds_alternative<ArrayTypeValue>(canonical.value));
+                        expect(std::holds_alternative<ArrayTypeValue>(canonical.value));
                         break;
                     case Shape::Callable:
-                        ct::expect(std::holds_alternative<CallableViewTypeValue>(canonical.value));
+                        expect(std::holds_alternative<CallableViewTypeValue>(canonical.value));
                         break;
                 }
-                ct::expect_equal(query.result->location.range.start(), use);
+                expect_equal(query.result->location.range.start(), use);
                 expect_target(
                     snapshot.definition(modules, "types.cv", use),
                     "types.cv",
@@ -328,37 +314,33 @@ const ct::Suite tests([] static noexcept {
                     scenario.name
                 );
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Editor analysis: unavailable semantics and out-of-range offsets have no navigation",
+    "Editor analysis: unavailable semantics and out-of-range offsets have no navigation"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "a.cv", 1, "fn f() -> i32 { return unknown; }");
             const auto modules = std::array {project_module("a.cv", "main")};
             const auto invalid = host.snapshot();
             const auto failed = invalid.hover(modules, "a.cv", 23u);
-            ct::expect(failed.analysis.result->program() == nullptr);
-            ct::expect(!failed.result);
-            ct::expect(!invalid.references(modules, "a.cv", 23u).result);
-            ct::expect(!invalid.definition(modules, "a.cv", 23u).result);
+            expect(failed.analysis.result->program() == nullptr);
+            expect(!failed.result);
+            expect(!invalid.references(modules, "a.cv", 23u).result);
+            expect(!invalid.definition(modules, "a.cv", 23u).result);
             constexpr auto text =
                 std::string_view("fn f() -> i32 { let value = 1; return value; }");
             update(host, "a.cv", 2, text);
             const auto repaired = host.snapshot();
-            ct::expect(!repaired.hover(modules, "absent.cv", 0u).result);
-            ct::expect(
+            expect(!repaired.hover(modules, "absent.cv", 0u).result);
+            expect(
                 !repaired.hover(modules, "a.cv", static_cast<std::uint32_t>(text.size())).result
             );
-            ct::expect(!repaired
-                            .definition(modules, "a.cv", std::numeric_limits<std::uint32_t>::max())
-                            .result);
+            expect(!repaired.definition(modules, "a.cv", std::numeric_limits<std::uint32_t>::max())
+                        .result);
             expect_type(
                 repaired.hover(modules, "a.cv", offset(text, "value", true)),
                 BuiltinType::I32
             );
-        }
-    );
+        };
 });
 } // namespace

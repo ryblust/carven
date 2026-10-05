@@ -6,16 +6,16 @@ has no dependency on this library.
 
 ## Inputs and ownership
 
-`AnalysisHost::update(document, version, text)` owns a document's source bytes.
+`EditorAnalysisHost::update(document, version, text)` owns a document's source bytes.
 Equal or older versions are rejected. Identical bytes advance the version while
 reusing the content owner. Removing a document permits reopening it with a new
 version sequence.
 
-`ProjectModule` maps document identities to canonical module paths. Document keys
+`EditorProjectModule` maps document identities to canonical module paths. Document keys
 may be URIs or untitled buffers; they are never interpreted as filesystem paths.
 The caller supplies the closed module set, including imported Carven modules.
 
-`Analysis` snapshots retain their document versions and input owners. Syntax and
+`EditorAnalysis` snapshots retain their document versions and input owners. Syntax and
 semantic query results retain the owners needed to interpret source locations and
 types. Workspace symbols copy names and ranges; their source versions belong to
 the snapshot. Client versions are separate from cached content.

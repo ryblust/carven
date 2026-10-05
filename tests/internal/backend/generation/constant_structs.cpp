@@ -14,8 +14,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct ExpressionFacts final {
     std::size_t constructions = 0uz;
     std::size_t calls = 0uz;
@@ -43,29 +41,29 @@ auto DeclarationFacts::enter_declaration(const TargetDecl& declaration) noexcept
     if (const auto* record = std::get_if<TargetStructDecl>(&declaration)) {
         if (record->name.spelling() == "Entry") {
             record_defined = true;
-            if (!ct::expect(record->members.size() == 1uz)) {
+            if (!expect(record->members.size() == 1uz)) {
                 return false;
             }
-            ct::expect(std::holds_alternative<TargetStructField>(record->members.front()));
+            expect(std::holds_alternative<TargetStructField>(record->members.front()));
         }
     }
     if (const auto* variable = std::get_if<TargetVariableDecl>(&declaration)) {
-        ct::expect(record_defined);
-        ct::expect(variable->constexpr_specifier);
+        expect(record_defined);
+        expect(variable->constexpr_specifier);
         const auto* array = std::get_if<TargetArrayExpr>(&variable->initializer.value);
-        if (!ct::expect(array != nullptr)) {
+        if (!expect(array != nullptr)) {
             return false;
         }
-        if (!ct::expect(array->elements.size() == 2uz)) {
+        if (!expect(array->elements.size() == 2uz)) {
             return false;
         }
         for (const auto& element : array->elements) {
             auto facts = ExpressionFacts();
-            if (!ct::expect(traverse_target_expression(element, facts))) {
+            if (!expect(traverse_target_expression(element, facts))) {
                 return false;
             }
-            ct::expect(facts.constructions == 1uz);
-            ct::expect(facts.calls == 0uz);
+            expect(facts.constructions == 1uz);
+            expect(facts.calls == 0uz);
         }
         ++storage;
     }
@@ -82,27 +80,22 @@ auto DeclarationFacts::enter_declaration(const TargetDecl& declaration) noexcept
         return true;
     }
     auto facts = ExpressionFacts();
-    if (!ct::expect(traverse_target_statements(definition->body, facts))) {
+    if (!expect(traverse_target_statements(definition->body, facts))) {
         return false;
     }
     if (name == "frozen") {
-        ct::expect(facts.constructions == 1uz);
-        ct::expect(facts.calls == 0uz);
+        expect(facts.constructions == 1uz);
+        expect(facts.calls == 0uz);
         ++frozen;
     } else {
-        ct::expect(facts.calls == 1uz);
+        expect(facts.calls == 1uz);
         ++ordinary;
     }
     return true;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: frozen user records use native aggregate data after complete type definitions",
+const TestSuite suite([] static noexcept {
+    "Generation: frozen user records use native aggregate data after complete type definitions"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -123,18 +116,17 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto facts = DeclarationFacts();
-                if (!ct::expect(traverse_target_unit(unit.sections(), facts))) {
+                if (!expect(traverse_target_unit(unit.sections(), facts))) {
                     return;
                 }
                 totals.storage += facts.storage;
                 totals.frozen += facts.frozen;
                 totals.ordinary += facts.ordinary;
             }
-            ct::expect(totals.storage == 1uz);
-            ct::expect(totals.frozen == 1uz);
-            ct::expect(totals.ordinary == 1uz);
-        }
-    );
+            expect(totals.storage == 1uz);
+            expect(totals.frozen == 1uz);
+            expect(totals.ordinary == 1uz);
+        };
 });
 
 } // namespace

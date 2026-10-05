@@ -9,12 +9,10 @@ const test "prepared" {
     check(prepared == 42);
 }
 
-fn fib(value: i32) -> i32 {
-    return match value {
-        ..2 => value,
-        _ => fib(value - 1) + fib(value - 2),
-    };
-}
+fn fib(value: i32) -> i32 => match value {
+    ..2 => value,
+    _ => fib(value - 1) + fib(value - 2),
+};
 
 let values = [1, 2, 3];
 var total = 0;

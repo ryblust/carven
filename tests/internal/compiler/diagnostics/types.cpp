@@ -15,11 +15,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: types failures preserve code and precise span",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: types failures preserve code and precise span"_test =
         [] static noexcept {
             static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {
@@ -335,11 +332,9 @@ const ct::Suite tests([] static noexcept {
                 },
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: expression body result contracts preserve source locations",
+    "Compiler diagnostics: expression body result contracts preserve source locations"_test =
         [] static noexcept {
             constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "direct result cycle",
@@ -360,11 +355,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "a"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: callable result inference is independent of body syntax",
+    "Compiler diagnostics: callable result inference is independent of body syntax"_test =
         [] static noexcept {
             constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "native return widths require a declared common result",
@@ -404,10 +397,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "return;"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test("Compiler diagnostics: structure equality is unavailable across source contexts", [] static noexcept {
+    "Compiler diagnostics: structure equality is unavailable across source contexts"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "scalar fields do not imply equality",
              .source =
@@ -449,7 +441,7 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "!="},
         });
         check_compiler_errors(cases);
-    });
+    };
 });
 
 } // namespace

@@ -23,24 +23,21 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Content identity: deep canonical queries have bounded traversal and encoding",
+const TestSuite suite([] static noexcept {
+    "Content identity: deep canonical queries have bounded traversal and encoding"_test =
         [] static noexcept {
             constexpr auto depth = 20'000uz;
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
             auto builder =
-                semir_test::begin_compilation(sources, diagnostics, "content.query_chain");
-            const auto facts = semir_test::module_facts(builder);
+                begin_semir_test_compilation(sources, diagnostics, "content.query_chain");
+            const auto module_origin = make_semir_test_module_origin(builder);
             const auto module = builder.reserve_module_declaration();
             builder.define_declaration(
                 module,
                 ModuleDeclaration {
-                    .provenance_module = facts.provenance_module,
-                    .origin = facts.origin,
+                    .provenance_module = module_origin.provenance_module,
+                    .origin = module_origin.origin,
                     .cpp_headers = {},
                     .cpp_source_fragments = {},
                     .items = {},
@@ -63,18 +60,16 @@ const ct::Suite tests([] static noexcept {
             }
             builder.finish_declaration_heads();
             const auto program = std::move(builder).finish();
-            if (!ct::expect(program.has_value())) {
+            if (!expect(program.has_value())) {
                 return;
             }
             const auto key = type_content_key(*program, type);
-            ct::expect_less(depth, key.size());
-            ct::expect_less(key.size(), 128uz * (depth + 1uz));
-            ct::expect(diagnostics.empty());
-        }
-    );
+            expect_less(depth, key.size());
+            expect_less(key.size(), 128uz * (depth + 1uz));
+            expect(diagnostics.empty());
+        };
 
-    ct::test(
-        "Generation: shared native query types have bounded expanded target syntax",
+    "Generation: shared native query types have bounded expanded target syntax"_test =
         [] static noexcept {
             constexpr auto depth = 12uz;
             auto source = std::string(
@@ -97,7 +92,7 @@ const ct::Suite tests([] static noexcept {
                 largest_key =
                     std::max(largest_key, type_content_key(compilation.semantic(), type.id).size());
             }
-            ct::expect_less(largest_key, 256uz * (depth + 1uz));
+            expect_less(largest_key, 256uz * (depth + 1uz));
 
             struct Query final {
                 const TargetUnit& unit;
@@ -113,12 +108,11 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query {.unit = unit, .expanded_types = 0uz};
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
                 expanded_types += query.expanded_types;
             }
-            ct::expect_less(expanded_types, 128uz * (depth + 1uz));
-        }
-    );
+            expect_less(expanded_types, 128uz * (depth + 1uz));
+        };
 });
 
 } // namespace

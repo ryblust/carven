@@ -23,123 +23,113 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
+const TestSuite suite([] static noexcept {
+    "Semantic failures: guarded propagation reaches delayed inputs and "
+    "filtered fixed points"_test = [] static noexcept {
+        struct Scenario final {
+            std::string_view name;
+            bool source_first;
+            bool seeded;
+        };
+        const auto scenarios = std::array {
+            Scenario {.name = "source first", .source_first = true, .seeded = true},
+            Scenario {.name = "gate first", .source_first = false, .seeded = true},
+            Scenario {.name = "no surviving seeds", .source_first = false, .seeded = false},
+        };
+        const auto program = analyze_test_program("");
+        each(
+            scenarios,
+            [](const Scenario& scenario) static noexcept { return scenario.name; },
+            [&](const Scenario& scenario) noexcept {
+                const auto provenance = CompilationProvenanceBuilder();
+                const auto types = CanonicalTypeStoreBuilder(program.identity());
+                const auto declarations =
+                    DeclarationBuilder(program.identity(), provenance.identity());
+                auto terms = FailureConstraintStore(program.identity(), provenance.identity());
+                auto sets = FailureSetStoreBuilder(program.identity());
+                const auto first = types.builtin_type(BuiltinType::I32);
+                const auto second = types.builtin_type(BuiltinType::Bool);
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic failures: guarded propagation reaches delayed inputs and "
-        "filtered fixed points",
-        [] static noexcept {
-            struct Scenario final {
-                std::string_view name;
-                bool source_first;
-                bool seeded;
-            };
-            const auto scenarios = std::array {
-                Scenario {.name = "source first", .source_first = true, .seeded = true},
-                Scenario {.name = "gate first", .source_first = false, .seeded = true},
-                Scenario {.name = "no surviving seeds", .source_first = false, .seeded = false},
-            };
-            const auto program = analyze_test_program("");
-            ct::each(
-                scenarios,
-                [](const Scenario& scenario) static noexcept { return scenario.name; },
-                [&](const Scenario& scenario) noexcept {
-                    const auto provenance = CompilationProvenanceBuilder();
-                    const auto types = CanonicalTypeStoreBuilder(program.identity());
-                    const auto declarations =
-                        DeclarationBuilder(program.identity(), provenance.identity());
-                    auto terms = FailureConstraintStore(program.identity(), provenance.identity());
-                    auto sets = FailureSetStoreBuilder(program.identity());
-                    const auto first = types.builtin_type(BuiltinType::I32);
-                    const auto second = types.builtin_type(BuiltinType::Bool);
+                const auto target = terms.add_empty_term();
+                const auto ready = terms.add_concrete_term(
+                    scenario.seeded ? std::vector {first} : std::vector<TypeID> {}
+                );
+                const auto delayed = terms.add_concrete_term(
+                    scenario.seeded ? std::vector {second} : std::vector<TypeID> {}
+                );
+                const auto first_hop = terms.add_union_term({delayed});
+                const auto second_hop = terms.add_union_term({first_hop});
+                terms.add_guarded_contribution(
+                    target,
+                    scenario.source_first ? second_hop : ready,
+                    scenario.source_first ? ready : second_hop
+                );
+                terms.add_guarded_contribution(
+                    target,
+                    scenario.source_first ? second_hop : ready,
+                    scenario.source_first ? ready : second_hop
+                );
+                terms.add_contribution(ready, ready);
 
-                    const auto target = terms.add_empty_term();
-                    const auto ready = terms.add_concrete_term(
-                        scenario.seeded ? std::vector {first} : std::vector<TypeID> {}
-                    );
-                    const auto delayed = terms.add_concrete_term(
-                        scenario.seeded ? std::vector {second} : std::vector<TypeID> {}
-                    );
-                    const auto first_hop = terms.add_union_term({delayed});
-                    const auto second_hop = terms.add_union_term({first_hop});
-                    terms.add_guarded_contribution(
-                        target,
-                        scenario.source_first ? second_hop : ready,
-                        scenario.source_first ? ready : second_hop
-                    );
-                    terms.add_guarded_contribution(
-                        target,
-                        scenario.source_first ? second_hop : ready,
-                        scenario.source_first ? ready : second_hop
-                    );
-                    terms.add_contribution(ready, ready);
+                const auto cycle_left = terms.add_empty_term();
+                const auto cycle_right = terms.add_empty_term();
+                terms.equate(cycle_left, cycle_right);
+                terms.add_guarded_contribution(cycle_left, cycle_right, cycle_left);
+                const auto disabled = terms.add_empty_term();
+                terms.add_guarded_contribution(disabled, cycle_left, ready);
 
-                    const auto cycle_left = terms.add_empty_term();
-                    const auto cycle_right = terms.add_empty_term();
-                    terms.equate(cycle_left, cycle_right);
-                    terms.add_guarded_contribution(cycle_left, cycle_right, cycle_left);
-                    const auto disabled = terms.add_empty_term();
-                    terms.add_guarded_contribution(disabled, cycle_left, ready);
+                const auto excluded = terms.add_residual_term(ready, {first});
+                terms.add_member(excluded, first);
+                const auto retained = terms.add_intersection_term(ready, {second});
+                terms.add_member(retained, first);
+                const auto filtered = terms.add_union_term({excluded, retained});
+                const auto residual_growth = terms.add_residual_term(ready, {first});
+                terms.add_member(residual_growth, first);
+                terms.add_contribution(residual_growth, second_hop);
+                const auto retained_growth = terms.add_intersection_term(ready, {second});
+                terms.add_member(retained_growth, first);
+                terms.add_contribution(retained_growth, second_hop);
 
-                    const auto excluded = terms.add_residual_term(ready, {first});
-                    terms.add_member(excluded, first);
-                    const auto retained = terms.add_intersection_term(ready, {second});
-                    terms.add_member(retained, first);
-                    const auto filtered = terms.add_union_term({excluded, retained});
-                    const auto residual_growth = terms.add_residual_term(ready, {first});
-                    terms.add_member(residual_growth, first);
-                    terms.add_contribution(residual_growth, second_hop);
-                    const auto retained_growth = terms.add_intersection_term(ready, {second});
-                    terms.add_member(retained_growth, first);
-                    terms.add_contribution(retained_growth, second_hop);
-
-                    auto diagnostics = DiagnosticSink();
-                    const auto solved = solve_failure_constraints(
-                        std::move(terms).finish(),
-                        sets,
-                        provenance.reader(),
-                        FailureTypeDiagnosticNames(
-                            types,
-                            declarations.construction_view(),
-                            provenance.reader()
-                        ),
-                        AnalysisDiagnostics(diagnostics)
-                    );
-                    if (!ct::expect_equal(solved.has_value(), true)) {
-                        return;
-                    }
-                    ct::expect_equal(diagnostics.empty(), true);
-                    const auto expected_target = scenario.seeded
-                        ? std::vector {scenario.source_first ? first : second}
-                        : std::vector<TypeID> {};
-                    ct::expect(sets.copy(solved->failure_set(target)).members == expected_target)
-                        .note("guarded contribution retains its source members");
-                    const auto expected_growth =
-                        scenario.seeded ? std::vector {second} : std::vector<TypeID> {};
-                    for (const auto term :
-                         {first_hop, second_hop, residual_growth, retained_growth}) {
-                        ct::expect(sets.copy(solved->failure_set(term)).members == expected_growth)
-                            .note("delayed propagation and filtering retain the second member");
-                    }
-                    const auto empty_set = sets.empty_set();
-                    for (const auto term :
-                         {cycle_left, cycle_right, disabled, excluded, retained, filtered}) {
-                        ct::expect_equal(solved->contains(term), true);
-                        ct::expect(solved->failure_set(term) == empty_set)
-                            .note("empty terms use the canonical empty failure set");
-                        ct::expect_equal(
-                            sets.copy(solved->failure_set(term)).members.empty(),
-                            true
-                        );
-                    }
+                auto diagnostics = DiagnosticSink();
+                const auto solved = solve_failure_constraints(
+                    std::move(terms).finish(),
+                    sets,
+                    provenance.reader(),
+                    FailureTypeDiagnosticNames(
+                        types,
+                        declarations.construction_view(),
+                        provenance.reader()
+                    ),
+                    AnalysisDiagnostics(diagnostics)
+                );
+                if (!expect_equal(solved.has_value(), true)) {
+                    return;
                 }
-            );
-        }
-    );
+                expect_equal(diagnostics.empty(), true);
+                const auto expected_target = scenario.seeded
+                    ? std::vector {scenario.source_first ? first : second}
+                    : std::vector<TypeID> {};
+                expect(sets.copy(solved->failure_set(target)).members == expected_target)
+                    .note("guarded contribution retains its source members");
+                const auto expected_growth =
+                    scenario.seeded ? std::vector {second} : std::vector<TypeID> {};
+                for (const auto term : {first_hop, second_hop, residual_growth, retained_growth}) {
+                    expect(sets.copy(solved->failure_set(term)).members == expected_growth)
+                        .note("delayed propagation and filtering retain the second member");
+                }
+                const auto empty_set = sets.empty_set();
+                for (const auto term :
+                     {cycle_left, cycle_right, disabled, excluded, retained, filtered}) {
+                    expect_equal(solved->contains(term), true);
+                    expect(solved->failure_set(term) == empty_set)
+                        .note("empty terms use the canonical empty failure set");
+                    expect_equal(sets.copy(solved->failure_set(term)).members.empty(), true);
+                }
+            }
+        );
+    };
 
-    ct::test(
-        "Semantic effects: every branch contributes its failures whatever its condition",
+    "Semantic effects: every branch contributes its failures whatever its condition"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
             struct Failure {}
@@ -162,26 +152,24 @@ const ct::Suite tests([] static noexcept {
             private fn static_if() { const if false { fail()?; } }
         )");
             const auto callables = test_function_callables(program);
-            if (!ct::expect_equal(callables.size(), 13uz)) {
+            if (!expect_equal(callables.size(), 13uz)) {
                 return;
             }
             for (auto index = 0uz; index < callables.size(); ++index) {
-                ct::scenario(std::format("function {}", index), [&]() noexcept {
-                    ct::expect_equal(
+                scenario(std::format("function {}", index), [&]() noexcept {
+                    expect_equal(
                         test_callable_failures(program, callables[index]).members.size(),
                         1uz
                     );
                 });
             }
-            ct::expect_diagnostic(
+            expect_diagnostic(
                 analyze_test_errors("private fn invalid() { if false { let value: bool = 1; } }"),
                 DiagnosticCode::TypeMismatch
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Semantic control: callable final signatures own their effective failures",
+    "Semantic control: callable final signatures own their effective failures"_test =
         [] static noexcept {
             const auto program = analyze_test_program(
                 "private fn inferred() {}\n"
@@ -190,17 +178,15 @@ const ct::Suite tests([] static noexcept {
                 "fn declared() throw Failure {}\n"
             );
             const auto callables = test_function_callables(program);
-            if (!ct::expect_equal(callables.size(), 3uz)) {
+            if (!expect_equal(callables.size(), 3uz)) {
                 return;
             }
-            ct::expect(test_callable_failures(program, callables[0]).members.empty());
-            ct::expect(test_callable_failures(program, callables[1]).members.empty());
-            ct::expect_equal(test_callable_failures(program, callables[2]).members.size(), 1uz);
-        }
-    );
+            expect(test_callable_failures(program, callables[0]).members.empty());
+            expect(test_callable_failures(program, callables[1]).members.empty());
+            expect_equal(test_callable_failures(program, callables[2]).members.size(), 1uz);
+        };
 
-    ct::test(
-        "Semantic effects: match bounds and coverage follow patterns, not the subject value",
+    "Semantic effects: match bounds and coverage follow patterns, not the subject value"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         struct Failure {}
@@ -211,54 +197,49 @@ const ct::Suite tests([] static noexcept {
         fn declared() -> i32 throw Failure => match true { true => 7, false => 0, };
     )");
             const auto callables = test_function_callables(program);
-            if (!ct::expect(callables.size() == 3uz)) {
+            if (!expect(callables.size() == 3uz)) {
                 return;
             }
-            ct::expect(test_callable_failures(program, callables[1]).members.size() == 1uz);
-            ct::expect(test_callable_failures(program, callables[2]).members.size() == 1uz);
-            ct::expect_diagnostic(
+            expect(test_callable_failures(program, callables[1]).members.size() == 1uz);
+            expect(test_callable_failures(program, callables[2]).members.size() == 1uz);
+            expect_diagnostic(
                 analyze_test_errors("fn invalid() -> i32 => match true { true => 7, };"),
                 DiagnosticCode::MatchNonExhaustive
             );
-            ct::expect_diagnostic(
+            expect_diagnostic(
                 analyze_test_errors(
                     "fn invalid() -> i32 => match true { true => 7, false => false, };"
                 ),
                 DiagnosticCode::TypeMismatch
             );
+        };
+
+    "Semantic failures: implicit entry infers the escaping failure set"_test = [] static noexcept {
+        const auto program = analyze_test_program(
+            "struct First {} struct Second {}\n"
+            "private fn later() throw First + Second { throw First {}; }\n"
+            "later()?;\n"
+            "throw Second {};\n"
+        );
+        const auto callables = test_function_callables(program);
+        if (!expect_equal(callables.size(), 2uz)) {
+            return;
         }
-    );
+        expect_equal(test_callable_failures(program, callables.back()).members.size(), 2uz);
 
-    ct::test(
-        "Semantic failures: implicit entry infers the escaping failure set",
-        [] static noexcept {
-            const auto program = analyze_test_program(
-                "struct First {} struct Second {}\n"
-                "private fn later() throw First + Second { throw First {}; }\n"
-                "later()?;\n"
-                "throw Second {};\n"
-            );
-            const auto callables = test_function_callables(program);
-            if (!ct::expect_equal(callables.size(), 2uz)) {
-                return;
-            }
-            ct::expect_equal(test_callable_failures(program, callables.back()).members.size(), 2uz);
-
-            const auto handled = analyze_test_program(
-                "struct Failure {}\n"
-                "private fn later() throw Failure { throw Failure {}; }\n"
-                "try { later()?; } catch { Failure(_) => {}, }\n"
-            );
-            const auto handled_callables = test_function_callables(handled);
-            if (!ct::expect_equal(handled_callables.size(), 2uz)) {
-                return;
-            }
-            ct::expect(test_callable_failures(handled, handled_callables.back()).members.empty());
+        const auto handled = analyze_test_program(
+            "struct Failure {}\n"
+            "private fn later() throw Failure { throw Failure {}; }\n"
+            "try { later()?; } catch { Failure(_) => {}, }\n"
+        );
+        const auto handled_callables = test_function_callables(handled);
+        if (!expect_equal(handled_callables.size(), 2uz)) {
+            return;
         }
-    );
+        expect(test_callable_failures(handled, handled_callables.back()).members.empty());
+    };
 
-    ct::test(
-        "Semantic failures: canonical set identity is independent of declaration order",
+    "Semantic failures: canonical set identity is independent of declaration order"_test =
         [] static noexcept {
             const auto program = analyze_test_program(
                 "struct AlphaFailure {}\n"
@@ -270,21 +251,19 @@ const ct::Suite tests([] static noexcept {
                 "}\n"
             );
             const auto callables = test_function_callables(program);
-            if (!ct::expect_greater_equal(callables.size(), 2uz)) {
+            if (!expect_greater_equal(callables.size(), 2uz)) {
                 return;
             }
-            ct::expect(((test_callable_signature(program, callables[0]).failures)
-                        == (test_callable_signature(program, callables[1]).failures)))
+            expect(((test_callable_signature(program, callables[0]).failures)
+                    == (test_callable_signature(program, callables[1]).failures)))
                 .note(
                     "test_callable_signature(program, callables[0]).failures == test_callable_signature(program, callables[1]).failures"
                 );
 
-            ct::expect(test_callable_failures(program, callables.back()).members.empty());
-        }
-    );
+            expect(test_callable_failures(program, callables.back()).members.empty());
+        };
 
-    ct::test(
-        "Semantic control: direct and mutually recursive inference reach one fixed point",
+    "Semantic control: direct and mutually recursive inference reach one fixed point"_test =
         [] static noexcept {
             const auto program = analyze_test_program(
                 "struct Failure {}\n"
@@ -301,30 +280,26 @@ const ct::Suite tests([] static noexcept {
                 "}\n"
             );
             const auto callables = test_function_callables(program);
-            if (!ct::expect_equal(callables.size(), 4uz)) {
+            if (!expect_equal(callables.size(), 4uz)) {
                 return;
             }
             for (auto index = 0uz; index < 3; ++index) {
-                ct::expect_equal(
-                    test_callable_failures(program, callables[index]).members.size(),
-                    1uz
-                );
+                expect_equal(test_callable_failures(program, callables[index]).members.size(), 1uz);
             }
-            ct::expect(((test_callable_signature(program, callables[0]).failures)
-                        == (test_callable_signature(program, callables[1]).failures)))
+            expect(((test_callable_signature(program, callables[0]).failures)
+                    == (test_callable_signature(program, callables[1]).failures)))
                 .note(
                     "test_callable_signature(program, callables[0]).failures == test_callable_signature(program, callables[1]).failures"
                 );
-            ct::expect(((test_callable_signature(program, callables[1]).failures)
-                        == (test_callable_signature(program, callables[2]).failures)))
+            expect(((test_callable_signature(program, callables[1]).failures)
+                    == (test_callable_signature(program, callables[2]).failures)))
                 .note(
                     "test_callable_signature(program, callables[1]).failures == test_callable_signature(program, callables[2]).failures"
                 );
-            ct::expect(test_callable_failures(program, callables[3]).members.empty());
-        }
-    );
+            expect(test_callable_failures(program, callables[3]).members.empty());
+        };
 
-    ct::test("Semantic control: fixed contracts are dependency boundaries", [] static noexcept {
+    "Semantic control: fixed contracts are dependency boundaries"_test = [] static noexcept {
         const auto program = analyze_test_program(
             "struct DeclaredFailure {}\n"
             "struct BodyFailure {}\n"
@@ -336,20 +311,18 @@ const ct::Suite tests([] static noexcept {
             "private fn caller() { fixed(true)?; }\n"
         );
         const auto callables = test_function_callables(program);
-        if (!ct::expect_equal(callables.size(), 3uz)) {
+        if (!expect_equal(callables.size(), 3uz)) {
             return;
         }
         const auto fixed_failures = test_callable_failures(program, callables[1]).members;
         const auto caller_failures = test_callable_failures(program, callables[2]).members;
-        if (!ct::expect_equal(fixed_failures.size(), 1uz)) {
+        if (!expect_equal(fixed_failures.size(), 1uz)) {
             return;
         }
-        ct::expect(((caller_failures) == (fixed_failures)))
-            .note("caller_failures == fixed_failures");
-    });
+        expect(((caller_failures) == (fixed_failures))).note("caller_failures == fixed_failures");
+    };
 
-    ct::test(
-        "Semantic failures: composite expressions retain every pending invocation",
+    "Semantic failures: composite expressions retain every pending invocation"_test =
         [] static noexcept {
             const auto program = analyze_test_program(
                 "struct FirstFailure {}\n"
@@ -366,16 +339,14 @@ const ct::Suite tests([] static noexcept {
                 "}\n"
             );
             const auto callables = test_function_callables(program);
-            if (!ct::expect_equal(callables.size(), 5uz)) {
+            if (!expect_equal(callables.size(), 5uz)) {
                 return;
             }
-            ct::expect_equal(test_callable_failures(program, callables[3]).members.size(), 2uz);
-            ct::expect_equal(test_callable_failures(program, callables[4]).members.size(), 2uz);
-        }
-    );
+            expect_equal(test_callable_failures(program, callables[3]).members.size(), 2uz);
+            expect_equal(test_callable_failures(program, callables[4]).members.size(), 2uz);
+        };
 
-    ct::test(
-        "Semantic effects: known function calls use the target contract through view widening",
+    "Semantic effects: known function calls use the target contract through view widening"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         struct Failure {}
@@ -392,13 +363,13 @@ const ct::Suite tests([] static noexcept {
         }
     )");
             const auto callables = test_function_callables(program);
-            if (!ct::expect(callables.size() == 4uz)) {
+            if (!expect(callables.size() == 4uz)) {
                 return;
             }
             const auto& signature = program.callable_signatures().signature(
                 program.declarations().callable(callables[1]).signature
             );
-            ct::expect(program.failure_sets().failure_set(signature.failures).members.empty());
+            expect(program.failure_sets().failure_set(signature.failures).members.empty());
             const auto redundant = analyze_test_errors(R"(
         struct Failure {}
         fn plain() -> i32 => 7;
@@ -407,9 +378,8 @@ const ct::Suite tests([] static noexcept {
             return callback()?;
         }
     )");
-            ct::expect_diagnostic(redundant, DiagnosticCode::EffectPropagateRedundant);
-        }
-    );
+            expect_diagnostic(redundant, DiagnosticCode::EffectPropagateRedundant);
+        };
 });
 
 } // namespace

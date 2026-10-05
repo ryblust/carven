@@ -16,11 +16,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: value regions report transfers and missing results",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: value regions report transfers and missing results"_test =
         [] static noexcept {
             static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {
@@ -53,11 +50,9 @@ const ct::Suite tests([] static noexcept {
             });
 
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: inline-test whole-test transfer controls reachability",
+    "Compiler diagnostics: inline-test whole-test transfer controls reachability"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto source = std::string(
@@ -82,27 +77,25 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
             const auto* unreachable =
-                ct::find_diagnostic(result->diagnostics, DiagnosticCode::FlowUnreachable);
-            if (!ct::expect(unreachable != nullptr)) {
+                find_diagnostic(result->diagnostics, DiagnosticCode::FlowUnreachable);
+            if (!expect(unreachable != nullptr)) {
                 return;
             }
-            if (!ct::expect(unreachable->attachment.primary.has_value())) {
+            if (!expect(unreachable->attachment.primary.has_value())) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 sources.slice(unreachable->attachment.primary->span),
                 std::string_view("let unreachable = 2;")
             );
-            ct::expect_no_diagnostic(result->diagnostics, DiagnosticCode::TestConditionType);
-        }
-    );
+            expect_no_diagnostic(result->diagnostics, DiagnosticCode::TestConditionType);
+        };
 
-    ct::test(
-        "Compiler diagnostics: covered match arms retain warning identity and span",
+    "Compiler diagnostics: covered match arms retain warning identity and span"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view type;
@@ -117,7 +110,7 @@ const ct::Suite tests([] static noexcept {
                 {.type = "f64", .patterns = "0.0 => {}, -0.0 => {}, _ => {},", .covered = "-0.0"},
                 {.type = "f64", .patterns = "-0.0 => {}, 0.0 => {}, _ => {},", .covered = "0.0"},
             });
-            ct::each(
+            each(
                 cases,
                 [](const Case& entry) static noexcept {
                     return std::format("{}: {}", entry.type, entry.patterns);
@@ -143,28 +136,24 @@ const ct::Suite tests([] static noexcept {
                         }
                     );
 
-                    if (!(ct::expect(result.has_value()))) {
+                    if (!(expect(result.has_value()))) {
                         return;
                     }
-                    const auto* warning = ct::find_diagnostic(
+                    const auto* warning = find_diagnostic(
                         result->diagnostics,
                         DiagnosticCode::FlowUnreachableMatchArm
                     );
-                    if (!(ct::expect(warning != nullptr))) {
+                    if (!(expect(warning != nullptr))) {
                         return;
                     }
-                    ct::expect_equal(warning->finding.severity, DiagnosticSeverity::Warning);
-                    if (!(ct::expect(warning->attachment.primary.has_value()))) {
+                    expect_equal(warning->finding.severity, DiagnosticSeverity::Warning);
+                    if (!(expect(warning->attachment.primary.has_value()))) {
                         return;
                     }
-                    ct::expect_equal(
-                        sources.slice(warning->attachment.primary->span),
-                        entry.covered
-                    );
+                    expect_equal(sources.slice(warning->attachment.primary->span), entry.covered);
                 }
             );
-        }
-    );
+        };
 });
 
 } // namespace

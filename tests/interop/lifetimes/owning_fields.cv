@@ -25,20 +25,14 @@ private fn pair() -> Pair {
     };
 }
 
-private fn extract(&&owner: Pair) -> Resource {
-    return (&&owner).selected;
-}
+private fn extract(&&owner: Pair) -> Resource => (&&owner).selected;
 
 private class ResourceBox {
     pair: Pair,
 
-    fn create() -> ResourceBox {
-        return { pair: pair() };
-    }
+    fn create() -> ResourceBox => { pair: pair() };
 
-    fn finish(&&self) -> Resource {
-        return (&&self).pair.selected;
-    }
+    fn finish(&&self) -> Resource => (&&self).pair.selected;
 }
 
 test "Owning fields: noncopyable field transfer retains remaining field cleanup" {
@@ -68,9 +62,7 @@ private fn fail_argument() -> i32 throw Failure {
     throw Failure {};
 }
 
-private fn accept(&&resource: Resource, number: i32) -> i32 {
-    return resource.id() + number;
-}
+private fn accept(&&resource: Resource, number: i32) -> i32 => resource.id() + number;
 
 test "Owning fields: a later failing argument cleans the projected owner" {
     try {
@@ -88,12 +80,10 @@ private struct TrivialFields {
     other: CopyOnly,
 }
 
-private fn trivial_fields() -> TrivialFields {
-    return {
-        selected: CopyTrivial { 7 },
-        other: CopyOnly { 8 }
-    };
-}
+private fn trivial_fields() -> TrivialFields => {
+    selected: CopyTrivial { 7 },
+    other: CopyOnly { 8 }
+};
 
 test "Owning fields: field delivery preserves the ordinary trivial-copy policy" {
     reset();

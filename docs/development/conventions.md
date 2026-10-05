@@ -3,7 +3,8 @@
 These rules apply to project-authored C++ in `src/`, `tests/`, `crafts/`, and `tools/`.
 Vendored source and fixtures that preserve an external interface follow their
 owning format. Generated artifacts follow the C++ baseline below; the remaining
-source-layout and style rules apply to handwritten code.
+source-layout and style rules apply to handwritten code. `.clang-format` owns
+formatting; neighboring code demonstrates local idioms.
 
 ## C++ baseline
 
@@ -55,24 +56,25 @@ native consumer tests include runtime component entries.
   Implementation partition names end in `.impl`. File stems match the final
   module segment before `.impl`.
 - Partition names use the owning responsibility and the file's role. Collapse a
-  repeated owner name at its entry: `frontend/parse/parse.cppm` is
-  `frontend.parse`, while `frontend/parse/parser.cppm` is
-  `frontend.parse.parser`.
+  repeated owner name at its entry.
 - Put imports in one block after the module declaration. Order partitions
   lexically and put `import std;` last. Import only dependencies used by the
   unit. An implementation partition imports its contract.
+- Shared declarations in compiler, tool, and internal-test partitions use
+  names that identify their domain without named C++ namespaces. Imports control
+  visibility; partitions of the same named module still share declaration
+  identity. Keep shared names distinct.
 - Use a global module fragment for macro-only test headers, required platform
   headers, or consumer headers exercised by tests.
 - Put translation-unit-private declarations in an anonymous namespace. Close
   every namespace with a namespace comment, using the namespace name for named
   namespaces.
 - A support component exposes the contract used by generated code and craft
-  support sources through its owning namespace. A subsystem namespace such as
-  `carven::runtime::simd` supplies the domain qualifier for its member names.
+  support sources through its owning namespace. A subsystem namespace supplies
+  the domain qualifier for its member names.
 - An internal interface shared by headers of one subsystem uses a namespace
-  named for its role, such as `backend`. Keep implementation helpers there when
-  they serve that same responsibility. Use `detail` for header-local helpers
-  that need a separate scope.
+  named for its role. Keep implementation helpers there when they serve that
+  same responsibility. Header-local helpers may use a separate private scope.
 - Backend-dependent support types may live in an inline namespace within their
   component. Callers use the component name; the defining namespace retains the
   selected backend's type identity.
@@ -84,29 +86,29 @@ native consumer tests include runtime component entries.
 
 ## Naming
 
-| Kind | Form | Example |
-| --- | --- | --- |
-| Type, class, enum | `UpperCamelCase` | `SourceManager` |
-| Function, member, local, parameter, file, directory | `lower_snake_case` | `source_id` |
-| Enum case | `UpperCamelCase` | `TokenKind::NumberLiteral` |
+| Kind | Form |
+| --- | --- |
+| Type, class, enum, enum case | `UpperCamelCase` |
+| Function, member, local, parameter, file, directory | `lower_snake_case` |
 
-- Preserve acronyms: `AST`, `IR`, `CV`, `ID`, and `UTF8`.
+- Preserve acronyms.
 - ID type names end in `ID`. Use `id` when context identifies its role;
-  otherwise qualify the role, as in `module_id`. ID collections use `_ids`.
+  otherwise qualify the role. ID collections use `_ids`.
 - Use the same domain vocabulary in directories, module partitions, types,
   operations, and tests. Use `decl`, `expr`, and `stmt` for those concepts in
   directory names, module segments, and file stems.
 - Use concise names that are precise in context. Omit domain qualifiers already
-  supplied by the parent directory, as in `constant/root.cppm`. Retain qualifiers
-  needed to distinguish responsibilities.
+  supplied by the parent directory. Retain qualifiers needed to distinguish
+  responsibilities.
 - Name types and APIs for their roles at use sites. Update names, callers, and
   architecture documentation when responsibilities change.
 - Name builders for their results and analyzers for their scope. Name
   implementation slices for their responsibility. Do not introduce plural long
   forms merely to distinguish an owner from its vocabulary.
-- Avoid catch-all directory names such as `core`, `common`, `util`, and `misc`.
-- Compiler module-name segments are non-keyword C++ identifiers. Avoid the bare
-  identifier `module`; use a name that states its role.
+- Avoid catch-all directory names; each owner names a coherent responsibility.
+- Compiler module-name segments are non-keyword C++ identifiers. Do not use the
+  bare contextual keyword `module` as a segment; choose a name that states its
+  role.
 - Protocol names and fixture spellings under test retain their required form.
 
 ## Declarations
@@ -145,8 +147,7 @@ native consumer tests include runtime component entries.
   explicit construction; document that requirement at the declaration.
   Classes may initialize their private execution state in members.
 - When an integer literal's type is intentional, use a lowercase literal suffix
-  such as `u`, `ll`, `ull`, or `uz` instead of constructing a fixed-width alias
-  solely to type the literal.
+  instead of constructing a fixed-width alias solely to type the literal.
 - Compiler-owned size literals use `uz`. Consumer-facing source uses deduction
   or an explicitly typed `std::size_t` value.
 - Use `static_cast` for explicit conversions it supports.
@@ -194,12 +195,13 @@ native consumer tests include runtime component entries.
 
 ## Tests
 
-Name C++ test cases `"Area: behavior"`, with a stable owning component and a
-concise description of the observed behavior. Name table data before iterating
-it and preserve each input's identity in assertion context. Use comparison
-assertions for printable values and guard premises before dereferencing or
-indexing. [Testing](testing.md#assertions) defines shared runner integration,
-assertion reporting, and failure control flow.
+Test names identify a stable owning component and the observed behavior. Name
+inputs before iterating and preserve their identity in assertion context. Use
+comparison assertions for printable values and guard premises before dependent
+observations. Tests establish accepted behavior, rejected inputs, and invariants
+at their owning boundaries. Test contracts admit equivalent implementations that
+preserve the observed property. Neighboring suites demonstrate registration and
+assertion syntax.
 
 ## Comments
 

@@ -18,20 +18,18 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noexcept
     -> ProgramDraft {
     const auto source = sources.append_virtual("constant-slices.cv", "");
-    ct::require(source.has_value());
+    require(source.has_value());
     auto path = CanonicalModulePath::from_value("constant.slices");
-    ct::require(path.has_value());
+    require(path.has_value());
     const auto inputs = std::array {SourceModuleInput {
         .source_id = *source,
         .module_path = std::move(*path),
     }};
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    ct::require(syntax.has_value());
+    require(syntax.has_value());
     auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);
     const auto provenance_module = draft.provenance_module_at(0uz);
     const auto origin =
@@ -59,13 +57,8 @@ auto slice_type(ProgramDraft& draft, TypeID element) noexcept -> TypeID {
     return draft.intern_type({.value = SliceTypeValue {.element = element}});
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "SemIR constants: slices intern typed ordered contents independently of host storage",
+const TestSuite suite([] static noexcept {
+    "SemIR constants: slices intern typed ordered contents independently of host storage"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -88,33 +81,33 @@ const ct::Suite tests([] static noexcept {
             const auto id = draft.intern_constant(fact);
             auto separately_stored = std::vector<ConstantID> {one, two, one};
             separately_stored.reserve(32uz);
-            ct::expect(
+            expect(
                 draft.intern_constant({
                     .type = type,
                     .value = SliceConstant {.elements = std::move(separately_stored)},
                 })
                 == id
             );
-            ct::expect(
+            expect(
                 draft.intern_constant({
                     .type = type,
                     .value = SliceConstant {.elements = {two, one, one}},
                 })
                 != id
             );
-            ct::expect(
+            expect(
                 draft.intern_constant({
                     .type = type,
                     .value = SliceConstant {.elements = {one, two}},
                 })
                 != id
             );
-            ct::expect(id.owner() == draft.identity());
+            expect(id.owner() == draft.identity());
             const auto empty = draft.intern_constant({
                 .type = type,
                 .value = SliceConstant {.elements = {}},
             });
-            ct::expect(
+            expect(
                 draft.intern_constant({
                     .type = slice_type(draft, boolean),
                     .value = SliceConstant {.elements = {}},
@@ -122,22 +115,20 @@ const ct::Suite tests([] static noexcept {
                 != empty
             );
             const auto program = std::move(draft).finish();
-            if (!ct::expect(program.has_value())) {
+            if (!expect(program.has_value())) {
                 return;
             }
-            ct::expect(program->constants().constant(id) == fact);
+            expect(program->constants().constant(id) == fact);
             const auto& empty_fact = program->constants().constant(empty);
-            ct::expect(empty_fact.type == type);
+            expect(empty_fact.type == type);
             const auto* empty_value = std::get_if<SliceConstant>(&empty_fact.value);
-            if (!ct::expect(empty_value != nullptr)) {
+            if (!expect(empty_value != nullptr)) {
                 return;
             }
-            ct::expect(empty_value->elements.empty());
-        }
-    );
+            expect(empty_value->elements.empty());
+        };
 
-    ct::test(
-        "SemIR constants: slices publish scalar text and nested fixed-array elements",
+    "SemIR constants: slices publish scalar text and nested fixed-array elements"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -182,29 +173,27 @@ const ct::Suite tests([] static noexcept {
                 }));
             }
             const auto program = std::move(draft).finish();
-            if (!ct::expect(program.has_value())) {
+            if (!expect(program.has_value())) {
                 return;
             }
             for (const auto [id, element] : std::views::zip(slices, elements)) {
                 const auto& fact = program->constants().constant(id);
                 const auto* type =
                     std::get_if<SliceTypeValue>(&program->types().type(fact.type).value);
-                if (!ct::expect(type != nullptr)) {
+                if (!expect(type != nullptr)) {
                     continue;
                 }
-                ct::expect(type->element == program->constants().constant(element).type);
+                expect(type->element == program->constants().constant(element).type);
                 const auto* value = std::get_if<SliceConstant>(&fact.value);
-                if (!ct::expect(value != nullptr)) {
+                if (!expect(value != nullptr)) {
                     continue;
                 }
                 const auto expected = std::vector<ConstantID> {element, element};
-                ct::expect(value->elements == expected);
+                expect(value->elements == expected);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR publication invariant: slice constants require exact element and child facts",
+    "SemIR publication invariant: slice constants require exact element and child facts"_test =
         [] static noexcept {
             enum class Malformation {
                 NonSliceType,
@@ -246,11 +235,11 @@ const ct::Suite tests([] static noexcept {
                     .malformation = Malformation::NestedChildShape
                 },
             };
-            ct::each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
+            each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
                 auto sources = SourceManager();
                 auto diagnostics = DiagnosticSink();
                 auto draft = begin_compilation(sources, diagnostics);
-                ct::expect(expect_termination(scenario.name, [&] noexcept {
+                expect(expect_termination(scenario.name, [&] noexcept {
                     const auto integer = draft.builtin_type(BuiltinType::I32);
                     const auto boolean = draft.builtin_type(BuiltinType::Bool);
                     auto child = draft.intern_constant({
@@ -292,14 +281,12 @@ const ct::Suite tests([] static noexcept {
                     static_cast<void>(std::move(draft).finish());
                 }));
             });
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR constants invariant: slice children already belong to the same store",
+    "SemIR constants invariant: slice children already belong to the same store"_test =
         [] static noexcept {
             const auto scenarios = std::array {false, true};
-            ct::each(
+            each(
                 scenarios,
                 [](bool foreign) static noexcept -> std::string_view {
                     return foreign ? "foreign child" : "unavailable child";
@@ -319,7 +306,7 @@ const ct::Suite tests([] static noexcept {
                         .type = integer,
                         .value = IntegerConstant::from_signed(1),
                     });
-                    ct::expect(expect_termination(
+                    expect(expect_termination(
                         foreign ? "slice-constant-foreign-child"
                                 : "slice-constant-unavailable-child",
                         [&] noexcept {
@@ -331,8 +318,7 @@ const ct::Suite tests([] static noexcept {
                     ));
                 }
             );
-        }
-    );
+        };
 });
 
 } // namespace

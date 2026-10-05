@@ -17,11 +17,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic constants: declarations publish values without executable bodies",
+const TestSuite suite([] static noexcept {
+    "Semantic constants: declarations publish values without executable bodies"_test =
         [] static noexcept {
             const auto program = analyze_test_program(
                 "enum Choice { Value(i32), Empty, }\n"
@@ -31,13 +28,13 @@ const ct::Suite tests([] static noexcept {
                 "const text_size: usize = \"abc\".len();\n"
                 "const same = Choice::Value(2) == .Value(2);\n"
             );
-            ct::expect_equal(program.bodies().size(), 0uz);
+            expect_equal(program.bodies().size(), 0uz);
             auto values = std::vector<ConstantID>();
             for (const auto [id, declaration] : program.declarations().module_constants()) {
                 static_cast<void>(id);
                 values.push_back(declaration.value);
             }
-            if (!ct::expect_equal(values.size(), 4uz)) {
+            if (!expect_equal(values.size(), 4uz)) {
                 return;
             }
             const auto expected_integers = std::array {3ll, 5ll, 3ll};
@@ -45,23 +42,21 @@ const ct::Suite tests([] static noexcept {
                 const auto* integer = std::get_if<IntegerConstant>(
                     &program.constants().constant(values[index]).value
                 );
-                if (!ct::expect(integer != nullptr)) {
+                if (!expect(integer != nullptr)) {
                     return;
                 }
-                ct::expect(((integer->as_signed()) == (expected_integers[index])))
+                expect(((integer->as_signed()) == (expected_integers[index])))
                     .note("integer->as_signed() == expected_integers[index]");
             }
             const auto* equality =
                 std::get_if<BooleanConstant>(&program.constants().constant(values.back()).value);
-            if (!ct::expect(equality != nullptr)) {
+            if (!expect(equality != nullptr)) {
                 return;
             }
-            ct::expect(equality->value);
-        }
-    );
+            expect(equality->value);
+        };
 
-    ct::test(
-        "Semantic constants: required initializer failures do not enter runtime contracts",
+    "Semantic constants: required initializer failures do not enter runtime contracts"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
             struct Error {}
@@ -75,18 +70,16 @@ const ct::Suite tests([] static noexcept {
                     callable = declaration.callable;
                 }
             }
-            if (!ct::expect(callable.has_value())) {
+            if (!expect(callable.has_value())) {
                 return;
             }
             const auto& signature = program.callable_signatures().signature(
                 program.declarations().callable(*callable).signature
             );
-            ct::expect(program.failure_sets().failure_set(signature.failures).members.empty());
-        }
-    );
+            expect(program.failure_sets().failure_set(signature.failures).members.empty());
+        };
 
-    ct::test(
-        "Semantic constants: static control and argument failures belong to static roots",
+    "Semantic constants: static control and argument failures belong to static roots"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
             struct Error {}
@@ -108,49 +101,46 @@ const ct::Suite tests([] static noexcept {
                     callable = declaration.callable;
                 }
             }
-            if (!ct::expect(callable.has_value())) {
+            if (!expect(callable.has_value())) {
                 return;
             }
             const auto& signature = program.callable_signatures().signature(
                 program.declarations().callable(*callable).signature
             );
-            ct::expect(program.failure_sets().failure_set(signature.failures).members.empty());
-        }
-    );
+            expect(program.failure_sets().failure_set(signature.failures).members.empty());
+        };
 
-    ct::test(
-        "Static roots: declared values and extents hold their computed values",
+    "Static roots: declared values and extents hold their computed values"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         const answer = (11 + 22) + 44;
         fn accept(value: [i32; (12 + 23) + 45]) {}
     )");
-            ct::require_equal(program.declarations().module_constants().size(), 1uz);
+            require_equal(program.declarations().module_constants().size(), 1uz);
             for (const auto [id, declaration] : program.declarations().module_constants()) {
                 static_cast<void>(id);
                 const auto* value = std::get_if<IntegerConstant>(
                     &program.constants().constant(declaration.value).value
                 );
-                if (ct::expect(value != nullptr)) {
-                    ct::expect(value->as_signed() == 77);
+                if (expect(value != nullptr)) {
+                    expect(value->as_signed() == 77);
                 }
             }
-            ct::require_equal(program.declarations().functions().size(), 1uz);
+            require_equal(program.declarations().functions().size(), 1uz);
             for (const auto [id, declaration] : program.declarations().functions()) {
                 static_cast<void>(id);
                 const auto& signature = program.callable_signatures().signature(
                     program.declarations().callable(declaration.callable).signature
                 );
-                ct::require_equal(signature.parameters.size(), 1uz);
+                require_equal(signature.parameters.size(), 1uz);
                 const auto* array = std::get_if<ArrayTypeValue>(
                     &program.types().type(signature.parameters.front().type).value
                 );
-                if (ct::expect(array != nullptr)) {
-                    ct::expect(array->extent == 80u);
+                if (expect(array != nullptr)) {
+                    expect(array->extent == 80u);
                 }
             }
-        }
-    );
+        };
 });
 
 } // namespace

@@ -104,8 +104,8 @@ test "String: holders end by scope replacement and independent consumption" {
 
 test "String: aggregate storage captures branches recursive calls and retained ranges" {
     var pair = TextPair {
-        first: own("one"),
-        second: own("two")
+        first: "one",
+        second: "two"
     };
     if true {
         let v = pair.first.as_str();

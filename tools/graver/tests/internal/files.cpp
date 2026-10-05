@@ -10,8 +10,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 class Fixture final {
 public:
     Fixture() noexcept;
@@ -19,7 +17,7 @@ public:
     auto entries() const noexcept -> std::size_t;
 
 private:
-    ct::TempDirectory directory;
+    TempDirectory directory;
 };
 
 Fixture::Fixture() noexcept
@@ -32,7 +30,7 @@ auto Fixture::path() const noexcept -> std::filesystem::path {
 auto Fixture::entries() const noexcept -> std::size_t {
     auto error = std::error_code();
     const auto iterator = std::filesystem::directory_iterator(directory.path(), error);
-    if (!ct::expect(!error)) {
+    if (!expect(!error)) {
         return 0;
     }
     return static_cast<std::size_t>(std::distance(iterator, std::filesystem::directory_iterator()));
@@ -61,71 +59,64 @@ auto read_fixture(const std::filesystem::path& path) noexcept -> std::optional<s
     return text;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Graver files: replacement preserves permissions and removes staging files",
+const TestSuite suite([] static noexcept {
+    "Graver files: replacement preserves permissions and removes staging files"_test =
         [] static noexcept {
             const auto fixture = Fixture();
             const auto path = fixture.path();
-            if (!ct::expect(write_fixture(path, "original"))) {
+            if (!expect(write_fixture(path, "original"))) {
                 return;
             }
             auto error = std::error_code();
             const auto permissions =
                 std::filesystem::perms::owner_read | std::filesystem::perms::owner_write;
             std::filesystem::permissions(path, permissions, error);
-            if (!ct::expect(!(error))) {
+            if (!expect(!(error))) {
                 return;
             }
             const auto original_permissions = std::filesystem::status(path, error).permissions();
-            if (!ct::expect(!(error))) {
+            if (!expect(!(error))) {
                 return;
             }
-            const auto result = graver::replace_file(path, "original", "formatted\n");
-            if (!ct::expect(result.has_value())) {
+            const auto result = replace_formatted_file(path, "original", "formatted\n");
+            if (!expect(result.has_value())) {
                 return;
             }
             const auto text = read_fixture(path);
-            if (!ct::expect(text.has_value())) {
+            if (!expect(text.has_value())) {
                 return;
             }
-            ct::expect_equal(*text, std::string_view("formatted\n"));
-            ct::expect(std::filesystem::status(path, error).permissions() == original_permissions);
-            ct::expect(!(error));
-            ct::expect_equal(fixture.entries(), 1uz);
-        }
-    );
+            expect_equal(*text, std::string_view("formatted\n"));
+            expect(std::filesystem::status(path, error).permissions() == original_permissions);
+            expect(!(error));
+            expect_equal(fixture.entries(), 1uz);
+        };
 
-    ct::test("Graver files: concurrent edits survive a rejected replacement", [] static noexcept {
+    "Graver files: concurrent edits survive a rejected replacement"_test = [] static noexcept {
         const auto fixture = Fixture();
         const auto path = fixture.path();
-        if (!ct::expect(write_fixture(path, "new user edit"))) {
+        if (!expect(write_fixture(path, "new user edit"))) {
             return;
         }
-        const auto result = graver::replace_file(path, "older source", "formatter output");
-        if (!ct::expect(!(result.has_value()))) {
+        const auto result = replace_formatted_file(path, "older source", "formatter output");
+        if (!expect(!(result.has_value()))) {
             return;
         }
-        ct::expect_not_equal(result.error().find("source changed"), std::string::npos);
+        expect_not_equal(result.error().find("source changed"), std::string::npos);
         const auto text = read_fixture(path);
-        if (!ct::expect(text.has_value())) {
+        if (!expect(text.has_value())) {
             return;
         }
-        ct::expect_equal(*text, std::string_view("new user edit"));
-        ct::expect_equal(fixture.entries(), 1uz);
-    });
+        expect_equal(*text, std::string_view("new user edit"));
+        expect_equal(fixture.entries(), 1uz);
+    };
 
-    ct::test(
-        "Graver files: symlink replacement is refused without touching its target",
+    "Graver files: symlink replacement is refused without touching its target"_test =
         [] static noexcept {
             const auto fixture = Fixture();
             const auto target = fixture.path();
             const auto link = target.parent_path() / "link.cv";
-            if (!ct::expect(write_fixture(target, "original"))) {
+            if (!expect(write_fixture(target, "original"))) {
                 return;
             }
             auto error = std::error_code();
@@ -138,19 +129,17 @@ const ct::Suite tests([] static noexcept {
                 );
                 return;
             }
-            ct::expect(!(graver::replace_file(link, "original", "formatted").has_value()));
+            expect(!(replace_formatted_file(link, "original", "formatted").has_value()));
             const auto text = read_fixture(target);
-            if (!ct::expect(text.has_value())) {
+            if (!expect(text.has_value())) {
                 return;
             }
-            ct::expect_equal(*text, std::string_view("original"));
-            ct::expect(std::filesystem::is_symlink(link));
-            ct::expect_equal(fixture.entries(), 2uz);
-        }
-    );
+            expect_equal(*text, std::string_view("original"));
+            expect(std::filesystem::is_symlink(link));
+            expect_equal(fixture.entries(), 2uz);
+        };
 
-    ct::test(
-        "Graver files: symlink parent traversal preserves the actual formatting destination",
+    "Graver files: symlink parent traversal follows native path resolution"_test =
         [] static noexcept {
             const auto fixture = Fixture();
             const auto decoy = fixture.path();
@@ -160,10 +149,10 @@ const ct::Suite tests([] static noexcept {
             const auto actual = actual_directory / "source.cv";
             const auto link = directory / "link";
             auto error = std::error_code();
-            if (!ct::expect(std::filesystem::create_directories(nested, error))) {
+            if (!expect(std::filesystem::create_directories(nested, error))) {
                 return;
             }
-            if (!ct::expect(!(error))) {
+            if (!expect(!(error))) {
                 return;
             }
             std::filesystem::create_directory_symlink(nested, link, error);
@@ -175,65 +164,76 @@ const ct::Suite tests([] static noexcept {
                 );
                 return;
             }
-            if (!ct::expect(write_fixture(decoy, "fn decoy(){}"))) {
+            if (!expect(write_fixture(decoy, "fn decoy(){}"))) {
                 return;
             }
-            if (!ct::expect(write_fixture(actual, "fn actual(){call();}"))) {
+            if (!expect(write_fixture(actual, "fn actual(){call();}"))) {
                 return;
             }
             const auto traversal = path_to_generic_utf8(link / ".." / "source.cv");
             const auto direct = path_to_generic_utf8(actual);
             const auto arguments = std::to_array<std::string_view>({traversal, direct, traversal});
-            const auto paths = graver::collect_inputs(arguments);
-            if (!ct::expect(paths.has_value())) {
+            const auto paths = collect_format_paths(arguments);
+            if (!expect(paths.has_value())) {
                 return;
             }
-            if (!ct::expect_equal(paths->size(), 1uz)) {
+#if defined(_WIN32)
+            // Win32 collapses link/.. before following the directory symlink.
+            constexpr auto expected_count = 2uz;
+            const auto& traversal_destination = decoy;
+            constexpr auto expected_report = "link/../source.cv\nother/source.cv\n";
+            constexpr auto expected_decoy = "fn decoy() {}\n";
+#else
+            constexpr auto expected_count = 1uz;
+            const auto& traversal_destination = actual;
+            constexpr auto expected_report = "link/../source.cv\n";
+            constexpr auto expected_decoy = "fn decoy(){}";
+#endif
+            if (!expect_equal(paths->size(), expected_count)) {
                 return;
             }
-            ct::expect(std::filesystem::equivalent(paths->front(), actual, error));
-            if (!ct::expect(!(error))) {
+            expect(
+                std::filesystem::equivalent(link / ".." / "source.cv", traversal_destination, error)
+            );
+            if (!expect(!(error))) {
                 return;
             }
             auto sources = SourceManager();
-            const auto id = sources.append_file(path_to_generic_utf8(paths->front()));
-            if (!ct::expect(id.has_value())) {
+            auto inputs = std::vector<FormattingInput>();
+            for (const auto& path : *paths) {
+                const auto id = sources.append_file(path_to_generic_utf8(path));
+                if (!expect(id.has_value())) {
+                    return;
+                }
+                inputs.push_back({.path = path, .source_id = *id});
+            }
+            const auto batch = format_batch(sources, inputs);
+            if (!expect(batch.has_value())) {
                 return;
             }
-            const auto inputs =
-                std::to_array<graver::BatchInput>({{.path = paths->front(), .source_id = *id}});
-            const auto batch = graver::format_batch(sources, inputs);
-            if (!ct::expect(batch.has_value())) {
-                return;
-            }
-            ct::expect_equal(
-                graver::check_report(*batch, directory),
-                std::string_view("link/../source.cv\n")
-            );
-            if (!ct::expect(graver::write_batch(*batch).has_value())) {
+            expect_equal(format_check_report(*batch, directory), std::string_view(expected_report));
+            if (!expect(write_formatted_batch(*batch).has_value())) {
                 return;
             }
             const auto actual_text = read_fixture(actual);
             const auto decoy_text = read_fixture(decoy);
-            if (!ct::expect(actual_text.has_value())) {
+            if (!expect(actual_text.has_value())) {
                 return;
             }
-            if (!ct::expect(decoy_text.has_value())) {
+            if (!expect(decoy_text.has_value())) {
                 return;
             }
-            ct::expect_equal(*actual_text, std::string_view("fn actual() {\n    call();\n}\n"));
-            ct::expect_equal(*decoy_text, std::string_view("fn decoy(){}"));
-        }
-    );
+            expect_equal(*actual_text, std::string_view("fn actual() {\n    call();\n}\n"));
+            expect_equal(*decoy_text, std::string_view(expected_decoy));
+        };
 
-    ct::test(
-        "Graver files: collecting a symlink and its target cannot bypass write rejection",
+    "Graver files: collecting a symlink and its target cannot bypass write rejection"_test =
         [] static noexcept {
             const auto fixture = Fixture();
             const auto target = fixture.path();
             const auto link = target.parent_path() / "z-link.cv";
             constexpr auto original = "fn original(){}";
-            if (!ct::expect(write_fixture(target, original))) {
+            if (!expect(write_fixture(target, original))) {
                 return;
             }
             auto error = std::error_code();
@@ -249,36 +249,35 @@ const ct::Suite tests([] static noexcept {
             const auto target_name = path_to_generic_utf8(target);
             const auto link_name = path_to_generic_utf8(link);
             const auto arguments = std::to_array<std::string_view>({target_name, link_name});
-            const auto paths = graver::collect_inputs(arguments);
-            if (!ct::expect(paths.has_value())) {
+            const auto paths = collect_format_paths(arguments);
+            if (!expect(paths.has_value())) {
                 return;
             }
-            if (!ct::expect_equal(paths->size(), 2uz)) {
+            if (!expect_equal(paths->size(), 2uz)) {
                 return;
             }
             auto sources = SourceManager();
-            auto inputs = std::vector<graver::BatchInput>();
+            auto inputs = std::vector<FormattingInput>();
             for (const auto& path : *paths) {
                 const auto id = sources.append_file(path_to_generic_utf8(path));
-                if (!ct::expect(id.has_value())) {
+                if (!expect(id.has_value())) {
                     return;
                 }
-                inputs.push_back(graver::BatchInput {.path = path, .source_id = *id});
+                inputs.push_back(FormattingInput {.path = path, .source_id = *id});
             }
-            const auto batch = graver::format_batch(sources, inputs);
-            if (!ct::expect(batch.has_value())) {
+            const auto batch = format_batch(sources, inputs);
+            if (!expect(batch.has_value())) {
                 return;
             }
-            ct::expect(!(graver::write_batch(*batch).has_value()));
+            expect(!(write_formatted_batch(*batch).has_value()));
             const auto contents = read_fixture(target);
-            if (!ct::expect(contents.has_value())) {
+            if (!expect(contents.has_value())) {
                 return;
             }
-            ct::expect_equal(*contents, original);
-            ct::expect(std::filesystem::is_symlink(link, error));
-            ct::expect(!(error));
-        }
-    );
+            expect_equal(*contents, original);
+            expect(std::filesystem::is_symlink(link, error));
+            expect(!(error));
+        };
 });
 
 } // namespace

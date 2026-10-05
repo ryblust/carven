@@ -16,8 +16,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto define_structure(ProgramDraft& draft) noexcept -> TypeID {
     const auto provenance = draft.provenance_module_at(0uz);
     const auto origin = draft.append_source_origin(draft.module_source(provenance), Span::at(0u));
@@ -55,13 +53,8 @@ auto define_structure(ProgramDraft& draft) noexcept -> TypeID {
     return draft.intern_type({.value = StructTypeValue {.structure = structure}});
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "SemIR constants: typed execution fields freeze in declaration order",
+const TestSuite suite([] static noexcept {
+    "SemIR constants: typed execution fields freeze in declaration order"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& draft = fixture.compilation;
@@ -82,30 +75,28 @@ const ct::Suite tests([] static noexcept {
                 return ExecutionAggregateValue {.type = type, .elements = std::move(elements)};
             };
             const auto frozen = freeze_constant_value(draft, make_value({integer, boolean}));
-            if (!ct::expect(frozen.has_value())) {
+            if (!expect(frozen.has_value())) {
                 return;
             }
-            ct::expect(draft.constant(*frozen).type == type);
-            ct::expect(
+            expect(draft.constant(*frozen).type == type);
+            expect(
                 std::get<StructConstant>(draft.constant(*frozen).value).fields
                 == std::vector<ConstantID> {integer, boolean}
             );
-            ct::expect(freeze_constant_value(draft, make_value({integer, boolean})) == frozen);
-            ct::expect(!(freeze_constant_value(draft, make_value({boolean, integer}))));
-            ct::expect(!(freeze_constant_value(draft, make_value({integer}))));
+            expect(freeze_constant_value(draft, make_value({integer, boolean})) == frozen);
+            expect(!(freeze_constant_value(draft, make_value({boolean, integer}))));
+            expect(!(freeze_constant_value(draft, make_value({integer}))));
             auto invalid_fields = std::vector<ExecutionValue>();
             invalid_fields.emplace_back(ExecutionOwnedText("7"));
             invalid_fields.emplace_back(boolean);
-            ct::expect(!(freeze_constant_value(
+            expect(!(freeze_constant_value(
                 draft,
                 ExecutionAggregateValue {.type = type, .elements = std::move(invalid_fields)}
             )));
-            ct::expect(std::move(draft).finish().has_value());
-        }
-    );
+            expect(std::move(draft).finish().has_value());
+        };
 
-    ct::test(
-        "SemIR constants: struct fields count toward retained aggregate size and depth",
+    "SemIR constants: struct fields count toward retained aggregate size and depth"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& draft = fixture.compilation;
@@ -113,36 +104,34 @@ const ct::Suite tests([] static noexcept {
             const auto table =
                 draft.intern_type({.value = ArrayTypeValue {.element = entry, .extent = 21845u}});
             const auto shapes = ExecutionTypeShapes(draft);
-            if (!ct::expect(shapes.get(table).has_value())) {
+            if (!expect(shapes.get(table).has_value())) {
                 return;
             }
-            ct::expect(shapes.get(table)->supported);
-            ct::expect(shapes.get(table)->elements == 65535uz);
+            expect(shapes.get(table)->supported);
+            expect(shapes.get(table)->elements == 65535uz);
             const auto oversized =
                 draft.intern_type({.value = ArrayTypeValue {.element = entry, .extent = 21846u}});
-            if (!ct::expect(shapes.get(oversized).has_value())) {
+            if (!expect(shapes.get(oversized).has_value())) {
                 return;
             }
-            ct::expect(shapes.get(oversized)->elements == 65537uz);
+            expect(shapes.get(oversized)->elements == 65537uz);
             auto nested = entry;
             for (auto level = 1uz; level < 64uz; ++level) {
                 nested =
                     draft.intern_type({.value = ArrayTypeValue {.element = nested, .extent = 1u}});
             }
-            if (!ct::expect(shapes.get(nested).has_value())) {
+            if (!expect(shapes.get(nested).has_value())) {
                 return;
             }
-            ct::expect(shapes.get(nested)->supported);
-            ct::expect(shapes.get(nested)->elements == 65uz);
+            expect(shapes.get(nested)->supported);
+            expect(shapes.get(nested)->elements == 65uz);
             nested = draft.intern_type({.value = ArrayTypeValue {.element = nested, .extent = 1u}});
-            ct::expect(!(shapes.get(nested).has_value()));
+            expect(!(shapes.get(nested).has_value()));
             const auto cold_shapes = ExecutionTypeShapes(draft);
-            ct::expect(!(cold_shapes.get(nested).has_value()));
-        }
-    );
+            expect(!(cold_shapes.get(nested).has_value()));
+        };
 
-    ct::test(
-        "SemIR publication invariant: struct constants require exact nominal field types and arity",
+    "SemIR publication invariant: struct constants require exact nominal field types and arity"_test =
         [] static noexcept {
             enum class Malformation { NonStruct, Missing, Swapped, Extra };
             const auto scenarios = std::array {
@@ -151,7 +140,7 @@ const ct::Suite tests([] static noexcept {
                 std::pair {"struct-swapped-fields", Malformation::Swapped},
                 std::pair {"struct-extra-field", Malformation::Extra},
             };
-            ct::each(
+            each(
                 scenarios,
                 [](const auto& entry) static noexcept { return entry.first; },
                 [&](const auto& entry) noexcept {
@@ -174,7 +163,7 @@ const ct::Suite tests([] static noexcept {
                         case Malformation::Swapped:   std::swap(fields[0], fields[1]); break;
                         case Malformation::Extra:     fields.push_back(integer); break;
                     }
-                    ct::expect(expect_termination(name, [&]() noexcept {
+                    expect(expect_termination(name, [&]() noexcept {
                         static_cast<void>(draft.intern_constant(
                             {.type = type, .value = StructConstant {.fields = std::move(fields)}}
                         ));
@@ -182,11 +171,9 @@ const ct::Suite tests([] static noexcept {
                     }));
                 }
             );
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR constants invariant: struct fields belong to the receiving constant store",
+    "SemIR constants invariant: struct fields belong to the receiving constant store"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto other = ConstantEvaluationFixture();
@@ -196,13 +183,12 @@ const ct::Suite tests([] static noexcept {
                 .type = other.compilation.builtin_type(BuiltinType::I32),
                 .value = IntegerConstant::from_signed(1),
             });
-            ct::expect(expect_termination("struct-foreign-field", [&]() noexcept {
+            expect(expect_termination("struct-foreign-field", [&]() noexcept {
                 static_cast<void>(draft.intern_constant(
                     {.type = type, .value = StructConstant {.fields = {foreign}}}
                 ));
             }));
-        }
-    );
+        };
 });
 
 } // namespace

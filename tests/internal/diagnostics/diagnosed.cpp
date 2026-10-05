@@ -8,11 +8,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Diagnostic: values with diagnostics retain non-blocking diagnostics",
+const TestSuite suite([] static noexcept {
+    "Diagnostic: values with diagnostics retain non-blocking diagnostics"_test =
         [] static noexcept {
             const auto diagnosed = Diagnosed<int> {
                 .value = 42,
@@ -20,10 +17,9 @@ const ct::Suite tests([] static noexcept {
                     DiagnosticBuilder(DiagnosticCode::FlowUnreachable, "warning").build(),
                 },
             };
-            ct::expect_equal(diagnosed.value, 42);
-            ct::expect(!has_errors(diagnosed));
-        }
-    );
+            expect_equal(diagnosed.value, 42);
+            expect(!has_errors(diagnosed));
+        };
 });
 
 } // namespace

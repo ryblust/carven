@@ -4,35 +4,32 @@ import :editor.document;
 import :source.text;
 import std;
 
-namespace editor {
+enum class EditorSymbolKind { Function, Structure, Class, Enumeration, Constant, Field, EnumCase };
 
-enum class SymbolKind { Function, Structure, Class, Enumeration, Constant, Field, EnumCase };
-
-struct DocumentSymbol final {
+struct EditorDocumentSymbol final {
     std::string name;
-    SymbolKind kind;
+    EditorSymbolKind kind;
     Span range;
     Span selection;
-    std::vector<DocumentSymbol> children;
+    std::vector<EditorDocumentSymbol> children;
 
-    auto operator==(const DocumentSymbol&) const noexcept -> bool = default;
+    auto operator==(const EditorDocumentSymbol&) const noexcept -> bool = default;
 };
 
-using DocumentSymbolList = std::vector<DocumentSymbol>;
+using EditorDocumentSymbolList = std::vector<EditorDocumentSymbol>;
 
 // Syntax declarations only; this query does not resolve names, imports, or types.
-auto collect_symbols(const DocumentSyntax& document) noexcept -> DocumentSymbolList;
+auto collect_editor_symbols(const EditorDocumentSyntax& document) noexcept
+    -> EditorDocumentSymbolList;
 
-struct WorkspaceSymbol final {
+struct EditorWorkspaceSymbol final {
     std::string document;
     std::string name;
-    SymbolKind kind;
+    EditorSymbolKind kind;
     Span range;
     Span selection;
 
-    auto operator==(const WorkspaceSymbol&) const noexcept -> bool = default;
+    auto operator==(const EditorWorkspaceSymbol&) const noexcept -> bool = default;
 };
 
-using WorkspaceSymbolList = std::vector<WorkspaceSymbol>;
-
-} // namespace editor
+using EditorWorkspaceSymbolList = std::vector<EditorWorkspaceSymbol>;

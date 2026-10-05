@@ -14,14 +14,12 @@ import :source.manager;
 import :source.text;
 import std;
 
-namespace editor {
-
-SemanticAnalysis::SemanticAnalysis(
+EditorSemanticAnalysis::EditorSemanticAnalysis(
     SourceManager sources,
     std::map<std::string, SourceID, std::less<>> document_sources,
     std::optional<SemIRProgram> program,
     Diagnostics diagnostics,
-    std::vector<SemanticOutput> output,
+    std::vector<EditorSemanticOutput> output,
     std::vector<SourceOccurrence> occurrences
 ) noexcept
     : source_manager(std::move(sources)),
@@ -34,23 +32,23 @@ SemanticAnalysis::SemanticAnalysis(
     }
 }
 
-auto SemanticAnalysis::program() const noexcept -> const SemIRProgram* {
+auto EditorSemanticAnalysis::program() const noexcept -> const SemIRProgram* {
     return semantic_program ? std::addressof(*semantic_program) : nullptr;
 }
 
-auto SemanticAnalysis::sources() const noexcept -> const SourceManager& {
+auto EditorSemanticAnalysis::sources() const noexcept -> const SourceManager& {
     return source_manager;
 }
 
-auto SemanticAnalysis::diagnostics() const noexcept -> std::span<const Diagnostic> {
+auto EditorSemanticAnalysis::diagnostics() const noexcept -> std::span<const Diagnostic> {
     return findings;
 }
 
-auto SemanticAnalysis::output() const noexcept -> std::span<const SemanticOutput> {
+auto EditorSemanticAnalysis::output() const noexcept -> std::span<const EditorSemanticOutput> {
     return execution_output;
 }
 
-auto SemanticAnalysis::select(std::string_view document, std::uint32_t offset) const noexcept
+auto EditorSemanticAnalysis::select(std::string_view document, std::uint32_t offset) const noexcept
     -> const SourceOccurrence* {
     const auto input = source(document);
     if (!input || offset >= input->text.size()) {
@@ -75,42 +73,46 @@ auto SemanticAnalysis::select(std::string_view document, std::uint32_t offset) c
     return selected;
 }
 
-auto SemanticAnalysis::locate_source(SourceSpan location) const noexcept
-    -> std::optional<DocumentLocation> {
+auto EditorSemanticAnalysis::locate_source(SourceSpan location) const noexcept
+    -> std::optional<EditorDocumentLocation> {
     const auto source = source_manager.try_view(location.source_id);
     if (!source || !try_slice(source->text, location.span)) {
         return std::nullopt;
     }
-    return DocumentLocation {.document = std::string(source->origin), .range = location.span};
+    return EditorDocumentLocation {.document = std::string(source->origin), .range = location.span};
 }
 
-auto SemanticAnalysis::hover(std::string_view document, std::uint32_t offset) const noexcept
-    -> std::optional<HoverInformation> {
+auto EditorSemanticAnalysis::hover(std::string_view document, std::uint32_t offset) const noexcept
+    -> std::optional<EditorHoverInformation> {
     const auto* occurrence = select(document, offset);
     if (occurrence == nullptr || !occurrence->type) {
         return std::nullopt;
     }
     const auto location = locate_source(occurrence->location);
     return location
-        ? std::optional(HoverInformation {.location = *location, .type = *occurrence->type})
+        ? std::optional(EditorHoverInformation {.location = *location, .type = *occurrence->type})
         : std::nullopt;
 }
 
-auto SemanticAnalysis::definition(std::string_view document, std::uint32_t offset) const noexcept
-    -> std::optional<DocumentLocation> {
+auto EditorSemanticAnalysis::definition(
+    std::string_view document,
+    std::uint32_t offset
+) const noexcept -> std::optional<EditorDocumentLocation> {
     const auto* occurrence = select(document, offset);
     return occurrence == nullptr || !occurrence->definition
         ? std::nullopt
         : locate_source(*occurrence->definition);
 }
 
-auto SemanticAnalysis::references(std::string_view document, std::uint32_t offset) const noexcept
-    -> std::optional<std::vector<DocumentLocation>> {
+auto EditorSemanticAnalysis::references(
+    std::string_view document,
+    std::uint32_t offset
+) const noexcept -> std::optional<std::vector<EditorDocumentLocation>> {
     const auto* selected = select(document, offset);
     if (selected == nullptr || !selected->definition) {
         return std::nullopt;
     }
-    auto result = std::vector<DocumentLocation>();
+    auto result = std::vector<EditorDocumentLocation>();
     const auto target = *selected->definition;
     for (const auto& [source_id, occurrences] : source_occurrences) {
         for (const auto& occurrence : occurrences) {
@@ -141,7 +143,7 @@ auto SemanticAnalysis::references(std::string_view document, std::uint32_t offse
     return result;
 }
 
-auto SemanticAnalysis::source(std::string_view document) const noexcept
+auto EditorSemanticAnalysis::source(std::string_view document) const noexcept
     -> std::optional<SourceView> {
     const auto found = source_ids.find(document);
     if (found == source_ids.end()) {
@@ -150,13 +152,13 @@ auto SemanticAnalysis::source(std::string_view document) const noexcept
     return source_manager.view(found->second);
 }
 
-auto analyze_project(std::span<const SemanticInput> inputs) noexcept
-    -> std::shared_ptr<const SemanticAnalysis> {
+auto analyze_editor_project(std::span<const EditorSemanticInput> inputs) noexcept
+    -> std::shared_ptr<const EditorSemanticAnalysis> {
     auto sources = SourceManager();
     auto source_ids = std::map<std::string, SourceID, std::less<>>();
     auto modules = std::vector<SourceModuleInput>();
     auto diagnostics = Diagnostics();
-    auto output = std::vector<SemanticOutput>();
+    auto output = std::vector<EditorSemanticOutput>();
     auto program = std::optional<SemIRProgram>();
     auto occurrences = std::vector<SourceOccurrence>();
     modules.reserve(inputs.size());
@@ -209,7 +211,7 @@ auto analyze_project(std::span<const SemanticInput> inputs) noexcept
             diagnostics = std::move(analyzed.error());
         }
     }
-    return std::shared_ptr<const SemanticAnalysis>(new SemanticAnalysis(
+    return std::shared_ptr<const EditorSemanticAnalysis>(new EditorSemanticAnalysis(
         std::move(sources),
         std::move(source_ids),
         std::move(program),
@@ -218,5 +220,3 @@ auto analyze_project(std::span<const SemanticInput> inputs) noexcept
         std::move(occurrences)
     ));
 }
-
-} // namespace editor

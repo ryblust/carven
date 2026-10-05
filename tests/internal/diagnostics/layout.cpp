@@ -14,11 +14,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Diagnostic report: single-line primary matches the accepted main snapshot",
+const TestSuite suite([] static noexcept {
+    "Diagnostic report: single-line primary matches the accepted main snapshot"_test =
         [] static noexcept {
             static constexpr auto source = SourceView {
                 .source_id = SourceID::from_index(0),
@@ -37,7 +34,7 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            ct::expect_equal(
+            expect_equal(
                 render_diagnostic(diagnostic, source),
                 std::string_view(
                     R"REPORT(error [CV-LEXICAL]: `main` accepts no parameters or one untyped parameter
@@ -48,11 +45,9 @@ const ct::Suite tests([] static noexcept {
 )REPORT"
                 )
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Diagnostic report: zero-width syntax spans render one insertion caret",
+    "Diagnostic report: zero-width syntax spans render one insertion caret"_test =
         [] static noexcept {
             static constexpr auto source = SourceView {
                 .source_id = SourceID::from_index(0),
@@ -71,7 +66,7 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            ct::expect_equal(
+            expect_equal(
                 render_diagnostic(diagnostic, source),
                 std::string_view(R"REPORT(error [CV-LEXICAL]: expected `)` after function parameters
  --> app.cv:1:9
@@ -80,10 +75,9 @@ const ct::Suite tests([] static noexcept {
   |         ^ expected `)` here
 )REPORT")
             );
-        }
-    );
+        };
 
-    ct::test("Diagnostic report: terminal control bytes are escaped", [] static noexcept {
+    "Diagnostic report: terminal control bytes are escaped"_test = [] static noexcept {
         const auto text = std::string("a\0b", 3);
         const auto source = SourceView {
             .source_id = SourceID::from_index(0),
@@ -102,7 +96,7 @@ const ct::Suite tests([] static noexcept {
             }
         );
 
-        ct::expect_equal(
+        expect_equal(
             render_diagnostic(diagnostic, source),
             std::string_view(R"REPORT(error [CV-LEXICAL]: control byte
  --> control.cv:1:2
@@ -111,10 +105,9 @@ const ct::Suite tests([] static noexcept {
   |  ^^^^ escaped
 )REPORT")
         );
-    });
+    };
 
-    ct::test(
-        "Diagnostic report: long multi-line spans show bounded endpoints and ellipsis",
+    "Diagnostic report: long multi-line spans show bounded endpoints and ellipsis"_test =
         [] static noexcept {
             static constexpr auto source = SourceView {
                 .source_id = SourceID::from_index(0),
@@ -138,7 +131,7 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            ct::expect_equal(
+            expect_equal(
                 render_diagnostic(diagnostic, source),
                 std::string_view(R"REPORT(error [CV-LEXICAL]: multi-line example
  --> app.cv:2:7
@@ -150,11 +143,9 @@ const ct::Suite tests([] static noexcept {
   | ^^^^ bounded region
 )REPORT")
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Diagnostic report: adjacent multi-line spans do not add an ellipsis",
+    "Diagnostic report: adjacent multi-line spans do not add an ellipsis"_test =
         [] static noexcept {
             static constexpr auto source = SourceView {
                 .source_id = SourceID::from_index(0),
@@ -174,7 +165,7 @@ const ct::Suite tests([] static noexcept {
             );
             const auto output = render_diagnostic(diagnostic, source);
 
-            ct::expect_equal(output, std::string_view(R"REPORT(error [CV-LEXICAL]: two lines
+            expect_equal(output, std::string_view(R"REPORT(error [CV-LEXICAL]: two lines
  --> app.cv:1:3
   |
 1 | first
@@ -182,47 +173,44 @@ const ct::Suite tests([] static noexcept {
 2 | second
   | ^^^ end
 )REPORT"));
-        }
-    );
+        };
 
-    ct::test(
-        "Diagnostic report: labels render in source order without changing "
-        "the primary location",
-        [] static noexcept {
-            static constexpr auto source = SourceView {
-                .source_id = SourceID::from_index(0),
-                .text = "fn main() {}\n"
-                        "\n"
-                        "fn helper() {}\n"
-                        "\n"
-                        "fn main(args) {}\n",
-                .origin = "app.cv",
-            };
-            const auto diagnostic = make_diagnostic(
-                "`main` is defined more than once",
+    "Diagnostic report: labels render in source order without changing "
+    "the primary location"_test = [] static noexcept {
+        static constexpr auto source = SourceView {
+            .source_id = SourceID::from_index(0),
+            .text = "fn main() {}\n"
+                    "\n"
+                    "fn helper() {}\n"
+                    "\n"
+                    "fn main(args) {}\n",
+            .origin = "app.cv",
+        };
+        const auto diagnostic = make_diagnostic(
+            "`main` is defined more than once",
+            {
+                .span =
+                    {
+                        .source_id = SourceID::from_index(0),
+                        .span = Span::from_bounds(33, 37),
+                    },
+                .message = "duplicate definition",
+            },
+            {
                 {
                     .span =
                         {
                             .source_id = SourceID::from_index(0),
-                            .span = Span::from_bounds(33, 37),
+                            .span = Span::from_bounds(3, 7),
                         },
-                    .message = "duplicate definition",
+                    .message = "first definition",
                 },
-                {
-                    {
-                        .span =
-                            {
-                                .source_id = SourceID::from_index(0),
-                                .span = Span::from_bounds(3, 7),
-                            },
-                        .message = "first definition",
-                    },
-                }
-            );
+            }
+        );
 
-            ct::expect_equal(
-                render_diagnostic(diagnostic, source),
-                std::string_view(R"REPORT(error [CV-LEXICAL]: `main` is defined more than once
+        expect_equal(
+            render_diagnostic(diagnostic, source),
+            std::string_view(R"REPORT(error [CV-LEXICAL]: `main` is defined more than once
  --> app.cv:5:4
   |
 1 | fn main() {}
@@ -231,12 +219,10 @@ const ct::Suite tests([] static noexcept {
 5 | fn main(args) {}
   |    ^^^^ duplicate definition
 )REPORT")
-            );
-        }
-    );
+        );
+    };
 
-    ct::test(
-        "Diagnostic report: one diagnostic can render labels from multiple sources",
+    "Diagnostic report: one diagnostic can render labels from multiple sources"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto first = *sources.append_virtual("first.cv", "export fn value() {}\n");
@@ -255,7 +241,7 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            ct::expect_equal(
+            expect_equal(
                 ::render_diagnostic(diagnostic, sources),
                 std::string_view(R"REPORT(error [CV-LEXICAL]: duplicate exported declaration
  --> second.cv:1:11
@@ -268,54 +254,49 @@ const ct::Suite tests([] static noexcept {
   |           ----- first declaration
 )REPORT")
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Diagnostic report: same-line labels retain deterministic tie order",
-        [] static noexcept {
-            static constexpr auto source = SourceView {
-                .source_id = SourceID::from_index(0),
-                .text = "abcdef",
-                .origin = "app.cv",
-            };
-            const auto diagnostic = make_diagnostic(
-                "overlap",
+    "Diagnostic report: same-line labels retain deterministic tie order"_test = [] static noexcept {
+        static constexpr auto source = SourceView {
+            .source_id = SourceID::from_index(0),
+            .text = "abcdef",
+            .origin = "app.cv",
+        };
+        const auto diagnostic = make_diagnostic(
+            "overlap",
+            {
+                .span =
+                    {
+                        .source_id = SourceID::from_index(0),
+                        .span = Span::from_bounds(1, 3),
+                    },
+                .message = "primary",
+            },
+            {
                 {
                     .span =
                         {
                             .source_id = SourceID::from_index(0),
                             .span = Span::from_bounds(1, 3),
                         },
-                    .message = "primary",
+                    .message = "secondary",
                 },
-                {
-                    {
-                        .span =
-                            {
-                                .source_id = SourceID::from_index(0),
-                                .span = Span::from_bounds(1, 3),
-                            },
-                        .message = "secondary",
-                    },
-                }
-            );
+            }
+        );
 
-            ct::expect_equal(
-                render_diagnostic(diagnostic, source),
-                std::string_view(R"REPORT(error [CV-LEXICAL]: overlap
+        expect_equal(
+            render_diagnostic(diagnostic, source),
+            std::string_view(R"REPORT(error [CV-LEXICAL]: overlap
  --> app.cv:1:2
   |
 1 | abcdef
   |  ^^ primary
   |  -- secondary
 )REPORT")
-            );
-        }
-    );
+        );
+    };
 
-    ct::test(
-        "Diagnostic report: wide and combining scalars advance markers by terminal cells",
+    "Diagnostic report: wide and combining scalars advance markers by terminal cells"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view("\"日本\" + e\u0301 + 1");
             const auto start = static_cast<std::uint32_t>(text.rfind('+'));
@@ -335,7 +316,7 @@ const ct::Suite tests([] static noexcept {
                 .text = text,
                 .origin = "wide.cv",
             };
-            ct::expect_equal(
+            expect_equal(
                 render_diagnostic(diagnostic, source),
                 std::format(
                     "error [CV-LEXICAL]: wide\n --> wide.cv:1:{}\n  |\n1 | {}\n  | {}^ here\n",
@@ -344,10 +325,9 @@ const ct::Suite tests([] static noexcept {
                     std::string(11, ' ')
                 )
             );
-        }
-    );
+        };
 
-    ct::test("Diagnostic report: help follows notes after the source frames", [] static noexcept {
+    "Diagnostic report: help follows notes after the source frames"_test = [] static noexcept {
         static constexpr auto source = SourceView {
             .source_id = SourceID::from_index(0),
             .text = "let a = 1;",
@@ -362,7 +342,7 @@ const ct::Suite tests([] static noexcept {
                                     .note("context")
                                     .help("declare with 'var'")
                                     .build();
-        ct::expect_equal(
+        expect_equal(
             render_diagnostic(diagnostic, source),
             std::string_view(R"REPORT(error [CV-ACCESS-IMMUTABLE]: read-only
  --> app.cv:1:5
@@ -373,10 +353,9 @@ note: context
 help: declare with 'var'
 )REPORT")
         );
-    });
+    };
 
-    ct::test(
-        "Diagnostic report: gutters grow to the largest displayed line number",
+    "Diagnostic report: gutters grow to the largest displayed line number"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view("1\n2\n3\n4\n5\n6\n7\n8\n9\ntarget");
             const auto start = static_cast<std::uint32_t>(text.find("target"));
@@ -397,7 +376,7 @@ help: declare with 'var'
                 .text = text,
                 .origin = "ten.cv",
             };
-            ct::expect_equal(
+            expect_equal(
                 render_diagnostic(diagnostic, source),
                 std::string_view(R"REPORT(error [CV-LEXICAL]: line ten
  --> ten.cv:10:1
@@ -406,8 +385,7 @@ help: declare with 'var'
    | ^^^^^^
 )REPORT")
             );
-        }
-    );
+        };
 });
 
 } // namespace

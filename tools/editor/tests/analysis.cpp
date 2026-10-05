@@ -12,174 +12,157 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto update(
-    editor::AnalysisHost& host,
+    EditorAnalysisHost& host,
     std::string_view document,
     std::int64_t version,
     std::string_view text
 ) noexcept -> void {
-    ct::require(host.update(std::string(document), version, std::string(text)).has_value());
+    require(host.update(std::string(document), version, std::string(text)).has_value());
 }
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Editor analysis: queries lazily cache syntax and derived symbols",
-        [] static noexcept {
-            auto host = editor::AnalysisHost();
-            update(host, "a.cv", 1, "import missing using *; fn f() {}");
-            const auto snapshot = host.snapshot();
-            ct::expect_equal(snapshot.counts().syntax, 0uz);
-            ct::expect(!snapshot.syntax("absent.cv"));
-            ct::expect(!snapshot.document_symbols("absent.cv"));
-            const auto parsed = snapshot.syntax("a.cv");
-            if (!ct::expect(parsed.has_value())) {
-                return;
-            }
-            ct::expect_equal(parsed->version, 1ll);
-            ct::expect(parsed->result->syntax().has_value());
-            ct::expect(parsed->result->diagnostics().empty());
-            ct::expect_equal(snapshot.counts().syntax, 1uz);
-            ct::expect_equal(snapshot.counts().document_symbols, 0uz);
-            const auto repeated = snapshot.syntax("a.cv");
-            if (!ct::expect(repeated.has_value())) {
-                return;
-            }
-            ct::expect(repeated->result == parsed->result);
-            const auto symbols = snapshot.document_symbols("a.cv");
-            if (!ct::expect(symbols && symbols->result)) {
-                return;
-            }
-            if (!ct::expect_equal(symbols->result->size(), 1uz)) {
-                return;
-            }
-            ct::expect_equal(symbols->result->front().name, "f");
-            const auto workspace = snapshot.workspace_symbols();
-            ct::expect(snapshot.workspace_symbols() == workspace);
-            ct::expect_equal(snapshot.counts().syntax, 1uz);
-            ct::expect_equal(snapshot.counts().document_symbols, 1uz);
-            ct::expect_equal(snapshot.counts().workspace_symbols, 1uz);
+const TestSuite tests([] static noexcept {
+    "Editor analysis: queries lazily cache syntax and derived symbols"_test = [] static noexcept {
+        auto host = EditorAnalysisHost();
+        update(host, "a.cv", 1, "import missing using *; fn f() {}");
+        const auto snapshot = host.snapshot();
+        expect_equal(snapshot.counts().syntax, 0uz);
+        expect(!snapshot.syntax("absent.cv"));
+        expect(!snapshot.document_symbols("absent.cv"));
+        const auto parsed = snapshot.syntax("a.cv");
+        if (!expect(parsed.has_value())) {
+            return;
         }
-    );
+        expect_equal(parsed->version, 1ll);
+        expect(parsed->result->syntax().has_value());
+        expect(parsed->result->diagnostics().empty());
+        expect_equal(snapshot.counts().syntax, 1uz);
+        expect_equal(snapshot.counts().document_symbols, 0uz);
+        const auto repeated = snapshot.syntax("a.cv");
+        if (!expect(repeated.has_value())) {
+            return;
+        }
+        expect(repeated->result == parsed->result);
+        const auto symbols = snapshot.document_symbols("a.cv");
+        if (!expect(symbols && symbols->result)) {
+            return;
+        }
+        if (!expect_equal(symbols->result->size(), 1uz)) {
+            return;
+        }
+        expect_equal(symbols->result->front().name, "f");
+        const auto workspace = snapshot.workspace_symbols();
+        expect(snapshot.workspace_symbols() == workspace);
+        expect_equal(snapshot.counts().syntax, 1uz);
+        expect_equal(snapshot.counts().document_symbols, 1uz);
+        expect_equal(snapshot.counts().workspace_symbols, 1uz);
+    };
 
-    ct::test(
-        "Editor analysis: editing one document preserves unrelated computations",
+    "Editor analysis: editing one document preserves unrelated computations"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "a.cv", 1, "fn f() {}");
             update(host, "b.cv", 1, "fn g() {}");
             const auto before = host.snapshot();
             const auto old_a = before.syntax("a.cv");
             const auto old_b = before.syntax("b.cv");
-            if (!ct::expect(old_a && old_b)) {
+            if (!expect(old_a && old_b)) {
                 return;
             }
             update(host, "a.cv", 2, "fn renamed() {}");
             const auto after = host.snapshot();
-            ct::expect_equal(after.counts().syntax, 2uz);
+            expect_equal(after.counts().syntax, 2uz);
             const auto new_b = after.syntax("b.cv");
             const auto new_a = after.syntax("a.cv");
-            if (!ct::expect(new_a && new_b)) {
+            if (!expect(new_a && new_b)) {
                 return;
             }
-            ct::expect(new_b->result == old_b->result);
-            ct::expect(new_a->result != old_a->result);
-            ct::expect_equal(new_a->version, 2ll);
-            ct::expect_equal(new_a->result->source().text, "fn renamed() {}");
-            ct::expect_equal(old_a->result->source().text, "fn f() {}");
-            ct::expect_equal(after.counts().syntax, 3uz);
-        }
-    );
+            expect(new_b->result == old_b->result);
+            expect(new_a->result != old_a->result);
+            expect_equal(new_a->version, 2ll);
+            expect_equal(new_a->result->source().text, "fn renamed() {}");
+            expect_equal(old_a->result->source().text, "fn f() {}");
+            expect_equal(after.counts().syntax, 3uz);
+        };
 
-    ct::test(
-        "Editor analysis: identical bytes advance the version without recomputation",
+    "Editor analysis: identical bytes advance the version without recomputation"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "a.cv", 10, "fn f() {}");
             const auto before = host.snapshot();
             const auto original = before.syntax("a.cv");
             const auto workspace = before.workspace_symbols();
             const auto changed = host.update("a.cv", 11, "fn f() {}");
-            if (!ct::expect(changed.has_value())) {
+            if (!expect(changed.has_value())) {
                 return;
             }
-            ct::expect_equal(*changed, editor::DocumentChange::VersionOnly);
+            expect_equal(*changed, EditorDocumentChange::VersionOnly);
             const auto after = host.snapshot();
             const auto current = after.syntax("a.cv");
-            if (!ct::expect(original && current)) {
+            if (!expect(original && current)) {
                 return;
             }
-            ct::expect(current->result == original->result);
-            ct::expect_equal(original->version, 10ll);
-            ct::expect_equal(current->version, 11ll);
-            ct::expect(after.workspace_symbols() == workspace);
-            ct::expect_equal(after.counts().syntax, 1uz);
-            ct::expect_equal(after.counts().document_symbols, 1uz);
-            ct::expect_equal(after.counts().workspace_symbols, 1uz);
+            expect(current->result == original->result);
+            expect_equal(original->version, 10ll);
+            expect_equal(current->version, 11ll);
+            expect(after.workspace_symbols() == workspace);
+            expect_equal(after.counts().syntax, 1uz);
+            expect_equal(after.counts().document_symbols, 1uz);
+            expect_equal(after.counts().workspace_symbols, 1uz);
             const auto versions = std::to_array<std::int64_t>({11, 9});
-            ct::each(
+            each(
                 versions,
                 [](std::int64_t version) static noexcept {
                     return version == 11 ? "Equal version" : "Older version";
                 },
                 [&](std::int64_t version) noexcept {
                     const auto rejected = host.update("a.cv", version, "fn stale() {}");
-                    if (!ct::expect(!rejected.has_value())) {
+                    if (!expect(!rejected.has_value())) {
                         return;
                     }
-                    const auto* error =
-                        std::get_if<editor::StaleDocumentVersion>(&rejected.error());
-                    if (!ct::expect(error != nullptr)) {
+                    const auto* error = std::get_if<EditorStaleDocumentVersion>(&rejected.error());
+                    if (!expect(error != nullptr)) {
                         return;
                     }
-                    ct::expect_equal(error->current, 11ll);
-                    ct::expect_equal(error->received, version);
+                    expect_equal(error->current, 11ll);
+                    expect_equal(error->received, version);
                     const auto retained = host.snapshot().syntax("a.cv");
-                    if (!ct::expect(retained.has_value())) {
+                    if (!expect(retained.has_value())) {
                         return;
                     }
-                    ct::expect_equal(retained->version, 11ll);
-                    ct::expect_equal(retained->result->source().text, "fn f() {}");
+                    expect_equal(retained->version, 11ll);
+                    expect_equal(retained->result->source().text, "fn f() {}");
                 }
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Editor analysis: equal symbol results stop workspace invalidation",
-        [] static noexcept {
-            auto host = editor::AnalysisHost();
-            update(host, "a.cv", 1, "fn f() -> i32 { return 1; }");
-            const auto before = host.snapshot();
-            const auto original = before.document_symbols("a.cv");
-            const auto workspace = before.workspace_symbols();
-            if (!ct::expect(original && original->result)) {
-                return;
-            }
-            update(host, "a.cv", 2, "fn f() -> i32 { return 2; }");
-            const auto after = host.snapshot();
-            const auto current = after.document_symbols("a.cv");
-            if (!ct::expect(current && current->result)) {
-                return;
-            }
-            ct::expect(current->document.result != original->document.result);
-            ct::expect_equal(
-                current->document.result->source().text,
-                "fn f() -> i32 { return 2; }"
-            );
-            ct::expect(current->result == original->result);
-            ct::expect(after.workspace_symbols() == workspace);
-            ct::expect_equal(after.counts().syntax, 2uz);
-            ct::expect_equal(after.counts().document_symbols, 2uz);
-            ct::expect_equal(after.counts().workspace_symbols, 1uz);
+    "Editor analysis: equal symbol results stop workspace invalidation"_test = [] static noexcept {
+        auto host = EditorAnalysisHost();
+        update(host, "a.cv", 1, "fn f() -> i32 { return 1; }");
+        const auto before = host.snapshot();
+        const auto original = before.document_symbols("a.cv");
+        const auto workspace = before.workspace_symbols();
+        if (!expect(original && original->result)) {
+            return;
         }
-    );
+        update(host, "a.cv", 2, "fn f() -> i32 { return 2; }");
+        const auto after = host.snapshot();
+        const auto current = after.document_symbols("a.cv");
+        if (!expect(current && current->result)) {
+            return;
+        }
+        expect(current->document.result != original->document.result);
+        expect_equal(current->document.result->source().text, "fn f() -> i32 { return 2; }");
+        expect(current->result == original->result);
+        expect(after.workspace_symbols() == workspace);
+        expect_equal(after.counts().syntax, 2uz);
+        expect_equal(after.counts().document_symbols, 2uz);
+        expect_equal(after.counts().workspace_symbols, 1uz);
+    };
 
-    ct::test(
-        "Editor analysis: symbol changes and shifted ranges invalidate workspace results",
+    "Editor analysis: symbol changes and shifted ranges invalidate workspace results"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "a.cv", 1, "fn f() {}");
             auto previous = host.snapshot().workspace_symbols();
             const auto edits = std::to_array<std::pair<std::string_view, std::string_view>>({
@@ -188,185 +171,173 @@ const ct::Suite tests([] static noexcept {
                 {"Longer body", "// comment\nfn g() { let x = 1; }"},
             });
             auto version = 1ll;
-            ct::each(
+            each(
                 edits,
                 [](const auto& entry) static noexcept { return entry.first; },
                 [&](const auto& entry) noexcept {
                     update(host, "a.cv", ++version, entry.second);
                     const auto snapshot = host.snapshot();
                     const auto current = snapshot.workspace_symbols();
-                    if (!ct::expect_equal(current->size(), 1uz)) {
+                    if (!expect_equal(current->size(), 1uz)) {
                         return;
                     }
-                    ct::expect(current != previous);
-                    ct::expect_equal(current->front().name, "g");
-                    ct::expect_equal(slice(entry.second, current->front().selection), "g");
-                    ct::expect_equal(current->front().range.end(), entry.second.size());
+                    expect(current != previous);
+                    expect_equal(current->front().name, "g");
+                    expect_equal(slice(entry.second, current->front().selection), "g");
+                    expect_equal(current->front().range.end(), entry.second.size());
                     previous = current;
                 }
             );
-            ct::expect_equal(host.snapshot().counts().workspace_symbols, 4uz);
-        }
-    );
+            expect_equal(host.snapshot().counts().workspace_symbols, 4uz);
+        };
 
-    ct::test(
-        "Editor analysis: invalid files cache diagnostics without blocking independent files",
+    "Editor analysis: invalid files cache diagnostics without blocking independent files"_test =
         [] static noexcept {
             const auto cases =
                 std::to_array<std::tuple<std::string_view, std::string_view, DiagnosticCode>>({
                     {"Lexical error", "@", DiagnosticCode::Lexical},
                     {"Incomplete function", "fn broken(", DiagnosticCode::Syntax},
                 });
-            ct::each(
+            each(
                 cases,
                 [](const auto& entry) static noexcept { return std::get<0>(entry); },
                 [&](const auto& entry) noexcept {
-                    auto host = editor::AnalysisHost();
+                    auto host = EditorAnalysisHost();
                     update(host, "valid.cv", 1, "fn good() {}");
                     update(host, "broken.cv", 1, std::get<1>(entry));
                     const auto before = host.snapshot();
                     const auto broken = before.document_symbols("broken.cv");
-                    if (!ct::expect(broken.has_value())) {
+                    if (!expect(broken.has_value())) {
                         return;
                     }
-                    ct::expect(!broken->result);
-                    ct::expect(!broken->document.result->syntax());
-                    const auto* diagnostic = ct::find_diagnostic(
-                        broken->document.result->diagnostics(),
-                        std::get<2>(entry)
-                    );
-                    if (!ct::expect(diagnostic != nullptr)) {
+                    expect(!broken->result);
+                    expect(!broken->document.result->syntax());
+                    const auto* diagnostic =
+                        find_diagnostic(broken->document.result->diagnostics(), std::get<2>(entry));
+                    if (!expect(diagnostic != nullptr)) {
                         return;
                     }
-                    ct::expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
-                    if (!ct::expect(diagnostic->attachment.primary.has_value())) {
+                    expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
+                    if (!expect(diagnostic->attachment.primary.has_value())) {
                         return;
                     }
-                    ct::expect_equal(
+                    expect_equal(
                         broken->document.result->sources()
                             .view(diagnostic->attachment.primary->span.source_id)
                             .origin,
                         "broken.cv"
                     );
                     const auto workspace = before.workspace_symbols();
-                    if (!ct::expect_equal(workspace->size(), 1uz)) {
+                    if (!expect_equal(workspace->size(), 1uz)) {
                         return;
                     }
-                    ct::expect_equal(workspace->front().name, "good");
+                    expect_equal(workspace->front().name, "good");
                     const auto repeated = before.syntax("broken.cv");
-                    if (!ct::expect(repeated.has_value())) {
+                    if (!expect(repeated.has_value())) {
                         return;
                     }
-                    ct::expect(repeated->result == broken->document.result);
-                    ct::expect_equal(before.counts().syntax, 2uz);
+                    expect(repeated->result == broken->document.result);
+                    expect_equal(before.counts().syntax, 2uz);
                     update(host, "broken.cv", 2, "fn repaired() {}");
                     const auto after = host.snapshot();
-                    ct::expect_equal(after.workspace_symbols()->size(), 2uz);
+                    expect_equal(after.workspace_symbols()->size(), 2uz);
                     const auto repaired = after.syntax("broken.cv");
-                    if (!ct::expect(repaired.has_value())) {
+                    if (!expect(repaired.has_value())) {
                         return;
                     }
-                    ct::expect(repaired->result->diagnostics().empty());
-                    ct::expect_equal(broken->document.result->source().text, std::get<1>(entry));
-                    ct::expect_equal(after.counts().syntax, 3uz);
+                    expect(repaired->result->diagnostics().empty());
+                    expect_equal(broken->document.result->source().text, std::get<1>(entry));
+                    expect_equal(after.counts().syntax, 3uz);
                 }
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Editor analysis: removing and reopening documents preserves old snapshots",
+    "Editor analysis: removing and reopening documents preserves old snapshots"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "a.cv", 20, "fn old() {}");
             const auto before = host.snapshot();
-            ct::expect(host.remove("a.cv"));
-            ct::expect(!host.remove("a.cv"));
+            expect(host.remove("a.cv"));
+            expect(!host.remove("a.cv"));
             const auto removed = host.snapshot();
-            ct::expect(!removed.syntax("a.cv"));
-            ct::expect(removed.workspace_symbols()->empty());
+            expect(!removed.syntax("a.cv"));
+            expect(removed.workspace_symbols()->empty());
             update(host, "a.cv", 1, "fn fresh() {}");
             const auto old = before.document_symbols("a.cv");
             const auto fresh = host.snapshot().document_symbols("a.cv");
-            if (!ct::expect(old && old->result && fresh && fresh->result)) {
+            if (!expect(old && old->result && fresh && fresh->result)) {
                 return;
             }
-            ct::expect_equal(old->document.version, 20ll);
-            ct::expect_equal(old->result->front().name, "old");
-            ct::expect_equal(fresh->document.version, 1ll);
-            ct::expect_equal(fresh->result->front().name, "fresh");
-            ct::expect(!removed.syntax("a.cv"));
-        }
-    );
+            expect_equal(old->document.version, 20ll);
+            expect_equal(old->result->front().name, "old");
+            expect_equal(fresh->document.version, 1ll);
+            expect_equal(fresh->result->front().name, "fresh");
+            expect(!removed.syntax("a.cv"));
+        };
 
-    ct::test(
-        "Editor analysis: results own their sources after hosts and snapshots die",
+    "Editor analysis: results own their sources after hosts and snapshots die"_test =
         [] static noexcept {
             const auto snapshot = []() static noexcept {
-                auto host = editor::AnalysisHost();
+                auto host = EditorAnalysisHost();
                 update(host, "owned.cv", 1, "// source\nfn retained() {}");
                 return host.snapshot();
             }();
             const auto retained = snapshot.document_symbols("owned.cv");
-            if (!ct::expect(retained && retained->result)) {
+            if (!expect(retained && retained->result)) {
                 return;
             }
             const auto& symbol = retained->result->front();
-            ct::expect_equal(
+            expect_equal(
                 slice(retained->document.result->source().text, symbol.selection),
                 "retained"
             );
             const auto result = []() static noexcept {
-                auto host = editor::AnalysisHost();
+                auto host = EditorAnalysisHost();
                 update(host, "diagnostic.cv", 1, "\n@");
                 return host.snapshot().syntax("diagnostic.cv");
             }();
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
             const auto* diagnostic =
-                ct::find_diagnostic(result->result->diagnostics(), DiagnosticCode::Lexical);
-            if (!ct::expect(diagnostic && diagnostic->attachment.primary)) {
+                find_diagnostic(result->result->diagnostics(), DiagnosticCode::Lexical);
+            if (!expect(diagnostic && diagnostic->attachment.primary)) {
                 return;
             }
             const auto location =
                 result->result->sources().location(diagnostic->attachment.primary->span);
-            ct::expect_equal(location.line, 2u);
-            ct::expect_equal(location.column, 1u);
-        }
-    );
+            expect_equal(location.line, 2u);
+            expect_equal(location.column, 1u);
+        };
 
-    ct::test(
-        "Editor analysis: caches release obsolete source trees without retained snapshots",
+    "Editor analysis: caches release obsolete source trees without retained snapshots"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "a.cv", 1, "fn f() {}");
-            auto old_syntax = std::weak_ptr<const editor::DocumentSyntax>();
+            auto old_syntax = std::weak_ptr<const EditorDocumentSyntax>();
             {
                 const auto snapshot = host.snapshot();
                 const auto old = snapshot.syntax("a.cv");
-                if (!ct::expect(old.has_value())) {
+                if (!expect(old.has_value())) {
                     return;
                 }
                 old_syntax = old->result;
                 static_cast<void>(snapshot.workspace_symbols());
             }
             update(host, "a.cv", 2, "fn g() {}");
-            ct::expect(old_syntax.expired());
+            expect(old_syntax.expired());
             update(host, "a.cv", 3, "fn h() {}");
             const auto current = host.snapshot().workspace_symbols();
-            if (!ct::expect_equal(current->size(), 1uz)) {
+            if (!expect_equal(current->size(), 1uz)) {
                 return;
             }
-            ct::expect_equal(current->front().name, "h");
-            ct::expect_equal(host.snapshot().counts().syntax, 2uz);
-        }
-    );
+            expect_equal(current->front().name, "h");
+            expect_equal(host.snapshot().counts().syntax, 2uz);
+        };
 
-    ct::test(
-        "Editor symbols: source declarations retain hierarchy and byte selections",
+    "Editor symbols: source declarations retain hierarchy and byte selections"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             const auto text = std::string_view(
                 "// 中文\r\n"
                 "struct Pair { left: i32, right: i32, }\r\n"
@@ -379,60 +350,57 @@ const ct::Suite tests([] static noexcept {
             );
             update(host, "symbols.cv", 1, text);
             const auto query = host.snapshot().document_symbols("symbols.cv");
-            if (!ct::expect(query && query->result)) {
+            if (!expect(query && query->result)) {
                 return;
             }
             const auto& symbols = *query->result;
-            if (!ct::expect_equal(symbols.size(), 5uz)) {
+            if (!expect_equal(symbols.size(), 5uz)) {
                 return;
             }
-            ct::expect_equal(symbols[0].kind, editor::SymbolKind::Structure);
-            ct::expect_equal(symbols[1].kind, editor::SymbolKind::Enumeration);
-            ct::expect_equal(symbols[2].kind, editor::SymbolKind::Class);
-            ct::expect_equal(symbols[3].kind, editor::SymbolKind::Constant);
-            ct::expect_equal(symbols[4].kind, editor::SymbolKind::Function);
+            expect_equal(symbols[0].kind, EditorSymbolKind::Structure);
+            expect_equal(symbols[1].kind, EditorSymbolKind::Enumeration);
+            expect_equal(symbols[2].kind, EditorSymbolKind::Class);
+            expect_equal(symbols[3].kind, EditorSymbolKind::Constant);
+            expect_equal(symbols[4].kind, EditorSymbolKind::Function);
             for (const auto& symbol : symbols) {
-                ct::scenario(symbol.name, [&] noexcept {
-                    ct::expect_equal(slice(text, symbol.selection), symbol.name);
-                    ct::expect(symbol.range.start() <= symbol.selection.start());
-                    ct::expect(symbol.selection.end() <= symbol.range.end());
+                scenario(symbol.name, [&] noexcept {
+                    expect_equal(slice(text, symbol.selection), symbol.name);
+                    expect(symbol.range.start() <= symbol.selection.start());
+                    expect(symbol.selection.end() <= symbol.range.end());
                     for (const auto& child : symbol.children) {
-                        ct::scenario(child.name, [&] noexcept {
-                            ct::expect_equal(slice(text, child.selection), child.name);
-                            ct::expect(symbol.range.start() <= child.range.start());
-                            ct::expect(child.range.end() <= symbol.range.end());
+                        scenario(child.name, [&] noexcept {
+                            expect_equal(slice(text, child.selection), child.name);
+                            expect(symbol.range.start() <= child.range.start());
+                            expect(child.range.end() <= symbol.range.end());
                         });
                     }
                 });
             }
-            if (!ct::expect_equal(symbols[0].children.size(), 2uz)
-                || !ct::expect_equal(symbols[1].children.size(), 2uz)
-                || !ct::expect_equal(symbols[2].children.size(), 2uz)) {
+            if (!expect_equal(symbols[0].children.size(), 2uz)
+                || !expect_equal(symbols[1].children.size(), 2uz)
+                || !expect_equal(symbols[2].children.size(), 2uz)) {
                 return;
             }
-            ct::expect_equal(symbols[0].children[0].kind, editor::SymbolKind::Field);
-            ct::expect_equal(symbols[1].children[0].kind, editor::SymbolKind::EnumCase);
-            ct::expect_equal(symbols[2].children[1].name, "read");
-            ct::expect_equal(symbols[2].children[1].kind, editor::SymbolKind::Function);
-        }
-    );
+            expect_equal(symbols[0].children[0].kind, EditorSymbolKind::Field);
+            expect_equal(symbols[1].children[0].kind, EditorSymbolKind::EnumCase);
+            expect_equal(symbols[2].children[1].name, "read");
+            expect_equal(symbols[2].children[1].kind, EditorSymbolKind::Function);
+        };
 
-    ct::test(
-        "Editor analysis: empty syntax differs from missing and unavailable documents",
+    "Editor analysis: empty syntax differs from missing and unavailable documents"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "empty.cv", 1, "// empty\n");
             const auto snapshot = host.snapshot();
             const auto query = snapshot.document_symbols("empty.cv");
-            if (!ct::expect(query && query->result)) {
+            if (!expect(query && query->result)) {
                 return;
             }
-            ct::expect(query->result->empty());
-            ct::expect(query->document.result->syntax().has_value());
-            ct::expect(!snapshot.document_symbols("absent.cv"));
-            ct::expect(snapshot.workspace_symbols()->empty());
-        }
-    );
+            expect(query->result->empty());
+            expect(query->document.result->syntax().has_value());
+            expect(!snapshot.document_symbols("absent.cv"));
+            expect(snapshot.workspace_symbols()->empty());
+        };
 });
 
 } // namespace

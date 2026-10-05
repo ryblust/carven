@@ -30,7 +30,7 @@ private fn step(value: i32, const lane: i32) -> i32 {
     let scale = [](input: i32) => input * 2;
     return scale(value)
         + weigh(
-            Lane {
+            {
                 index: lane,
                 weight: 10
             }

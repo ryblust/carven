@@ -16,11 +16,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: failure copyability closes after nominal signatures",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: failure copyability closes after nominal signatures"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto source_id = *sources.append_virtual(
@@ -44,12 +41,10 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            ct::expect(result.has_value());
-        }
-    );
+            expect(result.has_value());
+        };
 
-    ct::test(
-        "Compiler diagnostics: catch reachability has one precisely owned subject",
+    "Compiler diagnostics: catch reachability has one precisely owned subject"_test =
         [] static noexcept {
             struct WarningExpectation final {
                 std::string_view source;
@@ -76,7 +71,7 @@ const ct::Suite tests([] static noexcept {
                 },
             };
 
-            ct::each(cases, &WarningExpectation::source, [&](const auto& expectation) noexcept {
+            each(cases, &WarningExpectation::source, [&](const auto& expectation) noexcept {
                 auto sources = SourceManager();
                 const auto source_id =
                     *sources.append_virtual("catch-warning.cv", std::string(expectation.source));
@@ -94,11 +89,11 @@ const ct::Suite tests([] static noexcept {
                     }
                 );
 
-                ct::expect(result.has_value());
+                expect(result.has_value());
                 if (!result.has_value()) {
                     return;
                 }
-                ct::expect_equal(
+                expect_equal(
                     std::ranges::count_if(
                         result->diagnostics,
                         [&](const Diagnostic& diagnostic) noexcept {
@@ -107,22 +102,21 @@ const ct::Suite tests([] static noexcept {
                     ),
                     1
                 );
-                const auto* warning = ct::find_diagnostic(result->diagnostics, expectation.code);
+                const auto* warning = find_diagnostic(result->diagnostics, expectation.code);
                 if (warning == nullptr) {
                     return;
                 }
-                if (!ct::expect(warning->attachment.primary.has_value())) {
+                if (!expect(warning->attachment.primary.has_value())) {
                     return;
                 }
-                ct::expect_equal(
+                expect_equal(
                     sources.slice(warning->attachment.primary->span),
                     expectation.primary_text
                 );
             });
-        }
-    );
+        };
 
-    ct::test("Compiler diagnostics: control and fixed-point failures remain semantic contracts", [] static noexcept {
+    "Compiler diagnostics: control and fixed-point failures remain semantic contracts"_test = [] static noexcept {
         static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {
                 .name = "array of slices rejects callable failure narrowing",
@@ -389,10 +383,9 @@ const ct::Suite tests([] static noexcept {
         });
 
         check_compiler_errors(cases);
-    });
+    };
 
-    ct::test(
-        "Compiler diagnostics: explicit entry contracts and implicit entry inference",
+    "Compiler diagnostics: explicit entry contracts and implicit entry inference"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view source;
@@ -431,7 +424,7 @@ const ct::Suite tests([] static noexcept {
                     DiagnosticCode::EffectRootUnhandled
                 },
             };
-            ct::each(cases, &Case::source, [&](const auto& item) noexcept {
+            each(cases, &Case::source, [&](const auto& item) noexcept {
                 auto sources = SourceManager();
                 const auto source = *sources.append_virtual("entry.cv", std::string(item.source));
                 const auto input = SourceModuleInput {
@@ -447,23 +440,21 @@ const ct::Suite tests([] static noexcept {
                     }
                 );
                 if (!item.error.has_value()) {
-                    ct::expect(result.has_value());
+                    expect(result.has_value());
                 } else {
-                    if (!(ct::expect(!(result.has_value())))) {
+                    if (!(expect(!(result.has_value())))) {
                         return;
                     }
-                    if (!(ct::expect_equal(result.error().size(), 1uz))) {
+                    if (!(expect_equal(result.error().size(), 1uz))) {
                         return;
                     }
-                    ct::expect_diagnostic(result.error(), *item.error);
-                    ct::expect_equal(result.error().front().finding.code, *item.error);
+                    expect_diagnostic(result.error(), *item.error);
+                    expect_equal(result.error().front().finding.code, *item.error);
                 }
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: failure explanations describe resolved source contracts",
+    "Compiler diagnostics: failure explanations describe resolved source contracts"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view source;
@@ -515,7 +506,7 @@ const ct::Suite tests([] static noexcept {
                     {"failure type not fully covered: app.E"}
                 },
             };
-            ct::each(cases, &Case::source, [&](const auto& item) noexcept {
+            each(cases, &Case::source, [&](const auto& item) noexcept {
                 auto sources = SourceManager();
                 const auto source = *sources.append_virtual("app.cv", std::string(item.source));
                 const auto input = SourceModuleInput {
@@ -531,29 +522,27 @@ const ct::Suite tests([] static noexcept {
                             *LinkageDomain::explicit_value("test:failure-explanations"),
                     }
                 );
-                if (!(ct::expect(!(result.has_value())))) {
+                if (!(expect(!(result.has_value())))) {
                     return;
                 }
-                const auto* diagnostic = ct::find_diagnostic(result.error(), item.code);
-                if (!(ct::expect(diagnostic != nullptr))) {
+                const auto* diagnostic = find_diagnostic(result.error(), item.code);
+                if (!(expect(diagnostic != nullptr))) {
                     return;
                 }
-                ct::expect_equal(diagnostic->finding.message, item.message);
-                if (!(ct::expect(diagnostic->attachment.primary.has_value()))) {
+                expect_equal(diagnostic->finding.message, item.message);
+                if (!(expect(diagnostic->attachment.primary.has_value()))) {
                     return;
                 }
-                ct::expect((diagnostic->attachment.primary->span.source_id == source));
+                expect((diagnostic->attachment.primary->span.source_id == source));
                 auto notes = std::vector<std::string>();
                 for (const auto& note : diagnostic->attachment.notes) {
                     notes.push_back(note.message);
                 }
-                ct::expect(notes == item.notes);
+                expect(notes == item.notes);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: catch type names distinguish modules in stable order",
+    "Compiler diagnostics: catch type names distinguish modules in stable order"_test =
         [] static noexcept {
             for (const auto reverse : {false, true}) {
                 auto sources = SourceManager();
@@ -595,67 +584,61 @@ const ct::Suite tests([] static noexcept {
                         .linkage_domain = *LinkageDomain::explicit_value("test:catch-type-names"),
                     }
                 );
-                if (!ct::expect(!(result.has_value()))) {
+                if (!expect(!(result.has_value()))) {
                     return;
                 }
                 const auto* diagnostic =
-                    ct::find_diagnostic(result.error(), DiagnosticCode::EffectCatchNonExhaustive);
-                if (!ct::expect(diagnostic != nullptr)) {
+                    find_diagnostic(result.error(), DiagnosticCode::EffectCatchNonExhaustive);
+                if (!expect(diagnostic != nullptr)) {
                     return;
                 }
-                if (!ct::expect_equal(diagnostic->attachment.notes.size(), 2uz)) {
+                if (!expect_equal(diagnostic->attachment.notes.size(), 2uz)) {
                     return;
                 }
-                ct::expect_equal(
+                expect_equal(
                     diagnostic->attachment.notes[0].message,
                     std::string_view("failure type not fully covered: alpha.E")
                 );
-                ct::expect_equal(
+                expect_equal(
                     diagnostic->attachment.notes[1].message,
                     std::string_view("failure type not fully covered: zeta.E")
                 );
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler: array adoption preserves equal nested callable contracts",
-        [] static noexcept {
-            auto sources = SourceManager();
-            const auto source_id = *sources.append_virtual(
-                "adoption.cv",
-                "struct A {} struct B {} "
-                "fn higher(source: [fn(fn() -> i32 throw A + B) -> i32 throw A; 1]) { "
-                "let target: [fn(fn() -> i32 throw B + A) -> i32 throw A + B; 1] = source; } "
-                "fn slices(source: [[fn() -> i32 throw A + B]; 0]) { "
-                "let target: [[fn() -> i32 throw B + A]; 0] = source; }"
-            );
-            const auto input = SourceModuleInput {
-                .source_id = source_id,
-                .module_path = *CanonicalModulePath::from_value("adoption"),
-            };
-            const auto result = compile(
-                sources,
-                SourceBatch {.modules = std::span(&input, 1)},
-                TargetPlanningRequest {
-                    .test_mode = TestGenerationMode::None,
-                    .linkage_domain = LinkageDomain::explicit_value("test:adoption").value(),
-                }
-            );
-            ct::expect(result.has_value());
-        }
-    );
+    "Compiler: array adoption preserves equal nested callable contracts"_test = [] static noexcept {
+        auto sources = SourceManager();
+        const auto source_id = *sources.append_virtual(
+            "adoption.cv",
+            "struct A {} struct B {} "
+            "fn higher(source: [fn(fn() -> i32 throw A + B) -> i32 throw A; 1]) { "
+            "let target: [fn(fn() -> i32 throw B + A) -> i32 throw A + B; 1] = source; } "
+            "fn slices(source: [[fn() -> i32 throw A + B]; 0]) { "
+            "let target: [[fn() -> i32 throw B + A]; 0] = source; }"
+        );
+        const auto input = SourceModuleInput {
+            .source_id = source_id,
+            .module_path = *CanonicalModulePath::from_value("adoption"),
+        };
+        const auto result = compile(
+            sources,
+            SourceBatch {.modules = std::span(&input, 1)},
+            TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = LinkageDomain::explicit_value("test:adoption").value(),
+            }
+        );
+        expect(result.has_value());
+    };
 
-    ct::test(
-        "Compiler diagnostics: duplicate catch-all alternatives need no known failure type",
+    "Compiler diagnostics: duplicate catch-all alternatives need no known failure type"_test =
         [] static noexcept {
             check_compiler_error(
                 "fn f() { try {} catch { _ | _ => {}, } }",
                 DiagnosticCode::MatchDuplicateAlternative,
                 std::string_view("_")
             );
-        }
-    );
+        };
 });
 
 } // namespace

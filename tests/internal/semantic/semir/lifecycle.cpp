@@ -27,11 +27,9 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto path(std::string_view value) noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value(value);
-    ct::require(result.has_value());
+    require(result.has_value());
     return std::move(*result);
 }
 
@@ -51,7 +49,7 @@ struct BuiltProgram final {
 auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     auto sources = SourceManager();
     const auto source = sources.append_virtual("semir-fixture.cv", "");
-    ct::require(source.has_value());
+    require(source.has_value());
     const auto inputs = std::array {
         SourceModuleInput {
             .source_id = *source,
@@ -59,7 +57,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         },
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    ct::require(syntax.has_value());
+    require(syntax.has_value());
 
     auto diagnostics = DiagnosticSink();
     auto builder = ProgramDraft::begin(std::move(*syntax), diagnostics);
@@ -74,7 +72,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     const auto field_name = builder.intern_spelling("callback");
 
     const auto boolean = builder.builtin_type(BuiltinType::Bool);
-    ct::expect(builder.builtin_type(BuiltinType::Bool) == boolean);
+    expect(builder.builtin_type(BuiltinType::Bool) == boolean);
     const auto text = builder.builtin_type(BuiltinType::Str);
     const auto constant = builder.intern_constant(
         ConstantFact {
@@ -82,7 +80,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
             .value = StringConstant {.value = text_spelling},
         }
     );
-    ct::expect(
+    expect(
         builder.intern_constant(
             ConstantFact {
                 .type = text,
@@ -93,7 +91,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
     );
     const auto no_failures = builder.empty_failure_set();
     const auto declared_no_failures = builder.add_empty_failure_term();
-    ct::expect(builder.empty_failure_set() == no_failures);
+    expect(builder.empty_failure_set() == no_failures);
 
     const auto module_id = builder.reserve_module_declaration();
     const auto holder = builder.reserve_struct_declaration();
@@ -108,7 +106,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
             .value = StructTypeValue {.structure = guarded_failure_structure},
         }
     );
-    ct::expect(std::holds_alternative<StructTypeValue>(builder.type_copy(nominal_holder).value));
+    expect(std::holds_alternative<StructTypeValue>(builder.type_copy(nominal_holder).value));
     const auto first_callable = builder.reserve_callable_declaration();
     const auto second_callable = builder.reserve_callable_declaration();
     const auto first_function = builder.reserve_function_declaration();
@@ -203,41 +201,41 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
 
     auto active_builder = ProgramDraft(std::move(builder));
     active_builder.finish_declaration_heads();
-    ct::expect(expect_termination(
+    expect(expect_termination(
         std::format("compilation-builder-reserve-after-declarations-{}", module_name),
         [&] noexcept { static_cast<void>(active_builder.reserve_test()); }
     ));
-    ct::expect_equal(active_builder.module_declaration_count(), 1uz);
-    ct::expect_equal(active_builder.function_declaration_count(), 2uz);
-    ct::expect_equal(active_builder.struct_declaration_count(), 2uz);
-    ct::expect_equal(active_builder.callable_declaration_count(), 2uz);
-    ct::expect(active_builder.module_declaration_ids() == std::vector {module_id});
-    ct::expect(
+    expect_equal(active_builder.module_declaration_count(), 1uz);
+    expect_equal(active_builder.function_declaration_count(), 2uz);
+    expect_equal(active_builder.struct_declaration_count(), 2uz);
+    expect_equal(active_builder.callable_declaration_count(), 2uz);
+    expect(active_builder.module_declaration_ids() == std::vector {module_id});
+    expect(
         active_builder.function_declaration_ids() == std::vector {first_function, second_function}
     );
-    ct::expect(
+    expect(
         active_builder.struct_declaration_ids() == std::vector {holder, guarded_failure_structure}
     );
-    ct::expect(
+    expect(
         active_builder.callable_declaration_ids() == std::vector {first_callable, second_callable}
     );
-    ct::expect(((active_builder.module_declaration_copy(module_id).provenance_module)
-                == (provenance_module)))
+    expect(((active_builder.module_declaration_copy(module_id).provenance_module)
+            == (provenance_module)))
         .note(
             "active_builder.module_declaration_copy(module_id).provenance_module == provenance_module"
         );
-    ct::expect(((active_builder.function_declaration_copy(first_function).callable)
-                == (first_callable)))
+    expect(((active_builder.function_declaration_copy(first_function).callable)
+            == (first_callable)))
         .note(
             "active_builder.function_declaration_copy(first_function).callable == first_callable"
         );
-    ct::expect(((active_builder.construction_struct_declaration_copy(holder).fields.front().type)
-                == (ConstructionTypeRef(boolean_array))))
+    expect(((active_builder.construction_struct_declaration_copy(holder).fields.front().type)
+            == (ConstructionTypeRef(boolean_array))))
         .note(
             "active_builder.construction_struct_declaration_copy(holder).fields.front().type == ConstructionTypeRef(boolean_array)"
         );
-    ct::expect(((active_builder.construction_callable_contract_copy(first_callable).failures)
-                == (declared_no_failures)))
+    expect(((active_builder.construction_callable_contract_copy(first_callable).failures)
+            == (declared_no_failures)))
         .note(
             "active_builder.construction_callable_contract_copy(first_callable).failures == declared_no_failures"
         );
@@ -251,20 +249,20 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         CppImportImplementation {.form_origin = origin}
     );
     auto finished = std::move(active_builder).finish();
-    ct::require(finished.has_value());
-    ct::require(diagnostics.empty());
+    require(finished.has_value());
+    require(diagnostics.empty());
     auto program = std::move(*finished);
-    ct::expect(
+    expect(
         program.declarations().callable(first_callable).signature
         == program.declarations().callable(second_callable).signature
     );
-    ct::expect_equal(program.callable_signatures().size(), 1uz);
+    expect_equal(program.callable_signatures().size(), 1uz);
     const auto& holder_declaration = program.declarations().structure(holder);
-    ct::require_equal(holder_declaration.fields.size(), 1uz);
+    require_equal(holder_declaration.fields.size(), 1uz);
     const auto& array_type = std::get<ArrayTypeValue>(
         program.types().type(holder_declaration.fields.front().type).value
     );
-    ct::expect(((array_type.element) == (boolean))).note("array_type.element == boolean");
+    expect(((array_type.element) == (boolean))).note("array_type.element == boolean");
     return BuiltProgram {
         .program = std::move(program),
         .boolean_type = boolean,
@@ -282,7 +280,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
 auto check_callable_view_storage_rejected(bool use_enum) noexcept -> void {
     auto sources = SourceManager();
     const auto source = sources.append_virtual("callable-view-storage.cv", "");
-    if (!ct::expect(source.has_value())) {
+    if (!expect(source.has_value())) {
         return;
     }
     const auto inputs = std::array {
@@ -292,7 +290,7 @@ auto check_callable_view_storage_rejected(bool use_enum) noexcept -> void {
         },
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    if (!ct::expect(syntax.has_value())) {
+    if (!expect(syntax.has_value())) {
         return;
     }
 
@@ -383,14 +381,11 @@ auto check_callable_view_storage_rejected(bool use_enum) noexcept -> void {
     );
     builder.finish_declaration_heads();
     const auto validated = std::move(builder).finish();
-    ct::expect(!(validated.has_value()));
-    if (!ct::expect_equal(diagnostics.size(), 1uz)) {
+    expect(!(validated.has_value()));
+    if (!expect_equal(diagnostics.size(), 1uz)) {
         return;
     }
-    ct::expect_equal(
-        diagnostics.values().front().finding.code,
-        DiagnosticCode::TypeCallableViewEscape
-    );
+    expect_equal(diagnostics.values().front().finding.code, DiagnosticCode::TypeCallableViewEscape);
 }
 
 } // namespace
@@ -407,50 +402,46 @@ static_assert(!std::copy_constructible<SemIRBody>);
 
 namespace {
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic program: solving finalizes signatures and publication delivers immutable stores",
+const TestSuite suite([] static noexcept {
+    "Semantic program: solving finalizes signatures and publication delivers immutable stores"_test =
         [] static noexcept {
             const auto built = build_program("semir.lifecycle");
-            ct::expect(built.program.types().contains(built.boolean_type));
-            ct::expect(built.program.constants().contains(built.text_constant));
-            ct::expect(built.program.declarations().contains(built.first_callable));
-            ct::expect(built.program.declarations().contains(built.second_callable));
-            ct::expect(built.program.declarations().contains(built.holder_structure));
+            expect(built.program.types().contains(built.boolean_type));
+            expect(built.program.constants().contains(built.text_constant));
+            expect(built.program.declarations().contains(built.first_callable));
+            expect(built.program.declarations().contains(built.second_callable));
+            expect(built.program.declarations().contains(built.holder_structure));
             auto function_count = 0uz;
             for (const auto [id, function] : built.program.declarations().functions()) {
                 static_cast<void>(id);
                 static_cast<void>(function);
                 ++function_count;
             }
-            ct::expect_equal(function_count, 2uz);
-            ct::expect_equal(built.program.bodies().size(), 0uz);
-            ct::expect_equal(built.program.tests().size(), 0uz);
-        }
-    );
+            expect_equal(function_count, 2uz);
+            expect_equal(built.program.bodies().size(), 0uz);
+            expect_equal(built.program.tests().size(), 0uz);
+        };
 
-    ct::test(
-        "SemIR identity: owner evidence rejects rows from another sealed program",
+    "SemIR identity: owner evidence rejects rows from another sealed program"_test =
         [] static noexcept {
             const auto first = build_program("semir.first");
             const auto second = build_program("semir.second");
-            ct::expect(first.program.identity() != second.program.identity());
-            ct::expect(first.boolean_type.owner() != second.boolean_type.owner());
-            ct::expect(!(first.program.types().contains(second.boolean_type)));
-            ct::expect(!(first.program.constants().contains(second.text_constant)));
-            ct::expect(!(first.program.declarations().contains(second.first_callable)));
-        }
-    );
+            expect(first.program.identity() != second.program.identity());
+            expect(first.boolean_type.owner() != second.boolean_type.owner());
+            expect(!(first.program.types().contains(second.boolean_type)));
+            expect(!(first.program.constants().contains(second.text_constant)));
+            expect(!(first.program.declarations().contains(second.first_callable)));
+        };
 
-    ct::test(
-        "SemIR global contracts: structure rejects nested callable-view storage",
-        [] static noexcept { check_callable_view_storage_rejected(false); }
-    );
+    "SemIR global contracts: structure rejects nested callable-view storage"_test =
+        [] static noexcept {
+            check_callable_view_storage_rejected(false);
+        };
 
-    ct::test(
-        "SemIR global contracts: enum payload rejects nested callable-view storage",
-        [] static noexcept { check_callable_view_storage_rejected(true); }
-    );
+    "SemIR global contracts: enum payload rejects nested callable-view storage"_test =
+        [] static noexcept {
+            check_callable_view_storage_rejected(true);
+        };
 });
 
 } // namespace

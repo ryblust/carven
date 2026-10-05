@@ -22,8 +22,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto identifier(std::string_view spelling) noexcept -> TargetIdentifier {
     return TargetIdentifier::from_spelling(spelling);
 }
@@ -87,25 +85,25 @@ struct SparseTraversal final {
     std::vector<TraversalObservation> observations;
 
     auto enter_scope(TargetTraversalScope scope) noexcept -> bool {
-        ct::expect(scope.kind == TargetTraversalScopeKind::Block);
+        expect(scope.kind == TargetTraversalScopeKind::Block);
         observations.push_back(TraversalObservation::EnterBlock);
         return true;
     }
 
     auto leave_scope(TargetTraversalScope scope) noexcept -> bool {
-        ct::expect(scope.kind == TargetTraversalScopeKind::Block);
+        expect(scope.kind == TargetTraversalScopeKind::Block);
         observations.push_back(TraversalObservation::LeaveBlock);
         return true;
     }
 
     auto enter_expression(TargetExpr& expression, TargetExpressionRole role) noexcept -> bool {
-        ct::expect(role == TargetExpressionRole::Operand);
+        expect(role == TargetExpressionRole::Operand);
         auto* literal = std::get_if<TargetLiteralExpr>(&expression.value);
-        if (!ct::expect(literal != nullptr)) {
+        if (!expect(literal != nullptr)) {
             return false;
         }
         auto* value = std::get_if<bool>(&literal->value);
-        if (!ct::expect(value != nullptr)) {
+        if (!expect(value != nullptr)) {
             return false;
         }
         const auto observed = *value;
@@ -126,10 +124,10 @@ auto require_violation(
 ) noexcept -> void {
     const auto result =
         TargetTestingFixture::validate_unit(identity, types, unit_sections, local_count);
-    if (!ct::expect(!(result.has_value()))) {
+    if (!expect(!(result.has_value()))) {
         return;
     }
-    ct::expect_equal(result.error().kind, kind);
+    expect_equal(result.error().kind, kind);
 }
 
 template<typename T>
@@ -152,15 +150,11 @@ static_assert(!std::constructible_from<TargetTypeID, TargetUnitIdentity, std::ui
 static_assert(!std::is_move_assignable_v<TargetUnit>);
 static_assert(std::ranges::range<TargetPlanTableEntries<int, TargetArtifactID>>);
 
-} // namespace
 
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Target traversal: sparse hooks preserve nested order, mutation, and early stop",
+const TestSuite suite([] static noexcept {
+    "Target traversal: sparse hooks preserve nested order, mutation, and early stop"_test =
         [] static noexcept {
-            ct::each(
+            each(
                 std::array {false, true},
                 [](bool stop) static noexcept { return stop ? "early stop" : "complete"; },
                 [](bool stop) static noexcept {
@@ -178,7 +172,7 @@ const ct::Suite tests([] static noexcept {
                     });
                     body.push_back(expression(true));
                     auto visitor = SparseTraversal {.stop_at_false = stop, .observations = {}};
-                    ct::expect_equal(traverse_target_statements(body, visitor), !stop);
+                    expect_equal(traverse_target_statements(body, visitor), !stop);
                     auto expected = std::vector {
                         TraversalObservation::EnterBlock,
                         TraversalObservation::TrueValue,
@@ -188,27 +182,26 @@ const ct::Suite tests([] static noexcept {
                         expected.push_back(TraversalObservation::LeaveBlock);
                         expected.push_back(TraversalObservation::TrueValue);
                     }
-                    ct::expect(visitor.observations == expected);
+                    expect(visitor.observations == expected);
                     const auto boolean =
                         [](const TargetStmt& statement) static noexcept -> std::optional<bool> {
                         const auto* expression = std::get_if<TargetExprStmt>(&statement.value);
-                        if (!ct::expect(expression != nullptr)) {
+                        if (!expect(expression != nullptr)) {
                             return std::nullopt;
                         }
                         const auto* literal =
                             std::get_if<TargetLiteralExpr>(&expression->expression.value);
-                        if (!ct::expect(literal != nullptr)) {
+                        if (!expect(literal != nullptr)) {
                             return std::nullopt;
                         }
                         const auto* value = std::get_if<bool>(&literal->value);
-                        if (!ct::expect(value != nullptr)) {
+                        if (!expect(value != nullptr)) {
                             return std::nullopt;
                         }
                         return *value;
                     };
                     const auto* block = std::get_if<TargetBlockStmt>(&body.front().value);
-                    if (!ct::expect(block != nullptr)
-                        || !ct::expect_equal(block->statements.size(), 2uz)) {
+                    if (!expect(block != nullptr) || !expect_equal(block->statements.size(), 2uz)) {
                         return;
                     }
                     const auto first = boolean(block->statements[0]);
@@ -217,15 +210,14 @@ const ct::Suite tests([] static noexcept {
                     if (!first || !second || !last) {
                         return;
                     }
-                    ct::expect_equal(*first, false);
-                    ct::expect_equal(*second, true);
-                    ct::expect_equal(*last, stop);
+                    expect_equal(*first, false);
+                    expect_equal(*second, true);
+                    expect_equal(*last, stop);
                 }
             );
-        }
-    );
+        };
 
-    ct::test("Target builder: template query identity retains every argument", [] static noexcept {
+    "Target builder: template query identity retains every argument"_test = [] static noexcept {
         auto builder = TargetTestingFixture::unit_builder();
         const auto type = builder.intern_type(bool_type());
         const auto query =
@@ -256,64 +248,57 @@ const ct::Suite tests([] static noexcept {
             Scenario {"explicit empty arguments", {}},
         };
         auto identities = std::vector<TargetTypeID>();
-        ct::each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
+        each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
             const auto first = builder.intern_type(query(scenario.arguments));
             const auto repeated = builder.intern_type(query(scenario.arguments));
-            ct::expect_equal(first.index(), repeated.index());
-            ct::expect(std::ranges::find(identities, first) == identities.end());
+            expect_equal(first.index(), repeated.index());
+            expect(std::ranges::find(identities, first) == identities.end());
             identities.push_back(first);
         });
-    });
+    };
 
-    ct::test(
-        "Target verifier: standalone template arguments belong to the unit",
-        [] static noexcept {
-            const auto owner = TargetTestingFixture::unit_identity();
-            const auto result_type = TargetTestingFixture::type_id(owner, 0);
-            const auto foreign =
-                TargetTestingFixture::type_id(TargetTestingFixture::unit_identity(), 0);
-            const auto types = std::array {bool_type()};
-            struct Scenario final {
-                std::string_view name;
-                TargetTypeID argument;
-                bool accepted;
-            };
-            const auto scenarios = std::array {
-                Scenario {"unit-owned argument", result_type, true},
-                Scenario {"foreign argument", foreign, false},
-            };
-            ct::each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
-                auto body = one_statement({
-                    .value =
-                        TargetExprStmt {
-                            .expression = template_name_expression(
-                                TargetExpr {
-                                    .value =
-                                        TargetNameExpr {.name = TargetName(identifier("value"))}
-                                },
-                                {scenario.argument}
-                            ),
-                        },
-                    .attribution = attribution(),
-                });
-                const auto result = TargetTestingFixture::validate_unit(
-                    owner,
-                    types,
-                    sections(one_item(function(result_type, std::move(body))))
-                );
-                if (scenario.accepted) {
-                    ct::expect(result.has_value());
-                } else if (ct::expect(!result.has_value())) {
-                    ct::expect_equal(
-                        result.error().kind,
-                        TargetSealViolationKind::InvalidTypeReference
-                    );
-                }
+    "Target verifier: standalone template arguments belong to the unit"_test = [] static noexcept {
+        const auto owner = TargetTestingFixture::unit_identity();
+        const auto result_type = TargetTestingFixture::type_id(owner, 0);
+        const auto foreign =
+            TargetTestingFixture::type_id(TargetTestingFixture::unit_identity(), 0);
+        const auto types = std::array {bool_type()};
+        struct Scenario final {
+            std::string_view name;
+            TargetTypeID argument;
+            bool accepted;
+        };
+        const auto scenarios = std::array {
+            Scenario {"unit-owned argument", result_type, true},
+            Scenario {"foreign argument", foreign, false},
+        };
+        each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
+            auto body = one_statement({
+                .value =
+                    TargetExprStmt {
+                        .expression = template_name_expression(
+                            TargetExpr {
+                                .value = TargetNameExpr {.name = TargetName(identifier("value"))}
+                            },
+                            {scenario.argument}
+                        ),
+                    },
+                .attribution = attribution(),
             });
-        }
-    );
+            const auto result = TargetTestingFixture::validate_unit(
+                owner,
+                types,
+                sections(one_item(function(result_type, std::move(body))))
+            );
+            if (scenario.accepted) {
+                expect(result.has_value());
+            } else if (expect(!result.has_value())) {
+                expect_equal(result.error().kind, TargetSealViolationKind::InvalidTypeReference);
+            }
+        });
+    };
 
-    ct::test("Target type construction: children already belong to the unit", [] static noexcept {
+    "Target type construction: children already belong to the unit"_test = [] static noexcept {
         auto builder = TargetUnitBuilder();
         const auto foreign = TargetTestingFixture::unit_identity();
         const auto invalid = std::array {
@@ -322,7 +307,7 @@ const ct::Suite tests([] static noexcept {
             TargetTestingFixture::type_id(builder.identity(), 7),
         };
         for (const auto [index, child] : invalid | std::views::enumerate) {
-            ct::expect(expect_termination(std::format("target-type-child-{}", index), [&] noexcept {
+            expect(expect_termination(std::format("target-type-child-{}", index), [&] noexcept {
                 static_cast<void>(builder.intern_type(
                     TargetType {
                         .value =
@@ -346,9 +331,9 @@ const ct::Suite tests([] static noexcept {
                 .const_qualified = false,
             }
         );
-    });
+    };
 
-    ct::test("Target jump verifier: entering an empty nested scope is legal", [] static noexcept {
+    "Target jump verifier: entering an empty nested scope is legal"_test = [] static noexcept {
         const auto owner = TargetTestingFixture::unit_identity();
         const auto type = TargetTestingFixture::type_id(owner, 0);
         auto body = std::vector<TargetStmt>();
@@ -377,7 +362,7 @@ const ct::Suite tests([] static noexcept {
             .attribution = attribution(),
         });
         const auto types = std::array {bool_type()};
-        ct::expect(
+        expect(
             TargetTestingFixture::validate_unit(
                 owner,
                 types,
@@ -385,9 +370,9 @@ const ct::Suite tests([] static noexcept {
             )
                 .has_value()
         );
-    });
+    };
 
-    ct::test("Target jump verifier: region exit cannot jump backward", [] static noexcept {
+    "Target jump verifier: region exit cannot jump backward"_test = [] static noexcept {
         const auto owner = TargetTestingFixture::unit_identity();
         const auto type = TargetTestingFixture::type_id(owner, 0);
         auto body = std::vector<TargetStmt>();
@@ -408,15 +393,15 @@ const ct::Suite tests([] static noexcept {
             .attribution = attribution(),
         });
         const auto types = std::array {bool_type()};
-        ct::expect(!(TargetTestingFixture::validate_unit(
-                         owner,
-                         types,
-                         sections(one_item(function(type, std::move(body))))
+        expect(!(TargetTestingFixture::validate_unit(
+                     owner,
+                     types,
+                     sections(one_item(function(type, std::move(body))))
         )
-                         .has_value()));
-    });
+                     .has_value()));
+    };
 
-    ct::test("Target jump verifier: entering past initialization is rejected", [] static noexcept {
+    "Target jump verifier: entering past initialization is rejected"_test = [] static noexcept {
         const auto owner = TargetTestingFixture::unit_identity();
         const auto type = TargetTestingFixture::type_id(owner, 0);
         auto nested = std::vector<TargetStmt>();
@@ -463,10 +448,9 @@ const ct::Suite tests([] static noexcept {
             TargetSealViolationKind::InvalidControl,
             1
         );
-    });
+    };
 
-    ct::test(
-        "Target builder: interning is unit-owned and unused types add no dependency",
+    "Target builder: interning is unit-owned and unused types add no dependency"_test =
         [] static noexcept {
             auto builder = TargetTestingFixture::unit_builder();
             static_cast<void>(builder.intern_type(
@@ -483,14 +467,12 @@ const ct::Suite tests([] static noexcept {
             const auto second = builder.intern_type(bool_type());
             const auto unit = std::move(builder).finish(sections(one_item(function(first, {}))));
 
-            ct::expect((first == second));
-            ct::expect_equal(unit.type_count(), 2uz);
-            ct::expect(unit.directive_groups().empty());
-        }
-    );
+            expect((first == second));
+            expect_equal(unit.type_count(), 2uz);
+            expect(unit.directive_groups().empty());
+        };
 
-    ct::test(
-        "Target builder: type queries retain call structure across table growth",
+    "Target builder: type queries retain call structure across table growth"_test =
         [] static noexcept {
             auto builder = TargetTestingFixture::unit_builder();
             const auto query = [](bool grouped) static noexcept -> TargetType {
@@ -528,7 +510,7 @@ const ct::Suite tests([] static noexcept {
             };
             const auto separate = builder.intern_type(query(false));
             const auto grouped = builder.intern_type(query(true));
-            ct::expect((separate != grouped));
+            expect((separate != grouped));
             for (auto index = 0uz; index < 128uz; ++index) {
                 static_cast<void>(builder.intern_type(
                     TargetType {
@@ -542,15 +524,13 @@ const ct::Suite tests([] static noexcept {
                     }
                 ));
             }
-            ct::expect((builder.intern_type(query(false)) == separate));
-            ct::expect((builder.intern_type(query(true)) == grouped));
+            expect((builder.intern_type(query(false)) == separate));
+            expect((builder.intern_type(query(true)) == grouped));
             const auto unit = std::move(builder).finish(sections());
-            ct::expect_equal(unit.type_count(), 130uz);
-        }
-    );
+            expect_equal(unit.type_count(), 130uz);
+        };
 
-    ct::test(
-        "Target locals: references require a unique visible declaration in their unit",
+    "Target locals: references require a unique visible declaration in their unit"_test =
         [] static noexcept {
             enum class Reference { Visible, Foreign, OutOfRange, Duplicate, Escaped, Undeclared };
 
@@ -567,7 +547,7 @@ const ct::Suite tests([] static noexcept {
                 Scenario {.name = "escaped scope", .reference = Reference::Escaped},
                 Scenario {.name = "undeclared local", .reference = Reference::Undeclared},
             };
-            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+            each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
                 const auto owner = TargetTestingFixture::unit_identity();
                 const auto type = TargetTestingFixture::type_id(owner, 0);
                 const auto types = std::array {bool_type()};
@@ -618,18 +598,15 @@ const ct::Suite tests([] static noexcept {
                     1uz
                 );
                 if (scenario.reference == Reference::Visible) {
-                    ct::expect(result.has_value());
+                    expect(result.has_value());
                 } else {
-                    if (!(ct::expect(!(result.has_value())))) {
+                    if (!(expect(!(result.has_value())))) {
                         return;
                     }
-                    ct::expect(
-                        result.error().kind == TargetSealViolationKind::InvalidLocalReference
-                    );
+                    expect(result.error().kind == TargetSealViolationKind::InvalidLocalReference);
                 }
             });
-        }
-    );
+        };
 });
 
 } // namespace

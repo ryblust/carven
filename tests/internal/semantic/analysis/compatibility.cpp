@@ -17,18 +17,16 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto path() noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value("compatibility");
-    ct::require(result.has_value());
+    require(result.has_value());
     return std::move(*result);
 }
 
 auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noexcept
     -> ProgramDraft {
     const auto source = sources.append_virtual("compatibility.cv", "");
-    ct::require(source.has_value());
+    require(source.has_value());
     const auto inputs = std::array {
         SourceModuleInput {
             .source_id = *source,
@@ -36,7 +34,7 @@ auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noex
         },
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    ct::require(syntax.has_value());
+    require(syntax.has_value());
     return ProgramDraft::begin(std::move(*syntax), diagnostics);
 }
 
@@ -50,20 +48,15 @@ auto callable_contract(TypeID result, FailureTermID failures) noexcept
     };
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic type compatibility: owning callables differ from structural views",
+const TestSuite suite([] static noexcept {
+    "Semantic type compatibility: owning callables differ from structural views"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
             auto compilation = begin_compilation(sources, diagnostics);
 
-            ct::expect(builtin_type_supports_equality(BuiltinType::Bool));
-            ct::expect(!(builtin_type_supports_equality(BuiltinType::Void)));
+            expect(builtin_type_supports_equality(BuiltinType::Bool));
+            expect(!(builtin_type_supports_equality(BuiltinType::Void)));
 
             const auto boolean = compilation.builtin_type(BuiltinType::Bool);
             const auto integer = compilation.builtin_type(BuiltinType::I32);
@@ -223,30 +216,27 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            ct::expect(!(type_shapes_compatible(compilation, boolean, integer)));
-            ct::expect(type_shapes_compatible(compilation, view, widened_view));
-            ct::expect(type_shapes_compatible(compilation, function, view));
-            ct::expect(
-                !type_shapes_compatible(compilation, staged_function, ordinary_parameter_view)
-            );
-            ct::expect(type_shapes_compatible(compilation, first_closure, view));
-            ct::expect(!(type_shapes_compatible(compilation, first_closure, second_closure)));
-            ct::expect(type_shapes_compatible(compilation, nested_view, nested_widened_view));
-            ct::expect(!(type_shapes_compatible(compilation, nested_view, different_extent)));
-            ct::expect(type_shapes_compatible(
+            expect(!(type_shapes_compatible(compilation, boolean, integer)));
+            expect(type_shapes_compatible(compilation, view, widened_view));
+            expect(type_shapes_compatible(compilation, function, view));
+            expect(!type_shapes_compatible(compilation, staged_function, ordinary_parameter_view));
+            expect(type_shapes_compatible(compilation, first_closure, view));
+            expect(!(type_shapes_compatible(compilation, first_closure, second_closure)));
+            expect(type_shapes_compatible(compilation, nested_view, nested_widened_view));
+            expect(!(type_shapes_compatible(compilation, nested_view, different_extent)));
+            expect(type_shapes_compatible(
                 compilation,
                 canonical_integer_array,
                 construction_integer_array
             ));
 
-            ct::expect(!(type_contains_callable_view(compilation, integer)));
-            ct::expect(!(type_contains_callable_view(compilation, function)));
-            ct::expect(!(type_contains_callable_view(compilation, first_closure)));
-            ct::expect(type_contains_callable_view(compilation, view));
-            ct::expect(type_contains_callable_view(compilation, nested_view));
-            ct::expect(diagnostics.empty());
-        }
-    );
+            expect(!(type_contains_callable_view(compilation, integer)));
+            expect(!(type_contains_callable_view(compilation, function)));
+            expect(!(type_contains_callable_view(compilation, first_closure)));
+            expect(type_contains_callable_view(compilation, view));
+            expect(type_contains_callable_view(compilation, nested_view));
+            expect(diagnostics.empty());
+        };
 });
 
 } // namespace

@@ -41,9 +41,10 @@ const fn entry_build(seed: i32) -> [ConstantEntry; 4] {
 const fn entry_nothing() -> [ConstantEntry; 0] => [];
 const fn entry_transfer(&&entry: ConstantEntry) -> ConstantEntry => &&entry;
 
-const fn entry_observe(entry: ConstantEntry, snapshot: i32, marker: i32) -> i32 {
-    return entry.key * 100 + snapshot * 10 + marker;
-}
+const fn entry_observe(entry: ConstantEntry, snapshot: i32, marker: i32) -> i32 => entry.key
+    * 100
+    + snapshot * 10
+    + marker;
 
 const fn entry_read_order() -> i32 {
     var group = ConstantEntryGroup {
@@ -75,9 +76,11 @@ struct ConstantEntryBox {
     group: ConstantEntryGroup
 }
 
-const fn entry_observe_group(group: ConstantEntryGroup, snapshot: i32, marker: i32) -> i32 {
-    return group.entries[0].key * 100 + snapshot * 10 + marker;
-}
+const fn entry_observe_group(
+    group: ConstantEntryGroup,
+    snapshot: i32,
+    marker: i32
+) -> i32 => group.entries[0].key * 100 + snapshot * 10 + marker;
 
 const fn entry_storage_read_order() -> i32 {
     var box = ConstantEntryBox {

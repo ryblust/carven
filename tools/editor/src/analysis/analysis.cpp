@@ -7,27 +7,27 @@ import :editor.symbols;
 import :source.text;
 import std;
 
-namespace editor {
+namespace {
 
 class DocumentQueries final {
 public:
     DocumentQueries(
-        std::shared_ptr<const DocumentSource> source,
-        std::shared_ptr<const DocumentSymbolList> previous_symbols,
-        std::shared_ptr<QueryCounts> counts
+        std::shared_ptr<const EditorDocumentSource> source,
+        std::shared_ptr<const EditorDocumentSymbolList> previous_symbols,
+        std::shared_ptr<EditorQueryCounts> counts
     ) noexcept;
     auto source() const noexcept -> SourceView;
-    auto source_owner() const noexcept -> std::shared_ptr<const DocumentSource>;
-    auto syntax() noexcept -> std::shared_ptr<const DocumentSyntax>;
-    auto symbols() noexcept -> std::shared_ptr<const DocumentSymbolList>;
-    auto symbol_baseline() const noexcept -> std::shared_ptr<const DocumentSymbolList>;
+    auto source_owner() const noexcept -> std::shared_ptr<const EditorDocumentSource>;
+    auto syntax() noexcept -> std::shared_ptr<const EditorDocumentSyntax>;
+    auto symbols() noexcept -> std::shared_ptr<const EditorDocumentSymbolList>;
+    auto symbol_baseline() const noexcept -> std::shared_ptr<const EditorDocumentSymbolList>;
 
 private:
-    std::shared_ptr<const DocumentSource> input;
-    std::shared_ptr<const DocumentSymbolList> previous_symbols;
-    std::shared_ptr<QueryCounts> work_counts;
-    std::shared_ptr<const DocumentSyntax> cached_syntax;
-    std::shared_ptr<const DocumentSymbolList> cached_symbols;
+    std::shared_ptr<const EditorDocumentSource> input;
+    std::shared_ptr<const EditorDocumentSymbolList> previous_symbols;
+    std::shared_ptr<EditorQueryCounts> work_counts;
+    std::shared_ptr<const EditorDocumentSyntax> cached_syntax;
+    std::shared_ptr<const EditorDocumentSymbolList> cached_symbols;
     bool symbols_computed = false;
 };
 
@@ -38,57 +38,62 @@ struct DocumentEntry final {
 
 using DocumentMap = std::map<std::string, DocumentEntry, std::less<>>;
 using SymbolDependencies =
-    std::vector<std::pair<std::string, std::shared_ptr<const DocumentSymbolList>>>;
+    std::vector<std::pair<std::string, std::shared_ptr<const EditorDocumentSymbolList>>>;
 
 struct WorkspaceIndex final {
     SymbolDependencies dependencies;
-    std::shared_ptr<const WorkspaceSymbolList> result;
+    std::shared_ptr<const EditorWorkspaceSymbolList> result;
 };
 
 class CachedProject final {
 public:
-    CachedProject(std::vector<SemanticInput> inputs, std::shared_ptr<QueryCounts> counts) noexcept;
+    CachedProject(
+        std::vector<EditorSemanticInput> inputs,
+        std::shared_ptr<EditorQueryCounts> counts
+    ) noexcept;
     auto matches_documents(const DocumentMap& documents) const noexcept -> bool;
-    auto result() noexcept -> std::shared_ptr<const SemanticAnalysis>;
+    auto result() noexcept -> std::shared_ptr<const EditorSemanticAnalysis>;
 
 private:
-    std::vector<SemanticInput> inputs;
-    std::shared_ptr<QueryCounts> work_counts;
-    std::shared_ptr<const SemanticAnalysis> cached_result;
+    std::vector<EditorSemanticInput> inputs;
+    std::shared_ptr<EditorQueryCounts> work_counts;
+    std::shared_ptr<const EditorSemanticAnalysis> cached_result;
 };
 
 using ProjectKey = std::vector<std::pair<std::string, std::string>>;
 using ProjectCache = std::map<ProjectKey, std::shared_ptr<CachedProject>>;
 
-struct ResolvedProject final {
-    std::shared_ptr<CachedProject> node;
-    std::vector<DocumentVersion> versions;
-};
+} // namespace
 
-struct RecentRequest final {
-    std::vector<ProjectModule> modules;
-    ResolvedProject result;
-};
+class EditorWorkspaceQueries final {
+    struct ResolvedProject final {
+        std::shared_ptr<CachedProject> node;
+        std::vector<EditorDocumentVersion> versions;
+    };
 
-class WorkspaceQueries final {
+    struct RecentRequest final {
+        std::vector<EditorProjectModule> modules;
+        ResolvedProject result;
+    };
+
 public:
-    WorkspaceQueries(
+    EditorWorkspaceQueries(
         DocumentMap inputs,
-        std::shared_ptr<QueryCounts> counts,
+        std::shared_ptr<EditorQueryCounts> counts,
         std::shared_ptr<const WorkspaceIndex> previous_index,
         ProjectCache project_cache
     ) noexcept;
     auto document(std::string_view key) const noexcept -> std::optional<DocumentEntry>;
     auto documents() const noexcept -> DocumentMap;
-    auto counts() const noexcept -> std::shared_ptr<QueryCounts>;
+    auto counts() const noexcept -> std::shared_ptr<EditorQueryCounts>;
     auto index_baseline() const noexcept -> std::shared_ptr<const WorkspaceIndex>;
-    auto symbols() noexcept -> std::shared_ptr<const WorkspaceSymbolList>;
-    auto semantic(std::span<const ProjectModule> project) noexcept -> ResolvedProject;
+    auto symbols() noexcept -> std::shared_ptr<const EditorWorkspaceSymbolList>;
+    auto semantic(std::span<const EditorProjectModule> project) noexcept -> ResolvedProject;
     auto project_cache() const noexcept -> ProjectCache;
 
 private:
     DocumentMap inputs;
-    std::shared_ptr<QueryCounts> work_counts;
+    std::shared_ptr<EditorQueryCounts> work_counts;
     std::shared_ptr<const WorkspaceIndex> previous_index;
     std::shared_ptr<const WorkspaceIndex> cached_index;
     ProjectCache cached_projects;
@@ -97,9 +102,9 @@ private:
 };
 
 DocumentQueries::DocumentQueries(
-    std::shared_ptr<const DocumentSource> source,
-    std::shared_ptr<const DocumentSymbolList> previous_symbols,
-    std::shared_ptr<QueryCounts> counts
+    std::shared_ptr<const EditorDocumentSource> source,
+    std::shared_ptr<const EditorDocumentSymbolList> previous_symbols,
+    std::shared_ptr<EditorQueryCounts> counts
 ) noexcept
     : input(std::move(source)),
       previous_symbols(std::move(previous_symbols)),
@@ -109,19 +114,19 @@ auto DocumentQueries::source() const noexcept -> SourceView {
     return input->source();
 }
 
-auto DocumentQueries::source_owner() const noexcept -> std::shared_ptr<const DocumentSource> {
+auto DocumentQueries::source_owner() const noexcept -> std::shared_ptr<const EditorDocumentSource> {
     return input;
 }
 
-auto DocumentQueries::syntax() noexcept -> std::shared_ptr<const DocumentSyntax> {
+auto DocumentQueries::syntax() noexcept -> std::shared_ptr<const EditorDocumentSyntax> {
     if (!cached_syntax) {
         ++work_counts->syntax;
-        cached_syntax = parse_document(input);
+        cached_syntax = parse_editor_document(input);
     }
     return cached_syntax;
 }
 
-auto DocumentQueries::symbols() noexcept -> std::shared_ptr<const DocumentSymbolList> {
+auto DocumentQueries::symbols() noexcept -> std::shared_ptr<const EditorDocumentSymbolList> {
     if (symbols_computed) {
         return cached_symbols;
     }
@@ -129,11 +134,11 @@ auto DocumentQueries::symbols() noexcept -> std::shared_ptr<const DocumentSymbol
     const auto parsed = syntax();
     if (parsed->recovered_syntax()) {
         ++work_counts->document_symbols;
-        auto result = collect_symbols(*parsed);
+        auto result = collect_editor_symbols(*parsed);
         if (previous_symbols && *previous_symbols == result) {
             cached_symbols = previous_symbols;
         } else {
-            cached_symbols = std::make_shared<const DocumentSymbolList>(std::move(result));
+            cached_symbols = std::make_shared<const EditorDocumentSymbolList>(std::move(result));
         }
     }
     previous_symbols.reset();
@@ -141,13 +146,13 @@ auto DocumentQueries::symbols() noexcept -> std::shared_ptr<const DocumentSymbol
 }
 
 auto DocumentQueries::symbol_baseline() const noexcept
-    -> std::shared_ptr<const DocumentSymbolList> {
+    -> std::shared_ptr<const EditorDocumentSymbolList> {
     return symbols_computed ? cached_symbols : previous_symbols;
 }
 
-WorkspaceQueries::WorkspaceQueries(
+EditorWorkspaceQueries::EditorWorkspaceQueries(
     DocumentMap inputs,
-    std::shared_ptr<QueryCounts> counts,
+    std::shared_ptr<EditorQueryCounts> counts,
     std::shared_ptr<const WorkspaceIndex> previous_index,
     ProjectCache project_cache
 ) noexcept
@@ -162,7 +167,7 @@ WorkspaceQueries::WorkspaceQueries(
     });
 }
 
-auto WorkspaceQueries::document(std::string_view key) const noexcept
+auto EditorWorkspaceQueries::document(std::string_view key) const noexcept
     -> std::optional<DocumentEntry> {
     const auto found = inputs.find(key);
     if (found == inputs.end()) {
@@ -171,19 +176,21 @@ auto WorkspaceQueries::document(std::string_view key) const noexcept
     return found->second;
 }
 
-auto WorkspaceQueries::documents() const noexcept -> DocumentMap {
+auto EditorWorkspaceQueries::documents() const noexcept -> DocumentMap {
     return inputs;
 }
 
-auto WorkspaceQueries::counts() const noexcept -> std::shared_ptr<QueryCounts> {
+auto EditorWorkspaceQueries::counts() const noexcept -> std::shared_ptr<EditorQueryCounts> {
     return work_counts;
 }
 
-auto WorkspaceQueries::index_baseline() const noexcept -> std::shared_ptr<const WorkspaceIndex> {
+auto EditorWorkspaceQueries::index_baseline() const noexcept
+    -> std::shared_ptr<const WorkspaceIndex> {
     return cached_index ? cached_index : previous_index;
 }
 
-auto WorkspaceQueries::symbols() noexcept -> std::shared_ptr<const WorkspaceSymbolList> {
+auto EditorWorkspaceQueries::symbols() noexcept
+    -> std::shared_ptr<const EditorWorkspaceSymbolList> {
     if (cached_index) {
         return cached_index->result;
     }
@@ -195,14 +202,14 @@ auto WorkspaceQueries::symbols() noexcept -> std::shared_ptr<const WorkspaceSymb
         cached_index = previous_index;
     } else {
         ++work_counts->workspace_symbols;
-        auto result = WorkspaceSymbolList();
+        auto result = EditorWorkspaceSymbolList();
         for (const auto& [key, symbols] : dependencies) {
             if (!symbols) {
                 continue;
             }
             for (const auto& symbol : *symbols) {
                 result.push_back(
-                    WorkspaceSymbol {
+                    EditorWorkspaceSymbol {
                         .document = key,
                         .name = symbol.name,
                         .kind = symbol.kind,
@@ -214,7 +221,7 @@ auto WorkspaceQueries::symbols() noexcept -> std::shared_ptr<const WorkspaceSymb
         }
         cached_index = std::make_shared<const WorkspaceIndex>(WorkspaceIndex {
             .dependencies = std::move(dependencies),
-            .result = std::make_shared<const WorkspaceSymbolList>(std::move(result)),
+            .result = std::make_shared<const EditorWorkspaceSymbolList>(std::move(result)),
         });
     }
     previous_index.reset();
@@ -222,14 +229,14 @@ auto WorkspaceQueries::symbols() noexcept -> std::shared_ptr<const WorkspaceSymb
 }
 
 CachedProject::CachedProject(
-    std::vector<SemanticInput> inputs,
-    std::shared_ptr<QueryCounts> counts
+    std::vector<EditorSemanticInput> inputs,
+    std::shared_ptr<EditorQueryCounts> counts
 ) noexcept
     : inputs(std::move(inputs)),
       work_counts(std::move(counts)) {}
 
 auto CachedProject::matches_documents(const DocumentMap& documents) const noexcept -> bool {
-    return std::ranges::all_of(inputs, [&](const SemanticInput& input) noexcept {
+    return std::ranges::all_of(inputs, [&](const EditorSemanticInput& input) noexcept {
         const auto found = documents.find(input.module.document);
         const auto source =
             found == documents.end() ? nullptr : found->second.queries->source_owner();
@@ -237,15 +244,15 @@ auto CachedProject::matches_documents(const DocumentMap& documents) const noexce
     });
 }
 
-auto CachedProject::result() noexcept -> std::shared_ptr<const SemanticAnalysis> {
+auto CachedProject::result() noexcept -> std::shared_ptr<const EditorSemanticAnalysis> {
     if (!cached_result) {
         ++work_counts->semantic;
-        cached_result = analyze_project(inputs);
+        cached_result = analyze_editor_project(inputs);
     }
     return cached_result;
 }
 
-auto WorkspaceQueries::semantic(std::span<const ProjectModule> project) noexcept
+auto EditorWorkspaceQueries::semantic(std::span<const EditorProjectModule> project) noexcept
     -> ResolvedProject {
     if (recent && std::ranges::equal(project, recent->modules)) {
         return recent->result;
@@ -256,14 +263,14 @@ auto WorkspaceQueries::semantic(std::span<const ProjectModule> project) noexcept
             versions.emplace(module.document, entry->version);
         }
     }
-    auto document_versions = std::vector<DocumentVersion>();
+    auto document_versions = std::vector<EditorDocumentVersion>();
     for (const auto& [document, version] : versions) {
         document_versions.push_back({.document = document, .version = version});
     }
-    auto modules = std::vector<ProjectModule>(project.begin(), project.end());
+    auto modules = std::vector<EditorProjectModule>(project.begin(), project.end());
     std::ranges::sort(
         modules,
-        [](const ProjectModule& left, const ProjectModule& right) static noexcept {
+        [](const EditorProjectModule& left, const EditorProjectModule& right) static noexcept {
             return std::pair(left.module_path.value(), std::string_view(left.document))
                 < std::pair(right.module_path.value(), std::string_view(right.document));
         }
@@ -277,7 +284,7 @@ auto WorkspaceQueries::semantic(std::span<const ProjectModule> project) noexcept
     if (previous != cached_projects.end()) {
         node = previous->second;
     } else {
-        auto resolved = std::vector<SemanticInput>();
+        auto resolved = std::vector<EditorSemanticInput>();
         for (const auto& module : modules) {
             const auto entry = document(module.document);
             resolved.push_back(
@@ -289,7 +296,7 @@ auto WorkspaceQueries::semantic(std::span<const ProjectModule> project) noexcept
     }
     recent.emplace(
         RecentRequest {
-            .modules = std::vector<ProjectModule>(project.begin(), project.end()),
+            .modules = std::vector<EditorProjectModule>(project.begin(), project.end()),
             .result =
                 ResolvedProject {.node = std::move(node), .versions = std::move(document_versions)}
         }
@@ -297,67 +304,71 @@ auto WorkspaceQueries::semantic(std::span<const ProjectModule> project) noexcept
     return recent->result;
 }
 
-auto WorkspaceQueries::project_cache() const noexcept -> ProjectCache {
+auto EditorWorkspaceQueries::project_cache() const noexcept -> ProjectCache {
     return cached_projects;
 }
 
-Analysis::Analysis(std::shared_ptr<WorkspaceQueries> queries) noexcept
+EditorAnalysis::EditorAnalysis(std::shared_ptr<EditorWorkspaceQueries> queries) noexcept
     : queries(std::move(queries)) {}
 
-auto Analysis::syntax(std::string_view document) const noexcept -> std::optional<SyntaxQuery> {
+auto EditorAnalysis::syntax(std::string_view document) const noexcept
+    -> std::optional<EditorSyntaxQuery> {
     const auto entry = queries->document(document);
     if (!entry) {
         return std::nullopt;
     }
-    return SyntaxQuery {.version = entry->version, .result = entry->queries->syntax()};
+    return EditorSyntaxQuery {.version = entry->version, .result = entry->queries->syntax()};
 }
 
-auto Analysis::document_symbols(std::string_view document) const noexcept
-    -> std::optional<SymbolsQuery> {
+auto EditorAnalysis::document_symbols(std::string_view document) const noexcept
+    -> std::optional<EditorSymbolsQuery> {
     const auto entry = queries->document(document);
     if (!entry) {
         return std::nullopt;
     }
-    return SymbolsQuery {
-        .document = SyntaxQuery {.version = entry->version, .result = entry->queries->syntax()},
+    return EditorSymbolsQuery {
+        .document =
+            EditorSyntaxQuery {.version = entry->version, .result = entry->queries->syntax()},
         .result = entry->queries->symbols(),
     };
 }
 
-auto Analysis::workspace_symbols() const noexcept -> std::shared_ptr<const WorkspaceSymbolList> {
+auto EditorAnalysis::workspace_symbols() const noexcept
+    -> std::shared_ptr<const EditorWorkspaceSymbolList> {
     return queries->symbols();
 }
 
-auto Analysis::semantic(std::span<const ProjectModule> project) const noexcept -> SemanticQuery {
+auto EditorAnalysis::semantic(std::span<const EditorProjectModule> project) const noexcept
+    -> EditorSemanticQuery {
     auto resolved = queries->semantic(project);
-    return SemanticQuery {
+    return EditorSemanticQuery {
         .result = resolved.node->result(),
         .documents = std::move(resolved.versions)
     };
 }
 
-auto Analysis::hover(
-    std::span<const ProjectModule> project,
+auto EditorAnalysis::hover(
+    std::span<const EditorProjectModule> project,
     std::string_view document,
     std::uint32_t offset
-) const noexcept -> HoverQuery {
+) const noexcept -> EditorHoverQuery {
     auto analysis = semantic(project);
     const auto result = analysis.result->hover(document, offset);
-    return HoverQuery {.analysis = std::move(analysis), .result = result};
+    return EditorHoverQuery {.analysis = std::move(analysis), .result = result};
 }
 
-auto Analysis::definition(
-    std::span<const ProjectModule> project,
+auto EditorAnalysis::definition(
+    std::span<const EditorProjectModule> project,
     std::string_view document,
     std::uint32_t offset
-) const noexcept -> DefinitionQuery {
+) const noexcept -> EditorDefinitionQuery {
     auto analysis = semantic(project);
     const auto target = analysis.result->definition(document, offset);
-    auto result = std::optional<VersionedLocation>();
+    auto result = std::optional<EditorVersionedLocation>();
     if (target) {
         if (const auto entry = queries->document(target->document)) {
             result.emplace(
-                VersionedLocation {
+                EditorVersionedLocation {
                     .document = target->document,
                     .version = entry->version,
                     .range = target->range
@@ -365,17 +376,17 @@ auto Analysis::definition(
             );
         }
     }
-    return DefinitionQuery {.analysis = std::move(analysis), .result = std::move(result)};
+    return EditorDefinitionQuery {.analysis = std::move(analysis), .result = std::move(result)};
 }
 
-auto Analysis::references(
-    std::span<const ProjectModule> project,
+auto EditorAnalysis::references(
+    std::span<const EditorProjectModule> project,
     std::string_view document,
     std::uint32_t offset
-) const noexcept -> ReferencesQuery {
+) const noexcept -> EditorReferencesQuery {
     auto analysis = semantic(project);
     const auto locations = analysis.result->references(document, offset);
-    auto result = std::optional<std::vector<VersionedLocation>>();
+    auto result = std::optional<std::vector<EditorVersionedLocation>>();
     if (locations) {
         result.emplace();
         for (const auto& location : *locations) {
@@ -388,18 +399,18 @@ auto Analysis::references(
             }
         }
     }
-    return ReferencesQuery {.analysis = std::move(analysis), .result = std::move(result)};
+    return EditorReferencesQuery {.analysis = std::move(analysis), .result = std::move(result)};
 }
 
-auto Analysis::counts() const noexcept -> QueryCounts {
+auto EditorAnalysis::counts() const noexcept -> EditorQueryCounts {
     return *queries->counts();
 }
 
-AnalysisHost::AnalysisHost() noexcept
+EditorAnalysisHost::EditorAnalysisHost() noexcept
     : queries(
-          std::make_shared<WorkspaceQueries>(
+          std::make_shared<EditorWorkspaceQueries>(
               DocumentMap(),
-              std::make_shared<QueryCounts>(QueryCounts {
+              std::make_shared<EditorQueryCounts>(EditorQueryCounts {
                   .syntax = 0uz,
                   .document_symbols = 0uz,
                   .workspace_symbols = 0uz,
@@ -410,28 +421,31 @@ AnalysisHost::AnalysisHost() noexcept
           )
       ) {}
 
-auto AnalysisHost::update(std::string document, std::int64_t version, std::string text) noexcept
-    -> std::expected<DocumentChange, DocumentUpdateFailure> {
+auto EditorAnalysisHost::update(
+    std::string document,
+    std::int64_t version,
+    std::string text
+) noexcept -> std::expected<EditorDocumentChange, EditorDocumentUpdateFailure> {
     const auto previous = queries->document(document);
     if (previous && version <= previous->version) {
-        return std::unexpected(DocumentUpdateFailure(
-            StaleDocumentVersion {
+        return std::unexpected(EditorDocumentUpdateFailure(
+            EditorStaleDocumentVersion {
                 .current = previous->version,
                 .received = version,
             }
         ));
     }
     auto inputs = queries->documents();
-    auto change = DocumentChange::VersionOnly;
+    auto change = EditorDocumentChange::VersionOnly;
     if (previous && previous->queries->source().text == text) {
         inputs.insert_or_assign(
             document,
             DocumentEntry {.version = version, .queries = previous->queries}
         );
     } else {
-        auto source = DocumentSource::create(document, std::move(text));
+        auto source = EditorDocumentSource::create(document, std::move(text));
         if (!source) {
-            return std::unexpected(DocumentUpdateFailure(std::move(source.error())));
+            return std::unexpected(EditorDocumentUpdateFailure(std::move(source.error())));
         }
         auto next = std::make_shared<DocumentQueries>(
             std::move(*source),
@@ -442,9 +456,9 @@ auto AnalysisHost::update(std::string document, std::int64_t version, std::strin
             document,
             DocumentEntry {.version = version, .queries = std::move(next)}
         );
-        change = previous ? DocumentChange::Changed : DocumentChange::Added;
+        change = previous ? EditorDocumentChange::Changed : EditorDocumentChange::Added;
     }
-    queries = std::make_shared<WorkspaceQueries>(
+    queries = std::make_shared<EditorWorkspaceQueries>(
         std::move(inputs),
         queries->counts(),
         queries->index_baseline(),
@@ -453,13 +467,13 @@ auto AnalysisHost::update(std::string document, std::int64_t version, std::strin
     return change;
 }
 
-auto AnalysisHost::remove(std::string_view document) noexcept -> bool {
+auto EditorAnalysisHost::remove(std::string_view document) noexcept -> bool {
     if (!queries->document(document)) {
         return false;
     }
     auto inputs = queries->documents();
     inputs.erase(inputs.find(document));
-    queries = std::make_shared<WorkspaceQueries>(
+    queries = std::make_shared<EditorWorkspaceQueries>(
         std::move(inputs),
         queries->counts(),
         queries->index_baseline(),
@@ -468,8 +482,6 @@ auto AnalysisHost::remove(std::string_view document) noexcept -> bool {
     return true;
 }
 
-auto AnalysisHost::snapshot() const noexcept -> Analysis {
-    return Analysis(queries);
+auto EditorAnalysisHost::snapshot() const noexcept -> EditorAnalysis {
+    return EditorAnalysis(queries);
 }
-
-} // namespace editor

@@ -20,24 +20,22 @@ auto add_width(std::size_t left, std::size_t right) noexcept -> std::size_t {
         : left + right;
 }
 
-}
+} // namespace
 
-namespace graver {
-
-auto Document::append(Node value) noexcept -> DocID {
-    const auto id = DocID {.index = nodes.size()};
+auto FormattingDocument::append(Node value) noexcept -> FormattingNodeID {
+    const auto id = FormattingNodeID {.index = nodes.size()};
     nodes.push_back(std::move(value));
     return id;
 }
 
-auto Document::node(DocID id) const noexcept -> const Node& {
+auto FormattingDocument::node(FormattingNodeID id) const noexcept -> const Node& {
     if (id.index >= nodes.size()) {
         invariant_violation("Graver document used an invalid node");
     }
     return nodes[id.index];
 }
 
-auto Document::text(std::string_view value) noexcept -> DocID {
+auto FormattingDocument::text(std::string_view value) noexcept -> FormattingNodeID {
     const auto width = flat_width(value);
     if (!width) {
         invariant_violation("Graver Text must not contain line endings");
@@ -47,7 +45,7 @@ auto Document::text(std::string_view value) noexcept -> DocID {
     );
 }
 
-auto Document::verbatim(std::string_view value) noexcept -> DocID {
+auto FormattingDocument::verbatim(std::string_view value) noexcept -> FormattingNodeID {
     return append(
         Node {
             .kind = Kind::Verbatim,
@@ -58,7 +56,8 @@ auto Document::verbatim(std::string_view value) noexcept -> DocID {
     );
 }
 
-auto Document::concat(std::vector<DocID> children) noexcept -> DocID {
+auto FormattingDocument::concat(std::vector<FormattingNodeID> children) noexcept
+    -> FormattingNodeID {
     auto width = std::optional<std::size_t>(0);
     for (const auto child : children) {
         const auto child_width = node(child).flat_width;
@@ -75,7 +74,7 @@ auto Document::concat(std::vector<DocID> children) noexcept -> DocID {
     );
 }
 
-auto Document::line(bool space_when_flat) noexcept -> DocID {
+auto FormattingDocument::line(bool space_when_flat) noexcept -> FormattingNodeID {
     return append(
         Node {
             .kind = Kind::Line,
@@ -86,25 +85,26 @@ auto Document::line(bool space_when_flat) noexcept -> DocID {
     );
 }
 
-auto Document::hardline() noexcept -> DocID {
+auto FormattingDocument::hardline() noexcept -> FormattingNodeID {
     return append(
         Node {.kind = Kind::HardLine, .text = {}, .children = {}, .flat_width = std::nullopt}
     );
 }
 
-auto Document::indent(DocID child) noexcept -> DocID {
+auto FormattingDocument::indent(FormattingNodeID child) noexcept -> FormattingNodeID {
     const auto width = node(child).flat_width;
     return append(
         Node {.kind = Kind::Indent, .text = {}, .children = {child}, .flat_width = width}
     );
 }
 
-auto Document::group(DocID child) noexcept -> DocID {
+auto FormattingDocument::group(FormattingNodeID child) noexcept -> FormattingNodeID {
     const auto width = node(child).flat_width;
     return append(Node {.kind = Kind::Group, .text = {}, .children = {child}, .flat_width = width});
 }
 
-auto Document::fits(std::span<const Frame> pending, std::size_t remaining) const noexcept -> bool {
+auto FormattingDocument::fits(std::span<const Frame> pending, std::size_t remaining) const noexcept
+    -> bool {
     auto expanded = std::vector<Frame>();
     auto cursor = pending.size();
     while (cursor != 0 || !expanded.empty()) {
@@ -158,8 +158,11 @@ auto Document::fits(std::span<const Frame> pending, std::size_t remaining) const
     return true;
 }
 
-auto Document::render(DocID root, std::size_t width, std::size_t indent_width) const noexcept
-    -> std::string {
+auto FormattingDocument::render(
+    FormattingNodeID root,
+    std::size_t width,
+    std::size_t indent_width
+) const noexcept -> std::string {
     auto pending = std::vector<Frame> {{.id = root, .indentation = 0, .flat = false}};
     auto output = std::string();
     auto column = 0uz;
@@ -231,6 +234,4 @@ auto Document::render(DocID root, std::size_t width, std::size_t indent_width) c
         }
     }
     return output;
-}
-
 }

@@ -5,8 +5,9 @@ and build integration for this checkout.
 
 ## Compiler and target
 
-Compiler implementation uses C++26 with exceptions and RTTI disabled. The
-validated host is LLVM/Clang and libc++ 23.1.0. Generated programs and installed
+Compiler implementation uses C++26 with exceptions and RTTI disabled. It uses
+LLVM/Clang and libc++ across platforms, supplied by LLVM-MinGW on Windows.
+LLVM 23 is the validated toolchain version. Generated programs and installed
 crafts have a C++20 minimum baseline. The consumer project selects its C++
 standard. Generated code and runtime support select newer facilities through
 feature detection while preserving the operation's behavior.

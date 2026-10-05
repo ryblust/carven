@@ -2,23 +2,26 @@ import "lifetimes/lifetimes.hpp" using lifetime_probe::{ mark, reset, matches, F
 import .control using Failure;
 import .construction using initialization_argument;
 
-private fn selected_snapshot(flag: bool, &first: i32, &second: i32) -> i32 {
-    return ::lifetime_probe::snapshot_after_write(
-            if flag { first } else { second },
-            &first,
-            &second
-        )
-        as i32;
-}
+private fn selected_snapshot(
+    flag: bool,
+    &first: i32,
+    &second: i32
+) -> i32 => ::lifetime_probe::snapshot_after_write(
+        if flag { first } else { second },
+        &first,
+        &second
+    )
+    as i32;
 
-private fn known_snapshot(&first: i32, &second: i32) -> i32 {
-    return ::lifetime_probe::snapshot_after_write(
-            if true { first } else { second },
-            &first,
-            &second
-        )
-        as i32;
-}
+private fn known_snapshot(
+    &first: i32,
+    &second: i32
+) -> i32 => ::lifetime_probe::snapshot_after_write(
+        if true { first } else { second },
+        &first,
+        &second
+    )
+    as i32;
 
 test "Lifetimes: scalar value regions complete snapshots before native calls" {
     var first = 3;

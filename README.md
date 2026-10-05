@@ -11,41 +11,41 @@ abstractions as a design goal.
 
 ### Intent over mechanism
 
-Express whether an operation reads, mutates, or takes ownership of a value through
-function arguments and closure captures. Carven checks these contracts and
-manages lifetimes, arranging C++ construction, evaluation, and cleanup for you.
+Express read access, mutation, and ownership transfer through function calls
+and closure captures. Carven checks ownership and borrowed lifetimes across calls
+and control flow, then arranges C++ construction, evaluation, and cleanup for you.
 
 ### Compile-time capabilities
 
-Build the data your program needs before it runs. Generate lookup tables,
-validate UTF-8, and construct static text using familiar functions, loops,
-arrays, and text operations. Check the results with `const test`, and use the
-same `const fn` functions at runtime. Specialize the work that remains with
-`const` parameters, `const if`, and `const for`: you choose the compile-time
-inputs, and Carven generates code tailored to them.
+Compute and validate values during compilation using familiar language constructs.
+Reuse `const fn` functions at compile time and runtime under the same language
+rules, and check results with `const test`.
+Explicit static inputs and control flow select branches, expand loops, and
+specialize functions before C++ generation. Generated calls carry only runtime
+arguments.
 
 ### Typed failure contracts
 
-See what can fail in a function's contract. Propagate with `?` or recover with
-patterns that give you the failure's type and payload. The same model extends to
-callbacks, keeping failures visible as you compose operations. Handle failures
-where you have the context to recover.
+See recoverable failures in a function's contract. Propagate with `?` or match
+failure types and payloads to recover where you have the right context.
+Carven infers failure sets for private functions and checks declared public
+contracts. The same model keeps failures visible across functions and callbacks.
 
 ### Zero-overhead abstractions
 
-Use expressive language features with the cost of skilled handwritten C++ as the
-design target. Carven uses ownership and known values to avoid unnecessary storage
-and branching. Even formatting dynamic values benefits from work prepared at
-compile time. Explicit SIMD types offer portable lane operations with NEON and
-opt-in AVX2 acceleration. Your C++ compiler then optimizes the result. Inspect the
-generated C++ and measure native performance with familiar tools.
+Carven aims to offer expressive language features at the runtime cost of
+handwritten C++ with the same behavior and safety guarantees. The compiler prepares
+known parts of runtime operations and uses ownership and control-flow facts to
+avoid unnecessary storage and checks. Value classes provide encapsulation without
+implicit allocation or virtual dispatch. Inspect the generated C++ and measure
+native performance with familiar tools.
 
 ### Seamless C++ interoperability
 
-Bring C++ libraries into Carven through header imports, and expose Carven functions
-through generated public interfaces. Reuse native types and APIs, compile and
-debug with your existing tools, and introduce Carven into a C++ project alongside
-existing code.
+Reuse C++ types, templates, and libraries through header imports, and expose
+Carven functions through generated C++ interfaces. Native calls use C++ overload
+resolution and template deduction. Compile and debug with familiar native tools,
+and adopt Carven incrementally within existing C++ projects.
 
 > [!NOTE]
 > Carven is under active development, and language and tooling changes may
@@ -54,9 +54,13 @@ existing code.
 
 ## Build and run
 
-Building the Carven compiler requires [Xmake](https://xmake.io/) and an
-LLVM/Clang toolchain with C++26 support. The validated host toolchain is
-LLVM 23. Generated programs and support headers use C++20.
+Carven uses LLVM/Clang and libc++ across platforms. Building the compiler requires
+[Xmake](https://xmake.io/) and a toolchain with C++26 support; LLVM 23 is the
+validated version. Generated programs and support headers use C++20.
+
+On Windows, use [LLVM-MinGW](https://github.com/mstorsjo/llvm-mingw). Add the LLVM
+toolchain's `bin` directory to `PATH` so Xmake can discover the compiler and build
+tools.
 
 Use `./xmakew` on POSIX systems or `.\xmakew.ps1` in Windows PowerShell for
 repository commands.

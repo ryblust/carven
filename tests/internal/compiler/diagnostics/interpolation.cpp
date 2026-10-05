@@ -7,10 +7,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Compiler diagnostics: interpolation consumes Read operands and protects backing", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: interpolation consumes Read operands and protects backing"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "Write marker",
              .source = R"(fn bad() { var x = 1; let s = f"{&x}"; })",
@@ -64,10 +62,9 @@ const ct::Suite tests([] static noexcept {
              .primary_text = R"(f"{callback}")"},
         });
         check_compiler_errors(cases);
-    });
+    };
 
-    ct::test(
-        "Compiler diagnostics: constant interpolation preserves access type and execution boundaries",
+    "Compiler diagnostics: constant interpolation preserves access type and execution boundaries"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "constant Write marker",
@@ -125,11 +122,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = R"(f"x{1:1048576}")"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: constant widths retain format grammar and resource limits",
+    "Compiler diagnostics: constant widths retain format grammar and resource limits"_test =
         [] static noexcept {
             const auto sources = std::to_array<std::string_view>({
                 R"(const text = f"{7:2{2}}";)",
@@ -140,7 +135,7 @@ const ct::Suite tests([] static noexcept {
                 R"(const fn bad() -> String => f"{7:{2}{3}}"; const text = bad();)",
                 R"(const fn bad() -> String => f"{7:{0}4}"; const text = bad();)",
             });
-            ct::each(sources, std::identity {}, [&](const auto& source) noexcept {
+            each(sources, std::identity {}, [&](const auto& source) noexcept {
                 const auto start = source.find("f\"");
                 const auto finish = source.find("\";", start) + 1uz;
                 const auto cases = std::array {CompilerErrorExpectation {
@@ -181,8 +176,7 @@ const ct::Suite tests([] static noexcept {
                 .primary_text = initializer,
             }};
             check_compiler_errors(large_text);
-        }
-    );
+        };
 });
 
 } // namespace

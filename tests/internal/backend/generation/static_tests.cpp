@@ -8,10 +8,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Generation: only runtime tests enter module schedules", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Generation: only runtime tests enter module schedules"_test = [] static noexcept {
         for (const auto runtime : {false, true}) {
             const auto source =
                 std::string(
@@ -31,21 +29,21 @@ const ct::Suite tests([] static noexcept {
                         std::get_if<TargetModuleImplementationArtifact>(&artifact.value)) {
                     tests += module_artifact->schedule.emitted_tests.size();
                     for (const auto id : module_artifact->schedule.emitted_tests) {
-                        ct::expect(!compilation.semantic().tests().test(id).is_const)
+                        expect(!compilation.semantic().tests().test(id).is_const)
                             .note("runtime: ", runtime);
                     }
                 }
             }
-            ct::expect(tests == (runtime ? 3uz : 0uz)).note("runtime: ", runtime);
+            expect(tests == (runtime ? 3uz : 0uz)).note("runtime: ", runtime);
             for (const auto artifact : compilation.target().artifacts()) {
                 if (const auto* runner =
                         std::get_if<TargetTestRunnerHeaderArtifact>(&artifact.value)) {
-                    ct::expect(runner->module_runners.size() == (runtime ? 1uz : 0uz))
+                    expect(runner->module_runners.size() == (runtime ? 1uz : 0uz))
                         .note("runtime: ", runtime);
                 }
             }
         }
-    });
+    };
 });
 
 } // namespace

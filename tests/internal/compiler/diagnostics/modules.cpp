@@ -16,11 +16,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: module-scoped facts retain their owning source",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: module-scoped facts retain their owning source"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto healthy_source = *sources.append_virtual("healthy.cv", "fn healthy() {}\n");
@@ -51,27 +48,25 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect(!result.has_value())) {
+            if (!expect(!result.has_value())) {
                 return;
             }
             const auto* diagnostic =
-                ct::find_diagnostic(result.error(), DiagnosticCode::EffectUnmarked);
-            if (!ct::expect(diagnostic != nullptr)) {
+                find_diagnostic(result.error(), DiagnosticCode::EffectUnmarked);
+            if (!expect(diagnostic != nullptr)) {
                 return;
             }
-            if (!ct::expect(diagnostic->attachment.primary.has_value())) {
+            if (!expect(diagnostic->attachment.primary.has_value())) {
                 return;
             }
-            ct::expect((diagnostic->attachment.primary->span.source_id == failing_source));
-            ct::expect_equal(
+            expect((diagnostic->attachment.primary->span.source_id == failing_source));
+            expect_equal(
                 sources.slice(diagnostic->attachment.primary->span),
                 std::string_view("failing()")
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: explicit imports cannot bind two symbols to one name",
+    "Compiler diagnostics: explicit imports cannot bind two symbols to one name"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto first =
@@ -108,76 +103,67 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect(!result.has_value())) {
+            if (!expect(!result.has_value())) {
                 return;
             }
             const auto* diagnostic =
-                ct::find_diagnostic(result.error(), DiagnosticCode::ImportResolution);
-            if (!ct::expect(diagnostic != nullptr)) {
+                find_diagnostic(result.error(), DiagnosticCode::ImportResolution);
+            if (!expect(diagnostic != nullptr)) {
                 return;
             }
-            if (!ct::expect(diagnostic->attachment.primary.has_value())) {
+            if (!expect(diagnostic->attachment.primary.has_value())) {
                 return;
             }
-            ct::expect((diagnostic->attachment.primary->span.source_id == app));
-            ct::expect_equal(
+            expect((diagnostic->attachment.primary->span.source_id == app));
+            expect_equal(
                 sources.slice(diagnostic->attachment.primary->span),
                 std::string_view("value")
             );
+        };
+
+    "Compiler diagnostics: entry-point uniqueness spans source modules"_test = [] static noexcept {
+        auto sources = SourceManager();
+        const auto first = *sources.append_virtual("first.cv", "fn main() {}\n");
+        const auto second = *sources.append_virtual("second.cv", "fn main() {}\n");
+        const auto inputs = std::array {
+            SourceModuleInput {
+                .source_id = first,
+                .module_path = *CanonicalModulePath::from_value("first")
+            },
+            SourceModuleInput {
+                .source_id = second,
+                .module_path = *CanonicalModulePath::from_value("second")
+            },
+        };
+
+        const auto result = compile(
+            sources,
+            SourceBatch {.modules = inputs},
+            TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
+            }
+        );
+
+        if (!expect(!result.has_value())) {
+            return;
         }
-    );
-
-    ct::test(
-        "Compiler diagnostics: entry-point uniqueness spans source modules",
-        [] static noexcept {
-            auto sources = SourceManager();
-            const auto first = *sources.append_virtual("first.cv", "fn main() {}\n");
-            const auto second = *sources.append_virtual("second.cv", "fn main() {}\n");
-            const auto inputs = std::array {
-                SourceModuleInput {
-                    .source_id = first,
-                    .module_path = *CanonicalModulePath::from_value("first")
-                },
-                SourceModuleInput {
-                    .source_id = second,
-                    .module_path = *CanonicalModulePath::from_value("second")
-                },
-            };
-
-            const auto result = compile(
-                sources,
-                SourceBatch {.modules = inputs},
-                TargetPlanningRequest {
-                    .test_mode = TestGenerationMode::None,
-                    .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
-                }
-            );
-
-            if (!ct::expect(!result.has_value())) {
-                return;
-            }
-            const auto* diagnostic =
-                ct::find_diagnostic(result.error(), DiagnosticCode::EntryDuplicate);
-            if (!ct::expect(diagnostic != nullptr)) {
-                return;
-            }
-            if (!ct::expect(diagnostic->attachment.primary.has_value())) {
-                return;
-            }
-            if (!ct::expect_equal(diagnostic->attachment.related.size(), 1u)) {
-                return;
-            }
-            ct::expect((diagnostic->attachment.primary->span.source_id == second));
-            ct::expect((diagnostic->attachment.related.front().span.source_id == first));
-            ct::expect_equal(
-                sources.slice(diagnostic->attachment.primary->span),
-                std::string_view("main")
-            );
+        const auto* diagnostic = find_diagnostic(result.error(), DiagnosticCode::EntryDuplicate);
+        if (!expect(diagnostic != nullptr)) {
+            return;
         }
-    );
+        if (!expect(diagnostic->attachment.primary.has_value())) {
+            return;
+        }
+        if (!expect_equal(diagnostic->attachment.related.size(), 1u)) {
+            return;
+        }
+        expect((diagnostic->attachment.primary->span.source_id == second));
+        expect((diagnostic->attachment.related.front().span.source_id == first));
+        expect_equal(sources.slice(diagnostic->attachment.primary->span), std::string_view("main"));
+    };
 
-    ct::test(
-        "Compiler diagnostics: recursive storage across modules is diagnosed semantically",
+    "Compiler diagnostics: recursive storage across modules is diagnosed semantically"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto first = *sources.append_virtual(
@@ -208,26 +194,24 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect(!result.has_value())) {
+            if (!expect(!result.has_value())) {
                 return;
             }
             const auto* diagnostic =
-                ct::find_diagnostic(result.error(), DiagnosticCode::TypeRecursiveStorage);
-            if (!ct::expect(diagnostic != nullptr)) {
+                find_diagnostic(result.error(), DiagnosticCode::TypeRecursiveStorage);
+            if (!expect(diagnostic != nullptr)) {
                 return;
             }
-            if (!ct::expect(diagnostic->attachment.primary.has_value())) {
+            if (!expect(diagnostic->attachment.primary.has_value())) {
                 return;
             }
-            ct::expect(
+            expect(
                 (diagnostic->attachment.primary->span.source_id == first
                  || diagnostic->attachment.primary->span.source_id == second)
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: implicit entry locals remain local to their body",
+    "Compiler diagnostics: implicit entry locals remain local to their body"_test =
         [] static noexcept {
             const auto cases = std::array {
                 CompilerErrorExpectation {
@@ -250,11 +234,9 @@ const ct::Suite tests([] static noexcept {
                 },
             };
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: each file's top-level body counts as an entry",
+    "Compiler diagnostics: each file's top-level body counts as an entry"_test =
         [] static noexcept {
             auto sources = SourceManager();
             const auto first = *sources.append_virtual("first.cv", "println(1);");
@@ -277,26 +259,25 @@ const ct::Suite tests([] static noexcept {
                     .linkage_domain = *LinkageDomain::explicit_value("test:top-level"),
                 }
             );
-            if (!ct::expect(!result.has_value())) {
+            if (!expect(!result.has_value())) {
                 return;
             }
             const auto* diagnostic =
-                ct::find_diagnostic(result.error(), DiagnosticCode::EntryDuplicate);
-            if (!ct::expect(diagnostic != nullptr)) {
+                find_diagnostic(result.error(), DiagnosticCode::EntryDuplicate);
+            if (!expect(diagnostic != nullptr)) {
                 return;
             }
-            if (!ct::expect(diagnostic->attachment.primary.has_value())) {
+            if (!expect(diagnostic->attachment.primary.has_value())) {
                 return;
             }
-            ct::expect((diagnostic->attachment.primary->span.source_id == second));
-            if (!ct::expect_equal(diagnostic->attachment.related.size(), 1uz)) {
+            expect((diagnostic->attachment.primary->span.source_id == second));
+            if (!expect_equal(diagnostic->attachment.related.size(), 1uz)) {
                 return;
             }
-            ct::expect((diagnostic->attachment.related.front().span.source_id == first));
-        }
-    );
+            expect((diagnostic->attachment.related.front().span.source_id == first));
+        };
 
-    ct::test("Compiler: top-level bodies use ordinary callable analysis", [] static noexcept {
+    "Compiler: top-level bodies use ordinary callable analysis"_test = [] static noexcept {
         auto sources = SourceManager();
         const auto source = *sources.append_virtual("app.cv", R"(
         let result = twice(21);
@@ -318,8 +299,8 @@ const ct::Suite tests([] static noexcept {
                 .linkage_domain = *LinkageDomain::explicit_value("test:top-level"),
             }
         );
-        ct::expect(result.has_value());
-    });
+        expect(result.has_value());
+    };
 });
 
 } // namespace

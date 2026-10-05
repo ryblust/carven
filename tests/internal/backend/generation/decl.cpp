@@ -22,8 +22,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto name(std::string_view spelling) noexcept -> TargetIdentifier {
     return TargetIdentifier::from_spelling(spelling);
 }
@@ -95,7 +93,7 @@ struct DeclarationFlags final {
 
 auto flags(const std::vector<TargetStmt>& statements) noexcept -> std::vector<bool> {
     auto query = DeclarationFlags();
-    ct::expect(traverse_target_statements(statements, query));
+    expect(traverse_target_statements(statements, query));
     return query.result;
 }
 
@@ -106,54 +104,47 @@ auto boolean_type(TargetUnitBuilder& builder) noexcept -> TargetTypeID {
     });
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Names: content spelling preserves identity and source separation",
-        [] static noexcept {
-            const auto stems = std::array {"CarvenQuery", "CarvenDisplay", "carven_constant"};
-            ct::each(
-                stems,
-                [](const auto& stem) static noexcept { return stem; },
-                [](const auto& stem) static noexcept {
-                    const auto source = source_target_identifier(stem);
-                    ct::expect(source.spelling() != stem);
-                    ct::expect(
-                        std::format("{}_1234567890123456", source.spelling())
-                        != std::format("{}_1234567890123456", stem)
-                    );
-                }
-            );
-            const auto requests = std::array {
-                TargetContentName {.preferred = "Shared", .content = "second"},
-                TargetContentName {.preferred = "Shared", .content = "first"},
-                TargetContentName {.preferred = "Shared", .content = "first"},
-            };
-            auto occupied = std::flat_set<std::string> {"Shared"};
-            const auto planned = claim_content_identifiers(requests, occupied);
-            if (!ct::expect_equal(planned.size(), requests.size())) {
-                return;
+const TestSuite suite([] static noexcept {
+    "Names: content spelling preserves identity and source separation"_test = [] static noexcept {
+        const auto stems = std::array {"CarvenQuery", "CarvenDisplay", "carven_constant"};
+        each(
+            stems,
+            [](const auto& stem) static noexcept { return stem; },
+            [](const auto& stem) static noexcept {
+                const auto source = source_target_identifier(stem);
+                expect(source.spelling() != stem);
+                expect(
+                    std::format("{}_1234567890123456", source.spelling())
+                    != std::format("{}_1234567890123456", stem)
+                );
             }
-            ct::expect(planned[0] != planned[1]);
-            ct::expect(planned[1] == planned[2]);
-            ct::expect(planned[0].spelling() != "Shared");
-            ct::expect(planned[1].spelling() != "Shared");
-            const auto reversed = std::array {requests[2], requests[1], requests[0]};
-            auto reverse_occupied = std::flat_set<std::string> {"Shared"};
-            const auto reverse_names = claim_content_identifiers(reversed, reverse_occupied);
-            if (!ct::expect_equal(reverse_names.size(), requests.size())) {
-                return;
-            }
-            ct::expect(planned[0] == reverse_names[2]);
-            ct::expect(planned[1] == reverse_names[1]);
-            ct::expect(planned[2] == reverse_names[0]);
+        );
+        const auto requests = std::array {
+            TargetContentName {.preferred = "Shared", .content = "second"},
+            TargetContentName {.preferred = "Shared", .content = "first"},
+            TargetContentName {.preferred = "Shared", .content = "first"},
+        };
+        auto occupied = std::flat_set<std::string> {"Shared"};
+        const auto planned = claim_content_identifiers(requests, occupied);
+        if (!expect_equal(planned.size(), requests.size())) {
+            return;
         }
-    );
+        expect(planned[0] != planned[1]);
+        expect(planned[1] == planned[2]);
+        expect(planned[0].spelling() != "Shared");
+        expect(planned[1].spelling() != "Shared");
+        const auto reversed = std::array {requests[2], requests[1], requests[0]};
+        auto reverse_occupied = std::flat_set<std::string> {"Shared"};
+        const auto reverse_names = claim_content_identifiers(reversed, reverse_occupied);
+        if (!expect_equal(reverse_names.size(), requests.size())) {
+            return;
+        }
+        expect(planned[0] == reverse_names[2]);
+        expect(planned[1] == reverse_names[1]);
+        expect(planned[2] == reverse_names[0]);
+    };
 
-    ct::test("Declarations: reads clear attributes while writes retain names", [] static noexcept {
+    "Declarations: reads clear attributes while writes retain names"_test = [] static noexcept {
         auto builder = TargetUnitBuilder();
         const auto type = boolean_type(builder);
         const auto absent = builder.add_local(name("absent"));
@@ -176,14 +167,13 @@ const ct::Suite tests([] static noexcept {
             target_lowering_statement(TargetReturnStmt {.expression = reference(returned)})
         );
         const auto parameters = std::array {parameter, absent};
-        ct::expect(
+        expect(
             finish_body_declarations(body, parameters, {}, {}) == std::vector<bool> {true, false}
         );
-        ct::expect(flags(body) == std::vector<bool> {false, true, true, true});
-    });
+        expect(flags(body) == std::vector<bool> {false, true, true, true});
+    };
 
-    ct::test(
-        "Declarations: sibling declarations and lambda parameters have lexical identities",
+    "Declarations: sibling declarations and lambda parameters have lexical identities"_test =
         [] static noexcept {
             auto builder = TargetUnitBuilder();
             const auto type = boolean_type(builder);
@@ -220,11 +210,10 @@ const ct::Suite tests([] static noexcept {
                 TargetIfStmt {.branches = std::move(branches), .else_body = std::move(right)}
             ));
             static_cast<void>(finish_body_declarations(body, {}, {}, {}));
-            ct::expect(flags(body) == std::vector<bool> {false, true, false, true});
-        }
-    );
+            expect(flags(body) == std::vector<bool> {false, true, false, true});
+        };
 
-    ct::test("Declarations: loop bindings and steps use their own visibility", [] static noexcept {
+    "Declarations: loop bindings and steps use their own visibility"_test = [] static noexcept {
         auto builder = TargetUnitBuilder();
         const auto type = boolean_type(builder);
         const auto step = builder.add_local(name("step"));
@@ -271,57 +260,51 @@ const ct::Suite tests([] static noexcept {
             }
         ));
         static_cast<void>(finish_body_declarations(body, {}, {}, {}));
-        ct::expect(flags(body) == std::vector<bool> {false, false, true, false, false});
-    });
+        expect(flags(body) == std::vector<bool> {false, false, true, false, false});
+    };
 
-    ct::test(
-        "Declarations: exit restructuring preserves skipped storage scopes",
-        [] static noexcept {
-            auto builder = TargetUnitBuilder();
-            const auto type = boolean_type(builder);
-            const auto scoped = builder.add_local(name("scoped"));
-            const auto unscoped = builder.add_local(name("unscoped"));
-            auto block = std::vector<TargetStmt>();
-            block.push_back(local(scoped, type));
-            block.push_back(read(scoped));
-            auto accepted = std::vector<TargetStmt>();
-            accepted.push_back(conditional_jump("scoped_exit"));
-            accepted.push_back(
-                target_lowering_statement(TargetBlockStmt {.statements = std::move(block)})
-            );
-            accepted.push_back(exit("scoped_exit"));
-            static_cast<void>(finish_body_declarations(accepted, {}, {}, {}));
-            ct::require(accepted.size() == 1uz);
-            const auto* conditional = std::get_if<TargetIfStmt>(&accepted.front().value);
-            ct::require(conditional != nullptr);
-            ct::require(conditional->branches.front().body.size() == 1uz);
-            ct::expect(
-                std::holds_alternative<TargetBlockStmt>(
-                    conditional->branches.front().body.front().value
-                )
-            );
+    "Declarations: exit restructuring preserves skipped storage scopes"_test = [] static noexcept {
+        auto builder = TargetUnitBuilder();
+        const auto type = boolean_type(builder);
+        const auto scoped = builder.add_local(name("scoped"));
+        const auto unscoped = builder.add_local(name("unscoped"));
+        auto block = std::vector<TargetStmt>();
+        block.push_back(local(scoped, type));
+        block.push_back(read(scoped));
+        auto accepted = std::vector<TargetStmt>();
+        accepted.push_back(conditional_jump("scoped_exit"));
+        accepted.push_back(
+            target_lowering_statement(TargetBlockStmt {.statements = std::move(block)})
+        );
+        accepted.push_back(exit("scoped_exit"));
+        static_cast<void>(finish_body_declarations(accepted, {}, {}, {}));
+        require(accepted.size() == 1uz);
+        const auto* conditional = std::get_if<TargetIfStmt>(&accepted.front().value);
+        require(conditional != nullptr);
+        require(conditional->branches.front().body.size() == 1uz);
+        expect(
+            std::holds_alternative<TargetBlockStmt>(
+                conditional->branches.front().body.front().value
+            )
+        );
 
-            auto rejected = std::vector<TargetStmt>();
-            rejected.push_back(conditional_jump("unscoped_exit"));
-            rejected.push_back(local(unscoped, type));
-            rejected.push_back(exit("unscoped_exit"));
-            rejected.push_back(read(unscoped));
-            static_cast<void>(finish_body_declarations(rejected, {}, {}, {}));
-            ct::require(rejected.size() == 4uz);
-            ct::expect(std::holds_alternative<TargetVariableStmt>(rejected[1].value));
-            ct::expect(std::holds_alternative<TargetLabelStmt>(rejected[2].value));
-            const auto* retained = std::get_if<TargetIfStmt>(&rejected.front().value);
-            ct::require(retained != nullptr);
-            ct::expect(
-                std::holds_alternative<TargetGotoStmt>(
-                    retained->branches.front().body.front().value
-                )
-            );
-        }
-    );
+        auto rejected = std::vector<TargetStmt>();
+        rejected.push_back(conditional_jump("unscoped_exit"));
+        rejected.push_back(local(unscoped, type));
+        rejected.push_back(exit("unscoped_exit"));
+        rejected.push_back(read(unscoped));
+        static_cast<void>(finish_body_declarations(rejected, {}, {}, {}));
+        require(rejected.size() == 4uz);
+        expect(std::holds_alternative<TargetVariableStmt>(rejected[1].value));
+        expect(std::holds_alternative<TargetLabelStmt>(rejected[2].value));
+        const auto* retained = std::get_if<TargetIfStmt>(&rejected.front().value);
+        require(retained != nullptr);
+        expect(
+            std::holds_alternative<TargetGotoStmt>(retained->branches.front().body.front().value)
+        );
+    };
 
-    ct::test(
-        "Declarations: final generated bodies own parameter and local use facts",
+    "Declarations: final generated bodies own parameter and local use facts"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -352,15 +335,15 @@ const ct::Suite tests([] static noexcept {
                     ++definitions;
                     const auto spelling = function->name.components().back().spelling();
                     if (spelling == "forward" || spelling == "only_write") {
-                        if (!ct::expect(function->parameters.size() == 1uz)) {
+                        if (!expect(function->parameters.size() == 1uz)) {
                             return false;
                         }
-                        ct::expect(function->parameters.front().local.has_value());
+                        expect(function->parameters.front().local.has_value());
                     } else if (spelling == "inactive" || spelling == "consume") {
-                        if (!ct::expect(function->parameters.size() == 1uz)) {
+                        if (!expect(function->parameters.size() == 1uz)) {
                             return false;
                         }
-                        ct::expect(!(function->parameters.front().local.has_value()));
+                        expect(!(function->parameters.front().local.has_value()));
                     }
                     return true;
                 }
@@ -368,7 +351,7 @@ const ct::Suite tests([] static noexcept {
                 auto enter_statement(const TargetStmt& statement) noexcept -> bool {
                     if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
                         ++locals;
-                        ct::expect(
+                        expect(
                             variable->maybe_unused
                             == (unit->local_name(variable->local).spelling() != "local")
                         );
@@ -381,12 +364,11 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 query.unit = &unit;
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
             }
-            ct::expect(query.definitions == 8uz);
-            ct::expect(query.locals == 2uz);
-        }
-    );
+            expect(query.definitions == 8uz);
+            expect(query.locals == 2uz);
+        };
 });
 
 } // namespace

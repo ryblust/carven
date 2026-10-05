@@ -4,10 +4,8 @@ import("core.package.repository")
 import("xmake.benchmark.runner", {alias = "benchmark", rootdir = os.projectdir()})
 
 local library = [[export struct Value { number: i32, }
-private fn adjust(number: i32) -> i32 { return number + 1; }
-export fn make_value(number: i32) -> Value {
-    return { number: adjust(number) };
-}
+private fn adjust(number: i32) -> i32 => number + 1;
+export fn make_value(number: i32) -> Value => { number: adjust(number) };
 ]]
 
 function rules_repository()
@@ -124,9 +122,9 @@ function main(options)
     benchmark.run(session, selected, function (session, record, scenario, root)
         local inputs = {
             ["library.cv"] = library,
-            ["unrelated.cv"] = "export fn unrelated_value() -> i32 { return 7; }\n",
+            ["unrelated.cv"] = "export fn unrelated_value() -> i32 => 7;\n",
             ["facade.cv"] = [[import library using { Value, make_value, };
-export fn create_value(number: i32) -> Value { return make_value(number); }
+export fn create_value(number: i32) -> Value => make_value(number);
 ]],
             ["app.cv"] = [[import facade using create_value;
 fn main() { let value = create_value(41); }

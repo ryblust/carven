@@ -16,11 +16,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: access failures preserve code and precise span",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: access failures preserve code and precise span"_test =
         [] static noexcept {
             static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {
@@ -39,10 +36,9 @@ const ct::Suite tests([] static noexcept {
                 },
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test("Compiler diagnostics: converged range backedges retain access witnesses", [] static noexcept {
+    "Compiler diagnostics: converged range backedges retain access witnesses"_test = [] static noexcept {
         struct Expectation final {
             std::string_view name;
             std::string_view source;
@@ -70,43 +66,40 @@ const ct::Suite tests([] static noexcept {
                 .witness = "owner.as_str()",
             },
         });
-        ct::each(cases, &Expectation::name, [](const Expectation& item) static noexcept {
+        each(cases, &Expectation::name, [](const Expectation& item) static noexcept {
             with_compiled_source(
                 item.source,
                 [&](const auto& sources, const auto& result) noexcept {
-                    if (!ct::expect(!result.has_value())) {
+                    if (!expect(!result.has_value())) {
                         return;
                     }
-                    const auto* diagnostic = ct::find_diagnostic(result.error(), item.code);
-                    if (!ct::expect(diagnostic != nullptr)
-                        || !ct::expect(diagnostic->attachment.primary.has_value())
-                        || !ct::expect(!(diagnostic->attachment.related.empty()))) {
+                    const auto* diagnostic = find_diagnostic(result.error(), item.code);
+                    if (!expect(diagnostic != nullptr)
+                        || !expect(diagnostic->attachment.primary.has_value())
+                        || !expect(!(diagnostic->attachment.related.empty()))) {
                         return;
                     }
-                    ct::expect_equal(
-                        sources.slice(diagnostic->attachment.primary->span),
-                        item.primary
-                    );
+                    expect_equal(sources.slice(diagnostic->attachment.primary->span), item.primary);
                     const auto expected_witness = item.source.find(item.witness);
-                    if (!ct::expect_not_equal(expected_witness, std::string_view::npos)) {
+                    if (!expect_not_equal(expected_witness, std::string_view::npos)) {
                         return;
                     }
                     const auto actual_witness =
                         diagnostic->attachment.related.front().span.span.start();
-                    ct::expect_greater_equal(actual_witness, expected_witness);
-                    ct::expect_less(actual_witness, expected_witness + item.witness.size());
+                    expect_greater_equal(actual_witness, expected_witness);
+                    expect_less(actual_witness, expected_witness + item.witness.size());
                 }
             );
         });
-        ct::scenario("definite replacement releases a backedge borrow", [] static noexcept {
+        scenario("definite replacement releases a backedge borrow", [] static noexcept {
             check_compiler_accepts(
                 "fn valid(limit: usize) { var owner: String = \"owned\"; var view: str = \"\"; "
                 "for index in 0usize..limit { view = \"\"; owner.clear(); view = owner.as_str(); continue; } }"
             );
         });
-    });
+    };
 
-    ct::test("Compiler diagnostics: Take conversions preserve source access", [] static noexcept {
+    "Compiler diagnostics: Take conversions preserve source access"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "String owner is unavailable after conversion",
              .source =
@@ -158,7 +151,7 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "&&s"},
         });
         check_compiler_errors(cases);
-    });
+    };
 });
 
 } // namespace

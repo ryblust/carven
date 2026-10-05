@@ -19,11 +19,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic availability: Write capture and Take conflict across a callable",
+const TestSuite suite([] static noexcept {
+    "Semantic availability: Write capture and Take conflict across a callable"_test =
         [] static noexcept {
             const auto diagnostics = analyze_test_errors(
                 std::string(semantic_test_payload_prelude)
@@ -33,12 +30,10 @@ const ct::Suite tests([] static noexcept {
                   "    consume(&&payload);\n"
                   "}\n"
             );
-            ct::expect_diagnostic(diagnostics, DiagnosticCode::AccessCaptureConflict);
-        }
-    );
+            expect_diagnostic(diagnostics, DiagnosticCode::AccessCaptureConflict);
+        };
 
-    ct::test(
-        "Semantic availability: aggregate and branch results retain Write captures",
+    "Semantic availability: aggregate and branch results retain Write captures"_test =
         [] static noexcept {
             const auto aggregate = analyze_test_errors(
                 std::string(semantic_test_payload_prelude)
@@ -48,7 +43,7 @@ const ct::Suite tests([] static noexcept {
                   "    consume(&&payload);\n"
                   "}\n"
             );
-            ct::expect_diagnostic(aggregate, DiagnosticCode::AccessCaptureConflict);
+            expect_diagnostic(aggregate, DiagnosticCode::AccessCaptureConflict);
 
             const auto projection = analyze_test_errors(
                 std::string(semantic_test_payload_prelude)
@@ -58,7 +53,7 @@ const ct::Suite tests([] static noexcept {
                   "    consume(&&payload);\n"
                   "}\n"
             );
-            ct::expect_diagnostic(projection, DiagnosticCode::AccessCaptureConflict);
+            expect_diagnostic(projection, DiagnosticCode::AccessCaptureConflict);
 
             const auto place_read = analyze_test_errors(
                 std::string(semantic_test_payload_prelude)
@@ -70,7 +65,7 @@ const ct::Suite tests([] static noexcept {
                   "    consume(&&payload);\n"
                   "}\n"
             );
-            ct::expect_diagnostic(place_read, DiagnosticCode::AccessCaptureConflict);
+            expect_diagnostic(place_read, DiagnosticCode::AccessCaptureConflict);
 
             const auto forwarded = analyze_test_errors(
                 std::string(semantic_test_payload_prelude)
@@ -81,12 +76,10 @@ const ct::Suite tests([] static noexcept {
                   "    consume(&&payload);\n"
                   "}\n"
             );
-            ct::expect_diagnostic(forwarded, DiagnosticCode::AccessCaptureConflict);
-        }
-    );
+            expect_diagnostic(forwarded, DiagnosticCode::AccessCaptureConflict);
+        };
 
-    ct::test(
-        "Semantic availability: discarded owners retain Write captures until scope exit",
+    "Semantic availability: discarded owners retain Write captures until scope exit"_test =
         [] static noexcept {
             for (const auto* keyword : {"let", "var"}) {
                 const auto retained = analyze_test_errors(
@@ -95,7 +88,7 @@ const ct::Suite tests([] static noexcept {
                     + " _ = [&payload]() { payload.value = 2; }; "
                       "consume(&&payload); }"
                 );
-                ct::expect_diagnostic(retained, DiagnosticCode::AccessCaptureConflict)
+                expect_diagnostic(retained, DiagnosticCode::AccessCaptureConflict)
                     .note("keyword = ", keyword);
 
                 static_cast<void>(analyze_test_program(
@@ -105,36 +98,31 @@ const ct::Suite tests([] static noexcept {
                       "consume(&&payload); }"
                 ));
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Semantic availability: Write capture ends with its actual holder",
-        [] static noexcept {
-            static_cast<void>(analyze_test_program(
-                std::string(semantic_test_payload_prelude)
-                + "fn valid() {\n"
-                  "    var payload = Payload { value: 1 };\n"
-                  "    [&payload]() { payload.value = 2; }();\n"
-                  "    consume(&&payload);\n"
-                  "}\n"
-            ));
+    "Semantic availability: Write capture ends with its actual holder"_test = [] static noexcept {
+        static_cast<void>(analyze_test_program(
+            std::string(semantic_test_payload_prelude)
+            + "fn valid() {\n"
+              "    var payload = Payload { value: 1 };\n"
+              "    [&payload]() { payload.value = 2; }();\n"
+              "    consume(&&payload);\n"
+              "}\n"
+        ));
 
-            static_cast<void>(analyze_test_program(
-                std::string(semantic_test_payload_prelude)
-                + "fn valid() {\n"
-                  "    var payload = Payload { value: 1 };\n"
-                  "    if true {\n"
-                  "        let callback = [&payload]() { payload.value = 2; };\n"
-                  "    }\n"
-                  "    consume(&&payload);\n"
-                  "}\n"
-            ));
-        }
-    );
+        static_cast<void>(analyze_test_program(
+            std::string(semantic_test_payload_prelude)
+            + "fn valid() {\n"
+              "    var payload = Payload { value: 1 };\n"
+              "    if true {\n"
+              "        let callback = [&payload]() { payload.value = 2; };\n"
+              "    }\n"
+              "    consume(&&payload);\n"
+              "}\n"
+        ));
+    };
 
-    ct::test(
-        "Semantic availability: control-result callable loans end with borrower scope",
+    "Semantic availability: control-result callable loans end with borrower scope"_test =
         [] static noexcept {
             static_cast<void>(analyze_test_program(
                 "fn fallback(value: i32) -> i32 { return value; }\n"
@@ -148,33 +136,27 @@ const ct::Suite tests([] static noexcept {
                 "    let moved = &&owner;\n"
                 "}\n"
             ));
-        }
-    );
+        };
 
-    ct::test(
-        "Semantic loans: callee retains its backing during nested arguments",
-        [] static noexcept {
-            const auto nested = analyze_test_errors(
-                "fn invalid() { let offset = 1; let owner = [offset](x: i32) { return x + offset; }; "
-                "let view: fn(i32) -> i32 = owner; "
-                "let result = view(if true { let moved = &&owner; 0 } else { 0 }); }"
-            );
-            ct::expect_diagnostic(nested, DiagnosticCode::AccessBorrowConflict);
-        }
-    );
+    "Semantic loans: callee retains its backing during nested arguments"_test = [] static noexcept {
+        const auto nested = analyze_test_errors(
+            "fn invalid() { let offset = 1; let owner = [offset](x: i32) { return x + offset; }; "
+            "let view: fn(i32) -> i32 = owner; "
+            "let result = view(if true { let moved = &&owner; 0 } else { 0 }); }"
+        );
+        expect_diagnostic(nested, DiagnosticCode::AccessBorrowConflict);
+    };
 
-    ct::test(
-        "Semantic captures: returned closure cannot retain a local Write target",
+    "Semantic captures: returned closure cannot retain a local Write target"_test =
         [] static noexcept {
             const auto diagnostics = analyze_test_errors(
                 "fn invalid() { let factory = []() { var local = 1; "
                 "return [&local]() { local += 1; }; }; }"
             );
-            ct::expect_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict);
-        }
-    );
+            expect_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict);
+        };
 
-    ct::test("Semantic relationships: completed calls deliver only retained captures", [] static noexcept {
+    "Semantic relationships: completed calls deliver only retained captures"_test = [] static noexcept {
         const auto* factory = "let factory = [](&t: i32) { return [&t]() { t += 1; }; }; ";
         const auto valid = std::array {
             std::string("fn valid() {") + factory
@@ -197,7 +179,7 @@ const ct::Suite tests([] static noexcept {
                 "var a: [fn() -> i32; 1] = [c]; a[0] = one; let moved = &&c; let result = a[0](); }"
             ),
         };
-        ct::each(valid, std::identity {}, [&](const auto& source) noexcept {
+        each(valid, std::identity {}, [&](const auto& source) noexcept {
             static_cast<void>(analyze_test_program(source));
         });
         const auto invalid = std::array {
@@ -213,16 +195,16 @@ const ct::Suite tests([] static noexcept {
                   "if true { let setter = [&c, &y, factory]() { c = factory(&y); }; setter(); } "
                   "let moved = &&y; c(); }",
         };
-        ct::each(invalid, std::identity {}, [&](const auto& source) noexcept {
+        each(invalid, std::identity {}, [&](const auto& source) noexcept {
             const auto diagnostics = analyze_test_errors(source);
-            ct::expect(
-                (ct::find_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict)
-                 || ct::find_diagnostic(diagnostics, DiagnosticCode::AccessCaptureConflict))
+            expect(
+                (find_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict)
+                 || find_diagnostic(diagnostics, DiagnosticCode::AccessCaptureConflict))
             );
         });
-    });
+    };
 
-    ct::test("Semantic stable selection: guard access follows actual storage aliases", [] static noexcept {
+    "Semantic stable selection: guard access follows actual storage aliases"_test = [] static noexcept {
         const auto invalid = std::array {
             "fn invalid() { var x = 1; match x { _ if if true { x = 2; true } else { false } => {}, _ => {}, } }",
             "fn set(&x: i32) -> bool { x = 2; return true; } "
@@ -232,10 +214,10 @@ const ct::Suite tests([] static noexcept {
             "fn invalid() { var x = 1; match x { _ if if true { let moved = &&x; true } else { false } => {}, _ => {}, } }",
             "fn invalid() { var a = [1]; for &e in a { let moved = &&a; e = 0; } }",
         };
-        ct::each(invalid, std::identity {}, [&](const auto& source) noexcept {
+        each(invalid, std::identity {}, [&](const auto& source) noexcept {
             const auto diagnostics = analyze_test_errors(source);
-            ct::expect((ct::find_diagnostic(diagnostics, DiagnosticCode::AccessOperationConflict)
-                        || ct::find_diagnostic(diagnostics, DiagnosticCode::AccessUnavailable)))
+            expect((find_diagnostic(diagnostics, DiagnosticCode::AccessOperationConflict)
+                    || find_diagnostic(diagnostics, DiagnosticCode::AccessUnavailable)))
                 .note("source = ", source);
         });
         static_cast<void>(analyze_test_program(
@@ -243,10 +225,9 @@ const ct::Suite tests([] static noexcept {
             "fn valid() { var x = 1; var y = 1; match x { _ if set(&y) => { x = 3; }, _ => {}, } "
             "var a = [1]; for &e in a { e = 0; } let moved = &&a; }"
         ));
-    });
+    };
 
-    ct::test(
-        "Semantic callable views: copies retain the target instead of intermediate storage",
+    "Semantic callable views: copies retain the target instead of intermediate storage"_test =
         [] static noexcept {
             static_cast<void>(analyze_test_program(
                 "fn one() -> i32 { return 1; } "
@@ -262,12 +243,10 @@ const ct::Suite tests([] static noexcept {
                 "let intermediate: fn() -> i32 = owner; selected = intermediate; } "
                 "let result = selected(); }"
             );
-            ct::expect_diagnostic(diagnostics, DiagnosticCode::TypeCallableViewEscape);
-        }
-    );
+            expect_diagnostic(diagnostics, DiagnosticCode::TypeCallableViewEscape);
+        };
 
-    ct::test(
-        "Semantic availability: known function targets still require an available callee",
+    "Semantic availability: known function targets still require an available callee"_test =
         [] static noexcept {
             const auto diagnostics = analyze_test_errors(R"(
         fn plain() -> i32 => 1;
@@ -277,9 +256,8 @@ const ct::Suite tests([] static noexcept {
             return view();
         }
     )");
-            ct::expect_diagnostic(diagnostics, DiagnosticCode::AccessUnavailable);
-        }
-    );
+            expect_diagnostic(diagnostics, DiagnosticCode::AccessUnavailable);
+        };
 });
 
 } // namespace

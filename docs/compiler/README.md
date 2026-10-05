@@ -34,19 +34,16 @@ recipient.
 `driver/` owns command options, file loading, diagnostic presentation, artifact
 output, and native process execution. `driver.process` owns POSIX/Windows
 process launching, executable lookup, and temporary run-directory creation.
-`driver.sources` owns executable-relative Crafts lookup and collection from
-the toolchain and working-directory Crafts roots. It supplies physical source paths
-and resolved module identities to checking, C++ generation, and execution.
-It recursively collects all `.cv` and `.cpp` files in those roots, deduplicates
-canonical filesystem paths, and sorts inputs by path spelling. Module imports
-resolve within the collected Carven batch. The direct-run driver compiles collected
-native sources together with generated implementations and executes the result.
+`driver.sources` owns Crafts lookup and collection from the toolchain and
+working-directory Crafts roots. It collects `.cv` and `.cpp` files recursively,
+deduplicates canonical paths, and sorts inputs by path spelling. The collected
+batch supplies physical source paths and resolved module identities to checking,
+C++ generation, and execution. Module imports resolve within that batch.
+The direct-run driver compiles collected native sources with generated
+implementations and executes the result.
 `load_and_analyze_sources` prepares the batch, calls `analyze_compilation`, and
-renders diagnostics using the source manager's line index for byte locations and
-line ranges.
-The driver selects terminal styling and writes diagnostics to standard error.
-It presents command failures with usage hints for invalid invocations.
-`diagnostics.report` renders source diagnostics from their codes and source spans.
+renders diagnostics. `diagnostics.report` renders source diagnostics from their
+codes and source spans; the driver owns terminal styling and output transport.
 Compile and run commands send the program to the backend; interpret sends it to
 the interpreter. Check completes after successful analysis without invoking a
 backend or interpreter. Dump commands consume lexical or syntax results directly.

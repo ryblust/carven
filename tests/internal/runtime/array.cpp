@@ -10,8 +10,6 @@ namespace {
 
 constexpr auto site = carven::runtime::SourceSite::native();
 
-namespace ct = carven::testing;
-
 struct ArrayElement final {
     int value;
     std::vector<int>* trace;
@@ -39,32 +37,27 @@ AdoptedArrayElement::~AdoptedArrayElement() noexcept {
     source.trace->push_back(-source.value);
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Runtime: checked array indexing preserves references", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Runtime: checked array indexing preserves references"_test = [] static noexcept {
         using namespace carven::runtime;
         auto values = std::array<std::int32_t, 3> {1, 2, 3};
         checked_array_index(values, std::int32_t {0}, site) = 4;
         checked_array_index(values, std::size_t {2}, site) = 6;
-        ct::expect_equal(values[0], 4);
-        ct::expect_equal(values[2], 6);
-    });
+        expect_equal(values[0], 4);
+        expect_equal(values[2], 6);
+    };
 
-
-    ct::test("Runtime: array adoption directly constructs ordered elements", [] static noexcept {
+    "Runtime: array adoption directly constructs ordered elements"_test = [] static noexcept {
         auto trace = std::vector<int>();
         {
             const auto source = std::array {ArrayElement {1, &trace}, ArrayElement {2, &trace}};
             const auto adopted =
                 carven::runtime::adopt_array<std::array<AdoptedArrayElement, 2>, false>(source);
-            ct::expect_equal(adopted.size(), 2uz);
-            ct::expect(trace == std::vector<int> {1, 2});
+            expect_equal(adopted.size(), 2uz);
+            expect(trace == std::vector<int> {1, 2});
         }
-        ct::expect(trace == std::vector<int> {1, 2, -2, -1});
-    });
+        expect(trace == std::vector<int> {1, 2, -2, -1});
+    };
 });
 
 } // namespace

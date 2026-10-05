@@ -15,12 +15,12 @@ namespace {
 class SymbolCollector final {
 public:
     SymbolCollector(ASTView syntax, std::string_view source) noexcept;
-    auto collect() const noexcept -> editor::DocumentSymbolList;
+    auto collect() const noexcept -> EditorDocumentSymbolList;
 
 private:
-    auto collect_item(ASTItemID id) const noexcept -> std::optional<editor::DocumentSymbol>;
-    auto symbol(editor::SymbolKind kind, Span range, Span name) const noexcept
-        -> editor::DocumentSymbol;
+    auto collect_item(ASTItemID id) const noexcept -> std::optional<EditorDocumentSymbol>;
+    auto symbol(EditorSymbolKind kind, Span range, Span name) const noexcept
+        -> EditorDocumentSymbol;
 
     ASTView syntax;
     std::string_view source;
@@ -30,9 +30,9 @@ SymbolCollector::SymbolCollector(ASTView syntax, std::string_view source) noexce
     : syntax(syntax),
       source(source) {}
 
-auto SymbolCollector::symbol(editor::SymbolKind kind, Span range, Span name) const noexcept
-    -> editor::DocumentSymbol {
-    return editor::DocumentSymbol {
+auto SymbolCollector::symbol(EditorSymbolKind kind, Span range, Span name) const noexcept
+    -> EditorDocumentSymbol {
+    return EditorDocumentSymbol {
         .name = std::string(slice(source, name)),
         .kind = kind,
         .range = range,
@@ -42,28 +42,27 @@ auto SymbolCollector::symbol(editor::SymbolKind kind, Span range, Span name) con
 }
 
 auto SymbolCollector::collect_item(ASTItemID id) const noexcept
-    -> std::optional<editor::DocumentSymbol> {
+    -> std::optional<EditorDocumentSymbol> {
     const auto& item = syntax.item(id);
     return item.value.visit(
         Overloaded {
             [&](const ASTFunctionDecl& declaration) noexcept
-                -> std::optional<editor::DocumentSymbol> {
+                -> std::optional<EditorDocumentSymbol> {
                 if (declaration.is_implicit_entry) {
                     return std::nullopt;
                 }
-                return symbol(editor::SymbolKind::Function, item.span, declaration.name_span);
+                return symbol(EditorSymbolKind::Function, item.span, declaration.name_span);
             },
-            [&](const ASTRecordDecl& declaration) noexcept
-                -> std::optional<editor::DocumentSymbol> {
+            [&](const ASTRecordDecl& declaration) noexcept -> std::optional<EditorDocumentSymbol> {
                 auto result = symbol(
-                    declaration.kind == ASTRecordKind::Class ? editor::SymbolKind::Class
-                                                             : editor::SymbolKind::Structure,
+                    declaration.kind == ASTRecordKind::Class ? EditorSymbolKind::Class
+                                                             : EditorSymbolKind::Structure,
                     item.span,
                     declaration.name_span
                 );
                 for (const auto& field : declaration.fields) {
                     result.children.push_back(
-                        symbol(editor::SymbolKind::Field, field.span, field.name_span)
+                        symbol(EditorSymbolKind::Field, field.span, field.name_span)
                     );
                 }
                 for (const auto operation : declaration.operations) {
@@ -73,32 +72,32 @@ auto SymbolCollector::collect_item(ASTItemID id) const noexcept
                 }
                 return result;
             },
-            [&](const ASTEnumDecl& declaration) noexcept -> std::optional<editor::DocumentSymbol> {
+            [&](const ASTEnumDecl& declaration) noexcept -> std::optional<EditorDocumentSymbol> {
                 auto result =
-                    symbol(editor::SymbolKind::Enumeration, item.span, declaration.name_span);
+                    symbol(EditorSymbolKind::Enumeration, item.span, declaration.name_span);
                 for (const auto& entry : declaration.cases) {
                     result.children.push_back(
-                        symbol(editor::SymbolKind::EnumCase, entry.span, entry.name_span)
+                        symbol(EditorSymbolKind::EnumCase, entry.span, entry.name_span)
                     );
                 }
                 return result;
             },
             [&](const ASTConstantDecl& declaration) noexcept
-                -> std::optional<editor::DocumentSymbol> {
-                return symbol(editor::SymbolKind::Constant, item.span, declaration.name_span);
+                -> std::optional<EditorDocumentSymbol> {
+                return symbol(EditorSymbolKind::Constant, item.span, declaration.name_span);
             },
-            [](const ASTConstBlock&) static noexcept -> std::optional<editor::DocumentSymbol> {
+            [](const ASTConstBlock&) static noexcept -> std::optional<EditorDocumentSymbol> {
                 return std::nullopt;
             },
-            [](const ASTTestDecl&) static noexcept -> std::optional<editor::DocumentSymbol> {
+            [](const ASTTestDecl&) static noexcept -> std::optional<EditorDocumentSymbol> {
                 return std::nullopt;
             },
         }
     );
 }
 
-auto SymbolCollector::collect() const noexcept -> editor::DocumentSymbolList {
-    auto result = editor::DocumentSymbolList();
+auto SymbolCollector::collect() const noexcept -> EditorDocumentSymbolList {
+    auto result = EditorDocumentSymbolList();
     for (const auto id : syntax.ast_module().items) {
         if (auto declaration = collect_item(id)) {
             result.push_back(std::move(*declaration));
@@ -109,14 +108,11 @@ auto SymbolCollector::collect() const noexcept -> editor::DocumentSymbolList {
 
 } // namespace
 
-namespace editor {
-
-auto collect_symbols(const DocumentSyntax& document) noexcept -> DocumentSymbolList {
+auto collect_editor_symbols(const EditorDocumentSyntax& document) noexcept
+    -> EditorDocumentSymbolList {
     const auto syntax = document.recovered_syntax();
     if (!syntax) {
         return {};
     }
     return SymbolCollector(*syntax, document.source().text).collect();
 }
-
-} // namespace editor

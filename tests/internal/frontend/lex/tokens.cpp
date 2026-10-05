@@ -12,10 +12,8 @@ static_assert(std::movable<TokenBuffer>);
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Lexer: every reserved spelling has its grammar token", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Lexer: every reserved spelling has its grammar token"_test = [] static noexcept {
         static constexpr auto cases = std::to_array<TokenCase>({
             {.spelling = "as", .kind = TokenKind::As},
             {.spelling = "break", .kind = TokenKind::Break},
@@ -48,9 +46,9 @@ const ct::Suite tests([] static noexcept {
             {.spelling = "while", .kind = TokenKind::While},
         });
         check_tokens(cases);
-    });
+    };
 
-    ct::test("Lexer: identifiers are ASCII", [] static noexcept {
+    "Lexer: identifiers are ASCII"_test = [] static noexcept {
         static constexpr auto identifiers = std::to_array<std::string_view>({
             "name",
             "_",
@@ -62,15 +60,15 @@ const ct::Suite tests([] static noexcept {
             "new",
             "delete",
         });
-        ct::each(identifiers, std::identity {}, [](const auto& spelling) static noexcept {
+        each(identifiers, std::identity {}, [](const auto& spelling) static noexcept {
             check_token(spelling, TokenKind::Identifier);
         });
 
         check_lexical_error("变量");
         check_lexical_error(std::string_view("\xff", 1));
-    });
+    };
 
-    ct::test("Lexer: every source-text ingress validates UTF-8", [] static noexcept {
+    "Lexer: every source-text ingress validates UTF-8"_test = [] static noexcept {
         static constexpr auto malformed = [](std::string prefix,
                                              const std::string& suffix) static noexcept {
             prefix.push_back(static_cast<char>(0xff));
@@ -90,15 +88,15 @@ const ct::Suite tests([] static noexcept {
                 .origin = "utf8-ingress-test.cv",
             };
             const auto result = lex(source);
-            ct::expect(
+            expect(
                 std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) static noexcept {
                     return diagnostic.finding.message == "invalid UTF-8 encoding";
                 })
             ).note("text = ", text);
         }
-    });
+    };
 
-    ct::test("Lexer: throw syntax reserves singular keywords only", [] static noexcept {
+    "Lexer: throw syntax reserves singular keywords only"_test = [] static noexcept {
         check_token("throws", TokenKind::Identifier);
         check_token_sequence(
             "??",
@@ -107,9 +105,9 @@ const ct::Suite tests([] static noexcept {
                 {.spelling = "?", .kind = TokenKind::Question},
             })
         );
-    });
+    };
 
-    ct::test("Lexer: punctuators use maximal munch", [] static noexcept {
+    "Lexer: punctuators use maximal munch"_test = [] static noexcept {
         static constexpr auto cases = std::to_array<TokenCase>({
             {.spelling = "(", .kind = TokenKind::LeftParen},
             {.spelling = ")", .kind = TokenKind::RightParen},
@@ -160,9 +158,9 @@ const ct::Suite tests([] static noexcept {
             {.spelling = "::", .kind = TokenKind::ColonColon},
         });
         check_tokens(cases);
-    });
+    };
 
-    ct::test("Lexer: range punctuation preserves numbers and member access", [] static noexcept {
+    "Lexer: range punctuation preserves numbers and member access"_test = [] static noexcept {
         static constexpr auto integer_range = std::to_array<TokenCase>({
             {.spelling = "1", .kind = TokenKind::NumberLiteral},
             {.spelling = "..", .kind = TokenKind::DotDot},
@@ -196,9 +194,9 @@ const ct::Suite tests([] static noexcept {
                 {.spelling = "member", .kind = TokenKind::Identifier},
             })
         );
-    });
+    };
 
-    ct::test("Lexer: discarded text does not disturb source spans", [] static noexcept {
+    "Lexer: discarded text does not disturb source spans"_test = [] static noexcept {
         static constexpr auto text = std::string_view(" \t// first\r\nlet\nvalue");
         const auto source = SourceView {
             .source_id = SourceID::from_index(0),
@@ -206,20 +204,20 @@ const ct::Suite tests([] static noexcept {
             .origin = "tokenize-test.cv",
         };
         const auto result = lex(source);
-        if (!ct::expect(result.diagnostics.empty())) {
+        if (!expect(result.diagnostics.empty())) {
             return;
         }
         const auto tokens = result.value.tokens();
-        if (!ct::expect_equal(tokens.size(), 2uz)) {
+        if (!expect_equal(tokens.size(), 2uz)) {
             return;
         }
-        ct::expect_equal(tokens[0].kind, TokenKind::Let);
-        ct::expect_equal(slice(text, tokens[0].span), std::string_view("let"));
-        ct::expect_equal(tokens[1].kind, TokenKind::Identifier);
-        ct::expect_equal(slice(text, tokens[1].span), std::string_view("value"));
-    });
+        expect_equal(tokens[0].kind, TokenKind::Let);
+        expect_equal(slice(text, tokens[0].span), std::string_view("let"));
+        expect_equal(tokens[1].kind, TokenKind::Identifier);
+        expect_equal(slice(text, tokens[1].span), std::string_view("value"));
+    };
 
-    ct::test("Lexer: multiple lexical errors do not require an end sentinel", [] static noexcept {
+    "Lexer: multiple lexical errors do not require an end sentinel"_test = [] static noexcept {
         static constexpr auto text = std::string_view("@ let value = 1; $");
         const auto source = SourceView {
             .source_id = SourceID::from_index(0),
@@ -228,33 +226,33 @@ const ct::Suite tests([] static noexcept {
         };
         const auto result = lex(source);
 
-        ct::expect_equal(result.diagnostics.size(), 2uz);
-        ct::expect_equal(
+        expect_equal(result.diagnostics.size(), 2uz);
+        expect_equal(
             result.diagnostics[0].finding.message,
             std::string_view("unknown source character")
         );
-        if (!ct::expect(result.diagnostics[0].attachment.primary.has_value())) {
+        if (!expect(result.diagnostics[0].attachment.primary.has_value())) {
             return;
         }
-        ct::expect_equal(result.diagnostics[0].attachment.primary->span.span.start(), 0u);
-        ct::expect_equal(result.diagnostics[0].attachment.primary->span.span.end(), 1u);
-        ct::expect_equal(
+        expect_equal(result.diagnostics[0].attachment.primary->span.span.start(), 0u);
+        expect_equal(result.diagnostics[0].attachment.primary->span.span.end(), 1u);
+        expect_equal(
             result.diagnostics[1].finding.message,
             std::string_view("unknown source character")
         );
-        if (!ct::expect(result.diagnostics[1].attachment.primary.has_value())) {
+        if (!expect(result.diagnostics[1].attachment.primary.has_value())) {
             return;
         }
-        ct::expect_equal(result.diagnostics[1].attachment.primary->span.span.start(), 17u);
-        ct::expect_equal(result.diagnostics[1].attachment.primary->span.span.end(), 18u);
+        expect_equal(result.diagnostics[1].attachment.primary->span.span.start(), 17u);
+        expect_equal(result.diagnostics[1].attachment.primary->span.span.end(), 18u);
         const auto tokens = result.value.tokens();
-        if (!ct::expect_equal(tokens.size(), 7uz)) {
+        if (!expect_equal(tokens.size(), 7uz)) {
             return;
         }
-        ct::expect_equal(tokens.front().kind, TokenKind::Invalid);
-        ct::expect_equal(tokens.back().kind, TokenKind::Invalid);
-        ct::expect_equal(slice(text, tokens[1].span), std::string_view("let"));
-    });
+        expect_equal(tokens.front().kind, TokenKind::Invalid);
+        expect_equal(tokens.back().kind, TokenKind::Invalid);
+        expect_equal(slice(text, tokens[1].span), std::string_view("let"));
+    };
 });
 
 } // namespace

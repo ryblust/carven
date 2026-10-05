@@ -16,16 +16,14 @@
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/mman.h>
 #include <unistd.h>
-
-namespace {
-constexpr auto site = carven::runtime::SourceSite::native();
-} // namespace
 #endif
 
 namespace {
 
 namespace rt = carven::runtime;
 namespace simd = rt::simd;
+
+constexpr auto site = rt::SourceSite::native();
 
 template<typename... Value>
 constexpr auto has_value_representation =

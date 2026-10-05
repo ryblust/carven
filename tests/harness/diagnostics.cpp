@@ -6,7 +6,6 @@ import :test.harness.diagnostics;
 import :test.harness.framework;
 import std;
 
-namespace carven::testing {
 namespace {
 
 auto describe_diagnostics(std::ostream& output, std::span<const Diagnostic> diagnostics) noexcept
@@ -37,8 +36,8 @@ auto expect_diagnostic(
     std::span<const Diagnostic> diagnostics,
     DiagnosticCode code,
     std::source_location location
-) noexcept -> Assertion {
-    return Assertion(
+) noexcept -> TestAssertion {
+    return TestAssertion(
         find_diagnostic(diagnostics, code) != nullptr,
         false,
         location,
@@ -53,8 +52,8 @@ auto expect_no_diagnostic(
     std::span<const Diagnostic> diagnostics,
     DiagnosticCode code,
     std::source_location location
-) noexcept -> Assertion {
-    return Assertion(
+) noexcept -> TestAssertion {
+    return TestAssertion(
         find_diagnostic(diagnostics, code) == nullptr,
         false,
         location,
@@ -64,5 +63,3 @@ auto expect_no_diagnostic(
         }
     );
 }
-
-} // namespace carven::testing

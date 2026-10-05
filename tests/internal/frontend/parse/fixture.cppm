@@ -19,51 +19,45 @@ import :source.text;
 import :test.harness.framework;
 import std;
 
-namespace {
-
-namespace ct = carven::testing;
-
-} // namespace
-
 auto parse_source(std::string_view text) noexcept -> std::expected<SyntaxTree, Diagnostics> {
     auto sources = SourceManager();
     const auto source = *sources.append_virtual("parser-test.cv", std::string(text));
     const auto lexical = lex(sources.view(source));
-    ct::require(lexical.diagnostics.empty()).note("text = ", text);
+    require(lexical.diagnostics.empty()).note("text = ", text);
     return parse(sources, lexical.value);
 }
 
 auto parse_valid(std::string_view text) noexcept -> SyntaxTree {
     auto result = parse_source(text);
-    ct::require(result.has_value()).note("text = ", text);
+    require(result.has_value()).note("text = ", text);
     return std::move(*result);
 }
 
 auto check_invalid(std::string_view text) noexcept -> void {
     const auto result = parse_source(text);
-    if (!(ct::expect(!result.has_value()).note("text = ", text))) {
+    if (!(expect(!result.has_value()).note("text = ", text))) {
         return;
     }
-    ct::expect_equal(result.error().size(), 1uz).note("text = ", text);
+    expect_equal(result.error().size(), 1uz).note("text = ", text);
 }
 
 auto check_invalid(std::string_view text, std::string_view message) noexcept -> void {
     const auto result = parse_source(text);
-    if (!(ct::expect(!result.has_value()).note("text = ", text))) {
+    if (!(expect(!result.has_value()).note("text = ", text))) {
         return;
     }
-    if (!(ct::expect_equal(result.error().size(), 1uz).note("text = ", text))) {
+    if (!(expect_equal(result.error().size(), 1uz).note("text = ", text))) {
         return;
     }
-    ct::expect_equal(result.error()[0].finding.message, message).note("text = ", text);
+    expect_equal(result.error()[0].finding.message, message).note("text = ", text);
 }
 
 auto check_rejected(std::string_view text) noexcept -> void {
     const auto result = parse_source(text);
-    if (!(ct::expect(!result.has_value()).note("text = ", text))) {
+    if (!(expect(!result.has_value()).note("text = ", text))) {
         return;
     }
-    ct::expect(!result.error().empty()).note("text = ", text);
+    expect(!result.error().empty()).note("text = ", text);
 }
 
 template<typename Alternative, typename Family>

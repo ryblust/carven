@@ -7,8 +7,22 @@ target("carven-test-internal")
     add_files(path.join(os.projectdir(), "tests", "internal", "**.cppm"))
     add_files(path.join(os.projectdir(), "tests", "internal", "**.cpp"))
 
-    add_tests("internal", {group = "internal", run_timeout = 60000,
+    -- Leave headroom for sanitizer instrumentation and shared-runner variability.
+    -- The timeout guards against stalled tests; it is not a performance threshold.
+    local internal_test_timeout = has_config("sanitizers") and 180000 or 60000
+    add_tests("internal", {group = "internal", run_timeout = internal_test_timeout,
         runargs = {"--exclude", "Static specialization budgets:*"}})
-    add_tests("specialization-budgets", {group = "internal", run_timeout = 60000,
-        runargs = {"--filter", "Static specialization budgets:*"}})
+    -- Each production-budget contract gets its own result and timeout. Combining
+    -- them makes sanitizer overhead accumulate and hides which case is slow.
+    for _, budget in ipairs({
+        {name = "iteration", test = "default iteration boundary"},
+        {name = "instance", test = "default instance boundary is independent per root"},
+        {name = "nesting", test = "default nesting boundary"},
+        {name = "node", test = "default node limit counts copied operations"},
+    }) do
+        add_tests("specialization-" .. budget.name .. "-budget", {
+            group = "internal", run_timeout = internal_test_timeout,
+            runargs = {"--test", "Static specialization budgets: " .. budget.test},
+        })
+    end
 target_end()

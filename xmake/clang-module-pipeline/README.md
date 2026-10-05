@@ -95,8 +95,8 @@ does not require recompilation. BMI and object outputs have separate records.
 
 ### Non-cascading changes
 
-Carven enables `build.c++.modules.non_cascading_changes` for its non-Windows
-LLVM toolchain when the Xmake runtime contains the content-dependency adapter.
+Carven enables `build.c++.modules.non_cascading_changes` by default for its
+LLVM toolchain across platforms. Windows uses the LLVM-MinGW distribution.
 With this policy enabled, the content-based path uses directly imported BMI
 contents on Clang 19 and newer. Otherwise, it checks transitive BMI contents.
 The full dependency graph and transitive module mappings remain available for
@@ -116,7 +116,12 @@ Use the repository wrapper for local build commands:
 ./xmakew project -k compile_commands
 ```
 
-On Windows, use `.\xmakew.ps1` with the same arguments.
+On Windows, use `.\xmakew.ps1` with the same arguments. The project selects
+LLVM-MinGW and shared libc++ for the default Windows platform. Add the
+LLVM-MinGW installation's `bin` directory to PATH so Xmake can discover it;
+CI uses the same approach. No `--toolchain`, `-p mingw`, or `--sdk` argument
+is needed when the SDK is found. If an installation is not discoverable through
+PATH, set `LLVM_MINGW_ROOT` to its SDK directory.
 
 For an unexpected compiler, module, or dependency-order failure, clean and
 rebuild before diagnosing the implementation:
@@ -143,17 +148,26 @@ xmake build
 
 ## Overlay and compatibility
 
-The patch targets Xmake `v3.1.1+20260827`. The wrapper creates an overlay of the
-installed Xmake program directory under the platform temporary directory and
-selects it through `XMAKE_PROGRAM_DIR`. Its cache key includes the program
+The patch targets Xmake `v3.1.1+20260827`; CI pins Xmake 3.1.1 on every platform.
+The wrapper creates an overlay of the installed Xmake program directory under
+the platform temporary directory and selects it through `XMAKE_PROGRAM_DIR`.
+Its cache key includes the program
 directory, Xmake version, patched Lua files, and patch contents. A patch
 application failure stops the wrapper.
+
+The overlay also corrects Xmake 3.1.1 sanitizer detection for LLVM-MinGW on
+the Windows platform: GNU-driver sanitizer linking bypasses the MSVC-only
+MD/MT runtime check. Other Windows toolchains keep the stock runtime handling.
+The project continues to use Xmake sanitizer policies on every platform.
 
 The POSIX wrapper attempts an APFS clone on macOS or a reflink on Linux, with a
 regular copy as fallback. Windows uses `robocopy`. Each wrapper prepares a
 staging directory before publishing the overlay. The POSIX wrapper requires
 `patch` and either `shasum` or `sha256sum`; the PowerShell wrapper requires Git
-for Windows.
+for Windows. The repository's `.gitattributes` keeps the patch in LF format;
+`git apply --ignore-space-change` accepts CRLF context in the installed Xmake
+scripts. The PowerShell wrapper restores `XMAKE_PROGRAM_DIR` after each invocation
+so repeated calls in one session start from the original Xmake installation.
 
 The content-based path requires `clang-scan-deps` from the configured toolchain.
 Scan errors stop the build. Generated headers must exist before scanning, for

@@ -1,6 +1,6 @@
 // Text views preserve their backing identity through copying and projection.
 const fn text_views_share_backing() -> bool {
-    let source = String::from_str("abc");
+    let source: String = "abc";
     let view = source.as_str();
     let bytes = source.bytes;
     let copy = bytes;
@@ -21,7 +21,7 @@ const fn retained_text_views_share_backing() -> bool {
 }
 
 const fn transferred_text_has_live_backing() -> bool {
-    var source = String::from_str("a");
+    var source: String = "a";
     source.append("b");
     let moved = &&source;
     let view = moved.as_str();

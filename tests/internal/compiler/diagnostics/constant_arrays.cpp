@@ -7,10 +7,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Const arrays: owning elements require execution storage", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Const arrays: owning elements require execution storage"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "owning elements do not acquire a recursively frozen source type",
              .source = R"(const fn make() -> [String; 1] => ["text"]; const value = make();)",
@@ -23,10 +21,9 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "make()"},
         });
         check_compiler_errors(cases);
-    });
+    };
 
-    ct::test(
-        "Const arrays: freezing preserves ownership and ordinary backing lifetimes",
+    "Const arrays: freezing preserves ownership and ordinary backing lifetimes"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "whole-array Take leaves the source unavailable",
@@ -47,11 +44,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "local[0] = 3"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Const indexing: unresolved names and wrong index types retain diagnostics",
+    "Const indexing: unresolved names and wrong index types retain diagnostics"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "an unresolved index is diagnosed before constant call execution",
@@ -64,8 +59,7 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = R"("text")"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 });
 
 } // namespace

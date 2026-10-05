@@ -12,17 +12,20 @@ import "lifetimes/storage.hpp" using storage_probe::Observer;
 import .control using Failure;
 import .construction using crossed_step;
 
-private fn choose(flag: bool) -> bool {
-    return ResultMaker { 1 }.make(2).probe(if flag { 3 } else { 4 }, event(5)) as bool;
-}
+private fn choose(flag: bool) -> bool => ResultMaker { 1 }.make(2).probe(
+        if flag { 3 } else { 4 },
+        event(5)
+    )
+    as bool;
 
-private fn reference_choice(flag: bool) -> bool {
-    return ::lifetime_probe::receiver_reference().probe(if flag { 3 } else { 4 }) as bool;
-}
+private fn reference_choice(flag: bool) -> bool => ::lifetime_probe::receiver_reference().probe(
+        if flag { 3 } else { 4 }
+    )
+    as bool;
 
-private fn const_reference_choice(flag: bool) -> bool {
-    return ::lifetime_probe::receiver_const_reference().probe(if flag { 3 } else { 4 }) as bool;
-}
+private fn const_reference_choice(flag: bool) -> bool => ::lifetime_probe::receiver_const_reference(
+    ).probe(if flag { 3 } else { 4 })
+    as bool;
 
 test "Storage scopes: native prvalues and references retain category through scalar choices" {
     reset();
@@ -41,13 +44,11 @@ private fn combine(first: bool, second: bool, last: FixedOwner) -> bool {
     return first && second && (last.id as i32) == 4;
 }
 
-private fn mixed(selected: bool, succeeds: bool) -> bool throw Failure {
-    return combine(
-        ResultMaker { 1 }.make(2).probe(0, 0) as bool,
-        selected && (FixedOwner { 3 }.probe(crossed_step(5, succeeds)?, 0) as bool),
-        FixedOwner { 4 }
-    );
-}
+private fn mixed(selected: bool, succeeds: bool) -> bool throw Failure => combine(
+    ResultMaker { 1 }.make(2).probe(0, 0) as bool,
+    selected && (FixedOwner { 3 }.probe(crossed_step(5, succeeds)?, 0) as bool),
+    FixedOwner { 4 }
+);
 
 test "Storage scopes: mixed ordinary and conditional owners unwind in construction order" {
     reset();

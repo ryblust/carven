@@ -15,11 +15,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: names failures preserve code and precise span",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: names failures preserve code and precise span"_test =
         [] static noexcept {
             static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {
@@ -61,8 +58,7 @@ const ct::Suite tests([] static noexcept {
                 },
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 });
 
 } // namespace

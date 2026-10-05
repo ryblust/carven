@@ -9,8 +9,6 @@ import :test.harness.framework;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto increment(int value) noexcept -> int {
     return value + 1;
 }
@@ -156,31 +154,24 @@ static_assert(!StatelessIntTarget<WrongResultCallable>);
 static_assert(!StatelessIntTarget<MutableCallable>);
 static_assert(!StatelessIntTarget<CapturingCallable>);
 
-} // namespace
 
-namespace {
+const TestSuite suite([] static noexcept {
+    "Runtime: FunctionRef invokes functions and noncapturing callables"_test = [] static noexcept {
+        const auto function = IntFunctionRef(&increment);
+        expect_equal(function(4), 5);
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Runtime: FunctionRef invokes functions and noncapturing callables",
-        [] static noexcept {
-            const auto function = IntFunctionRef(&increment);
-            ct::expect_equal(function(4), 5);
+        const auto lambda = [](int value) static noexcept -> int {
+            return value * 2;
+        };
+        const auto reference = IntFunctionRef(lambda);
+        expect_equal(reference(6), 12);
 
-            const auto lambda = [](int value) static noexcept -> int {
-                return value * 2;
-            };
-            const auto reference = IntFunctionRef(lambda);
-            ct::expect_equal(reference(6), 12);
+        const auto temporary =
+            IntFunctionRef([](int value) static noexcept -> int { return value - 1; });
+        expect_equal(temporary(6), 5);
+    };
 
-            const auto temporary =
-                IntFunctionRef([](int value) static noexcept -> int { return value - 1; });
-            ct::expect_equal(temporary(6), 5);
-        }
-    );
-
-    ct::test(
-        "Runtime: FunctionRef preserves capturing mutable callable identity when copied",
+    "Runtime: FunctionRef preserves capturing mutable callable identity when copied"_test =
         [] static noexcept {
             auto offset = 3;
             auto capture = [&offset](int value) noexcept -> int {
@@ -189,21 +180,20 @@ const ct::Suite tests([] static noexcept {
             };
             const auto first = IntFunctionRef(capture);
             const auto second = first;
-            ct::expect_equal(first(1), 5);
-            ct::expect_equal(second(1), 6);
-            ct::expect_equal(offset, 5);
+            expect_equal(first(1), 5);
+            expect_equal(second(1), 6);
+            expect_equal(offset, 5);
 
             auto mutable_callable = MutableCallable {.calls = 0};
             const auto mutable_reference = IntFunctionRef(mutable_callable);
-            ct::expect_equal(mutable_reference(10), 11);
-            ct::expect_equal(mutable_reference(10), 12);
-        }
-    );
+            expect_equal(mutable_reference(10), 11);
+            expect_equal(mutable_reference(10), 12);
+        };
 
-    ct::test("Runtime: FunctionRef preserves constness and exact void results", [] static noexcept {
+    "Runtime: FunctionRef preserves constness and exact void results"_test = [] static noexcept {
         const auto callable = ConstCallable {};
         const auto const_reference = IntFunctionRef(callable);
-        ct::expect_equal(const_reference(4), 12);
+        expect_equal(const_reference(4), 12);
 
         auto calls = 0;
         auto void_callable = [&calls](int) noexcept -> void {
@@ -211,10 +201,10 @@ const ct::Suite tests([] static noexcept {
         };
         const auto void_reference = carven::runtime::FunctionRef<void(int) noexcept>(void_callable);
         void_reference(3);
-        ct::expect_equal(calls, 1);
-    });
+        expect_equal(calls, 1);
+    };
 
-    ct::test("Runtime: FunctionRef copies views without copying their target", [] static noexcept {
+    "Runtime: FunctionRef copies views without copying their target"_test = [] static noexcept {
         auto copies = 0;
         auto moves = 0;
 
@@ -245,12 +235,12 @@ const ct::Suite tests([] static noexcept {
         const auto first = IntFunctionRef(target);
         auto second = first;
         second = first;
-        ct::expect_equal(second(1), 2);
-        ct::expect_equal(copies, 0);
-        ct::expect_equal(moves, 0);
-    });
+        expect_equal(second(1), 2);
+        expect_equal(copies, 0);
+        expect_equal(moves, 0);
+    };
 
-    ct::test("Runtime: FunctionRef preserves reference parameter categories", [] static noexcept {
+    "Runtime: FunctionRef preserves reference parameter categories"_test = [] static noexcept {
         auto callable = [](int& left, int&& right) static noexcept -> int {
             left += right;
             right = 0;
@@ -260,22 +250,21 @@ const ct::Suite tests([] static noexcept {
 
         auto left = 2;
         auto right = 5;
-        ct::expect_equal(reference(left, std::move(right)), 7);
-        ct::expect_equal(left, 7);
+        expect_equal(reference(left, std::move(right)), 7);
+        expect_equal(left, 7);
         // NOLINTNEXTLINE(bugprone-use-after-move): the callable mutates, but does not consume, the referred object.
-        ct::expect_equal(right, 0);
-    });
+        expect_equal(right, 0);
+    };
 
-    ct::test(
-        "Runtime: FunctionRef widens compatible function, object, and temporary lambda results",
+    "Runtime: FunctionRef widens compatible function, object, and temporary lambda results"_test =
         [] static noexcept {
             const auto function = WideFunctionRef(&narrow_result);
             auto success = function(7);
             const auto* success_value = success.success_if();
-            if (!ct::expect(success_value != nullptr)) {
+            if (!expect(success_value != nullptr)) {
                 return;
             }
-            ct::expect_equal(success_value->value, 7);
+            expect_equal(success_value->value, 7);
 
             auto object = [](int value) static noexcept -> NarrowOutcome {
                 return NarrowOutcome::failure(ParseFailure {.offset = value});
@@ -283,33 +272,31 @@ const ct::Suite tests([] static noexcept {
             const auto object_reference = WideFunctionRef(object);
             auto object_failure = object_reference(11);
             const auto* object_failure_value = object_failure.failure_if<ParseFailure>();
-            if (!ct::expect(object_failure_value != nullptr)) {
+            if (!expect(object_failure_value != nullptr)) {
                 return;
             }
-            ct::expect_equal(object_failure_value->offset, 11);
+            expect_equal(object_failure_value->offset, 11);
 
             const auto temporary = WideFunctionRef([](int value) static noexcept -> NarrowOutcome {
                 return NarrowOutcome::success_from([value]() noexcept { return value * 2; });
             });
             auto temporary_success = temporary(6);
             const auto* temporary_value = temporary_success.success_if();
-            if (!ct::expect(temporary_value != nullptr)) {
+            if (!expect(temporary_value != nullptr)) {
                 return;
             }
-            ct::expect_equal(temporary_value->value, 12);
-        }
-    );
+            expect_equal(temporary_value->value, 12);
+        };
 
-    ct::test(
-        "Runtime: FunctionRef wraps plain success results for failing destinations",
+    "Runtime: FunctionRef wraps plain success results for failing destinations"_test =
         [] static noexcept {
             const auto value_function = WideFunctionRef(&increment);
             auto value_success = value_function(4);
             const auto* function_value = value_success.success_if();
-            if (!ct::expect(function_value != nullptr)) {
+            if (!expect(function_value != nullptr)) {
                 return;
             }
-            ct::expect_equal(function_value->value, 5);
+            expect_equal(function_value->value, 5);
 
             auto value_object = [](int value) static noexcept -> int {
                 return value * 3;
@@ -317,70 +304,64 @@ const ct::Suite tests([] static noexcept {
             const auto value_reference = WideFunctionRef(value_object);
             auto object_success = value_reference(3);
             const auto* object_value = object_success.success_if();
-            if (!ct::expect(object_value != nullptr)) {
+            if (!expect(object_value != nullptr)) {
                 return;
             }
-            ct::expect_equal(object_value->value, 9);
+            expect_equal(object_value->value, 9);
 
             const auto void_function = VoidOutcomeFunctionRef(&plain_void);
             auto void_success = void_function(0);
-            ct::expect(void_success.success_if() != nullptr);
-        }
-    );
+            expect(void_success.success_if() != nullptr);
+        };
 
-    ct::test(
-        "Runtime FunctionRef: noexcept boundary admits potentially throwing targets",
+    "Runtime FunctionRef: noexcept boundary admits potentially throwing targets"_test =
         [] static noexcept {
             const auto callable = ThrowingCallable();
             const auto view = IntFunctionRef(callable);
-            ct::expect_equal(view(7), 7);
+            expect_equal(view(7), 7);
             const auto converted = IntFunctionRef(ThrowingFunctionPointerConversion());
-            ct::expect_equal(converted(7), 8);
+            expect_equal(converted(7), 8);
             const auto function = +[](int value) static -> int {
                 return value + 2;
             };
             const auto pointer = IntFunctionRef(function);
-            ct::expect_equal(pointer(7), 9);
+            expect_equal(pointer(7), 9);
             const auto temporary =
                 IntFunctionRef([](int value) static -> int { return value + 3; });
-            ct::expect_equal(temporary(7), 10);
-        }
-    );
+            expect_equal(temporary(7), 10);
+        };
 
-    ct::test(
-        "Callable views: stateless targets adapt results without borrowing source storage",
+    "Callable views: stateless targets adapt results without borrowing source storage"_test =
         [] static noexcept {
             const auto view = IntFunctionRef::from_stateless(ConstCallable {});
-            ct::expect_equal(view(4), 12);
+            expect_equal(view(4), 12);
             const auto lambda_view =
                 IntFunctionRef::from_stateless([](int value) static noexcept -> int {
                     return value + 1;
                 });
-            ct::expect_equal(lambda_view(4), 5);
+            expect_equal(lambda_view(4), 5);
             const auto failing_view = WideFunctionRef::from_stateless(ConstCallable {});
             const auto result = failing_view(3);
-            if (!ct::expect(result.success_if() != nullptr)) {
+            if (!expect(result.success_if() != nullptr)) {
                 return;
             }
-            ct::expect_equal(result.success_if()->value, 9);
+            expect_equal(result.success_if()->value, 9);
             const auto widening_view =
                 WideFunctionRef::from_stateless([](int value) static noexcept -> NarrowOutcome {
                     return NarrowOutcome::failure(ParseFailure {.offset = value});
                 });
             const auto failure = widening_view(7);
             const auto* payload = failure.failure_if<ParseFailure>();
-            if (!ct::expect(payload != nullptr)) {
+            if (!expect(payload != nullptr)) {
                 return;
             }
-            ct::expect_equal(payload->offset, 7);
+            expect_equal(payload->offset, 7);
             const auto void_view =
                 VoidOutcomeFunctionRef::from_stateless([](int) static noexcept -> void {});
-            ct::expect(void_view(0).success_if() != nullptr);
-        }
-    );
+            expect(void_view(0).success_if() != nullptr);
+        };
 
-    ct::test(
-        "Runtime FunctionRef: value delivery uses the ordinary transfer policy",
+    "Runtime FunctionRef: value delivery uses the ordinary transfer policy"_test =
         [] static noexcept {
             struct CopyTrivial final {
                 int* moves;
@@ -405,15 +386,13 @@ const ct::Suite tests([] static noexcept {
             const auto function = View(+callable);
             const auto object = View(callable);
             const auto stateless = View::from_stateless(callable);
-            ct::expect(function(carven::runtime::transfer(value)) == 42);
-            ct::expect(object(carven::runtime::transfer(value)) == 42);
-            ct::expect(stateless(carven::runtime::transfer(value)) == 42);
-            ct::expect(moves == 0);
-        }
-    );
+            expect(function(carven::runtime::transfer(value)) == 42);
+            expect(object(carven::runtime::transfer(value)) == 42);
+            expect(stateless(carven::runtime::transfer(value)) == 42);
+            expect(moves == 0);
+        };
 
-    ct::test(
-        "Runtime FunctionRef: admission checks delivered arguments and result construction",
+    "Runtime FunctionRef: admission checks delivered arguments and result construction"_test =
         [] static noexcept {
             struct CopyOnly final {
                 CopyOnly() = default;
@@ -428,9 +407,9 @@ const ct::Suite tests([] static noexcept {
             static_assert(std::constructible_from<View, decltype(+callable)>);
             static_assert(std::constructible_from<View, decltype(callable)&>);
             auto value = CopyOnly {};
-            ct::expect(View(+callable)(carven::runtime::transfer(value)) == 42);
-            ct::expect(View(callable)(carven::runtime::transfer(value)) == 42);
-            ct::expect(View::from_stateless(callable)(carven::runtime::transfer(value)) == 42);
+            expect(View(+callable)(carven::runtime::transfer(value)) == 42);
+            expect(View(callable)(carven::runtime::transfer(value)) == 42);
+            expect(View::from_stateless(callable)(carven::runtime::transfer(value)) == 42);
             const auto rvalue_only = [](CopyOnly&&) static noexcept -> int {
                 return 0;
             };
@@ -455,11 +434,10 @@ const ct::Suite tests([] static noexcept {
             static_assert(!std::constructible_from<WideView, decltype(+narrow)>);
             static_assert(!std::constructible_from<WideView, decltype(narrow)&>);
             const auto direct = carven::runtime::FunctionRef<Narrow() noexcept>(+narrow)();
-            ct::expect(direct.success_if() != nullptr);
+            expect(direct.success_if() != nullptr);
             const auto wrapped = WideView(+plain)();
-            ct::expect(wrapped.success_if() != nullptr);
-        }
-    );
+            expect(wrapped.success_if() != nullptr);
+        };
 });
 
 } // namespace

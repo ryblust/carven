@@ -15,13 +15,11 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto analyze_observed(std::string text, const SourceAnalysisOutput& observation) noexcept
     -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
     auto sources = SourceManager();
     const auto source = sources.append_virtual("observed.cv", std::move(text));
-    ct::require(source.has_value());
+    require(source.has_value());
     const auto inputs = std::array {SourceModuleInput {
         .source_id = *source,
         .module_path = semantic_test_module_path(),
@@ -29,9 +27,8 @@ auto analyze_observed(std::string text, const SourceAnalysisOutput& observation)
     return analyze_compilation(sources, SourceBatch {.modules = inputs}, {}, {}, observation);
 }
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Source observation: published types belong to the delivered program",
+const TestSuite tests([] static noexcept {
+    "Source observation: published types belong to the delivered program"_test =
         [] static noexcept {
             auto calls = 0uz;
             auto retained = std::vector<SourceOccurrence>();
@@ -43,31 +40,30 @@ const ct::Suite tests([] static noexcept {
                         retained.assign(occurrences.begin(), occurrences.end());
                     }
                 );
-                ct::require(result.has_value());
-                ct::expect_equal(calls, 1uz);
-                ct::require(!retained.empty());
+                require(result.has_value());
+                expect_equal(calls, 1uz);
+                require(!retained.empty());
                 auto typed = 0uz;
                 for (const auto& occurrence : retained) {
                     if (!occurrence.type) {
                         continue;
                     }
                     const auto* type = std::get_if<TypeID>(&*occurrence.type);
-                    ct::require(type != nullptr);
-                    ct::expect(result->value.types().contains(*type));
+                    require(type != nullptr);
+                    expect(result->value.types().contains(*type));
                     ++typed;
                 }
-                ct::expect(typed != 0uz);
+                expect(typed != 0uz);
                 return std::move(result->value);
             }();
             for (const auto& occurrence : retained) {
                 if (occurrence.type) {
-                    ct::expect(moved.types().contains(std::get<TypeID>(*occurrence.type)));
+                    expect(moved.types().contains(std::get<TypeID>(*occurrence.type)));
                 }
             }
-        }
-    );
+        };
 
-    ct::test("Source observation: failure gates control evidence delivery", [] static noexcept {
+    "Source observation: failure gates control evidence delivery"_test = [] static noexcept {
         struct Scenario final {
             std::string_view name;
             std::string_view source;
@@ -107,7 +103,7 @@ const ct::Suite tests([] static noexcept {
                 .has_occurrences = true,
             },
         };
-        ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+        each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
             auto calls = 0uz;
             auto retained = std::vector<SourceOccurrence>();
             const auto result = analyze_observed(
@@ -117,15 +113,15 @@ const ct::Suite tests([] static noexcept {
                     retained.assign(occurrences.begin(), occurrences.end());
                 }
             );
-            ct::require(!result.has_value());
-            ct::expect_diagnostic(result.error(), scenario.diagnostic);
-            ct::expect_equal(calls, scenario.calls);
-            ct::expect_equal(!retained.empty(), scenario.has_occurrences);
+            require(!result.has_value());
+            expect_diagnostic(result.error(), scenario.diagnostic);
+            expect_equal(calls, scenario.calls);
+            expect_equal(!retained.empty(), scenario.has_occurrences);
             for (const auto& occurrence : retained) {
-                ct::expect(!occurrence.type || !std::holds_alternative<TypeID>(*occurrence.type));
+                expect(!occurrence.type || !std::holds_alternative<TypeID>(*occurrence.type));
             }
         });
-    });
+    };
 });
 
 } // namespace

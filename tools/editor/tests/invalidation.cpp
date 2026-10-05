@@ -13,42 +13,40 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-auto project_module(std::string document, std::string_view path) noexcept -> editor::ProjectModule {
+auto project_module(std::string document, std::string_view path) noexcept -> EditorProjectModule {
     auto canonical = CanonicalModulePath::from_value(path);
-    ct::require(canonical.has_value());
+    require(canonical.has_value());
     return {.document = std::move(document), .module_path = std::move(*canonical)};
 }
 
 auto update(
-    editor::AnalysisHost& host,
+    EditorAnalysisHost& host,
     std::string_view document,
     std::int64_t version,
     std::string_view text
 ) noexcept -> void {
-    ct::require(host.update(std::string(document), version, std::string(text)).has_value());
+    require(host.update(std::string(document), version, std::string(text)).has_value());
 }
 
 auto offset(std::string_view text, std::string_view needle, bool last = false) noexcept
     -> std::uint32_t {
     const auto position = last ? text.rfind(needle) : text.find(needle);
-    ct::require(position != std::string_view::npos);
+    require(position != std::string_view::npos);
     return static_cast<std::uint32_t>(position);
 }
 
-auto expect_type(const editor::HoverQuery& query, BuiltinType type) noexcept -> void {
+auto expect_type(const EditorHoverQuery& query, BuiltinType type) noexcept -> void {
     const auto* program = query.analysis.result->program();
-    if (!ct::expect(program != nullptr && query.result.has_value())) {
+    if (!expect(program != nullptr && query.result.has_value())) {
         return;
     }
     const auto* published = std::get_if<TypeID>(&query.result->type);
-    ct::expect(published != nullptr && *published == program->types().builtin_type(type));
+    expect(published != nullptr && *published == program->types().builtin_type(type));
 }
 
-auto expect_inferred_result(const editor::SemanticQuery& query, BuiltinType type) noexcept -> void {
+auto expect_inferred_result(const EditorSemanticQuery& query, BuiltinType type) noexcept -> void {
     const auto* program = query.result->program();
-    if (!ct::expect(program != nullptr)) {
+    if (!expect(program != nullptr)) {
         return;
     }
     const auto provenance = program->provenance();
@@ -58,27 +56,27 @@ auto expect_inferred_result(const editor::SemanticQuery& query, BuiltinType type
         }
         const auto& callable = program->declarations().callable(function.value.callable);
         const auto& signature = program->callable_signatures().signature(callable.signature);
-        ct::expect(signature.result == program->types().builtin_type(type));
+        expect(signature.result == program->types().builtin_type(type));
         return;
     }
-    ct::expect(false).note("The analyzed caller must retain its inferred declaration");
+    expect(false).note("The analyzed caller must retain its inferred declaration");
 }
 
 auto expect_definition(
-    const editor::DefinitionQuery& query,
+    const EditorDefinitionQuery& query,
     std::string_view document,
     std::int64_t version
 ) noexcept -> void {
-    if (!ct::expect(query.result.has_value())) {
+    if (!expect(query.result.has_value())) {
         return;
     }
-    ct::expect_equal(query.result->document, document);
-    ct::expect_equal(query.result->version, version);
+    expect_equal(query.result->document, document);
+    expect_equal(query.result->version, version);
     const auto source = query.analysis.result->source(document);
-    if (!ct::expect(source.has_value())) {
+    if (!expect(source.has_value())) {
         return;
     }
-    ct::expect_equal(slice(source->text, query.result->range), "answer");
+    expect_equal(slice(source->text, query.result->range), "answer");
 }
 
 constexpr auto library = std::string_view("export fn answer() -> i32 { return 42; }");
@@ -86,9 +84,8 @@ constexpr auto caller = std::string_view(
     "import lib using answer; fn inferred() => answer(); fn probe() { let value = answer(); }"
 );
 
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Editor analysis: dependency body and signature edits refresh consumer inference",
+const TestSuite tests([] static noexcept {
+    "Editor analysis: dependency body and signature edits refresh consumer inference"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view name;
@@ -108,15 +105,15 @@ const ct::Suite tests([] static noexcept {
                     .type = BuiltinType::I64
                 },
             };
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "caller.cv", 7, caller);
             const auto modules = std::array {
                 project_module("lib.cv", "lib"),
                 project_module("caller.cv", "main"),
             };
             auto version = 0ll;
-            auto previous = std::shared_ptr<const editor::SemanticAnalysis>();
-            ct::each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
+            auto previous = std::shared_ptr<const EditorSemanticAnalysis>();
+            each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
                 update(host, "lib.cv", ++version, scenario.text);
                 const auto snapshot = host.snapshot();
                 const auto current = snapshot.hover(modules, "caller.cv", offset(caller, "value"));
@@ -127,16 +124,14 @@ const ct::Suite tests([] static noexcept {
                     "lib.cv",
                     version
                 );
-                ct::expect(current.analysis.result != previous);
-                ct::expect(snapshot.semantic(modules).result == current.analysis.result);
-                ct::expect_equal(snapshot.counts().semantic, static_cast<std::size_t>(version));
+                expect(current.analysis.result != previous);
+                expect(snapshot.semantic(modules).result == current.analysis.result);
+                expect_equal(snapshot.counts().semantic, static_cast<std::size_t>(version));
                 previous = current.analysis.result;
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Editor analysis: broken dependency transitions never reuse stale navigation",
+    "Editor analysis: broken dependency transitions never reuse stale navigation"_test =
         [] static noexcept {
             enum class Change {
                 RenameExport,
@@ -156,8 +151,8 @@ const ct::Suite tests([] static noexcept {
                 Scenario {.name = "remove dependency document", .change = Change::RemoveDocument},
                 Scenario {.name = "omit dependency module", .change = Change::OmitModule},
             };
-            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
-                auto host = editor::AnalysisHost();
+            each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                auto host = EditorAnalysisHost();
                 update(host, "lib.cv", 1, library);
                 update(host, "caller.cv", 1, caller);
                 const auto modules = std::array {
@@ -168,7 +163,7 @@ const ct::Suite tests([] static noexcept {
                 const auto call = offset(caller, "answer()", true);
                 const auto before = original.definition(modules, "caller.cv", call);
                 expect_definition(before, "lib.cv", 1);
-                auto project = std::vector<editor::ProjectModule>(modules.begin(), modules.end());
+                auto project = std::vector<EditorProjectModule>(modules.begin(), modules.end());
                 switch (scenario.change) {
                     case Change::RenameExport:
                         update(host, "lib.cv", 2, "export fn renamed() -> i32 { return 42; }");
@@ -184,38 +179,36 @@ const ct::Suite tests([] static noexcept {
                             "import absent using answer; fn inferred() => answer(); fn probe() { let value = answer(); }"
                         );
                         break;
-                    case Change::RemoveDocument: ct::expect(host.remove("lib.cv")); break;
+                    case Change::RemoveDocument: expect(host.remove("lib.cv")); break;
                     case Change::OmitModule:     project.erase(project.begin()); break;
                 }
                 const auto broken = host.snapshot();
                 const auto failed = broken.definition(project, "caller.cv", call);
-                ct::expect(failed.analysis.result != before.analysis.result);
-                ct::expect(failed.analysis.result->program() == nullptr);
-                ct::expect(!failed.analysis.result->diagnostics().empty());
-                ct::expect(!failed.result);
-                ct::expect(!broken.hover(project, "caller.cv", call).result);
-                ct::expect(broken.semantic(project).result == failed.analysis.result);
+                expect(failed.analysis.result != before.analysis.result);
+                expect(failed.analysis.result->program() == nullptr);
+                expect(!failed.analysis.result->diagnostics().empty());
+                expect(!failed.result);
+                expect(!broken.hover(project, "caller.cv", call).result);
+                expect(broken.semantic(project).result == failed.analysis.result);
                 expect_definition(original.definition(modules, "caller.cv", call), "lib.cv", 1);
-                ct::expect_equal(broken.counts().semantic, 2uz);
+                expect_equal(broken.counts().semantic, 2uz);
                 update(host, "lib.cv", 3, library);
                 update(host, "caller.cv", 3, caller);
                 const auto repaired = host.snapshot();
                 const auto after = repaired.definition(modules, "caller.cv", call);
                 expect_definition(after, "lib.cv", 3);
-                ct::expect(after.analysis.result != failed.analysis.result);
-                ct::expect(failed.analysis.result->program() == nullptr);
-                ct::expect(!failed.analysis.result->diagnostics().empty());
+                expect(after.analysis.result != failed.analysis.result);
+                expect(failed.analysis.result->program() == nullptr);
+                expect(!failed.analysis.result->diagnostics().empty());
                 const auto reused_project = scenario.change == Change::OmitModule;
-                ct::expect_equal(repaired.counts().semantic, reused_project ? 2uz : 3uz);
-                ct::expect((after.analysis.result == before.analysis.result) == reused_project);
+                expect_equal(repaired.counts().semantic, reused_project ? 2uz : 3uz);
+                expect((after.analysis.result == before.analysis.result) == reused_project);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Editor analysis: navigation caches follow selected content rather than unrelated edits",
+    "Editor analysis: navigation caches follow selected content rather than unrelated edits"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "lib.cv", 1, library);
             update(host, "caller.cv", 1, caller);
             update(host, "unselected.cv", 1, "fn unused() {}");
@@ -230,24 +223,22 @@ const ct::Suite tests([] static noexcept {
             update(host, "lib.cv", 2, library);
             const auto reused = host.snapshot().definition(modules, "caller.cv", call);
             expect_definition(reused, "lib.cv", 2);
-            ct::expect(reused.analysis.result == first.analysis.result);
-            ct::expect_equal(host.snapshot().counts().semantic, 1uz);
+            expect(reused.analysis.result == first.analysis.result);
+            expect_equal(host.snapshot().counts().semantic, 1uz);
             const auto selected_edit = std::string("// shifted\n") + std::string(caller);
             update(host, "caller.cv", 2, selected_edit);
             const auto refreshed =
                 host.snapshot().hover(modules, "caller.cv", offset(selected_edit, "value"));
             expect_type(refreshed, BuiltinType::I32);
             expect_inferred_result(refreshed.analysis, BuiltinType::I32);
-            ct::expect(refreshed.analysis.result != first.analysis.result);
-            ct::expect_equal(host.snapshot().counts().semantic, 2uz);
+            expect(refreshed.analysis.result != first.analysis.result);
+            expect_equal(host.snapshot().counts().semantic, 2uz);
             expect_definition(first, "lib.cv", 1);
-        }
-    );
+        };
 
-    ct::test(
-        "Editor analysis: replacing selected content releases unobserved semantic generations",
+    "Editor analysis: replacing selected content releases unobserved semantic generations"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "lib.cv", 1, library);
             update(host, "caller.cv", 1, caller);
             const auto modules = std::array {
@@ -255,9 +246,9 @@ const ct::Suite tests([] static noexcept {
                 project_module("caller.cv", "main"),
             };
             const auto use = offset(caller, "value");
-            auto previous = std::weak_ptr<const editor::SemanticAnalysis>();
+            auto previous = std::weak_ptr<const EditorSemanticAnalysis>();
             for (auto version = 1ll; version <= 6ll; ++version) {
-                ct::scenario(std::format("generation {}", version), [&]() noexcept {
+                scenario(std::format("generation {}", version), [&]() noexcept {
                     if (version != 1ll) {
                         const auto text = std::format(
                             "export fn answer() -> i32 {{ return {}; }}",
@@ -267,21 +258,19 @@ const ct::Suite tests([] static noexcept {
                     }
                     const auto current = host.snapshot().hover(modules, "caller.cv", use);
                     expect_type(current, BuiltinType::I32);
-                    ct::expect(previous.expired());
+                    expect(previous.expired());
                     previous = current.analysis.result;
                 });
             }
-            ct::expect(!previous.expired());
-            ct::expect_equal(host.snapshot().counts().semantic, 6uz);
-            ct::expect(host.remove("lib.cv"));
+            expect(!previous.expired());
+            expect_equal(host.snapshot().counts().semantic, 6uz);
+            expect(host.remove("lib.cv"));
             const auto failed = host.snapshot().semantic(modules);
-            ct::expect(failed.result->program() == nullptr);
-            ct::expect(previous.expired());
-        }
-    );
+            expect(failed.result->program() == nullptr);
+            expect(previous.expired());
+        };
 
-    ct::test(
-        "Editor analysis: invalidated semantic owners release before another project query",
+    "Editor analysis: invalidated semantic owners release before another project query"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view name;
@@ -294,8 +283,8 @@ const ct::Suite tests([] static noexcept {
                 Scenario {.name = "edit with old owners", .remove = false, .retain = true},
                 Scenario {.name = "remove with old owners", .remove = true, .retain = true},
             };
-            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
-                auto host = editor::AnalysisHost();
+            each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+                auto host = EditorAnalysisHost();
                 update(host, "lib.cv", 1, library);
                 update(host, "caller.cv", 1, caller);
                 const auto modules = std::array {
@@ -308,36 +297,34 @@ const ct::Suite tests([] static noexcept {
                 );
                 expect_definition(*held, "lib.cv", 1);
                 const auto observed =
-                    std::weak_ptr<const editor::SemanticAnalysis>(held->analysis.result);
+                    std::weak_ptr<const EditorSemanticAnalysis>(held->analysis.result);
                 if (!scenario.retain) {
                     snapshot.reset();
                     held.reset();
                 }
-                ct::expect(!observed.expired());
+                expect(!observed.expired());
                 if (scenario.remove) {
-                    ct::expect(host.remove("lib.cv"));
+                    expect(host.remove("lib.cv"));
                 } else {
                     update(host, "lib.cv", 2, "export fn answer() -> i32 { return 43; }");
                 }
-                ct::expect_equal(host.snapshot().counts().semantic, 1uz);
+                expect_equal(host.snapshot().counts().semantic, 1uz);
                 if (!scenario.retain) {
-                    ct::expect(observed.expired());
+                    expect(observed.expired());
                     return;
                 }
-                ct::expect(!observed.expired());
+                expect(!observed.expired());
                 expect_definition(*held, "lib.cv", 1);
                 snapshot.reset();
-                ct::expect(!observed.expired());
+                expect(!observed.expired());
                 held.reset();
-                ct::expect(observed.expired());
+                expect(observed.expired());
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Editor analysis: old snapshots and query owners retain only their requested generations",
+    "Editor analysis: old snapshots and query owners retain only their requested generations"_test =
         [] static noexcept {
-            auto host = editor::AnalysisHost();
+            auto host = EditorAnalysisHost();
             update(host, "lib.cv", 1, library);
             update(host, "caller.cv", 1, caller);
             const auto modules = std::array {
@@ -348,22 +335,21 @@ const ct::Suite tests([] static noexcept {
             auto snapshot = std::optional(host.snapshot());
             auto retained = std::optional(snapshot->definition(modules, "caller.cv", call));
             const auto observed =
-                std::weak_ptr<const editor::SemanticAnalysis>(retained->analysis.result);
+                std::weak_ptr<const EditorSemanticAnalysis>(retained->analysis.result);
             update(host, "lib.cv", 2, "export fn answer() -> i64 { return 42; }");
             const auto current =
                 host.snapshot().hover(modules, "caller.cv", offset(caller, "value"));
             expect_type(current, BuiltinType::I64);
             expect_definition(*retained, "lib.cv", 1);
             expect_definition(snapshot->definition(modules, "caller.cv", call), "lib.cv", 1);
-            ct::expect(!observed.expired());
+            expect(!observed.expired());
             snapshot.reset();
-            ct::expect(!observed.expired());
+            expect(!observed.expired());
             expect_definition(*retained, "lib.cv", 1);
             retained.reset();
-            ct::expect(observed.expired());
+            expect(observed.expired());
             expect_type(current, BuiltinType::I64);
-        }
-    );
+        };
 });
 
 } // namespace
