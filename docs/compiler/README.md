@@ -177,7 +177,7 @@ contracts, global semantic contracts, ownership, and local pointer nullability,
 in that order. All checks read `const SemIRProgram&`.
 
 Before returning the program, publication records callable/type surfaces and
-closure construction order, then releases checked source regions and static-only
+closure reference order, then releases checked source regions and static-only
 bodies. Surviving bodies keep their IDs and contain one executable region.
 Source-template callables and completed static tests retain declarations and
 provenance without a body reference. No source tree is available to downstream

@@ -89,6 +89,12 @@ struct Vector final {
         return data;
     }
 
+    CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sum() const noexcept -> std::size_t
+        requires std::is_same_v<Element, std::uint8_t>
+    {
+        return backend::sum<sizeof(Element) * Lanes>(value);
+    }
+
     static CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL
     load(Slice<Element> data, std::size_t offset, SourceSite site) noexcept -> Vector {
         if (offset > data.size() || data.size() - offset < Lanes) {

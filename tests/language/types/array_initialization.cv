@@ -1,0 +1,148 @@
+const fn array_initialize(&counter: i32) -> i32 {
+    counter += 1;
+    return counter;
+}
+
+const fn array_repeat_values() -> [i32; 4] {
+    var counter = 0;
+    return [array_initialize(&counter); 4];
+}
+
+const fn array_repeat_empty() -> bool {
+    var counter = 0;
+    let empty = [array_initialize(&counter); 0];
+    let input: String = "retained";
+    let unused = [&&input; 0];
+    return empty.as_slice().len()
+        == 0
+        && unused.as_slice().len() == 0
+        && counter == 0
+        && input == "retained";
+}
+
+const fn array_repeat_extent() -> usize => 3;
+
+const array_repeated = [7u8; array_repeat_extent()];
+const array_zero = [9u8; 0];
+
+enum ArrayFailure {
+    Stop
+}
+
+const fn array_fail_value() -> i32 throw ArrayFailure {
+    throw ArrayFailure::Stop;
+}
+
+const array_skipped_failure = [array_fail_value()?; 0];
+const array_nested_repeat = [[2u8; 3]; 2];
+
+const test "Array initialization: each element executes in order and zero executes none" {
+    check(array_repeat_values() == [1, 2, 3, 4]);
+    check(array_repeat_empty());
+    check(array_repeated == [7u8, 7u8, 7u8]);
+    check(array_zero.as_slice().len() == 0);
+    check(array_skipped_failure.as_slice().len() == 0);
+    check(
+        array_nested_repeat
+            == [
+                [2u8, 2u8, 2u8],
+                [2u8, 2u8, 2u8]
+            ]
+    );
+    let typed: [u16; 3] = [9; 3];
+    check(typed == [9u16, 9u16, 9u16]);
+}
+
+test "Array initialization: native effects and owning copies follow ordinary elements" {
+    check(array_repeat_values() == [1, 2, 3, 4]);
+    check(array_repeat_empty());
+    var input: String = "owned";
+    var copies = [input; 2];
+    input.clear();
+    copies[0].append(" first");
+    check(copies[0] == "owned first");
+    check(copies[1] == "owned");
+    let scalar = 42;
+    let transferred = [&&scalar; 1];
+    check(transferred == [42]);
+    let text = "borrowed";
+    let views: [str; 2] = [text; 2];
+    check(views[0] == text && views[1] == text);
+}
+
+class ArrayElement {
+    value: i32,
+
+    fn create(&counter: i32) -> ArrayElement {
+        counter += 1;
+        return { value: counter };
+    }
+
+    fn read(self) -> i32 => self.value;
+}
+
+test "Array initialization: elements need no default construction" {
+    var counter = 0;
+    let values = [ArrayElement::create(&counter); 3];
+    check(counter == 3);
+    check(values[0].read() == 1 && values[1].read() == 2 && values[2].read() == 3);
+    let empty = [ArrayElement::create(&counter); 0];
+    check(empty.as_slice().len() == 0 && counter == 3);
+}
+
+test "Array initialization: one lexical lambda type keeps independent capture values" {
+    var value = 0;
+    let callbacks = [
+        match true {
+            _ => {
+                value += 1;
+                [value]() -> i32 => value
+            },
+        }; 2
+    ];
+    check(value == 2);
+    value = 10;
+    check(callbacks[0]() == 1 && callbacks[1]() == 2);
+    let stateless = [[]() -> i32 => 7; 3];
+    check(stateless[0]() == 7 && stateless[1]() == 7 && stateless[2]() == 7);
+
+    let different: [fn() -> i32; 2] = [[]() -> i32 => 1, []() -> i32 => 2];
+    check(different[0]() == 1 && different[1]() == 2);
+}
+
+test "Array initialization: nested repetitions share lambda declarations and preserve Write captures" {
+    var value = 0;
+    let nested = [
+        [
+            [&value]() -> i32 {
+                value += 1;
+                return value;
+            }; 2
+        ]; 2
+    ];
+    check(nested[0][0]() == 1 && nested[0][1]() == 2);
+    check(nested[1][0]() == 3 && nested[1][1]() == 4);
+    check(value == 4);
+    let factories = [[value]() => [value]() -> i32 => value; 2];
+    let first = factories[0]();
+    let second = factories[1]();
+    check(first() == 4 && second() == 4);
+}
+
+test "Array initialization: zero lambda occurrences retain a type without constructing captures" {
+    var input: String = "retained";
+    let empty = [
+        [&input]() {
+            input.clear();
+        }; 0
+    ];
+    let stateless = [[]() -> i32 => 7; 0];
+    let nested = [[[]() -> i32 => 7; 0]; 2];
+    let factory = []() => [[]() -> i32 => 7; 0];
+    let produced = factory();
+    check(produced.as_slice().is_empty());
+    check(empty.as_slice().is_empty() && stateless.as_slice().is_empty());
+    check(nested[0].as_slice().is_empty() && nested[1].as_slice().is_empty());
+    let taken = &&input;
+    check(taken == "retained");
+}

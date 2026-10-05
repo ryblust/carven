@@ -1,0 +1,18 @@
+import std::json.validation using validate;
+import std::json.string using decode_string;
+import std::json.error using JSONError;
+import std::simd.scan using { one_of, count_where };
+
+let document = r#"{"message": "你好\u0020JSON", "ok": true}"#;
+
+try {
+    validate(document)?;
+    println("JSON is valid");
+    println(f"Whitespace bytes: {count_where(document.bytes, one_of(" \t\r\n".bytes))}");
+    let decoded = decode_string(r#""你好\u0020JSON""#)?;
+    println(f"Decoded: {decoded}");
+    let plain = decode_string(r#""plain JSON""#)?;
+    println(f"Decoded plain: {plain}");
+} catch {
+    JSONError(error) => println(f"Invalid JSON at byte {error.offset}"),
+}

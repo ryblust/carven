@@ -33,6 +33,7 @@ const 11
 struct 12
 Runtime: const 21
 ]]},
+    {name = "json", dir = "json", output = "JSON is valid\nWhitespace bytes: 3\nDecoded: 你好 JSON\nDecoded plain: plain JSON\n"},
     {name = "strings", dir = "strings", output = "Hello, 世界!\nGoodbye!\nHello, 世界!\nBytes: 14, ID: 002a\n"},
     {name = "hello-world", dir = "helloworld", output = "Hello World\n"},
     {name = "receipt", dir = "basics", output = [[

@@ -3,6 +3,7 @@ module carven:semantic.evaluation.control.impl;
 import :semantic.evaluation.admission;
 import :semantic.evaluation.display;
 import :semantic.evaluation.executor;
+import :semantic.evaluation.operation;
 import :semantic.semir.stage;
 import :support.invariant;
 import std;
@@ -338,14 +339,8 @@ auto SemanticExecutor::range_loop(
         if (!fact) {
             co_return std::unexpected(std::move(fact.error()));
         }
-        const auto range = std::get<RangeConstant>(fact->value);
-        auto current = range.begin;
-        const auto less = [](IntegerConstant a, IntegerConstant b) static noexcept {
-            return a.negative() != b.negative() ? a.negative()
-                : a.negative()                  ? a.magnitude() > b.magnitude()
-                                                : a.magnitude() < b.magnitude();
-        };
-        while (less(current, range.end) || (range.inclusive && current == range.end)) {
+        auto cursor = IntegerRangeCursor(std::get<RangeConstant>(fact->value));
+        while (const auto current = cursor.next()) {
             if (auto checked = step(origin); !checked) {
                 co_return std::unexpected(std::move(checked.error()));
             }
@@ -353,19 +348,16 @@ auto SemanticExecutor::range_loop(
                 bind(
                     frame,
                     source.binding->index(),
-                    ConstantAtom {.type = range_type->element, .value = current}
+                    ConstantAtom {.type = range_type->element, .value = *current}
                 );
             }
             auto body = co_await region(frame, *source.body);
             if (!body || body->flow == ExecutionFlow::Return) {
                 co_return body;
             }
-            if (body->flow == ExecutionFlow::Break || current == range.end) {
+            if (body->flow == ExecutionFlow::Break) {
                 break;
             }
-            current = current.negative()
-                ? IntegerConstant::from_parts(current.magnitude() - 1u, true)
-                : IntegerConstant::from_parts(current.magnitude() + 1u, false);
         }
         co_return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
     }

@@ -3,6 +3,7 @@ module carven:semantic.analysis.stage.session.impl;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.constant.freeze;
+import :semantic.analysis.construction.limits;
 import :semantic.analysis.stage.iteration;
 import :semantic.analysis.stage.session;
 import :semantic.analysis.stage.specialization;
@@ -19,7 +20,6 @@ import std;
 namespace {
 
 constexpr auto maximum_nested_roots = 128uz;
-constexpr auto maximum_nodes = 524'288uz;
 constexpr auto maximum_iterations = 100'000uz;
 constexpr auto maximum_instances = 4096uz;
 
@@ -384,7 +384,7 @@ auto StaticStage::charge(StageResource resource, ProgramOriginID origin) noexcep
     };
 
     static constexpr auto budgets = std::array {
-        Budget {.limit = maximum_nodes, .name = "node"},
+        Budget {.limit = maximum_construction_work, .name = "node"},
         Budget {.limit = maximum_iterations, .name = "iteration"},
         Budget {.limit = maximum_instances, .name = "instance"},
     };

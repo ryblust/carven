@@ -495,7 +495,8 @@ auto SyntaxFormatter::annotate() noexcept -> void {
             element = &syntax.expression(group->expression);
         }
         return std::holds_alternative<ASTConstructionExpr>(element->value)
-            || std::holds_alternative<ASTArrayExpr>(element->value);
+            || std::holds_alternative<ASTArrayExpr>(element->value)
+            || std::holds_alternative<ASTArrayRepeatExpr>(element->value);
     };
     for (const auto& fragment : syntax.ast_module().cpp_source_fragments) {
         separation_before[token_at(fragment.form_span.start())] = Separation::Hard;
@@ -623,6 +624,10 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                             Separation::Hard;
                     }
                 }
+            } else if constexpr (std::same_as<T, ASTArrayRepeatExpr>) {
+                mark_group(expression.span);
+                separation_before[token_at(syntax.expression(value.extent).span.start())] =
+                    Separation::Space;
             } else if constexpr (std::same_as<T, ASTConstructionExpr>) {
                 value.initializer.value.visit([&](const auto& initializer) noexcept {
                     using U = std::decay_t<decltype(initializer)>;

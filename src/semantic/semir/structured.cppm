@@ -432,7 +432,7 @@ struct SemRangeLoop final {
     bool is_static;
 };
 
-// A const for in a realized body: one specialized region per index. Continue
+// A const for in a realized body: one specialized region per element. Continue
 // leaves the current iteration and break leaves the expansion.
 struct SemExpandedLoop final {
     std::vector<SemanticRegion> iterations;

@@ -177,18 +177,20 @@ auto BodyElaborator::range_for_statement(
             co_return std::unexpected(value.error());
         }
         auto read_only = false;
-        auto integer_range = false;
+        auto static_iterable = false;
         if (const auto* type = std::get_if<TypeID>(&value->type())) {
             const auto canonical = draft().type_copy(*type);
             if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
                 element_type = array->element;
+                static_iterable = true;
             } else if (const auto* range = std::get_if<RangeTypeValue>(&canonical.value)) {
                 element_type = range->element;
                 read_only = true;
-                integer_range = true;
+                static_iterable = true;
             } else if (const auto* slice = std::get_if<SliceTypeValue>(&canonical.value)) {
                 element_type = slice->element;
                 read_only = true;
+                static_iterable = true;
             } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
                        builtin != nullptr && builtin->kind == BuiltinType::StrCharsView) {
                 read_only = true;
@@ -199,10 +201,12 @@ auto BodyElaborator::range_for_statement(
                 draft().construction_type_copy(std::get<TypeTermID>(value->type()));
             if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
                 element_type = array->element;
+                static_iterable = true;
             } else if (const auto* slice =
                            std::get_if<ConstructionSliceTypeValue>(&construction.value)) {
                 element_type = slice->element;
                 read_only = true;
+                static_iterable = true;
             }
         }
         if (!element_type.has_value()) {
@@ -210,6 +214,13 @@ auto BodyElaborator::range_for_statement(
                 ast.expression(id).span,
                 DiagnosticCode::TypeRangeIterable,
                 "range iterable must be an integer range, array, slice, or character view"
+            ));
+        }
+        if (source.const_span && (!static_iterable || header.write_marker.has_value())) {
+            co_return std::unexpected(fail(
+                *source.const_span,
+                DiagnosticCode::ConstAdmission,
+                "const for requires a Read integer range, array, or slice"
             ));
         }
         if (header.write_marker.has_value()) {
@@ -246,15 +257,6 @@ auto BodyElaborator::range_for_statement(
         }
         if (header.write_marker.has_value()) {
             iterable = take_built(*value, ast.expression(id).span);
-        }
-        if (source.const_span) {
-            if (!integer_range || header.write_marker.has_value()) {
-                co_return std::unexpected(fail(
-                    *source.const_span,
-                    DiagnosticCode::ConstAdmission,
-                    "const for requires a Read integer range"
-                ));
-            }
         }
     }
     if (declared.has_value() && !compatible(*declared, *element_type)) {

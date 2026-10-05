@@ -86,7 +86,7 @@ enum class DefinitionPlacement {
 struct CallableSurface final {
     std::vector<TypeID> types;
     std::vector<CallableID> callables;
-    // Source construction order, retained independently of specialization.
+    // First-encounter reference order, deduplicated independently of specialization.
     std::vector<CallableID> closures;
 };
 
@@ -167,3 +167,6 @@ private:
 
     friend class ProgramDraft;
 };
+
+auto body_closure_references(const SemIRProgram& semantic, const SemIRBody& body) noexcept
+    -> std::vector<CallableID>;

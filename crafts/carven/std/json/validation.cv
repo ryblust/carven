@@ -1,0 +1,212 @@
+import .error using JSONError;
+import .string using skip_string;
+import std::simd.scan using { one_of, byte_range, prefix_where };
+import std::utf.validation using validate_utf8;
+import std::utf.error using UTF8Error;
+
+private enum Expectation: u8 {
+    ArrayFirst,
+    ArrayValue,
+    ArraySeparator,
+    ObjectFirst,
+    ObjectKey,
+    ObjectColon,
+    ObjectValue,
+    ObjectSeparator,
+}
+
+private const whitespace = one_of(" \t\r\n".bytes);
+private const digits = byte_range(0x30, 0x39);
+
+private const fn skip_space(bytes: [u8], &offset: usize) {
+    if offset == bytes.len() { return; }
+    let byte = bytes[offset];
+    if byte != 0x20 && byte != 0x09 && byte != 0x0a && byte != 0x0d { return; }
+    offset += prefix_where(bytes.slice(offset, bytes.len()), whitespace);
+}
+
+private const fn read_digits(bytes: [u8], &offset: usize) throw JSONError {
+    let count = prefix_where(bytes.slice(offset, bytes.len()), digits);
+    if count == 0 {
+        throw JSONError {
+            kind:.InvalidNumber,
+            offset: offset
+        };
+    }
+    offset += count;
+}
+
+private const fn read_number(bytes: [u8], &offset: usize) throw JSONError {
+    if bytes[offset] == 0x2d { offset += 1; }
+    if offset == bytes.len() {
+        throw JSONError {
+            kind:.InvalidNumber,
+            offset: offset
+        };
+    }
+    if bytes[offset] == 0x30 {
+        offset += 1;
+        if offset < bytes.len() && bytes[offset] >= 0x30 && bytes[offset] <= 0x39 {
+            throw JSONError {
+                kind:.InvalidNumber,
+                offset: offset
+            };
+        }
+    } else {
+        read_digits(bytes, &offset)?;
+    }
+    if offset < bytes.len() && bytes[offset] == 0x2e {
+        offset += 1;
+        read_digits(bytes, &offset)?;
+    }
+    if offset < bytes.len() && (bytes[offset] == 0x65 || bytes[offset] == 0x45) {
+        offset += 1;
+        if offset < bytes.len() && (bytes[offset] == 0x2b || bytes[offset] == 0x2d) { offset += 1; }
+        read_digits(bytes, &offset)?;
+    }
+}
+
+private const fn read_literal(bytes: [u8], &offset: usize, const literal: str) throw JSONError {
+    for byte in literal.bytes {
+        if offset == bytes.len() {
+            throw JSONError {
+                kind:.UnexpectedEnd,
+                offset: offset
+            };
+        }
+        if bytes[offset] != byte {
+            throw JSONError {
+                kind:.UnexpectedByte,
+                offset: offset
+            };
+        }
+        offset += 1;
+    }
+}
+
+// Explicit bounded stack avoids native recursion and input-dependent allocation.
+private const fn validate_input(bytes: [u8]) throw JSONError {
+    var frames: [Expectation; 64] = [.ArrayFirst; 64];
+    var depth: usize = 0;
+    var offset: usize = 0;
+    var root_done = false;
+    while {
+        skip_space(bytes, &offset);
+        if depth == 0 && root_done {
+            if offset != bytes.len() {
+                throw JSONError {
+                    kind:.TrailingInput,
+                    offset: offset
+                };
+            }
+            return;
+        }
+        if offset == bytes.len() {
+            throw JSONError {
+                kind:.UnexpectedEnd,
+                offset: offset
+            };
+        }
+        let byte = bytes[offset];
+        if depth != 0 {
+            match frames[depth - 1] {
+                .ObjectFirst | .ObjectKey => {
+                    if frames[depth - 1] == .ObjectFirst && byte == 0x7d {
+                        depth -= 1;
+                        offset += 1;
+                        continue;
+                    }
+                    skip_string(bytes, &offset)?;
+                    frames[depth - 1] = .ObjectColon;
+                    continue;
+                },
+                .ObjectColon => {
+                    if byte != 0x3a {
+                        throw JSONError {
+                            kind:.UnexpectedByte,
+                            offset: offset
+                        };
+                    }
+                    offset += 1;
+                    frames[depth - 1] = .ObjectValue;
+                    continue;
+                },
+                .ObjectSeparator => {
+                    if byte == 0x7d {
+                        depth -= 1;
+                        offset += 1;
+                        continue;
+                    }
+                    if byte != 0x2c {
+                        throw JSONError {
+                            kind:.UnexpectedByte,
+                            offset: offset
+                        };
+                    }
+                    offset += 1;
+                    frames[depth - 1] = .ObjectKey;
+                    continue;
+                },
+                .ObjectValue => {
+                    frames[depth - 1] = .ObjectSeparator;
+                },
+                .ArrayFirst | .ArrayValue => {
+                    if frames[depth - 1] == .ArrayFirst && byte == 0x5d {
+                        depth -= 1;
+                        offset += 1;
+                        continue;
+                    }
+                    frames[depth - 1] = .ArraySeparator;
+                },
+                .ArraySeparator => {
+                    if byte == 0x5d {
+                        depth -= 1;
+                        offset += 1;
+                        continue;
+                    }
+                    if byte != 0x2c {
+                        throw JSONError {
+                            kind:.UnexpectedByte,
+                            offset: offset
+                        };
+                    }
+                    offset += 1;
+                    frames[depth - 1] = .ArrayValue;
+                    continue;
+                },
+            }
+        } else {
+            root_done = true;
+        }
+        match byte {
+            0x7b | 0x5b => {
+                if depth == frames.as_slice().len() {
+                    throw JSONError {
+                        kind:.DepthLimit,
+                        offset: offset
+                    };
+                }
+                frames[depth] = if byte == 0x7b { .ObjectFirst } else { .ArrayFirst };
+                depth += 1;
+                offset += 1;
+            },
+            0x22 => skip_string(bytes, &offset)?,
+            0x74 => read_literal(bytes, &offset, "true")?,
+            0x66 => read_literal(bytes, &offset, "false")?,
+            0x6e => read_literal(bytes, &offset, "null")?,
+            0x2d | 0x30..=0x39 => read_number(bytes, &offset)?,
+            _ => throw JSONError {
+                kind:.UnexpectedByte,
+                offset: offset
+            },
+        }
+    }
+}
+
+// str already establishes UTF-8 validity. All JSON syntax is still checked.
+export const fn validate(text: str) throw JSONError => validate_input(text.bytes)?;
+
+export const fn validate_bytes(bytes: [u8]) throw JSONError + UTF8Error {
+    validate_utf8(bytes)?;
+    validate_input(bytes)?;
+}

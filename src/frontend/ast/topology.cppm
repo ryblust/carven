@@ -359,6 +359,10 @@ private:
 
     auto visit(const ASTArrayExpr& value) noexcept -> void { visit(value.element_ids); }
 
+    auto visit(const ASTArrayRepeatExpr& value) noexcept -> void {
+        visit_fields(value.element, value.extent);
+    }
+
     auto visit(const ASTPositionalInitializerList& value) noexcept -> void {
         visit_fields(value.span, value.values);
     }

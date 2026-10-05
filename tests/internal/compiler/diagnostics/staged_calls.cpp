@@ -156,7 +156,7 @@ const TestSuite suite([] static noexcept {
             }
         };
 
-    "Compiler: static control requires static inputs and integer ranges"_test = [] static noexcept {
+    "Compiler: static control requires static inputs and Read iteration"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {
                 .name = "const for over a runtime range",
@@ -165,10 +165,44 @@ const TestSuite suite([] static noexcept {
                 .primary_text = "0..count",
             },
             {
-                .name = "const for over an array",
-                .source = R"(fn use() { const for value in [1, 2] {} })",
+                .name = "const for over a runtime array",
+                .source = R"(fn use(values: [i32; 2]) { const for value in values {} })",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "values",
+            },
+            {
+                .name = "const for over a runtime slice",
+                .source = R"(fn use(values: [i32]) { const for value in values {} })",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "values",
+            },
+            {
+                .name = "const for cannot write frozen elements",
+                .source = R"(fn use() { const for &value in [1, 2] {} })",
                 .code = DiagnosticCode::ConstAdmission,
                 .primary_text = "const",
+            },
+            {
+                .name = "ordinary array traversal does not supply static elements",
+                .source = R"(fn lane(const value: i32) -> i32 => value;
+                fn use() { for value in [1, 2] { lane(value); } })",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "value",
+            },
+            {
+                .name = "static array iteration retains element binding types",
+                .source = R"(const fn make() -> [String; 1] => [String::from_str("a")];
+                fn use() { const for value in make() {} })",
+                .code = DiagnosticCode::ConstAdmission,
+                .primary_text = "make()",
+            },
+            {
+                .name = "a failed static sequence does not create iterations",
+                .source = R"(struct Broken {}
+                const fn make() -> [i32; 1] throw Broken { throw Broken {}; }
+                fn use() throw Broken { const for value in make()? {} })",
+                .code = DiagnosticCode::ConstEvaluation,
+                .primary_text = "throw Broken {};",
             },
             {
                 .name = "a captured static parameter is runtime closure storage",

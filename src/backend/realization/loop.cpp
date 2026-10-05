@@ -7,6 +7,7 @@ import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :semantic.semir.body;
+import :semantic.semir.constant;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
@@ -177,9 +178,10 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
     -> ContinuationTask<std::monostate> {
     auto scope = LoweringStmtBuilder();
     const auto index = fresh_local(TargetTemporaryNameKind::Operand);
-    const auto range_value = std::holds_alternative<RangeTypeValue>(
-        context.semantic().types().type(preparation.operation(value.source).type.resolved()).value
-    );
+    const auto& source = preparation.operation(value.source);
+    const auto* range =
+        std::get_if<RangeTypeValue>(&context.semantic().types().type(source.type.resolved()).value);
+    const auto range_value = range != nullptr;
     auto iterable = scope.accept((co_await operand(
         {.expression = std::addressof(value.source),
          .use = range_value                      ? PreparedUse::OperandValue
@@ -188,6 +190,153 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
          .demand = PreparedDemand::Value}
     )));
     if (!scope.continues()) {
+        destination.scope(std::move(scope));
+        co_return {};
+    }
+    if (range != nullptr) {
+        // A range owns bound snapshots, including when the source is a mutable local.
+        const auto snapshot = fresh_local(TargetTemporaryNameKind::Operand);
+        scope.declare(
+            TargetVariableStmt {
+                .binding = TargetVariableBinding::ConstValue,
+                .maybe_unused = false,
+                .local = snapshot,
+                .type = context.lower_type(source.type.resolved()),
+                .initializer = std::move(*iterable)
+            },
+            false
+        );
+        const auto member = [&](std::string_view name) noexcept -> TargetExpr {
+            return TargetExpr {
+                .value = TargetMemberExpr {
+                    .operand = target_child(name_expression(snapshot)),
+                    .name = TargetIdentifier::from_spelling(name)
+                }
+            };
+        };
+        scope.declare(
+            TargetVariableStmt {
+                .binding = TargetVariableBinding::MutableValue,
+                .maybe_unused = false,
+                .local = index,
+                .type = context.lower_type(range->element),
+                .initializer = member("first")
+            },
+            false
+        );
+        auto inclusive = std::optional<bool>();
+        if (const auto* bounds = std::get_if<SemRange>(&source.value)) {
+            inclusive = bounds->inclusive;
+        } else if (source.constant) {
+            const auto& constant = context.semantic().constants().constant(*source.constant);
+            if (const auto* bounds = std::get_if<RangeConstant>(&constant.value)) {
+                inclusive = bounds->inclusive;
+            }
+        }
+        const auto exclusive = inclusive == false;
+        auto loop_condition = binary_expression(
+            name_expression(index),
+            inclusive == true ? TargetBinaryOperator::LessEqual : TargetBinaryOperator::Less,
+            member("last")
+        );
+        if (!inclusive.has_value()) {
+            loop_condition = binary_expression(
+                std::move(loop_condition),
+                TargetBinaryOperator::LogicalOr,
+                binary_expression(
+                    member("inclusive"),
+                    TargetBinaryOperator::LogicalAnd,
+                    binary_expression(
+                        name_expression(index),
+                        TargetBinaryOperator::Equal,
+                        member("last")
+                    )
+                )
+            );
+        }
+        const auto step = exclusive ? std::nullopt
+                                    : std::optional(names.fresh(TargetTemporaryNameKind::Continue));
+        const auto continuation = LoopContinuation {
+            .step = step,
+            .break_label = std::nullopt,
+            .jump_role = TargetJumpRole::ForLoopContinue,
+            .expanded = false,
+            .target = exit_target(LoweringExitKind::Continue),
+            .break_target = exit_target(LoweringExitKind::Break)
+        };
+        const auto outer_loop = std::exchange(current_loop, continuation);
+        auto iteration = LoweringStmtBuilder();
+        if (value.binding) {
+            declare_binding(*value.binding, name_expression(index), iteration);
+        }
+        iteration.append((co_await region(*value.body, LoweringDiscardResult {})));
+        current_loop = outer_loop;
+        const auto continued = iteration.exits().contains(continuation.target);
+        const auto run_steps = iteration.continues() || continued;
+        auto steps = std::vector<TargetForStep>();
+        auto body = LoweringStmtBuilder();
+        if (exclusive) {
+            body.append(std::move(iteration));
+            if (run_steps) {
+                steps.push_back(
+                    TargetForStep {
+                        .value = TargetUpdateStmt {
+                            .op = TargetUpdateOperator::Increment,
+                            .target = name_expression(index)
+                        }
+                    }
+                );
+            }
+        } else {
+            // Continue closes the iteration's owners before checking an inclusive end.
+            body.scope(std::move(iteration));
+            if (continued) {
+                body.resume(*step, TargetJumpRole::ForLoopContinue, continuation.target);
+            }
+            if (run_steps) {
+                auto terminal = binary_expression(
+                    name_expression(index),
+                    TargetBinaryOperator::Equal,
+                    member("last")
+                );
+                auto done = LoweringStmtBuilder();
+                done.terminate(generated_statement(TargetBreakStmt {}), continuation.break_target);
+                body.record_exits(done.exits());
+                auto branches = std::vector<TargetIfBranch>();
+                branches.push_back(
+                    {.condition = std::move(terminal), .body = std::move(done).finish()}
+                );
+                body.emit(generated_statement(
+                    TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
+                ));
+                body.emit(generated_statement(
+                    TargetUpdateStmt {
+                        .op = TargetUpdateOperator::Increment,
+                        .target = name_expression(index)
+                    }
+                ));
+            }
+        }
+        static_cast<void>(body.consume_exit(continuation.target));
+        static_cast<void>(body.consume_exit(continuation.break_target));
+        scope.record_exits(body.exits());
+        if (exclusive) {
+            scope.emit(generated_statement(
+                TargetForStmt {
+                    .initializer = std::nullopt,
+                    .condition = std::move(loop_condition),
+                    .steps = std::move(steps),
+                    .body = std::move(body).finish()
+                }
+            ));
+        } else {
+            scope.emit(generated_statement(
+                TargetWhileStmt {
+                    .condition = std::move(loop_condition),
+                    .body = std::move(body).finish()
+                }
+            ));
+        }
         destination.scope(std::move(scope));
         co_return {};
     }

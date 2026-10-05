@@ -30,7 +30,7 @@ Payload enum values with different cases compare unequal. Values of the same
 case compare payloads in position order with short-circuiting. Floating-point
 equality follows IEEE `==`; `!=` is its negation.
 
-All Carven expression evaluation is left to right and exactly once. This
+Carven evaluates operands left to right, once per executed occurrence. This
 includes callee before arguments, binary left before right, receiver before
 index, assignment target before value, and initializer clauses in source order.
 Short-circuiting operators and control expressions evaluate only the selected

@@ -701,6 +701,33 @@ const TestSuite suite([] static noexcept {
                 std::string_view("println(value);")
             );
         };
+    "Parser declaration: top-level static controls belong to the implicit entry"_test =
+        [] static noexcept {
+            static constexpr auto text = std::string_view(
+                "const answer = 2;\n"
+                "const fn twice(value: i32) -> i32 => value * 2;\n"
+                "const test { check(answer == 2); }\n"
+                "const { assert(answer == 2); }\n"
+                "const for value in [answer] { println(value); }\n"
+                "const if true { println(answer); }\n"
+            );
+            const auto result = parse_valid(text);
+            const auto ast = result.view();
+            if (!expect_equal(root(result).items.size(), 5uz)) {
+                return;
+            }
+            expect(is<ASTConstantDecl>(ast.item(root(result).items[0])));
+            expect(function(result, 1).const_span.has_value());
+            expect(is<ASTTestDecl>(ast.item(root(result).items[2])));
+            expect(is<ASTConstBlock>(ast.item(root(result).items[3])));
+            const auto& entry = function(result, 4);
+            require(entry.is_implicit_entry);
+            const auto& implementation = std::get<ASTFunctionBody>(entry.implementation);
+            const auto& body = ast.block(std::get<ASTBlockID>(implementation.body));
+            require(body.statements.size() == 2uz);
+            expect(is<ASTForStmt>(ast.statement(body.statements[0])));
+            expect(is<ASTIfForm>(ast.statement(body.statements[1])));
+        };
     "Parser: named function parameters retain const qualifiers and spans"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view(

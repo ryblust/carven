@@ -275,7 +275,7 @@ with an initializer of exactly the binding type. Structural traversal includes
 static initializer roots; ordinary evaluation-child traversal excludes them.
 
 Publication records each source template's callable and type surface after
-validation, together with closure construction order for each callable.
+validation, together with closure reference order for each callable.
 Artifact planning consumes this source-independent metadata to retain provider
 dependencies and stable closure names without traversing template bodies or
 depending on which instances callers requested.
@@ -339,5 +339,5 @@ operator, including signed minimum divided by negative one.
 Local construction checks its preconditions. Program validation checks owner
 and range relations, type and call contracts, lifetime and control legality,
 binding relations, declaration topology, and cross-body callable relations.
-Each declaration and body has its required unique owner; each closure has one
-construction site and one body.
+Each declaration and body has its required unique owner. A lexical closure has
+one callable and one body; construction expressions create values of that type.

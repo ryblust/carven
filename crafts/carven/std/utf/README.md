@@ -23,6 +23,7 @@ the official package sources.
 | `to_string(bytes: [u8]) -> String throw UTF8Error` | Validate and copy into independent storage |
 | `decode_utf8_prefix(bytes: [u8]) -> UTF8DecodeResult throw UTF8Error` | `.End` for empty input; otherwise `.Scalar(char, usize)` for the first scalar and its width |
 | `encode_utf8(character: char) -> UTF8Encoded` | Four-byte array `bytes` and valid `width` |
+| `encoded_bytes(encoded: UTF8Encoded) -> [u8]` | Borrow exactly the valid encoding prefix |
 | `char_from_u32(value: u32) -> char throw UnicodeScalarError` | Reject surrogates and values above U+10FFFF |
 | `character as u32` | Unicode scalar number |
 | `UTF8Validator::create() -> UTF8Validator` | Start an incremental validation attempt |
@@ -51,23 +52,24 @@ fn example() -> String throw UTF8Error {
 
 ## Compile-time use
 
-`char_from_u32`, `encode_utf8`, `decode_utf8_prefix`, and `validate_utf8` are
+`char_from_u32`, `encode_utf8`, `encoded_bytes`, `decode_utf8_prefix`, and `validate_utf8` are
 `const fn`: the same implementation runs in static roots and
 ordinary runtime calls.
 Encoded arrays can also become frozen constant slices:
 
 ```carven
-import std::utf.codec using encode_utf8;
+import std::utf.codec using { encode_utf8, encoded_bytes };
 import std::utf.validation using validate_utf8;
 
 const encoded = encode_utf8('😀');
-const bytes: [u8] = encoded.bytes;
-const { validate_utf8(bytes.slice(0, encoded.width))?; }
+const bytes = encoded_bytes(encoded);
+const { validate_utf8(bytes)?; }
 ```
 
 `UTF8Encoded.bytes` always contains four bytes; only the first `width` bytes
-belong to the encoding, and the remaining bytes are zero. Keep that width when
-constructing a byte view, since zero padding would otherwise encode extra NULs.
+belong to the encoding, and the remaining bytes are zero.
+`encoded_bytes(encoded)` borrows that valid prefix. Bind the encoding before
+retaining its view; Carven tracks the backing storage's lifetime and mutation.
 
 `from_utf8` and `to_string` currently require runtime execution: the executor
 does not admit unchecked borrowed text construction. `UTF8Validator` also requires

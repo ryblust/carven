@@ -11,6 +11,32 @@ import :semantic.semir.type;
 import :support.invariant;
 import std;
 
+IntegerRangeCursor::IntegerRangeCursor(RangeConstant range) noexcept
+    : current(range.begin),
+      end(range.end),
+      inclusive(range.inclusive) {}
+
+auto IntegerRangeCursor::next() noexcept -> std::optional<IntegerConstant> {
+    if (!current) {
+        return std::nullopt;
+    }
+    const auto value = *current;
+    const auto less = value.negative() != end.negative() ? value.negative()
+        : value.negative()                               ? value.magnitude() > end.magnitude()
+                                                         : value.magnitude() < end.magnitude();
+    if (!less && !(inclusive && value == end)) {
+        current.reset();
+        return std::nullopt;
+    }
+    if (value == end) {
+        current.reset();
+    } else {
+        current = value.negative() ? IntegerConstant::from_parts(value.magnitude() - 1u, true)
+                                   : IntegerConstant::from_parts(value.magnitude() + 1u, false);
+    }
+    return value;
+}
+
 auto constant_evaluation_diagnostic(ConstantEvaluationFailure failure) noexcept
     -> std::optional<ConstantEvaluationDiagnostic> {
     switch (failure) {
@@ -1158,6 +1184,13 @@ auto evaluate_simd_constant_value(
                 std::unreachable();
             }
             break;
+        case SIMDIntrinsic::Sum: {
+            auto sum = 0u;
+            for (const auto lane : lanes(0)) {
+                sum += lane;
+            }
+            return ConstantFact {.type = result, .value = IntegerConstant::from_parts(sum, false)};
+        }
         case SIMDIntrinsic::FirstOr: {
             auto first = number(1);
             for (auto i = 0uz; i < width; ++i) {

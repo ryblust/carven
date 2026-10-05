@@ -292,17 +292,34 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL all(Value<Bytes> a) noexcept -> bool {
 
 template<std::size_t Bytes, bool Float>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL count(Value<Bytes> a) noexcept -> std::size_t {
-    const auto chunk_count = [](uint8x16_t chunk) noexcept -> std::size_t {
-        if constexpr (Float) {
-            return vaddvq_u32(vshrq_n_u32(vreinterpretq_u32_u8(chunk), 31));
+    // Widen narrow sums and combine wide halves before reducing to avoid mask packing.
+    if constexpr (Float) {
+        const auto lanes = [](uint8x16_t chunk) noexcept {
+            return vshrq_n_u32(vreinterpretq_u32_u8(chunk), 31);
+        };
+        if constexpr (Bytes == 16) {
+            return vaddlvq_u32(lanes(a));
         } else {
-            return vaddvq_u8(vshrq_n_u8(chunk, 7));
+            return vaddvq_u32(vaddq_u32(lanes(a.low), lanes(a.high)));
         }
-    };
-    if constexpr (Bytes == 16) {
-        return chunk_count(a);
     } else {
-        return chunk_count(a.low) + chunk_count(a.high);
+        const auto lanes = [](uint8x16_t chunk) noexcept {
+            return vshrq_n_u8(chunk, 7);
+        };
+        if constexpr (Bytes == 16) {
+            return vaddlvq_u8(lanes(a));
+        } else {
+            return vaddvq_u8(vaddq_u8(lanes(a.low), lanes(a.high)));
+        }
+    }
+}
+
+template<std::size_t Bytes>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sum(Value<Bytes> a) noexcept -> std::size_t {
+    if constexpr (Bytes == 16) {
+        return vaddlvq_u8(a);
+    } else {
+        return vaddvq_u16(vaddq_u16(vpaddlq_u8(a.low), vpaddlq_u8(a.high)));
     }
 }
 

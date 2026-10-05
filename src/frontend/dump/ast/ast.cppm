@@ -157,6 +157,13 @@ private:
         std::string_view field
     ) noexcept -> void;
     auto render_expression(
+        const ASTArrayRepeatExpr& value,
+        ASTExprID expression,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
+    ) noexcept -> void;
+    auto render_expression(
         const ASTConstructionExpr& value,
         ASTExprID expression,
         std::string_view prefix,

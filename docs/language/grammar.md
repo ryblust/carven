@@ -287,7 +287,8 @@ top-level-item = module-item
                | statement;
 
 (* A top-level const binding is a module constant declaration;
-   const test introduces a test and const { introduces a const block. *)
+   const test introduces a test, const { a const block,
+   const if a conditional, and const for a loop. *)
 module-item = [ visibility-modifier ], module-declaration;
 
 visibility-modifier = "private" | "export";
@@ -834,7 +835,8 @@ field-initializer-list = field-initializer,
 
 field-initializer = IDENTIFIER, ":", expression;
 
-array-expression = "[", [ array-element-list ], "]";
+array-expression = "[", [ array-element-list ], "]"
+                 | "[", expression, ";", expression, "]";
 
 array-element-list = expression,
                      { ",", expression },

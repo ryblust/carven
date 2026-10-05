@@ -566,31 +566,47 @@ auto Specializer::expand(SemRangeLoop& loop, ProgramOriginID origin) noexcept
     if (!constant) {
         co_return std::unexpected(constant.error());
     }
-    const auto fact = draft.constant(*constant);
+    const auto& fact = draft.constant(*constant);
     const auto* range = std::get_if<RangeConstant>(&fact.value);
-    if (!range) {
-        invariant_violation("static loop source is not an integer range");
+    auto elements = std::span<const ConstantID>();
+    if (const auto* array = std::get_if<ArrayConstant>(&fact.value)) {
+        elements = array->elements;
+    } else if (const auto* slice = std::get_if<SliceConstant>(&fact.value)) {
+        elements = slice->elements;
+    } else if (!range) {
+        invariant_violation("static loop source is not a range, array, or slice");
     }
-    const auto range_type = draft.type_copy(fact.type);
-    const auto element = std::get<RangeTypeValue>(range_type.value).element;
+    const auto sequence_type = draft.type_copy(fact.type);
+    const auto element = sequence_type.value.visit([](const auto& value) static noexcept -> TypeID {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, RangeTypeValue>
+                      || std::same_as<Value, ArrayTypeValue>
+                      || std::same_as<Value, SliceTypeValue>) {
+            return value.element;
+        } else {
+            invariant_violation("static loop source has no element type");
+        }
+    });
+    auto cursor = range ? std::optional(IntegerRangeCursor(*range)) : std::nullopt;
+    auto index = 0uz;
+    const auto next = [&]() noexcept -> std::optional<ConstantID> {
+        if (cursor) {
+            const auto current = cursor->next();
+            return current
+                ? std::optional(draft.intern_constant({.type = element, .value = *current}))
+                : std::nullopt;
+        }
+        return index < elements.size() ? std::optional(elements[index++]) : std::nullopt;
+    };
     const auto saved = environment;
     auto expanded = SemExpandedLoop {.iterations = {}};
-    auto current = range->begin;
-    const auto less = [](IntegerConstant a, IntegerConstant b) static noexcept {
-        return a.negative() != b.negative() ? a.negative()
-            : a.negative()                  ? a.magnitude() > b.magnitude()
-                                            : a.magnitude() < b.magnitude();
-    };
-    while (less(current, range->end) || (range->inclusive && current == range->end)) {
+    while (const auto current = next()) {
         if (auto charged = stage.charge(StageResource::Iterations, origin); !charged) {
             co_return std::unexpected(charged.error());
         }
         environment = saved;
         if (loop.binding) {
-            environment.insert_or_assign(
-                *loop.binding,
-                draft.intern_constant({.type = element, .value = current})
-            );
+            environment.insert_or_assign(*loop.binding, *current);
         }
         auto iteration = *loop.body;
         auto result = co_await region(iteration);
@@ -601,12 +617,9 @@ auto Specializer::expand(SemRangeLoop& loop, ProgramOriginID origin) noexcept
         expanded.iterations.push_back(std::move(iteration));
         // Continue enters the next copy; a copy that neither completes nor
         // continues makes the later ones unreachable.
-        if ((!leaves.contains(Exit::Normal) && !leaves.contains(Exit::Continue))
-            || current == range->end) {
+        if (!leaves.contains(Exit::Normal) && !leaves.contains(Exit::Continue)) {
             break;
         }
-        current = current.negative() ? IntegerConstant::from_parts(current.magnitude() - 1u, true)
-                                     : IntegerConstant::from_parts(current.magnitude() + 1u, false);
     }
     environment = saved;
     co_return expanded;

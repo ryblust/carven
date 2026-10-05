@@ -611,6 +611,9 @@ private:
     // The frame count at entry to each enclosing const block. A local of an
     // earlier frame is visible inside the block only when it is static.
     std::vector<std::size_t> const_block_frames;
+    // One lexical lambda declaration serves each evaluation of that source expression.
+    std::map<Span, CallableID> lambda_callables;
+    std::size_t aggregate_construction_work = 0uz;
     bool static_body = false;
     std::optional<LifetimeRegionID> active_full_expression;
     bool reachable;

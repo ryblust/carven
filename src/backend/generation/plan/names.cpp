@@ -8,6 +8,7 @@ import :semantic.semir.stage;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :semantic.visibility;
+import :source.provenance;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -91,45 +92,54 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
     auto scanned_production = std::vector<std::uint8_t>(callable_count);
     auto scanned_tests = std::vector<std::uint8_t>(callable_count);
     auto discovery = std::vector<CallableID>();
+    auto source_modules = std::flat_map<ProgramSourceID, ModuleID>();
+    for (const auto module : declarations.modules()) {
+        source_modules.emplace(
+            semantic.provenance().module_record(module.value.provenance_module).source_id,
+            module.id
+        );
+    }
 
-    const auto record = [&](ModuleID module_id, CallableID callable, bool test) noexcept {
+    const auto closure_origin = [&](CallableID callable) noexcept {
+        const auto* implementation =
+            std::get_if<ClosureBodyImplementation>(&declarations.callable(callable).implementation);
+        if (implementation == nullptr) {
+            invariant_violation("closure reference names a non-closure callable");
+        }
+        const auto origin = semantic.bodies().body(implementation->body).region().origin;
+        return semantic.provenance().source_origin(origin);
+    };
+    const auto record = [&](CallableID callable, bool test) noexcept {
         if (callable.owner() != semantic.identity() || callable.index() >= owners.size()) {
             invariant_violation("closure discovery received a foreign callable");
         }
         auto& owner = owners[callable.index()];
-        if (owner.has_value() && *owner != module_id) {
-            invariant_violation("one closure callable is constructed by multiple modules");
-        }
         if (!owner.has_value()) {
-            owner = module_id;
+            owner = source_modules.at(closure_origin(callable).source_id);
             discovery.push_back(callable);
         }
         (test ? tests : production)[callable.index()] = 1;
     };
 
-    auto visit_callable = std::function<void(ModuleID, CallableID, bool)>();
-    const auto visit_closure = [&](ModuleID module_id, CallableID closure, bool test) noexcept {
-        record(module_id, closure, test);
+    auto visit_callable = std::function<void(CallableID, bool)>();
+    const auto visit_closure = [&](CallableID closure, bool test) noexcept {
+        record(closure, test);
         auto& scanned = (test ? scanned_tests : scanned_production)[closure.index()];
         if (scanned == 0) {
             scanned = 1;
-            visit_callable(module_id, closure, test);
+            visit_callable(closure, test);
         }
     };
-    visit_callable = [&](ModuleID module_id, CallableID callable, bool test) noexcept {
+    visit_callable = [&](CallableID callable, bool test) noexcept {
         for (const auto closure : semantic.callable_surface(callable).closures) {
-            visit_closure(module_id, closure, test);
+            visit_closure(closure, test);
         }
     };
-    const auto visit_body = [&](ModuleID module_id, BodyID body_id, bool test) noexcept {
-        visit_semantic_nodes(
-            semantic.bodies().body(body_id).region(),
-            [&](const SemanticExpression& expression) noexcept {
-                if (const auto* closure = std::get_if<SemClosure>(&expression.value)) {
-                    visit_closure(module_id, closure->callable, test);
-                }
-            }
-        );
+    const auto visit_body = [&](BodyID body_id, bool test) noexcept {
+        for (const auto closure :
+             body_closure_references(semantic, semantic.bodies().body(body_id))) {
+            visit_closure(closure, test);
+        }
     };
 
     for (const auto module_record : declarations.modules()) {
@@ -137,12 +147,12 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
             item.visit(
                 Overloaded {
                     [&](FunctionID id) noexcept {
-                        visit_callable(module_record.id, declarations.function(id).callable, false);
+                        visit_callable(declarations.function(id).callable, false);
                     },
                     [&](TestID id) noexcept {
                         const auto& test = semantic.tests().test(id);
                         if (!test.is_const) {
-                            visit_body(module_record.id, *test.body, true);
+                            visit_body(*test.body, true);
                         }
                     },
                     [](StructID) static noexcept {},
@@ -219,10 +229,17 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
             );
         }
         visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
+            auto active_types = std::flat_set<TypeID>();
+            collect_value_closure_dependencies(
+                expression.type.resolved(),
+                dependencies[callable.index()],
+                active_types
+            );
             if (const auto* child = std::get_if<SemClosure>(&expression.value)) {
                 dependencies[callable.index()].push_back(child->callable);
             }
         });
+        std::erase(dependencies[callable.index()], callable);
         std::ranges::sort(dependencies[callable.index()]);
         const auto unique = std::ranges::unique(dependencies[callable.index()]);
         dependencies[callable.index()].erase(unique.begin(), unique.end());
@@ -269,7 +286,12 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
 
     auto module_ordinals = std::vector<std::uint32_t>(callable_count);
     auto module_counts = std::vector<std::uint32_t>(module_count);
-    for (const auto callable : discovery) {
+    auto lexical_order = discovery;
+    std::ranges::sort(lexical_order, [&](CallableID left, CallableID right) noexcept {
+        return std::tuple {*owners[left.index()], closure_origin(left).span, left}
+        < std::tuple {*owners[right.index()], closure_origin(right).span, right};
+    });
+    for (const auto callable : lexical_order) {
         module_ordinals[callable.index()] = module_counts[owners[callable.index()]->index()]++;
     }
 

@@ -1,0 +1,170 @@
+import .error using JSONError;
+import std::simd.scan using { one_of, byte_range, set_union, find_where };
+
+// The payload ends the ordinary byte run; offset advances past the terminator.
+private enum StringPart {
+    End(usize),
+    Escape(usize, char),
+}
+
+private const stops = set_union(byte_range(0, 0x1f), one_of([0x22, 0x5c]));
+
+private const fn read_hex(bytes: [u8], &offset: usize) -> u32 throw JSONError {
+    var value: u32 = 0;
+    for _ in 0..4 {
+        if offset == bytes.len() {
+            throw JSONError {
+                kind:.UnexpectedEnd,
+                offset: offset
+            };
+        }
+        let byte = bytes[offset];
+        let digit: u32 = match byte {
+            0x30..=0x39 => (byte - 0x30) as u32,
+            0x41..=0x46 => (byte - 0x41 + 10) as u32,
+            0x61..=0x66 => (byte - 0x61 + 10) as u32,
+            _ => throw JSONError {
+                kind:.InvalidHex,
+                offset: offset
+            },
+        };
+        value = (value << 4) | digit;
+        offset += 1;
+    }
+    return value;
+}
+
+// offset starts immediately after the backslash and advances past the escape.
+private const fn read_escape(bytes: [u8], &offset: usize) -> char throw JSONError {
+    let start = offset - 1;
+    if offset == bytes.len() {
+        throw JSONError {
+            kind:.UnexpectedEnd,
+            offset: offset
+        };
+    }
+    let byte = bytes[offset];
+    offset += 1;
+    match byte {
+        0x22 => return '"',
+        0x5c => return '\\',
+        0x2f => return '/',
+        0x62 => return '\u{8}',
+        0x66 => return '\u{c}',
+        0x6e => return '\n',
+        0x72 => return '\r',
+        0x74 => return '\t',
+        0x75 => {},
+        _ => throw JSONError {
+            kind:.InvalidEscape,
+            offset: offset - 1
+        },
+    }
+    let first = read_hex(bytes, &offset)?;
+    if first >= 0xdc00 && first <= 0xdfff {
+        throw JSONError {
+            kind:.UnpairedSurrogate,
+            offset: start
+        };
+    }
+    if first < 0xd800 || first > 0xdbff { return char::from_u32_unchecked(first); }
+    if bytes.len() - offset < 2 {
+        throw JSONError {
+            kind:.UnpairedSurrogate,
+            offset: start
+        };
+    }
+    if bytes[offset] != 0x5c || bytes[offset + 1] != 0x75 {
+        throw JSONError {
+            kind:.UnpairedSurrogate,
+            offset: start
+        };
+    }
+    let second_start = offset;
+    offset += 2;
+    let second = read_hex(bytes, &offset)?;
+    if second < 0xdc00 || second > 0xdfff {
+        throw JSONError {
+            kind:.UnpairedSurrogate,
+            offset: second_start
+        };
+    }
+    return char::from_u32_unchecked(0x10000 + ((first - 0xd800) << 10) + second - 0xdc00);
+}
+
+private const fn begin_string(bytes: [u8], &offset: usize) throw JSONError {
+    if offset == bytes.len() {
+        throw JSONError {
+            kind:.UnexpectedEnd,
+            offset: offset
+        };
+    }
+    if bytes[offset] != 0x22 {
+        throw JSONError {
+            kind:.UnexpectedByte,
+            offset: offset
+        };
+    }
+    offset += 1;
+}
+
+// Raw bytes are not checked for UTF-8 here; each public ingress establishes it.
+private const fn next_string_part(bytes: [u8], &offset: usize) -> StringPart throw JSONError {
+    var end = offset;
+    match find_where(bytes.slice(offset, bytes.len()), stops) {
+        .Missing => throw JSONError {
+            kind:.UnexpectedEnd,
+            offset: bytes.len()
+        },
+        .Found(position) => {
+            end += position;
+        },
+    }
+    let byte = bytes[end];
+    if byte < 0x20 {
+        throw JSONError {
+            kind:.ControlCharacter,
+            offset: end
+        };
+    }
+    offset = end + 1;
+    if byte == 0x22 { return .End(end); }
+    return .Escape(end, read_escape(bytes, &offset)?);
+}
+
+const fn skip_string(bytes: [u8], &offset: usize) throw JSONError {
+    begin_string(bytes, &offset)?;
+    while {
+        match next_string_part(bytes, &offset)? {
+            .End(_) => return,
+            .Escape(_, _) => {},
+        }
+    }
+}
+
+// Exactly one quoted string. The result owns independent decoded storage.
+export fn decode_string(text: str) -> String throw JSONError {
+    var offset: usize = 0;
+    begin_string(text.bytes, &offset)?;
+    var result = String {};
+    while {
+        let start = offset;
+        match next_string_part(text.bytes, &offset)? {
+            .End(end) => {
+                if offset != text.len() {
+                    throw JSONError {
+                        kind:.TrailingInput,
+                        offset: offset
+                    };
+                }
+                // Quotes and escapes are ASCII boundaries in valid UTF-8.
+                result.append(str::from_utf8_unchecked(text.bytes.slice(start, end)));
+                return &&result;
+            },
+            .Escape(end, character) => {
+                result.append(str::from_utf8_unchecked(text.bytes.slice(start, end)));
+                result.push(character);
+            },
+        }
+    }
+}

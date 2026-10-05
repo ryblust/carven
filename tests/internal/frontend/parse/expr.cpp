@@ -113,6 +113,18 @@ const TestSuite suite([] static noexcept {
             check_invalid("fn invalid() { let native = #[cpp] ---\nreturn compute();\n---\n; }");
         };
 
+    "Parser expression: array initialization retains one element and its extent"_test =
+        [] static noexcept {
+            const auto result = parse_valid("fn arrays() { let values = [make(); 3]; }");
+            const auto ast = result.view();
+            const auto& repeated = get<ASTArrayRepeatExpr>(initializer(result, 0));
+            expect(is<ASTCallExpr>(ast.expression(repeated.element)));
+            expect(is<ASTLiteral>(ast.expression(repeated.extent)));
+            check_invalid("fn bad() { let values = [1;]; }");
+            check_invalid("fn bad() { let values = [1, 2; 3]; }");
+            check_invalid("fn bad() { let values = [1; 3, 4]; }");
+        };
+
     "Parser expression: precedence is represented by typed expression edges"_test =
         [] static noexcept {
             const auto result = parse_valid(

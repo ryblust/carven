@@ -10,6 +10,18 @@ import :semantic.semir.simd;
 import :semantic.semir.type;
 import std;
 
+// Advances a checked integer range without stepping beyond an inclusive end.
+class IntegerRangeCursor final {
+public:
+    explicit IntegerRangeCursor(RangeConstant range) noexcept;
+    auto next() noexcept -> std::optional<IntegerConstant>;
+
+private:
+    std::optional<IntegerConstant> current;
+    IntegerConstant end;
+    bool inclusive;
+};
+
 enum class IntegerArithmetic { Checked, Wrapping };
 
 enum class ConstantEvaluationFailure {

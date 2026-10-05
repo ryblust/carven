@@ -1,4 +1,4 @@
--- UTF validation also runs with the forced portable backend.
+-- SIMD scanners and UTF/JSON validation also run with the portable backend.
 for _, variant in ipairs({
     {name = "carven-test-crafts", test = "crafts"},
     {name = "carven-test-crafts-scalar", test = "crafts-scalar", scalar = true},
@@ -11,7 +11,8 @@ for _, variant in ipairs({
         end
         add_rules("@carven/carven", {tests = "default"})
         if variant.scalar then
-            add_files("carven/std/utf/blocks.cv", "carven/std/utf/validation.cv")
+            add_files("carven/std/utf/blocks.cv", "carven/std/utf/validation.cv",
+                "carven/std/simd/**.cv", "carven/std/json/**.cv")
         else
             add_files("carven/**.cv")
         end

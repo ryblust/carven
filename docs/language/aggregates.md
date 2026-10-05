@@ -146,13 +146,23 @@ an owning value during execution. Native defaults remain delegated to C++ and
 are outside Carven's interpreter and constant executor.
 
 An array type has one element type and a constant nonnegative extent. A
-zero-length array type is valid and still carries its element type. Without an
-expected array or slice type, an array literal must be nonempty; its element
-type is inferred from an unambiguous element, its extent is the element count,
-and every element must be compatible. An expected `[T; N]` supplies the element
-type and requires exactly N elements. An expected `[T]` supplies the element
-type and borrows the resulting array under ordinary lifetime rules. Empty `[]`
-is valid with either an expected `[T; 0]` or `[T]`.
+zero-length array type is valid and still carries its element type. A
+comma-separated literal has an extent equal to its element count. Without an
+expected array or slice type, it must be nonempty; its element type is inferred
+from an unambiguous element, and every element must be compatible. An expected
+`[T; N]` supplies the element type and requires exactly N elements. An expected
+`[T]` supplies the element type and borrows the resulting array under ordinary
+lifetime rules. Empty `[]` is valid with either an expected `[T; 0]` or `[T]`.
+
+`[expression; N]` constructs an array with N elements. N follows the same
+constant nonnegative extent rules as `[T; N]`. An expected array or slice supplies
+the element type; otherwise it is inferred from the expression. An expected
+array extent must equal N. Each element evaluates the expression afresh in
+index order, with ordinary access and lifetime rules. For N = 0, the expression
+is checked and determines the element type but is not executed. No element
+default is required. If an element fails, construction stops and already
+constructed elements follow ordinary cleanup rules. Literal expansion is bounded
+by the compiler's construction budgets.
 
 Array indexing accepts an integer index. A constant negative index or one
 greater than or equal to the extent is diagnosed before lowering. A dynamic

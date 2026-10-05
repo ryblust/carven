@@ -558,6 +558,20 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
                     break;
                 }
                 elements.push_back(*element);
+                if (elements.size() == 1uz && match(TokenKind::Semicolon)) {
+                    auto extent = parse_expression();
+                    const auto right =
+                        expect(TokenKind::RightBracket, "expected ']' after array extent");
+                    if (!extent || failed) {
+                        return std::nullopt;
+                    }
+                    return builder.append_expression(
+                        ASTExpr {
+                            .span = join(left->span, right.span),
+                            .value = ASTArrayRepeatExpr {.element = *element, .extent = *extent},
+                        }
+                    );
+                }
                 if (!match(TokenKind::Comma)) {
                     break;
                 }

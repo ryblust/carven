@@ -138,7 +138,7 @@ the checked region and body inputs.
 Publication verifies residual regions through ordinary semantic contracts and
 checks instance identities and argument types. Executable bodies contain no static
 control or static initializers. After validation, publication computes
-callable/type surfaces and closure construction order, then discards checked
+callable/type surfaces and closure reference order, then discards checked
 source regions and static-only bodies. Declarations and tests clear references
 to removed bodies. Surviving body IDs and local table identities remain stable.
 Specialization does not change parameter, result, or layout types.

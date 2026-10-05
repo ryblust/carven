@@ -89,6 +89,7 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
                                  || std::same_as<Form, ASTCppNameExpr>
                                  || std::same_as<Form, ASTNameExpr>
                                  || std::same_as<Form, ASTArrayExpr>
+                                 || std::same_as<Form, ASTArrayRepeatExpr>
                                  || std::same_as<Form, ASTConstructionExpr>
                                  || std::same_as<Form, ASTPrefixExpr>
                                  || std::same_as<Form, ASTAccessExpr>

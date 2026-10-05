@@ -68,3 +68,9 @@ export const fn encode_utf8(character: char) -> UTF8Encoded {
         },
     };
 }
+
+// Bind the encoding result before retaining this view; it borrows that result.
+export const fn encoded_bytes(encoded: UTF8Encoded) -> [u8] {
+    assert(encoded.width >= 1 && encoded.width <= 4);
+    return encoded.bytes.as_slice().slice(0, encoded.width);
+}

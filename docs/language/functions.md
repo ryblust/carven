@@ -140,8 +140,9 @@ specialization, without executing their declarations. A `const { ... }` block
 in the body executes with its local constants; see the
 [`const` block rules](constants.md#const-blocks).
 
-`const for` expands a Read integer range whose bounds are static. Its index is a
-static binding in each iteration, so it can supply static arguments and dependent
+`const for` expands a Read integer range, array, or slice whose source is static.
+The source evaluates once during expansion. Each iteration's binding is a static
+value with the source element type, so it can supply static arguments and local
 constants:
 
 ```carven
@@ -158,9 +159,14 @@ In a runtime body, `const alias = index` preserves the static stage;
 `let alias = index` does not.
 Each iteration has its own scope while outer variables remain shared. `break`,
 `continue`, `return`, and failure propagation keep their ordinary meaning.
-Reversed and empty ranges have no iterations. Expansion has cumulative iteration,
-instance, and nesting limits; exceeding one is a compiler diagnostic, without an
-implicit runtime substitute.
+Reversed integer ranges and empty sources have no iterations. Array and slice
+elements must freeze without changing their declared type. Expansion has
+cumulative iteration, instance, nesting, and construction limits. Exceeding a
+limit is a compiler diagnostic.
+
+A `const for` may also appear at module scope. It expands statements in the
+module's runtime entry body; ordinary calls in those statements run at runtime.
+A `const { ... }` block instead executes its entire body during compilation.
 
 Unselected `const if` arms, iterations after a static `break`, and statements after
 a static exit are checked in the source body and omitted from specialization.

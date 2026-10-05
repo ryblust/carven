@@ -57,6 +57,27 @@ auto analyze_failure_profiles() noexcept -> SemIRProgram {
     return std::move(semantic->value);
 }
 
+auto analyze_closure_references() noexcept -> SemIRProgram {
+    auto sources = SourceManager();
+    const auto source = sources.append_virtual(
+        "closures.cv",
+        "fn repeated() => [[]() => 7; 2];\n"
+        "fn empty() => [[]() => 7; 0];\n"
+        "fn nested() => []() { let inner = [[]() => 7; 0]; return 0; };\n"
+        "fn selected() { const if true { let chosen = [[]() => 7; 0]; } "
+        "else { let removed = [[]() => 9; 0]; } }\n"
+    );
+    require(source.has_value());
+    const auto path = CanonicalModulePath::from_value("closures");
+    require(path.has_value());
+    const auto input = SourceModuleInput {.source_id = *source, .module_path = *path};
+    auto syntax = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
+    require(syntax.has_value());
+    auto semantic = analyze(std::move(*syntax));
+    require(semantic.has_value());
+    return std::move(semantic->value);
+}
+
 auto request(TestGenerationMode test_mode, std::string_view linkage) noexcept
     -> TargetPlanningRequest {
     return {
@@ -140,6 +161,34 @@ static_assert(!std::is_move_assignable_v<TargetPlan>);
 
 
 const TestSuite suite([] static noexcept {
+    "Target plan: closure references retain type-only declarations and discard inactive source"_test =
+        [] static noexcept {
+            const auto semantic = analyze_closure_references();
+            const auto closures = plan_closures(semantic);
+            for (const auto name : std::array {"repeated", "empty", "nested", "selected"}) {
+                const auto function = function_named(semantic, name);
+                const auto callable = semantic.declarations().function(function).callable;
+                expect_equal(semantic.callable_surface(callable).closures.size(), 1uz);
+            }
+            const auto nested =
+                semantic.declarations().function(function_named(semantic, "nested")).callable;
+            const auto& outer_references = semantic.callable_surface(nested).closures;
+            require(outer_references.size() == 1uz);
+            const auto outer = outer_references.front();
+            const auto& inner_references = semantic.callable_surface(outer).closures;
+            require(inner_references.size() == 1uz);
+            const auto inner = inner_references.front();
+            const auto outer_position = std::ranges::find(closures.definition_order, outer);
+            const auto inner_position = std::ranges::find(closures.definition_order, inner);
+            require(outer_position != closures.definition_order.end());
+            require(inner_position != closures.definition_order.end());
+            expect(inner_position < outer_position);
+            expect_equal(closures.definition_order.size(), 5uz);
+            const auto unique =
+                std::flat_set<CallableID>(std::from_range, closures.definition_order);
+            expect_equal(unique.size(), closures.definition_order.size());
+        };
+
     "Target plan: failure ABI has one deterministic nominal order"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_failure_profiles(),

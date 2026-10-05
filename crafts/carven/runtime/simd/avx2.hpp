@@ -301,6 +301,20 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL count(Value<Bytes> a) noexcept -> std::
     return static_cast<std::size_t>(std::popcount(bits<Bytes, Float>(a)));
 }
 
+template<std::size_t Bytes>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sum(Value<Bytes> a) noexcept -> std::size_t {
+    auto partial = _mm_setzero_si128();
+    if constexpr (Bytes == 16) {
+        partial = _mm_sad_epu8(a, _mm_setzero_si128());
+    } else {
+        const auto sums = _mm256_sad_epu8(a, _mm256_setzero_si256());
+        partial = _mm_add_epi64(_mm256_castsi256_si128(sums), _mm256_extracti128_si256(sums, 1));
+    }
+    return static_cast<std::size_t>(
+        _mm_cvtsi128_si64(_mm_add_epi64(partial, _mm_srli_si128(partial, 8)))
+    );
+}
+
 // Offset is a byte offset in 1..Bytes-1; the public layer handles both ends.
 template<std::size_t Bytes, std::size_t Offset>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL extract(Value<Bytes> a, Value<Bytes> b) noexcept

@@ -21,7 +21,10 @@ algorithms and block traversal belong to this craft.
 | `f32x8` | `f32` | 8 | `mask8` | `u8` |
 
 The runtime has a C++20 portable backend that requires no SIMD instruction-set
-options.
+options. On Clang and GCC, its arithmetic and comparisons use internal 16-byte
+compiler vector expressions; other compilers evaluate the same operations per
+lane. Its stored values remain byte arrays, and ordinary C++ optimization may
+use machine vector instructions.
 Each translation unit selects one backend at compile time: AArch64 NEON when
 available, x86 AVX2 when the consumer enables it, and otherwise a portable lane
 implementation. All backends share the same lane contracts. There is no runtime
@@ -84,8 +87,9 @@ and `N` its lane count.
 | `mask.bits()` / `.count()` | Packed bits / `usize` count. |
 | `mask.select(yes, no)` | Per-lane selection of matching vectors. |
 
-Byte vectors additionally expose `.lookup(indices)` with a matching byte vector
-of indices: every index `>= N` yields zero. Lookup uses the entire logical table,
+Byte vectors expose `.sum() -> usize`, the exact mathematical sum of all lanes.
+The maximum is `N * 255`; the reduction does not wrap. They also expose
+`.lookup(indices)` with a matching byte vector of indices: every index `>= N` yields zero. Lookup uses the entire logical table,
 including indices crossing the 128-bit hardware boundary. This differs from
 AVX2's lane-local byte shuffle instruction. `.shift_left(count)` and
 `.shift_right(count)` shift every byte independently by `0..7` bits, zero-fill,
@@ -139,6 +143,36 @@ Lane access accepts dynamic indices and checks bounds. Ordinary functions live
 in separate C++ translation units; cross-module inlining depends on consumer
 build settings. Static specializations have shared inline definitions.
 
+## Byte-set scanning
+
+`std::simd.scan` supplies byte-set queries. `one_of([u8])` constructs a `ByteSet`;
+`byte_range(lower, upper)` includes both endpoints and requires `lower <= upper`.
+The set stores four `u64` words: bit `n` identifies byte `n`, including NUL and FF.
+`set_union(left, right)` combines two sets; duplicates have no effect. A text's
+`.bytes` denotes encoded bytes, not Unicode characters.
+
+`match_set(value, const set)` classifies a raw `u8x32`. `count_where`, `find_where`,
+and `prefix_where` query an entire byte slice. `find_where` returns
+`ByteSearch::Found(input_offset)` or `Missing`; `prefix_where` returns the leading
+matching run length, including the input length when every byte matches. Empty
+input has count and prefix length zero, and no first match.
+
+```carven
+import std::simd.scan using { one_of, count_where, find_where };
+
+const punctuation = one_of("{}[]:,".bytes);
+const fn count_punctuation(text: str) -> usize => count_where(text.bytes, punctuation);
+const fn first_punctuation(text: str) => find_where(text.bytes, punctuation);
+```
+
+All operations are `const fn`. Sets with at most four contiguous runs select
+direct byte or range comparisons; other sets use nibble lookup tables.
+Empty and complete sets produce constant masks. Matching plans are derived from
+the set during compilation. Whole-slice queries read complete 32-byte blocks and
+check the remaining bytes individually; input padding is unnecessary.
+`count_where` accumulates matching lanes across blocks and takes an exact vector
+sum before the byte accumulators can wrap.
+
 ## Floating execution
 
 Floating arithmetic follows scalar `f32` execution per lane. Signed zeros compare
@@ -148,4 +182,4 @@ and NaN representations. Static execution uses compiler-host arithmetic;
 ordinary runtime arithmetic retains the target's floating environment. Identical
 results across differing floating environments, NaN payload propagation, and
 nondefault rounding modes are not promised. Fused operations, approximations,
-min/max, and horizontal reductions are not provided.
+min/max, and floating horizontal reductions are not provided.

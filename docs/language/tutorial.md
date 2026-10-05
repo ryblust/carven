@@ -583,7 +583,8 @@ Use `carven check source.cv` to evaluate the `const` blocks, initializers, and
 static tests without running the program or ordinary tests.
 
 Use a `const` parameter when an input must select a static specialization.
-`const if` selects an arm and `const for` expands a static integer range:
+`const if` selects an arm and `const for` expands a static integer range, array,
+or slice:
 
 ```carven
 fn scaled_sum(value: i32, const count: i32) -> i32 {

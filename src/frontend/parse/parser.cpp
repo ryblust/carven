@@ -84,7 +84,9 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
             || kind == TokenKind::Struct
             || kind == TokenKind::Class
             || kind == TokenKind::Fn
-            || kind == TokenKind::Const
+            || (kind == TokenKind::Const
+                && !check_next(TokenKind::If)
+                && !check_next(TokenKind::For))
             || kind == TokenKind::Test;
         auto item = std::optional<ASTItemID>();
         if (is_declaration) {
