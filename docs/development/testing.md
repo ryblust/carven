@@ -115,9 +115,12 @@ The internal runner excludes static-specialization budgets from its ordinary
 selection and registers each iteration, instance, nesting, and node budget
 contract separately on the same executable. Every selection belongs to the
 `internal` group and runs in the full suite. Each budget contract has its own
-result, elapsed time, and 60-second timeout, so instrumentation overhead does not
-accumulate across unrelated cases. These source-level cases exercise
-production-size default limits; they are not performance checks.
+result, elapsed time, and timeout, so instrumentation overhead does not accumulate
+across unrelated cases. The compiler's internal selections use a 60-second timeout
+in ordinary builds and 180 seconds with sanitizers on every platform. This leaves
+headroom for instrumentation and runner variability while still stopping stalled
+tests. These source-level cases exercise production-size default limits; they are
+not performance checks.
 
 Language tests use local Carven state for counters and execution traces.
 A language fixture may use a same-stem C++ provider header for observations that
