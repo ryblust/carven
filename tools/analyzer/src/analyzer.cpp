@@ -84,7 +84,7 @@ extern "C++" auto main(int argc, char**) noexcept -> int {
         }
         auto request = decode_analyzer_request(**frame);
         const auto stop = request && std::holds_alternative<AnalyzerStop>(*request);
-        auto response = request
+        const auto response = request
             ? session.execute(std::move(*request))
             : AnalyzerResponse {
                   .document_versions = {},
