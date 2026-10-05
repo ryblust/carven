@@ -158,10 +158,10 @@ local function with_service(program, name, run)
             pipes.child_in, pipes.parent_in = pipe.openpair("BA")
             pipes.parent_out, pipes.child_out = pipe.openpair("AB")
             child = process.openv(program, {}, {stdin = pipes.child_in, stdout = pipes.child_out, stderr = stderr})
-            close_pipe("child_in")
-            close_pipe("child_out")
+            -- Xmake closes a Windows pipe server by disconnecting it, including
+            -- the handle inherited by the child. Retain both child endpoints
+            -- until the child exits; Stop does not depend on input EOF.
             -- Register before requests: Xmake's POSIX poller can reap unwatched children.
-            -- A timed wait retains the registration and any subsequent exit status.
             local done, code = child:wait(1)
             reaped = done == 1
             assert(done == 0, string.format("analyzer exited before requests: wait=%s, status=%s", tostring(done), tostring(code)))
@@ -169,10 +169,6 @@ local function with_service(program, name, run)
         end,
         finally {function (ok, error)
             completed, failure = ok, error
-            close_pipe("child_in")
-            close_pipe("child_out")
-            close_pipe("parent_in")
-            close_pipe("parent_out")
             if child then
                 if not reaped then
                     child:kill()
@@ -180,6 +176,10 @@ local function with_service(program, name, run)
                 end
                 child:close()
             end
+            close_pipe("child_in")
+            close_pipe("child_out")
+            close_pipe("parent_in")
+            close_pipe("parent_out")
             if ok then
                 os.tryrm(stderr)
             end

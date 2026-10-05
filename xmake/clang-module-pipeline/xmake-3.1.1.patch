@@ -945,3 +945,19 @@ diff --git a/modules/private/utils/toolchain.lua b/modules/private/utils/toolcha
 +    if target:is_plat("windows") and not target:toolchain("mingw")
 +        and checkmode == "address" and not target:has_tool("cxx", "cl") then
          assert(target:has_runtime("MD", "MT"), "clang asan only support MD/MT runtime on windows")
+diff --git a/core/sandbox/modules/import/core/base/task.lua b/core/sandbox/modules/import/core/base/task.lua
+--- a/core/sandbox/modules/import/core/base/task.lua
++++ b/core/sandbox/modules/import/core/base/task.lua
+@@ -62,9 +62,9 @@
+     -- run the task
+     local ok, errors = taskinst:run(...)
++
++    -- restore the previous option context, including when the task failed
++    option.restore()
+     if not ok then
+         raise(errors)
+     end
+-
+-    -- restore the previous option context
+-    option.restore()
+ end

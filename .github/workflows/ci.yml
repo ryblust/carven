@@ -118,7 +118,7 @@ jobs:
 
       - name: Clang-tidy
         if: matrix.mode == 'release'
-        run: ./xmakew check clang.tidy
+        run: ./xmakew check -D clang.tidy
 
   ubuntu:
     name: Ubuntu / LLVM / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
@@ -221,7 +221,7 @@ jobs:
 
       - name: Clang-tidy
         if: matrix.mode == 'release'
-        run: ./xmakew check clang.tidy
+        run: ./xmakew check -D clang.tidy
 
   windows:
     name: Windows / LLVM-MinGW / ${{ matrix.mode == 'release' && 'Release' || 'ASan + UBSan' }}
@@ -350,4 +350,4 @@ jobs:
 
       - name: Clang-tidy
         if: matrix.mode == 'release'
-        run: .\xmakew.ps1 check clang.tidy
+        run: .\xmakew.ps1 check -D clang.tidy

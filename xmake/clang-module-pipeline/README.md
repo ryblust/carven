@@ -155,6 +155,10 @@ Its cache key includes the program
 directory, Xmake version, patched Lua files, and patch contents. A patch
 application failure stops the wrapper.
 
+Nested tasks restore their option context before propagating a failure. This
+preserves the caller's diagnostic settings when automatic compilation-database
+generation fails inside a quiet task.
+
 The overlay also corrects Xmake 3.1.1 sanitizer detection for LLVM-MinGW on
 the Windows platform: GNU-driver sanitizer linking bypasses the MSVC-only
 MD/MT runtime check. Other Windows toolchains keep the stock runtime handling.

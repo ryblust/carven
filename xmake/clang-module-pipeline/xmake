@@ -34,6 +34,7 @@ source_key=$(
     {
         printf '%s\n' "$source_program_dir" "$source_version"
         hash_sha256 \
+            "$source_program_dir/core/sandbox/modules/import/core/base/task.lua" \
             "$source_program_dir/modules/private/action/build/object.lua" \
             "$source_program_dir/modules/private/action/build/link_objects.lua" \
             "$source_program_dir/modules/private/utils/toolchain.lua" \
