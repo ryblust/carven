@@ -439,7 +439,7 @@ auto WorkspaceAnalysisHost::update(
     auto change = WorkspaceDocumentChange::VersionOnly;
     if (previous && previous->queries->source().text == text) {
         inputs.insert_or_assign(
-            document,
+            std::move(document),
             DocumentEntry {.version = version, .queries = previous->queries}
         );
     } else {
@@ -453,7 +453,7 @@ auto WorkspaceAnalysisHost::update(
             queries->counts()
         );
         inputs.insert_or_assign(
-            document,
+            std::move(document),
             DocumentEntry {.version = version, .queries = std::move(next)}
         );
         change = previous ? WorkspaceDocumentChange::Changed : WorkspaceDocumentChange::Added;
