@@ -13,8 +13,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct ModuleFixture final {
     std::string_view path;
     std::string_view source;
@@ -30,9 +28,9 @@ auto compile_modules(
     for (const auto& fixture : modules) {
         const auto source =
             sources.append_virtual(std::format("{}.cv", fixture.path), std::string(fixture.source));
-        ct::require(source.has_value());
+        require(source.has_value());
         const auto path = CanonicalModulePath::from_value(fixture.path);
-        ct::require(path.has_value());
+        require(path.has_value());
         inputs.push_back({.source_id = *source, .module_path = *path});
     }
     auto result = compile(
@@ -43,7 +41,7 @@ auto compile_modules(
             .linkage_domain = LinkageDomain::explicit_value(std::string(linkage_domain)).value(),
         }
     );
-    ct::require(result.has_value()).note([&] noexcept {
+    require(result.has_value()).note([&] noexcept {
         return render_diagnostics(result.error(), sources);
     });
     return std::move(result->value);
@@ -69,7 +67,7 @@ auto interface_for(const GeneratedArtifactSet& artifacts, std::string_view modul
     logical_path += ".hpp";
     const auto found =
         std::ranges::find(artifacts.entries(), logical_path, &GeneratedArtifact::logical_path);
-    ct::require(found != artifacts.entries().end()).note("artifact:", logical_path);
+    require(found != artifacts.entries().end()).note("artifact:", logical_path);
     return *found;
 }
 
@@ -77,7 +75,7 @@ auto artifact(const GeneratedArtifactSet& artifacts, std::string_view logical_pa
     -> const GeneratedArtifact& {
     const auto found =
         std::ranges::find(artifacts.entries(), logical_path, &GeneratedArtifact::logical_path);
-    ct::require(found != artifacts.entries().end()).note("artifact:", logical_path);
+    require(found != artifacts.entries().end()).note("artifact:", logical_path);
     return *found;
 }
 
@@ -85,13 +83,8 @@ auto component_include(const GeneratedArtifact& component) noexcept -> std::stri
     return std::format("#include <{}>", component.logical_path);
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Interface components: stable domain keeps interface changes surface-local",
+const TestSuite suite([] static noexcept {
+    "Interface components: stable domain keeps interface changes surface-local"_test =
         [] static noexcept {
             constexpr auto baseline = "private fn helper() -> i32 { return 1; }\n"
                                       "export struct PublicItem { value: i32, }\n";
@@ -110,20 +103,18 @@ const ct::Suite tests([] static noexcept {
             const auto& stable_header = interface_for(stable, "stable");
             const auto& private_header = interface_for(stable_private, "stable");
             const auto& surface_header = interface_for(stable_surface, "stable");
-            ct::expect_equal(stable_header.logical_path, private_header.logical_path);
-            ct::expect_equal(stable_header.logical_path, surface_header.logical_path);
-            ct::expect_equal(
+            expect_equal(stable_header.logical_path, private_header.logical_path);
+            expect_equal(stable_header.logical_path, surface_header.logical_path);
+            expect_equal(
                 stable_header.logical_path,
                 std::string_view("carven/generated/stable.hpp")
             );
-            ct::expect_equal(stable_header.content, private_header.content);
-            ct::expect_not_equal(stable_header.content, surface_header.content);
-            ct::expect(!(stable_header.content.contains("#line")));
-        }
-    );
+            expect_equal(stable_header.content, private_header.content);
+            expect_not_equal(stable_header.content, surface_header.content);
+            expect(!(stable_header.content.contains("#line")));
+        };
 
-    ct::test(
-        "Interface components: a private implementation edit changes only its module unit",
+    "Interface components: a private implementation edit changes only its module unit"_test =
         [] static noexcept {
             constexpr auto provider_before = "export fn answer() -> i32 { return helper(); }\n"
                                              "private fn helper() -> i32 { return 1; }\n";
@@ -147,25 +138,23 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect_equal(before.entries().size(), after.entries().size())) {
+            if (!expect_equal(before.entries().size(), after.entries().size())) {
                 return;
             }
             auto changed = std::vector<std::string_view>();
             for (const auto& [before_artifact, after_artifact] :
                  std::views::zip(before.entries(), after.entries())) {
-                if (!ct::expect_equal(before_artifact.logical_path, after_artifact.logical_path)) {
+                if (!expect_equal(before_artifact.logical_path, after_artifact.logical_path)) {
                     return;
                 }
                 if (before_artifact.content != after_artifact.content) {
                     changed.push_back(before_artifact.logical_path);
                 }
             }
-            ct::expect((changed == std::vector<std::string_view> {"provider.cpp"}));
-        }
-    );
+            expect((changed == std::vector<std::string_view> {"provider.cpp"}));
+        };
 
-    ct::test(
-        "Interface components: implementation-only references do not merge surfaces",
+    "Interface components: implementation-only references do not merge surfaces"_test =
         [] static noexcept {
             constexpr auto provider = "export fn answer() -> i32 { return 42; }\n";
             constexpr auto consumer_used = "import provider using answer;\n"
@@ -187,34 +176,32 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect_equal(interfaces(used).size(), 2uz)) {
+            if (!expect_equal(interfaces(used).size(), 2uz)) {
                 return;
             }
             const auto& provider_header = interface_for(used, "provider");
             const auto& consumer_header = interface_for(used, "consumer");
-            ct::expect_equal(
+            expect_equal(
                 provider_header.logical_path,
                 std::string_view("carven/generated/provider.hpp")
             );
-            ct::expect_equal(
+            expect_equal(
                 consumer_header.logical_path,
                 std::string_view("carven/generated/consumer.hpp")
             );
-            ct::expect_not_equal(provider_header.logical_path, consumer_header.logical_path);
+            expect_not_equal(provider_header.logical_path, consumer_header.logical_path);
             const auto& used_cpp = artifact(used, "consumer.cpp");
-            ct::expect(used_cpp.content.contains(component_include(provider_header)));
-            ct::expect(used_cpp.content.contains(component_include(consumer_header)));
+            expect(used_cpp.content.contains(component_include(provider_header)));
+            expect(used_cpp.content.contains(component_include(consumer_header)));
 
             const auto& unused_provider = interface_for(unused, "provider");
             const auto& unused_consumer = interface_for(unused, "consumer");
             const auto& unused_cpp = artifact(unused, "consumer.cpp");
-            ct::expect(!(unused_cpp.content.contains(component_include(unused_provider))));
-            ct::expect(unused_cpp.content.contains(component_include(unused_consumer)));
-        }
-    );
+            expect(!(unused_cpp.content.contains(component_include(unused_provider))));
+            expect(unused_cpp.content.contains(component_include(unused_consumer)));
+        };
 
-    ct::test(
-        "Interface components: covered match arms do not create dependencies",
+    "Interface components: covered match arms do not create dependencies"_test =
         [] static noexcept {
             constexpr auto provider = "export fn answer() -> i32 { return 42; }\n";
             constexpr auto consumer = "import provider using answer;\n"
@@ -233,12 +220,11 @@ const ct::Suite tests([] static noexcept {
 
             const auto& provider_header = interface_for(artifacts, "provider");
             const auto& consumer_cpp = artifact(artifacts, "consumer.cpp");
-            ct::expect(!(consumer_cpp.content.contains(component_include(provider_header))));
-            ct::expect(!(consumer_cpp.content.contains("answer(")));
-        }
-    );
+            expect(!(consumer_cpp.content.contains(component_include(provider_header))));
+            expect(!(consumer_cpp.content.contains("answer(")));
+        };
 
-    ct::test("Interface components: body-only dependency cycles stay separate", [] static noexcept {
+    "Interface components: body-only dependency cycles stay separate"_test = [] static noexcept {
         constexpr auto left = "import right using right_value;\n"
                               "export fn left_value() -> i32 { return right_value(); }\n";
         constexpr auto right = "import left using left_value;\n"
@@ -250,23 +236,19 @@ const ct::Suite tests([] static noexcept {
             }
         );
 
-        if (!ct::expect_equal(interfaces(artifacts).size(), 2uz)) {
+        if (!expect_equal(interfaces(artifacts).size(), 2uz)) {
             return;
         }
         const auto& left_header = interface_for(artifacts, "left");
         const auto& right_header = interface_for(artifacts, "right");
-        ct::expect_equal(left_header.logical_path, std::string_view("carven/generated/left.hpp"));
-        ct::expect_equal(right_header.logical_path, std::string_view("carven/generated/right.hpp"));
-        ct::expect_not_equal(left_header.logical_path, right_header.logical_path);
-        ct::expect(
-            artifact(artifacts, "left.cpp").content.contains(component_include(right_header))
-        );
-        ct::expect(
-            artifact(artifacts, "right.cpp").content.contains(component_include(left_header))
-        );
-    });
+        expect_equal(left_header.logical_path, std::string_view("carven/generated/left.hpp"));
+        expect_equal(right_header.logical_path, std::string_view("carven/generated/right.hpp"));
+        expect_not_equal(left_header.logical_path, right_header.logical_path);
+        expect(artifact(artifacts, "left.cpp").content.contains(component_include(right_header)));
+        expect(artifact(artifacts, "right.cpp").content.contains(component_include(left_header)));
+    };
 
-    ct::test("Interface components: cyclic published surfaces form one SCC", [] static noexcept {
+    "Interface components: cyclic published surfaces form one SCC"_test = [] static noexcept {
         constexpr auto left = "import right using RightLeaf;\n"
                               "export struct LeftWrap { right: RightLeaf, }\n";
         constexpr auto right = "import left using LeftWrap;\n"
@@ -280,26 +262,22 @@ const ct::Suite tests([] static noexcept {
         );
 
         const auto headers = interfaces(artifacts);
-        if (!ct::expect_equal(headers.size(), 1uz)) {
+        if (!expect_equal(headers.size(), 1uz)) {
             return;
         }
-        ct::expect_equal(
-            headers.front()->logical_path,
-            std::string_view("carven/generated/left.hpp")
-        );
-        ct::expect(headers.front()->content.contains("struct LeftWrap"));
-        ct::expect(headers.front()->content.contains("struct RightLeaf"));
-        ct::expect(headers.front()->content.contains("struct RightWrap"));
-        ct::expect(
+        expect_equal(headers.front()->logical_path, std::string_view("carven/generated/left.hpp"));
+        expect(headers.front()->content.contains("struct LeftWrap"));
+        expect(headers.front()->content.contains("struct RightLeaf"));
+        expect(headers.front()->content.contains("struct RightWrap"));
+        expect(
             artifact(artifacts, "left.cpp").content.contains(component_include(*headers.front()))
         );
-        ct::expect(
+        expect(
             artifact(artifacts, "right.cpp").content.contains(component_include(*headers.front()))
         );
-    });
+    };
 
-    ct::test(
-        "Interface components: declaration-only predecessors use forward declarations",
+    "Interface components: declaration-only predecessors use forward declarations"_test =
         [] static noexcept {
             constexpr auto model = "export struct Model { value: i32, }\n";
             constexpr auto api = "import model using Model;\n"
@@ -311,24 +289,19 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect_equal(interfaces(artifacts).size(), 2uz)) {
+            if (!expect_equal(interfaces(artifacts).size(), 2uz)) {
                 return;
             }
             const auto& model_header = interface_for(artifacts, "model");
             const auto& api_header = interface_for(artifacts, "api");
-            ct::expect_equal(
-                model_header.logical_path,
-                std::string_view("carven/generated/model.hpp")
-            );
-            ct::expect_equal(api_header.logical_path, std::string_view("carven/generated/api.hpp"));
-            ct::expect(!(api_header.content.contains(component_include(model_header))));
-            ct::expect(api_header.content.contains("struct Model;"));
-            ct::expect(!(model_header.content.contains(component_include(api_header))));
-        }
-    );
+            expect_equal(model_header.logical_path, std::string_view("carven/generated/model.hpp"));
+            expect_equal(api_header.logical_path, std::string_view("carven/generated/api.hpp"));
+            expect(!(api_header.content.contains(component_include(model_header))));
+            expect(api_header.content.contains("struct Model;"));
+            expect(!(model_header.content.contains(component_include(api_header))));
+        };
 
-    ct::test(
-        "Interface components: root-relative includes ignore the including directory",
+    "Interface components: root-relative includes ignore the including directory"_test =
         [] static noexcept {
             constexpr auto model = "export struct Model { value: i32, }\n";
             constexpr auto shadow = "export struct Shadow { value: i32, }\n";
@@ -342,28 +315,21 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect_equal(interfaces(artifacts).size(), 3uz)) {
+            if (!expect_equal(interfaces(artifacts).size(), 3uz)) {
                 return;
             }
             const auto& api_header = interface_for(artifacts, "src.api");
             const auto& model_header = interface_for(artifacts, "lib.model");
-            ct::expect_equal(
-                api_header.logical_path,
-                std::string_view("carven/generated/src/api.hpp")
-            );
-            ct::expect_equal(
+            expect_equal(api_header.logical_path, std::string_view("carven/generated/src/api.hpp"));
+            expect_equal(
                 model_header.logical_path,
                 std::string_view("carven/generated/lib/model.hpp")
             );
-            ct::expect(api_header.content.contains("#include <carven/generated/lib/model.hpp>"));
-            ct::expect(
-                !(api_header.content.contains("#include \"carven/generated/lib/model.hpp\""))
-            );
-        }
-    );
+            expect(api_header.content.contains("#include <carven/generated/lib/model.hpp>"));
+            expect(!(api_header.content.contains("#include \"carven/generated/lib/model.hpp\"")));
+        };
 
-    ct::test(
-        "Interface components: read parameters and failure results require complete types",
+    "Interface components: read parameters and failure results require complete types"_test =
         [] static noexcept {
             constexpr auto outcome_types = "export struct Model { value: i32, }\n"
                                            "export struct Failure { code: i32, }\n";
@@ -385,21 +351,19 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            if (!ct::expect_equal(interfaces(artifacts).size(), 3uz)) {
+            if (!expect_equal(interfaces(artifacts).size(), 3uz)) {
                 return;
             }
             const auto& api_header = interface_for(artifacts, "api");
             const auto& outcome_header = interface_for(artifacts, "outcome_types");
             const auto& parameter_header = interface_for(artifacts, "parameter_types");
-            ct::expect(api_header.content.contains(component_include(outcome_header)));
-            ct::expect(api_header.content.contains(component_include(parameter_header)));
-            ct::expect(!(api_header.content.contains("struct Model;")));
-            ct::expect(!(api_header.content.contains("struct Failure;")));
-        }
-    );
+            expect(api_header.content.contains(component_include(outcome_header)));
+            expect(api_header.content.contains(component_include(parameter_header)));
+            expect(!(api_header.content.contains("struct Model;")));
+            expect(!(api_header.content.contains("struct Failure;")));
+        };
 
-    ct::test(
-        "Interface components: arrays require complete predecessor definitions",
+    "Interface components: arrays require complete predecessor definitions"_test =
         [] static noexcept {
             constexpr auto model = "export struct Model { value: i32, }\n";
             constexpr auto api = "import model using Model;\n"
@@ -413,57 +377,52 @@ const ct::Suite tests([] static noexcept {
 
             const auto& api_header = interface_for(artifacts, "api");
             const auto& model_header = interface_for(artifacts, "model");
-            ct::expect(api_header.content.contains(component_include(model_header)));
-        }
-    );
+            expect(api_header.content.contains(component_include(model_header)));
+        };
 
-    ct::test(
-        "Interface components: SCC membership reuses the canonical anchor",
-        [] static noexcept {
-            constexpr auto split_a = "export struct A { value: i32, }\n";
-            constexpr auto split_b = "export struct B { value: i32, }\n";
-            constexpr auto merged_a = "import b using BLeaf;\n"
-                                      "export struct AWrap { b: BLeaf, }\n";
-            constexpr auto merged_b = "import a using AWrap;\n"
-                                      "export struct BLeaf { value: i32, }\n"
-                                      "export struct BWrap { a: AWrap, }\n";
-            const auto split = compile_modules(
-                std::array {
-                    ModuleFixture {"a", split_a},
-                    ModuleFixture {"b", split_b},
-                }
-            );
-            const auto merged = compile_modules(
-                std::array {
-                    ModuleFixture {"a", merged_a},
-                    ModuleFixture {"b", merged_b},
-                }
-            );
-
-            if (!ct::expect_equal(interfaces(split).size(), 2uz)) {
-                return;
+    "Interface components: SCC membership reuses the canonical anchor"_test = [] static noexcept {
+        constexpr auto split_a = "export struct A { value: i32, }\n";
+        constexpr auto split_b = "export struct B { value: i32, }\n";
+        constexpr auto merged_a = "import b using BLeaf;\n"
+                                  "export struct AWrap { b: BLeaf, }\n";
+        constexpr auto merged_b = "import a using AWrap;\n"
+                                  "export struct BLeaf { value: i32, }\n"
+                                  "export struct BWrap { a: AWrap, }\n";
+        const auto split = compile_modules(
+            std::array {
+                ModuleFixture {"a", split_a},
+                ModuleFixture {"b", split_b},
             }
-            ct::expect_equal(
-                interface_for(split, "a").logical_path,
-                std::string_view("carven/generated/a.hpp")
-            );
-            ct::expect_equal(
-                interface_for(split, "b").logical_path,
-                std::string_view("carven/generated/b.hpp")
-            );
-            const auto merged_headers = interfaces(merged);
-            if (!ct::expect_equal(merged_headers.size(), 1uz)) {
-                return;
+        );
+        const auto merged = compile_modules(
+            std::array {
+                ModuleFixture {"a", merged_a},
+                ModuleFixture {"b", merged_b},
             }
-            ct::expect_equal(
-                merged_headers.front()->logical_path,
-                std::string_view("carven/generated/a.hpp")
-            );
-        }
-    );
+        );
 
-    ct::test(
-        "Artifacts: input order and linkage domain produce deterministic schedules",
+        if (!expect_equal(interfaces(split).size(), 2uz)) {
+            return;
+        }
+        expect_equal(
+            interface_for(split, "a").logical_path,
+            std::string_view("carven/generated/a.hpp")
+        );
+        expect_equal(
+            interface_for(split, "b").logical_path,
+            std::string_view("carven/generated/b.hpp")
+        );
+        const auto merged_headers = interfaces(merged);
+        if (!expect_equal(merged_headers.size(), 1uz)) {
+            return;
+        }
+        expect_equal(
+            merged_headers.front()->logical_path,
+            std::string_view("carven/generated/a.hpp")
+        );
+    };
+
+    "Artifacts: input order and linkage domain produce deterministic schedules"_test =
         [] static noexcept {
             constexpr auto provider = "export struct Model { value: i32, }\n";
             constexpr auto consumer = "import provider using Model;\n"
@@ -479,33 +438,31 @@ const ct::Suite tests([] static noexcept {
 
             const auto first = compile_modules(forward, "test:determinism:first");
             const auto repeated = compile_modules(reverse, "test:determinism:first");
-            if (!ct::expect_equal(first.entries().size(), repeated.entries().size())) {
+            if (!expect_equal(first.entries().size(), repeated.entries().size())) {
                 return;
             }
             for (const auto& [left, right] : std::views::zip(first.entries(), repeated.entries())) {
-                ct::expect_equal(left.logical_path, right.logical_path);
-                ct::expect_equal(left.role, right.role);
-                ct::expect((left.source_mapping == right.source_mapping));
-                ct::expect_equal(left.content, right.content);
+                expect_equal(left.logical_path, right.logical_path);
+                expect_equal(left.role, right.role);
+                expect((left.source_mapping == right.source_mapping));
+                expect_equal(left.content, right.content);
             }
 
             const auto other_domain = compile_modules(reverse, "test:determinism:second");
-            if (!ct::expect_equal(first.entries().size(), other_domain.entries().size())) {
+            if (!expect_equal(first.entries().size(), other_domain.entries().size())) {
                 return;
             }
             auto changed_content = false;
             for (const auto& [left, right] :
                  std::views::zip(first.entries(), other_domain.entries())) {
-                ct::expect_equal(left.logical_path, right.logical_path);
-                ct::expect_equal(left.role, right.role);
+                expect_equal(left.logical_path, right.logical_path);
+                expect_equal(left.role, right.role);
                 changed_content |= left.content != right.content;
             }
-            ct::expect(changed_content);
-        }
-    );
+            expect(changed_content);
+        };
 
-    ct::test(
-        "Generated interfaces: C++ environments preserve complete ordered imports",
+    "Generated interfaces: C++ environments preserve complete ordered imports"_test =
         [] static noexcept {
             constexpr auto modules = std::array {
                 ModuleFixture {
@@ -520,24 +477,22 @@ const ct::Suite tests([] static noexcept {
             const auto& content = interface_for(artifacts, "provider").content;
             const auto first = content.find("#include \"first.hpp\"");
             const auto second = content.find("#include <second.hpp>");
-            if (!ct::expect(first != std::string::npos)) {
+            if (!expect(first != std::string::npos)) {
                 return;
             }
             const auto repeated = content.find("#include \"first.hpp\"", first + 1uz);
-            if (!ct::expect(second != std::string::npos)) {
+            if (!expect(second != std::string::npos)) {
                 return;
             }
-            if (!ct::expect(repeated != std::string::npos)) {
+            if (!expect(repeated != std::string::npos)) {
                 return;
             }
-            ct::expect(first < second);
-            ct::expect(second < repeated);
-            ct::expect(content.find("#include \"first.hpp\"", repeated + 1uz) == std::string::npos);
-        }
-    );
+            expect(first < second);
+            expect(second < repeated);
+            expect(content.find("#include \"first.hpp\"", repeated + 1uz) == std::string::npos);
+        };
 
-    ct::test(
-        "Generated interfaces: global lookup carries headers without using bindings",
+    "Generated interfaces: global lookup carries headers without using bindings"_test =
         [] static noexcept {
             constexpr auto modules = std::array {
                 ModuleFixture {
@@ -548,10 +503,9 @@ const ct::Suite tests([] static noexcept {
             };
             const auto artifacts = compile_modules(modules);
             const auto& content = interface_for(artifacts, "global_only").content;
-            ct::expect(content.contains("#include \"native.hpp\""));
-            ct::expect(!content.contains("using ::native::unused;"));
-        }
-    );
+            expect(content.contains("#include \"native.hpp\""));
+            expect(!content.contains("using ::native::unused;"));
+        };
 });
 
 } // namespace

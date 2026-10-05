@@ -136,7 +136,7 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
         return 2;
     }
     auto sources = SourceManager();
-    auto batch_inputs = std::vector<graver::BatchInput>();
+    auto batch_inputs = std::vector<FormattingInput>();
     if (stdin_input) {
         auto text = std::string(std::istreambuf_iterator<char>(std::cin), {});
         if (std::cin.bad()) {
@@ -148,9 +148,9 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
             std::println(stderr, "graver: {}", id.error().message);
             return 2;
         }
-        batch_inputs.push_back(graver::BatchInput {.path = {}, .source_id = *id});
+        batch_inputs.push_back(FormattingInput {.path = {}, .source_id = *id});
     } else {
-        const auto paths = graver::collect_inputs(inputs);
+        const auto paths = collect_format_paths(inputs);
         if (!paths) {
             std::println(stderr, "graver: {}", paths.error());
             return 2;
@@ -168,10 +168,10 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
                 std::println(stderr, "graver: {}: {}", id.error().origin, id.error().message);
                 return 2;
             }
-            batch_inputs.push_back(graver::BatchInput {.path = path, .source_id = *id});
+            batch_inputs.push_back(FormattingInput {.path = path, .source_id = *id});
         }
     }
-    const auto batch = graver::format_batch(sources, batch_inputs);
+    const auto batch = format_batch(sources, batch_inputs);
     if (!batch) {
         std::print(stderr, "{}", render_diagnostics(batch.error(), sources));
         return 2;
@@ -183,14 +183,14 @@ extern "C++" auto main(int argc, char** argv) noexcept -> int {
             std::println(stderr, "graver: cannot resolve current directory: {}", error.message());
             return 2;
         }
-        const auto report = graver::check_report(*batch, directory);
+        const auto report = format_check_report(*batch, directory);
         if (write_stdout(report) != 0) {
             return 2;
         }
         return report.empty() ? 0 : 1;
     }
     if (mode == OutputMode::Write) {
-        const auto written = graver::write_batch(*batch);
+        const auto written = write_formatted_batch(*batch);
         if (!written) {
             std::println(stderr, "graver: {}", written.error());
             return 2;

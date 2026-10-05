@@ -20,11 +20,9 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto path(std::string_view value) noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value(value);
-    ct::require(result.has_value());
+    require(result.has_value());
     return std::move(*result);
 }
 
@@ -42,7 +40,7 @@ struct CoverageFixture final {
 auto fixture(SourceManager& sources, DiagnosticSink& diagnostics, std::size_t width = 2uz) noexcept
     -> CoverageFixture {
     const auto source = sources.append_virtual("coverage-fixture.cv", "");
-    ct::require(source.has_value());
+    require(source.has_value());
     const auto inputs = std::array {
         SourceModuleInput {
             .source_id = *source,
@@ -50,7 +48,7 @@ auto fixture(SourceManager& sources, DiagnosticSink& diagnostics, std::size_t wi
         },
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    ct::require(syntax.has_value());
+    require(syntax.has_value());
     auto compilation = ProgramDraft::begin(std::move(*syntax), diagnostics);
     const auto provenance_module = compilation.provenance_module_at(0uz);
     const auto source_id = compilation.module_source(provenance_module);
@@ -209,13 +207,8 @@ auto enum_case(
     );
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Pattern coverage: enum payload overlap and guarded exhaustiveness stay exact",
+const TestSuite suite([] static noexcept {
+    "Pattern coverage: enum payload overlap and guarded exhaustiveness stay exact"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -260,24 +253,20 @@ const ct::Suite tests([] static noexcept {
                 source.pair_enum,
                 arms
             );
-            if (!ct::expect(coverage.has_value())) {
+            if (!expect(coverage.has_value())) {
                 return;
             }
-            ct::expect(
-                (coverage->arm_usefulness == std::vector<bool> {true, true, true, true, false})
-            );
-            ct::expect(
+            expect((coverage->arm_usefulness == std::vector<bool> {true, true, true, true, false}));
+            expect(
                 (coverage->exhaustive_after_arm
                  == std::vector<bool> {false, false, false, true, true})
             );
-            ct::expect(coverage->exhaustive);
-            ct::expect(coverage->redundant_alternatives.empty());
-            ct::expect(diagnostics.empty());
-        }
-    );
+            expect(coverage->exhaustive);
+            expect(coverage->redundant_alternatives.empty());
+            expect(diagnostics.empty());
+        };
 
-    ct::test(
-        "Pattern coverage: redundant alternatives and finite witnesses are reported",
+    "Pattern coverage: redundant alternatives and finite witnesses are reported"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -296,74 +285,69 @@ const ct::Suite tests([] static noexcept {
                 source.boolean,
                 arms
             );
-            if (!ct::expect(coverage.has_value())) {
+            if (!expect(coverage.has_value())) {
                 return;
             }
-            ct::expect(!(coverage->exhaustive));
-            ct::expect_equal(coverage->missing_witness, std::string_view("false"));
-            if (!ct::expect_equal(coverage->redundant_alternatives.size(), 1uz)) {
+            expect(!(coverage->exhaustive));
+            expect_equal(coverage->missing_witness, std::string_view("false"));
+            if (!expect_equal(coverage->redundant_alternatives.size(), 1uz)) {
                 return;
             }
-            ct::expect_equal(coverage->redundant_alternatives.front().arm, 0uz);
-            ct::expect_equal(coverage->redundant_alternatives.front().alternative, 1uz);
-            ct::expect(diagnostics.empty());
-        }
-    );
+            expect_equal(coverage->redundant_alternatives.front().arm, 0uz);
+            expect_equal(coverage->redundant_alternatives.front().alternative, 1uz);
+            expect(diagnostics.empty());
+        };
 
-    ct::test(
-        "Pattern coverage: an alternative covered by a union is redundant",
-        [] static noexcept {
-            auto sources = SourceManager();
-            auto diagnostics = DiagnosticSink();
-            auto source = fixture(sources, diagnostics);
-            auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-            const auto true_pattern = boolean_literal(source, body, true);
-            const auto false_pattern = boolean_literal(source, body, false);
-            const auto row = enum_case(
-                source,
-                body,
-                source.pair_case,
-                {true_pattern, wildcard(body, source.boolean, source.origin)}
-            );
-            const auto true_column = enum_case(
-                source,
-                body,
-                source.pair_case,
-                {wildcard(body, source.boolean, source.origin), true_pattern}
-            );
-            const auto false_column = enum_case(
-                source,
-                body,
-                source.pair_case,
-                {wildcard(body, source.boolean, source.origin), false_pattern}
-            );
-            const auto arms = std::array {
-                PatternCoverageArm {
-                    .alternatives = {row, true_column, false_column},
-                    .guarded = false,
-                },
-            };
-            auto coverage = compute_pattern_coverage(
-                source.compilation,
-                body.pattern_table(),
-                source.pair_enum,
-                arms
-            );
-            if (!ct::expect(coverage.has_value())) {
-                return;
-            }
-            if (!ct::expect_equal(coverage->redundant_alternatives.size(), 1uz)) {
-                return;
-            }
-            ct::expect_equal(coverage->redundant_alternatives.front().arm, 0uz);
-            ct::expect_equal(coverage->redundant_alternatives.front().alternative, 0uz);
-            ct::expect(!(coverage->alternative_usefulness.front().front()));
-            ct::expect(diagnostics.empty());
+    "Pattern coverage: an alternative covered by a union is redundant"_test = [] static noexcept {
+        auto sources = SourceManager();
+        auto diagnostics = DiagnosticSink();
+        auto source = fixture(sources, diagnostics);
+        auto body = BodyBuilder(std::move(source.reservation), source.compilation);
+        const auto true_pattern = boolean_literal(source, body, true);
+        const auto false_pattern = boolean_literal(source, body, false);
+        const auto row = enum_case(
+            source,
+            body,
+            source.pair_case,
+            {true_pattern, wildcard(body, source.boolean, source.origin)}
+        );
+        const auto true_column = enum_case(
+            source,
+            body,
+            source.pair_case,
+            {wildcard(body, source.boolean, source.origin), true_pattern}
+        );
+        const auto false_column = enum_case(
+            source,
+            body,
+            source.pair_case,
+            {wildcard(body, source.boolean, source.origin), false_pattern}
+        );
+        const auto arms = std::array {
+            PatternCoverageArm {
+                .alternatives = {row, true_column, false_column},
+                .guarded = false,
+            },
+        };
+        auto coverage = compute_pattern_coverage(
+            source.compilation,
+            body.pattern_table(),
+            source.pair_enum,
+            arms
+        );
+        if (!expect(coverage.has_value())) {
+            return;
         }
-    );
+        if (!expect_equal(coverage->redundant_alternatives.size(), 1uz)) {
+            return;
+        }
+        expect_equal(coverage->redundant_alternatives.front().arm, 0uz);
+        expect_equal(coverage->redundant_alternatives.front().alternative, 0uz);
+        expect(!(coverage->alternative_usefulness.front().front()));
+        expect(diagnostics.empty());
+    };
 
-    ct::test(
-        "Pattern coverage: witnesses retain missing nested payload constructors",
+    "Pattern coverage: witnesses retain missing nested payload constructors"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -387,16 +371,15 @@ const ct::Suite tests([] static noexcept {
                 source.pair_enum,
                 arms
             );
-            if (!ct::expect(coverage.has_value())) {
+            if (!expect(coverage.has_value())) {
                 return;
             }
-            ct::expect(!(coverage->exhaustive));
-            ct::expect_equal(coverage->missing_witness, std::string_view(".Pair(false, false)"));
-            ct::expect(diagnostics.empty());
-        }
-    );
+            expect(!(coverage->exhaustive));
+            expect_equal(coverage->missing_witness, std::string_view(".Pair(false, false)"));
+            expect(diagnostics.empty());
+        };
 
-    ct::test("Pattern coverage: an enum with no constructors is exhaustive", [] static noexcept {
+    "Pattern coverage: an enum with no constructors is exhaustive"_test = [] static noexcept {
         auto sources = SourceManager();
         auto diagnostics = DiagnosticSink();
         auto source = fixture(sources, diagnostics);
@@ -408,16 +391,15 @@ const ct::Suite tests([] static noexcept {
             source.empty_enum,
             arms
         );
-        if (!ct::expect(coverage.has_value())) {
+        if (!expect(coverage.has_value())) {
             return;
         }
-        ct::expect(coverage->exhaustive);
-        ct::expect(coverage->arm_usefulness.empty());
-        ct::expect(diagnostics.empty());
-    });
+        expect(coverage->exhaustive);
+        expect(coverage->arm_usefulness.empty());
+        expect(diagnostics.empty());
+    };
 
-    ct::test(
-        "Pattern coverage: wide payloads retain missing and covered value classes",
+    "Pattern coverage: wide payloads retain missing and covered value classes"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -439,11 +421,11 @@ const ct::Suite tests([] static noexcept {
                 source.pair_enum,
                 arms
             );
-            if (!ct::expect(coverage.has_value())) {
+            if (!expect(coverage.has_value())) {
                 return;
             }
-            ct::expect(!(coverage->exhaustive));
-            ct::expect(coverage->arm_usefulness.front());
+            expect(!(coverage->exhaustive));
+            expect(coverage->arm_usefulness.front());
             arms.push_back({.alternatives = {std::nullopt}, .guarded = false});
             coverage = compute_pattern_coverage(
                 source.compilation,
@@ -451,16 +433,14 @@ const ct::Suite tests([] static noexcept {
                 source.pair_enum,
                 arms
             );
-            if (!ct::expect(coverage.has_value())) {
+            if (!expect(coverage.has_value())) {
                 return;
             }
-            ct::expect(coverage->exhaustive);
-            ct::expect(coverage->arm_usefulness == std::vector<bool> {true, true});
-        }
-    );
+            expect(coverage->exhaustive);
+            expect(coverage->arm_usefulness == std::vector<bool> {true, true});
+        };
 
-    ct::test(
-        "Pattern coverage: uninhabited cases do not hide missing inhabited cases",
+    "Pattern coverage: uninhabited cases do not hide missing inhabited cases"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -476,16 +456,14 @@ const ct::Suite tests([] static noexcept {
                 source.pair_enum,
                 arms
             );
-            if (!ct::expect(coverage.has_value())) {
+            if (!expect(coverage.has_value())) {
                 return;
             }
-            ct::expect(!(coverage->exhaustive));
-            ct::expect_equal(coverage->missing_witness, std::string_view(".Pair(false, false)"));
-        }
-    );
+            expect(!(coverage->exhaustive));
+            expect_equal(coverage->missing_witness, std::string_view(".Pair(false, false)"));
+        };
 
-    ct::test(
-        "Pattern coverage: a covered product makes independent constraints unreachable",
+    "Pattern coverage: a covered product makes independent constraints unreachable"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -511,18 +489,16 @@ const ct::Suite tests([] static noexcept {
                 source.pair_enum,
                 arms
             );
-            if (!ct::expect(coverage.has_value())) {
+            if (!expect(coverage.has_value())) {
                 return;
             }
-            ct::expect(coverage->exhaustive);
-            ct::expect(coverage->arm_usefulness.front());
-            ct::expect_equal(std::ranges::count(coverage->arm_usefulness, true), 1);
-            ct::expect(std::ranges::all_of(coverage->exhaustive_after_arm, std::identity {}));
-        }
-    );
+            expect(coverage->exhaustive);
+            expect(coverage->arm_usefulness.front());
+            expect_equal(std::ranges::count(coverage->arm_usefulness, true), 1);
+            expect(std::ranges::all_of(coverage->exhaustive_after_arm, std::identity {}));
+        };
 
-    ct::test(
-        "Pattern coverage: boolean products obey set difference and guarded coverage",
+    "Pattern coverage: boolean products obey set difference and guarded coverage"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
@@ -578,7 +554,7 @@ const ct::Suite tests([] static noexcept {
                             source.pair_enum,
                             arms
                         );
-                        if (!(ct::expect(coverage.has_value())
+                        if (!(expect(coverage.has_value())
                                   .note(
                                       "first.values = ",
                                       first.values,
@@ -590,8 +566,8 @@ const ct::Suite tests([] static noexcept {
                             return;
                         }
                         const auto covered = guarded ? 0u : first.values;
-                        ct::expect(((coverage->arm_usefulness[2])
-                                    == ((second.values & ~covered) != 0u)))
+                        expect(((coverage->arm_usefulness[2])
+                                == ((second.values & ~covered) != 0u)))
                             .note(
                                 "coverage->arm_usefulness[2] == (second.values & ~covered) != 0u",
                                 "first.values = ",
@@ -601,7 +577,7 @@ const ct::Suite tests([] static noexcept {
                                 "guarded = ",
                                 guarded
                             );
-                        ct::expect(((coverage->exhaustive_after_arm[1]) == (covered == 15u)))
+                        expect(((coverage->exhaustive_after_arm[1]) == (covered == 15u)))
                             .note(
                                 "coverage->exhaustive_after_arm[1] == covered == 15u",
                                 "first.values = ",
@@ -611,7 +587,7 @@ const ct::Suite tests([] static noexcept {
                                 "guarded = ",
                                 guarded
                             );
-                        ct::expect(((coverage->exhaustive) == ((covered | second.values) == 15u)))
+                        expect(((coverage->exhaustive) == ((covered | second.values) == 15u)))
                             .note(
                                 "coverage->exhaustive == (covered | second.values) == 15u",
                                 "first.values = ",
@@ -621,7 +597,7 @@ const ct::Suite tests([] static noexcept {
                                 "guarded = ",
                                 guarded
                             );
-                        ct::expect(((coverage->exhaustive_after_arm[2]) == (coverage->exhaustive)))
+                        expect(((coverage->exhaustive_after_arm[2]) == (coverage->exhaustive)))
                             .note(
                                 "coverage->exhaustive_after_arm[2] == coverage->exhaustive",
                                 "first.values = ",
@@ -634,8 +610,7 @@ const ct::Suite tests([] static noexcept {
                     }
                 }
             }
-        }
-    );
+        };
 });
 
 } // namespace

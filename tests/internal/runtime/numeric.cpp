@@ -12,8 +12,6 @@ namespace {
 
 constexpr auto site = carven::runtime::SourceSite::native();
 
-namespace ct = carven::testing;
-
 template<typename Integer>
 constexpr auto ordinary_integer_contract() noexcept -> bool {
     using namespace carven::runtime;
@@ -93,12 +91,9 @@ static_assert(
     == std::int64_t {-4}
 );
 
-} // namespace
 
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Runtime: integer helpers cover every fixed width", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Runtime: integer helpers cover every fixed width"_test = [] static noexcept {
         static_assert(ordinary_integer_contract<std::int8_t>());
         static_assert(ordinary_integer_contract<std::int16_t>());
         static_assert(ordinary_integer_contract<std::int32_t>());
@@ -107,25 +102,25 @@ const ct::Suite tests([] static noexcept {
         static_assert(ordinary_integer_contract<std::uint16_t>());
         static_assert(ordinary_integer_contract<std::uint32_t>());
         static_assert(ordinary_integer_contract<std::uint64_t>());
-        ct::expect(ordinary_integer_contract<std::ptrdiff_t>());
-        ct::expect(ordinary_integer_contract<std::size_t>());
-    });
+        expect(ordinary_integer_contract<std::ptrdiff_t>());
+        expect(ordinary_integer_contract<std::size_t>());
+    };
 
-    ct::test("Runtime: invalid arithmetic always terminates", [] static noexcept {
+    "Runtime: invalid arithmetic always terminates"_test = [] static noexcept {
         using namespace carven::runtime;
-        ct::expect(expect_termination("runtime-integer-divide-zero", []() static noexcept {
+        expect(expect_termination("runtime-integer-divide-zero", []() static noexcept {
             static_cast<void>(integer_divide(std::int32_t {1}, std::int32_t {0}, site));
         }));
-        ct::expect(expect_termination("runtime-integer-remainder-zero", []() static noexcept {
+        expect(expect_termination("runtime-integer-remainder-zero", []() static noexcept {
             static_cast<void>(integer_remainder(std::int32_t {1}, std::int32_t {0}, site));
         }));
-        ct::expect(expect_termination("runtime-left-shift-negative", []() static noexcept {
+        expect(expect_termination("runtime-left-shift-negative", []() static noexcept {
             static_cast<void>(integer_left_shift(std::int32_t {1}, std::int32_t {-1}, site));
         }));
-        ct::expect(expect_termination("runtime-right-shift-width", []() static noexcept {
+        expect(expect_termination("runtime-right-shift-width", []() static noexcept {
             static_cast<void>(integer_right_shift(std::int32_t {1}, std::int32_t {32}, site));
         }));
-    });
+    };
 });
 
 } // namespace

@@ -8,11 +8,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic relationships: unknown element projection preserves set identity",
+const TestSuite suite([] static noexcept {
+    "Semantic relationships: unknown element projection preserves set identity"_test =
         [] static noexcept {
             const auto program = analyze_test_program("fn source() {}");
             for (const auto [id, body] : program.bodies().entries()) {
@@ -29,32 +26,27 @@ const ct::Suite tests([] static noexcept {
                     }
                 );
                 const auto result = project_relationships(source, {std::nullopt});
-                if (!ct::expect(result.view().callable_loans.size() == 1uz)) {
+                if (!expect(result.view().callable_loans.size() == 1uz)) {
                     return;
                 }
-                if (!ct::expect(result.view().captures.size() == 1uz)) {
+                if (!expect(result.view().captures.size() == 1uz)) {
                     return;
                 }
-                if (!ct::expect(result.view().storage_loans.size() == 1uz)) {
+                if (!expect(result.view().storage_loans.size() == 1uz)) {
                     return;
                 }
-                ct::expect(result.view().storage_loans.front().holder.empty());
-                ct::expect(result.view().callable_loans.front().holder.empty());
-                ct::expect(result.view().captures.front().holder.empty());
+                expect(result.view().storage_loans.front().holder.empty());
+                expect(result.view().callable_loans.front().holder.empty());
+                expect(result.view().captures.front().holder.empty());
                 auto merged = result;
                 merge_relationships(merged, result);
-                ct::expect(merged == result);
+                expect(merged == result);
                 merged.edit().storage_loans.front().backing.object = 1uz;
-                ct::expect_equal(
-                    result.view().storage_loans.front().backing.object,
-                    backing.object
-                );
+                expect_equal(result.view().storage_loans.front().backing.object, backing.object);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Semantic relationships: equivalent facts retain a stable diagnostic origin",
+    "Semantic relationships: equivalent facts retain a stable diagnostic origin"_test =
         [] static noexcept {
             const auto program = analyze_test_program("fn first() {} fn second() {}");
             auto origins = std::vector<ProgramOriginID>();
@@ -62,7 +54,7 @@ const ct::Suite tests([] static noexcept {
                 static_cast<void>(id);
                 origins.push_back(body.region().origin);
             }
-            if (!ct::expect(origins.size() == 2uz)) {
+            if (!expect(origins.size() == 2uz)) {
                 return;
             }
             std::ranges::sort(origins);
@@ -85,23 +77,22 @@ const ct::Suite tests([] static noexcept {
             std::ranges::reverse(second.edit().storage_loans);
             normalize_relationships(first);
             normalize_relationships(second);
-            ct::expect(first == second);
-            if (!ct::expect(first.view().callable_loans.size() == 1uz)) {
+            expect(first == second);
+            if (!expect(first.view().callable_loans.size() == 1uz)) {
                 return;
             }
-            if (!ct::expect(first.view().captures.size() == 1uz)) {
+            if (!expect(first.view().captures.size() == 1uz)) {
                 return;
             }
-            if (!ct::expect(first.view().storage_loans.size() == 1uz)) {
+            if (!expect(first.view().storage_loans.size() == 1uz)) {
                 return;
             }
-            ct::expect(first.view().storage_loans.front().origin == origins.front());
-            ct::expect(first.view().callable_loans.front().origin == origins.front());
-            ct::expect(second.view().callable_loans.front().origin == origins.front());
-            ct::expect(first.view().captures.front().origin == origins.front());
-            ct::expect(second.view().captures.front().origin == origins.front());
-        }
-    );
+            expect(first.view().storage_loans.front().origin == origins.front());
+            expect(first.view().callable_loans.front().origin == origins.front());
+            expect(second.view().callable_loans.front().origin == origins.front());
+            expect(first.view().captures.front().origin == origins.front());
+            expect(second.view().captures.front().origin == origins.front());
+        };
 });
 
 } // namespace

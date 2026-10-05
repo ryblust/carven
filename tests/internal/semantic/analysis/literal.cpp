@@ -15,8 +15,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto integer_literal(
     std::uint64_t magnitude,
     NumericSuffix suffix = NumericSuffix::None,
@@ -34,13 +32,8 @@ auto integer_literal(
     };
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Semantic constant facts: literals normalize suffix, context, sign, and spelling",
+const TestSuite suite([] static noexcept {
+    "Semantic constant facts: literals normalize suffix, context, sign, and spelling"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& compilation = fixture.compilation;
@@ -50,32 +43,32 @@ const ct::Suite tests([] static noexcept {
             const auto f64 = compilation.builtin_type(BuiltinType::F64);
 
             const auto default_integer = normalize_literal(compilation, integer_literal(42u));
-            if (!ct::expect(default_integer.has_value())) {
+            if (!expect(default_integer.has_value())) {
                 return;
             }
-            ct::expect(((default_integer->type) == (i32))).note("default_integer->type == i32");
+            expect(((default_integer->type) == (i32))).note("default_integer->type == i32");
 
             const auto contextual =
                 normalize_literal(compilation, integer_literal(42u), ConstructionTypeRef {i64});
-            if (!ct::expect(contextual.has_value())) {
+            if (!expect(contextual.has_value())) {
                 return;
             }
-            ct::expect(((contextual->type) == (i64))).note("contextual->type == i64");
+            expect(((contextual->type) == (i64))).note("contextual->type == i64");
             const auto contextual_value = std::get<IntegerConstant>(contextual->value).as_signed();
-            if (!ct::expect(contextual_value.has_value())) {
+            if (!expect(contextual_value.has_value())) {
                 return;
             }
-            ct::expect_equal(*contextual_value, 42);
+            expect_equal(*contextual_value, 42);
 
             const auto suffixed = normalize_literal(
                 compilation,
                 integer_literal(42u, NumericSuffix::I32),
                 ConstructionTypeRef {i64}
             );
-            if (!ct::expect(suffixed.has_value())) {
+            if (!expect(suffixed.has_value())) {
                 return;
             }
-            ct::expect(((suffixed->type) == (i32))).note("suffixed->type == i32");
+            expect(((suffixed->type) == (i32))).note("suffixed->type == i32");
 
             const auto signed_minimum = normalize_literal(
                 compilation,
@@ -83,46 +76,46 @@ const ct::Suite tests([] static noexcept {
                 std::nullopt,
                 LiteralSign::Negative
             );
-            if (!ct::expect(signed_minimum.has_value())) {
+            if (!expect(signed_minimum.has_value())) {
                 return;
             }
             const auto minimum_constant =
                 std::get<IntegerConstant>(signed_minimum->value).as_signed();
-            if (!ct::expect(minimum_constant.has_value())) {
+            if (!expect(minimum_constant.has_value())) {
                 return;
             }
-            ct::expect_equal(*minimum_constant, -128);
+            expect_equal(*minimum_constant, -128);
 
             const auto positive_overflow =
                 normalize_literal(compilation, integer_literal(128u, NumericSuffix::I8));
-            if (!ct::expect(!(positive_overflow.has_value()))) {
+            if (!expect(!(positive_overflow.has_value()))) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 positive_overflow.error(),
                 ConstantEvaluationFailure::IntegerLiteralNotRepresentable
             );
             const auto range_diagnostic = constant_evaluation_diagnostic(positive_overflow.error());
-            if (!ct::expect(range_diagnostic.has_value())) {
+            if (!expect(range_diagnostic.has_value())) {
                 return;
             }
-            ct::expect_equal(range_diagnostic->code, DiagnosticCode::ConstLiteralRange);
+            expect_equal(range_diagnostic->code, DiagnosticCode::ConstLiteralRange);
 
             const auto lexer_overflow = normalize_literal(
                 compilation,
                 integer_literal(0u, NumericSuffix::None, NumericConversion::OutOfRange)
             );
-            if (!ct::expect(!(lexer_overflow.has_value()))) {
+            if (!expect(!(lexer_overflow.has_value()))) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 lexer_overflow.error(),
                 ConstantEvaluationFailure::IntegerLiteralOutOfRange
             );
-            if (!ct::expect(constant_evaluation_diagnostic(lexer_overflow.error()).has_value())) {
+            if (!expect(constant_evaluation_diagnostic(lexer_overflow.error()).has_value())) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 constant_evaluation_diagnostic(lexer_overflow.error())->code,
                 DiagnosticCode::ConstOverflow
             );
@@ -140,11 +133,11 @@ const ct::Suite tests([] static noexcept {
                 },
                 ConstructionTypeRef {f32}
             );
-            if (!ct::expect(floating.has_value())) {
+            if (!expect(floating.has_value())) {
                 return;
             }
-            ct::expect(((floating->type) == (f32))).note("floating->type == f32");
-            ct::expect_equal(std::get<F32Constant>(floating->value).value, 1.25f);
+            expect(((floating->type) == (f32))).note("floating->type == f32");
+            expect_equal(std::get<F32Constant>(floating->value).value, 1.25f);
 
             const auto default_floating = normalize_literal(
                 compilation,
@@ -157,10 +150,10 @@ const ct::Suite tests([] static noexcept {
                     },
                 }
             );
-            if (!ct::expect(default_floating.has_value())) {
+            if (!expect(default_floating.has_value())) {
                 return;
             }
-            ct::expect(((default_floating->type) == (f64))).note("default_floating->type == f64");
+            expect(((default_floating->type) == (f64))).note("default_floating->type == f64");
 
             const auto floating_overflow = normalize_literal(
                 compilation,
@@ -173,10 +166,10 @@ const ct::Suite tests([] static noexcept {
                     },
                 }
             );
-            if (!ct::expect(!(floating_overflow.has_value()))) {
+            if (!expect(!(floating_overflow.has_value()))) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 floating_overflow.error(),
                 ConstantEvaluationFailure::FloatingLiteralOutOfRange
             );
@@ -188,18 +181,16 @@ const ct::Suite tests([] static noexcept {
                     .value = StringLiteralValue {.bytes = "hello"},
                 }
             );
-            if (!ct::expect(string.has_value())) {
+            if (!expect(string.has_value())) {
                 return;
             }
             const auto spelling = std::get<StringConstant>(string->value).value;
-            ct::expect_equal(compilation.spelling_copy(spelling), std::string_view("hello"));
-            ct::expect(((std::get<StringConstant>(string->value).value) == (spelling)))
+            expect_equal(compilation.spelling_copy(spelling), std::string_view("hello"));
+            expect(((std::get<StringConstant>(string->value).value) == (spelling)))
                 .note("std::get<StringConstant>(string->value).value == spelling");
-        }
-    );
+        };
 
-    ct::test(
-        "Semantic literals: floating conversion uses the selected precision and range",
+    "Semantic literals: floating conversion uses the selected precision and range"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& compilation = fixture.compilation;
@@ -288,8 +279,8 @@ const ct::Suite tests([] static noexcept {
                 },
             };
             const auto signs = std::array {LiteralSign::Positive, LiteralSign::Negative};
-            ct::each(cases, &Case::spelling, [&](const auto& item) noexcept {
-                ct::each(
+            each(cases, &Case::spelling, [&](const auto& item) noexcept {
+                each(
                     signs,
                     [](LiteralSign sign) static noexcept -> std::string_view {
                         return sign == LiteralSign::Positive ? "positive" : "negative";
@@ -310,25 +301,25 @@ const ct::Suite tests([] static noexcept {
                             sign
                         );
                         if (!item.bits.has_value()) {
-                            if (!(ct::expect(!(result.has_value()))
+                            if (!(expect(!(result.has_value()))
                                       .note("item.suffix = ", static_cast<int>(item.suffix)))) {
                                 return;
                             }
-                            ct::expect_equal(
+                            expect_equal(
                                 result.error(),
                                 ConstantEvaluationFailure::FloatingLiteralOutOfRange
                             )
                                 .note("item.suffix = ", static_cast<int>(item.suffix));
                             return;
                         }
-                        if (!(ct::expect(result.has_value())
+                        if (!(expect(result.has_value())
                                   .note("item.suffix = ", static_cast<int>(item.suffix)))) {
                             return;
                         }
                         const auto narrow = item.suffix == NumericSuffix::F32
                             || (item.suffix == NumericSuffix::None
                                 && item.expected_type == BuiltinType::F32);
-                        ct::expect(((result->type) == (narrow ? f32 : f64)))
+                        expect(((result->type) == (narrow ? f32 : f64)))
                             .note(
                                 "result->type == narrow ? f32 : f64",
                                 "item.suffix = ",
@@ -343,7 +334,7 @@ const ct::Suite tests([] static noexcept {
                                                  : std::bit_cast<std::uint64_t>(
                                                        std::get<F64Constant>(result->value).value
                                                    );
-                        ct::expect(((bits) == (*item.bits | sign_bit)))
+                        expect(((bits) == (*item.bits | sign_bit)))
                             .note(
                                 "bits == *item.bits | sign_bit",
                                 "item.suffix = ",
@@ -352,8 +343,7 @@ const ct::Suite tests([] static noexcept {
                     }
                 );
             });
-        }
-    );
+        };
 });
 
 } // namespace

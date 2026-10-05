@@ -8,8 +8,6 @@ import :source.manager;
 import :support.path;
 import std;
 
-namespace graver {
-
 auto FormattedFile::changed() const noexcept -> bool {
     return original != formatted;
 }
@@ -21,14 +19,14 @@ auto FormattedBatch::files() const noexcept -> std::span<const FormattedFile> {
     return outputs;
 }
 
-auto format_batch(const SourceManager& sources, std::span<const BatchInput> inputs) noexcept
+auto format_batch(const SourceManager& sources, std::span<const FormattingInput> inputs) noexcept
     -> std::expected<FormattedBatch, Diagnostics> {
     auto outputs = std::vector<FormattedFile>();
     outputs.reserve(inputs.size());
     auto diagnostics = Diagnostics();
     auto failed = false;
     for (const auto& input : inputs) {
-        auto result = format(sources, input.source_id);
+        auto result = format_source(sources, input.source_id);
         if (!result) {
             failed = true;
             diagnostics.append_range(std::move(result.error()) | std::views::as_rvalue);
@@ -48,8 +46,10 @@ auto format_batch(const SourceManager& sources, std::span<const BatchInput> inpu
     return FormattedBatch(std::move(outputs));
 }
 
-auto check_report(const FormattedBatch& batch, const std::filesystem::path& directory) noexcept
-    -> std::string {
+auto format_check_report(
+    const FormattedBatch& batch,
+    const std::filesystem::path& directory
+) noexcept -> std::string {
     auto report = std::string();
     for (const auto& file : batch.files()) {
         if (!file.changed()) {
@@ -63,7 +63,8 @@ auto check_report(const FormattedBatch& batch, const std::filesystem::path& dire
     return report;
 }
 
-auto write_batch(const FormattedBatch& batch) noexcept -> std::expected<void, std::string> {
+auto write_formatted_batch(const FormattedBatch& batch) noexcept
+    -> std::expected<void, std::string> {
     for (const auto& file : batch.files()) {
         if (file.path.empty()) {
             return std::unexpected("write requires regular files, not stdin");
@@ -83,7 +84,7 @@ auto write_batch(const FormattedBatch& batch) noexcept -> std::expected<void, st
         if (!file.changed()) {
             continue;
         }
-        const auto replaced = replace_file(file.path, file.original, file.formatted);
+        const auto replaced = replace_formatted_file(file.path, file.original, file.formatted);
         if (!replaced) {
             return std::unexpected(
                 std::format("{}: {}", path_to_generic_utf8(file.path), replaced.error())
@@ -91,6 +92,4 @@ auto write_batch(const FormattedBatch& batch) noexcept -> std::expected<void, st
         }
     }
     return {};
-}
-
 }

@@ -6,10 +6,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Support quote: text remains readable and bytes remain explicit", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Support quote: text remains readable and bytes remain explicit"_test = [] static noexcept {
         struct Case final {
             std::string_view name;
             std::string_view text;
@@ -26,10 +24,10 @@ const ct::Suite tests([] static noexcept {
              .text = "\xff\xc0\x80中\xe2\x82",
              .expected = R"("\xff\xc0\x80中\xe2\x82")"},
         });
-        ct::each(cases, &Case::name, [](const Case& entry) static noexcept {
-            ct::expect_equal(quote_text(entry.text), entry.expected);
+        each(cases, &Case::name, [](const Case& entry) static noexcept {
+            expect_equal(quote_text(entry.text), entry.expected);
         });
-    });
+    };
 });
 
 } // namespace

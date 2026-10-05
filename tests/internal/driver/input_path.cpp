@@ -8,100 +8,90 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Input path: normalized relative paths preserve their module hierarchy",
+const TestSuite suite([] static noexcept {
+    "Input path: normalized relative paths preserve their module hierarchy"_test =
         [] static noexcept {
             const auto direct = derive_input_module_path("src/app/main.cv");
             const auto normalized = derive_input_module_path("src/app/./nested/../main.cv");
 
-            if (!ct::expect(direct.has_value())) {
+            if (!expect(direct.has_value())) {
                 return;
             }
-            if (!ct::expect(normalized.has_value())) {
+            if (!expect(normalized.has_value())) {
                 return;
             }
-            ct::expect_equal(direct->value(), std::string_view("src.app.main"));
-            ct::expect((*normalized == *direct));
-        }
-    );
+            expect_equal(direct->value(), std::string_view("src.app.main"));
+            expect((*normalized == *direct));
+        };
 
-    ct::test("Input path: identifier-only hierarchy remains exact", [] static noexcept {
+    "Input path: identifier-only hierarchy remains exact"_test = [] static noexcept {
         const auto upper = derive_input_module_path("Case.cv");
         const auto lower = derive_input_module_path("case.cv");
         const auto nested = derive_input_module_path("linear_algebra/vector2.cv");
         const auto cv = derive_input_module_path("cv.cv");
         const auto double_underscore = derive_input_module_path("__carven_internal/__value.cv");
 
-        if (!ct::expect(upper.has_value())) {
+        if (!expect(upper.has_value())) {
             return;
         }
-        if (!ct::expect(lower.has_value())) {
+        if (!expect(lower.has_value())) {
             return;
         }
-        if (!ct::expect(nested.has_value())) {
+        if (!expect(nested.has_value())) {
             return;
         }
-        if (!ct::expect(cv.has_value())) {
+        if (!expect(cv.has_value())) {
             return;
         }
-        if (!ct::expect(double_underscore.has_value())) {
+        if (!expect(double_underscore.has_value())) {
             return;
         }
-        ct::expect_equal(upper->value(), std::string_view("Case"));
-        ct::expect_equal(lower->value(), std::string_view("case"));
-        ct::expect(*upper != *lower);
-        ct::expect_equal(nested->value(), std::string_view("linear_algebra.vector2"));
-        ct::expect_equal(cv->value(), std::string_view("cv"));
-        ct::expect_equal(double_underscore->value(), std::string_view("__carven_internal.__value"));
-    });
+        expect_equal(upper->value(), std::string_view("Case"));
+        expect_equal(lower->value(), std::string_view("case"));
+        expect(*upper != *lower);
+        expect_equal(nested->value(), std::string_view("linear_algebra.vector2"));
+        expect_equal(cv->value(), std::string_view("cv"));
+        expect_equal(double_underscore->value(), std::string_view("__carven_internal.__value"));
+    };
 
-    ct::test(
-        "Input path: standard craft inputs follow ordinary path derivation",
-        [] static noexcept {
-            const auto direct = derive_input_module_path("crafts/carven/std/utf.cv");
-            const auto normalized = derive_input_module_path("crafts/vendor/../json/parser.cv");
-            if (!ct::expect(direct.has_value())) {
-                return;
-            }
-            if (!ct::expect(normalized.has_value())) {
-                return;
-            }
-            ct::expect_equal(direct->value(), std::string_view("crafts.carven.std.utf"));
-            ct::expect_equal(normalized->value(), std::string_view("crafts.json.parser"));
+    "Input path: standard craft inputs follow ordinary path derivation"_test = [] static noexcept {
+        const auto direct = derive_input_module_path("crafts/carven/std/utf.cv");
+        const auto normalized = derive_input_module_path("crafts/vendor/../json/parser.cv");
+        if (!expect(direct.has_value())) {
+            return;
         }
-    );
+        if (!expect(normalized.has_value())) {
+            return;
+        }
+        expect_equal(direct->value(), std::string_view("crafts.carven.std.utf"));
+        expect_equal(normalized->value(), std::string_view("crafts.json.parser"));
+    };
 
-    ct::test(
-        "Input path: installed crafts preserve package-relative module identity",
+    "Input path: installed crafts preserve package-relative module identity"_test =
         [] static noexcept {
-            const auto directory = ct::TempDirectory("installed-crafts");
+            const auto directory = TempDirectory("installed-crafts");
             const auto installed = derive_input_module_path(
                 path_to_generic_utf8(directory.path("crafts/carven/std/utf.cv"))
             );
             const auto local = derive_input_module_path("crafts/carven/std/utf.cv");
-            if (!ct::expect(installed.has_value())) {
+            if (!expect(installed.has_value())) {
                 return;
             }
-            if (!ct::expect(local.has_value())) {
+            if (!expect(local.has_value())) {
                 return;
             }
-            ct::expect((*installed == *local));
-            ct::expect_equal(installed->value(), std::string_view("crafts.carven.std.utf"));
+            expect((*installed == *local));
+            expect_equal(installed->value(), std::string_view("crafts.carven.std.utf"));
             const auto outside =
                 derive_input_module_path(path_to_generic_utf8(directory.path("other/std/utf.cv")));
             const auto escaped = derive_input_module_path(
                 path_to_generic_utf8(directory.path("crafts/../outside.cv"))
             );
-            ct::expect(!outside.has_value());
-            ct::expect(!escaped.has_value());
-        }
-    );
+            expect(!outside.has_value());
+            expect(!escaped.has_value());
+        };
 
-    ct::test(
-        "Input path: invalid module names identify the first offending component",
+    "Input path: invalid module names identify the first offending component"_test =
         [] static noexcept {
             const auto cases = std::array {
                 std::pair {
@@ -135,132 +125,121 @@ const ct::Suite tests([] static noexcept {
                 },
             };
 
-            ct::each(
+            each(
                 cases,
                 [](const auto& entry) static noexcept { return entry.first; },
                 [&](const auto& entry) noexcept {
                     const auto& [input, error] = entry;
                     const auto result = derive_input_module_path(input);
-                    if (!(ct::expect(!result.has_value()))) {
+                    if (!(expect(!result.has_value()))) {
                         return;
                     }
-                    ct::expect((result.error() == error));
+                    expect((result.error() == error));
                 }
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Input path: invalid paths are rejected before source acquisition",
-        [] static noexcept {
-            const auto cases = std::array {
-                std::pair {
-                    std::string_view(""),
-                    std::string_view("input path cannot be empty"),
-                },
-                std::pair {
-                    std::string_view("/absolute.cv"),
-                    std::string_view(
-                        "input '/absolute.cv' must be relative or belong to a crafts directory"
-                    ),
-                },
-                std::pair {
-                    std::string_view("../outside.cv"),
-                    std::string_view("input '../outside.cv' escapes the working directory"),
-                },
-                std::pair {
-                    std::string_view("wrong.txt"),
-                    std::string_view("input 'wrong.txt' does not have a .cv extension"),
-                },
-                std::pair {
-                    std::string_view("..cv"),
-                    std::string_view("cannot derive a module path from '..cv'"),
-                },
-                std::pair {
-                    std::string_view("a/..cv"),
-                    std::string_view("input 'a/..cv' derives an empty module path component"),
-                },
-                std::pair {
-                    std::string_view("bad\\name.cv"),
-                    std::string_view("input path must use '/' as the path separator"),
-                },
-                std::pair {
-                    std::string_view("quote\"name.cv"),
-                    std::string_view("input path cannot contain '\"'"),
-                },
-                std::pair {
-                    std::string_view("line\nname.cv"),
-                    std::string_view("input path cannot contain a line break"),
-                },
-                std::pair {
-                    std::string_view("carriage\rname.cv"),
-                    std::string_view("input path cannot contain a line break"),
-                },
-            };
+    "Input path: invalid paths are rejected before source acquisition"_test = [] static noexcept {
+        const auto cases = std::array {
+            std::pair {
+                std::string_view(""),
+                std::string_view("input path cannot be empty"),
+            },
+            std::pair {
+                std::string_view("/absolute.cv"),
+                std::string_view(
+                    "input '/absolute.cv' must be relative or belong to a crafts directory"
+                ),
+            },
+            std::pair {
+                std::string_view("../outside.cv"),
+                std::string_view("input '../outside.cv' escapes the working directory"),
+            },
+            std::pair {
+                std::string_view("wrong.txt"),
+                std::string_view("input 'wrong.txt' does not have a .cv extension"),
+            },
+            std::pair {
+                std::string_view("..cv"),
+                std::string_view("cannot derive a module path from '..cv'"),
+            },
+            std::pair {
+                std::string_view("a/..cv"),
+                std::string_view("input 'a/..cv' derives an empty module path component"),
+            },
+            std::pair {
+                std::string_view("bad\\name.cv"),
+                std::string_view("input path must use '/' as the path separator"),
+            },
+            std::pair {
+                std::string_view("quote\"name.cv"),
+                std::string_view("input path cannot contain '\"'"),
+            },
+            std::pair {
+                std::string_view("line\nname.cv"),
+                std::string_view("input path cannot contain a line break"),
+            },
+            std::pair {
+                std::string_view("carriage\rname.cv"),
+                std::string_view("input path cannot contain a line break"),
+            },
+        };
 
-            ct::each(
-                cases,
-                [](const auto& entry) static noexcept { return entry.first; },
-                [&](const auto& entry) noexcept {
-                    const auto& [input, error] = entry;
-                    const auto result = derive_input_module_path(input);
-                    if (!(ct::expect(!result.has_value()))) {
-                        return;
-                    }
-                    ct::expect((result.error() == error));
+        each(
+            cases,
+            [](const auto& entry) static noexcept { return entry.first; },
+            [&](const auto& entry) noexcept {
+                const auto& [input, error] = entry;
+                const auto result = derive_input_module_path(input);
+                if (!(expect(!result.has_value()))) {
+                    return;
                 }
-            );
-
-            const auto with_nul = std::string_view("nul\0name.cv", 11);
-            const auto nul_result = derive_input_module_path(with_nul);
-            if (!ct::expect(!nul_result.has_value())) {
-                return;
+                expect((result.error() == error));
             }
-            ct::expect_equal(nul_result.error(), std::string_view("input path cannot contain NUL"));
+        );
 
-            auto invalid_utf8 = std::string("invalid-");
-            invalid_utf8.push_back(static_cast<char>(0xff));
-            invalid_utf8 += ".cv";
-            const auto utf8_result = derive_input_module_path(invalid_utf8);
-            if (!ct::expect(!utf8_result.has_value())) {
-                return;
-            }
-            ct::expect_equal(
-                utf8_result.error(),
-                std::string_view("input path is not valid UTF-8")
-            );
+        const auto with_nul = std::string_view("nul\0name.cv", 11);
+        const auto nul_result = derive_input_module_path(with_nul);
+        if (!expect(!nul_result.has_value())) {
+            return;
         }
-    );
+        expect_equal(nul_result.error(), std::string_view("input path cannot contain NUL"));
+
+        auto invalid_utf8 = std::string("invalid-");
+        invalid_utf8.push_back(static_cast<char>(0xff));
+        invalid_utf8 += ".cv";
+        const auto utf8_result = derive_input_module_path(invalid_utf8);
+        if (!expect(!utf8_result.has_value())) {
+            return;
+        }
+        expect_equal(utf8_result.error(), std::string_view("input path is not valid UTF-8"));
+    };
 
 #if defined(_WIN32)
-    ct::test(
-        "Input path: drive-relative paths cannot escape the working directory",
+    "Input path: drive-relative paths cannot escape the working directory"_test =
         [] static noexcept {
             const auto result = derive_input_module_path("C:escape.cv");
 
-            ct::expect(
-                !(derive_input_module_path("C:prefix/crafts/carven/std/utf.cv").has_value())
-            );
-            if (!ct::expect(!result.has_value())) {
+            expect(!(derive_input_module_path("C:prefix/crafts/carven/std/utf.cv").has_value()));
+            if (!expect(!result.has_value())) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 result.error(),
                 std::string_view(
                     "input 'C:escape.cv' must be relative or belong to a crafts directory"
                 )
             );
-        }
-    );
+        };
 #endif
 
-    ct::test("Input path: keyword components preserve exact module identity", [] static noexcept {
+    "Input path: keyword components preserve exact module identity"_test = [] static noexcept {
         const auto result = derive_input_module_path("crafts/import/using/match.cv");
-        if (!ct::expect(result.has_value())) {
+        if (!expect(result.has_value())) {
             return;
         }
-        ct::expect_equal(result->value(), std::string_view("crafts.import.using.match"));
-    });
+        expect_equal(result->value(), std::string_view("crafts.import.using.match"));
+    };
 });
 
 } // namespace

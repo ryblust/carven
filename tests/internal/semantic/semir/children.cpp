@@ -11,16 +11,13 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "SemIR trees: deep mixed storage survives partial moves and replacement",
+const TestSuite suite([] static noexcept {
+    "SemIR trees: deep mixed storage survives partial moves and replacement"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            auto draft = semir_test::begin_compilation(sources, diagnostics, "semir.mixed_storage");
-            const auto origin = semir_test::module_facts(draft).origin;
+            auto draft = begin_semir_test_compilation(sources, diagnostics, "semir.mixed_storage");
+            const auto origin = make_semir_test_module_origin(draft).origin;
             const auto integer = draft.builtin_type(BuiltinType::I32);
             const auto boolean = draft.builtin_type(BuiltinType::Bool);
             const auto constant =
@@ -100,15 +97,15 @@ const ct::Suite tests([] static noexcept {
                         ++observed[2];
                     }
                 });
-                ct::expect_equal(observed[0], expression_count);
-                ct::expect_equal(observed[1], depth / 2uz);
-                ct::expect_equal(observed[2], depth / 2uz);
+                expect_equal(observed[0], expression_count);
+                expect_equal(observed[1], depth / 2uz);
+                expect_equal(observed[2], depth / 2uz);
             };
             constexpr auto expression_count = 1uz + 2uz * depth;
             check_structure(expression, expression_count);
             auto moved = std::move(expression);
             auto* unary = std::get_if<SemUnary>(&moved.value);
-            if (!ct::expect(unary != nullptr)) {
+            if (!expect(unary != nullptr)) {
                 return;
             }
             auto detached = std::move(unary->operand);
@@ -125,8 +122,8 @@ const ct::Suite tests([] static noexcept {
             );
             check_structure(restored, expression_count);
             auto copied = restored;
-            ct::expect(exits(restored) == ExitSet(Exit::Normal));
-            ct::expect(exits(copied) == ExitSet(Exit::Normal));
+            expect(exits(restored) == ExitSet(Exit::Normal));
+            expect(exits(copied) == ExitSet(Exit::Normal));
             visit_semantic_nodes(copied, [](SemanticExpression& node) static noexcept {
                 node.exits_test = true;
             });
@@ -134,19 +131,18 @@ const ct::Suite tests([] static noexcept {
             visit_semantic_nodes(restored, [&](const SemanticExpression& node) noexcept {
                 unchanged &= !node.exits_test;
             });
-            ct::expect(unchanged);
+            expect(unchanged);
             // Replacement destroys the original deep tree; its independent
             // copy remains complete and is destroyed normally at scope exit.
             restored = leaf();
             check_structure(copied, expression_count);
-        }
-    );
+        };
 
-    ct::test("SemIR children: direct ordered borrows preserve nested storage", [] static noexcept {
+    "SemIR children: direct ordered borrows preserve nested storage"_test = [] static noexcept {
         auto sources = SourceManager();
         auto diagnostics = DiagnosticSink();
-        auto draft = semir_test::begin_compilation(sources, diagnostics, "semir.children");
-        const auto origin = semir_test::module_facts(draft).origin;
+        auto draft = begin_semir_test_compilation(sources, diagnostics, "semir.children");
+        const auto origin = make_semir_test_module_origin(draft).origin;
         const auto integer = draft.builtin_type(BuiltinType::I32);
         const auto constant =
             draft.intern_constant({.type = integer, .value = IntegerConstant::zero()});
@@ -175,22 +171,22 @@ const ct::Suite tests([] static noexcept {
             std::as_const(operation),
             [&](const SemanticExpression& child) noexcept { children.push_back(&child); }
         );
-        if (!ct::expect(children.size() == 2)) {
+        if (!expect(children.size() == 2)) {
             return;
         }
-        ct::expect(children[0] == &*operation.left);
-        ct::expect(children[1] == &*operation.right);
+        expect(children[0] == &*operation.left);
+        expect(children[1] == &*operation.right);
         visit_semantic_children(operation, [](SemanticExpression& child) static noexcept {
             child.exits_test = true;
         });
-        ct::expect(operation.left->exits_test);
-        ct::expect(operation.right->exits_test);
+        expect(operation.left->exits_test);
+        expect(operation.right->exits_test);
         const auto* nested = std::get_if<SemUnary>(&operation.left->value);
-        if (!ct::expect(nested != nullptr)) {
+        if (!expect(nested != nullptr)) {
             return;
         }
-        ct::expect(!(nested->operand->exits_test));
-    });
+        expect(!(nested->operand->exits_test));
+    };
 });
 
 } // namespace

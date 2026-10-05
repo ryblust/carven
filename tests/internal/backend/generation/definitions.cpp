@@ -15,8 +15,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct Definitions final {
     std::flat_set<std::string> functions;
     std::size_t closures = 0uz;
@@ -32,13 +30,8 @@ auto Definitions::enter_declaration(const TargetDecl& declaration) noexcept -> b
     return true;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: native definitions follow residual references and selected test roots",
+const TestSuite suite([] static noexcept {
+    "Generation: native definitions follow residual references and selected test roots"_test =
         [] static noexcept {
             const auto modes =
                 std::array {TestGenerationMode::None, TestGenerationMode::RunnerHeader};
@@ -82,7 +75,7 @@ const ct::Suite tests([] static noexcept {
                 auto definitions = Definitions();
                 for (const auto artifact : compilation.target().artifacts()) {
                     const auto unit = lower_artifact(compilation, artifact.id);
-                    if (!(ct::expect(traverse_target_unit(unit.sections(), definitions))
+                    if (!(expect(traverse_target_unit(unit.sections(), definitions))
                               .note("static_cast<int>(mode): ", static_cast<int>(mode)))) {
                         return;
                     }
@@ -105,7 +98,7 @@ const ct::Suite tests([] static noexcept {
                     const auto expected = source == "test_leaf"
                         ? mode != TestGenerationMode::None
                         : !std::ranges::contains(absent, source);
-                    ct::expect(definitions.functions.contains(std::string(name)) == expected)
+                    expect(definitions.functions.contains(std::string(name)) == expected)
                         .note(
                             "static_cast<int>(mode): ",
                             static_cast<int>(mode),
@@ -113,11 +106,10 @@ const ct::Suite tests([] static noexcept {
                             source
                         );
                 }
-                ct::expect(definitions.closures == 1uz)
+                expect(definitions.closures == 1uz)
                     .note("static_cast<int>(mode): ", static_cast<int>(mode));
             }
-        }
-    );
+        };
 });
 
 } // namespace

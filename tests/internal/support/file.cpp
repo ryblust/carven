@@ -7,54 +7,52 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Support file: writes and reads exact bytes", [] static noexcept {
-        const auto temporary = ct::TempDirectory("carven-support-file");
+const TestSuite suite([] static noexcept {
+    "Support file: writes and reads exact bytes"_test = [] static noexcept {
+        const auto temporary = TempDirectory("carven-support-file");
         const auto path = temporary.path("bytes");
         const auto expected = std::string("alpha\0beta\n", 11);
 
         const auto written = write_file(path, expected);
-        if (!ct::expect(written.has_value())) {
+        if (!expect(written.has_value())) {
             return;
         }
         auto input = std::ifstream(path, std::ios::binary);
-        if (!ct::expect(input.is_open())) {
+        if (!expect(input.is_open())) {
             return;
         }
         const auto actual =
             std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
-        ct::expect(!input.bad());
-        ct::expect_equal(actual, expected);
+        expect(!input.bad());
+        expect_equal(actual, expected);
 
         const auto read_path = temporary.path("read-input");
         auto output = std::ofstream(read_path, std::ios::binary | std::ios::trunc);
-        if (!ct::expect(output.is_open())) {
+        if (!expect(output.is_open())) {
             return;
         }
         output.write(expected.data(), static_cast<std::streamsize>(expected.size()));
         output.close();
-        if (!ct::expect(output.good())) {
+        if (!expect(output.good())) {
             return;
         }
         const auto read = read_file(read_path, expected.size());
-        if (!ct::expect(read.has_value())) {
+        if (!expect(read.has_value())) {
             return;
         }
-        ct::expect_equal(*read, expected);
-    });
+        expect_equal(*read, expected);
+    };
 
-    ct::test("Support file: missing paths report the failed operation", [] static noexcept {
-        const auto temporary = ct::TempDirectory("carven-support-file");
+    "Support file: missing paths report the failed operation"_test = [] static noexcept {
+        const auto temporary = TempDirectory("carven-support-file");
 
         const auto read = read_file(temporary.path("missing"), 1024);
-        if (!ct::expect(!read.has_value())) {
+        if (!expect(!read.has_value())) {
             return;
         }
-        ct::expect_equal(read.error().operation, FileOperation::Inspect);
-        ct::expect(read.error().code);
-    });
+        expect_equal(read.error().operation, FileOperation::Inspect);
+        expect(read.error().code);
+    };
 });
 
 } // namespace

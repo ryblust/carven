@@ -6,11 +6,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Diagnostic presentation: command errors retain text with or without styling",
+const TestSuite suite([] static noexcept {
+    "Diagnostic presentation: command errors retain text with or without styling"_test =
         [] static noexcept {
             const auto plain = render_driver_error(
                 "unknown check option '--bad'",
@@ -25,7 +22,7 @@ const ct::Suite tests([] static noexcept {
                 "choose a supported option"
             );
 
-            ct::expect_equal(
+            expect_equal(
                 plain,
                 std::string_view(
                     "carven: error: unknown check option '--bad'\n"
@@ -35,10 +32,9 @@ const ct::Suite tests([] static noexcept {
             );
             // Only complete, non-nested style/reset pairs may be removed.
             const auto styled_text = std::regex("\\x1b\\[[0-9;]+m([^\\x1b]*)\\x1b\\[0m");
-            ct::expect_not_equal(styled, plain);
-            ct::expect_equal(std::regex_replace(styled, styled_text, "$1"), plain);
-        }
-    );
+            expect_not_equal(styled, plain);
+            expect_equal(std::regex_replace(styled, styled_text, "$1"), plain);
+        };
 });
 
 } // namespace

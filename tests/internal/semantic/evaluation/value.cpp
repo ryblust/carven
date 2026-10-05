@@ -14,11 +14,8 @@ static_assert(!std::is_copy_constructible_v<ExecutionOwnedText>);
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Execution type admission: root permissions and views retain their storage boundaries",
+const TestSuite suite([] static noexcept {
+    "Execution type admission: root permissions and views retain their storage boundaries"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& values = fixture.compilation;
@@ -94,17 +91,15 @@ const ct::Suite tests([] static noexcept {
                     .supported = false
                 },
             };
-            ct::each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
-                ct::expect_equal(
+            each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
+                expect_equal(
                     supported_execution_type(values, scenario.type, scenario.allow_void),
                     scenario.supported
                 );
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant values: text observation and equality are independent of storage representation",
+    "Constant values: text observation and equality are independent of storage representation"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             const auto& values = fixture.compilation;
@@ -122,16 +117,16 @@ const ct::Suite tests([] static noexcept {
             };
             for (auto index = 0uz; index < representations.size(); ++index) {
                 const auto text = execution_text(values, representations[index]);
-                if (!(ct::expect(text.has_value()).note("index = ", index))) {
+                if (!(expect(text.has_value()).note("index = ", index))) {
                     return;
                 }
-                ct::expect(*text == bytes).note("index = ", index);
+                expect(*text == bytes).note("index = ", index);
                 auto steps = 0uz;
-                ct::expect(
+                expect(
                     execution_equal(values, representations[index], retained, steps, 1uz) == true
                 )
                     .note("index = ", index);
-                ct::expect(steps == 1uz).note("index = ", index);
+                expect(steps == 1uz).note("index = ", index);
             }
             const auto nontext = ExecutionValue(
                 ConstantAtom {
@@ -139,14 +134,12 @@ const ct::Suite tests([] static noexcept {
                     .value = IntegerConstant::from_signed(1)
                 }
             );
-            ct::expect(!(execution_text(values, nontext).has_value()));
+            expect(!(execution_text(values, nontext).has_value()));
             auto steps = 0uz;
-            ct::expect(execution_equal(values, nontext, retained, steps, 1uz) == false);
-        }
-    );
+            expect(execution_equal(values, nontext, retained, steps, 1uz) == false);
+        };
 
-    ct::test(
-        "Constant values: comparison distinguishes expired text, unsupported values and limits",
+    "Constant values: comparison distinguishes expired text, unsupported values and limits"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             const auto& values = fixture.compilation;
@@ -154,12 +147,12 @@ const ct::Suite tests([] static noexcept {
             const auto borrowed = ExecutionValue(storage->borrow());
             const auto owned = ExecutionValue(ExecutionOwnedText("text"));
             auto steps = 0uz;
-            ct::expect(execution_equal(values, borrowed, owned, steps, 1uz) == true);
+            expect(execution_equal(values, borrowed, owned, steps, 1uz) == true);
             const auto exhausted = execution_equal(values, borrowed, owned, steps, 1uz);
-            if (!ct::expect(!(exhausted.has_value()))) {
+            if (!expect(!(exhausted.has_value()))) {
                 return;
             }
-            ct::expect(exhausted.error() == ExecutionComparisonFailure::StepLimit);
+            expect(exhausted.error() == ExecutionComparisonFailure::StepLimit);
 
             storage.reset();
             for (const auto reverse : {false, true}) {
@@ -171,10 +164,10 @@ const ct::Suite tests([] static noexcept {
                     steps,
                     1uz
                 );
-                if (!(ct::expect(!(result.has_value())).note("reverse = ", reverse))) {
+                if (!(expect(!(result.has_value())).note("reverse = ", reverse))) {
                     return;
                 }
-                ct::expect(result.error() == ExecutionComparisonFailure::ExpiredText)
+                expect(result.error() == ExecutionComparisonFailure::ExpiredText)
                     .note("reverse = ", reverse);
             }
 
@@ -188,46 +181,43 @@ const ct::Suite tests([] static noexcept {
             );
             steps = 0uz;
             const auto unsupported = execution_equal(values, cstring, cstring, steps, 1uz);
-            if (!ct::expect(!(unsupported.has_value()))) {
+            if (!expect(!(unsupported.has_value()))) {
                 return;
             }
-            ct::expect(unsupported.error() == ExecutionComparisonFailure::Unsupported);
-        }
-    );
+            expect(unsupported.error() == ExecutionComparisonFailure::Unsupported);
+        };
 
-    ct::test(
-        "Execution text: shared content and String borrows have separate lifetimes",
+    "Execution text: shared content and String borrows have separate lifetimes"_test =
         [] static noexcept {
             auto owner = ExecutionOwnedText("a");
             const auto borrowed = owner.borrow();
             // Copying the borrow is part of the lifetime contract under test.
             // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
             const auto copied_borrow = borrowed;
-            if (!ct::expect(borrowed.bytes() == "a")) {
+            if (!expect(borrowed.bytes() == "a")) {
                 return;
             }
             auto moved_owner = std::move(owner);
-            ct::expect(copied_borrow.bytes() == "a");
+            expect(copied_borrow.bytes() == "a");
             moved_owner.append("b");
-            ct::expect(moved_owner.bytes() == "ab");
-            ct::expect(!(borrowed.bytes().has_value()));
-            ct::expect(!(copied_borrow.bytes().has_value()));
+            expect(moved_owner.bytes() == "ab");
+            expect(!(borrowed.bytes().has_value()));
+            expect(!(copied_borrow.bytes().has_value()));
 
             const auto before_take = moved_owner.borrow();
             moved_owner.transfer();
-            ct::expect(moved_owner.bytes() == "ab");
-            ct::expect(!(before_take.bytes().has_value()));
+            expect(moved_owner.bytes() == "ab");
+            expect(!(before_take.bytes().has_value()));
 
             auto text = std::optional(ExecutionText(std::string("shared")));
             auto shared = std::optional(*text);
             const auto view = text->borrow();
             text.reset();
-            ct::expect(shared->bytes() == "shared");
-            ct::expect(view.bytes() == "shared");
+            expect(shared->bytes() == "shared");
+            expect(view.bytes() == "shared");
             shared.reset();
-            ct::expect(!(view.bytes().has_value()));
-        }
-    );
+            expect(!(view.bytes().has_value()));
+        };
 });
 
 } // namespace

@@ -26,11 +26,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Evaluation: known results retain source operations and execution obligations",
+const TestSuite suite([] static noexcept {
+    "Evaluation: known results retain source operations and execution obligations"_test =
         [] static noexcept {
             const auto semantic = analyze_test_program(
                 "fn touch(&n: i32) -> bool { n += 1; return true; }\n"
@@ -53,15 +50,15 @@ const ct::Suite tests([] static noexcept {
                         if (const auto* binary = std::get_if<SemBinary>(&expression.value)) {
                             if (binary->operation == BinaryOperator::Less) {
                                 ++comparison_count;
-                                ct::expect(known_boolean(semantic, expression) == true);
-                                ct::expect(
+                                expect(known_boolean(semantic, expression) == true);
+                                expect(
                                     evaluation_rule(semantic, expression).action
                                     == EvaluationAction::Operands
                                 );
                             }
                             if (binary->operation == BinaryOperator::Divide) {
                                 ++checked_count;
-                                ct::expect(
+                                expect(
                                     evaluation_rule(semantic, expression).action
                                     == EvaluationAction::Required
                                 );
@@ -71,7 +68,7 @@ const ct::Suite tests([] static noexcept {
                                 );
                                 builtin != nullptr && builtin->kind == BuiltinType::F32) {
                                 ++floating_count;
-                                ct::expect(
+                                expect(
                                     evaluation_rule(semantic, expression).action
                                     == EvaluationAction::Required
                                 );
@@ -80,7 +77,7 @@ const ct::Suite tests([] static noexcept {
                         if (const auto* cast = std::get_if<SemCast>(&expression.value);
                             cast != nullptr && cast->kind == CastKind::IntegerToFloating) {
                             ++floating_count;
-                            ct::expect(
+                            expect(
                                 evaluation_rule(semantic, expression).action
                                 == EvaluationAction::Required
                             );
@@ -88,11 +85,11 @@ const ct::Suite tests([] static noexcept {
                         if (const auto* logic = std::get_if<SemShortCircuit>(&expression.value)) {
                             ++logic_count;
                             const auto skipped = known_boolean(semantic, *logic->left) == false;
-                            ct::expect(
+                            expect(
                                 known_boolean(semantic, expression)
                                 == (skipped ? std::optional(false) : std::nullopt)
                             );
-                            ct::expect(
+                            expect(
                                 (evaluation_rule(semantic, expression).operands[1] == nullptr)
                                 == skipped
                             );
@@ -100,15 +97,13 @@ const ct::Suite tests([] static noexcept {
                     }
                 );
             }
-            ct::expect(comparison_count == 1uz);
-            ct::expect(logic_count == 2uz);
-            ct::expect(checked_count == 1uz);
-            ct::expect(floating_count == 2uz);
-        }
-    );
+            expect(comparison_count == 1uz);
+            expect(logic_count == 2uz);
+            expect(checked_count == 1uz);
+            expect(floating_count == 2uz);
+        };
 
-    ct::test(
-        "Generation: proven scalar results require no computation or discard scaffolding",
+    "Generation: proven scalar results require no computation or discard scaffolding"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -130,18 +125,18 @@ const ct::Suite tests([] static noexcept {
 
                 auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
                     -> bool {
-                    ct::expect(!(std::holds_alternative<TargetStaticCastExpr>(expression.value)));
-                    ct::expect(!(std::holds_alternative<TargetBinaryExpr>(expression.value)));
-                    ct::expect(!(std::holds_alternative<TargetConstructionExpr>(expression.value)));
+                    expect(!(std::holds_alternative<TargetStaticCastExpr>(expression.value)));
+                    expect(!(std::holds_alternative<TargetBinaryExpr>(expression.value)));
+                    expect(!(std::holds_alternative<TargetConstructionExpr>(expression.value)));
                     calls += std::holds_alternative<TargetCallExpr>(expression.value);
                     return true;
                 }
 
                 auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-                    ct::expect(!(std::holds_alternative<TargetBlockStmt>(statement.value)));
-                    ct::expect(!(std::holds_alternative<TargetDiscardStmt>(statement.value)));
-                    ct::expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
-                    ct::expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetBlockStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetDiscardStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
                     return true;
                 }
             };
@@ -149,17 +144,14 @@ const ct::Suite tests([] static noexcept {
             auto query = Query {.calls = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
             }
-            ct::expect(query.calls == 2uz);
-        }
-    );
+            expect(query.calls == 2uz);
+        };
 
-    ct::test(
-        "Generation: discarded operations use their native result contract",
-        [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+    "Generation: discarded operations use their native result contract"_test = [] static noexcept {
+        const auto compilation = PlannedCompilation::build(
+            analyze_test_program(R"(
             struct Record { value: i32, }
             enum Tag { First, Second, }
             fn scalar() -> i32 => 1;
@@ -176,66 +168,60 @@ const ct::Suite tests([] static noexcept {
                 if false && effect() { scalar(); }
             }
         )"),
-                {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("discarded_operations")}
-            );
+            {.test_mode = TestGenerationMode::None,
+             .linkage_domain = *LinkageDomain::explicit_value("discarded_operations")}
+        );
 
-            struct Query final {
-                std::flat_map<std::string, std::size_t> calls;
-                std::size_t checked_divisions;
-                std::size_t explicit_discards;
+        struct Query final {
+            std::flat_map<std::string, std::size_t> calls;
+            std::size_t checked_divisions;
+            std::size_t explicit_discards;
 
-                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                    if (const auto* discard = std::get_if<TargetDiscardStmt>(&statement.value)) {
-                        ++explicit_discards;
-                        ct::expect(
-                            std::holds_alternative<TargetBinaryExpr>(discard->expression.value)
-                        );
-                    }
-                    if (const auto* expression = std::get_if<TargetExprStmt>(&statement.value)) {
-                        ct::expect(
-                            std::holds_alternative<TargetCallExpr>(expression->expression.value)
-                        );
-                    }
-                    return true;
+            auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                if (const auto* discard = std::get_if<TargetDiscardStmt>(&statement.value)) {
+                    ++explicit_discards;
+                    expect(std::holds_alternative<TargetBinaryExpr>(discard->expression.value));
                 }
-
-                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
-                    -> bool {
-                    if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-                        if (const auto* name = std::get_if<TargetNameExpr>(
-                                &template_primary_expression(*call->callee).value
-                            )) {
-                            ++calls[std::string(name->name.components().back().spelling())];
-                        } else if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(
-                                       &template_primary_expression(*call->callee).value
-                                   )) {
-                            checked_divisions +=
-                                intrinsic->symbol == TargetSymbol::RuntimeIntegerDivide;
-                        }
-                    }
-                    return true;
+                if (const auto* expression = std::get_if<TargetExprStmt>(&statement.value)) {
+                    expect(std::holds_alternative<TargetCallExpr>(expression->expression.value));
                 }
-            };
-
-            auto query = Query {.calls = {}, .checked_divisions = 0uz, .explicit_discards = 0uz};
-            for (const auto artifact : compilation.target().artifacts()) {
-                const auto unit = lower_artifact(compilation, artifact.id);
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
-                    return;
-                }
+                return true;
             }
-            ct::expect(query.calls["scalar"] >= 1uz);
-            ct::expect_equal(query.calls["record"], 1uz);
-            ct::expect_equal(query.calls["tag"], 1uz);
-            ct::expect_equal(query.calls["effect"], 1uz);
-            ct::expect(query.checked_divisions == 1uz);
-            ct::expect(query.explicit_discards == 1uz);
-        }
-    );
 
-    ct::test(
-        "Generation: boolean expressions use native short circuit without result storage",
+            auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                -> bool {
+                if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                    if (const auto* name = std::get_if<TargetNameExpr>(
+                            &template_primary_expression(*call->callee).value
+                        )) {
+                        ++calls[std::string(name->name.components().back().spelling())];
+                    } else if (const auto* intrinsic = std::get_if<TargetIntrinsicNameExpr>(
+                                   &template_primary_expression(*call->callee).value
+                               )) {
+                        checked_divisions +=
+                            intrinsic->symbol == TargetSymbol::RuntimeIntegerDivide;
+                    }
+                }
+                return true;
+            }
+        };
+
+        auto query = Query {.calls = {}, .checked_divisions = 0uz, .explicit_discards = 0uz};
+        for (const auto artifact : compilation.target().artifacts()) {
+            const auto unit = lower_artifact(compilation, artifact.id);
+            if (!expect(traverse_target_unit(unit.sections(), query))) {
+                return;
+            }
+        }
+        expect(query.calls["scalar"] >= 1uz);
+        expect_equal(query.calls["record"], 1uz);
+        expect_equal(query.calls["tag"], 1uz);
+        expect_equal(query.calls["effect"], 1uz);
+        expect(query.checked_divisions == 1uz);
+        expect(query.explicit_discards == 1uz);
+    };
+
+    "Generation: boolean expressions use native short circuit without result storage"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -251,8 +237,8 @@ const ct::Suite tests([] static noexcept {
                 std::size_t logical;
 
                 auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-                    ct::expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
-                    ct::expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
                     return true;
                 }
 
@@ -269,16 +255,14 @@ const ct::Suite tests([] static noexcept {
             auto query = Query {.logical = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
             }
-            ct::expect(query.logical == 4uz);
-        }
-    );
+            expect(query.logical == 4uz);
+        };
 
-    ct::test(
-        "Generation: loop conditions use native expressions after required sequencing",
+    "Generation: loop conditions use native expressions after required sequencing"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -301,7 +285,7 @@ const ct::Suite tests([] static noexcept {
                             std::get_if<TargetLiteralExpr>(&loop->condition.value);
                         if (literal != nullptr) {
                             ++sequenced;
-                            ct::expect(!(loop->body.empty()));
+                            expect(!(loop->body.empty()));
                         } else {
                             ++direct;
                         }
@@ -313,16 +297,15 @@ const ct::Suite tests([] static noexcept {
             auto query = Query {.direct = 0uz, .sequenced = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
             }
-            ct::expect(query.direct == 1uz);
-            ct::expect(query.sequenced == 1uz);
-        }
-    );
+            expect(query.direct == 1uz);
+            expect(query.sequenced == 1uz);
+        };
 
-    ct::test("Generation: nested expressions retain each runtime operand once", [] static noexcept {
+    "Generation: nested expressions retain each runtime operand once"_test = [] static noexcept {
         constexpr auto count = 128uz;
         auto source = std::string(
             "fn operand(n: i32) -> i32 { return n; } fn chain(n: i32) -> i32 { return "
@@ -359,13 +342,12 @@ const ct::Suite tests([] static noexcept {
         auto query = Query {.calls = 0uz};
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
-            ct::expect(traverse_target_unit(unit.sections(), query));
+            expect(traverse_target_unit(unit.sections(), query));
         }
-        ct::expect(query.calls == count);
-    });
+        expect(query.calls == count);
+    };
 
-    ct::test(
-        "Generation: integer facts select direct operations and preserve required operands",
+    "Generation: integer facts select direct operations and preserve required operands"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -391,10 +373,10 @@ const ct::Suite tests([] static noexcept {
                         const auto* name = std::get_if<TargetNameExpr>(
                             &template_primary_expression(*call->callee).value
                         );
-                        if (!ct::expect(name != nullptr)) {
+                        if (!expect(name != nullptr)) {
                             return false;
                         }
-                        ct::expect(name->name.components().back().spelling() == "effect");
+                        expect(name->name.components().back().spelling() == "effect");
                         ++effects;
                     }
                     return true;
@@ -404,14 +386,13 @@ const ct::Suite tests([] static noexcept {
             auto query = Query();
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
             }
-            ct::expect(query.operations == 5uz);
-            ct::expect(query.effects == 3uz);
-        }
-    );
+            expect(query.operations == 5uz);
+            expect(query.effects == 3uz);
+        };
 });
 
 } // namespace

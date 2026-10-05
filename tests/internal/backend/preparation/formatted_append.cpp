@@ -9,11 +9,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Format preparation: append shares normalization with a separate Write destination",
+const TestSuite suite([] static noexcept {
+    "Format preparation: append shares normalization with a separate Write destination"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         fn add(&text: String, value: i32, width: i32) {
@@ -32,59 +29,56 @@ const ct::Suite tests([] static noexcept {
                             return;
                         }
                         const auto selected_plan = prepare_operation(program, expression);
-                        if (!ct::expect(selected_plan != nullptr)) {
+                        if (!expect(selected_plan != nullptr)) {
                             return;
                         }
                         const auto& preparation = std::get<PreparedFormat>(*selected_plan);
-                        if (!ct::expect(format->receiver.has_value())) {
+                        if (!expect(format->receiver.has_value())) {
                             return;
                         }
-                        ct::expect((**format->receiver).category == SemanticValueCategory::Place);
-                        ct::expect(
+                        expect((**format->receiver).category == SemanticValueCategory::Place);
+                        expect(
                             program.types().type((**format->receiver).type.resolved()).value
                             == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}
                         );
-                        ct::expect(
+                        expect(
                             program.types().type(expression.type.resolved()).value
                             == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}}
                         );
-                        ct::expect(!(expression.constant.has_value()));
+                        expect(!(expression.constant.has_value()));
                         if (count == 0uz) {
-                            if (!ct::expect(format->operands.size() == 3uz)) {
+                            if (!expect(format->operands.size() == 3uz)) {
                                 return;
                             }
-                            ct::expect(serialize_format(format->specification) == "{0}/{1:0{2}}");
+                            expect(serialize_format(format->specification) == "{0}/{1:0{2}}");
                             const auto* writer = std::get_if<PreparedWriterFormat>(&preparation);
-                            if (!ct::expect(writer != nullptr)) {
+                            if (!expect(writer != nullptr)) {
                                 return;
                             }
-                            ct::expect(writer->format.text == std::vector<std::string> {"7/", ""});
-                            ct::expect(
-                                writer->operand_indices == std::vector<std::size_t> {1uz, 2uz}
-                            );
+                            expect(writer->format.text == std::vector<std::string> {"7/", ""});
+                            expect(writer->operand_indices == std::vector<std::size_t> {1uz, 2uz});
                             const auto* integer =
                                 std::get_if<IntegerFormatField>(&writer->format.fields.front());
-                            if (!ct::expect(integer != nullptr)) {
+                            if (!expect(integer != nullptr)) {
                                 return;
                             }
-                            ct::expect(!(integer->static_width.has_value()));
+                            expect(!(integer->static_width.has_value()));
                         } else if (count == 1uz) {
                             const auto* text = std::get_if<PreparedFormatText>(&preparation);
-                            if (!ct::expect(text != nullptr)) {
+                            if (!expect(text != nullptr)) {
                                 return;
                             }
-                            ct::expect(text->text == "7");
-                            ct::expect(format->operands.size() == 1uz);
+                            expect(text->text == "7");
+                            expect(format->operands.size() == 1uz);
                         } else {
-                            ct::expect(std::holds_alternative<PreparedWriterFormat>(preparation));
+                            expect(std::holds_alternative<PreparedWriterFormat>(preparation));
                         }
                         ++count;
                     }
                 );
             }
-            ct::expect(count == 3uz);
-        }
-    );
+            expect(count == 3uz);
+        };
 });
 
 } // namespace

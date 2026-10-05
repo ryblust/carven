@@ -31,11 +31,6 @@ namespace {
 constexpr auto line_width = 100uz;
 constexpr auto indent_width = 4uz;
 
-using graver::DocID;
-using graver::Document;
-using graver::Source;
-using graver::TriviaKind;
-
 auto failure(SourceID source_id, Span span, std::string message) noexcept -> Diagnostics {
     auto result = Diagnostics();
     result.push_back(DiagnosticBuilder(DiagnosticCode::Syntax, std::move(message))
@@ -50,11 +45,11 @@ enum class BlockLayout { None, Block, Compact, Expanded };
 
 class SyntaxFormatter final {
 public:
-    SyntaxFormatter(const Source& source_value, ASTView syntax_value) noexcept;
+    SyntaxFormatter(const FormattingSource& source_value, ASTView syntax_value) noexcept;
     auto format() noexcept -> std::string;
 
 private:
-    const Source& source;
+    const FormattingSource& source;
     ASTView syntax;
     std::span<const Token> tokens;
     std::vector<bool> prefix_operators;
@@ -75,7 +70,7 @@ private:
     std::vector<std::size_t> closing_indices;
     std::vector<std::size_t> opening_indices;
     std::vector<std::size_t> group_end_exclusive;
-    Document document;
+    FormattingDocument document;
     const ASTBlock* top_level_body = nullptr;
     auto render() noexcept -> std::string;
     auto delimiter_boundary(std::size_t index) const noexcept -> bool;
@@ -161,18 +156,21 @@ private:
     auto mark_group(Span span) noexcept -> void;
     auto annotate() noexcept -> void;
     auto separation(std::size_t index) const noexcept -> Separation;
-    auto separator(Separation value) noexcept -> DocID;
+    auto separator(Separation value) noexcept -> FormattingNodeID;
     auto needs_separator(std::size_t index) const noexcept -> bool;
-    auto gap(std::size_t index, Separation desired, bool closing) noexcept -> DocID;
+    auto gap(std::size_t index, Separation desired, bool closing) noexcept -> FormattingNodeID;
     auto sequence(
         std::size_t start,
         std::size_t end,
         Separation first,
         bool inside_group = false
-    ) noexcept -> DocID;
+    ) noexcept -> FormattingNodeID;
 };
 
-SyntaxFormatter::SyntaxFormatter(const Source& source_value, ASTView syntax_value) noexcept
+SyntaxFormatter::SyntaxFormatter(
+    const FormattingSource& source_value,
+    ASTView syntax_value
+) noexcept
     : source(source_value),
       syntax(syntax_value),
       tokens(source.token_buffer().tokens()),
@@ -334,8 +332,8 @@ auto SyntaxFormatter::format() noexcept -> std::string {
 }
 
 auto SyntaxFormatter::render() noexcept -> std::string {
-    document = Document();
-    auto parts = std::vector<DocID> {sequence(0, tokens.size(), Separation::None)};
+    document = FormattingDocument();
+    auto parts = std::vector<FormattingNodeID> {sequence(0, tokens.size(), Separation::None)};
     parts.push_back(
         gap(tokens.size(), tokens.empty() ? Separation::None : Separation::Hard, false)
     );
@@ -364,10 +362,10 @@ auto SyntaxFormatter::consider_compact(Span span, std::size_t header) noexcept -
     for (auto i = open + 1uz; i <= close; ++i) {
         auto endings = 0uz;
         for (const auto trivia : source.trivia_before(i)) {
-            if (trivia.kind == TriviaKind::LineComment) {
+            if (trivia.kind == SourceTriviaKind::LineComment) {
                 return;
             }
-            endings += trivia.kind == TriviaKind::LineEnding ? 1uz : 0uz;
+            endings += trivia.kind == SourceTriviaKind::LineEnding ? 1uz : 0uz;
         }
         if ((endings > 1uz && !delimiter_boundary(i))
             || (i < close && block_layouts[i] != BlockLayout::None)) {
@@ -785,7 +783,7 @@ auto SyntaxFormatter::separation(std::size_t index) const noexcept -> Separation
     return Separation::Space;
 }
 
-auto SyntaxFormatter::separator(Separation value) noexcept -> DocID {
+auto SyntaxFormatter::separator(Separation value) noexcept -> FormattingNodeID {
     switch (value) {
         case Separation::None:      return document.text("");
         case Separation::Space:     return document.text(" ");
@@ -823,8 +821,9 @@ auto SyntaxFormatter::needs_separator(std::size_t index) const noexcept -> bool 
         || pair[0].span.size() != left.size();
 }
 
-auto SyntaxFormatter::gap(std::size_t index, Separation desired, bool closing) noexcept -> DocID {
-    auto parts = std::vector<DocID>();
+auto SyntaxFormatter::gap(std::size_t index, Separation desired, bool closing) noexcept
+    -> FormattingNodeID {
+    auto parts = std::vector<FormattingNodeID>();
     auto endings = 0uz;
     auto comment_count = 0uz;
     auto required = minimum_breaks[index];
@@ -834,9 +833,9 @@ auto SyntaxFormatter::gap(std::size_t index, Separation desired, bool closing) n
         }
     };
     for (const auto trivia : source.trivia_before(index)) {
-        if (trivia.kind == TriviaKind::LineEnding) {
+        if (trivia.kind == SourceTriviaKind::LineEnding) {
             endings = std::min(endings + 1uz, index == 0uz && comment_count == 0uz ? 1uz : 2uz);
-        } else if (trivia.kind == TriviaKind::LineComment) {
+        } else if (trivia.kind == SourceTriviaKind::LineComment) {
             if (endings != 0uz) {
                 breaks(std::max(endings, required));
                 required = 0uz;
@@ -879,8 +878,8 @@ auto SyntaxFormatter::sequence(
     std::size_t end,
     Separation first,
     bool inside_group
-) noexcept -> DocID {
-    auto result = std::vector<DocID>();
+) noexcept -> FormattingNodeID {
+    auto result = std::vector<FormattingNodeID>();
     for (auto index = start; index < end; ++index) {
         result.push_back(
             inside_group && index == start
@@ -911,8 +910,9 @@ auto SyntaxFormatter::sequence(
                 : nonempty_block                ? Separation::SoftSpace
                 : brace_list                    ? Separation::SoftSpace
                                                 : Separation::SoftEmpty;
-            auto parts =
-                std::vector<DocID> {document.verbatim(source.spelling(tokens[index].span))};
+            auto parts = std::vector<FormattingNodeID> {
+                document.verbatim(source.spelling(tokens[index].span))
+            };
             const auto inner = sequence(index + 1uz, close, boundary);
             parts.push_back(
                 tokens[index].kind == TokenKind::InterpolationStart ? inner : document.indent(inner)
@@ -927,7 +927,7 @@ auto SyntaxFormatter::sequence(
         }
     }
     if (inside_group && continuation_groups[start] && result.size() > 2uz) {
-        auto rest = std::vector<DocID>(result.begin() + 2, result.end());
+        auto rest = std::vector<FormattingNodeID>(result.begin() + 2, result.end());
         return document.concat(
             {result[0], result[1], document.indent(document.concat(std::move(rest)))}
         );
@@ -935,10 +935,11 @@ auto SyntaxFormatter::sequence(
     return document.concat(std::move(result));
 }
 
-auto comments(const Source& source, std::size_t index) noexcept -> std::vector<std::string_view> {
+auto comments(const FormattingSource& source, std::size_t index) noexcept
+    -> std::vector<std::string_view> {
     auto result = std::vector<std::string_view>();
     for (const auto trivia : source.trivia_before(index)) {
-        if (trivia.kind == TriviaKind::LineComment) {
+        if (trivia.kind == SourceTriviaKind::LineComment) {
             result.push_back(source.spelling(trivia.span));
         }
     }
@@ -947,7 +948,7 @@ auto comments(const Source& source, std::size_t index) noexcept -> std::vector<s
 
 // Only parsed import selections may change punctuation. Keep all other token
 // boundaries, including commas in calls and constructions, exact.
-auto import_list_bounds(const Source& source, ASTView syntax) noexcept
+auto import_list_bounds(const FormattingSource& source, ASTView syntax) noexcept
     -> std::vector<std::pair<std::size_t, std::size_t>> {
     const auto tokens = source.token_buffer().tokens();
     auto result = std::vector<std::pair<std::size_t, std::size_t>>();
@@ -981,7 +982,7 @@ auto import_list_bounds(const Source& source, ASTView syntax) noexcept
     return result;
 }
 
-auto import_commas(const Source& source, ASTView syntax) noexcept -> std::vector<bool> {
+auto import_commas(const FormattingSource& source, ASTView syntax) noexcept -> std::vector<bool> {
     const auto tokens = source.token_buffer().tokens();
     auto result = std::vector<bool>(tokens.size(), false);
     for (const auto [open, close] : import_list_bounds(source, syntax)) {
@@ -992,7 +993,8 @@ auto import_commas(const Source& source, ASTView syntax) noexcept -> std::vector
     return result;
 }
 
-auto mask_import_trailing_commas(const Source& source, ASTView syntax) noexcept -> std::string {
+auto mask_import_trailing_commas(const FormattingSource& source, ASTView syntax) noexcept
+    -> std::string {
     auto result = std::string(source.text());
     const auto tokens = source.token_buffer().tokens();
     for (const auto [open, close] : import_list_bounds(source, syntax) | std::views::reverse) {
@@ -1006,8 +1008,11 @@ auto mask_import_trailing_commas(const Source& source, ASTView syntax) noexcept 
     return result;
 }
 
-auto with_multiline_import_commas(const Source& source, ASTView syntax, std::string output) noexcept
-    -> std::string {
+auto with_multiline_import_commas(
+    const FormattingSource& source,
+    ASTView syntax,
+    std::string output
+) noexcept -> std::string {
     const auto scanned =
         lex(SourceView {
             .source_id = source.token_buffer().source_id(),
@@ -1030,9 +1035,9 @@ auto with_multiline_import_commas(const Source& source, ASTView syntax, std::str
 }
 
 auto same_tokens_and_comments(
-    const Source& before,
+    const FormattingSource& before,
     ASTView before_syntax,
-    const Source& after,
+    const FormattingSource& after,
     ASTView after_syntax
 ) noexcept -> bool {
     const auto left = before.token_buffer().tokens();
@@ -1067,11 +1072,9 @@ auto same_tokens_and_comments(
 
 } // namespace
 
-namespace graver {
-
-auto format(const SourceManager& sources, SourceID source_id) noexcept
+auto format_source(const SourceManager& sources, SourceID source_id) noexcept
     -> std::expected<std::string, Diagnostics> {
-    const auto input = Source::scan(sources.view(source_id));
+    const auto input = FormattingSource::scan(sources.view(source_id));
     if (!input) {
         return std::unexpected(input.error());
     }
@@ -1079,9 +1082,10 @@ auto format(const SourceManager& sources, SourceID source_id) noexcept
     if (!syntax) {
         return std::unexpected(syntax.error());
     }
-    // Replacing optional commas with spaces preserves AST offsets during layout.
+    // Replacing optional commas with spaces preserves the original AST offsets.
+    // Layout uses that AST directly; the normalized token buffer is not parsed.
     const auto layout_text = mask_import_trailing_commas(*input, syntax->view());
-    const auto layout_input = Source::scan(
+    const auto layout_input = FormattingSource::scan(
         SourceView {
             .source_id = source_id,
             .text = layout_text,
@@ -1092,7 +1096,8 @@ auto format(const SourceManager& sources, SourceID source_id) noexcept
         return std::unexpected(layout_input.error());
     }
     auto result = SyntaxFormatter(*layout_input, syntax->view()).format();
-    result = align_array_rows(*layout_input, syntax->view(), std::move(result), line_width);
+    result =
+        align_formatted_array_rows(*layout_input, syntax->view(), std::move(result), line_width);
     result = with_multiline_import_commas(*layout_input, syntax->view(), std::move(result));
     auto output_sources = SourceManager();
     const auto output_id = output_sources.append_virtual("graver output", result);
@@ -1101,7 +1106,7 @@ auto format(const SourceManager& sources, SourceID source_id) noexcept
             failure(source_id, Span::at(0), "graver: output exceeds source size limit")
         );
     }
-    const auto output = Source::scan(output_sources.view(*output_id));
+    const auto output = FormattingSource::scan(output_sources.view(*output_id));
     if (!output) {
         return std::unexpected(output.error());
     }
@@ -1115,6 +1120,4 @@ auto format(const SourceManager& sources, SourceID source_id) noexcept
         ));
     }
     return result;
-}
-
 }

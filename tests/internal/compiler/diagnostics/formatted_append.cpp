@@ -7,11 +7,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Compiler diagnostics: formatted append requires interpolation and writable storage",
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: formatted append requires interpolation and writable storage"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "immutable destination",
@@ -49,11 +46,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = R"(&f"{7}")"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: formatted append keeps destination separate from input storage",
+    "Compiler diagnostics: formatted append keeps destination separate from input storage"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "owning Read aliases destination",
@@ -114,8 +109,7 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = R"(text.append_format(f"{7:+}"))"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 });
 
 } // namespace

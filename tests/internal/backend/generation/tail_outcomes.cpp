@@ -17,8 +17,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct OutcomeOperations final {
     std::size_t propagation = 0;
     std::size_t returned_propagation = 0;
@@ -62,18 +60,13 @@ auto outcome_operations(std::string source) noexcept -> OutcomeOperations {
     auto query = OutcomeOperations {};
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
-        ct::expect(traverse_target_unit(unit.sections(), query));
+        expect(traverse_target_unit(unit.sections(), query));
     }
     return query;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: exact value and void tails propagate materialized outcomes",
+const TestSuite suite([] static noexcept {
+    "Generation: exact value and void tails propagate materialized outcomes"_test =
         [] static noexcept {
             const auto query = outcome_operations(
                 "struct Error {}\n"
@@ -82,26 +75,24 @@ const ct::Suite tests([] static noexcept {
                 "fn action() throw Error {}\n"
                 "fn forward_void() throw Error { return action()?; }\n"
             );
-            ct::expect(query.propagation == 2uz);
-            ct::expect(query.returned_propagation == 2uz);
-            ct::expect(query.success_projection == 0uz);
-        }
-    );
+            expect(query.propagation == 2uz);
+            expect(query.returned_propagation == 2uz);
+            expect(query.success_projection == 0uz);
+        };
 
-    ct::test("Generation: a tail demand does not propagate argument outcomes", [] static noexcept {
+    "Generation: a tail demand does not propagate argument outcomes"_test = [] static noexcept {
         const auto query = outcome_operations(
             "struct Error {}\n"
             "fn value() -> i32 throw Error { return 7; }\n"
             "fn consume(value: i32) -> i32 throw Error { return value; }\n"
             "fn forward() -> i32 throw Error { return consume(value()?)?; }\n"
         );
-        ct::expect(query.propagation == 1uz);
-        ct::expect(query.returned_propagation == 1uz);
-        ct::expect(query.success_projection == 1uz);
-    });
+        expect(query.propagation == 1uz);
+        expect(query.returned_propagation == 1uz);
+        expect(query.success_projection == 1uz);
+    };
 
-    ct::test(
-        "Generation: handlers widening and success computation retain projected outcomes",
+    "Generation: handlers widening and success computation retain projected outcomes"_test =
         [] static noexcept {
             const auto query = outcome_operations(
                 "struct Error {}\n"
@@ -111,13 +102,11 @@ const ct::Suite tests([] static noexcept {
                 "fn add() -> i32 throw Error { return value()? + 1; }\n"
                 "fn recover() -> i32 { return try { value()? } catch { Error(_) => 0, }; }\n"
             );
-            ct::expect(query.propagation == 0uz);
-            ct::expect(query.success_projection == 3uz);
-        }
-    );
+            expect(query.propagation == 0uz);
+            expect(query.success_projection == 3uz);
+        };
 
-    ct::test(
-        "Generation: callable views propagate the exact carrier including test stops",
+    "Generation: callable views propagate the exact carrier including test stops"_test =
         [] static noexcept {
             const auto query = outcome_operations(
                 "struct Error {}\n"
@@ -125,14 +114,12 @@ const ct::Suite tests([] static noexcept {
                 "  return callback(value)?;\n"
                 "}\n"
             );
-            ct::expect(query.propagation == 1uz);
-            ct::expect(query.returned_propagation == 1uz);
-            ct::expect(query.success_projection == 0uz);
-        }
-    );
+            expect(query.propagation == 1uz);
+            expect(query.returned_propagation == 1uz);
+            expect(query.success_projection == 0uz);
+        };
 
-    ct::test(
-        "Generation: discarded failing calls check success without projecting a payload",
+    "Generation: discarded failing calls check success without projecting a payload"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -180,7 +167,7 @@ const ct::Suite tests([] static noexcept {
                 }
 
                 auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                    ct::expect(!(std::holds_alternative<TargetDiscardStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetDiscardStmt>(statement.value)));
                     if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
                         saved_successes += is_success(variable->initializer);
                     }
@@ -191,16 +178,14 @@ const ct::Suite tests([] static noexcept {
             auto query = Query {.payloads = 0uz, .success_checks = 0uz, .saved_successes = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
             }
-            ct::expect(query.success_checks == 4uz);
-            ct::expect(query.saved_successes == 1uz);
-            ct::expect(query.payloads == 1uz);
-        }
-    );
+            expect(query.success_checks == 4uz);
+            expect(query.saved_successes == 1uz);
+            expect(query.payloads == 1uz);
+        };
 
-    ct::test(
-        "Generation: a sole failure needs no type selection in its handler or dispatch",
+    "Generation: a sole failure needs no type selection in its handler or dispatch"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
@@ -218,7 +203,7 @@ const ct::Suite tests([] static noexcept {
 
                 auto visit_type(TargetTypeID id) const noexcept -> bool {
                     if (const auto* type = std::get_if<TargetIntrinsicType>(&unit.type(id).value)) {
-                        ct::expect(type->symbol != TargetSymbol::StdVariant);
+                        expect(type->symbol != TargetSymbol::StdVariant);
                     }
                     return visit_target_type_children(unit.type(id).value, *this);
                 }
@@ -233,14 +218,13 @@ const ct::Suite tests([] static noexcept {
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = Query {.unit = unit};
-                if (!ct::expect(traverse_target_unit(unit.sections(), query))) {
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
                     return;
                 }
                 branches += query.branches;
             }
-            ct::expect(branches == 1uz); // The call's success/failure distinction remains.
-        }
-    );
+            expect(branches == 1uz); // The call's success/failure distinction remains.
+        };
 });
 
 } // namespace

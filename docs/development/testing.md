@@ -177,11 +177,31 @@ require enabling an extension.
 
 The shared C++ runner lives under `tests/harness/` and is linked only into test
 binaries through `carven-test-support`. Tests import the framework and fixture
-partitions they use. Its API belongs to `carven::testing`, locally aliased as
-`ct`. A file-local `Suite` registers noncapturing `noexcept` case bodies during
-collection. Duplicate names, empty selections, and cases with no assertions fail.
+partitions they use. Shared harness types use test-domain names such as
+`TestSuite` and `TestAssertion`; the partitions belong to the compiler's `carven`
+module and do not introduce a named C++ namespace. File-private helpers and suite
+objects remain in anonymous namespaces. Product suites exercise this
+infrastructure; do not add self-tests for the shared runner or its process
+fixtures. A file-local `TestSuite suite` supplies case declarations during
+collection:
 
-Use `ct::each` for independent table inputs and `ct::scenario` for other scoped
+```cpp
+const TestSuite suite([] static noexcept {
+    "Source: slicing respects snapshot bounds"_test = [] static noexcept {
+        const auto source = std::string_view("abc");
+        expect_equal(slice(source, Span::from_bounds(0, 1)), std::string_view("a"));
+        expect(!try_slice(source, Span::from_bounds(0, 4)).has_value());
+    };
+});
+```
+
+The `_test` literal creates a registration handle. Assignment accepts a
+noncapturing `noexcept` case body and captures its declaration location through
+`TestBody`'s implicit conversion. The runner collects and validates all
+declarations before selecting cases and executing them in name order. Duplicate
+names, empty selections, and cases with no assertions fail.
+
+Use `each` for independent table inputs and `scenario` for other scoped
 input contexts. An input's name accompanies its failures; returning from an
 `each` callback permits the next input to run. Empty tables fail. Scenarios are
 contexts within a case, not separately selected or counted tests. Ordinary loops
@@ -191,18 +211,18 @@ Comparison assertions report actual and expected values. Text operands compare
 contents, including string literals and C strings; null C strings are distinct
 from empty text. Use an explicit-length string view for bytes containing NUL.
 Text and range equality reports include lengths and the first differing byte or
-element. Use `ct::expect` for predicates and opaque values, and `.note(...)` for
+element. Use `expect` for predicates and opaque values, and `.note(...)` for
 input details or the meaning of a condition. A `noexcept` note callback computes
 expensive context only on failure.
 
 Guard premises before indexing, dereferencing, or reading an error. Assertion
 results convert to Boolean so a failed premise can return from the case or its
-current input. `ct::require` terminates the process; reserve it for fixture
+current input. `require` terminates the process; reserve it for fixture
 construction that cannot produce a valid value or other unrecoverable failures.
 
 Diagnostic assertions compare typed codes and report actual findings.
-`ct::find_diagnostic` borrows from the diagnostic collection; source-aware output
-uses the compiler's diagnostic renderer. `ct::TempDirectory` exclusively creates
+`find_diagnostic` borrows from the diagnostic collection; source-aware output
+uses the compiler's diagnostic renderer. `TempDirectory` exclusively creates
 its directory and attempts removal at destruction. File-operation tests prepare
 and observe bytes through independent standard file I/O. Domain fixtures own
 their setup and observations.

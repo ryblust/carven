@@ -20,8 +20,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto attribution() noexcept -> TargetAttribution {
     return TargetGeneratedExpansionAttribution {
         .reason = TargetExpansionReason::LoweringSupport,
@@ -71,12 +69,8 @@ auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
     );
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Emission: variable template references retain type dependencies", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Emission: variable template references retain type dependencies"_test = [] static noexcept {
         const auto artifact = emitted_statement([](TargetUnitBuilder& builder) static noexcept {
             const auto scalar = builder.intern_type({
                 .value =
@@ -109,14 +103,14 @@ const ct::Suite tests([] static noexcept {
                 ),
             };
         });
-        ct::expect(artifact.content.contains("#include <carven/runtime/stateless.hpp>"));
-        ct::expect(artifact.content.contains("#include <carven/runtime/display/display.hpp>"));
-        ct::expect(artifact.content.contains("&::carven::runtime::stateless_value<"));
-        ct::expect(artifact.content.contains("::carven::runtime::SequenceDisplay<"));
-        ct::expect(artifact.content.contains("::carven::runtime::ScalarDisplay"));
-    });
+        expect(artifact.content.contains("#include <carven/runtime/stateless.hpp>"));
+        expect(artifact.content.contains("#include <carven/runtime/display/display.hpp>"));
+        expect(artifact.content.contains("&::carven::runtime::stateless_value<"));
+        expect(artifact.content.contains("::carven::runtime::SequenceDisplay<"));
+        expect(artifact.content.contains("::carven::runtime::ScalarDisplay"));
+    };
 
-    ct::test("Emission: explicit empty template arguments survive composition", [] static noexcept {
+    "Emission: explicit empty template arguments survive composition"_test = [] static noexcept {
         const auto artifact = emitted_statement(
             TargetExprStmt {
                 .expression = template_call_expression(
@@ -131,10 +125,10 @@ const ct::Suite tests([] static noexcept {
                 ),
             }
         );
-        ct::expect(artifact.content.contains("selected<>();"));
-    });
+        expect(artifact.content.contains("selected<>();"));
+    };
 
-    ct::test("Emission: template references compose with member access", [] static noexcept {
+    "Emission: template references compose with member access"_test = [] static noexcept {
         const auto artifact = emitted_statement(
             TargetExprStmt {
                 .expression = call_member(
@@ -152,21 +146,21 @@ const ct::Suite tests([] static noexcept {
                 ),
             }
         );
-        ct::expect(artifact.content.contains("policy<true>.apply();"));
-    });
+        expect(artifact.content.contains("policy<true>.apply();"));
+    };
 
-    ct::test("Emission: C++ string quoting owns escape syntax", [] static noexcept {
-        ct::expect_equal(
+    "Emission: C++ string quoting owns escape syntax"_test = [] static noexcept {
+        expect_equal(
             cpp_string_token("a\\b\n\"c\t"),
             std::string_view("\"a\\\\b\\012\\\"c\\011\"")
         );
-        ct::expect_equal(
+        expect_equal(
             cpp_string_token(std::string_view("\0018\377", 3)),
             std::string_view("\"\\0018\\377\"")
         );
-    });
+    };
 
-    ct::test("Emission: explicit directive groups are serialized in order", [] static noexcept {
+    "Emission: explicit directive groups are serialized in order"_test = [] static noexcept {
         auto builder = TargetTestingFixture::unit_builder();
         auto unit = std::move(builder).finish(
             {.preamble = {}, .body = {}, .epilogue = {}},
@@ -185,37 +179,36 @@ const ct::Suite tests([] static noexcept {
             SourceAttributedEmission {.generated_origin = "custom.cpp"}
         );
 
-        ct::expect(artifact.content.contains("#custom first\n#custom second"));
-        ct::expect(!(artifact.content.contains("carven/runtime")));
-    });
+        expect(artifact.content.contains("#custom first\n#custom second"));
+        expect(!(artifact.content.contains("carven/runtime")));
+    };
 
-    ct::test("Emission: verified unreachable uses the C++20 runtime leaf", [] static noexcept {
+    "Emission: verified unreachable uses the C++20 runtime leaf"_test = [] static noexcept {
         const auto artifact = emitted_statement(
             TargetUnreachableStmt {
                 .reason = TargetUnreachableReason::SemIRProof,
             }
         );
 
-        ct::expect(artifact.content.contains("#include <carven/runtime/unreachable.hpp>"));
-        ct::expect(artifact.content.contains("carven::runtime::unreachable();"));
-        ct::expect(!(artifact.content.contains("std::unreachable")));
-        ct::expect(!(artifact.content.contains("std::abort();")));
-    });
+        expect(artifact.content.contains("#include <carven/runtime/unreachable.hpp>"));
+        expect(artifact.content.contains("carven::runtime::unreachable();"));
+        expect(!(artifact.content.contains("std::unreachable")));
+        expect(!(artifact.content.contains("std::abort();")));
+    };
 
-    ct::test("Emission: runtime trap remains distinct from unreachable proof", [] static noexcept {
+    "Emission: runtime trap remains distinct from unreachable proof"_test = [] static noexcept {
         const auto artifact = emitted_statement(
             TargetRuntimeTrapStmt {
                 .reason = TargetRuntimeTrapReason::SourceContract,
             }
         );
 
-        ct::expect(artifact.content.contains("#include <cstdlib>"));
-        ct::expect(artifact.content.contains("std::abort();"));
-        ct::expect(!(artifact.content.contains("carven::runtime::unreachable();")));
-    });
+        expect(artifact.content.contains("#include <cstdlib>"));
+        expect(artifact.content.contains("std::abort();"));
+        expect(!(artifact.content.contains("carven::runtime::unreachable();")));
+    };
 
-    ct::test(
-        "Emission: binary grouping preserves associativity and makes comparisons explicit",
+    "Emission: binary grouping preserves associativity and makes comparisons explicit"_test =
         [] static noexcept {
             struct Case final {
                 TargetBinaryOperator outer;
@@ -341,7 +334,7 @@ const ct::Suite tests([] static noexcept {
                     }
                 };
             };
-            ct::each(
+            each(
                 cases,
                 [](const Case& scenario) static noexcept -> std::string_view {
                     return scenario.expected;
@@ -360,14 +353,13 @@ const ct::Suite tests([] static noexcept {
                           );
                     const auto artifact =
                         emitted_statement(TargetExprStmt {.expression = std::move(expression)});
-                    ct::expect(artifact.content.contains(scenario.expected))
+                    expect(artifact.content.contains(scenario.expected))
                         .note("scenario.expected: ", scenario.expected);
                 }
             );
-        }
-    );
+        };
 
-    ct::test("Emission: owning snapshots annotate only their binding name", [] static noexcept {
+    "Emission: owning snapshots annotate only their binding name"_test = [] static noexcept {
         struct Scenario final {
             std::string_view name;
             TargetVariableBinding binding;
@@ -386,7 +378,7 @@ const ct::Suite tests([] static noexcept {
                     "const bool value /* NOLINT(performance-unnecessary-copy-initialization) */"
             }
         };
-        ct::each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
+        each(scenarios, &Scenario::name, [](const auto& scenario) static noexcept {
             const auto artifact = emitted_statement([&](TargetUnitBuilder& builder) noexcept {
                 return TargetVariableStmt {
                     .binding = scenario.binding,
@@ -403,17 +395,16 @@ const ct::Suite tests([] static noexcept {
                     .initializer = TargetExpr {.value = TargetLiteralExpr {.value = true}}
                 };
             });
-            ct::expect(artifact.content.contains(scenario.declaration)).note(artifact.content);
-            ct::expect(artifact.content.contains("= true;"));
-            ct::expect_equal(
+            expect(artifact.content.contains(scenario.declaration)).note(artifact.content);
+            expect(artifact.content.contains("= true;"));
+            expect_equal(
                 artifact.content.contains("NOLINT"),
                 scenario.binding == TargetVariableBinding::ConstSnapshot
             );
         });
-    });
+    };
 
-    ct::test(
-        "Emission: value regions retain explicit result types and selective unused names",
+    "Emission: value regions retain explicit result types and selective unused names"_test =
         [] static noexcept {
             for (const auto maybe_unused : {false, true}) {
                 const auto artifact =
@@ -457,15 +448,14 @@ const ct::Suite tests([] static noexcept {
                             },
                         };
                     });
-                ct::expect_equal(artifact.content.contains("[[maybe_unused]]"), maybe_unused);
-                ct::expect(artifact.content.contains("const bool value"));
-                ct::expect(artifact.content.contains("[&]() noexcept -> bool"));
-                ct::expect(artifact.content.contains("return true;"));
+                expect_equal(artifact.content.contains("[[maybe_unused]]"), maybe_unused);
+                expect(artifact.content.contains("const bool value"));
+                expect(artifact.content.contains("[&]() noexcept -> bool"));
+                expect(artifact.content.contains("return true;"));
             }
-        }
-    );
+        };
 
-    ct::test("Emission: range-for preserves native binding and loop scope", [] static noexcept {
+    "Emission: range-for preserves native binding and loop scope"_test = [] static noexcept {
         for (const auto binding :
              {TargetVariableBinding::ConstValue, TargetVariableBinding::ConstReference}) {
             const auto artifact = emitted_statement([&](TargetUnitBuilder& builder) noexcept {
@@ -489,15 +479,14 @@ const ct::Suite tests([] static noexcept {
                     .body = {},
                 };
             });
-            ct::expect(artifact.content.contains(
+            expect(artifact.content.contains(
                 binding == TargetVariableBinding::ConstValue ? "for (const int element : elements)"
                                                              : "for (const int& element : elements)"
             ));
         }
-    });
+    };
 
-    ct::test(
-        "Emission: expression type queries preserve references unless normalization is explicit",
+    "Emission: expression type queries preserve references unless normalization is explicit"_test =
         [] static noexcept {
             for (const auto normalize : {false, true}) {
                 const auto artifact = emitted_statement([&](TargetUnitBuilder& builder) noexcept {
@@ -539,16 +528,14 @@ const ct::Suite tests([] static noexcept {
                         .initializer = member()
                     };
                 });
-                ct::expect(artifact.content.contains("decltype((source.value))"));
-                ct::expect(artifact.content.contains("std::remove_cvref_t<") == normalize);
-                ct::expect(artifact.content.contains("#include <type_traits>") == normalize);
-                ct::expect(!(artifact.content.contains("#include <utility>")));
+                expect(artifact.content.contains("decltype((source.value))"));
+                expect(artifact.content.contains("std::remove_cvref_t<") == normalize);
+                expect(artifact.content.contains("#include <type_traits>") == normalize);
+                expect(!(artifact.content.contains("#include <utility>")));
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Emission: deep owned expressions render and release without native recursion",
+    "Emission: deep owned expressions render and release without native recursion"_test =
         [] static noexcept {
             constexpr auto depth = 12000uz;
             auto expression = TargetExpr {.value = TargetLiteralExpr {.value = true}};
@@ -562,52 +549,45 @@ const ct::Suite tests([] static noexcept {
             }
             const auto artifact =
                 emitted_statement(TargetExprStmt {.expression = std::move(expression)});
-            ct::expect_equal(
+            expect_equal(
                 std::ranges::count(artifact.content, '!'),
                 static_cast<std::ptrdiff_t>(depth)
             );
-            ct::expect(artifact.content.contains("true"));
-        }
-    );
+            expect(artifact.content.contains("true"));
+        };
 
-    ct::test(
-        "Emission: deep type dependencies render without native recursion",
-        [] static noexcept {
-            constexpr auto depth = 12000uz;
-            const auto artifact = emitted_statement([](TargetUnitBuilder& builder) static noexcept {
-                auto type = builder.intern_type({
-                    .value =
-                        TargetIntrinsicType {.symbol = TargetSymbol::Void, .type_argument_ids = {}},
+    "Emission: deep type dependencies render without native recursion"_test = [] static noexcept {
+        constexpr auto depth = 12000uz;
+        const auto artifact = emitted_statement([](TargetUnitBuilder& builder) static noexcept {
+            auto type = builder.intern_type({
+                .value =
+                    TargetIntrinsicType {.symbol = TargetSymbol::Void, .type_argument_ids = {}},
+                .const_qualified = false,
+            });
+            for (auto index = 0uz; index < depth; ++index) {
+                type = builder.intern_type({
+                    .value = TargetPointerType {.pointee = type},
                     .const_qualified = false,
                 });
-                for (auto index = 0uz; index < depth; ++index) {
-                    type = builder.intern_type({
-                        .value = TargetPointerType {.pointee = type},
-                        .const_qualified = false,
-                    });
-                }
-                return TargetExprStmt {
-                    .expression = TargetExpr {
-                        .value = TargetStaticCastExpr {
-                            .type = type,
-                            .operand = UniqueIndirect(
-                                TargetExpr {
-                                    .value = TargetIntrinsicNameExpr {
-                                        .symbol = TargetSymbol::StdNullptr,
-                                    }
+            }
+            return TargetExprStmt {
+                .expression = TargetExpr {
+                    .value = TargetStaticCastExpr {
+                        .type = type,
+                        .operand = UniqueIndirect(
+                            TargetExpr {
+                                .value = TargetIntrinsicNameExpr {
+                                    .symbol = TargetSymbol::StdNullptr,
                                 }
-                            ),
-                        }
+                            }
+                        ),
                     }
-                };
-            });
-            ct::expect_equal(
-                std::ranges::count(artifact.content, '*'),
-                static_cast<std::ptrdiff_t>(depth)
-            );
-            ct::expect(artifact.content.contains("nullptr"));
-        }
-    );
+                }
+            };
+        });
+        expect_equal(std::ranges::count(artifact.content, '*'), static_cast<std::ptrdiff_t>(depth));
+        expect(artifact.content.contains("nullptr"));
+    };
 });
 
 } // namespace

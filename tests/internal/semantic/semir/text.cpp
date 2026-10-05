@@ -25,15 +25,10 @@ import :test.internal.semantic.format.fixture;
 import :test.internal.semantic.semir.fixture;
 import std;
 
-using namespace semir_test;
-
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "SemIR publication: String operations validate arity types access and results",
+const TestSuite suite([] static noexcept {
+    "SemIR publication: String operations validate arity types access and results"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view name;
@@ -87,18 +82,19 @@ const ct::Suite tests([] static noexcept {
                     .valid = false,
                 },
             };
-            ct::each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
+            each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
                 auto sources = SourceManager();
                 auto diagnostics = DiagnosticSink();
-                auto builder = begin_compilation(sources, diagnostics, "semir.publication.text");
-                const auto facts = module_facts(builder);
+                auto builder =
+                    begin_semir_test_compilation(sources, diagnostics, "semir.publication.text");
+                const auto module_origin = make_semir_test_module_origin(builder);
                 const auto module_id = builder.reserve_module_declaration();
                 const auto test = builder.reserve_test();
                 builder.define_declaration(
                     module_id,
                     ModuleDeclaration {
-                        .provenance_module = facts.provenance_module,
-                        .origin = facts.origin,
+                        .provenance_module = module_origin.provenance_module,
+                        .origin = module_origin.origin,
                         .cpp_headers = {},
                         .cpp_source_fragments = {},
                         .items = {test},
@@ -114,7 +110,8 @@ const ct::Suite tests([] static noexcept {
                         .is_const = false,
                         .module_id = module_id,
                         .source =
-                            {.label = builder.intern_spelling("text"), .origin = facts.origin},
+                            {.label = builder.intern_spelling("text"),
+                             .origin = module_origin.origin},
                         .body = reservation.id(),
                     }
                 );
@@ -122,26 +119,30 @@ const ct::Suite tests([] static noexcept {
                 const auto lifetime = body.add_lifetime_region(
                     std::nullopt,
                     LifetimeRegionKind::Lexical,
-                    facts.origin
+                    module_origin.origin
                 );
                 auto operands = std::vector<SemCallArgument>();
                 if (scenario.operand) {
                     operands.push_back({
                         .access = *scenario.operand,
-                        .expression =
-                            body.make_expression(owning, lifetime, facts.origin, SemDefault {}),
+                        .expression = body.make_expression(
+                            owning,
+                            lifetime,
+                            module_origin.origin,
+                            SemDefault {}
+                        ),
                     });
                 }
                 auto statements = std::vector<SemanticStatement>();
                 statements.push_back({
-                    .origin = facts.origin,
+                    .origin = module_origin.origin,
                     .lifetime = lifetime,
                     .reachable = true,
                     .value = SemExpressionStatement {
                         .expression = body.make_expression(
                             result_type,
                             lifetime,
-                            facts.origin,
+                            module_origin.origin,
                             SemIntrinsic {
                                 .operation = scenario.intrinsic,
                                 .operands = std::move(operands),
@@ -150,37 +151,34 @@ const ct::Suite tests([] static noexcept {
                     },
                 });
                 const auto publish_text = [&]() noexcept {
-                    publish(
+                    builder.add_body_draft(
                         std::move(body).finish(
                             SemanticRegion {
                                 .lifetime = lifetime,
-                                .origin = facts.origin,
+                                .origin = module_origin.origin,
                                 .statements = std::move(statements),
                                 .result = std::nullopt,
                                 .result_reachable = false,
                                 .failures = BodyFailures(builder.add_empty_failure_term()),
                                 .exits_test = false,
                             }
-                        ),
-                        builder
+                        )
                     );
                     return std::move(builder).finish();
                 };
                 if (scenario.valid) {
-                    ct::expect(publish_text().has_value());
+                    expect(publish_text().has_value());
                 } else {
-                    ct::expect(expect_termination(scenario.name, publish_text));
+                    expect(expect_termination(scenario.name, publish_text));
                 }
             });
-        }
-    );
+        };
 
-    ct::test(
-        "SemIR text contracts: type constraints distinguish text bytes and characters",
+    "SemIR text contracts: type constraints distinguish text bytes and characters"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            auto draft = begin_compilation(sources, diagnostics, "semir.text.contracts");
+            auto draft = begin_semir_test_compilation(sources, diagnostics, "semir.text.contracts");
             const auto lookup = [&](TypeID type) noexcept {
                 return draft.type_copy(type);
             };
@@ -192,37 +190,34 @@ const ct::Suite tests([] static noexcept {
             const auto bytes = draft.intern_type({.value = SliceTypeValue {.element = byte}});
             const auto integers = draft.intern_type({.value = SliceTypeValue {.element = integer}});
             const auto query = text_intrinsic_contract(TextIntrinsic::Bytes);
-            if (!ct::expect(query.parameters.size() == 1)) {
+            if (!expect(query.parameters.size() == 1)) {
                 return;
             }
-            ct::expect(matches_text_intrinsic_type(query.parameters[0].type, str, lookup));
-            ct::expect(matches_text_intrinsic_type(query.parameters[0].type, string, lookup));
-            ct::expect(!(matches_text_intrinsic_type(query.parameters[0].type, bytes, lookup)));
-            ct::expect(matches_text_intrinsic_type(query.result, bytes, lookup));
-            ct::expect(!(matches_text_intrinsic_type(query.result, integers, lookup)));
-            ct::expect(resolve_text_intrinsic_type(draft, query.result) == bytes);
+            expect(matches_text_intrinsic_type(query.parameters[0].type, str, lookup));
+            expect(matches_text_intrinsic_type(query.parameters[0].type, string, lookup));
+            expect(!(matches_text_intrinsic_type(query.parameters[0].type, bytes, lookup)));
+            expect(matches_text_intrinsic_type(query.result, bytes, lookup));
+            expect(!(matches_text_intrinsic_type(query.result, integers, lookup)));
+            expect(resolve_text_intrinsic_type(draft, query.result) == bytes);
             const auto utf8 = text_intrinsic_contract(TextIntrinsic::FromUTF8Unchecked);
-            if (!ct::expect(utf8.parameters.size() == 1)) {
+            if (!expect(utf8.parameters.size() == 1)) {
                 return;
             }
-            ct::expect(matches_text_intrinsic_type(utf8.parameters[0].type, bytes, lookup));
-            ct::expect(!(matches_text_intrinsic_type(utf8.parameters[0].type, str, lookup)));
+            expect(matches_text_intrinsic_type(utf8.parameters[0].type, bytes, lookup));
+            expect(!(matches_text_intrinsic_type(utf8.parameters[0].type, str, lookup)));
             const auto append = text_intrinsic_contract(TextIntrinsic::Append);
             const auto push = text_intrinsic_contract(TextIntrinsic::Push);
-            if (!ct::expect(append.parameters.size() == 2)) {
+            if (!expect(append.parameters.size() == 2)) {
                 return;
             }
-            if (!ct::expect(push.parameters.size() == 2)) {
+            if (!expect(push.parameters.size() == 2)) {
                 return;
             }
-            ct::expect(matches_text_intrinsic_type(append.parameters[1].type, str, lookup));
-            ct::expect(
-                !(matches_text_intrinsic_type(append.parameters[1].type, character, lookup))
-            );
-            ct::expect(matches_text_intrinsic_type(push.parameters[1].type, character, lookup));
-            ct::expect(!(matches_text_intrinsic_type(push.parameters[1].type, str, lookup)));
-        }
-    );
+            expect(matches_text_intrinsic_type(append.parameters[1].type, str, lookup));
+            expect(!(matches_text_intrinsic_type(append.parameters[1].type, character, lookup)));
+            expect(matches_text_intrinsic_type(push.parameters[1].type, character, lookup));
+            expect(!(matches_text_intrinsic_type(push.parameters[1].type, str, lookup)));
+        };
 });
 
 } // namespace

@@ -15,8 +15,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct DisplayQuery final {
     std::size_t nodes;
     std::size_t branches;
@@ -64,17 +62,13 @@ auto inspect(std::string source) noexcept -> DisplayQuery {
     };
     for (const auto artifact : compilation.target().artifacts()) {
         const auto unit = lower_artifact(compilation, artifact.id);
-        ct::require(traverse_target_unit(unit.sections(), query));
+        require(traverse_target_unit(unit.sections(), query));
     }
     return query;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Generation: enum display selects only unresolved cases", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Generation: enum display selects only unresolved cases"_test = [] static noexcept {
         struct Scenario final {
             std::string_view name;
             std::string_view source;
@@ -102,13 +96,13 @@ const ct::Suite tests([] static noexcept {
                 1uz,
             },
         };
-        ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+        each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
             const auto query = inspect(std::string(scenario.source));
-            ct::expect_equal(query.enum_conditions, scenario.conditions);
+            expect_equal(query.enum_conditions, scenario.conditions);
         });
-    });
+    };
 
-    ct::test("Generation: shared display types have bounded target syntax", [] static noexcept {
+    "Generation: shared display types have bounded target syntax"_test = [] static noexcept {
         constexpr auto width = 4uz;
         const auto depths = std::array {2uz, 4uz, 6uz};
         for (const auto depth : depths) {
@@ -122,36 +116,31 @@ const ct::Suite tests([] static noexcept {
             }
             source += std::format("fn show(value: N{}) {{ println(value); }}", depth);
             const auto query = inspect(std::move(source));
-            ct::expect_less(query.nodes, 100uz * (depth + 1uz) * width).note("depth: ", depth);
+            expect_less(query.nodes, 100uz * (depth + 1uz) * width).note("depth: ", depth);
         }
-    });
+    };
 
-    ct::test(
-        "Generation: known short circuit test operands need no selection branch",
+    "Generation: known short circuit test operands need no selection branch"_test =
         [] static noexcept {
             const auto direct = inspect("fn verify(value: bool) { check(value); }");
             const auto skipped = inspect("fn verify(value: bool) { check(false && value); }");
             const auto selected = inspect("fn verify(value: bool) { check(true && value); }");
-            ct::expect(skipped.branches == 0uz);
-            ct::expect(selected.branches == direct.branches);
-        }
-    );
+            expect(skipped.branches == 0uz);
+            expect(selected.branches == direct.branches);
+        };
 
-    ct::test(
-        "Generation: repeated structural displays share module definitions",
-        [] static noexcept {
-            const auto prefix = std::string("struct Pair { first: i32, second: i32 } ");
-            const auto single = inspect(prefix + "fn show(value: Pair) { println(value); }");
-            const auto repeated = inspect(
-                prefix
-                + "fn first(value: Pair) { println(value); } "
-                  "fn second(value: Pair) { println(value); } "
-                  "fn third(value: Pair) { println(value); }"
-            );
-            ct::expect(single.pair_fields == 2uz);
-            ct::expect(repeated.pair_fields == single.pair_fields);
-        }
-    );
+    "Generation: repeated structural displays share module definitions"_test = [] static noexcept {
+        const auto prefix = std::string("struct Pair { first: i32, second: i32 } ");
+        const auto single = inspect(prefix + "fn show(value: Pair) { println(value); }");
+        const auto repeated = inspect(
+            prefix
+            + "fn first(value: Pair) { println(value); } "
+              "fn second(value: Pair) { println(value); } "
+              "fn third(value: Pair) { println(value); }"
+        );
+        expect(single.pair_fields == 2uz);
+        expect(repeated.pair_fields == single.pair_fields);
+    };
 });
 
 } // namespace

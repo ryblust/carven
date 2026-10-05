@@ -14,8 +14,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto entry(const SemIRProgram& program) noexcept -> FunctionID {
     auto selected = std::optional<FunctionID>();
     for (const auto row : program.declarations().functions()) {
@@ -23,17 +21,12 @@ auto entry(const SemIRProgram& program) noexcept -> FunctionID {
             selected = row.id;
         }
     }
-    ct::require(selected.has_value());
+    require(selected.has_value());
     return *selected;
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Interpreter: argument observation follows shared storage and evaluation rules",
+const TestSuite suite([] static noexcept {
+    "Interpreter: argument observation follows shared storage and evaluation rules"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         fn observe(value: i32) { print("argument;"); return value; }
@@ -53,23 +46,21 @@ const ct::Suite tests([] static noexcept {
                 program,
                 entry(program),
                 [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
-                    ct::expect(stream == ExecutionOutputStream::Standard);
+                    expect(stream == ExecutionOutputStream::Standard);
                     output.append(bytes);
                 },
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
-            ct::expect(output == "argument;1 ab 2\n");
-            ct::expect(program.constants().size() == constants);
-            ct::expect(program.types().size() == types);
-            ct::expect(program.provenance().spellings().size() == spellings);
-        }
-    );
+            expect(output == "argument;1 ab 2\n");
+            expect(program.constants().size() == constants);
+            expect(program.types().size() == types);
+            expect(program.provenance().spellings().size() == spellings);
+        };
 
-    ct::test(
-        "Interpreter: unused native functions do not constrain executed bodies",
+    "Interpreter: unused native functions do not constrain executed bodies"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         private import(cpp) fn native();
@@ -85,15 +76,13 @@ const ct::Suite tests([] static noexcept {
                 },
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
-            ct::expect(output == "ready\n");
-        }
-    );
+            expect(output == "ready\n");
+        };
 
-    ct::test(
-        "Interpreter: native admission follows executed paths and preserves preceding effects",
+    "Interpreter: native admission follows executed paths and preserves preceding effects"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         private import(cpp) fn native();
@@ -113,21 +102,18 @@ const ct::Suite tests([] static noexcept {
                 },
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
-            if (!ct::expect(!result.has_value())) {
+            if (!expect(!result.has_value())) {
                 return;
             }
-            ct::expect(
+            expect(
                 interpreter_diagnostic_code(result.error().event.reason())
                 == DiagnosticCode::InterpretAdmission
             );
-            ct::expect(output == "before\nafter skipped call\n");
-        }
-    );
+            expect(output == "before\nafter skipped call\n");
+        };
 
-    ct::test(
-        "Interpreter: native capability is checked after operands complete",
-        [] static noexcept {
-            const auto program = analyze_test_program(R"(
+    "Interpreter: native capability is checked after operands complete"_test = [] static noexcept {
+        const auto program = analyze_test_program(R"(
         import <cstdlib>;
         struct Failure {}
         fn operand(failing: bool) -> i32 throw Failure {
@@ -143,27 +129,24 @@ const ct::Suite tests([] static noexcept {
         println(attempt(true));
         println(attempt(false));
     )");
-            auto output = std::string();
-            const auto result = interpret(
-                program,
-                entry(program),
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    output.append(bytes);
-                },
-                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
-            );
-            if (!ct::expect(!result.has_value())) {
-                return;
-            }
-            ct::expect(
-                interpreter_diagnostic_code(result.error().event.reason())
-                == DiagnosticCode::InterpretAdmission
-            );
-            ct::expect(output == "operand\n7\noperand\n");
+        auto output = std::string();
+        const auto result = interpret(
+            program,
+            entry(program),
+            [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
+            InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+        );
+        if (!expect(!result.has_value())) {
+            return;
         }
-    );
+        expect(
+            interpreter_diagnostic_code(result.error().event.reason())
+            == DiagnosticCode::InterpretAdmission
+        );
+        expect(output == "operand\n7\noperand\n");
+    };
 
-    ct::test("Interpreter: budgets cover ordinary recursive calls", [] static noexcept {
+    "Interpreter: budgets cover ordinary recursive calls"_test = [] static noexcept {
         const auto program = analyze_test_program(R"(
         fn recurse(value: i32) -> i32 { return recurse(value); }
         recurse(1);
@@ -174,18 +157,17 @@ const ct::Suite tests([] static noexcept {
             {},
             InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
         );
-        if (!ct::expect(!result.has_value())) {
+        if (!expect(!result.has_value())) {
             return;
         }
-        ct::expect(
+        expect(
             interpreter_diagnostic_code(result.error().event.reason())
             == DiagnosticCode::InterpretLimit
         );
-        ct::expect(!result.error().event.calls.empty());
-    });
+        expect(!result.error().event.calls.empty());
+    };
 
-    ct::test(
-        "Interpreter: native source initialization cannot be silently omitted",
+    "Interpreter: native source initialization cannot be silently omitted"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         #[cpp] ---
@@ -202,21 +184,18 @@ const ct::Suite tests([] static noexcept {
                 },
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
-            if (!ct::expect(!result.has_value())) {
+            if (!expect(!result.has_value())) {
                 return;
             }
-            ct::expect(
+            expect(
                 interpreter_diagnostic_code(result.error().event.reason())
                 == DiagnosticCode::InterpretAdmission
             );
-            ct::expect(output.empty());
-        }
-    );
+            expect(output.empty());
+        };
 
-    ct::test(
-        "Interpreter: static and dynamic ranges select the matching branch",
-        [] static noexcept {
-            const auto program = analyze_test_program(R"(
+    "Interpreter: static and dynamic ranges select the matching branch"_test = [] static noexcept {
+        const auto program = analyze_test_program(R"(
         fn classify(score: i32) -> str {
             return match score {
                 ..0 => "invalid",
@@ -234,38 +213,32 @@ const ct::Suite tests([] static noexcept {
         println(classify(-1), classify(59), classify(60), classify(100), classify(101));
         println(within(3, 3, 3), within(3, 4, 2));
     )");
-            const auto types = program.types().size();
-            const auto constants = program.constants().size();
-            const auto values = PublishedConstantValues(program);
-            for (const auto kind : builtin_types) {
-                ct::expect(values.builtin_type(kind) == program.types().builtin_type(kind));
-            }
-            for (auto attempt = 0; attempt < 2; ++attempt) {
-                auto output = std::string();
-                const auto result = interpret(
-                    program,
-                    entry(program),
-                    [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                        output.append(bytes);
-                    },
-                    InterpreterOptions {
-                        .limits = static_execution_limits(),
-                        .trace = {},
-                        .report = {}
-                    }
-                );
-                if (!ct::expect(result.has_value())) {
-                    return;
-                }
-                ct::expect(output == "invalid retry pass pass invalid\ninside outside\n");
-                ct::expect(program.types().size() == types);
-                ct::expect(program.constants().size() == constants);
-            }
+        const auto types = program.types().size();
+        const auto constants = program.constants().size();
+        const auto values = PublishedConstantValues(program);
+        for (const auto kind : builtin_types) {
+            expect(values.builtin_type(kind) == program.types().builtin_type(kind));
         }
-    );
+        for (auto attempt = 0; attempt < 2; ++attempt) {
+            auto output = std::string();
+            const auto result = interpret(
+                program,
+                entry(program),
+                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                    output.append(bytes);
+                },
+                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+            );
+            if (!expect(result.has_value())) {
+                return;
+            }
+            expect(output == "invalid retry pass pass invalid\ninside outside\n");
+            expect(program.types().size() == types);
+            expect(program.constants().size() == constants);
+        }
+    };
 
-    ct::test(
-        "Interpreter: runtime tests execute published bodies without admitting the program entry",
+    "Interpreter: runtime tests execute published bodies without admitting the program entry"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         private import(cpp) fn native();
@@ -298,52 +271,48 @@ const ct::Suite tests([] static noexcept {
                         .report = {}
                     }
                 );
-                if (!ct::expect(results.has_value())) {
+                if (!expect(results.has_value())) {
                     return;
                 }
-                if (!ct::expect(results->size() == 3)) {
+                if (!expect(results->size() == 3)) {
                     return;
                 }
-                ct::expect(
+                expect(
                     block_display_name(
                         program.provenance(),
                         program.tests().test((*results)[0].test).source
                     )
                     == "failed"
                 );
-                if (!ct::expect((*results)[0].reports.size() == 2)) {
+                if (!expect((*results)[0].reports.size() == 2)) {
                     return;
                 }
-                ct::expect(
+                expect(
                     interpreter_diagnostic_code((*results)[0].reports[0].reason())
                     == DiagnosticCode::InterpretExecution
                 );
-                ct::expect(execution_message((*results)[0].reports[0]).contains("first"));
-                ct::expect(execution_message((*results)[0].reports[1]).contains("stop"));
-                ct::expect(!(*results)[0].reports[1].calls.empty());
-                ct::expect((*results)[0].termination == ExecutionTermination::StopRoot);
-                if (!ct::expect((*results)[1].reports.size() == 1)) {
+                expect(execution_message((*results)[0].reports[0]).contains("first"));
+                expect(execution_message((*results)[0].reports[1]).contains("stop"));
+                expect(!(*results)[0].reports[1].calls.empty());
+                expect((*results)[0].termination == ExecutionTermination::StopRoot);
+                if (!expect((*results)[1].reports.size() == 1)) {
                     return;
                 }
-                ct::expect(
+                expect(
                     interpreter_diagnostic_code((*results)[1].reports[0].reason())
                     == DiagnosticCode::InterpretExecution
                 );
-                ct::expect(
-                    execution_message((*results)[1].reports[0]).contains("explicit failure")
-                );
-                ct::expect((*results)[1].termination == ExecutionTermination::StopRoot);
-                ct::expect((*results)[2].reports.empty());
-                ct::expect((*results)[2].termination == ExecutionTermination::Continue);
-                ct::expect(output == "next\n");
-                ct::expect(program.constants().size() == constants);
-                ct::expect(program.types().size() == types);
+                expect(execution_message((*results)[1].reports[0]).contains("explicit failure"));
+                expect((*results)[1].termination == ExecutionTermination::StopRoot);
+                expect((*results)[2].reports.empty());
+                expect((*results)[2].termination == ExecutionTermination::Continue);
+                expect(output == "next\n");
+                expect(program.constants().size() == constants);
+                expect(program.types().size() == types);
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Interpreter: runtime tests admit executed paths and continue after unsupported calls",
+    "Interpreter: runtime tests admit executed paths and continue after unsupported calls"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         private import(cpp) fn native();
@@ -360,30 +329,28 @@ const ct::Suite tests([] static noexcept {
                 },
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
-            if (!ct::expect(results.has_value())) {
+            if (!expect(results.has_value())) {
                 return;
             }
-            if (!ct::expect(results->size() == 3)) {
+            if (!expect(results->size() == 3)) {
                 return;
             }
-            ct::expect((*results)[0].reports.empty());
-            if (!ct::expect((*results)[1].reports.size() == 1)) {
+            expect((*results)[0].reports.empty());
+            if (!expect((*results)[1].reports.size() == 1)) {
                 return;
             }
-            ct::expect(
+            expect(
                 interpreter_diagnostic_code((*results)[1].reports[0].reason())
                 == DiagnosticCode::InterpretAdmission
             );
-            ct::expect((*results)[1].reports[0].termination() == ExecutionTermination::StopRoot);
-            ct::expect((*results)[1].termination == ExecutionTermination::StopRoot);
-            ct::expect(!(*results)[1].aborted());
-            ct::expect((*results)[2].reports.empty());
-            ct::expect(output == "skipped\nlater\n");
-        }
-    );
+            expect((*results)[1].reports[0].termination() == ExecutionTermination::StopRoot);
+            expect((*results)[1].termination == ExecutionTermination::StopRoot);
+            expect(!(*results)[1].aborted());
+            expect((*results)[2].reports.empty());
+            expect(output == "skipped\nlater\n");
+        };
 
-    ct::test(
-        "Interpreter: each runtime test receives an independent execution budget",
+    "Interpreter: each runtime test receives an independent execution budget"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         test "limited" { while true {} }
@@ -399,29 +366,27 @@ const ct::Suite tests([] static noexcept {
                 },
                 InterpreterOptions {.limits = limits, .trace = {}, .report = {}}
             );
-            if (!ct::expect(results.has_value())) {
+            if (!expect(results.has_value())) {
                 return;
             }
-            if (!ct::expect(results->size() == 2)) {
+            if (!expect(results->size() == 2)) {
                 return;
             }
-            if (!ct::expect((*results)[0].reports.size() == 1)) {
+            if (!expect((*results)[0].reports.size() == 1)) {
                 return;
             }
-            ct::expect(
+            expect(
                 interpreter_diagnostic_code((*results)[0].reports[0].reason())
                 == DiagnosticCode::InterpretLimit
             );
-            ct::expect(!(*results)[0].aborted());
-            ct::expect((*results)[0].reports[0].termination() == ExecutionTermination::StopRoot);
-            ct::expect((*results)[0].termination == ExecutionTermination::StopRoot);
-            ct::expect((*results)[1].reports.empty());
-            ct::expect(output == "fresh\n");
-        }
-    );
+            expect(!(*results)[0].aborted());
+            expect((*results)[0].reports[0].termination() == ExecutionTermination::StopRoot);
+            expect((*results)[0].termination == ExecutionTermination::StopRoot);
+            expect((*results)[1].reports.empty());
+            expect(output == "fresh\n");
+        };
 
-    ct::test(
-        "Interpreter: fatal assertions retain earlier diagnostics and stop remaining tests",
+    "Interpreter: fatal assertions retain earlier diagnostics and stop remaining tests"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         test "earlier" { println("before"); check(false, "first"); println("after"); }
@@ -437,8 +402,8 @@ const ct::Suite tests([] static noexcept {
                     .trace = {},
                     .report = [&](std::optional<TestID> test,
                                   const ExecutionEvent& event) noexcept {
-                        ct::expect(test.has_value());
-                        if (!ct::expect(event.report_kind().has_value())) {
+                        expect(test.has_value());
+                        if (!expect(event.report_kind().has_value())) {
                             return;
                         }
                         events +=
@@ -446,142 +411,132 @@ const ct::Suite tests([] static noexcept {
                     }
                 }
             );
-            if (!ct::expect(result.has_value())) {
+            if (!expect(result.has_value())) {
                 return;
             }
-            if (!ct::expect(result->size() == 2)) {
+            if (!expect(result->size() == 2)) {
                 return;
             }
-            ct::expect(!(*result)[0].aborted());
-            ct::expect((*result)[0].termination == ExecutionTermination::Continue);
-            if (!ct::expect((*result)[0].reports.size() == 1)) {
+            expect(!(*result)[0].aborted());
+            expect((*result)[0].termination == ExecutionTermination::Continue);
+            if (!expect((*result)[0].reports.size() == 1)) {
                 return;
             }
-            ct::expect(execution_message((*result)[0].reports[0]).contains("first"));
-            ct::expect((*result)[1].aborted());
-            if (!ct::expect((*result)[1].reports.size() == 2)) {
+            expect(execution_message((*result)[0].reports[0]).contains("first"));
+            expect((*result)[1].aborted());
+            if (!expect((*result)[1].reports.size() == 2)) {
                 return;
             }
-            ct::expect(execution_message((*result)[1].reports[0]).contains("second"));
-            ct::expect(execution_message((*result)[1].reports[1]).contains("fatal"));
-            ct::expect(events == "before\ncheck\nafter\ncheck\nassert\n");
-        }
-    );
+            expect(execution_message((*result)[1].reports[0]).contains("second"));
+            expect(execution_message((*result)[1].reports[1]).contains("fatal"));
+            expect(events == "before\ncheck\nafter\ncheck\nassert\n");
+        };
 
-    ct::test(
-        "Interpreter: runtime traps retain prior checks and abort remaining tests",
-        [] static noexcept {
-            struct Input final {
-                std::string_view name;
-                std::string_view declaration;
-                std::string_view operation;
-                std::string_view message;
-            };
-            const auto inputs = std::array {
-                Input {
-                    .name = "division",
-                    .declaration = "fn divide(value: i32) { println(4 / value); }",
-                    .operation = "divide(0);",
-                    .message = "division by zero"
-                },
-                Input {
-                    .name = "remainder",
-                    .declaration = "fn remainder(value: i32) { println(4 % value); }",
-                    .operation = "remainder(0);",
-                    .message = "division by zero"
-                },
-                Input {
-                    .name = "shift",
-                    .declaration = "fn shift(count: i32) { println(1 << count); }",
-                    .operation = "shift(-1);",
-                    .message = "shift count is outside"
-                },
-                Input {
-                    .name = "array index",
-                    .declaration =
-                        "fn element(values: [i32; 1], index: i32) { println(values[index]); }",
-                    .operation = "element([1], -1);",
-                    .message = "sequence index is out of bounds"
-                },
-                Input {
-                    .name = "slice index",
-                    .declaration =
-                        "fn element(values: [i32], index: i32) { println(values[index]); }",
-                    .operation = "element([1], 1);",
-                    .message = "sequence index is out of bounds"
-                },
-                Input {
-                    .name = "slice range",
-                    .declaration =
-                        "fn slice(values: [i32], start: usize, end: usize) { println(values.slice(start, end).len()); }",
-                    .operation = "slice([1, 2], 2, 1);",
-                    .message = "slice range is out of bounds"
-                },
-                Input {
-                    .name = "SIMD lane",
-                    .declaration =
-                        "fn lane(value: u8x16, index: usize) { println(value.lane(index)); }",
-                    .operation = "lane(u8x16::splat(7), 16);",
-                    .message = "SIMD index or memory range is out of bounds"
-                },
-                Input {
-                    .name = "SIMD load",
-                    .declaration =
-                        "fn load(values: [u8], index: usize) { let _ = u8x16::load(values, index); }",
-                    .operation = "load([1u8], 0);",
-                    .message = "SIMD index or memory range is out of bounds"
-                },
-                Input {
-                    .name = "unchecked scalar precondition",
-                    .declaration =
-                        "fn character(value: u32) { let _ = char::from_u32_unchecked(value); }",
-                    .operation = "character(0xd800);",
-                    .message = "requires a Unicode scalar value"
-                },
-            };
-            ct::each(inputs, &Input::name, [](const Input& input) static noexcept {
-                auto source = std::string(input.declaration);
-                source += R"(
+    "Interpreter: runtime traps retain prior checks and abort remaining tests"_test = [] static noexcept {
+        struct Input final {
+            std::string_view name;
+            std::string_view declaration;
+            std::string_view operation;
+            std::string_view message;
+        };
+        const auto inputs = std::array {
+            Input {
+                .name = "division",
+                .declaration = "fn divide(value: i32) { println(4 / value); }",
+                .operation = "divide(0);",
+                .message = "division by zero"
+            },
+            Input {
+                .name = "remainder",
+                .declaration = "fn remainder(value: i32) { println(4 % value); }",
+                .operation = "remainder(0);",
+                .message = "division by zero"
+            },
+            Input {
+                .name = "shift",
+                .declaration = "fn shift(count: i32) { println(1 << count); }",
+                .operation = "shift(-1);",
+                .message = "shift count is outside"
+            },
+            Input {
+                .name = "array index",
+                .declaration =
+                    "fn element(values: [i32; 1], index: i32) { println(values[index]); }",
+                .operation = "element([1], -1);",
+                .message = "sequence index is out of bounds"
+            },
+            Input {
+                .name = "slice index",
+                .declaration = "fn element(values: [i32], index: i32) { println(values[index]); }",
+                .operation = "element([1], 1);",
+                .message = "sequence index is out of bounds"
+            },
+            Input {
+                .name = "slice range",
+                .declaration =
+                    "fn slice(values: [i32], start: usize, end: usize) { println(values.slice(start, end).len()); }",
+                .operation = "slice([1, 2], 2, 1);",
+                .message = "slice range is out of bounds"
+            },
+            Input {
+                .name = "SIMD lane",
+                .declaration =
+                    "fn lane(value: u8x16, index: usize) { println(value.lane(index)); }",
+                .operation = "lane(u8x16::splat(7), 16);",
+                .message = "SIMD index or memory range is out of bounds"
+            },
+            Input {
+                .name = "SIMD load",
+                .declaration =
+                    "fn load(values: [u8], index: usize) { let _ = u8x16::load(values, index); }",
+                .operation = "load([1u8], 0);",
+                .message = "SIMD index or memory range is out of bounds"
+            },
+            Input {
+                .name = "unchecked scalar precondition",
+                .declaration =
+                    "fn character(value: u32) { let _ = char::from_u32_unchecked(value); }",
+                .operation = "character(0xd800);",
+                .message = "requires a Unicode scalar value"
+            },
+        };
+        each(inputs, &Input::name, [](const Input& input) static noexcept {
+            auto source = std::string(input.declaration);
+            source += R"(
                     test "fatal" { println("before"); check(false, "earlier");
                 )";
-                source += input.operation;
-                source += R"(
+            source += input.operation;
+            source += R"(
                         println("unreachable");
                     }
                     test "later" { println("unreachable"); }
                 )";
-                const auto program = analyze_test_program(source);
-                auto output = std::string();
-                const auto results = interpret_tests(
-                    program,
-                    [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                        output.append(bytes);
-                    },
-                    InterpreterOptions {
-                        .limits = static_execution_limits(),
-                        .trace = {},
-                        .report = {}
-                    }
-                );
-                if (!ct::expect(results.has_value()) || !ct::expect(results->size() == 1)) {
-                    return;
-                }
-                const auto& result = results->front();
-                ct::expect(result.aborted());
-                if (!ct::expect(result.reports.size() == 2)) {
-                    return;
-                }
-                ct::expect(result.reports.front().termination() == ExecutionTermination::Continue);
-                ct::expect(execution_message(result.reports.front()).contains("earlier"));
-                ct::expect(result.reports.back().termination() == ExecutionTermination::Abort);
-                ct::expect(execution_message(result.reports.back()).contains(input.message));
-                ct::expect_equal(output, "before\n");
-            });
-        }
-    );
+            const auto program = analyze_test_program(source);
+            auto output = std::string();
+            const auto results = interpret_tests(
+                program,
+                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                    output.append(bytes);
+                },
+                InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+            );
+            if (!expect(results.has_value()) || !expect(results->size() == 1)) {
+                return;
+            }
+            const auto& result = results->front();
+            expect(result.aborted());
+            if (!expect(result.reports.size() == 2)) {
+                return;
+            }
+            expect(result.reports.front().termination() == ExecutionTermination::Continue);
+            expect(execution_message(result.reports.front()).contains("earlier"));
+            expect(result.reports.back().termination() == ExecutionTermination::Abort);
+            expect(execution_message(result.reports.back()).contains(input.message));
+            expect_equal(output, "before\n");
+        });
+    };
 
-    ct::test(
-        "Interpreter: unchecked character construction checks the executed precondition",
+    "Interpreter: unchecked character construction checks the executed precondition"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         fn character(value: u32) -> char => char::from_u32_unchecked(value);
@@ -599,17 +554,16 @@ const ct::Suite tests([] static noexcept {
                 },
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
-            if (!ct::expect(!result.has_value())) {
+            if (!expect(!result.has_value())) {
                 return;
             }
-            ct::expect(
+            expect(
                 interpreter_diagnostic_code(result.error().event.reason())
                 == DiagnosticCode::InterpretExecution
             );
-            ct::expect(result.error().event.termination() == ExecutionTermination::Abort);
-            ct::expect(output == "1114111\n");
-        }
-    );
+            expect(result.error().event.termination() == ExecutionTermination::Abort);
+            expect(output == "1114111\n");
+        };
 });
 
 } // namespace

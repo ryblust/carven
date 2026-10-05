@@ -29,18 +29,16 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 auto path(std::string_view value) noexcept -> CanonicalModulePath {
     auto result = CanonicalModulePath::from_value(value);
-    ct::require(result.has_value());
+    require(result.has_value());
     return std::move(*result);
 }
 
 auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noexcept
     -> ProgramDraft {
     const auto source = sources.append_virtual("operations.cv", "");
-    ct::require(source.has_value());
+    require(source.has_value());
     const auto inputs = std::array {
         SourceModuleInput {
             .source_id = *source,
@@ -48,7 +46,7 @@ auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noex
         },
     };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-    ct::require(syntax.has_value());
+    require(syntax.has_value());
     return ProgramDraft::begin(std::move(*syntax), diagnostics);
 }
 
@@ -111,19 +109,15 @@ auto add_numeric_enum(ProgramDraft& compilation, TypeID underlying) noexcept -> 
     );
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Semantic operations: AST operators have one exact SemIR mapping", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Semantic operations: AST operators have one exact SemIR mapping"_test = [] static noexcept {
         const auto prefix_mappings = std::array {
             std::pair {ASTPrefixOperator::LogicalNot, UnaryOperator::LogicalNot},
             std::pair {ASTPrefixOperator::Negate, UnaryOperator::Negate},
             std::pair {ASTPrefixOperator::BitwiseNot, UnaryOperator::BitwiseNot},
         };
         for (const auto [ast, expected] : prefix_mappings) {
-            ct::expect(((semantic_operator(ast)) == (expected)))
+            expect(((semantic_operator(ast)) == (expected)))
                 .note("semantic_operator(ast) == expected");
         }
 
@@ -147,17 +141,16 @@ const ct::Suite tests([] static noexcept {
         };
         for (const auto [ast, expected] : binary_mappings) {
             const auto operation = semantic_operator(ast);
-            if (!ct::expect(operation.has_value())) {
+            if (!expect(operation.has_value())) {
                 return;
             }
-            ct::expect(((*operation) == (expected))).note("*operation == expected");
+            expect(((*operation) == (expected))).note("*operation == expected");
         }
-        ct::expect(!(semantic_operator(ASTBinaryOperator::LogicalOr).has_value()));
-        ct::expect(!(semantic_operator(ASTBinaryOperator::LogicalAnd).has_value()));
-    });
+        expect(!(semantic_operator(ASTBinaryOperator::LogicalOr).has_value()));
+        expect(!(semantic_operator(ASTBinaryOperator::LogicalAnd).has_value()));
+    };
 
-    ct::test(
-        "Semantic operations: contextual binary operand planning is syntax-authoritative",
+    "Semantic operations: contextual binary operand planning is syntax-authoritative"_test =
         [] static noexcept {
             const auto tree = parse_valid(
                 "fn plans() {"
@@ -171,39 +164,37 @@ const ct::Suite tests([] static noexcept {
                 "}"
             );
             const auto ast = tree.view();
-            ct::expect_equal(
+            expect_equal(
                 binary_operand_plan(ast, binary_initializer(tree, 0uz)),
                 BinaryOperandPlan::LeftExpectedFromRight
             );
-            ct::expect_equal(
+            expect_equal(
                 binary_operand_plan(ast, binary_initializer(tree, 1uz)),
                 BinaryOperandPlan::RightExpectedFromLeft
             );
-            ct::expect_equal(
+            expect_equal(
                 binary_operand_plan(ast, binary_initializer(tree, 2uz)),
                 BinaryOperandPlan::RightExpectedFromLeft
             );
-            ct::expect_equal(
+            expect_equal(
                 binary_operand_plan(ast, binary_initializer(tree, 3uz)),
                 BinaryOperandPlan::Independent
             );
-            ct::expect_equal(
+            expect_equal(
                 binary_operand_plan(ast, binary_initializer(tree, 4uz)),
                 BinaryOperandPlan::LeftExpectedFromRight
             );
-            ct::expect_equal(
+            expect_equal(
                 binary_operand_plan(ast, binary_initializer(tree, 5uz)),
                 BinaryOperandPlan::RightExpectedFromLeft
             );
-            ct::expect_equal(
+            expect_equal(
                 binary_operand_plan(ast, binary_initializer(tree, 6uz)),
                 BinaryOperandPlan::LeftExpectedFromRight
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Semantic operations: decisions carry their stable diagnostic classification",
+    "Semantic operations: decisions carry their stable diagnostic classification"_test =
         [] static noexcept {
             auto fixture = OperationFixture();
             auto& compilation = fixture.compilation;
@@ -214,39 +205,39 @@ const ct::Suite tests([] static noexcept {
             const auto text = compilation.builtin_type(BuiltinType::Str);
             const auto numeric_enum = add_numeric_enum(compilation, i32);
 
-            ct::expect(binary_operator_requires_equality(ASTBinaryOperator::Equal));
-            ct::expect(!(binary_operator_requires_equality(ASTBinaryOperator::Add)));
-            ct::expect(operator_result_builtin(OperatorResult::Boolean) == BuiltinType::Bool)
+            expect(binary_operator_requires_equality(ASTBinaryOperator::Equal));
+            expect(!(binary_operator_requires_equality(ASTBinaryOperator::Add)));
+            expect(operator_result_builtin(OperatorResult::Boolean) == BuiltinType::Bool)
                 .note("Boolean operator result selects the Bool builtin");
-            ct::expect(!(operator_result_builtin(OperatorResult::Operand).has_value()));
+            expect(!(operator_result_builtin(OperatorResult::Operand).has_value()));
 
-            ct::expect((select_contextual_numeric_type(
-                            compilation,
-                            i32,
-                            ConstructionTypeRef {i64},
-                            NumericSuffix::None
-                        )
-                        == i64))
+            expect((select_contextual_numeric_type(
+                        compilation,
+                        i32,
+                        ConstructionTypeRef {i64},
+                        NumericSuffix::None
+                    )
+                    == i64))
                 .note(
                     "select_contextual_numeric_type(\n                    compilation,\n                    i32,\n                    Constru..."
                 );
-            ct::expect((select_contextual_numeric_type(
-                            compilation,
-                            i32,
-                            ConstructionTypeRef {f32},
-                            NumericSuffix::None
-                        )
-                        == i32))
+            expect((select_contextual_numeric_type(
+                        compilation,
+                        i32,
+                        ConstructionTypeRef {f32},
+                        NumericSuffix::None
+                    )
+                    == i32))
                 .note(
                     "select_contextual_numeric_type(\n                    compilation,\n                    i32,\n                    Constru..."
                 );
-            ct::expect((select_contextual_numeric_type(
-                            compilation,
-                            i32,
-                            ConstructionTypeRef {i64},
-                            NumericSuffix::I32
-                        )
-                        == i32))
+            expect((select_contextual_numeric_type(
+                        compilation,
+                        i32,
+                        ConstructionTypeRef {i64},
+                        NumericSuffix::I32
+                    )
+                    == i32))
                 .note(
                     "select_contextual_numeric_type(\n                    compilation,\n                    i32,\n                    Constru..."
                 );
@@ -256,11 +247,11 @@ const ct::Suite tests([] static noexcept {
                 UnaryOperator::Negate,
                 ConstructionTypeRef {boolean}
             );
-            if (!ct::expect(!(unary.has_value()))) {
+            if (!expect(!(unary.has_value()))) {
                 return;
             }
-            ct::expect_equal(unary.error().code, DiagnosticCode::TypePrefixNumeric);
-            ct::expect_equal(
+            expect_equal(unary.error().code, DiagnosticCode::TypePrefixNumeric);
+            expect_equal(
                 unary.error().message,
                 std::string_view("arithmetic negation requires a numeric operand")
             );
@@ -273,10 +264,10 @@ const ct::Suite tests([] static noexcept {
                 false,
                 true
             );
-            if (!ct::expect(!(incompatible.has_value()))) {
+            if (!expect(!(incompatible.has_value()))) {
                 return;
             }
-            ct::expect_equal(incompatible.error().code, DiagnosticCode::TypeBinary);
+            expect_equal(incompatible.error().code, DiagnosticCode::TypeBinary);
 
             const auto unsupported_equality = decide_binary_operator(
                 compilation,
@@ -286,10 +277,10 @@ const ct::Suite tests([] static noexcept {
                 true,
                 false
             );
-            if (!ct::expect(!(unsupported_equality.has_value()))) {
+            if (!expect(!(unsupported_equality.has_value()))) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 unsupported_equality.error().code,
                 DiagnosticCode::TypeEqualityUnsupported
             );
@@ -302,10 +293,10 @@ const ct::Suite tests([] static noexcept {
                 true,
                 true
             );
-            if (!ct::expect(!(ordered.has_value()))) {
+            if (!expect(!(ordered.has_value()))) {
                 return;
             }
-            ct::expect_equal(ordered.error().code, DiagnosticCode::TypeBinaryOrdered);
+            expect_equal(ordered.error().code, DiagnosticCode::TypeBinaryOrdered);
 
             const auto logical = decide_binary_operator(
                 compilation,
@@ -315,10 +306,10 @@ const ct::Suite tests([] static noexcept {
                 true,
                 true
             );
-            if (!ct::expect(logical.has_value())) {
+            if (!expect(logical.has_value())) {
                 return;
             }
-            ct::expect_equal(*logical, OperatorResult::Boolean);
+            expect_equal(*logical, OperatorResult::Boolean);
 
             const auto cast = decide_cast(
                 compilation,
@@ -326,82 +317,80 @@ const ct::Suite tests([] static noexcept {
                 ConstructionTypeRef {i64},
                 false
             );
-            if (!ct::expect(cast.has_value())) {
+            if (!expect(cast.has_value())) {
                 return;
             }
-            ct::expect_equal(*cast, CastKind::IntegerToInteger);
+            expect_equal(*cast, CastKind::IntegerToInteger);
             const auto invalid_cast = decide_cast(
                 compilation,
                 ConstructionTypeRef {text},
                 ConstructionTypeRef {boolean},
                 false
             );
-            if (!ct::expect(!(invalid_cast.has_value()))) {
+            if (!expect(!(invalid_cast.has_value()))) {
                 return;
             }
-            ct::expect_equal(invalid_cast.error().code, DiagnosticCode::TypeCast);
+            expect_equal(invalid_cast.error().code, DiagnosticCode::TypeCast);
             const auto numeric_enum_cast = decide_cast(
                 compilation,
                 ConstructionTypeRef {numeric_enum},
                 ConstructionTypeRef {i32},
                 true
             );
-            if (!ct::expect(numeric_enum_cast.has_value())) {
+            if (!expect(numeric_enum_cast.has_value())) {
                 return;
             }
-            ct::expect_equal(*numeric_enum_cast, CastKind::EnumToInteger);
+            expect_equal(*numeric_enum_cast, CastKind::EnumToInteger);
 
             const auto method =
                 decide_text_method(compilation, ConstructionTypeRef {text}, "is_empty", 0uz);
-            if (!ct::expect(method.has_value())) {
+            if (!expect(method.has_value())) {
                 return;
             }
-            if (!ct::expect(method->has_value())) {
+            if (!expect(method->has_value())) {
                 return;
             }
-            ct::expect_equal(**method, TextIntrinsic::IsEmpty);
-            ct::expect(((text_intrinsic_contract(**method).result)
-                        == (TextIntrinsicType {BuiltinType::Bool})))
+            expect_equal(**method, TextIntrinsic::IsEmpty);
+            expect(((text_intrinsic_contract(**method).result)
+                    == (TextIntrinsicType {BuiltinType::Bool})))
                 .note(
                     "text_intrinsic_contract(**method).result == TextIntrinsicType {BuiltinType::Bool}"
                 );
             const auto non_text_method =
                 decide_text_method(compilation, ConstructionTypeRef {i32}, "len", 0uz);
-            if (!ct::expect(non_text_method.has_value())) {
+            if (!expect(non_text_method.has_value())) {
                 return;
             }
-            ct::expect(!(non_text_method->has_value()));
+            expect(!(non_text_method->has_value()));
             const auto property_as_method =
                 decide_text_method(compilation, ConstructionTypeRef {text}, "bytes", 0uz);
-            if (!ct::expect(!(property_as_method.has_value()))) {
+            if (!expect(!(property_as_method.has_value()))) {
                 return;
             }
-            ct::expect_equal(property_as_method.error().code, DiagnosticCode::TypeMethodCall);
+            expect_equal(property_as_method.error().code, DiagnosticCode::TypeMethodCall);
             const auto method_arity =
                 decide_text_method(compilation, ConstructionTypeRef {text}, "len", 1uz);
-            if (!ct::expect(!(method_arity.has_value()))) {
+            if (!expect(!(method_arity.has_value()))) {
                 return;
             }
-            ct::expect_equal(method_arity.error().code, DiagnosticCode::TypeMethodCallArity);
+            expect_equal(method_arity.error().code, DiagnosticCode::TypeMethodCallArity);
             const auto method_as_property = decide_text_property("len");
-            if (!ct::expect(!(method_as_property.has_value()))) {
+            if (!expect(!(method_as_property.has_value()))) {
                 return;
             }
-            ct::expect_equal(method_as_property.error().code, DiagnosticCode::TypeTextProperty);
+            expect_equal(method_as_property.error().code, DiagnosticCode::TypeTextProperty);
             const auto property = decide_text_property("bytes");
-            if (!ct::expect(property.has_value())) {
+            if (!expect(property.has_value())) {
                 return;
             }
-            ct::expect(
+            expect(
                 std::holds_alternative<TextIntrinsicShape>(
                     text_intrinsic_contract(*property).result
                 )
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Semantic operations: construction types expose their exact recursive shape",
+    "Semantic operations: construction types expose their exact recursive shape"_test =
         [] static noexcept {
             auto fixture = OperationFixture();
             auto& compilation = fixture.compilation;
@@ -459,25 +448,21 @@ const ct::Suite tests([] static noexcept {
                 }
             );
 
-            ct::expect(type_shapes_compatible(
+            expect(type_shapes_compatible(
                 compilation,
                 ConstructionTypeRef {first_array},
                 ConstructionTypeRef {second_array}
             ));
-            ct::expect(type_supports_equality(compilation, ConstructionTypeRef {first_array}));
-            ct::expect(!(type_supports_equality(compilation, ConstructionTypeRef {callable})));
-            ct::expect(!type_shapes_compatible(compilation, callable, staged_callable));
-            ct::expect(type_contains_callable_view(compilation, ConstructionTypeRef {callable}));
-            ct::expect(
-                type_contains_callable_view(compilation, ConstructionTypeRef {callable_array})
-            );
-            ct::expect(builtin_type_supports_equality(BuiltinType::Str));
-            ct::expect(!(type_supports_equality(compilation, ConstructionTypeRef {text_view})));
-        }
-    );
+            expect(type_supports_equality(compilation, ConstructionTypeRef {first_array}));
+            expect(!(type_supports_equality(compilation, ConstructionTypeRef {callable})));
+            expect(!type_shapes_compatible(compilation, callable, staged_callable));
+            expect(type_contains_callable_view(compilation, ConstructionTypeRef {callable}));
+            expect(type_contains_callable_view(compilation, ConstructionTypeRef {callable_array}));
+            expect(builtin_type_supports_equality(BuiltinType::Str));
+            expect(!(type_supports_equality(compilation, ConstructionTypeRef {text_view})));
+        };
 
-    ct::test(
-        "Semantic operations: evaluator failures retain stable diagnostic boundaries",
+    "Semantic operations: evaluator failures retain stable diagnostic boundaries"_test =
         [] static noexcept {
             auto fixture = OperationFixture();
             auto& compilation = fixture.compilation;
@@ -494,29 +479,25 @@ const ct::Suite tests([] static noexcept {
                     {.value = SliceTypeValue {.element = compilation.builtin_type(BuiltinType::U8)}}
                 )
             );
-            if (!ct::expect(!(non_constant_view.has_value()))) {
+            if (!expect(!(non_constant_view.has_value()))) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 non_constant_view.error(),
                 ConstantEvaluationFailure::UnsupportedOperation
             );
 
             const auto divide_by_zero =
                 constant_evaluation_diagnostic(ConstantEvaluationFailure::DivideByZero);
-            if (!ct::expect(divide_by_zero.has_value())) {
+            if (!expect(divide_by_zero.has_value())) {
                 return;
             }
-            ct::expect_equal(divide_by_zero->code, DiagnosticCode::ConstDivideByZero);
-            ct::expect(
-                !(constant_evaluation_diagnostic(ConstantEvaluationFailure::OperandNotConstant)
-                      .has_value())
-            );
-        }
-    );
+            expect_equal(divide_by_zero->code, DiagnosticCode::ConstDivideByZero);
+            expect(!(constant_evaluation_diagnostic(ConstantEvaluationFailure::OperandNotConstant)
+                         .has_value()));
+        };
 
-    ct::test(
-        "Semantic equality: shared enum payload dependencies propagate unsupported leaves",
+    "Semantic equality: shared enum payload dependencies propagate unsupported leaves"_test =
         [] static noexcept {
             for (const auto supported : {true, false}) {
                 auto source = std::string(
@@ -530,7 +511,7 @@ const ct::Suite tests([] static noexcept {
                 const auto program = analyze_test_program(source);
                 for (const auto [id, declaration] : program.declarations().enumerations()) {
                     static_cast<void>(id);
-                    ct::expect(((declaration.supports_equality) == (supported)))
+                    expect(((declaration.supports_equality) == (supported)))
                         .note(
                             "declaration.supports_equality == supported",
                             "supported = ",
@@ -538,8 +519,7 @@ const ct::Suite tests([] static noexcept {
                         );
                 }
             }
-        }
-    );
+        };
 });
 
 } // namespace

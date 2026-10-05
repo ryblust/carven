@@ -15,79 +15,71 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Constant function admission: capability diagnostics preserve evaluation order",
-        [] static noexcept {
-            struct Scenario final {
-                std::string_view name;
-                std::string_view source;
-                std::string_view primary;
-                std::uint32_t start;
+const TestSuite suite([] static noexcept {
+    "Constant function admission: capability diagnostics preserve evaluation order"_test = [] static noexcept {
+        struct Scenario final {
+            std::string_view name;
+            std::string_view source;
+            std::string_view primary;
+            std::uint32_t start;
+        };
+        const auto scenarios = std::array {
+            Scenario {
+                .name = "left child is checked before right child",
+                .source =
+                    "fn first() -> i32 => 1; fn second() -> i32 => 2; const fn invalid() -> i32 => first() + second();\n",
+                .primary = "first()",
+                .start = 78u,
+            },
+            Scenario {
+                .name = "earlier reachable statement is checked before later return",
+                .source =
+                    "fn first() -> i32 => 1; fn second() -> i32 => 2; const fn invalid() -> i32 { let value = first(); return second(); }\n",
+                .primary = "first()",
+                .start = 89u,
+            },
+            Scenario {
+                .name = "parent call is checked before its argument",
+                .source =
+                    "fn ordinary(value: i32) -> i32 => value; const fn invalid() -> i32 => ordinary(ordinary(1));\n",
+                .primary = "ordinary(ordinary(1))",
+                .start = 70u,
+            },
+        };
+        each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
+            auto sources = SourceManager();
+            const auto source = sources.append_virtual("analysis.cv", std::string(scenario.source));
+            require(source.has_value());
+            const auto input = SourceModuleInput {
+                .source_id = *source,
+                .module_path = semantic_test_module_path(),
             };
-            const auto scenarios = std::array {
-                Scenario {
-                    .name = "left child is checked before right child",
-                    .source =
-                        "fn first() -> i32 => 1; fn second() -> i32 => 2; const fn invalid() -> i32 => first() + second();\n",
-                    .primary = "first()",
-                    .start = 78u,
-                },
-                Scenario {
-                    .name = "earlier reachable statement is checked before later return",
-                    .source =
-                        "fn first() -> i32 => 1; fn second() -> i32 => 2; const fn invalid() -> i32 { let value = first(); return second(); }\n",
-                    .primary = "first()",
-                    .start = 89u,
-                },
-                Scenario {
-                    .name = "parent call is checked before its argument",
-                    .source =
-                        "fn ordinary(value: i32) -> i32 => value; const fn invalid() -> i32 => ordinary(ordinary(1));\n",
-                    .primary = "ordinary(ordinary(1))",
-                    .start = 70u,
-                },
-            };
-            ct::each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
-                auto sources = SourceManager();
-                const auto source =
-                    sources.append_virtual("analysis.cv", std::string(scenario.source));
-                ct::require(source.has_value());
-                const auto input = SourceModuleInput {
-                    .source_id = *source,
-                    .module_path = semantic_test_module_path(),
-                };
-                auto parsed =
-                    parse_program(sources, SourceBatch {.modules = std::span(&input, 1uz)});
-                ct::require(parsed.has_value());
-                const auto analyzed = analyze(std::move(*parsed));
-                if (!ct::expect(!analyzed.has_value())) {
-                    return;
-                }
-                ct::expect_diagnostic(analyzed.error(), DiagnosticCode::ConstAdmission);
-                const auto* diagnostic =
-                    ct::find_diagnostic(analyzed.error(), DiagnosticCode::ConstAdmission);
-                if (!ct::expect(diagnostic != nullptr)) {
-                    return;
-                }
-                ct::expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
-                if (!ct::expect(diagnostic->attachment.primary.has_value())) {
-                    return;
-                }
-                const auto primary = diagnostic->attachment.primary->span;
-                if (!ct::expect(primary.source_id == *source)) {
-                    return;
-                }
-                ct::expect_equal(sources.slice(primary), scenario.primary);
-                ct::expect_equal(primary.span.start(), scenario.start);
-            });
-        }
-    );
+            auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1uz)});
+            require(parsed.has_value());
+            const auto analyzed = analyze(std::move(*parsed));
+            if (!expect(!analyzed.has_value())) {
+                return;
+            }
+            expect_diagnostic(analyzed.error(), DiagnosticCode::ConstAdmission);
+            const auto* diagnostic =
+                find_diagnostic(analyzed.error(), DiagnosticCode::ConstAdmission);
+            if (!expect(diagnostic != nullptr)) {
+                return;
+            }
+            expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
+            if (!expect(diagnostic->attachment.primary.has_value())) {
+                return;
+            }
+            const auto primary = diagnostic->attachment.primary->span;
+            if (!expect(primary.source_id == *source)) {
+                return;
+            }
+            expect_equal(sources.slice(primary), scenario.primary);
+            expect_equal(primary.span.start(), scenario.start);
+        });
+    };
 
-    ct::test(
-        "Constant function admission: executable bodies are proved at their definitions",
+    "Constant function admission: executable bodies are proved at their definitions"_test =
         [] static noexcept {
             const auto sources = std::to_array<std::string_view>({
                 R"(const fn empty() {})",
@@ -144,15 +136,13 @@ const ct::Suite tests([] static noexcept {
             };
         })",
             });
-            ct::each(sources, std::identity {}, [&](const auto& source) noexcept {
+            each(sources, std::identity {}, [&](const auto& source) noexcept {
                 const auto program = analyze_test_program(std::string(source));
-                ct::expect(program.declarations().functions().size() > 0uz);
+                expect(program.declarations().functions().size() > 0uz);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant function admission: ordinary functions have no definition-time capability gate",
+    "Constant function admission: ordinary functions have no definition-time capability gate"_test =
         [] static noexcept {
             struct Scenario final {
                 std::string_view name;
@@ -179,14 +169,13 @@ const ct::Suite tests([] static noexcept {
             for character in value.chars { let copy = character; }
         })"},
             });
-            ct::each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
+            each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
                 const auto program = analyze_test_program(std::string(scenario.source));
-                ct::expect(program.declarations().functions().size() > 0uz);
+                expect(program.declarations().functions().size() > 0uz);
             });
-        }
-    );
+        };
 
-    ct::test("Constant function admission: capability proof requires marked reachable callees", [] static noexcept {
+    "Constant function admission: capability proof requires marked reachable callees"_test = [] static noexcept {
         const auto accepted = std::to_array<std::string_view>({
             "import(cpp) fn native(); const fn guaranteed() { return; native(); }",
             "import(cpp) fn native(); const fn guaranteed(flag: bool) { if flag { return; } else { return; } native(); }",
@@ -205,7 +194,7 @@ const ct::Suite tests([] static noexcept {
             "const fn guaranteed(&value: i32) { value = 1; }",
             "const fn guaranteed(value: ptr<i32>) -> bool => value == nullptr;",
         });
-        ct::each(accepted, std::identity {}, [&](const auto& source) noexcept {
+        each(accepted, std::identity {}, [&](const auto& source) noexcept {
             static_cast<void>(analyze_test_program(std::string(source)));
         });
 
@@ -227,14 +216,13 @@ const ct::Suite tests([] static noexcept {
             "const fn guaranteed() -> i32 { let action = []() => 1; return action(); }",
             "const fn guaranteed(value: str) { for character in value.chars {} }",
         });
-        ct::each(rejected, std::identity {}, [&](const auto& source) noexcept {
+        each(rejected, std::identity {}, [&](const auto& source) noexcept {
             const auto diagnostics = analyze_test_errors(std::string(source));
-            ct::expect_diagnostic(diagnostics, DiagnosticCode::ConstAdmission);
+            expect_diagnostic(diagnostics, DiagnosticCode::ConstAdmission);
         });
-    });
+    };
 
-    ct::test(
-        "Constant functions: control dispatch does not construct an unreachable native result",
+    "Constant functions: control dispatch does not construct an unreachable native result"_test =
         [] static noexcept {
             const auto accepted = std::to_array<std::string_view>({
                 R"(struct Failure {}
@@ -253,7 +241,7 @@ const ct::Suite tests([] static noexcept {
                 ordinary(try { throw Failure {}; } catch { _ => { throw Failure {}; }, });
             })",
             });
-            ct::each(accepted, std::identity {}, [&](const auto& source) noexcept {
+            each(accepted, std::identity {}, [&](const auto& source) noexcept {
                 static_cast<void>(analyze_test_program(std::string(source)));
             });
 
@@ -266,21 +254,19 @@ const ct::Suite tests([] static noexcept {
             let value = try { throw Failure {}; } catch { _ => ::Native {}, };
         })",
             });
-            ct::each(rejected, std::identity {}, [&](const auto& source) noexcept {
+            each(rejected, std::identity {}, [&](const auto& source) noexcept {
                 const auto diagnostics = analyze_test_errors(std::string(source));
-                ct::expect_diagnostic(diagnostics, DiagnosticCode::ConstAdmission);
+                expect_diagnostic(diagnostics, DiagnosticCode::ConstAdmission);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant functions: view signatures do not require executable target storage",
+    "Constant functions: view signatures do not require executable target storage"_test =
         [] static noexcept {
             const auto accepted = std::to_array<std::string_view>({
                 "const fn ignore(action: fn(::Native) -> ::Native) {}",
                 "const fn length(values: [::Native]) -> usize => values.len();",
             });
-            ct::each(accepted, std::identity {}, [&](const auto& source) noexcept {
+            each(accepted, std::identity {}, [&](const auto& source) noexcept {
                 static_cast<void>(analyze_test_program(std::string(source)));
             });
             const auto rejected = std::to_array<std::string_view>({
@@ -288,15 +274,13 @@ const ct::Suite tests([] static noexcept {
                 "const fn own(values: [::Native; 2]) {}",
                 "const fn invoke(action: fn(::Native) -> ::Native, value: ::Native) { action(value); }",
             });
-            ct::each(rejected, std::identity {}, [&](const auto& source) noexcept {
+            each(rejected, std::identity {}, [&](const auto& source) noexcept {
                 const auto diagnostics = analyze_test_errors(std::string(source));
-                ct::expect_diagnostic(diagnostics, DiagnosticCode::ConstAdmission);
+                expect_diagnostic(diagnostics, DiagnosticCode::ConstAdmission);
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Constant function admission: required contexts call only explicit const functions",
+    "Constant function admission: required contexts call only explicit const functions"_test =
         [] static noexcept {
             const auto rejected = std::to_array<std::string_view>({
                 "fn ordinary() -> i32 => 1 + 2; const answer = ordinary();",
@@ -306,9 +290,9 @@ const ct::Suite tests([] static noexcept {
                 "fn ordinary() -> i32 => 42; const test \"named value\" { "
                 "let selected = ordinary; check(selected() == 42); }",
             });
-            ct::each(rejected, std::identity {}, [&](const auto& source) noexcept {
+            each(rejected, std::identity {}, [&](const auto& source) noexcept {
                 const auto diagnostics = analyze_test_errors(std::string(source));
-                ct::expect_diagnostic(diagnostics, DiagnosticCode::ConstAdmission);
+                expect_diagnostic(diagnostics, DiagnosticCode::ConstAdmission);
             });
 
             const auto program = analyze_test_program(R"(
@@ -317,9 +301,8 @@ const ct::Suite tests([] static noexcept {
         fn ordinary() -> i32 => value();
         const test "named const value" { let selected = value; check(selected() == 42); }
     )");
-            ct::expect(program.declarations().functions().size() == 2uz);
-        }
-    );
+            expect(program.declarations().functions().size() == 2uz);
+        };
 });
 
 } // namespace

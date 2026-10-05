@@ -16,8 +16,6 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
 struct ModuleFixture final {
     std::string_view origin;
     std::string_view path;
@@ -43,8 +41,8 @@ auto compile_fixture(SourceManager& sources, std::span<const ModuleFixture> modu
             std::string(source_module.source)
         );
         const auto module_path = CanonicalModulePath::from_value(source_module.path);
-        ct::require(source_id.has_value());
-        ct::require(module_path.has_value());
+        require(source_id.has_value());
+        require(module_path.has_value());
         inputs.push_back({
             .source_id = *source_id,
             .module_path = *module_path,
@@ -69,12 +67,8 @@ auto diagnostic_count(std::span<const Diagnostic> diagnostics, DiagnosticCode co
     );
 }
 
-} // namespace
-
-namespace {
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Top-level constants: visibility follows declaration audiences", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Top-level constants: visibility follows declaration audiences"_test = [] static noexcept {
         static constexpr auto cases = std::to_array<VisibilityExpectation>({
             {
                 .name = "private constant from a sibling module",
@@ -114,7 +108,7 @@ const ct::Suite tests([] static noexcept {
             },
         });
 
-        ct::each(cases, &VisibilityExpectation::name, [&](const auto& expectation) noexcept {
+        each(cases, &VisibilityExpectation::name, [&](const auto& expectation) noexcept {
             auto sources = SourceManager();
             const auto modules = std::to_array<ModuleFixture>({
                 {
@@ -131,28 +125,28 @@ const ct::Suite tests([] static noexcept {
 
             const auto result = compile_fixture(sources, modules);
             if (expectation.succeeds) {
-                ct::expect(result.has_value());
+                expect(result.has_value());
                 return;
             }
-            if (!(ct::expect(!(result.has_value())))) {
+            if (!(expect(!(result.has_value())))) {
                 return;
             }
             const auto* diagnostic =
-                ct::find_diagnostic(result.error(), DiagnosticCode::ImportResolution);
-            if (!(ct::expect(diagnostic != nullptr))) {
+                find_diagnostic(result.error(), DiagnosticCode::ImportResolution);
+            if (!(expect(diagnostic != nullptr))) {
                 return;
             }
-            if (!(ct::expect(diagnostic->attachment.primary.has_value()))) {
+            if (!(expect(diagnostic->attachment.primary.has_value()))) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 sources.slice(diagnostic->attachment.primary->span),
                 std::string_view("shared")
             );
         });
-    });
+    };
 
-    ct::test("Top-level constants: direct cycles emit one stable diagnostic", [] static noexcept {
+    "Top-level constants: direct cycles emit one stable diagnostic"_test = [] static noexcept {
         auto sources = SourceManager();
         static constexpr auto modules = std::to_array<ModuleFixture>({
             {
@@ -165,85 +159,78 @@ const ct::Suite tests([] static noexcept {
 
         const auto result = compile_fixture(sources, modules);
 
-        if (!ct::expect(!(result.has_value()))) {
+        if (!expect(!(result.has_value()))) {
             return;
         }
-        ct::expect_equal(diagnostic_count(result.error(), DiagnosticCode::ConstCycle), 1uz);
-        const auto* diagnostic = ct::find_diagnostic(result.error(), DiagnosticCode::ConstCycle);
-        if (!ct::expect(diagnostic != nullptr)) {
+        expect_equal(diagnostic_count(result.error(), DiagnosticCode::ConstCycle), 1uz);
+        const auto* diagnostic = find_diagnostic(result.error(), DiagnosticCode::ConstCycle);
+        if (!expect(diagnostic != nullptr)) {
             return;
         }
-        if (!ct::expect(diagnostic->attachment.primary.has_value())) {
+        if (!expect(diagnostic->attachment.primary.has_value())) {
             return;
         }
-        ct::expect_equal(
+        expect_equal(
             sources.slice(diagnostic->attachment.primary->span),
             std::string_view("direct")
         );
-    });
+    };
 
-    ct::test(
-        "Top-level constants: cross-module cycles retain related locations",
-        [] static noexcept {
-            auto sources = SourceManager();
-            static constexpr auto modules = std::to_array<ModuleFixture>({
-                {
-                    .origin = "a.cv",
-                    .path = "a",
-                    .source = "import b using second;\n"
-                              "const first = second;\n",
-                },
-                {
-                    .origin = "b.cv",
-                    .path = "b",
-                    .source = "import a using first;\n"
-                              "const second = first;\n",
-                },
-            });
+    "Top-level constants: cross-module cycles retain related locations"_test = [] static noexcept {
+        auto sources = SourceManager();
+        static constexpr auto modules = std::to_array<ModuleFixture>({
+            {
+                .origin = "a.cv",
+                .path = "a",
+                .source = "import b using second;\n"
+                          "const first = second;\n",
+            },
+            {
+                .origin = "b.cv",
+                .path = "b",
+                .source = "import a using first;\n"
+                          "const second = first;\n",
+            },
+        });
 
-            const auto result = compile_fixture(sources, modules);
+        const auto result = compile_fixture(sources, modules);
 
-            if (!ct::expect(!(result.has_value()))) {
-                return;
-            }
-            ct::expect_equal(diagnostic_count(result.error(), DiagnosticCode::ConstCycle), 1uz);
-            const auto* diagnostic =
-                ct::find_diagnostic(result.error(), DiagnosticCode::ConstCycle);
-            if (!ct::expect(diagnostic != nullptr)) {
-                return;
-            }
-            if (!ct::expect(diagnostic->attachment.primary.has_value())) {
-                return;
-            }
-            ct::expect_equal(diagnostic->attachment.related.size(), 2uz);
+        if (!expect(!(result.has_value()))) {
+            return;
         }
-    );
-
-    ct::test(
-        "Top-level constants: numeric enum case cycles emit one diagnostic",
-        [] static noexcept {
-            auto sources = SourceManager();
-            static constexpr auto modules = std::to_array<ModuleFixture>({
-                {
-                    .origin = "enum-cycle.cv",
-                    .path = "enum_cycle",
-                    .source = "enum Code: i32 {\n"
-                              "    First = Code::Second as i32,\n"
-                              "    Second = Code::First as i32,\n"
-                              "}\n",
-                },
-            });
-
-            const auto result = compile_fixture(sources, modules);
-
-            if (!ct::expect(!(result.has_value()))) {
-                return;
-            }
-            ct::expect_equal(diagnostic_count(result.error(), DiagnosticCode::ConstCycle), 1uz);
+        expect_equal(diagnostic_count(result.error(), DiagnosticCode::ConstCycle), 1uz);
+        const auto* diagnostic = find_diagnostic(result.error(), DiagnosticCode::ConstCycle);
+        if (!expect(diagnostic != nullptr)) {
+            return;
         }
-    );
+        if (!expect(diagnostic->attachment.primary.has_value())) {
+            return;
+        }
+        expect_equal(diagnostic->attachment.related.size(), 2uz);
+    };
 
-    ct::test("Top-level constants: enum owners resolve before case lookup", [] static noexcept {
+    "Top-level constants: numeric enum case cycles emit one diagnostic"_test = [] static noexcept {
+        auto sources = SourceManager();
+        static constexpr auto modules = std::to_array<ModuleFixture>({
+            {
+                .origin = "enum-cycle.cv",
+                .path = "enum_cycle",
+                .source = "enum Code: i32 {\n"
+                          "    First = Code::Second as i32,\n"
+                          "    Second = Code::First as i32,\n"
+                          "}\n",
+            },
+        });
+
+        const auto result = compile_fixture(sources, modules);
+
+        if (!expect(!(result.has_value()))) {
+            return;
+        }
+        expect_equal(diagnostic_count(result.error(), DiagnosticCode::ConstCycle), 1uz);
+    };
+
+    "Top-level constants: enum owners resolve before case lookup"_test = [] static noexcept {
         auto sources = SourceManager();
         static constexpr auto modules = std::to_array<ModuleFixture>({
             {
@@ -256,18 +243,14 @@ const ct::Suite tests([] static noexcept {
 
         const auto result = compile_fixture(sources, modules);
 
-        if (!ct::expect(!(result.has_value()))) {
+        if (!expect(!(result.has_value()))) {
             return;
         }
-        ct::expect_equal(diagnostic_count(result.error(), DiagnosticCode::TypeEnumEmpty), 1uz);
-        ct::expect_equal(
-            diagnostic_count(result.error(), DiagnosticCode::TypeMemberUnresolved),
-            0uz
-        );
-    });
+        expect_equal(diagnostic_count(result.error(), DiagnosticCode::TypeEnumEmpty), 1uz);
+        expect_equal(diagnostic_count(result.error(), DiagnosticCode::TypeMemberUnresolved), 0uz);
+    };
 
-    ct::test(
-        "Top-level constants: lexical facts stay outside declaration elaboration",
+    "Top-level constants: lexical facts stay outside declaration elaboration"_test =
         [] static noexcept {
             auto sources = SourceManager();
             static constexpr auto modules = std::to_array<ModuleFixture>({
@@ -280,18 +263,14 @@ const ct::Suite tests([] static noexcept {
 
             const auto result = compile_fixture(sources, modules);
 
-            if (!ct::expect(!(result.has_value()))) {
+            if (!expect(!(result.has_value()))) {
                 return;
             }
-            ct::expect_equal(result.error().size(), 1uz);
-            ct::expect_equal(
-                diagnostic_count(result.error(), DiagnosticCode::ConstInitializer),
-                1uz
-            );
-        }
-    );
+            expect_equal(result.error().size(), 1uz);
+            expect_equal(diagnostic_count(result.error(), DiagnosticCode::ConstInitializer), 1uz);
+        };
 
-    ct::test("Top-level constants: a nullary enum case remains a value", [] static noexcept {
+    "Top-level constants: a nullary enum case remains a value"_test = [] static noexcept {
         static constexpr auto cases = std::to_array<std::string_view>({
             "enum Choice { Empty }\n"
             "const invalid = Choice::Empty();\n",
@@ -299,7 +278,7 @@ const ct::Suite tests([] static noexcept {
             "const invalid = Choice::Empty();\n",
         });
 
-        ct::each(cases, std::identity {}, [&](const auto& source) noexcept {
+        each(cases, std::identity {}, [&](const auto& source) noexcept {
             auto sources = SourceManager();
             const auto modules = std::to_array<ModuleFixture>({
                 {
@@ -310,58 +289,53 @@ const ct::Suite tests([] static noexcept {
             });
             const auto result = compile_fixture(sources, modules);
 
-            if (!(ct::expect(!(result.has_value())))) {
+            if (!(expect(!(result.has_value())))) {
                 return;
             }
             const auto* diagnostic =
-                ct::find_diagnostic(result.error(), DiagnosticCode::TypeEnumCaseArity);
-            if (!(ct::expect(diagnostic != nullptr))) {
+                find_diagnostic(result.error(), DiagnosticCode::TypeEnumCaseArity);
+            if (!(expect(diagnostic != nullptr))) {
                 return;
             }
-            if (!(ct::expect(diagnostic->attachment.primary.has_value()))) {
+            if (!(expect(diagnostic->attachment.primary.has_value()))) {
                 return;
             }
-            ct::expect_equal(
+            expect_equal(
                 sources.slice(diagnostic->attachment.primary->span),
                 std::string_view("Choice::Empty()")
             );
         });
-    });
+    };
 
-    ct::test(
-        "Top-level constants: exported constants require a declaration type",
-        [] static noexcept {
-            auto sources = SourceManager();
-            static constexpr auto modules = std::to_array<ModuleFixture>({
-                {
-                    .origin = "missing-type.cv",
-                    .path = "missing_type",
-                    .source = "export const answer = 42;\n",
-                },
-            });
+    "Top-level constants: exported constants require a declaration type"_test = [] static noexcept {
+        auto sources = SourceManager();
+        static constexpr auto modules = std::to_array<ModuleFixture>({
+            {
+                .origin = "missing-type.cv",
+                .path = "missing_type",
+                .source = "export const answer = 42;\n",
+            },
+        });
 
-            const auto result = compile_fixture(sources, modules);
+        const auto result = compile_fixture(sources, modules);
 
-            if (!ct::expect(!(result.has_value()))) {
-                return;
-            }
-            const auto* diagnostic =
-                ct::find_diagnostic(result.error(), DiagnosticCode::ConstExportedType);
-            if (!ct::expect(diagnostic != nullptr)) {
-                return;
-            }
-            if (!ct::expect(diagnostic->attachment.primary.has_value())) {
-                return;
-            }
-            ct::expect_equal(
-                sources.slice(diagnostic->attachment.primary->span),
-                std::string_view("answer")
-            );
+        if (!expect(!(result.has_value()))) {
+            return;
         }
-    );
+        const auto* diagnostic = find_diagnostic(result.error(), DiagnosticCode::ConstExportedType);
+        if (!expect(diagnostic != nullptr)) {
+            return;
+        }
+        if (!expect(diagnostic->attachment.primary.has_value())) {
+            return;
+        }
+        expect_equal(
+            sources.slice(diagnostic->attachment.primary->span),
+            std::string_view("answer")
+        );
+    };
 
-    ct::test(
-        "Top-level constants: exported constants reject private nominal identities",
+    "Top-level constants: exported constants reject private nominal identities"_test =
         [] static noexcept {
             auto sources = SourceManager();
             static constexpr auto modules = std::to_array<ModuleFixture>({
@@ -375,36 +349,32 @@ const ct::Suite tests([] static noexcept {
 
             const auto result = compile_fixture(sources, modules);
 
-            if (!ct::expect(!(result.has_value()))) {
+            if (!expect(!(result.has_value()))) {
                 return;
             }
             const auto* diagnostic =
-                ct::find_diagnostic(result.error(), DiagnosticCode::TypeVisibilityLeak);
-            if (!ct::expect(diagnostic != nullptr)) {
+                find_diagnostic(result.error(), DiagnosticCode::TypeVisibilityLeak);
+            if (!expect(diagnostic != nullptr)) {
                 return;
             }
-            ct::expect(diagnostic->attachment.primary.has_value());
-        }
-    );
+            expect(diagnostic->attachment.primary.has_value());
+        };
 
-    ct::test(
-        "Top-level constants: normalization removes private enum identity",
-        [] static noexcept {
-            auto sources = SourceManager();
-            static constexpr auto modules = std::to_array<ModuleFixture>({
-                {
-                    .origin = "normalized-surface.cv",
-                    .path = "normalized_surface",
-                    .source = "private enum Hidden: i32 { Value = 7 }\n"
-                              "export const exposed: i32 = Hidden::Value as i32;\n",
-                },
-            });
+    "Top-level constants: normalization removes private enum identity"_test = [] static noexcept {
+        auto sources = SourceManager();
+        static constexpr auto modules = std::to_array<ModuleFixture>({
+            {
+                .origin = "normalized-surface.cv",
+                .path = "normalized_surface",
+                .source = "private enum Hidden: i32 { Value = 7 }\n"
+                          "export const exposed: i32 = Hidden::Value as i32;\n",
+            },
+        });
 
-            const auto result = compile_fixture(sources, modules);
+        const auto result = compile_fixture(sources, modules);
 
-            ct::expect(result.has_value());
-        }
-    );
+        expect(result.has_value());
+    };
 });
 
 } // namespace

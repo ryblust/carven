@@ -17,11 +17,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Generation: native branches and calls need no enclosing artificial block",
+const TestSuite suite([] static noexcept {
+    "Generation: native branches and calls need no enclosing artificial block"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -41,15 +38,15 @@ const ct::Suite tests([] static noexcept {
                 std::size_t calls;
 
                 auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                    ct::expect(!(std::holds_alternative<TargetBlockStmt>(statement.value)));
-                    ct::expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetBlockStmt>(statement.value)));
+                    expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
                     branches += std::holds_alternative<TargetIfStmt>(statement.value);
                     return true;
                 }
 
                 auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
                     -> bool {
-                    ct::expect(!(std::holds_alternative<TargetLambdaExpr>(expression.value)));
+                    expect(!(std::holds_alternative<TargetLambdaExpr>(expression.value)));
                     calls += std::holds_alternative<TargetCallExpr>(expression.value);
                     return true;
                 }
@@ -58,15 +55,13 @@ const ct::Suite tests([] static noexcept {
             auto query = Query {.branches = 0uz, .calls = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                ct::expect(traverse_target_unit(unit.sections(), query));
+                expect(traverse_target_unit(unit.sections(), query));
             }
-            ct::expect(query.branches == 1uz);
-            ct::expect(query.calls == 2uz);
-        }
-    );
+            expect(query.branches == 1uz);
+            expect(query.calls == 2uz);
+        };
 
-    ct::test(
-        "Generation: cleanup-free prefixes deliver initializers and conditions directly",
+    "Generation: cleanup-free prefixes deliver initializers and conditions directly"_test =
         [] static noexcept {
             struct Case final {
                 std::string_view name;
@@ -94,7 +89,7 @@ const ct::Suite tests([] static noexcept {
                     .body = "while source(flag)? > 0 { return 1; } return 0;"
                 },
             };
-            ct::each(cases, &Case::name, [](const Case& input) static noexcept {
+            each(cases, &Case::name, [](const Case& input) static noexcept {
                 const auto compilation = PlannedCompilation::build(
                     analyze_test_program(
                         std::format(
@@ -115,8 +110,8 @@ const ct::Suite tests([] static noexcept {
                     auto visit_variable(const TargetVariableStmt& variable) const noexcept -> bool {
                         if (const auto* type =
                                 std::get_if<TargetIntrinsicType>(&unit.type(variable.type).value)) {
-                            ct::expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
-                            ct::expect(
+                            expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
+                            expect(
                                 type->symbol != TargetSymbol::Bool
                                 || variable.binding != TargetVariableBinding::MutableValue
                             );
@@ -127,14 +122,12 @@ const ct::Suite tests([] static noexcept {
                 for (const auto artifact : compilation.target().artifacts()) {
                     const auto unit = lower_artifact(compilation, artifact.id);
                     const auto query = Query {.unit = unit};
-                    ct::expect(traverse_target_unit(unit.sections(), query));
+                    expect(traverse_target_unit(unit.sections(), query));
                 }
             });
-        }
-    );
+        };
 
-    ct::test(
-        "Generation: independent value branches compose without duplicating successors",
+    "Generation: independent value branches compose without duplicating successors"_test =
         [] static noexcept {
             for (const auto suffix : {false, true}) {
                 auto single_nodes = 0uz;
@@ -202,21 +195,18 @@ const ct::Suite tests([] static noexcept {
                     auto query = Query {.nodes = 0uz, .calls = 0uz};
                     for (const auto artifact : compilation.target().artifacts()) {
                         const auto unit = lower_artifact(compilation, artifact.id);
-                        ct::expect(traverse_target_unit(unit.sections(), query));
+                        expect(traverse_target_unit(unit.sections(), query));
                     }
-                    ct::expect(query.calls == 1uz);
+                    expect(query.calls == 1uz);
                     if (count == 1uz) {
                         single_nodes = query.nodes;
                     }
-                    ct::expect(query.nodes <= count * single_nodes)
-                        .note("query.nodes: ", query.nodes);
+                    expect(query.nodes <= count * single_nodes).note("query.nodes: ", query.nodes);
                 }
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Generation: structured values deliver into their destination without factories",
+    "Generation: structured values deliver into their destination without factories"_test =
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
@@ -240,7 +230,7 @@ const ct::Suite tests([] static noexcept {
 
                 auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
                     -> bool {
-                    ct::expect(!(std::holds_alternative<TargetLambdaExpr>(expression.value)));
+                    expect(!(std::holds_alternative<TargetLambdaExpr>(expression.value)));
                     return true;
                 }
             };
@@ -248,11 +238,10 @@ const ct::Suite tests([] static noexcept {
             auto query = Query {.transfers = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
-                ct::require(traverse_target_unit(unit.sections(), query));
+                require(traverse_target_unit(unit.sections(), query));
             }
-            ct::expect_equal(query.transfers, 0uz);
-        }
-    );
+            expect_equal(query.transfers, 0uz);
+        };
 });
 
 } // namespace

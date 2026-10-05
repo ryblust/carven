@@ -7,10 +7,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test("Compiler diagnostics: String access and operation contracts", [] static noexcept {
+const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: String access and operation contracts"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "named view blocks mutation",
              .source = "fn invalid() { var s: String = \"abc\"; let v: str = s; s.push('!'); }",
@@ -115,9 +113,9 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "s.len()"},
         });
         check_compiler_errors(cases);
-    });
+    };
 
-    ct::test("Compiler diagnostics: String escapes failures and foreign boundaries", [] static noexcept {
+    "Compiler diagnostics: String escapes failures and foreign boundaries"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "local return",
              .source = "fn bad() -> str { let s = String {}; return s; }",
@@ -203,10 +201,9 @@ const ct::Suite tests([] static noexcept {
              .primary_text = "s"},
         });
         check_compiler_errors(cases);
-    });
+    };
 
-    ct::test(
-        "Compiler diagnostics: callable adaptation retains captured text loans",
+    "Compiler diagnostics: callable adaptation retains captured text loans"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "temporary closure passed as a callable view",
@@ -223,11 +220,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "&&"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: String relationships survive joins and projected copies",
+    "Compiler diagnostics: String relationships survive joins and projected copies"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "branch join retains either backing",
@@ -262,11 +257,9 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "s"},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 
-    ct::test(
-        "Compiler diagnostics: multiline errors retain original source locations",
+    "Compiler diagnostics: multiline errors retain original source locations"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "escape after indentation",
@@ -283,8 +276,7 @@ const ct::Suite tests([] static noexcept {
                  .primary_text = "\"\"\""},
             });
             check_compiler_errors(cases);
-        }
-    );
+        };
 });
 
 } // namespace

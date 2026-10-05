@@ -5,8 +5,6 @@ import :test.harness.directory;
 import :test.harness.framework;
 import std;
 
-namespace carven::testing {
-
 TempDirectory::TempDirectory(std::string_view label) noexcept {
     auto error = std::error_code();
     const auto root = std::filesystem::temp_directory_path(error);
@@ -45,5 +43,3 @@ TempDirectory::~TempDirectory() noexcept {
 auto TempDirectory::path(std::string_view name) const noexcept -> std::filesystem::path {
     return name.empty() ? directory : directory / path_from_utf8(name);
 }
-
-} // namespace carven::testing

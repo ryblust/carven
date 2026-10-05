@@ -61,6 +61,10 @@ native consumer tests include runtime component entries.
 - Put imports in one block after the module declaration. Order partitions
   lexically and put `import std;` last. Import only dependencies used by the
   unit. An implementation partition imports its contract.
+- Shared declarations in compiler, tool, and internal-test partitions use
+  names that identify their domain, such as `FormattingSource` and `TestSuite`,
+  without named C++ namespaces. Imports control visibility; partitions of the
+  same named module still share declaration identity. Keep shared names distinct.
 - Use a global module fragment for macro-only test headers, required platform
   headers, or consumer headers exercised by tests.
 - Put translation-unit-private declarations in an anonymous namespace. Close

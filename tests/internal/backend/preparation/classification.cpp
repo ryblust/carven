@@ -10,11 +10,8 @@ import std;
 
 namespace {
 
-namespace ct = carven::testing;
-
-const ct::Suite tests([] static noexcept {
-    ct::test(
-        "Integer formatting: parsed fields retain literal bytes and exact type-derived sizes",
+const TestSuite suite([] static noexcept {
+    "Integer formatting: parsed fields retain literal bytes and exact type-derived sizes"_test =
         [] static noexcept {
             const auto types = std::array<std::optional<BuiltinType>, 2> {
                 BuiltinType::U32,
@@ -30,13 +27,11 @@ const ct::Suite tests([] static noexcept {
                 },
                 types
             );
-            if (!ct::expect(parsed.has_value())) {
+            if (!expect(parsed.has_value())) {
                 return;
             }
-            ct::expect(
-                parsed->text == std::vector<std::string> {std::string("{我}\0", 6uz), "/", ""}
-            );
-            ct::expect(
+            expect(parsed->text == std::vector<std::string> {std::string("{我}\0", 6uz), "/", ""});
+            expect(
                 parsed->fields
                 == std::vector<WriterFormatField> {
                     IntegerFormatField {
@@ -53,13 +48,11 @@ const ct::Suite tests([] static noexcept {
                     },
                 }
             );
-            ct::expect(parsed->minimum_size == 35u);
-            ct::expect(parsed->maximum_size == 35u);
-        }
-    );
+            expect(parsed->minimum_size == 35u);
+            expect(parsed->maximum_size == 35u);
+        };
 
-    ct::test(
-        "Integer formatting: size bounds include every value and the sign of a signed minimum",
+    "Integer formatting: size bounds include every value and the sign of a signed minimum"_test =
         [] static noexcept {
             struct Scenario final {
                 BuiltinType type;
@@ -120,7 +113,7 @@ const ct::Suite tests([] static noexcept {
                  .minimum_size = 65537u,
                  .maximum_size = 65537u},
             });
-            ct::each(
+            each(
                 scenarios,
                 [](const Scenario& scenario) static noexcept -> std::string {
                     return quote_text(serialize_format(scenario.format));
@@ -128,7 +121,7 @@ const ct::Suite tests([] static noexcept {
                 [](const Scenario& scenario) static noexcept {
                     const auto types = std::array<std::optional<BuiltinType>, 1> {scenario.type};
                     const auto parsed = classify_writer_format(scenario.format, types);
-                    if (!(ct::expect(parsed.has_value()).note([&] noexcept {
+                    if (!(expect(parsed.has_value()).note([&] noexcept {
                             return std::format(
                                 "serialize_format(scenario.format): {}",
                                 serialize_format(scenario.format)
@@ -136,13 +129,13 @@ const ct::Suite tests([] static noexcept {
                         }))) {
                         return;
                     }
-                    ct::expect(parsed->minimum_size == scenario.minimum_size).note([&] noexcept {
+                    expect(parsed->minimum_size == scenario.minimum_size).note([&] noexcept {
                         return std::format(
                             "serialize_format(scenario.format): {}",
                             serialize_format(scenario.format)
                         );
                     });
-                    ct::expect(parsed->maximum_size == scenario.maximum_size).note([&] noexcept {
+                    expect(parsed->maximum_size == scenario.maximum_size).note([&] noexcept {
                         return std::format(
                             "serialize_format(scenario.format): {}",
                             serialize_format(scenario.format)
@@ -150,16 +143,14 @@ const ct::Suite tests([] static noexcept {
                     });
                 }
             );
-        }
-    );
+        };
 
-    ct::test(
-        "Integer formatting: unknown types and unsupported or malformed specifications remain general",
+    "Integer formatting: unknown types and unsupported or malformed specifications remain general"_test =
         [] static noexcept {
             const auto integer = std::array<std::optional<BuiltinType>, 1> {BuiltinType::I32};
             for (const auto specification :
                  {"00", "+d", "#x", "c", "L", "2147483648", "999999999999999999999999"}) {
-                ct::expect(
+                expect(
                     !(classify_writer_format(
                           FormatSpec {.parts = {format_field(0uz, {format_text(specification)})}},
                           integer
@@ -168,31 +159,27 @@ const ct::Suite tests([] static noexcept {
                 )
                     .note("specification: ", specification);
             }
-            ct::expect(!(classify_writer_format(FormatSpec {.parts = {format_field(1uz)}}, integer)
-                             .has_value()));
-            ct::expect(!(classify_writer_format(
-                             FormatSpec {.parts = {format_field(0uz), format_field(0uz)}},
-                             integer
+            expect(!(classify_writer_format(FormatSpec {.parts = {format_field(1uz)}}, integer)
+                         .has_value()));
+            expect(!(classify_writer_format(
+                         FormatSpec {.parts = {format_field(0uz), format_field(0uz)}},
+                         integer
             )
-                             .has_value()));
-            ct::expect(!(classify_writer_format(
-                             FormatSpec {.parts = {format_field(0uz, {format_field(1uz)})}},
-                             integer
+                         .has_value()));
+            expect(!(classify_writer_format(
+                         FormatSpec {.parts = {format_field(0uz, {format_field(1uz)})}},
+                         integer
             )
-                             .has_value()));
+                         .has_value()));
             for (const auto type :
                  {std::optional(BuiltinType::Void), std::optional<BuiltinType>()}) {
                 const auto types = std::array {type};
-                ct::expect(
-                    !(classify_writer_format(FormatSpec {.parts = {format_field(0uz)}}, types)
-                          .has_value())
-                );
+                expect(!(classify_writer_format(FormatSpec {.parts = {format_field(0uz)}}, types)
+                             .has_value()));
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Writer formatting: mixed bounds exclude runtime text and include bool and Unicode scalars",
+    "Writer formatting: mixed bounds exclude runtime text and include bool and Unicode scalars"_test =
         [] static noexcept {
             const auto types = std::array<std::optional<BuiltinType>, 5> {
                 BuiltinType::Str,
@@ -214,33 +201,31 @@ const ct::Suite tests([] static noexcept {
                 },
                 types
             );
-            if (!ct::expect(parsed.has_value())) {
+            if (!expect(parsed.has_value())) {
                 return;
             }
-            ct::expect(parsed->minimum_size == 9u);
-            ct::expect(parsed->maximum_size == 13u);
-            ct::expect(parsed->fields.size() == 5uz);
+            expect(parsed->minimum_size == 9u);
+            expect(parsed->maximum_size == 13u);
+            expect(parsed->fields.size() == 5uz);
             for (const auto type :
                  {BuiltinType::Str, BuiltinType::String, BuiltinType::Bool, BuiltinType::Char}) {
                 const auto operand = std::array<std::optional<BuiltinType>, 1> {type};
-                ct::expect(!(classify_writer_format(
-                                 FormatSpec {.parts = {format_field(0uz, {format_text(">8")})}},
-                                 operand
+                expect(!(classify_writer_format(
+                             FormatSpec {.parts = {format_field(0uz, {format_text(">8")})}},
+                             operand
                 )
-                                 .has_value()));
+                             .has_value()));
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Floating formatting: direct policies bound output and delegate decorated or large formats",
+    "Floating formatting: direct policies bound output and delegate decorated or large formats"_test =
         [] static noexcept {
             const auto types = std::array<std::optional<BuiltinType>, 1uz> {BuiltinType::F64};
             for (const auto specification : {"", "f", ".2f", ".4e", ".17g", ".0", ".256f"}) {
                 const auto format =
                     FormatSpec {.parts = {format_field(0uz, {format_text(specification)})}};
                 const auto prepared = classify_writer_format(format, types);
-                if (!(ct::expect(prepared.has_value()).note("specification: ", specification))) {
+                if (!(expect(prepared.has_value()).note("specification: ", specification))) {
                     return;
                 }
                 for (auto value :
@@ -253,14 +238,14 @@ const ct::Suite tests([] static noexcept {
                         std::format("{{:{}}}", specification),
                         std::make_format_args(value)
                     );
-                    ct::expect(output.size() >= prepared->minimum_size)
+                    expect(output.size() >= prepared->minimum_size)
                         .note("specification: ", specification);
-                    ct::expect(output.size() <= prepared->maximum_size)
+                    expect(output.size() <= prepared->maximum_size)
                         .note("specification: ", specification);
                 }
             }
             for (const auto specification : {".257f", "+.2f", ">12.2f", "a", "L"}) {
-                ct::expect(
+                expect(
                     !(classify_writer_format(
                           FormatSpec {.parts = {format_field(0uz, {format_text(specification)})}},
                           types
@@ -268,11 +253,9 @@ const ct::Suite tests([] static noexcept {
                           .has_value())
                 );
             }
-        }
-    );
+        };
 
-    ct::test(
-        "Writer formatting: dynamic widths consume one additional operand per integer field",
+    "Writer formatting: dynamic widths consume one additional operand per integer field"_test =
         [] static noexcept {
             const auto types = std::array<std::optional<BuiltinType>, 5> {
                 BuiltinType::I32,
@@ -291,39 +274,37 @@ const ct::Suite tests([] static noexcept {
                 },
                 types
             );
-            if (!ct::expect(prepared.has_value())) {
+            if (!expect(prepared.has_value())) {
                 return;
             }
-            ct::expect(prepared->minimum_size == 7u);
-            ct::expect(prepared->maximum_size == 7u);
+            expect(prepared->minimum_size == 7u);
+            expect(prepared->maximum_size == 7u);
             const auto* first = std::get_if<IntegerFormatField>(&prepared->fields[0]);
-            if (!ct::expect(first != nullptr)) {
+            if (!expect(first != nullptr)) {
                 return;
             }
-            ct::expect(first->base == 16);
-            ct::expect(first->uppercase);
-            ct::expect(first->zero_pad);
-            ct::expect(!(first->static_width.has_value()));
-            ct::expect(writer_field_operand_count(prepared->fields[0]) == 2uz);
-            ct::expect(writer_field_operand_count(prepared->fields[1]) == 1uz);
+            expect(first->base == 16);
+            expect(first->uppercase);
+            expect(first->zero_pad);
+            expect(!(first->static_width.has_value()));
+            expect(writer_field_operand_count(prepared->fields[0]) == 2uz);
+            expect(writer_field_operand_count(prepared->fields[1]) == 1uz);
             const auto* last = std::get_if<IntegerFormatField>(&prepared->fields[2]);
-            if (!ct::expect(last != nullptr)) {
+            if (!expect(last != nullptr)) {
                 return;
             }
-            ct::expect(last->base == 2);
-            ct::expect(!(last->zero_pad));
-            ct::expect(!(last->static_width.has_value()));
-            ct::expect(writer_field_operand_count(prepared->fields[2]) == 2uz);
-        }
-    );
+            expect(last->base == 2);
+            expect(!(last->zero_pad));
+            expect(!(last->static_width.has_value()));
+            expect(writer_field_operand_count(prepared->fields[2]) == 2uz);
+        };
 
-    ct::test(
-        "Writer formatting: unsupported dynamic width shapes retain native formatting",
+    "Writer formatting: unsupported dynamic width shapes retain native formatting"_test =
         [] static noexcept {
             const auto integer =
                 std::array<std::optional<BuiltinType>, 2> {BuiltinType::I32, BuiltinType::I32};
             for (const auto prefix : {">", "+", "#", "00", "1", "."}) {
-                ct::expect(
+                expect(
                     !(classify_writer_format(
                         FormatSpec {
                             .parts = {format_field(0uz, {format_text(prefix), format_field(1uz)})}
@@ -334,7 +315,7 @@ const ct::Suite tests([] static noexcept {
                     .note("prefix: ", prefix);
             }
             for (const auto suffix : {"0", "1", "L", ".2f", "xx"}) {
-                ct::expect(
+                expect(
                     !(classify_writer_format(
                         FormatSpec {
                             .parts = {format_field(0uz, {format_field(1uz), format_text(suffix)})}
@@ -354,14 +335,13 @@ const ct::Suite tests([] static noexcept {
                   BuiltinType::U64}) {
                 const auto types =
                     std::array<std::optional<BuiltinType>, 2> {BuiltinType::I32, type};
-                ct::expect(!(classify_writer_format(
-                               FormatSpec {.parts = {format_field(0uz, {format_field(1uz)})}},
-                               types
-                           )))
+                expect(!(classify_writer_format(
+                           FormatSpec {.parts = {format_field(0uz, {format_field(1uz)})}},
+                           types
+                       )))
                     .note("static_cast<int>(type): ", static_cast<int>(type));
             }
-        }
-    );
+        };
 });
 
 } // namespace
