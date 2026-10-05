@@ -6,7 +6,7 @@ import std;
 class ProgramDraft;
 class SemIRProgram;
 
-// Spells source types for diagnostics and editor results. Nominal names are
+// Spells source types for diagnostics and workspace results. Nominal names are
 // unqualified; an inferred callable or closure is described by its signature.
 auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> std::string;
 

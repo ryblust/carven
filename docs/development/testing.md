@@ -17,8 +17,8 @@ suites do not establish.
 | `interop` | C++ providers, consumers, and support headers | Boundary signatures, native calls, source fragments, and header self-containment |
 | `examples` | User-facing programs | Documented output from actual example executables |
 | `cli` | Compiler processes, interpreted execution, and build integration | Arguments, reports, exit status, files, scheduling, and generation policy |
-| `graver` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
-| `editor` | Document snapshots and cached source queries | Source observations, result ownership, versions, and invalidation |
+| `formatter` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
+| `workspace` | Document snapshots and cached source queries | Source observations, result ownership, versions, and invalidation |
 | `analyzer` | Resident analysis sessions and process messages | Atomic requests, owning responses, message encoding, transport, and process lifetime |
 
 Place each case in the group that owns the tested boundary. Reuse fixtures and
@@ -184,7 +184,7 @@ Before publishing, format, run the complete suite, and perform static analysis:
 
 ```shell
 ./xmakew build
-./xmakew build graver
+./xmakew build carven-format
 ./xmakew format
 ./xmakew test
 ./xmakew check clang.tidy

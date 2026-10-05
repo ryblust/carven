@@ -5,8 +5,8 @@ import("private.action.run.runenvs")
 
 function main(check)
     config.load()
-    local target = project.target("graver")
-    local graver = path.absolute(target:targetfile(), os.projectdir())
+    local target = project.target("carven-format")
+    local formatter = path.absolute(target:targetfile(), os.projectdir())
     local addenvs, setenvs = runenvs.make(target)
     local program
     if os.host() == "macosx" then
@@ -26,7 +26,7 @@ function main(check)
     assert(program, "clang-format is required; install llvm on macOS or add clang-format to PATH")
 
     local files = {}
-    for _, root in ipairs({"src", "tests", "crafts", "examples", "tools/graver/src", "tools/graver/tests", "tools/editor/src", "tools/editor/tests", "tools/editor/benchmarks", "tools/analyzer/src", "tools/analyzer/tests"}) do
+    for _, root in ipairs({"src", "tests", "crafts", "examples", "tools"}) do
         for _, extension in ipairs({"cpp", "cppm", "h", "hpp"}) do
             table.join2(files, os.files(path.join(os.projectdir(), root, "**." .. extension)))
         end
@@ -53,12 +53,12 @@ function main(check)
         end
     end
     -- Formatter inputs deliberately exercise unformatted text; check only outputs.
-    for _, file in ipairs(os.files(path.join(os.projectdir(), "tools/graver/tests/format/*/expected.cv"))) do
+    for _, file in ipairs(os.files(path.join(os.projectdir(), "tools/formatter/tests/format/*/expected.cv"))) do
         table.insert(sources, path.relative(file, os.projectdir()))
     end
     table.sort(sources)
-    local graver_args = {check and "check" or "write"}
-    table.join2(graver_args, sources)
-    os.vrunv(graver, graver_args, {curdir = os.projectdir(), addenvs = addenvs, setenvs = setenvs})
+    local formatter_args = {check and "check" or "write"}
+    table.join2(formatter_args, sources)
+    os.vrunv(formatter, formatter_args, {curdir = os.projectdir(), addenvs = addenvs, setenvs = setenvs})
     print(check and "Formatting check passed." or "Formatting complete.")
 end

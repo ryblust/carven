@@ -67,7 +67,7 @@ structural traversal for syntax construction and validation.
 recovery, together with error diagnostics. Delimiter preflight and initial import
 failures provide no tree. The `parse` entry remains strict and rejects these
 recovered results when diagnostics are present; recovery does not admit incomplete
-source into compilation. Editor queries can consume retained declarations while
+source into compilation. Workspace queries can consume retained declarations while
 keeping the source and tree owners alive.
 
 `parse_program` parses the closed source batch and resolves module imports.
@@ -88,9 +88,9 @@ draft identities or borrows, and do not establish solved failure or ownership
 contracts. An empty recipient performs no recording. The analysis entry delivers
 one observation batch at completion; publication gates remain unchanged.
 
-`tools/editor` owns document revisions, retained snapshots, lazy source queries,
+`tools/workspace` owns document revisions, retained snapshots, lazy source queries,
 and content caching. Its provider analyzes an explicit closed module set in full
-when selected content changes. See [Editor analysis](../../tools/editor/README.md)
+when selected content changes. See [Workspace analysis](../../tools/workspace/README.md)
 for ownership, query contracts, invalidation, and measurement commands.
 
 ## Design considerations

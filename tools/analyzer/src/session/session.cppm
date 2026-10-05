@@ -1,7 +1,7 @@
 module carven:analyzer.session;
 
-import :editor.analysis;
-import :editor.semantic;
+import :workspace.analysis;
+import :workspace.semantic;
 import std;
 
 struct AnalyzerUpdate final {
@@ -60,12 +60,12 @@ struct AnalyzerFailure final {
 struct AnalyzerAcknowledgement final {};
 
 struct AnalyzerDiagnosticLabel final {
-    EditorVersionedLocation location;
+    WorkspaceVersionedLocation location;
     std::string message;
 };
 
 struct AnalyzerDiagnosticNote final {
-    std::optional<EditorVersionedLocation> location;
+    std::optional<WorkspaceVersionedLocation> location;
     std::string message;
 };
 
@@ -91,7 +91,7 @@ struct AnalyzerCheckResult final {
 };
 
 struct AnalyzerHoverInformation final {
-    EditorVersionedLocation location;
+    WorkspaceVersionedLocation location;
     std::string type_text;
 };
 
@@ -100,11 +100,11 @@ struct AnalyzerHoverResult final {
 };
 
 struct AnalyzerDefinitionResult final {
-    std::optional<EditorVersionedLocation> location;
+    std::optional<WorkspaceVersionedLocation> location;
 };
 
 struct AnalyzerReferencesResult final {
-    std::optional<std::vector<EditorVersionedLocation>> locations;
+    std::optional<std::vector<WorkspaceVersionedLocation>> locations;
 };
 
 using AnalyzerResult = std::variant<
@@ -117,7 +117,7 @@ using AnalyzerResult = std::variant<
 
 // Owns all response data. No compiler identities or borrows leave the session.
 struct AnalyzerResponse final {
-    std::vector<EditorDocumentVersion> document_versions;
+    std::vector<WorkspaceDocumentVersion> document_versions;
     AnalyzerResult result;
 };
 
@@ -126,9 +126,9 @@ struct AnalyzerResponse final {
 class AnalyzerSession final {
 public:
     auto execute(AnalyzerRequest request) noexcept -> AnalyzerResponse;
-    auto counts() const noexcept -> EditorQueryCounts;
+    auto counts() const noexcept -> WorkspaceQueryCounts;
 
 private:
-    EditorAnalysisHost host;
-    std::vector<EditorProjectModule> project;
+    WorkspaceAnalysisHost host;
+    std::vector<WorkspaceProjectModule> project;
 };

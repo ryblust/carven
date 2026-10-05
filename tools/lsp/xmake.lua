@@ -1,0 +1,6 @@
+target("carven-lsp")
+    set_default(false)
+    set_kind("binary")
+    add_deps("carven-modules")
+    add_files(path.join(os.scriptdir(), "lsp.cpp"))
+target_end()

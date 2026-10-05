@@ -1,7 +1,7 @@
 target("analyzer-modules")
     set_default(false)
     set_kind("moduleonly")
-    add_deps("editor-modules")
+    add_deps("workspace-modules")
     add_files(path.join(os.scriptdir(), "src", "**.cppm"))
     add_files(path.join(os.scriptdir(), "src", "**.cpp"))
     remove_files(path.join(os.scriptdir(), "src", "analyzer.cpp"))

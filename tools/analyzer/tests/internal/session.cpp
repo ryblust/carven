@@ -1,9 +1,9 @@
 module carven:test.analyzer.session;
 
 import :analyzer.session;
-import :editor.analysis;
 import :source.text;
 import :test.harness.framework;
+import :workspace.analysis;
 import std;
 
 namespace {
@@ -92,12 +92,12 @@ const TestSuite tests([] static noexcept {
             const auto library_version = std::ranges::find(
                 current.document_versions,
                 "lib",
-                &EditorDocumentVersion::document
+                &WorkspaceDocumentVersion::document
             );
             const auto caller_version = std::ranges::find(
                 current.document_versions,
                 "app",
-                &EditorDocumentVersion::document
+                &WorkspaceDocumentVersion::document
             );
             if (!expect(library_version != current.document_versions.end())
                 || !expect(caller_version != current.document_versions.end())) {

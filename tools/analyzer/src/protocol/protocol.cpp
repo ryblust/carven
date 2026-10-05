@@ -2,8 +2,8 @@ module carven:analyzer.protocol.impl;
 
 import :analyzer.protocol;
 import :analyzer.session;
-import :editor.analysis;
 import :support.visit;
+import :workspace.analysis;
 import std;
 
 namespace {
@@ -88,7 +88,7 @@ public:
     auto u32(std::uint32_t value) noexcept -> void;
     auto u64(std::uint64_t value) noexcept -> void;
     auto text(std::string_view value) noexcept -> void;
-    auto location(const EditorVersionedLocation& value) noexcept -> void;
+    auto location(const WorkspaceVersionedLocation& value) noexcept -> void;
 
     template<typename Values, typename Write>
     auto list(const Values& values, const Write& write) noexcept -> void {
@@ -154,7 +154,7 @@ auto ResponseWriter::text(std::string_view value) noexcept -> void {
     bytes.append(value);
 }
 
-auto ResponseWriter::location(const EditorVersionedLocation& value) noexcept -> void {
+auto ResponseWriter::location(const WorkspaceVersionedLocation& value) noexcept -> void {
     text(value.document);
     u64(std::bit_cast<std::uint64_t>(value.version));
     u32(value.range.start());
@@ -248,11 +248,11 @@ auto encode_analyzer_response(const AnalyzerResponse& response) noexcept
         }
     );
     writer.byte(static_cast<std::uint8_t>(tag));
-    writer.list(response.document_versions, [&](const EditorDocumentVersion& document) noexcept {
+    writer.list(response.document_versions, [&](const WorkspaceDocumentVersion& document) noexcept {
         writer.text(document.document);
         writer.u64(std::bit_cast<std::uint64_t>(document.version));
     });
-    const auto write_location = [&](const EditorVersionedLocation& location) noexcept {
+    const auto write_location = [&](const WorkspaceVersionedLocation& location) noexcept {
         writer.location(location);
     };
     const auto write_label = [&](const AnalyzerDiagnosticLabel& label) noexcept {

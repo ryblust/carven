@@ -3,8 +3,6 @@ module carven:analyzer.session.impl;
 import :analyzer.session;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
-import :editor.analysis;
-import :editor.semantic;
 import :semantic.analysis.types.display;
 import :semantic.evaluation.output;
 import :semantic.semir.ids;
@@ -14,6 +12,8 @@ import :source.module_path;
 import :source.text;
 import :support.invariant;
 import :support.visit;
+import :workspace.analysis;
+import :workspace.semantic;
 import std;
 
 namespace {
@@ -24,29 +24,30 @@ auto failure(std::string code, std::string message) noexcept -> AnalyzerResponse
     };
 }
 
-auto locate(const EditorSemanticQuery& query, SourceSpan span) noexcept -> EditorVersionedLocation {
+auto locate(const WorkspaceSemanticQuery& query, SourceSpan span) noexcept
+    -> WorkspaceVersionedLocation {
     const auto source = query.result->sources().try_view(span.source_id);
     if (!source || !try_slice(source->text, span.span)) {
         invariant_violation("analyzer diagnostic span has no selected source");
     }
     const auto found =
-        std::ranges::find(query.documents, source->origin, &EditorDocumentVersion::document);
+        std::ranges::find(query.documents, source->origin, &WorkspaceDocumentVersion::document);
     if (found == query.documents.end()) {
         invariant_violation("analyzer diagnostic source has no document version");
     }
-    return EditorVersionedLocation {
+    return WorkspaceVersionedLocation {
         .document = found->document,
         .version = found->version,
         .range = span.span
     };
 }
 
-auto label(const EditorSemanticQuery& query, const DiagnosticLabel& value) noexcept
+auto label(const WorkspaceSemanticQuery& query, const DiagnosticLabel& value) noexcept
     -> AnalyzerDiagnosticLabel {
     return {.location = locate(query, value.span), .message = value.message};
 }
 
-auto findings(const EditorSemanticQuery& query) noexcept -> AnalyzerCheckResult {
+auto findings(const WorkspaceSemanticQuery& query) noexcept -> AnalyzerCheckResult {
     auto result = AnalyzerCheckResult {
         .published = query.result->program() != nullptr,
         .diagnostics = {},
@@ -96,7 +97,7 @@ auto AnalyzerSession::execute(AnalyzerRequest request) noexcept -> AnalyzerRespo
                     host.update(std::move(value.document), version, std::move(value.text));
                 if (!result) {
                     if (const auto* stale =
-                            std::get_if<EditorStaleDocumentVersion>(&result.error())) {
+                            std::get_if<WorkspaceStaleDocumentVersion>(&result.error())) {
                         return failure(
                             "stale_version",
                             std::format(
@@ -118,7 +119,7 @@ auto AnalyzerSession::execute(AnalyzerRequest request) noexcept -> AnalyzerRespo
                 return {.document_versions = {}, .result = AnalyzerAcknowledgement {}};
             },
             [&](const AnalyzerReplaceProject& value) noexcept -> AnalyzerResponse {
-                auto selected = std::vector<EditorProjectModule>();
+                auto selected = std::vector<WorkspaceProjectModule>();
                 for (const auto& input : value.modules) {
                     auto path = CanonicalModulePath::from_value(input.module_path);
                     if (!path) {
@@ -149,7 +150,7 @@ auto AnalyzerSession::execute(AnalyzerRequest request) noexcept -> AnalyzerRespo
                     const auto found = std::ranges::find(
                         query.analysis.documents,
                         query.result->location.document,
-                        &EditorDocumentVersion::document
+                        &WorkspaceDocumentVersion::document
                     );
                     if (found == query.analysis.documents.end()) {
                         invariant_violation("analyzer hover source has no document version");
@@ -198,6 +199,6 @@ auto AnalyzerSession::execute(AnalyzerRequest request) noexcept -> AnalyzerRespo
     );
 }
 
-auto AnalyzerSession::counts() const noexcept -> EditorQueryCounts {
+auto AnalyzerSession::counts() const noexcept -> WorkspaceQueryCounts {
     return host.snapshot().counts();
 }

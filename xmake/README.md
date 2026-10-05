@@ -35,14 +35,15 @@ Run commands from the repository root using `./xmakew`; on Windows, use
 
 `format-check` reports formatting violations; `format` applies formatting.
 Both use clang-format for `.cpp`, `.cppm`, `.h`, and `.hpp` files under `src/`,
-`tests/`, `crafts/`, `examples/`, and Graver's source and test directories.
+`tests/`, `crafts/`, `examples/`, and `tools/`.
 On macOS, the script queries Homebrew's local installation prefix and looks in
 `opt/llvm/bin`, then falls back to PATH. Other platforms use PATH.
 
-Build Graver with `./xmakew build graver`. Both commands use it for `.cv` files
-under `crafts/`, `examples/`, and `tests/`, plus Graver's expected-output fixtures.
-Deliberately unformatted Graver inputs and the three lexical/syntax rejection fixtures listed in
-`format.lua` are excluded. Other formatting or parse failures fail the command.
+Build `carven-format` with `./xmakew build carven-format`. Both commands use it
+for `.cv` files under `crafts/`, `examples/`, and `tests/`, plus the formatter's
+expected-output fixtures. Deliberately unformatted formatter inputs and the three
+lexical/syntax rejection fixtures listed in `format.lua` are excluded. Other
+formatting or parse failures fail the command.
 See [C++ conventions](../docs/development/conventions.md) for source conventions and
 [Testing](../docs/development/testing.md) for test responsibilities and validation workflow.
 

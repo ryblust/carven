@@ -1,6 +1,6 @@
 # Analyzer
 
-`carven-analyzer` is a resident, serial analysis process built on `tools/editor`.
+`carven-analyzer` is a resident, serial analysis process built on `tools/workspace`.
 The caller supplies document identities, source bytes, versions, and an explicit
 closed module selection. The process retains these inputs and their query caches
 across requests.
@@ -30,8 +30,8 @@ mappings.
 
 Responses remain valid after later updates or session destruction. Acknowledgements
 only confirm completion and carry no document versions. The process inherits the
-editor library's whole-project invalidation, observation coverage, and cache
-retention; see [Editor analysis](../editor/README.md).
+workspace library's whole-project invalidation, observation coverage, and cache
+retention; see [Workspace analysis](../workspace/README.md).
 
 ## Transport
 

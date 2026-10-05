@@ -149,7 +149,7 @@ local function with_service(program, name, run)
     function service.wait()
         local done, code = child:wait(10000)
         reaped = done == 1
-        assert(done == 1 and code == 0, "analyzer did not exit successfully")
+        assert(done == 1 and code == 0, string.format("analyzer did not exit successfully: wait=%s, status=%s", tostring(done), tostring(code)))
         assert(io.readfile(stderr, {encoding = "binary"}) == "", "unexpected analyzer stderr")
     end
     try {
@@ -160,6 +160,11 @@ local function with_service(program, name, run)
             child = process.openv(program, {}, {stdin = pipes.child_in, stdout = pipes.child_out, stderr = stderr})
             close_pipe("child_in")
             close_pipe("child_out")
+            -- Register before requests: Xmake's POSIX poller can reap unwatched children.
+            -- A timed wait retains the registration and any subsequent exit status.
+            local done, code = child:wait(1)
+            reaped = done == 1
+            assert(done == 0, string.format("analyzer exited before requests: wait=%s, status=%s", tostring(done), tostring(code)))
             run(service)
         end,
         finally {function (ok, error)
