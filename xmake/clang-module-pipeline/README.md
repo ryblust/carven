@@ -155,6 +155,11 @@ Its cache key includes the program
 directory, Xmake version, patched Lua files, and patch contents. A patch
 application failure stops the wrapper.
 
+The overlay also corrects Xmake 3.1.1 sanitizer detection for LLVM-MinGW on
+the Windows platform: GNU-driver sanitizer linking bypasses the MSVC-only
+MD/MT runtime check. Other Windows toolchains keep the stock runtime handling.
+The project continues to use Xmake sanitizer policies on every platform.
+
 The POSIX wrapper attempts an APFS clone on macOS or a reflink on Linux, with a
 regular copy as fallback. Windows uses `robocopy`. Each wrapper prepares a
 staging directory before publishing the overlay. The POSIX wrapper requires

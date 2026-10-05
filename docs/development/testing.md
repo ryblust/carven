@@ -55,9 +55,15 @@ The `sanitizers` option defaults to off, including in Debug builds. Configure
 `./xmakew f -m debug --sanitizers=y` to enable Xmake's address and undefined-behavior
 sanitizer policies, debug symbols, and light optimization. Clean the build tree
 when switching instrumentation. Use `--sanitizers=n` to disable it again.
-The Linux sanitizer CI also supplies a `CXX` adapter for native compilation
+Each platform runs Release tests with clang-tidy and a separate Debug
+ASan/UBSan job with all tests. Sanitizer jobs do not repeat clang-tidy.
+POSIX sanitizer CI supplies a `CXX` adapter for native compilation
 launched by Carven, which runs outside Xmake targets and does not inherit their
-flags. Ordinary compiler and test targets use the project configuration directly.
+flags. Windows uses a Clang driver configuration in the temporary LLVM-MinGW
+installation for the same purpose. It disables leak detection and adds the
+target SDK runtime directory to PATH for the ASan DLL. Smoke checks verify
+that memory and undefined-behavior errors fail before running the suite.
+Ordinary compiler and test targets use the project configuration directly.
 
 ## Test responsibilities
 

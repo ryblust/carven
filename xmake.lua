@@ -19,7 +19,7 @@ option_end()
 if has_config("sanitizers") then
     set_policy("build.sanitizer.address", true)
     set_policy("build.sanitizer.undefined", true)
-    set_symbols("debug")
+    -- O1 keeps sanitizer runs practical; these flags preserve useful failure traces.
     set_optimize("fast")
     add_cxflags("-fno-omit-frame-pointer", "-fno-optimize-sibling-calls",
         "-fsanitize-address-use-after-scope", "-fno-sanitize-recover=all", {tools = "clang"})
