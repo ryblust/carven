@@ -42,13 +42,15 @@ const TestSuite suite([] static noexcept {
             const auto constants = program.constants().size();
             const auto types = program.types().size();
             const auto spellings = program.provenance().spellings().size();
+            const auto write_output = [&](ExecutionOutputStream stream,
+                                          std::string_view bytes) noexcept {
+                expect(stream == ExecutionOutputStream::Standard);
+                output.append(bytes);
+            };
             const auto result = interpret(
                 program,
                 entry(program),
-                [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
-                    expect(stream == ExecutionOutputStream::Standard);
-                    output.append(bytes);
-                },
+                write_output,
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
             if (!expect(result.has_value())) {
@@ -68,12 +70,13 @@ const TestSuite suite([] static noexcept {
         println("ready");
     )");
             auto output = std::string();
+            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                output.append(bytes);
+            };
             const auto result = interpret(
                 program,
                 entry(program),
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    output.append(bytes);
-                },
+                write_output,
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
             if (!expect(result.has_value())) {
@@ -94,12 +97,13 @@ const TestSuite suite([] static noexcept {
         println("after native call");
     )");
             auto output = std::string();
+            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                output.append(bytes);
+            };
             const auto result = interpret(
                 program,
                 entry(program),
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    output.append(bytes);
-                },
+                write_output,
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
             if (!expect(!result.has_value())) {
@@ -130,10 +134,13 @@ const TestSuite suite([] static noexcept {
         println(attempt(false));
     )");
         auto output = std::string();
+        const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+            output.append(bytes);
+        };
         const auto result = interpret(
             program,
             entry(program),
-            [&](ExecutionOutputStream, std::string_view bytes) noexcept { output.append(bytes); },
+            write_output,
             InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
         );
         if (!expect(!result.has_value())) {
@@ -176,12 +183,13 @@ const TestSuite suite([] static noexcept {
         println("not executed");
     )");
             auto output = std::string();
+            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                output.append(bytes);
+            };
             const auto result = interpret(
                 program,
                 entry(program),
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    output.append(bytes);
-                },
+                write_output,
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
             if (!expect(!result.has_value())) {
@@ -221,12 +229,13 @@ const TestSuite suite([] static noexcept {
         }
         for (auto attempt = 0; attempt < 2; ++attempt) {
             auto output = std::string();
+            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                output.append(bytes);
+            };
             const auto result = interpret(
                 program,
                 entry(program),
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    output.append(bytes);
-                },
+                write_output,
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
             if (!expect(result.has_value())) {
@@ -260,11 +269,13 @@ const TestSuite suite([] static noexcept {
             const auto types = program.types().size();
             for (auto attempt = 0; attempt < 2; ++attempt) {
                 auto output = std::string();
+                const auto write_output = [&](ExecutionOutputStream,
+                                              std::string_view bytes) noexcept {
+                    output.append(bytes);
+                };
                 const auto results = interpret_tests(
                     program,
-                    [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                        output.append(bytes);
-                    },
+                    write_output,
                     InterpreterOptions {
                         .limits = static_execution_limits(),
                         .trace = {},
@@ -322,11 +333,12 @@ const TestSuite suite([] static noexcept {
         test "later" { println("later"); }
     )");
             auto output = std::string();
+            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                output.append(bytes);
+            };
             const auto results = interpret_tests(
                 program,
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    output.append(bytes);
-                },
+                write_output,
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
             if (!expect(results.has_value())) {
@@ -359,11 +371,12 @@ const TestSuite suite([] static noexcept {
             auto limits = static_execution_limits();
             limits.steps = 20uz;
             auto output = std::string();
+            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                output.append(bytes);
+            };
             const auto results = interpret_tests(
                 program,
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    output.append(bytes);
-                },
+                write_output,
                 InterpreterOptions {.limits = limits, .trace = {}, .report = {}}
             );
             if (!expect(results.has_value())) {
@@ -394,21 +407,24 @@ const TestSuite suite([] static noexcept {
         test "later" { println("unreachable"); }
     )");
             auto events = std::string();
+            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                events += bytes;
+            };
+            const auto report_event = [&](std::optional<TestID> test,
+                                          const ExecutionEvent& event) noexcept {
+                expect(test.has_value());
+                if (!expect(event.report_kind().has_value())) {
+                    return;
+                }
+                events += *event.report_kind() == ReportKind::Assert ? "assert\n" : "check\n";
+            };
             const auto result = interpret_tests(
                 program,
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept { events += bytes; },
+                write_output,
                 InterpreterOptions {
                     .limits = static_execution_limits(),
                     .trace = {},
-                    .report = [&](std::optional<TestID> test,
-                                  const ExecutionEvent& event) noexcept {
-                        expect(test.has_value());
-                        if (!expect(event.report_kind().has_value())) {
-                            return;
-                        }
-                        events +=
-                            *event.report_kind() == ReportKind::Assert ? "assert\n" : "check\n";
-                    }
+                    .report = report_event
                 }
             );
             if (!expect(result.has_value())) {
@@ -513,11 +529,12 @@ const TestSuite suite([] static noexcept {
                 )";
             const auto program = analyze_test_program(source);
             auto output = std::string();
+            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                output.append(bytes);
+            };
             const auto results = interpret_tests(
                 program,
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    output.append(bytes);
-                },
+                write_output,
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
             if (!expect(results.has_value()) || !expect(results->size() == 1)) {
@@ -546,12 +563,13 @@ const TestSuite suite([] static noexcept {
         println("unreachable");
     )");
             auto output = std::string();
+            const auto write_output = [&](ExecutionOutputStream, std::string_view bytes) noexcept {
+                output.append(bytes);
+            };
             const auto result = interpret(
                 program,
                 entry(program),
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    output.append(bytes);
-                },
+                write_output,
                 InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
             );
             if (!expect(!result.has_value())) {

@@ -92,7 +92,7 @@ auto parse_options(int argc, const char* const* argv) noexcept -> std::optional<
         if (argument == "--list-tests" || argument == "--help") {
             auto& flag = argument == "--list-tests" ? options.list_tests : options.show_help;
             if (flag) {
-                std::cerr << "Invalid test option: " << argument << '\n';
+                std::print(std::cerr, "Invalid test option: {}\n", argument);
                 return std::nullopt;
             }
             flag = true;
@@ -103,16 +103,16 @@ auto parse_options(int argc, const char* const* argv) noexcept -> std::optional<
             : argument == "--test"                 ? &options.test_name
                                                    : nullptr;
         if (destination == nullptr || !destination->empty()) {
-            std::cerr << "Invalid test option: " << argument << '\n';
+            std::print(std::cerr, "Invalid test option: {}\n", argument);
             return std::nullopt;
         }
         if (index + 1 == argc || std::string_view(argv[index + 1]).starts_with("--")) {
-            std::cerr << "Missing value for test option: " << argument << '\n';
+            std::print(std::cerr, "Missing value for test option: {}\n", argument);
             return std::nullopt;
         }
         *destination = argv[++index];
         if (destination->empty()) {
-            std::cerr << "Test selection must not be empty.\n";
+            std::print(std::cerr, "Test selection must not be empty.\n");
             return std::nullopt;
         }
     }
@@ -129,14 +129,24 @@ auto collect_tests() noexcept -> bool {
     const TestCase* previous = nullptr;
     for (const auto& entry : runner.tests) {
         if (entry.name.empty() || entry.body == nullptr) {
-            std::cerr << entry.location.file_name() << ':' << entry.location.line()
-                      << ": Invalid test declaration: " << entry.name << '\n';
+            std::print(
+                std::cerr,
+                "{}:{}: Invalid test declaration: {}\n",
+                entry.location.file_name(),
+                entry.location.line(),
+                entry.name
+            );
             ++runner.harness_errors;
         } else if (previous != nullptr && entry.name == previous->name) {
-            std::cerr << entry.location.file_name() << ':' << entry.location.line()
-                      << ": Duplicate test name: " << quote_text(entry.name)
-                      << "\n  also declared at " << previous->location.file_name() << ':'
-                      << previous->location.line() << '\n';
+            std::print(
+                std::cerr,
+                "{}:{}: Duplicate test name: {}\n  also declared at {}:{}\n",
+                entry.location.file_name(),
+                entry.location.line(),
+                quote_text(entry.name),
+                previous->location.file_name(),
+                previous->location.line()
+            );
             ++runner.harness_errors;
         }
         previous = &entry;
@@ -150,7 +160,7 @@ TestSuite::TestSuite(TestFunction declare) noexcept {
     auto& runner = runner_state();
     if (runner.phase != Phase::Declaration || declare == nullptr) {
         ++runner.harness_errors;
-        std::cerr << "Invalid test suite declaration.\n";
+        std::print(std::cerr, "Invalid test suite declaration.\n");
         return;
     }
     runner.suites.push_back(declare);
@@ -160,7 +170,7 @@ auto TestRegistration::operator=(TestBody body) const noexcept -> void {
     auto& runner = runner_state();
     if (runner.phase != Phase::Collection) {
         ++runner.harness_errors;
-        std::cerr << "Test declared outside collection: " << name << '\n';
+        std::print(std::cerr, "Test declared outside collection: {}\n", name);
         return;
     }
     runner.tests.push_back(
@@ -184,19 +194,24 @@ auto write_test_text_difference(
         const auto start = value.size() <= limit || offset <= context ? 0uz : offset - context;
         const auto length = std::min(limit, value.size() - start);
         if (start != 0uz) {
-            output << "...";
+            std::print(output, "...");
         }
-        output << quote_text(value.substr(start, length));
+        std::print(output, "{}", quote_text(value.substr(start, length)));
         if (start + length < value.size()) {
-            output << "...";
+            std::print(output, "...");
         }
     };
-    output << "\n  actual:   ";
+    std::print(output, "\n  actual:   ");
     write_excerpt(actual);
-    output << "\n  expected: ";
+    std::print(output, "\n  expected: ");
     write_excerpt(expected);
-    output << "\n  lengths: actual " << actual.size() << ", expected " << expected.size()
-           << "\n  first difference at byte " << offset;
+    std::print(
+        output,
+        "\n  lengths: actual {}, expected {}\n  first difference at byte {}",
+        actual.size(),
+        expected.size(),
+        offset
+    );
 }
 
 auto record_test_assertion(bool passed, std::source_location location) noexcept -> bool {
@@ -211,14 +226,14 @@ auto record_test_assertion(bool passed, std::source_location location) noexcept 
         return true;
     }
     ++runner.assertions_failed;
-    std::cerr << location.file_name() << ':' << location.line() << ": ";
+    std::print(std::cerr, "{}:{}: ", location.file_name(), location.line());
     if (outside_test) {
-        std::cerr << "assertion outside a test";
+        std::print(std::cerr, "assertion outside a test");
     } else {
-        std::cerr << "assertion failed in " << quote_text(runner.current_test_name);
+        std::print(std::cerr, "assertion failed in {}", quote_text(runner.current_test_name));
     }
     for (const auto& context : runner.contexts) {
-        std::cerr << "\n  context: " << quote_text(context);
+        std::print(std::cerr, "\n  context: {}", quote_text(context));
     }
     return false;
 }
@@ -241,7 +256,7 @@ TestAssertion::TestAssertion(bool condition, bool fatal, std::source_location lo
 
 TestAssertion::~TestAssertion() noexcept {
     if (!passed) {
-        std::cerr << '\n';
+        std::print(std::cerr, "\n");
         std::cerr.flush();
         if (fatal) {
             std::abort();
@@ -263,14 +278,17 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
         return 2;
     }
     if (options->show_help) {
-        std::cout << "Usage: " << argv[0]
-                  << " [--filter PATTERN] [--exclude PATTERN] [--test NAME] [--list-tests]\n"
-                  << "Patterns support * and ?. An empty selection fails.\n";
+        std::print(
+            std::cout,
+            "Usage: {} [--filter PATTERN] [--exclude PATTERN] [--test NAME] [--list-tests]\n"
+            "Patterns support * and ?. An empty selection fails.\n",
+            argv[0]
+        );
         return 0;
     }
     auto& runner = runner_state();
     if (runner.phase != Phase::Declaration) {
-        std::cerr << "Tests may only run once.\n";
+        std::print(std::cerr, "Tests may only run once.\n");
         return 1;
     }
     if (!collect_tests()) {
@@ -287,7 +305,7 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
         }
         ++selected_count;
         if (options->list_tests) {
-            std::cout << entry.name << '\n';
+            std::print(std::cout, "{}\n", entry.name);
             continue;
         }
         runner.current_test_name = entry.name;
@@ -298,8 +316,13 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
         runner.current_test_name = {};
         if (runner.assertions_passed == passed_before
             && runner.assertions_failed == failed_before) {
-            std::cerr << entry.location.file_name() << ':' << entry.location.line()
-                      << ": Test executed no assertions: " << quote_text(entry.name) << '\n';
+            std::print(
+                std::cerr,
+                "{}:{}: Test executed no assertions: {}\n",
+                entry.location.file_name(),
+                entry.location.line(),
+                quote_text(entry.name)
+            );
             ++failed_count;
         } else if (runner.assertions_failed != failed_before
                    || runner.harness_errors != errors_before) {
@@ -310,22 +333,27 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
     }
     runner.phase = Phase::Complete;
     if (selected_count == 0uz) {
-        std::cerr << "No tests matched the selection.\n";
+        std::print(std::cerr, "No tests matched the selection.\n");
         if (!options->test_name.empty()) {
-            std::cerr << "  test: " << quote_text(options->test_name) << '\n';
+            std::print(std::cerr, "  test: {}\n", quote_text(options->test_name));
         }
         if (!options->include_pattern.empty()) {
-            std::cerr << "  filter: " << quote_text(options->include_pattern) << '\n';
+            std::print(std::cerr, "  filter: {}\n", quote_text(options->include_pattern));
         }
         if (!options->exclude_pattern.empty()) {
-            std::cerr << "  exclude: " << quote_text(options->exclude_pattern) << '\n';
+            std::print(std::cerr, "  exclude: {}\n", quote_text(options->exclude_pattern));
         }
         return 1;
     }
     if (!options->list_tests) {
-        std::cerr << "Tests: " << passed_count << " passed, " << failed_count
-                  << " failed; assertions: " << runner.assertions_passed << " passed, "
-                  << runner.assertions_failed << " failed\n";
+        std::print(
+            std::cerr,
+            "Tests: {} passed, {} failed; assertions: {} passed, {} failed\n",
+            passed_count,
+            failed_count,
+            runner.assertions_passed,
+            runner.assertions_failed
+        );
     }
     return failed_count != 0uz || runner.harness_errors != 0uz ? 1 : 0;
 }

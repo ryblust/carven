@@ -160,29 +160,6 @@ const TestSuite suite([] static noexcept {
         );
     };
 
-    "Emission: explicit directive groups are serialized in order"_test = [] static noexcept {
-        auto builder = TargetTestingFixture::unit_builder();
-        auto unit = std::move(builder).finish(
-            {.preamble = {}, .body = {}, .epilogue = {}},
-            TargetDirectiveInputs {
-                .prefix_groups = {{
-                    .directives = {{.bytes = "#custom first"}, {.bytes = "#custom second"}},
-                    .attribution = std::nullopt,
-                }},
-                .suffix_groups = {},
-            }
-        );
-        const auto artifact = emit(
-            std::move(unit),
-            "custom.cpp",
-            GeneratedArtifactRole::ModuleImplementation,
-            SourceAttributedEmission {.generated_origin = "custom.cpp"}
-        );
-
-        expect(artifact.content.contains("#custom first\n#custom second"));
-        expect(!(artifact.content.contains("carven/runtime")));
-    };
-
     "Emission: verified unreachable uses the C++20 runtime leaf"_test = [] static noexcept {
         const auto artifact = emitted_statement(
             TargetUnreachableStmt {

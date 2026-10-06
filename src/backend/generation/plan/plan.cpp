@@ -415,18 +415,35 @@ auto artifact_source_mapping(const TargetArtifactPlan& artifact) noexcept
     );
 }
 
+auto artifact_associated_header(const TargetArtifactPlan& artifact) noexcept
+    -> std::optional<TargetArtifactID> {
+    return artifact.visit([](const auto& value) static noexcept -> std::optional<TargetArtifactID> {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, TargetModuleImplementationArtifact>) {
+            return value.associated_interface;
+        } else if constexpr (std::same_as<Value, TargetTestEntryArtifact>) {
+            return value.runner_header_dependency;
+        } else {
+            return std::nullopt;
+        }
+    });
+}
+
 auto artifact_dependencies(const TargetArtifactPlan& artifact) noexcept
     -> std::vector<TargetArtifactID> {
+    if (const auto associated = artifact_associated_header(artifact)) {
+        return {*associated};
+    }
     return artifact.visit(
         Overloaded {
             [](const TargetInterfaceArtifact& value) static noexcept {
                 return value.predecessor_artifacts;
             },
-            [](const TargetModuleImplementationArtifact& value) static noexcept {
-                return value.interface_dependencies;
+            [](const TargetModuleImplementationArtifact&) static noexcept {
+                return std::vector<TargetArtifactID>();
             },
-            [](const TargetTestEntryArtifact& value) static noexcept {
-                return std::vector {value.runner_header_dependency};
+            [](const TargetTestEntryArtifact&) static noexcept {
+                return std::vector<TargetArtifactID>();
             },
             [](const TargetCppAPIHeaderArtifact& value) static noexcept {
                 return value.interface_dependencies;

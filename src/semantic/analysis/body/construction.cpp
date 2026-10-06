@@ -385,6 +385,9 @@ auto BodyElaborator::resolve_constant_enum_case(
 }
 
 auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisTask<ConstructionTypeRef> {
+    const auto resolve_extent = [&](ASTExprID extent) noexcept {
+        return resolve_array_extent(extent);
+    };
     auto result = (co_await resolve_source_type(
         draft(),
         catalog(),
@@ -392,7 +395,7 @@ auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisTask<Const
         source_module_id,
         ast,
         type,
-        [&](ASTExprID extent) noexcept { return resolve_array_extent(extent); }
+        resolve_extent
     ));
     if (result) {
         auto prepared =
@@ -406,6 +409,9 @@ auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisTask<Const
 
 auto BodyElaborator::resolve_construction_type(const ASTConstructionType& type) noexcept
     -> AnalysisTask<ConstructionTypeRef> {
+    const auto resolve_extent = [&](ASTExprID extent) noexcept {
+        return resolve_array_extent(extent);
+    };
     auto result = (co_await resolve_source_construction_type(
         draft(),
         catalog(),
@@ -413,7 +419,7 @@ auto BodyElaborator::resolve_construction_type(const ASTConstructionType& type) 
         source_module_id,
         ast,
         type,
-        [&](ASTExprID extent) noexcept { return resolve_array_extent(extent); }
+        resolve_extent
     ));
     if (result) {
         auto prepared =

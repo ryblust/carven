@@ -3,7 +3,8 @@
 - **Status:** Draft
 - **Implementation:** Not started
 - **Scope:** Async user semantics, compiler facts, lowering, and C++ interoperation boundaries
-- **Depends on:** None for the same-thread core; [cross-thread concurrency](concurrency.md) for cross-thread execution
+- **Depends on:** None for the same-thread core; concurrency contracts for
+  cross-thread execution
 
 ## Summary
 
@@ -12,9 +13,11 @@ cancellation, lifetime closure, and fixed-size combinators. These phase-one
 semantics are accepted and unimplemented. Several source spellings remain
 provisional.
 
-Execution context (`OPEN-01`) and suspension, borrow, and frame rules (`OPEN-02`)
-block implementation. Provider selection, lowering, and explicit C++ async
-bridges remain deferred under `DEFER-08`.
+Execution context (OPEN-01) and suspension, borrow, and frame rules (OPEN-02)
+block implementation. LOWER-01 selects direct C++20 coroutine lowering with
+Carven-owned core support, without a third-party coroutine-framework dependency.
+External provider selection and explicit C++ async bridges remain deferred under
+DEFER-08.
 
 Cross-thread value admission and synchronization are prerequisites when operations,
 frames, captures, or completions may cross threads.
@@ -26,10 +29,9 @@ atomic, lock, or shared-ownership source contract. Concurrent use of generated
 C++ does not establish a Carven concurrency guarantee.
 
 Same-thread suspension can run within one logical thread or event loop. It
-implies neither blocking nor thread creation or physical parallelism. Migration,
-blocking operations in async contexts, and awaitable channels require explicit
-integration contracts. Network, file, timer, DNS, and TLS APIs need concrete
-provider use cases and are outside the async core.
+can yield execution without blocking the thread. Migration, blocking operations
+in async contexts, and awaitable channels require explicit integration contracts.
+I/O APIs belong to concrete providers.
 
 The design uses these maturity labels:
 
@@ -38,23 +40,16 @@ The design uses these maturity labels:
 - **Exploration:** An unresolved design question.
 - **Deferred:** Outside phase one, with a recorded reactivation condition.
 
-The numbered design entries are the decision record. Preserve their identifiers
-and contracts during editorial changes; a changed decision explicitly supersedes
-its predecessor. Working-spelling changes preserve completion, ownership,
-lifetime, and failure behavior. Implementation maps the relevant entries to
-syntax, semantic facts, diagnostics, and tests.
-
 ## Goals and non-goals
 
 The core defines observable async behavior independently of backend mechanisms,
 with structured ownership and opportunities to specialize known operations.
 Execution context and suspension lifetime must be resolved before implementation.
-Future coroutine, sender, and provider bridges must preserve that contract.
 
 Cross-thread executors, runtime-sized groups, streams, `select`, shared tasks,
 ownership transfer, supervisors, and general I/O or scheduler APIs are outside
-phase one. Structured cancellation does not roll back external effects. The
-proposal fixes no runtime library, private generated spelling, or allocation count.
+phase one. Private generated spelling, support-object layout, and allocation
+count remain implementation choices.
 
 ## Design
 
@@ -67,21 +62,19 @@ The following decisions define semantic ownership and representation constraints
 #### METHOD-01 — Carven owns the semantics
 
 Carven analysis defines async source validity and publishes its semantic facts.
-C++ coroutine promises, sender concepts, runtime task types, and libraries may
-implement or adapt those facts. They do not introduce additional source behavior.
+Carven-owned C++ coroutine promises and runtime support implement those facts.
+Sender protocols and external libraries may adapt them through explicit bridges;
+they do not introduce additional source behavior.
 
 #### METHOD-02 — Specialize representation from known semantic facts
 
-High-level forms require their observable behavior, with no required generic
-runtime object:
+Observable behavior determines the required runtime state:
 
 ```text
 Carven intent and facts
-    -> specialized C++ state machine
-    -> flattened frame/storage
-    -> backend-native cancellation/deadline
-    -> std::execution bridge
-    -> or another observationally equivalent form
+    -> C++20 coroutine lowering with Carven-owned completion and closure
+    -> specialized frame/storage and cancellation/deadline support
+    -> optional provider or std::execution bridges
 ```
 
 Known child counts, concrete result and failure types, ownership, cancellation,
@@ -417,6 +410,13 @@ Operation<A, E1> + Operation<B, E2>
 The tuple is a general static product with `(a, b, c)` syntax, not an async-only
 container or an array/list form.
 
+Delivering this result requires builtin tuple rules for type identity,
+construction, element access, decomposition, Read/Write/Take, and backing
+lifetimes. Consuming multiple elements must account for the whole owner and every
+unused element. This dependency applies to ALL-03; cold operations, individual
+awaits, and lexical children can be delivered independently. Builtin tuples can
+be implemented directly.
+
 #### ALL-04 — First non-value closes the group; final failure outranks cancellation
 
 The first child failure, child cancellation, or accepted ambient cancellation
@@ -572,9 +572,10 @@ and diagnostics. Their spellings remain ordinary function-shaped names.
 
 ### Compiler-owned facts and feature admission
 
-**Maturity:** Draft; blocked by `OPEN-01` and `OPEN-02`.
+**Maturity:** Draft; blocked by OPEN-01 and OPEN-02.
 
-An implementation slice must publish these source facts before lowering:
+For the behavior admitted by a selected slice, analysis publishes the relevant
+source facts before lowering:
 
 - async signatures and value, failure, and cancellation completion;
 - cold construction, movement, single consumption, and must-use diagnostics;
@@ -591,23 +592,59 @@ library behavior implement their consequences.
 
 ### Selected lowering
 
-**Maturity:** No lowering selected; selection is deferred under `DEFER-08`.
+#### LOWER-01 — Use C++20 coroutines
 
-Candidate mechanisms include C++ coroutines, explicit state machines, specialized
-frames, and sender bridges. Each must preserve source behavior, compiler facts,
-diagnostics, and cost boundaries. Storage retains only state required across
-suspension, completion, or C++ interoperation boundaries. Ownership flattening,
-wrapper elimination, and native cancellation/deadline support are permitted
-when they preserve those requirements.
+**Maturity:** Accepted; implementation remains blocked by OPEN-01 and OPEN-02.
+
+Generated async functions use C++20 coroutines. Carven analysis defines source
+validity, completion channels, cancellation, and lifetime closure; generated
+coroutine control and runtime support implement those facts. The coroutine
+mechanism is selected independently of an external provider or public async ABI.
+
+The async core uses Carven-owned support without a dependency on a third-party
+general coroutine framework. Standard `<coroutine>` facilities provide the
+transformation interface; Carven supplies the operation and lifetime protocol.
+Private concrete types and C++ templates remain available implementation tools.
+External coroutine libraries are mechanism references and optional bridge targets
+under DEFER-08.
+
+Core support has these responsibilities:
+
+| Responsibility | Required behavior |
+| --- | --- |
+| Operation, promise, and awaiters | Cold construction, one start/consumer, suspension, resumption, and safe handle ownership |
+| Completion and continuation | Preserve value/failure/cancellation until delivery and commit exactly once |
+| Cancellation and closure | Propagate requests, close children and external registrations, then permit reclamation |
+| Execution context and progress | Implement the selected continuation-placement, inline/reentrant completion, and deep-chain rules from OPEN-01 |
+| Frame storage | Retain required state and realize borrow, destruction, and allocation-failure rules from OPEN-02 |
+
+These responsibilities may be specialized or combined. Allocation, continuation
+placement, and progress follow the selected source and provider contracts. A
+same-thread slice may use inline transfer or a small continuation driver; those
+choices remain open under OPEN-01.
+
+Closing epilogues are explicit potentially suspending control paths before a
+source lifetime exit can move or destroy child-reachable storage. They cannot
+reside only in `final_suspend`: native `co_return` exits body scopes before that
+point, and an ordinary C++ destructor cannot be a coroutine. Generated early
+return, typed failure, cancellation, and lexical scope exit must enter the
+appropriate closure path while its borrowed backing is still alive. Final
+suspension may hand off a closed completion or retain the completed frame for
+its owner; it does not replace that earlier closure. Destroying a coroutine
+handle alone does not prove closure of registered external operations or permit
+outward completion.
+
+Storage retains only state required across suspension, completion, or C++
+interoperation boundaries. Specialized frames, ownership flattening, wrapper
+elimination, and native cancellation/deadline support remain permitted when they
+preserve those requirements. Sender bridges adapt the selected core.
 
 ## Open decisions
-
-**Next discussion:** `OPEN-01`
 
 ### OPEN-01 — What execution context does a same-thread operation inherit?
 
 - **Status:** Active
-- **Depends on:** `TASK-01`, `TASK-02`, `CANCEL-03`, `OWN-01`, `OWN-02`
+- **Depends on:** TASK-01, TASK-02, CANCEL-03, OWN-01, OWN-02
 - **Question:** The context model determines capture, continuation placement,
   inline completion, same-thread progress, and submission failure.
 - **Constraints:** Scheduler is an execution mechanism rather than operation identity; `async` does not imply
@@ -626,7 +663,7 @@ when they preserve those requirements.
 ### OPEN-02 — Which values and borrows may live across suspension, and where may the frame live?
 
 - **Status:** Blocked
-- **Depends on:** `OPEN-01`
+- **Depends on:** OPEN-01
 - **Activation condition:** Execution-context and continuation semantics are closed.
 - **Question:** The suspension boundary determines lifetime safety, destruction
   order, frame storage, visible cost, and allocation failure.
@@ -650,7 +687,7 @@ when they preserve those requirements.
 
 - **Reason deferred:** Phase one needs a conservative, diagnosable borrow and storage boundary before exposing
   general lifetime proof or user-controlled frame placement.
-- **Depends on:** `OPEN-02`
+- **Depends on:** OPEN-02
 - **Reactivation condition:** The phase-one frame contract is implemented and a concrete API requires more
   general borrow proof, custom allocation, or explicit storage control.
 
@@ -661,7 +698,7 @@ allocator selection, and user control over frame placement or allocation policy.
 
 - **Reason deferred:** Fixed operations and lexical composition must close before runtime-sized or iterative
   composition introduces new ownership and fairness rules.
-- **Depends on:** `OPEN-01` and `OPEN-02`
+- **Depends on:** OPEN-01 and OPEN-02
 - **Reactivation condition:** A real program cannot be expressed by fixed-size combinators and supplies a
   complete lifetime, cancellation, result, and fairness contract.
 
@@ -672,7 +709,7 @@ This includes dynamic/runtime-sized task groups, async closures, generators, str
 
 - **Reason deferred:** The phase-one operation is move-only and single-consumer; sharing changes result
   storage, observation, cancellation authority, and lifetime.
-- **Depends on:** `TASK-03`, `OPEN-01`, and `OPEN-02`
+- **Depends on:** TASK-03, OPEN-01, and OPEN-02
 - **Reactivation condition:** A concrete API requires multiple observers and can define repeated observation,
   result retention, cancellation authority, and closure.
 
@@ -682,28 +719,28 @@ This includes shared tasks, multi-consumer futures, and repeated `await`.
 
 - **Reason deferred:** Phase one obtains cancellation authority from structured ownership and does not need an
   arbitrary user-created control plane.
-- **Depends on:** `CANCEL-01` through `CANCEL-06`
+- **Depends on:** CANCEL-01 through CANCEL-06
 - **Reactivation condition:** UI shutdown, service control, tests, deadlines, or C++ interoperation require a source-level
   cancellation source and can specify propagation, handlers, shielding, and lifetime.
 
-This includes user cancellation sources/tokens, custom cancellation handlers, and shields. `CANCEL-06`
+This includes user cancellation sources/tokens, custom cancellation handlers, and shields. CANCEL-06
 remains the phase-one authority.
 
 ### DEFER-05 — Ownership transfer and supervision
 
 - **Reason deferred:** Phase one keeps every started child inside one structured ownership tree.
-- **Depends on:** `OWN-01` through `OWN-05`
+- **Depends on:** OWN-01 through OWN-05
 - **Reactivation condition:** A service, actor, or supervisor use case requires work to outlive the current
   scope and can atomically transfer lifetime, shutdown, failure, and storage responsibility.
 
 This includes daemon work, explicit detach-like transfer, supervisor/service/actor ownership, and background
-runtime ownership. Ownerless work remains invalid; `OWN-05` is the phase-one authority.
+runtime ownership. Ownerless work remains invalid; OWN-05 is the phase-one authority.
 
 ### DEFER-06 — Async resource disposal
 
 - **Reason deferred:** Phase one can express explicit cleanup without selecting a generic async-disposal
   protocol or new control construct.
-- **Depends on:** `OPEN-01`, `OPEN-02`, and a concrete async resource API
+- **Depends on:** OPEN-01, OPEN-02, and a concrete async resource API
 - **Reactivation condition:** Repeated resource APIs require one reusable disposal contract and can state
   failure, cancellation, ordering, and scope-exit behavior.
 
@@ -719,19 +756,18 @@ This direction includes cross-thread resume, physical parallel execution, Send/S
 scheduler/executor source APIs, source-visible scheduler hops, thread affinity, priority, fairness, and
 cross-thread completion carriers.
 
-### DEFER-08 — Provider/lowering selection and explicit async C++ interoperation
+### DEFER-08 — External provider selection and explicit async C++ interoperation
 
-- **Reason deferred:** Provider/lowering selection and async `import(cpp)`/`export(cpp)` implementation require
+- **Reason deferred:** External provider selection and async `import(cpp)`/`export(cpp)` implementation require
   closed source semantics, execution context, suspension lifetime, and feature-admission facts.
-- **Depends on:** `OPEN-01` and `OPEN-02`; cross-thread concurrency for
+- **Depends on:** OPEN-01 and OPEN-02; cross-thread concurrency for
   cross-thread candidates
-- **Reactivation condition:** The source contract and compiler facts form an actionable vertical slice; a
-  provider or lowering may then be selected without leaking experimental types into public artifacts.
+- **Reactivation condition:** The source contract and compiler facts form an actionable vertical slice; an
+  external provider or bridge may then be selected without leaking experimental types into public artifacts.
 
 Evaluate provider candidates against the accepted operation, completion, failure,
-cancellation, lifetime, and context contracts. Public C++ async ABI and import
-bridges/export façades remain part of this deferred selection. Store reading
-material and experimental results in the external archive.
+cancellation, lifetime, and context contracts. This selection includes public C++
+async ABI, import bridges, and export façades.
 
 #### Bridge scope and constraints
 
@@ -743,8 +779,7 @@ material and experimental results in the external archive.
 - C++ exceptions cannot cross a no-exception Carven frame; an exception-enabled bridge catches and maps them
   to declared typed failure;
 - third-party task, sender, scheduler, socket, and allocator types do not enter phase-one public generated ABI;
-- downstream builds explicitly select, pin, and link a provider; the compiler does not become a second package
-  manager;
+- downstream builds explicitly select, pin, and link a provider;
 - ordinary generated C++ remains inspectable and debuggable behind a Carven-owned bridge contract.
 
 #### Bridge design questions
@@ -768,27 +803,24 @@ Every bridge is an independent product slice and must validate:
 - scheduler/context transition;
 - no-exceptions and exception-enabled boundaries;
 - generated C++20/C++23 compile, link, and run behavior;
-- dependency, license, version pin, and downstream build instructions;
+- provider dependency, version pin, and downstream build requirements;
 - no private backend type leaks through public surfaces unless the consumer contract explicitly accepts it.
 
 Compare candidate bridges using generated code size, compile time, completion
-fidelity, lifetime, and diagnostics. Selection also requires the source and
-compiler prerequisites above.
+fidelity, lifetime, and diagnostics.
 
 ## Implementation
 
-Implementation is not yet actionable. `OPEN-01` and `OPEN-02` block a coherent grammar/SemIRProgram/control/lifetime
-slice; `DEFER-08` keeps provider/lowering selection deferred until that slice exists.
-
-Once unblocked, each relevant decision ID must map through grammar, SyntaxProgram, SemIRProgram,
-verification, TargetUnit lowering, runtime, C++ interoperation boundaries, diagnostics, tests, and
-permanent documentation. Scope-closing control edges and the parent-completion
-publication barrier must be explicit compiler facts. Cross-thread work also
-requires the memory-model and threading contracts.
+OPEN-01 and OPEN-02 block implementation using the selected C++20 coroutine
+lowering. Once closed, each selected slice delivers its grammar, semantic facts,
+verification, lowering, runtime support, diagnostics, and tests together.
+Scope-closing control edges and the parent-completion publication barrier are
+explicit compiler facts. Cross-thread slices additionally require concurrency
+contracts; external providers and public bridges remain under DEFER-08.
 
 ## Validation
 
-Feature admission must cover:
+Validation covers the behavior admitted by the selected slice:
 
 - cold operation does not start early and accidental discard emits a must-use diagnostic;
 - exactly-once operation start, consume, and completion;
@@ -804,9 +836,23 @@ Feature admission must cover:
 - rejection of active drop, orphan work, implicit detach, repeated await, and cross-thread resume;
 - direct/inline completion reentrancy and deep-chain behavior;
 - temporary, borrow, frame, and destruction behavior around suspension;
+- scope-closing epilogues run before native body-local destruction on success,
+  typed failure, cancellation, and early exit;
+- core generated code and support compile without a third-party coroutine framework;
 - generated C++20/C++23 compile, link, and run checks under no-exceptions configuration.
 
-Tests assert Carven observable semantics and representation invariants. They do not fix private generated
-spelling, a runtime class, heap-allocation count, or a third-party type. Cost claims require benchmarks and
-artifact inspection in addition to semantic tests. Bridge-specific evidence remains under `DEFER-08` and may
-be collected without turning a candidate into an implementation choice.
+Tests assert observable semantics and representation invariants. Private
+generated names and support-object layouts remain implementation choices. Cost
+claims require benchmarks and artifact inspection. Bridge-specific evidence
+belongs to DEFER-08.
+
+## References
+
+- [Async programming](../notes/async-programming.md): coroutine mechanisms,
+  execution contexts, lifetime closure, and provider comparisons with primary
+  references.
+- [Closing before destruction](../notes/async-programming.md#closing-before-destruction):
+  C++20 body-scope destruction and explicit closing epilogues.
+- [Tuples](tuples.md): builtin product rules required by ALL-03.
+- [Concurrency](concurrency.md): value admission, synchronization, and visibility
+  for cross-thread execution.

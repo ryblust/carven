@@ -13,10 +13,11 @@ This proposal defines type parameters, definition-site checking, local inference
 static capabilities, associated types, coherence, and generic instance identity.
 These semantics are accepted and unimplemented.
 
-Two decisions block implementation: generic C++ boundary participation (`OPEN-01`)
-and finite instance expansion (`OPEN-02`). Lowering may use concrete C++
-declarations, templates, erasure, or a combination after semantic analysis.
-Advanced facilities remain under `DEFER-01` through `DEFER-11`.
+Open decisions block implementation: generic C++ boundary participation (OPEN-01),
+finite instance expansion (OPEN-02), and universal operations and copy admission
+(OPEN-03). Lowering may use concrete C++ declarations, templates, erasure, or
+a combination after semantic analysis.
+Advanced facilities remain under DEFER-01 through DEFER-11.
 
 ## Context
 
@@ -99,6 +100,11 @@ fn equal<T>(left: T, right: T) -> bool {
 If equality is not universal, this body requires an explicit capability.
 `concept` and `impl` provide that additional layer; simple parametric declarations
 such as `Box<T>` do not require capability dispatch.
+
+The accepted Read `identity` example requires copying. OPEN-03 must reconcile
+that requirement with the candidate that unconstrained `T` guarantees transfer
+but not copying. A copyable application alone cannot establish a universal
+operation.
 
 ### Type-generic syntax
 
@@ -371,7 +377,7 @@ missing source facts.
 ### Target realization freedom
 
 **Maturity:** Accepted lowering freedom; the first representation is selected
-after `OPEN-01` and `OPEN-02`.
+after OPEN-01 and OPEN-02.
 
 Lowering may emit concrete declarations, use C++ templates for checked instances,
 erase distinctions that no longer affect operations or representation, or combine
@@ -387,65 +393,197 @@ decide whether a Carven call exists or which implementation it selects.
 
 | ID | Decision and reason |
 | --- | --- |
-| `GEN-01` | Check bodies at definition site for caller-independent meaning and diagnostics. |
-| `GEN-02` | Functions, transparent structs, and enums form a parametric core independent of capability dispatch. |
-| `GEN-03` | Nonempty `<...>` type clauses use token-only parsing with no semantic fallback. |
-| `GEN-04` | Infer a unique substitution locally from signatures, arguments, and immediate expected types. |
-| `GEN-05` | Compiler and source evidence share satisfaction, diagnostics, and resolved operations. |
-| `GEN-06` | Concepts are named contracts; anonymous impls provide compilation-wide canonical evidence. |
-| `GEN-07` | Explicit function-shaped requirements use concept-qualified lookup consistently. |
-| `GEN-08` | Contextual `Self` names the implementing type in requirements and impls. |
-| `GEN-09` | `+` combines bounds by finite static conjunction. |
-| `GEN-10` | Associated types normalize through unique evidence before lowering. |
-| `GEN-11` | Compilation-wide coherence gives each obligation at most one applicable evidence. |
-| `GEN-12` | Module-domain locality and anchored nominal heads bound impl lookup and overlap checking. |
-| `GEN-13` | Declaration identity and normalized semantic arguments identify an instance independently of target form. |
-| `GEN-14` | Cross-module use retains resolved facts needed for checking and instance formation. |
-| `GEN-15` | Concrete declarations, templates, erasure, and mixed forms remain equivalent lowering choices. |
+| GEN-01 | Check bodies at definition site for caller-independent meaning and diagnostics. |
+| GEN-02 | Functions, transparent structs, and enums form a parametric core independent of capability dispatch. |
+| GEN-03 | Nonempty `<...>` type clauses use token-only parsing with no semantic fallback. |
+| GEN-04 | Infer a unique substitution locally from signatures, arguments, and immediate expected types. |
+| GEN-05 | Compiler and source evidence share satisfaction, diagnostics, and resolved operations. |
+| GEN-06 | Concepts are named contracts; anonymous impls provide compilation-wide canonical evidence. |
+| GEN-07 | Explicit function-shaped requirements use concept-qualified lookup consistently. |
+| GEN-08 | Contextual `Self` names the implementing type in requirements and impls. |
+| GEN-09 | `+` combines bounds by finite static conjunction. |
+| GEN-10 | Associated types normalize through unique evidence before lowering. |
+| GEN-11 | Compilation-wide coherence gives each obligation at most one applicable evidence. |
+| GEN-12 | Module-domain locality and anchored nominal heads bound impl lookup and overlap checking. |
+| GEN-13 | Declaration identity and normalized semantic arguments identify an instance independently of target form. |
+| GEN-14 | Cross-module use retains resolved facts needed for checking and instance formation. |
+| GEN-15 | Concrete declarations, templates, erasure, and mixed forms remain equivalent lowering choices. |
 
 ## Open decisions
 
-**Next discussion:** None
-
 ### OPEN-01 — How do C++ boundary functions participate in generics?
 
-- **Status:** Blocked
-- **Depends on:** `GEN-01`, `GEN-04`, `GEN-10` through `GEN-14`
-- **Blocked by:** The implemented C++ boundary accepts only concrete scalar
-  declarations; generic instance publication is not defined.
-- **Activation condition:** Representative generic `import(cpp)` or
-  `export(cpp)` use requires a finite instance and symbol contract.
-- **Question:** C++ boundary participation must not create unrecorded
-  applications, instances, conversions, or evidence outside the closed
-  semantic graph.
+- **Status:** Active
+- **Depends on:** GEN-01, GEN-04, GEN-10 through GEN-14
+- **Question:** Does the initial generic core exclude generic C++ boundary
+  declarations, or include a finite provider or consumer contract? Participation
+  must not create unrecorded applications, instances, conversions, or evidence
+  outside the closed semantic graph.
 - **Constraints:** C++ names, deduction, overload resolution, and substitution
   failure cannot complete Carven inference or constraints; every generic value
   crossing the boundary has normalized concrete Carven types and a finite typed
   callable contract.
-- **Options:** Explicit instance lists, closed compilation-derived instances,
+- **Options:** A closed Carven core that rejects generic `import(cpp)` and
+  `export(cpp)` declarations while concrete scalar wrappers may call recorded
+  instances; explicit instance lists; closed compilation-derived instances;
   or separately named generic provider/façade forms.
-- **Closure condition:** Specify typed inbound and outbound examples, prove that
-  every resulting application and evidence enters the instance graph, and
-  reject open uses that cannot be accounted for.
+- **Closure condition:** Record the exclusion with accepted and rejected boundary
+  examples, or use a representative boundary consumer to specify typed inbound
+  and outbound examples and prove that every application and evidence enters
+  the instance graph. Reject open uses that cannot be accounted for.
 
 ### OPEN-02 — What finite-instance expansion rule is source semantics?
 
 - **Status:** Blocked
-- **Depends on:** `OPEN-01`, `GEN-13`
-- **Activation condition:** Every external generic entry point is represented in
-  the closed graph.
+- **Depends on:** OPEN-01, GEN-13
+- **Activation condition:** OPEN-01 closes the initial boundary scope; every
+  admitted external generic entry point is represented in the closed graph.
 - **Question:** The compiler must distinguish valid recursion, invalid
   by-value storage cycles, infinite argument growth, and implementation
   resource exhaustion.
 - **Constraints:** The rule cannot delegate to C++ template-depth failure;
   semantic invalidity needs a stable Carven diagnostic and source anchor;
   compiler budgets are not language limits.
-- **Options:** Unknown. Candidate rules must handle expansion such as `F<T>`,
-  `F<Box<T>>`, `F<Box<Box<T>>>` without rejecting ordinary recursive calls or
-  indirect type references.
+- **Options:** The parameter-flow candidate below rejects cycles containing type
+  construction while permitting forwarding and permutation. Evaluate its
+  conservatism and extend its proof to the accepted associated-type and evidence
+  model before selecting it. Another rule needs equivalent decidability,
+  diagnostic, and closure evidence.
 - **Closure condition:** Define a decidable semantic rule, diagnostic anchor,
   and separate implementation budget, then validate them against recursive
   call, recursive type, finite mutual recursion, and growing-instance examples.
+
+### OPEN-03 — Which operations are universal for admitted type arguments?
+
+- **Status:** Active
+- **Depends on:** GEN-01, GEN-02, GEN-05
+- **Question:** Does unconstrained `T` admit ordinary copying, or does a copying
+  body need an explicit capability? Define the admitted type set and distinguish
+  holding, Read/Write forwarding, complete Take, copying, default construction,
+  comparison, formatting, and parameter-dependent assignment.
+- **Constraints:** Definition-site checking cannot infer a capability from the
+  currently selected applications. Copying String content is not a bitwise copy.
+  The accepted Read `identity` example must be accounted for explicitly.
+- **Options:** Admit a type set with universal copying; require copy evidence;
+  or define another operation boundary with corresponding admission rules.
+- **Closure condition:** Check Read identity, Take relay, storage and release,
+  slice forwarding, and enum payload bindings with copyable and borrowed values.
+  Record any revision to an accepted decision explicitly.
+
+## Candidate implementation contracts
+
+**Maturity:** Exploration.
+
+### Consumers and admission
+
+Choose a real interface repeated across at least two concrete types and identify
+its transfer, borrowing, copying, and operation needs. Candidate examples,
+subject to OPEN-03, include:
+
+```carven
+fn relay<T>(&&value: T) -> T => &&value;
+fn hold<T>(&&value: T) -> Box<T> => { value: &&value };
+fn release<T>(&&owner: Box<T>) -> T => (&&owner).value;
+enum Maybe<T> { None, Some(T) }
+fn pass_slice<T>(values: [T]) -> [T] => values;
+```
+
+Slice forwarding copies its descriptor and preserves backing, without copying
+`T`. A payload wildcard can match without producing an owner; an owning payload
+binding may require copying. Each operation needs its own guarantee.
+
+A restricted argument set could admit modeled Carven scalars, String/str,
+arrays, slices, pointers, and ordinary nominal combinations, excluding void,
+unknown native types and their containing types, callable/closure value types,
+and compiler-private forms. Recursive admission distinguishes pointer edges from
+by-value storage cycles. An ordinary class argument does not admit generic class
+declarations or class constant execution. SIMD arguments need explicit operation
+and ownership rules; builtin identity gives unknown `T` no SIMD capability.
+
+One experiment can keep array lengths independent of `T`, failure types concrete,
+and native operations independent of `T`. Constant generic aggregates and generic
+static calls have separate admission questions; an ordinary `const fn` cannot
+bypass an unsupported generic call. Local inference under GEN-04 includes
+occurs-check and evaluates each actual argument once.
+
+### Finite instance expansion
+
+The candidate for OPEN-02 builds a graph whose vertices are type-parameter
+positions in generic declarations. An argument coming directly from a source
+parameter creates a forwarding edge; an argument containing that parameter under
+an array, slice, pointer, or nominal constructor creates a construction edge.
+Fully concrete arguments contribute no parameter-origin edge. Analyze nested
+applications separately. Reject every strongly connected component containing a
+construction edge; components containing only forwarding edges are allowed.
+
+| Application or storage relation | Candidate result |
+| --- | --- |
+| `f<T>` calls `f<T>`; `f<A, B>` calls `f<B, A>` | Allowed reuse or finite permutation |
+| `f<T>` calls `g<Box<T>>`, with no return edge | Allowed finite wrapping |
+| `f<T>` calls `g<Box<T>>`, which calls `f<Box<T>>` | Rejected argument growth |
+| `f<T>` calls `g<Box<T>>`; `g<U>` calls `f<i32>` | Allowed concrete reset |
+| `Node<T>` contains `ptr<Node<T>>` | Finite arguments; no by-value cycle |
+| `Grow<T>` contains `ptr<Grow<[T]>>` | Rejected growth despite pointer indirection |
+| `Bad<T>` contains `Bad<T>` | Finite instances but rejected by-value storage cycle |
+
+Check unused definitions and ordinary source branches; backend elimination is
+not a legality proof. With finite first-order constructors, concrete array
+lengths, and no associated-projection reduction or declaration generation,
+collapsing forwarding cycles leaves an acyclic construction graph with bounded
+wrapping depth. Those assumptions do not cover the full accepted capability and
+associated-type model. Its normalization and evidence expansion need a separate
+termination argument before this rule can close OPEN-02.
+
+Symbolic checking rejects evident layout cycles; concrete instances still check
+the substituted storage topology. Budgets for instance count, type nodes, and
+work queues diagnose resource exhaustion separately from semantic infinite
+expansion. Raising a budget does not change source legality.
+
+### Instance lifecycle and publication
+
+A construction design can retain each checked parameterized definition once and
+index its instances by the accepted normalized identity. Rigid parameters use
+definition identity and ordinal, rather than an arbitrary placeholder TypeID or
+incomplete C++ type. Instances reuse structured semantic operations and traversal;
+application sites consume checked bodies rather than replaying source AST.
+
+Distinguish reserved, head-available, body-in-progress, complete, and failed
+instances. Recursion reuses the same key. A failed instance retains failure state
+to avoid duplicate construction and primary diagnostics. An available signature
+permits recursive calls without permitting reads of an unfinished body or layout.
+
+Evaluate reuse of the existing program and stage-session completion boundaries.
+Define how catalog closure, static-value instances, and type-generic closure
+interact; they retain distinct argument identities. Every concrete application
+requiring semantic checking enters the closure even if its enclosing function
+does not generate native code. Unused definitions are checked without enumerating
+all possible arguments.
+
+Before publication, check key uniqueness, program-owned and closed arguments,
+complete reservations, body ownership, and converged types, failures, and
+ownership. Concrete bodies contain no symbolic parameters, pending applications,
+or unresolved evidence. Parameterized bodies may be released when no downstream
+consumer needs them, while required provenance survives. Caller lifetime, source
+origin, and target names do not become instance-key components.
+
+### Ownership and artifact delivery
+
+An unknown `T` may contain loans. Parameterized checking must preserve transfer
+and projection relationships, reject use after Take and local-borrow escape, and
+avoid assuming a scalar snapshot, no cleanup, or copying beyond OPEN-03's
+selected guarantee. Concrete calls check the actual type contents and backing;
+a String owner and a record containing str cannot share a single borrowed-input
+flag. Residual realization uses concrete `TypeContents`. Pattern rejection is
+proved in the symbolic domain or reconstructed and checked for an instance;
+guards and alternative binding sources remain independent.
+
+One artifact candidate gives the defining module ownership of an instance and
+makes callers reference the same semantic declaration. Caller-private nominal
+arguments may require internal support interfaces, without widening source
+audience. Validate two caller modules requesting one instance, private arguments,
+and reverse dependencies through independent generation, self-contained headers,
+multi-TU compile/link/run, and input-order determinism. Specify any additional
+planning dependencies and preserve private-type audience in internal interfaces.
 
 ## Deferred work
 
@@ -467,7 +605,8 @@ value-dependent types remain deferred here.
 
 - **Reason deferred:** Generic closures add capture, callable identity,
   inference, and lifetime questions independently from named declarations.
-- **Depends on:** Implemented generics and an owning-callable design
+- **Depends on:** Checked polymorphic calls and the selected callable and capture
+  lifetime contract; owning storage only if the selected holding form requires it
 - **Reactivation condition:** A real higher-order API requires a locally
   declared polymorphic callable.
 
@@ -483,7 +622,7 @@ value-dependent types remain deferred here.
 
 - **Reason deferred:** Multiple applicable evidence would replace strong
   coherence with priority and compatibility rules not needed by the first model.
-- **Depends on:** Implemented canonical evidence and a dedicated specialization proposal
+- **Depends on:** Canonical evidence, coherence, and candidate-selection rules
 - **Reactivation condition:** A concrete API cannot use explicit strategy
   types and can define stable ordering and evolution behavior.
 
@@ -505,10 +644,10 @@ value-dependent types remain deferred here.
 
 ### DEFER-07 — Static meta and source generation
 
-- **Reason deferred:** Stable generics must first reveal a bounded query and
-  generation need; arbitrary text generation would create a second template
-  language.
-- **Depends on:** Implemented generics and a dedicated static-meta proposal
+- **Reason deferred:** Compile-time queries and generation need input, output,
+  semantic ownership, and diagnostic rules beyond parameterized declarations.
+- **Depends on:** A bounded query and generation contract; generic reflection
+  additionally consumes checked generic definitions and instances
 - **Reactivation condition:** A concrete consumer defines bounded inputs,
   outputs, semantic ownership, and diagnostics.
 
@@ -516,7 +655,7 @@ value-dependent types remain deferred here.
 
 - **Reason deferred:** Static evidence creates no runtime descriptor, registry,
   ownership, or cost contract.
-- **Depends on:** A dedicated reflection proposal and implemented type semantics
+- **Depends on:** Type identity and metadata, lifetime, and lookup contracts
 - **Reactivation condition:** A runtime use case justifies explicit metadata,
   lifetime, lookup, and cost.
 
@@ -546,25 +685,16 @@ value-dependent types remain deferred here.
 
 ## Implementation
 
-Implementation is blocked by `OPEN-01` and `OPEN-02`. Once closed, delivery
-proceeds vertically:
-
-1. add parametric declaration/application syntax and SyntaxProgram/SemIRProgram facts,
-   definition-site checking, local inference, normalized instance identity, and
-   finite graph production;
-2. add `concept`/`impl` parsing, visibility, canonical evidence, module-domain
-   and anchored-head validation, coherence, qualified operations, `Self`,
-   conjunctive bounds, and associated normalization;
-3. select unit-local TargetUnit/C++ realizations only from published semantic facts;
-4. deliver diagnostics, tests, generated C++ checks, and permanent documentation
-   with each slice.
-
-The compiler should not add unused generic condition fields, registries, target
-templates, caches, or ABI scaffolding before a delivered slice needs them.
+Implementation is blocked by OPEN-01 through OPEN-03. A selected slice needs
+source syntax, definition-site checking, local inference, normalized identity, and
+finite graph production together. Capability consumers additionally need their
+concept and impl contracts, coherent evidence, and associated normalization.
+TargetUnit lowering consumes published semantic facts. Each slice includes its
+diagnostics, generated C++ checks, tests, and permanent documentation.
 
 ## Validation
 
-Validation must cover:
+Validation covers the rules admitted by the selected slice:
 
 - generic parameter/application parsing and the comparison, shift, member, and
   call ambiguity boundaries;
@@ -578,8 +708,27 @@ Validation must cover:
 - associated projection normalization, aliases, cycles, and instance identity;
 - access, Take, failure, constants, storage cycles, evaluation order, and
   visibility under instantiation;
+- unused invalid definitions, String transfer, borrowed forwarding and escape,
+  payload wildcard versus owning bindings, and exactly-once arguments;
+- same-key recursion, failed-instance reuse, complete reservations, foreign
+  identities, duplicate keys, symbolic leakage, and bounded diagnostic chains;
 - C++ boundary instances and stable rejection of open/untracked applications;
 - finite instance production versus semantic infinite expansion and separate
   compiler resource limits;
 - C++20/C++23 compile, link, and run without fixing concrete/template target
   shape or private generated names.
+
+Application-site AST replay, C++ diagnostics deciding source legality, and caller
+lifetime in instance identity violate the definition-site and identity contracts.
+Representation sharing needs correct C++ signatures or typed thunks; arbitrary
+function-pointer casts and equal storage size do not establish type or behavioral
+equivalence.
+
+## References
+
+- [Dynamic values](dynamic-values.md): runtime holding and dispatch, including
+  existential packages and polymorphic elimination.
+- [C++ interoperation](../docs/language/interop.md): implemented concrete boundary
+  used by the options in OPEN-01.
+- [Go parameter-flow checking](https://go.dev/src/cmd/compile/internal/types2/mono.go):
+  a compiler implementation reference for detecting recursive type-argument growth.

@@ -123,7 +123,7 @@ auto resolve_named(
     ProgramModuleID module_id,
     const ASTNamedType& named,
     ASTView syntax,
-    const ArrayExtentResolver& resolve_extent,
+    ArrayExtentResolver resolve_extent,
     Span origin
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
@@ -278,7 +278,7 @@ auto resolve_function_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTFunctionType& function,
-    const ArrayExtentResolver& resolve_extent
+    ArrayExtentResolver resolve_extent
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     auto parameters = std::vector<ConstructionCallableParameter>();
     parameters.reserve(function.parameters.size());
@@ -358,7 +358,7 @@ auto resolve_type_value(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTType& source_type,
-    const ArrayExtentResolver& resolve_extent
+    ArrayExtentResolver resolve_extent
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -514,7 +514,7 @@ auto resolve_source_type(
     ProgramModuleID module_id,
     ASTView syntax,
     ASTTypeID source_type,
-    const ArrayExtentResolver& resolve_extent
+    ArrayExtentResolver resolve_extent
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await resolve_type_value(
         draft,
@@ -534,7 +534,7 @@ auto resolve_source_construction_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstructionType& source_type,
-    const ArrayExtentResolver& resolve_extent
+    ArrayExtentResolver resolve_extent
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -572,7 +572,7 @@ auto resolve_source_constraint_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstraintOperand& source_type,
-    const ArrayExtentResolver& resolve_extent
+    ArrayExtentResolver resolve_extent
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -648,7 +648,7 @@ auto resolve_failure_types(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTThrowClause& clause,
-    const ArrayExtentResolver& resolve_extent
+    ArrayExtentResolver resolve_extent
 ) noexcept -> AnalysisTask<std::vector<TypeID>> {
     auto failures = std::vector<TypeID>();
     auto first_seen = std::flat_map<TypeID, Span>();

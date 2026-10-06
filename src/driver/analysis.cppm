@@ -9,6 +9,6 @@ import std;
 // Loads the collected source batch with its resolved module identities.
 auto load_and_analyze_sources(
     std::span<const SourceInput> inputs,
-    const ExecutionOutput& output,
-    const TimingOutput& timings = {}
+    ExecutionOutput output,
+    TimingOutput timings = {}
 ) noexcept -> std::optional<SemIRProgram>;

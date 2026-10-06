@@ -302,10 +302,10 @@ calls `runtime::adopt_array<Destination, Stateless>` in `array.hpp`. Native arra
 types determine recursive aggregate initialization; matching types retain ordinary
 copy construction. Empty arrays perform no element adaptation. The explicit
 stateless policy selects the existing callable factory at leaves; other leaves
-use ordinary construction. Semantic analysis applies the same callable compatibility constraints to scalar
-and array element types. Slice elements retain invariant storage types; adoption
-does not rebuild their borrowed backing. Semantic analysis owns borrowing validity. The body realizer retains
-the source backing storage.
+use ordinary construction. Semantic analysis applies the same callable compatibility
+constraints to scalar and array element types. Slice elements retain invariant storage
+types; adoption does not rebuild their borrowed backing. Semantic analysis owns borrowing
+validity. The body realizer retains the source backing storage.
 
 ## Aggregate sequencing
 

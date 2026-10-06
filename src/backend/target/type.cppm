@@ -24,6 +24,9 @@ struct TargetNamedType final {
 struct TargetIntrinsicType final {
     TargetSymbol symbol;
     std::vector<TargetTypeID> type_argument_ids;
+
+    constexpr auto native_symbol() const noexcept -> TargetSymbol { return symbol; }
+
     auto operator==(const TargetIntrinsicType&) const noexcept -> bool = default;
 };
 
@@ -35,12 +38,22 @@ struct TargetArrayExtent final {
 struct TargetArrayType final {
     TargetTypeID element_type_id;
     TargetArrayExtent extent;
+
+    static constexpr auto native_symbol() noexcept -> TargetSymbol {
+        return TargetSymbol::StdArray;
+    }
+
     auto operator==(const TargetArrayType&) const noexcept -> bool = default;
 };
 
 struct TargetFunctionRefType final {
     std::vector<TargetTypeID> parameters;
     TargetTypeID result;
+
+    static constexpr auto native_symbol() noexcept -> TargetSymbol {
+        return TargetSymbol::RuntimeFunctionRef;
+    }
+
     auto operator==(const TargetFunctionRefType&) const noexcept -> bool = default;
 };
 

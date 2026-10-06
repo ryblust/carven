@@ -14,8 +14,8 @@ import std;
 auto analyze_compilation(
     const SourceManager& sources,
     SourceBatch batch,
-    const ExecutionOutput& output,
-    const TimingOutput& timings
+    ExecutionOutput output,
+    TimingOutput timings
 ) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
     auto syntax = parse_program(sources, batch, timings);
     if (!syntax.has_value()) {

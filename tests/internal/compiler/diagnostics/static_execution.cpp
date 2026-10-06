@@ -25,6 +25,9 @@ auto compile_constant_program(
         .source_id = id,
         .module_path = *CanonicalModulePath::from_value("static_execution")
     };
+    const auto write_output = [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
+        (stream == ExecutionOutputStream::Standard ? output : errors) += bytes;
+    };
     return compile(
         sources,
         SourceBatch {.modules = std::span(&input, 1)},
@@ -32,9 +35,7 @@ auto compile_constant_program(
             .test_mode = TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("static-execution")
         },
-        [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
-            (stream == ExecutionOutputStream::Standard ? output : errors) += bytes;
-        }
+        write_output
     );
 }
 

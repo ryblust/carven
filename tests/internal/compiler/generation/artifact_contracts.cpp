@@ -136,37 +136,31 @@ const TestSuite suite([] static noexcept {
             auto composed_output = std::string();
             auto composed_stages = std::vector<TimingStage>();
             const auto composed_timings =
-                TimingOutput([&](TimingStage stage,
-                                 std::chrono::steady_clock::duration elapsed) noexcept {
+                [&](TimingStage stage, std::chrono::steady_clock::duration elapsed) noexcept {
                     expect(elapsed >= std::chrono::steady_clock::duration::zero());
                     composed_stages.push_back(stage);
-                });
-            auto composed = compile(
-                sources,
-                batch,
-                request,
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    composed_output += bytes;
-                },
-                composed_timings
-            );
+                };
+            const auto write_composed_output = [&](ExecutionOutputStream,
+                                                   std::string_view bytes) noexcept {
+                composed_output += bytes;
+            };
+            auto composed =
+                compile(sources, batch, request, write_composed_output, composed_timings);
             auto staged_output = std::string();
             auto staged_stages = std::vector<TimingStage>();
-            const auto staged_timings =
-                TimingOutput([&](TimingStage stage, std::chrono::steady_clock::duration) noexcept {
-                    staged_stages.push_back(stage);
-                });
+            const auto staged_timings = [&](TimingStage stage,
+                                            std::chrono::steady_clock::duration) noexcept {
+                staged_stages.push_back(stage);
+            };
             auto syntax = parse_program(sources, batch, staged_timings);
             if (!expect(composed.has_value()) || !expect(syntax.has_value())) {
                 return;
             }
-            auto semantic = analyze(
-                std::move(*syntax),
-                [&](ExecutionOutputStream, std::string_view bytes) noexcept {
-                    staged_output += bytes;
-                },
-                staged_timings
-            );
+            const auto write_staged_output = [&](ExecutionOutputStream,
+                                                 std::string_view bytes) noexcept {
+                staged_output += bytes;
+            };
+            auto semantic = analyze(std::move(*syntax), write_staged_output, staged_timings);
             if (!expect(semantic.has_value())) {
                 return;
             }
@@ -229,6 +223,10 @@ const TestSuite suite([] static noexcept {
                 const auto input =
                     SourceModuleInput {.source_id = *source, .module_path = *module_path};
                 auto stages = std::vector<TimingStage>();
+                const auto record_timing = [&](TimingStage stage,
+                                               std::chrono::steady_clock::duration) noexcept {
+                    stages.push_back(stage);
+                };
                 const auto result = compile(
                     sources,
                     SourceBatch {.modules = std::span(&input, 1)},
@@ -237,9 +235,7 @@ const TestSuite suite([] static noexcept {
                         .linkage_domain = LinkageDomain::explicit_value("test:pipeline").value(),
                     },
                     {},
-                    [&](TimingStage stage, std::chrono::steady_clock::duration) noexcept {
-                        stages.push_back(stage);
-                    }
+                    record_timing
                 );
                 expect(!result.has_value());
                 expect(stages == failure.stages);

@@ -1,5 +1,6 @@
 module carven:backend.target.symbol;
 
+import :backend.target.header;
 import std;
 
 enum class TargetSymbol {
@@ -99,15 +100,28 @@ enum class TargetSymbol {
     StdInitializerList,
     StdStringView,
     StdVariant,
+    StdArray,
+    StdAbort,
+    RuntimeUnreachable,
     TestingContext,
     TestingReporter,
 };
 
 struct TargetSymbolInfo final {
     std::string_view spelling;
-    std::string_view header;
+    std::optional<TargetHeaderProvider> header;
     // The call-result contract does not permit omitting execution.
     bool allows_implicit_discard;
 };
 
 auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo;
+
+// Nodes declare their native facility; rendering and dependency discovery share it.
+template<typename Node>
+auto target_node_symbol(const Node& node) noexcept -> std::optional<TargetSymbol> {
+    if constexpr (requires { node.native_symbol(); }) {
+        return node.native_symbol();
+    } else {
+        return std::nullopt;
+    }
+}

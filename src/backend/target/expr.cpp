@@ -5,6 +5,20 @@ import :backend.target.stmt;
 import :support.unique_indirect;
 import std;
 
+auto TargetStringLiteral::native_symbol() const noexcept -> std::optional<TargetSymbol> {
+    switch (kind) {
+        case TargetStringLiteralKind::String:     return std::nullopt;
+        case TargetStringLiteralKind::StringView: return TargetSymbol::StdStringView;
+    }
+    std::unreachable();
+}
+
+auto TargetLiteralExpr::native_symbol() const noexcept -> std::optional<TargetSymbol> {
+    return value.visit([](const auto& literal) static noexcept {
+        return target_node_symbol(literal);
+    });
+}
+
 auto bool_expression(bool value) noexcept -> TargetExpr {
     return {.value = TargetLiteralExpr {.value = value}};
 }

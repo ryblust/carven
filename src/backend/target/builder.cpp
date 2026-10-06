@@ -2,6 +2,7 @@ module carven:backend.target.builder.impl;
 
 import :backend.target.builder;
 import :backend.target.dependencies;
+import :backend.target.directives;
 import :backend.target.expr;
 import :backend.target.name;
 import :backend.target.traversal;
@@ -178,21 +179,8 @@ auto TargetUnitBuilder::finish(
         invariant_violation(validation.error().message);
     }
 
-    auto directive_groups = std::move(directives.prefix_groups);
-    auto dependencies = collect_target_dependencies(identity, target_types, sections);
-    if (!dependencies.empty()) {
-        directive_groups.push_back({
-            .directives = std::move(dependencies),
-            .attribution = TargetCompilerOwnedAttribution {
-                .reason = TargetCompilerReason::ArtifactScaffolding,
-            },
-        });
-    }
-    directive_groups.insert(
-        directive_groups.end(),
-        std::make_move_iterator(directives.suffix_groups.begin()),
-        std::make_move_iterator(directives.suffix_groups.end())
-    );
+    const auto dependencies = collect_target_dependencies(identity, target_types, sections);
+    auto directive_groups = plan_target_directives(std::move(directives), dependencies);
     return TargetUnit(
         identity,
         std::move(target_types),

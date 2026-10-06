@@ -24,10 +24,10 @@ As with interpolation, scalar Read values are saved and String Read values alias
 their owners. Text views retain their backing throughout argument evaluation
 and printing.
 
-Direct printing is admitted in functions executed in the static stage, `const` blocks and `const test` for
-the types supported by static execution. Static execution delivers
-output synchronously to the compiler host; runtime calls use the runtime streams. Declaring a function
-does not itself execute it. Optional precomputation does not produce
+Direct printing is admitted in functions executed in the static stage, `const` blocks and
+`const test` for the types supported by static execution. Static execution delivers
+output synchronously to the compiler host; runtime calls use the runtime streams. Declaring
+a function does not itself execute it. Optional precomputation does not produce
 static-stage output or remove required runtime printing. Printing follows the
 same argument, separator, newline, and text rules in both stages. Output bytes
 consume the root's cumulative text-work budget. Completed output remains observable
@@ -164,13 +164,13 @@ string is optional for both `test` and `const test`; anonymous failures report
 the test's file, line, and column. Explicit names must be unique within a module.
 Its body uses the static-execution operation and type subset, including direct
 `const fn` calls, calls through local bindings of named `const fn`, printing, and
-test operations. Unsupported operations are diagnosed when executed. Each static test executes once
-after body construction during semantic analysis, regardless of test artifact
-selection. Tests follow the compilation batch's module order and source order
-within each module. Each test has a fresh execution budget and local storage. Failed-check diagnostic
-text consumes the same cumulative text-work budget as output and text construction.
-Passing static tests generate no test functions or runtime runner entries.
-Ordinary `test` bodies retain runtime execution.
+test operations. Unsupported operations are diagnosed when executed. Each static
+test executes once after body construction during semantic analysis, regardless of
+test artifact selection. Tests follow the compilation batch's module order and source
+order within each module. Each test has a fresh execution budget and local storage.
+Failed-check diagnostic text consumes the same cumulative text-work budget as output
+and text construction. Passing static tests generate no test functions or runtime
+runner entries. Ordinary `test` bodies retain runtime execution.
 
 Static `check` failures are compilation errors and execution continues. Failed
 `require` and `fail` stop the current test, including nested Carven calls; the

@@ -19,14 +19,13 @@ explicit result annotation supplies the expected type to every return operand.
 A body without return operands infers `void`; bare returns also require `void`.
 Normal completion of a value-returning body requires a return on every path.
 Result-inference dependency cycles require an explicit result type to break the
-cycle. A declaration without a body defaults to `void` when no result type is written. Parameter names must be
-unique. A call requires the exact
-arity, access marker, and compatible argument type declared by the callable.
-At runtime, the callee is evaluated first, then runtime arguments are evaluated
-once from left to right. A concrete closure selects its object identity;
-a callable view selects its target description. Invocation reads that target's
-current captures after argument evaluation. An explicit closure copy requests a
-capture-value snapshot.
+cycle. A declaration without a body defaults to `void` when no result type is written.
+Parameter names must be unique. A call requires the exact arity, access marker, and
+compatible argument type declared by the callable. At runtime, the callee is evaluated
+first, then runtime arguments are evaluated once from left to right. A concrete closure
+selects its object identity; a callable view selects its target description. Invocation
+reads that target's current captures after argument evaluation. An explicit closure copy
+requests a capture-value snapshot.
 
 A bare `return;` is valid only for `void`. A return operand must have a successful
 result compatible with the callable result, including `void`: `return action();`
@@ -244,8 +243,8 @@ function or lambda, or captured by a lambda. These restrictions apply
 recursively through arrays. A capturing lambda temporary may form a view only
 as a direct call argument and remains valid for that call. Noncapturing closures
 form views without borrowing closure storage; the closure expression is
-evaluated once. A named capturing closure may initialize a local view while its owner remains in an enclosing
-scope.
+evaluated once. A named capturing closure may initialize a local view while its owner
+remains in an enclosing scope.
 
 Adopting a capturing closure as a callable view borrows the closure object; it
 does not copy its captures or acquire ownership. Copying a view of the same type

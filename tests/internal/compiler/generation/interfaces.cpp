@@ -20,7 +20,8 @@ struct ModuleFixture final {
 
 auto compile_modules(
     std::span<const ModuleFixture> modules,
-    std::string_view linkage_domain = "test:interfaces"
+    std::string_view linkage_domain = "test:interfaces",
+    TestGenerationMode test_mode = TestGenerationMode::None
 ) noexcept -> GeneratedArtifactSet {
     auto sources = SourceManager();
     auto inputs = std::vector<SourceModuleInput>();
@@ -37,7 +38,7 @@ auto compile_modules(
         sources,
         SourceBatch {.modules = inputs},
         TargetPlanningRequest {
-            .test_mode = TestGenerationMode::None,
+            .test_mode = test_mode,
             .linkage_domain = LinkageDomain::explicit_value(std::string(linkage_domain)).value(),
         }
     );
@@ -270,11 +271,10 @@ const TestSuite suite([] static noexcept {
         expect(headers.front()->content.contains("struct RightLeaf"));
         expect(headers.front()->content.contains("struct RightWrap"));
         expect(
-            artifact(artifacts, "left.cpp").content.contains(component_include(*headers.front()))
+            artifact(artifacts, "left.cpp").content.starts_with(component_include(*headers.front()))
         );
-        expect(
-            artifact(artifacts, "right.cpp").content.contains(component_include(*headers.front()))
-        );
+        expect(artifact(artifacts, "right.cpp")
+                   .content.starts_with(component_include(*headers.front())));
     };
 
     "Interface components: declaration-only predecessors use forward declarations"_test =
@@ -460,6 +460,105 @@ const TestSuite suite([] static noexcept {
                 changed_content |= left.content != right.content;
             }
             expect(changed_content);
+        };
+
+    "Generated artifacts: associated interfaces precede direct dependencies"_test =
+        [] static noexcept {
+            const auto artifacts = compile_modules(
+                std::array {ModuleFixture {
+                    "order",
+                    R"(enum Status { Pending, Shipped(i32), }
+struct Order { id: i32, code: u32, status: Status, items: [str; 2], }
+let order = Order { id: 7, code: 9u32, status: Status::Shipped(3), items: ["disk", "cable"], };
+println(order);)"
+                }}
+            );
+            const auto& implementation = artifact(artifacts, "order.cpp").content;
+            expect(
+                implementation.starts_with(component_include(interface_for(artifacts, "order")))
+            );
+            const auto runtime =
+                implementation.find("#include <carven/runtime/display/display.hpp>");
+            const auto standard = implementation.find("#include <array>");
+            if (!expect(runtime != std::string::npos) || !expect(standard != std::string::npos)) {
+                return;
+            }
+            expect(runtime < standard);
+            const auto& header = interface_for(artifacts, "order").content;
+            expect(header.starts_with("#pragma once"));
+            const auto passing = header.find("#include <carven/runtime/passing.hpp>");
+            const auto array = header.find("#include <array>");
+            if (!expect(passing != std::string::npos) || !expect(array != std::string::npos)) {
+                return;
+            }
+            expect(passing < array);
+            for (const auto content :
+                 {std::string_view(implementation), std::string_view(header)}) {
+                constexpr auto include = std::string_view("#include <cstdint>");
+                const auto first = content.find(include);
+                if (!expect(first != std::string_view::npos)) {
+                    return;
+                }
+                expect(content.find(include, first + include.size()) == std::string_view::npos);
+            }
+        };
+
+    "Generated test entries: runner header is the first include"_test = [] static noexcept {
+        const auto artifacts = compile_modules(
+            std::array {ModuleFixture {"tested", "test { check(true); }"}},
+            "test:runner",
+            TestGenerationMode::RunnerEntryPoint
+        );
+        const auto& entry = artifact(artifacts, "carven/generated/carven-test-main.cpp").content;
+        expect(entry.starts_with("#include <carven/generated/carven-test-runner.hpp>"));
+    };
+
+    "Generated interfaces: native environments follow canonical module order"_test =
+        [] static noexcept {
+            constexpr auto modules = std::array {
+                ModuleFixture {
+                    "zeta",
+                    "import \"zeta.hpp\";\n"
+                    "import alpha using AlphaLeaf;\n"
+                    "export struct ZetaLeaf { native: ::ZetaNative, }\n"
+                    "export struct ZetaWrap { alpha: AlphaLeaf, }\n"
+                },
+                ModuleFixture {
+                    "alpha",
+                    "\nimport \"alpha.hpp\";\n"
+                    "import <shared.hpp>;\n"
+                    "import \"alpha.hpp\";\n"
+                    "import zeta using ZetaLeaf;\n"
+                    "export struct AlphaLeaf { native: ::AlphaNative, }\n"
+                    "export struct AlphaWrap { zeta: ZetaLeaf, }\n"
+                },
+            };
+            const auto artifacts = compile_modules(modules);
+            const auto& header = interface_for(artifacts, "alpha").content;
+            const auto first = header.find("#include \"alpha.hpp\"");
+            const auto shared = header.find("#include <shared.hpp>");
+            const auto zeta = header.find("#include \"zeta.hpp\"");
+            if (!expect(first != std::string::npos)
+                || !expect(shared != std::string::npos)
+                || !expect(zeta != std::string::npos)) {
+                return;
+            }
+            const auto repeated = header.find("#include \"alpha.hpp\"", first + 1uz);
+            if (!expect(repeated != std::string::npos)) {
+                return;
+            }
+            expect(first < shared);
+            expect(shared < repeated);
+            expect(repeated < zeta);
+            expect(header.find("#include \"alpha.hpp\"", repeated + 1uz) == std::string::npos);
+            expect(header.find("#include \"zeta.hpp\"", zeta + 1uz) == std::string::npos);
+            const auto& implementation = artifact(artifacts, "alpha.cpp").content;
+            expect(implementation.contains("#line 2 \"alpha.cv\"\n#include \"alpha.hpp\""));
+            expect(implementation.contains("#line 4 \"alpha.cv\"\n#include \"alpha.hpp\""));
+            auto reversed = modules;
+            std::ranges::reverse(reversed);
+            const auto reordered = compile_modules(reversed);
+            expect_equal(header, interface_for(reordered, "alpha").content);
         };
 
     "Generated interfaces: C++ environments preserve complete ordered imports"_test =

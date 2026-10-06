@@ -21,7 +21,7 @@ class Interpreter final : public SemanticExecutionContext {
 public:
     Interpreter(
         const SemIRProgram& program,
-        const ExecutionOutput& output,
+        ExecutionOutput output,
         const InterpreterOptions& options
     ) noexcept;
     auto stage() const noexcept -> ExecutionStage override;
@@ -40,7 +40,7 @@ private:
     auto reject(ProgramOriginID origin, std::string_view message) noexcept -> ExecutionHalt;
 
     const SemIRProgram& program;
-    const ExecutionOutput& output;
+    ExecutionOutput output;
     const InterpreterOptions& options;
     PublishedConstantValues values;
     std::vector<InterpreterTestResult> test_results;
@@ -48,7 +48,7 @@ private:
 
 Interpreter::Interpreter(
     const SemIRProgram& program,
-    const ExecutionOutput& output,
+    ExecutionOutput output,
     const InterpreterOptions& options
 ) noexcept
     : program(program),
@@ -224,7 +224,7 @@ auto interpreter_diagnostic_code(ExecutionReason reason) noexcept -> DiagnosticC
 auto interpret(
     const SemIRProgram& program,
     FunctionID entry,
-    const ExecutionOutput& output,
+    ExecutionOutput output,
     const InterpreterOptions& options
 ) noexcept -> std::expected<void, ExecutionHalt> {
     return Interpreter(program, output, options).run(entry);
@@ -232,7 +232,7 @@ auto interpret(
 
 auto interpret_tests(
     const SemIRProgram& program,
-    const ExecutionOutput& output,
+    ExecutionOutput output,
     const InterpreterOptions& options
 ) noexcept -> std::expected<std::vector<InterpreterTestResult>, ExecutionHalt> {
     return Interpreter(program, output, options).run_tests();

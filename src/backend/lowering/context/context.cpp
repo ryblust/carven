@@ -112,8 +112,8 @@ auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> Target
     }
     auto dependencies =
         std::vector<TargetArtifactID>(lowering_dependencies.begin(), lowering_dependencies.end());
-    auto directives = materialize_directives(plan(), artifact_id, dependencies);
-    materialize_cpp_environments(sections, directives);
+    auto directives = artifact_directive_inputs(plan(), artifact_id, dependencies);
+    lower_cpp_environments(sections, directives);
     return std::move(target_builder).finish(std::move(sections), std::move(directives));
 }
 
