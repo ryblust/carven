@@ -268,6 +268,7 @@ namespace {
     X(TypeTextProperty, "CV-TYPE-TEXT-PROPERTY", Error, "Invalid text property.")                  \
     X(TypeUnresolved, "CV-TYPE-UNRESOLVED", Error, "Unresolved type.")                             \
     X(TypeUpdateInteger, "CV-TYPE-UPDATE-INTEGER", Error, "Integer update target required.")       \
+    X(TypeSequenceElement, "CV-TYPE-SEQUENCE-ELEMENT", Error, "Invalid owning sequence element.")  \
     X(TypeValueRequired,                                                                           \
       "CV-TYPE-VALUE-REQUIRED",                                                                    \
       Error,                                                                                       \

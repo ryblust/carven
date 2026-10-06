@@ -5,6 +5,7 @@ import :semantic.analysis.validation.context;
 import :semantic.format;
 import :semantic.semir.format;
 import :semantic.semir.initialization;
+import :semantic.semir.sequence;
 import :support.utf8;
 import std;
 
@@ -387,13 +388,15 @@ auto BodyContractVerifier::verify_expression(
                                     .value;
                             const auto* array = std::get_if<ArrayTypeValue>(&receiver);
                             const auto* slice = std::get_if<SliceTypeValue>(&receiver);
-                            if ((contract.receiver == SliceIntrinsicShape::Array
-                                 && array == nullptr)
-                                || (contract.receiver == SliceIntrinsicShape::Slice
-                                    && slice == nullptr)) {
+                            if ((array == nullptr && slice == nullptr)
+                                || !slice_intrinsic_accepts_receiver(
+                                    contract.receiver,
+                                    array ? SliceIntrinsicShape::Array : SliceIntrinsicShape::Slice
+                                )) {
                                 invariant_violation("slice intrinsic receiver mismatch");
                             }
-                            if (array != nullptr && family.result_extent != array->extent) {
+                            if (family.intrinsic == SliceIntrinsic::FromArray
+                                && family.result_extent != array->extent) {
                                 invariant_violation(
                                     "array slice extent differs from its source type"
                                 );
@@ -420,6 +423,40 @@ auto BodyContractVerifier::verify_expression(
                                         BuiltinTypeValue {contract.arguments[i - 1]}
                                     }) {
                                     invariant_violation("slice bound type mismatch");
+                                }
+                            }
+                        },
+                        [&](const SequenceIntrinsicOperation& family) noexcept {
+                            const auto contract = sequence_intrinsic_contract(family.intrinsic);
+                            if (value.operands.size() != 1uz + contract.argument.has_value()
+                                || value.operands.front().access != contract.receiver_access) {
+                                invariant_violation("Sequence intrinsic operand contract mismatch");
+                            }
+                            const auto* sequence = std::get_if<OwnedSequenceTypeValue>(
+                                &require_type(value.operands.front().expression.type.resolved())
+                                     .value
+                            );
+                            if (!sequence
+                                || require_type(source.type.resolved()).value
+                                    != CanonicalTypeValue {BuiltinTypeValue {contract.result}}) {
+                                invariant_violation("Sequence intrinsic type contract mismatch");
+                            }
+                            if (contract.argument) {
+                                const auto& operand = value.operands[1];
+                                if (*contract.argument == SequenceIntrinsicArgument::Element) {
+                                    if (operand.expression.type.resolved() != sequence->element
+                                        || (operand.access != AccessMode::Read
+                                            && operand.access != AccessMode::Take)) {
+                                        invariant_violation(
+                                            "Sequence push element contract mismatch"
+                                        );
+                                    }
+                                } else if (operand.access != AccessMode::Read
+                                           || require_type(operand.expression.type.resolved()).value
+                                               != CanonicalTypeValue {
+                                                   BuiltinTypeValue {BuiltinType::Usize}
+                                               }) {
+                                    invariant_violation("Sequence remove index contract mismatch");
                                 }
                             }
                         },
@@ -634,8 +671,11 @@ auto BodyContractVerifier::verify_expression(
                 const auto& index = require_type(value.index->type.resolved());
                 const auto* integer = std::get_if<BuiltinTypeValue>(&index.value);
                 const auto* slice = std::get_if<SliceTypeValue>(&type.value);
-                if ((array == nullptr && slice == nullptr)
-                    || (array != nullptr ? array->element : slice->element)
+                const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&type.value);
+                if ((array == nullptr && slice == nullptr && sequence == nullptr)
+                    || (array       ? array->element
+                            : slice ? slice->element
+                                    : sequence->element)
                         != source.type.resolved()
                     || integer == nullptr
                     || !builtin_is_integer(integer->kind)) {

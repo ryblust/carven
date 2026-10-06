@@ -495,9 +495,9 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
             const auto implicit_entry = function != nullptr && function->is_implicit_entry;
             auto name = implicit_entry ? std::string("main")
                                        : draft.source_slice_copy(module_id, *name_span);
-            if (source_builtin_type(name)) {
+            if (source_type_name_is_reserved(name)) {
                 diagnostics.push_back(
-                    catalog_error(source_id, "builtin type names are reserved", *name_span)
+                    catalog_error(source_id, "language type names are reserved", *name_span)
                 );
                 continue;
             }

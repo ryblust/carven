@@ -14,6 +14,7 @@ import :support.function_ref;
 import std;
 
 auto source_builtin_type(std::string_view name) noexcept -> std::optional<BuiltinType>;
+auto source_type_name_is_reserved(std::string_view name) noexcept -> bool;
 
 // The callable outlives each returned task, including nested type resolution.
 using ArrayExtentResolver = FunctionRef<AnalysisTask<std::uint64_t>(ASTExprID) noexcept>;

@@ -576,6 +576,13 @@ auto BodyExprSite::consume_read(OperandState& state, Value value, Span span) noe
     return result;
 }
 
+auto BodyExprSite::consume_take(OperandState& state, Value value, Span span) noexcept
+    -> ExpressionResult<SemanticExpression> {
+    state.completes &= value.completes;
+    append_pending_failures(state.pending, take_pending_failures(value));
+    return body.consume_value(value, span, AccessMode::Take);
+}
+
 auto BodyExprSite::finish_constructed(
     ConstructionTypeRef type,
     SemanticExpressionValue value,

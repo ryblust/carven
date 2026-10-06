@@ -38,7 +38,7 @@ auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span spa
         co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeNotIndexable,
-            "indexing requires an array or slice value"
+            "indexing requires an array, slice, or Sequence value"
         ));
     }
     const auto index_type = site.type(*index);
@@ -71,7 +71,7 @@ auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span spa
     }
     co_return site.finish_index(
         shape->element,
-        shape->extent.has_value(),
+        shape->kind != SequenceShapeKind::Slice,
         bounds,
         std::move(*receiver),
         std::move(*index),

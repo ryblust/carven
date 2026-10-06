@@ -1,5 +1,5 @@
 import .error using JSONError;
-import std::simd.scan using { one_of, byte_range, set_union, find_where };
+import std::simd.scan using { one_of, byte_range, set_union, find_from };
 
 // The payload ends the ordinary byte run; offset advances past the terminator.
 enum StringPart {
@@ -111,13 +111,13 @@ const fn begin_string(bytes: [u8], &offset: usize) throw JSONError {
 // Raw bytes are not checked for UTF-8 here; each public ingress establishes it.
 const fn next_string_part(bytes: [u8], &offset: usize) -> StringPart throw JSONError {
     var end = offset;
-    match find_where(bytes.slice(offset, bytes.len()), stops) {
+    match find_from(bytes, offset, stops) {
         .Missing => throw JSONError {
             kind:.UnexpectedEnd,
             offset: bytes.len()
         },
         .Found(position) => {
-            end += position;
+            end = position;
         },
     }
     let byte = bytes[end];

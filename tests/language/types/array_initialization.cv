@@ -146,3 +146,33 @@ test "Array initialization: zero lambda occurrences retain a type without constr
     let taken = &&input;
     check(taken == "retained");
 }
+
+const fn array_extent_effects() -> bool {
+    var counter = 0;
+    let count = [array_initialize(&counter); 3].len();
+    let empty = [array_initialize(&counter); 0].is_empty();
+    let nonempty = [array_initialize(&counter); 1].is_empty();
+    [array_initialize(&counter); 1].len();
+    return count == 3 && empty && !nonempty && counter == 5;
+}
+
+const fn array_extent_failure() -> usize {
+    return try {
+        [array_fail_value()?].len()
+    } catch {
+        ArrayFailure(_) => 9usize,
+    };
+}
+
+const array_direct_extent = [2u8, 4u8, 6u8].len();
+
+const test "Array extent queries: receiver effects and failures execute once" {
+    check(array_direct_extent == 3);
+    check(array_extent_effects());
+    check(array_extent_failure() == 9);
+}
+
+test "Array extent queries: native results preserve receiver effects and failures" {
+    check(array_extent_effects());
+    check(array_extent_failure() == 9);
+}

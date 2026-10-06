@@ -34,7 +34,7 @@ to an owner; holder relationships belong to storage positions within that owner.
 Query inputs describe aliases, accesses, availability, relationships, and
 execution state. Writes replace relationships for a definite singleton target.
 Unknown elements and multiple possible targets merge possible relationships. Type
-contents identify Carven storage owners (arrays and Strings), closure owners,
+contents identify Carven storage owners (arrays, Strings, and owning sequences), closure owners,
 and callable views. These facts propagate to a fixed point over type
 dependencies. Slices and native template arguments propagate only callable-view
 restrictions; pointers do not propagate target contents. Relationship
@@ -100,8 +100,10 @@ part of semantic identity.
 
 Recursive storage uses direct backing edges. Call normalization preserves exact
 identities for unambiguous interface roots and their inline callable/capture
-storage. Other reachable objects are grouped by allocation site
-`(BodyID, slot, input-or-local)`. Query identity retains a local site only when its
+storage. Other reachable objects are grouped by storage site
+`(BodyID, slot, input-or-local, element-selection)`. Selection roles bound
+abstract grouping; they do not establish exact storage identity. Query identity
+retains a local site only when its
 body shares the callee's recursion component, because only such a body can
 allocate at that site again during the callee's execution. Other sites are
 renamed to callee-relative input sites in first-occurrence order, preserving their
@@ -113,6 +115,24 @@ multiple objects retains that property through subsequent calls. Exact inline tr
 stops at slice backing and ambiguous or unknown-index targets. The semantic restrictions
 on callable-view storage in nominal types and captures bound inline callable
 chains. Allocation identity is separate from diagnostic provenance.
+
+Sequence selections record checked element types before normalization, including
+when enum payload slots have different types. Call boundaries cut these
+indirections into element referents with finite inline paths. Carrier ownership
+is a separate topology and is not copied with a value. Observable roots retain
+transitive carrier relations; inaccessible intermediate ancestors are discarded.
+An inherited structural pin is removed only when a retained child's protection
+covers it through exact inline positions and direct selections. Other hidden pins
+and reader loans retain protected element regions. Unknown selections remain
+many, may overlap, and receive weak updates.
+
+Restoration maps modified referents to their actual caller projection, rather
+than replacing the entire carrier. Returned storage loans retain the first
+selected element index and protect that element's descendants. Recursive suffixes
+are summarized in this region, keeping returned borrowing relationships finite.
+Known different indices remain disjoint for element updates; structural carrier
+mutation invalidates their loans. Exact storage identity uses carrier, index, and
+element type, independently of diagnostic witnesses and selection roles.
 
 ### Joins and solver completion
 
@@ -152,7 +172,11 @@ after every query succeeds. Solver and diagnosis state remain private to analysi
 ### Control flow and diagnostics
 
 Unfinished calls retain direct place and borrowed-target accesses. Array iteration
-retains its source owner. Match guards additionally require stable subject storage.
+retains its source owner. Sequence traversal also retains its carrier against
+structural replacement while allowing element updates. Match guards additionally require stable subject storage.
+Payload alias bindings resolve through the selected storage map; alternatives
+retain the union of candidate projections. Their arms pin enclosing storage,
+and leaving an arm restores the enclosing selection environment.
 Branches merge only real successors; loops include entry, backedges, and exits.
 Diagnostic witnesses do not distinguish execution states.
 Return, failure, and test-stop states have separate transfer paths. Test stop

@@ -124,6 +124,9 @@ auto ProgramDraft::intern_generic_type(GenericTypeExpression expression) noexcep
             [&](const GenericSliceType& slice) noexcept {
                 static_cast<void>(generic_type_copy(slice.element));
             },
+            [&](const GenericOwnedSequenceType& sequence) noexcept {
+                static_cast<void>(generic_type_copy(sequence.element));
+            },
             [&](const GenericPointerType& pointer) noexcept {
                 static_cast<void>(generic_type_copy(pointer.target));
             },
@@ -191,6 +194,13 @@ auto ProgramDraft::substitute_generic_type(
                     GenericSliceType {substitute_generic_type(slice.element, definition, arguments)}
                 );
             },
+            [&](const GenericOwnedSequenceType& sequence) noexcept {
+                return intern_generic_type(
+                    GenericOwnedSequenceType {
+                        substitute_generic_type(sequence.element, definition, arguments)
+                    }
+                );
+            },
             [&](const GenericPointerType& pointer) noexcept {
                 return intern_generic_type(
                     GenericPointerType {
@@ -233,6 +243,13 @@ auto ProgramDraft::resolve_generic_type(GenericTypeID type, ProgramOriginID orig
                     return std::unexpected(element.error());
                 }
                 return intern_type({.value = SliceTypeValue {*element}});
+            },
+            [&](const GenericOwnedSequenceType& sequence) noexcept -> AnalysisResult<TypeID> {
+                auto element = resolve_generic_type(sequence.element, origin);
+                if (!element) {
+                    return std::unexpected(element.error());
+                }
+                return intern_type({.value = OwnedSequenceTypeValue {*element}});
             },
             [&](const GenericPointerType& pointer) noexcept -> AnalysisResult<TypeID> {
                 auto target = resolve_generic_type(pointer.target, origin);

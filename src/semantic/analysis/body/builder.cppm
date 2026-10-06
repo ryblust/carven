@@ -53,6 +53,14 @@ public:
         bool,
         ProgramOriginID
     ) noexcept -> BoundStorage;
+    auto add_alias_binding(
+        ProgramSpellingID,
+        ConstructionTypeRef,
+        LifetimeRegionID,
+        AccessMode,
+        ProgramOriginID
+    ) noexcept -> BoundStorage;
+    auto binding_copy(LocalBindingID) const noexcept -> ElaboratedLocalBinding;
     auto add_pattern(ElaboratedPattern) noexcept -> PatternID;
     auto pattern_copy(PatternID) const noexcept -> ElaboratedPattern;
     auto completion_patterns() const noexcept -> CompletionPatterns;

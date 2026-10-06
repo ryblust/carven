@@ -181,6 +181,15 @@ auto BodyElaborator::lambda_expression(
             capture.write_marker.has_value() ? CaptureMode::Write : CaptureMode::Value;
         auto operand = std::optional<SemCapture>();
         if (mode == CaptureMode::Write) {
+            if (std::holds_alternative<AliasBindingStorage>(
+                    active_builder().binding_copy(local->storage.binding).storage
+                )) {
+                co_return std::unexpected(fail(
+                    capture.name_span,
+                    DiagnosticCode::AccessCaptureConflict,
+                    "payload aliases cannot be captured with Write access"
+                ));
+            }
             auto place = consume_place(built, capture.span);
             if (!place.has_value()) {
                 co_return std::unexpected(place.error());

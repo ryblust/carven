@@ -5,6 +5,7 @@ import :semantic.analysis.construction.limits;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.generic;
+import :semantic.semir.sequence;
 import :support.graph;
 import :support.invariant;
 import :support.visit;
@@ -85,6 +86,9 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                 [](const GenericTypeParameter&) static noexcept {},
                 [&](const GenericArrayType& array) noexcept { self(self, array.element, origin); },
                 [&](const GenericSliceType& slice) noexcept { self(self, slice.element, origin); },
+                [&](const GenericOwnedSequenceType& sequence) noexcept {
+                    self(self, sequence.element, origin);
+                },
                 [&](const GenericPointerType& pointer) noexcept {
                     self(self, pointer.target, origin);
                 },
@@ -171,6 +175,9 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                     [&](const GenericSliceType& slice) noexcept {
                         self(self, slice.element, true, result);
                     },
+                    [&](const GenericOwnedSequenceType& sequence) noexcept {
+                        self(self, sequence.element, true, result);
+                    },
                     [&](const GenericPointerType& pointer) noexcept {
                         self(self, pointer.target, true, result);
                     },
@@ -199,6 +206,9 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                     },
                     [&](const GenericArrayType& array) noexcept { self(self, array.element); },
                     [&](const GenericSliceType& slice) noexcept { self(self, slice.element); },
+                    [&](const GenericOwnedSequenceType& sequence) noexcept {
+                        self(self, sequence.element);
+                    },
                     [&](const GenericPointerType& pointer) noexcept { self(self, pointer.target); },
                     [&](const GenericNominalApplication& application) noexcept {
                         const auto target = generic_declaration_copy(application.definition);
@@ -321,6 +331,11 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                 },
                 [&](const GenericArrayType& array) noexcept {
                     self(self, array.element, owns_storage, origin);
+                },
+                [&](const GenericOwnedSequenceType& sequence) noexcept {
+                    // Dynamic owning storage breaks layout recursion. Its element
+                    // value contract is checked after source heads are complete.
+                    self(self, sequence.element, false, origin);
                 },
                 [&](const GenericNominalApplication& application) noexcept {
                     const auto key =

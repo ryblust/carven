@@ -112,7 +112,7 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
     }
     // Only a body in the callee's recursion component can allocate at a local
     // site again; other sites need only their equality within this input.
-    auto canonical_sites = std::flat_map<OwnershipAllocationSite, OwnershipAllocationSite>();
+    auto canonical_sites = std::flat_map<OwnershipStorageSite, OwnershipStorageSite>();
     for (auto& object : input.objects) {
         normalize_relationships(object.state.relationships);
         if (!object.site.input
@@ -120,7 +120,7 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
                 == recursion_components.at(input.body_id)) {
             continue;
         }
-        const auto canonical = OwnershipAllocationSite {
+        const auto canonical = OwnershipStorageSite {
             .body = input.body_id,
             .slot = canonical_sites.size(),
             .input = true,
@@ -266,6 +266,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                         return true;
                     },
                     [](const OwnerBindingStorage&) static noexcept { return false; },
+                    [](const AliasBindingStorage&) static noexcept { return false; },
                 }
             );
             auto alias = std::optional<OwnershipPlace>();

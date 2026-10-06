@@ -96,6 +96,11 @@ struct SliceTypeValue final {
     constexpr auto operator==(const SliceTypeValue&) const noexcept -> bool = default;
 };
 
+struct OwnedSequenceTypeValue final {
+    TypeID element;
+    constexpr auto operator==(const OwnedSequenceTypeValue&) const noexcept -> bool = default;
+};
+
 struct FunctionTypeValue final {
     CallableID callable;
     constexpr auto operator==(const FunctionTypeValue&) const noexcept -> bool = default;
@@ -117,6 +122,7 @@ using CanonicalTypeValue = std::variant<
     EnumTypeValue,
     ArrayTypeValue,
     SliceTypeValue,
+    OwnedSequenceTypeValue,
     RangeTypeValue,
     PointerTypeValue,
     FunctionTypeValue,

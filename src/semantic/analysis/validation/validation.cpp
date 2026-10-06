@@ -7,8 +7,10 @@ import :semantic.analysis.operations;
 import :semantic.analysis.validation.context;
 import :semantic.analysis.validation;
 import :semantic.semir.constant;
+import :semantic.semir.constant_access;
 import :semantic.semir.contents;
 import :semantic.semir.program;
+import :semantic.semir.sequence;
 import :support.invariant;
 import std;
 
@@ -47,6 +49,22 @@ auto validate_global_semantic_contracts(
             for (const auto payload : case_declaration.payload_types) {
                 reject(payload, case_declaration.origin);
             }
+        }
+    }
+    const auto values = PublishedConstantValues(program);
+    for (const auto [type, canonical] : program.types().entries()) {
+        const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&canonical.value);
+        if (!sequence) {
+            continue;
+        }
+        if (const auto reason = unsupported_sequence_element(values, sequence->element)) {
+            auto diagnostic =
+                DiagnosticBuilder(DiagnosticCode::TypeSequenceElement, std::string(*reason));
+            for (const auto [module, declaration] : program.declarations().modules()) {
+                diagnostic.primary(program.provenance().source_span(declaration.origin));
+                break;
+            }
+            failure = diagnostics.error(diagnostic.build());
         }
     }
     if (failure.has_value()) {

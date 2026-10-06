@@ -46,6 +46,7 @@ auto failure_order_key(const SemIRProgram& semantic, TypeID id) noexcept
                         || std::same_as<Value, CppTypeValue>
                         || std::same_as<Value, PointerTypeValue>
                         || std::same_as<Value, SliceTypeValue>
+                        || std::same_as<Value, OwnedSequenceTypeValue>
                         || std::same_as<Value, RangeTypeValue>,
                     "unhandled canonical failure type"
                 );

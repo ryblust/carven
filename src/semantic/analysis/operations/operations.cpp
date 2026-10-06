@@ -10,6 +10,7 @@ import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.decl;
 import :semantic.semir.simd;
+import :semantic.semir.sequence;
 import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
@@ -406,6 +407,9 @@ auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef 
     if (const auto* array = std::get_if<ArrayTypeValue>(&concrete.value)) {
         return type_contains_callable_view(draft, ConstructionTypeRef {array->element});
     }
+    if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&concrete.value)) {
+        return type_contains_callable_view(draft, ConstructionTypeRef {sequence->element});
+    }
     if (const auto* native = std::get_if<CppTypeValue>(&concrete.value)) {
         if (const auto* named = std::get_if<CppNamedType>(&native->form)) {
             return std::ranges::any_of(named->arguments, [&](TypeID argument) noexcept {
@@ -437,6 +441,7 @@ auto supports_equality(
             [](const PointerTypeValue&) static noexcept { return true; },
             [](const RangeTypeValue&) static noexcept { return false; },
             [](const SliceTypeValue&) static noexcept { return false; },
+            [](const OwnedSequenceTypeValue&) static noexcept { return false; },
         }
     );
 }
@@ -845,7 +850,7 @@ auto decide_slice_method(
     }
     const auto contract = slice_intrinsic_contract(*operation);
     const auto receiver = array ? SliceIntrinsicShape::Array : SliceIntrinsicShape::Slice;
-    if (receiver != contract.receiver) {
+    if (!slice_intrinsic_accepts_receiver(contract.receiver, receiver)) {
         return operation_error("sequence has no such method", DiagnosticCode::TypeMethodCall);
     }
     if (arguments != contract.arguments.size()) {
@@ -855,6 +860,39 @@ auto decide_slice_method(
         );
     }
     return operation;
+}
+
+auto decide_sequence_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<SequenceIntrinsic>, OperationDiagnostic> {
+    const auto shape = sequence_shape(draft, operand);
+    if (!shape || shape->kind != SequenceShapeKind::OwnedSequence) {
+        return std::optional<SequenceIntrinsic>();
+    }
+    auto intrinsic = SequenceIntrinsic::Len;
+    if (name == "len") {
+        intrinsic = SequenceIntrinsic::Len;
+    } else if (name == "is_empty") {
+        intrinsic = SequenceIntrinsic::IsEmpty;
+    } else if (name == "push") {
+        intrinsic = SequenceIntrinsic::Push;
+    } else if (name == "remove") {
+        intrinsic = SequenceIntrinsic::Remove;
+    } else if (name == "clear") {
+        intrinsic = SequenceIntrinsic::Clear;
+    } else {
+        return operation_error("Sequence has no such method", DiagnosticCode::TypeMethodCall);
+    }
+    if (arguments != (sequence_intrinsic_contract(intrinsic).argument ? 1uz : 0uz)) {
+        return operation_error(
+            "Sequence method argument count does not match",
+            DiagnosticCode::TypeMethodCallArity
+        );
+    }
+    return std::optional(intrinsic);
 }
 
 auto decide_text_method(
@@ -912,11 +950,29 @@ auto decide_text_property(std::string_view name) noexcept -> TextIntrinsicDecisi
 
 auto sequence_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<SequenceShape> {
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto canonical = draft.type_copy(*concrete);
+        if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&canonical.value)) {
+            return SequenceShape {
+                .kind = SequenceShapeKind::OwnedSequence,
+                .element = sequence->element,
+                .extent = std::nullopt,
+            };
+        }
+    }
     if (const auto array = array_shape(draft, type)) {
-        return SequenceShape {.element = array->element, .extent = array->extent};
+        return SequenceShape {
+            .kind = SequenceShapeKind::Array,
+            .element = array->element,
+            .extent = array->extent
+        };
     }
     if (const auto element = slice_element(draft, type)) {
-        return SequenceShape {.element = *element, .extent = std::nullopt};
+        return SequenceShape {
+            .kind = SequenceShapeKind::Slice,
+            .element = *element,
+            .extent = std::nullopt
+        };
     }
     return std::nullopt;
 }

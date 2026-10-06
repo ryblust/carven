@@ -230,7 +230,7 @@ auto plan_artifacts(
         auto added = false;
         for (const auto& requirements : references.surface_requirements) {
             for (const auto& [nominal, completeness] : requirements) {
-                if (completeness != TargetTypeCompleteness::CompleteDefinition
+                if (completeness == TargetTypeCompleteness::Declaration
                     || !interface_nominals.insert(nominal).second) {
                     continue;
                 }
@@ -306,7 +306,7 @@ auto plan_artifacts(
             }
         }
         for (const auto& [nominal, completeness] : references.surface_requirements[index]) {
-            if (completeness != TargetTypeCompleteness::CompleteDefinition) {
+            if (completeness == TargetTypeCompleteness::Declaration) {
                 continue;
             }
             const auto dependency = target_owner_module(semantic, target_declaration_ref(nominal));
@@ -415,7 +415,7 @@ auto plan_artifacts(
                         || included_components[*owner_component])) {
                     continue;
                 }
-                if (completeness == TargetTypeCompleteness::CompleteDefinition) {
+                if (completeness != TargetTypeCompleteness::Declaration) {
                     invariant_violation("complete interface dependency was not included");
                 }
                 forwards.insert(nominal);

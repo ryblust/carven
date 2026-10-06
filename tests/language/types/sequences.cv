@@ -1,0 +1,142 @@
+enum SequenceNode {
+    Leaf(i32),
+    Branch(Sequence<SequenceNode>),
+}
+
+struct SequenceLabels {
+    labels: Sequence<String>,
+}
+
+fn sequence_leaf(value: SequenceNode) -> i32 {
+    return match value {
+        .Leaf(number) => number,
+        .Branch(_) => -1,
+    };
+}
+
+fn sequence_add(&values: Sequence<i32>, value: i32) {
+    values.push(value);
+}
+
+fn sequence_first_text(values: Sequence<String>) -> str => values[0].as_str();
+
+fn sequence_sum(value: SequenceNode) -> i32 {
+    match value {
+        .Leaf(number) => return number,
+        .Branch(ref children) => {
+            var result = 0;
+            for child in children {
+                result += sequence_sum(child);
+            }
+            return result;
+        },
+    }
+}
+
+fn sequence_increment(&value: SequenceNode) -> void {
+    match value {
+        .Leaf(&number) => {
+            number += 1;
+        },
+        .Branch(&children) => {
+            for &child in children {
+                sequence_increment(&child);
+            }
+        },
+    }
+}
+
+test "Sequences: initialized elements support copies, transfer and mutation" {
+    var values = Sequence<i32> {};
+    check(values.is_empty());
+    values.push(3);
+    sequence_add(&values, 7);
+    check(values.len() == 2);
+    check(values[0] == 3);
+    check(values[1] == 7);
+    for &item in values {
+        item += 1;
+    }
+    var sum = 0;
+    for item in values {
+        sum += item;
+    }
+    check(sum == 12);
+    values.remove(0);
+    check(values.len() == 1);
+    check(values[0] == 8);
+    var moved = &&values;
+    moved.clear();
+    check(moved.is_empty());
+
+    var flags = Sequence<bool> {};
+    flags.push(true);
+    flags.push(false);
+    flags[1] = true;
+    for &flag in flags {
+        flag = !flag;
+    }
+    check(!flags[0]);
+    check(!flags[1]);
+}
+
+test "Sequences: nested String copies own independent storage" {
+    var labels = Sequence<String> {};
+    var first: String = "first";
+    labels.push(first);
+    first.append(" local");
+    check(labels[0].as_str() == "first");
+    let second: String = "second";
+    labels.push(&&second);
+    var original = SequenceLabels { labels: (&&labels) };
+    var copy = original;
+    copy.labels[0].append(" copy");
+    check(original.labels[0].as_str() == "first");
+    check(copy.labels[0].as_str() == "first copy");
+    original.labels.remove(0);
+    check(original.labels[0].as_str() == "second");
+    check(copy.labels.len() == 2);
+    let borrowed = sequence_first_text(original.labels);
+    copy.labels.clear();
+    check(borrowed == "second");
+}
+
+test "Sequences: owning indirection permits recursive enum children" {
+    var children = Sequence<SequenceNode> {};
+    children.push(.Leaf(4));
+    var branch: SequenceNode = .Branch(&&children);
+    match branch {
+        .Branch(&items) => { items.push(.Leaf(9)); },
+        .Leaf(_) => {},
+    }
+    let copy = branch;
+    match branch {
+        .Branch(&items) => { items[0] = .Leaf(8); },
+        .Leaf(_) => {},
+    }
+    match copy {
+        .Branch(ref items) => {
+            check(items.len() == 2);
+            check(sequence_leaf(items[0]) == 4);
+            check(sequence_leaf(items[1]) == 9);
+        },
+        .Leaf(_) => {
+            check(false);
+        },
+    }
+}
+
+test "Sequences: recursive reads and writes traverse independent owned trees" {
+    var inner = Sequence<SequenceNode> {};
+    inner.push(.Leaf(4));
+    inner.push(.Leaf(9));
+    var outer = Sequence<SequenceNode> {};
+    outer.push(.Branch(&&inner));
+    outer.push(.Leaf(2));
+    var tree: SequenceNode = .Branch(&&outer);
+    var copy = tree;
+    check(sequence_sum(tree) == 15);
+    sequence_increment(&copy);
+    check(sequence_sum(copy) == 18);
+    check(sequence_sum(tree) == 15);
+}

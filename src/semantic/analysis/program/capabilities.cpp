@@ -82,6 +82,7 @@ auto compute_equality_capabilities(
                             || std::same_as<Value, CppTypeValue>
                             || std::same_as<Value, RangeTypeValue>
                             || std::same_as<Value, SliceTypeValue>
+                            || std::same_as<Value, OwnedSequenceTypeValue>
                         );
                         supported[index] = false;
                     },

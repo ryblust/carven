@@ -68,6 +68,10 @@ auto solve_type_contents(
             Overloaded {
                 [&](const ClosureTypeValue&) noexcept { contents[index] = closure_content; },
                 [&](const CallableViewTypeValue&) noexcept { contents[index] = callable_content; },
+                [&](const OwnedSequenceTypeValue& value) noexcept {
+                    contents[index] = storage_content;
+                    depend(value.element, all_contents);
+                },
                 [&](const ArrayTypeValue& value) noexcept {
                     contents[index] = storage_content;
                     depend(

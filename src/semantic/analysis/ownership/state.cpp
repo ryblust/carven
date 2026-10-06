@@ -384,22 +384,52 @@ auto OwnershipBodyAnalyzer::is_writable(LocalBindingID id) const noexcept -> boo
             [](const CaptureBindingStorage& value) static noexcept {
                 return value.mode == CaptureMode::Write;
             },
+            [](const AliasBindingStorage& value) static noexcept {
+                return value.access == AccessMode::Write;
+            },
         }
     );
 }
 
+auto OwnershipBodyAnalyzer::storage_ancestor(
+    const OwnershipPlace& owner,
+    const OwnershipPlace& referent,
+    bool strict
+) const noexcept -> bool {
+    return storage_region_ancestor(input.owns, owner, referent, strict);
+}
+
+auto OwnershipBodyAnalyzer::storage_overlaps(
+    const OwnershipPlace& left,
+    const OwnershipPlace& right
+) const noexcept -> bool {
+    return storage_regions_overlap(input.owns, left, right);
+}
+
 auto OwnershipBodyAnalyzer::write_access(
     const OwnershipPlace& target,
-    ProgramOriginID origin
+    ProgramOriginID origin,
+    bool invalidates
 ) noexcept -> void {
     if (!diagnosing) {
         return;
     }
     for (const auto& access : accesses) {
-        if (access.stable && overlaps(access.place, target)) {
+        if (access.kind == OwnershipAccessKind::Stable && storage_overlaps(access.place, target)) {
             diagnose(
                 DiagnosticCode::AccessOperationConflict,
                 "Write conflicts with stable match selection",
+                origin,
+                object_origin(access.place.object)
+            );
+        }
+        if (invalidates
+            && access.kind == OwnershipAccessKind::Structural
+            && (storage_ancestor(target, access.place, true)
+                || (access.descendants && storage_overlaps(target, access.place)))) {
+            diagnose(
+                DiagnosticCode::AccessBorrowConflict,
+                "Write would invalidate a selected element or active iteration",
                 origin,
                 object_origin(access.place.object)
             );
@@ -480,6 +510,20 @@ auto OwnershipBodyAnalyzer::take_conflict(
     const OwnershipState& state,
     const OwnershipPlace& target
 ) const noexcept -> std::optional<TakeConflict> {
+    for (const auto& [binding, places] : selected_storage) {
+        if (!std::holds_alternative<AliasBindingStorage>(body.binding(binding).storage)) {
+            continue;
+        }
+        for (const auto& selected : places) {
+            if (storage_ancestor(target, selected, false)) {
+                return TakeConflict {
+                    DiagnosticCode::AccessBorrowConflict,
+                    "Take would invalidate a borrowed pattern binding",
+                    body.binding(binding).origin
+                };
+            }
+        }
+    }
     if (const auto loan = storage_write_conflict(state, target)) {
         return TakeConflict {
             .code = DiagnosticCode::AccessBorrowConflict,
@@ -489,7 +533,7 @@ auto OwnershipBodyAnalyzer::take_conflict(
     }
     for (const auto& holder : state.objects) {
         for (const auto& loan : holder.relationships.view().callable_loans) {
-            if (loan.backing.has_value() && overlaps(*loan.backing, target)) {
+            if (loan.backing.has_value() && storage_overlaps(*loan.backing, target)) {
                 return TakeConflict {
                     .code = DiagnosticCode::AccessBorrowConflict,
                     .message = "Take conflicts with a live callable view",
@@ -499,7 +543,7 @@ auto OwnershipBodyAnalyzer::take_conflict(
         }
     }
     for (const auto& access : accesses) {
-        if (overlaps(access.place, target)) {
+        if (storage_overlaps(access.place, target)) {
             return TakeConflict {
                 .code = DiagnosticCode::AccessOperationConflict,
                 .message = "Take conflicts with an active access",
@@ -529,7 +573,7 @@ auto OwnershipBodyAnalyzer::storage_write_conflict(
                               std::span<const OwnershipStorageLoan> loans
                           ) noexcept -> std::optional<ProgramOriginID> {
         for (const auto& loan : loans) {
-            if (overlaps(loan.backing, target)) {
+            if (storage_overlaps(loan.backing, target)) {
                 return loan.origin;
             }
         }

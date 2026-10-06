@@ -2,7 +2,7 @@ import std::json.value using { Value, ValueKind };
 import std::json.error using ValueError;
 import std::json.error using JSONError;
 
-// Native-owned storage stays outside static execution; these exercise the source API.
+// Owning values and mutation are runtime contracts.
 test "JSON values: numeric construction and conversion preserve their one spelling" {
     try {
         let signed = Value::integer(-9223372036854775807i64 - 1);

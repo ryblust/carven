@@ -104,6 +104,9 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
             [&](const SliceTypeValue& value) noexcept {
                 return std::format("[{}]", name(value.element));
             },
+            [&](const OwnedSequenceTypeValue& value) noexcept {
+                return std::format("Sequence<{}>", name(value.element));
+            },
             [&](const RangeTypeValue& value) noexcept {
                 return std::format("range<{}>", name(value.element));
             },

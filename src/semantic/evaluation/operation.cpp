@@ -7,6 +7,7 @@ import :semantic.semir.constant;
 import :semantic.semir.constant_access;
 import :semantic.semir.operation;
 import :semantic.semir.simd;
+import :semantic.semir.slice;
 import :semantic.semir.type;
 import :support.invariant;
 import std;
@@ -952,15 +953,25 @@ auto evaluate_slice_intrinsic_constant_value(
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     validate_constant_fact(values, operand);
+    const auto* array = std::get_if<ArrayConstant>(&operand.value);
     const auto* slice = std::get_if<SliceConstant>(&operand.value);
-    if (slice == nullptr || intrinsic == SliceIntrinsic::FromArray) {
+    const auto contract = slice_intrinsic_contract(intrinsic);
+    if (array == nullptr && slice == nullptr) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
-    if (bounds.size() != (intrinsic == SliceIntrinsic::Slice ? 2uz : 0uz)) {
+    if (!slice_intrinsic_accepts_receiver(
+            contract.receiver,
+            array ? SliceIntrinsicShape::Array : SliceIntrinsicShape::Slice
+        )
+        || bounds.size() != contract.arguments.size()) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
+    if (intrinsic == SliceIntrinsic::FromArray) {
+        return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
+    }
+    const auto& elements = array ? array->elements : slice->elements;
     if (intrinsic == SliceIntrinsic::IsEmpty) {
-        return constant_boolean(values, result, slice->elements.empty());
+        return constant_boolean(values, result, elements.empty());
     }
     if (intrinsic == SliceIntrinsic::Len) {
         if (!is_builtin(values, result, BuiltinType::Usize)) {
@@ -968,7 +979,7 @@ auto evaluate_slice_intrinsic_constant_value(
         }
         return ConstantFact {
             .type = result,
-            .value = IntegerConstant::from_parts(slice->elements.size(), false),
+            .value = IntegerConstant::from_parts(elements.size(), false),
         };
     }
     if (result != operand.type) {

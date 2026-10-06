@@ -42,6 +42,8 @@ auto query_default_initialization(
                         || value.kind == BuiltinType::Char
                         || value.kind == BuiltinType::Str
                         || value.kind == BuiltinType::String;
+                } else if constexpr (std::same_as<Value, OwnedSequenceTypeValue>) {
+                    return true;
                 } else if constexpr (std::same_as<Value, ArrayTypeValue>
                                      || std::same_as<Value, ConstructionArrayTypeValue>) {
                     if (value.extent != 0u) {

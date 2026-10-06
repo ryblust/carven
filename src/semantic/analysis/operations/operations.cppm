@@ -8,6 +8,7 @@ import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.initialization;
 import :semantic.semir.program;
+import :semantic.semir.sequence;
 import :semantic.semir.type;
 import std;
 
@@ -48,7 +49,10 @@ auto select_structure_initializers(
     std::span<const ConstructionStructField> fields
 ) noexcept -> AnalysisResult<std::vector<StructureInitializer>>;
 
+enum class SequenceShapeKind { Array, Slice, OwnedSequence };
+
 struct SequenceShape final {
+    SequenceShapeKind kind;
     ConstructionTypeRef element;
     std::optional<std::uint64_t> extent;
 };
@@ -142,6 +146,13 @@ auto decide_slice_method(
     std::string_view name,
     std::size_t arguments
 ) noexcept -> std::expected<std::optional<SliceIntrinsic>, OperationDiagnostic>;
+
+auto decide_sequence_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<SequenceIntrinsic>, OperationDiagnostic>;
 
 auto decide_text_method(
     const ProgramDraft& draft,

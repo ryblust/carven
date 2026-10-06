@@ -614,33 +614,6 @@ auto traverse_target_class_member(const TargetClassMember& member, Visitor& visi
             [&](const TargetTypeAlias& value) noexcept {
                 return visit_target_type(visitor, value.type);
             },
-            [&](const TargetConstructorDecl& value) noexcept {
-                return traverse_target_parameters(value.parameters, visitor)
-                    && with_target_scope(
-                           visitor,
-                           {TargetTraversalScopeKind::Callable, false},
-                           [&]() noexcept {
-                               for (const auto& parameter : value.parameters) {
-                                   if (parameter.local.has_value()
-                                       && !visit_target_local_parameter(
-                                           visitor,
-                                           *parameter.local
-                                       )) {
-                                       return false;
-                                   }
-                               }
-                               return std::ranges::all_of(
-                                   value.initializers,
-                                   [&](const auto& initializer) noexcept {
-                                       return traverse_target_expression(
-                                           initializer.value,
-                                           visitor
-                                       );
-                                   }
-                               );
-                           }
-                    );
-            },
             [&](const TargetMemberFunctionDecl& value) noexcept {
                 return traverse_target_member_function(value, visitor);
             },

@@ -169,7 +169,8 @@ auto BodyBuilder::binding_expression(LocalBindingID id) noexcept -> PlaceExpress
             using Storage = std::remove_cvref_t<decltype(storage)>;
             if constexpr (std::same_as<Storage, OwnerBindingStorage>) {
                 return storage.writable ? AccessMode::Write : AccessMode::Read;
-            } else if constexpr (std::same_as<Storage, ParameterBindingStorage>) {
+            } else if constexpr (std::same_as<Storage, ParameterBindingStorage>
+                                 || std::same_as<Storage, AliasBindingStorage>) {
                 return storage.access == AccessMode::Write ? AccessMode::Write : AccessMode::Read;
             } else {
                 return storage.mode == CaptureMode::Write ? AccessMode::Write : AccessMode::Read;

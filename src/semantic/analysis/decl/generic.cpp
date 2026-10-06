@@ -32,7 +32,7 @@ auto DeclResolver::resolve_generic_nominal(
     auto parameter_names = std::map<std::string, Span, std::less<>>();
     for (const auto span : (*clause)->names) {
         auto name = draft.source_slice_copy(symbol.module_id, span);
-        if (name == "_" || name == "ptr" || name == "range" || source_builtin_type(name)) {
+        if (name == "_" || source_type_name_is_reserved(name)) {
             co_return std::unexpected(declaration_failure(
                 draft,
                 symbol.module_id,
@@ -90,6 +90,9 @@ auto DeclResolver::resolve_generic_nominal(
                 [](const GenericTypeParameter&) static noexcept {},
                 [&](const GenericArrayType& array) noexcept { self(self, array.element, origin); },
                 [&](const GenericSliceType& slice) noexcept { self(self, slice.element, origin); },
+                [&](const GenericOwnedSequenceType& sequence) noexcept {
+                    self(self, sequence.element, origin);
+                },
                 [&](const GenericPointerType& pointer) noexcept {
                     self(self, pointer.target, origin);
                 },

@@ -183,6 +183,9 @@ auto body_closure_references(const SemIRProgram& semantic, const SemIRBody& body
                         }
                     },
                     [&](const ArrayTypeValue& value) noexcept { pending.push_back(value.element); },
+                    [&](const OwnedSequenceTypeValue& value) noexcept {
+                        pending.push_back(value.element);
+                    },
                     [&](const SliceTypeValue& value) noexcept { pending.push_back(value.element); },
                     [&](const RangeTypeValue& value) noexcept { pending.push_back(value.element); },
                     [&](const FunctionTypeValue& value) noexcept {

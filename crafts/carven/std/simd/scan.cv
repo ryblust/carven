@@ -193,12 +193,18 @@ export const fn count_where(bytes: [u8], const set: ByteSet) -> usize {
 }
 
 export const fn find_where(bytes: [u8], const set: ByteSet) -> ByteSearch {
+    return find_from(bytes, 0, set);
+}
+
+// Found positions refer to the supplied input, including a skipped prefix.
+export const fn find_from(bytes: [u8], start: usize, const set: ByteSet) -> ByteSearch {
+    assert(start <= bytes.len());
     const if run_count(set) == 0 { return .Missing; }
     const if is_complete(set) {
-        if bytes.is_empty() { return .Missing; }
-        return .Found(0);
+        if start == bytes.len() { return .Missing; }
+        return .Found(start);
     }
-    var offset: usize = 0;
+    var offset = start;
     while bytes.len() - offset >= 32 {
         let matched = match_set(u8x32::load(bytes, offset), set);
         if matched.any() { return .Found(offset + matched.first_or(0)); }
@@ -212,10 +218,15 @@ export const fn find_where(bytes: [u8], const set: ByteSet) -> ByteSearch {
 }
 
 export const fn prefix_where(bytes: [u8], const set: ByteSet) -> usize {
-    const if run_count(set) == 0 { return 0; }
+    return prefix_end(bytes, 0, set);
+}
+
+export const fn prefix_end(bytes: [u8], start: usize, const set: ByteSet) -> usize {
+    assert(start <= bytes.len());
+    const if run_count(set) == 0 { return start; }
     const if is_complete(set) { return bytes.len(); }
-    if bytes.is_empty() || contains_byte(bytes[0], set) == false { return 0; }
-    var offset: usize = 0;
+    if start == bytes.len() || contains_byte(bytes[start], set) == false { return start; }
+    var offset = start;
     while bytes.len() - offset >= 32 {
         let rejected = ~match_set(u8x32::load(bytes, offset), set);
         if rejected.any() { return offset + rejected.first_or(0); }

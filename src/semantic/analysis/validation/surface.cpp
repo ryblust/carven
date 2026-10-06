@@ -125,6 +125,7 @@ auto DeclarationSurfaceValidator::validate(TypeID type) noexcept -> void {
                 }
             },
             [&](const RangeTypeValue& value) noexcept { validate(value.element); },
+            [&](const OwnedSequenceTypeValue& value) noexcept { validate(value.element); },
             [&](const SliceTypeValue& value) noexcept { validate(value.element); },
             [&](const ArrayTypeValue& value) noexcept { validate(value.element); },
             [&](const PointerTypeValue& value) noexcept { validate(value.target); },

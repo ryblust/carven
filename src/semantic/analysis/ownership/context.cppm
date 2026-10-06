@@ -15,9 +15,26 @@ import std;
 // not the computations that selected it.
 using OwnershipProjectionPath = std::vector<std::optional<std::uint64_t>>;
 
+// Sequence storage is indirect. These checked selection boundaries are cut
+// into referent roots at a call boundary; inline paths remain finite.
+struct OwnershipIndirection final {
+    std::size_t offset;
+    TypeID element;
+    ProgramOriginID site;
+
+    auto operator<=>(const OwnershipIndirection& other) const noexcept {
+        return std::tie(offset, element) <=> std::tie(other.offset, other.element);
+    }
+
+    auto operator==(const OwnershipIndirection& other) const noexcept -> bool {
+        return (*this <=> other) == 0;
+    }
+};
+
 struct OwnershipPlace final {
     std::size_t object;
     OwnershipProjectionPath path;
+    std::vector<OwnershipIndirection> indirections {};
     auto operator<=>(const OwnershipPlace&) const noexcept = default;
 };
 
@@ -139,9 +156,12 @@ struct OwnershipCondition final {
     std::vector<OwnershipExit> exits;
 };
 
+enum class OwnershipAccessKind { Active, Stable, Structural };
+
 struct OwnershipAccess final {
     OwnershipPlace place;
-    bool stable;
+    OwnershipAccessKind kind;
+    bool descendants = false;
     auto operator<=>(const OwnershipAccess&) const noexcept = default;
 };
 
@@ -153,21 +173,31 @@ struct OwnershipCallArgument final {
     auto operator==(const OwnershipCallArgument&) const noexcept -> bool = default;
 };
 
-struct OwnershipAllocationSite final {
+struct OwnershipStorageSite final {
     BodyID body;
     std::size_t slot;
     bool input;
-    auto operator<=>(const OwnershipAllocationSite&) const noexcept = default;
+    std::optional<ProgramOriginID> element_selection {};
+    auto operator<=>(const OwnershipStorageSite&) const noexcept = default;
 };
 
 struct OwnershipExternalObject final {
     TypeID type;
     ProgramOriginID origin;
     OwnershipObjectState state;
-    OwnershipAllocationSite site;
+    OwnershipStorageSite site;
     bool many;
 
     auto operator==(const OwnershipExternalObject& other) const noexcept -> bool;
+};
+
+// Carrier ownership is storage topology, not a relationship copied with a value.
+struct OwnershipStorageEdge final {
+    OwnershipPlace carrier;
+    std::size_t element;
+    std::optional<std::uint64_t> index;
+    bool direct;
+    auto operator<=>(const OwnershipStorageEdge&) const noexcept = default;
 };
 
 // Call inputs normalize reachable objects and clear modification history.
@@ -180,6 +210,7 @@ struct OwnershipCallInput final {
     std::vector<std::vector<bool>> outlives;
     std::vector<OwnershipAccess> accesses;
     std::vector<OwnershipStorageLoan> storage_readers;
+    std::vector<OwnershipStorageEdge> owns {};
     auto operator==(const OwnershipCallInput&) const noexcept -> bool = default;
 };
 
@@ -265,7 +296,8 @@ auto select_element_storage(
     TypeID sequence,
     std::span<const OwnershipPlace> storage,
     const OwnershipRelationships& relationships,
-    std::optional<std::uint64_t> index
+    std::optional<std::uint64_t> index,
+    ProgramOriginID selection
 ) noexcept -> std::vector<OwnershipPlace>;
 
 auto overlaps(
@@ -273,6 +305,18 @@ auto overlaps(
     std::span<const std::optional<std::uint64_t>> right
 ) noexcept -> bool;
 auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept -> bool;
+
+auto storage_region_ancestor(
+    std::span<const OwnershipStorageEdge> edges,
+    const OwnershipPlace& owner,
+    const OwnershipPlace& referent,
+    bool strict
+) noexcept -> bool;
+auto storage_regions_overlap(
+    std::span<const OwnershipStorageEdge> edges,
+    const OwnershipPlace& left,
+    const OwnershipPlace& right
+) noexcept -> bool;
 auto normalize_storage_loans(std::vector<OwnershipStorageLoan>& loans) noexcept -> void;
 auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void;
 auto merge_relationships(
@@ -387,12 +431,25 @@ private:
         -> std::vector<OwnershipPlace>;
     auto binding_place(LocalBindingID binding) const noexcept -> OwnershipPlace;
     auto is_writable(LocalBindingID binding) const noexcept -> bool;
-    auto write_access(const OwnershipPlace& target, ProgramOriginID origin) noexcept -> void;
+    auto storage_ancestor(
+        const OwnershipPlace& owner,
+        const OwnershipPlace& referent,
+        bool strict
+    ) const noexcept -> bool;
+    auto storage_overlaps(const OwnershipPlace& left, const OwnershipPlace& right) const noexcept
+        -> bool;
+    auto write_access(
+        const OwnershipPlace& target,
+        ProgramOriginID origin,
+        bool invalidates = true
+    ) noexcept -> void;
     auto require_available(
         const OwnershipState& state,
         const OwnershipPlace& place,
         ProgramOriginID origin
     ) noexcept -> void;
+    auto selected_access_kind(const SemanticExpression& source) const noexcept
+        -> OwnershipAccessKind;
     auto constant_index(const SemanticExpression& source) const noexcept
         -> std::optional<std::uint64_t>;
     auto complete_place(
@@ -445,7 +502,8 @@ private:
     auto bind_pattern(
         OwnershipState& state,
         PatternID pattern,
-        const OwnershipRelationships& relationships
+        const OwnershipRelationships& relationships,
+        std::span<const OwnershipPlace> places = {}
     ) noexcept -> void;
     auto pattern_condition(
         PatternID pattern,

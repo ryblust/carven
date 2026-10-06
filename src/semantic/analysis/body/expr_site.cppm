@@ -66,6 +66,8 @@ public:
     ) noexcept -> ExpressionTask<Value>;
     auto consume_write(OperandState& state, Value value, Span span) noexcept
         -> ExpressionResult<SemanticExpression>;
+    auto consume_take(OperandState& state, Value value, Span span) noexcept
+        -> ExpressionResult<SemanticExpression>;
     auto consume_read(OperandState& state, Value value, Span span) noexcept
         -> ExpressionResult<SemanticExpression>;
     auto finish_constructed(

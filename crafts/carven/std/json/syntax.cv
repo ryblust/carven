@@ -1,6 +1,6 @@
 import .error using JSONError;
 import .string using { begin_string, next_string_part };
-import std::simd.scan using { one_of, byte_range, prefix_where };
+import std::simd.scan using { one_of, byte_range, prefix_end };
 
 enum Expectation: u8 {
     ArrayFirst,
@@ -48,18 +48,18 @@ private const whitespace = one_of(" \t\r\n".bytes);
 private const digits = byte_range(0x30, 0x39);
 
 private const fn skip_space(bytes: [u8], &offset: usize) {
-    offset += prefix_where(bytes.slice(offset, bytes.len()), whitespace);
+    offset = prefix_end(bytes, offset, whitespace);
 }
 
 private const fn read_digits(bytes: [u8], &offset: usize) throw JSONError {
-    let count = prefix_where(bytes.slice(offset, bytes.len()), digits);
-    if count == 0 {
+    let end = prefix_end(bytes, offset, digits);
+    if end == offset {
         throw JSONError {
             kind:.InvalidNumber,
             offset: offset
         };
     }
-    offset += count;
+    offset = end;
 }
 
 private const fn read_number(bytes: [u8], &offset: usize) throw JSONError {
@@ -213,7 +213,7 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
         }
         match byte {
             0x7b | 0x5b => {
-                if state.depth == state.frames.as_slice().len() {
+                if state.depth == state.frames.len() {
                     throw JSONError {
                         kind:.DepthLimit,
                         offset: state.offset

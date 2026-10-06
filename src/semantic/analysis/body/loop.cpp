@@ -183,6 +183,9 @@ auto BodyElaborator::range_for_statement(
             if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
                 element_type = array->element;
                 static_iterable = true;
+            } else if (const auto* sequence =
+                           std::get_if<OwnedSequenceTypeValue>(&canonical.value)) {
+                element_type = sequence->element;
             } else if (const auto* range = std::get_if<RangeTypeValue>(&canonical.value)) {
                 element_type = range->element;
                 read_only = true;
@@ -213,7 +216,7 @@ auto BodyElaborator::range_for_statement(
             co_return std::unexpected(fail(
                 ast.expression(id).span,
                 DiagnosticCode::TypeRangeIterable,
-                "range iterable must be an integer range, array, slice, or character view"
+                "range iterable must be an integer range, array, slice, Sequence, or character view"
             ));
         }
         if (source.const_span && (!static_iterable || header.write_marker.has_value())) {
@@ -237,6 +240,7 @@ auto BodyElaborator::range_for_statement(
                 for (const auto& [name, local] : frame.names) {
                     static_cast<void>(name);
                     stable |= place != nullptr
+                        && place->access == AccessMode::Write
                         && local.storage.binding == place->root
                         && std::holds_alternative<SemBinding>(place->expression.value);
                 }
@@ -245,7 +249,7 @@ auto BodyElaborator::range_for_statement(
                 co_return std::unexpected(fail(
                     ast.expression(id).span,
                     DiagnosticCode::AccessRangeIterable,
-                    "Write array iteration requires a stable whole local array place"
+                    "Write iteration requires a writable stable whole local owner place"
                 ));
             }
         } else {

@@ -22,14 +22,21 @@ modules cannot renumber them.
 Semantic visibility and C++ definition requirements determine interface
 artifacts. Declaration-only dependencies use forward declarations. Complete
 requirements form interface edges; strongly connected components share an
-interface. Function declaration return types, including Outcome and arrays,
-require only declarations of their component types. Object storage and Read
+interface. Function results and Take parameters require complete component
+types for the caller's value operations without imposing layout order. Object storage and Read
 traits require complete definitions. Body-only calls do not merge interfaces.
 Private nominals needed by an interface layout receive definitions in their
 owner's interface; declaration-only references receive forward declarations.
 Nominal declarations and definitions use the same module namespace, including
 source-only definitions. Completeness determines the artifact that owns a
 definition; it does not change the type's C++ identity or Carven source visibility.
+
+Owning sequence elements require complete definitions for their operations,
+but only declarations for the carrier layout. These deferred complete requirements
+participate in interface closure without imposing layout order. Both interface
+and source artifacts emit forwards, ordered nominal layouts, then dependent enum
+factory bodies. Payload enums use aggregate variant storage and implicit C++
+copy, move, and destruction; source construction and access remain checked by Carven.
 
 Concrete generic nominal instances seed the internal interface schedule. Their
 private layout dependencies use the same completeness closure and module ordering.

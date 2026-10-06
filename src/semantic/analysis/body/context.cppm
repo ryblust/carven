@@ -508,7 +508,8 @@ private:
         bool allow_new_bindings,
         std::flat_set<std::string, std::less<>>& used_bindings,
         std::vector<SemPatternBounds>& pattern_bounds,
-        CompletionQuery& completion
+        CompletionQuery& completion,
+        std::optional<AccessMode> subject_access = std::nullopt
     ) noexcept -> AnalysisTask<BuiltPattern>;
     auto resolve_pattern_constraint(const ASTConstraintOperand& operand) noexcept
         -> AnalysisTask<ConstructionTypeRef>;

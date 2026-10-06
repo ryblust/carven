@@ -36,6 +36,9 @@ auto DeclResolver::ensure_available(
                     [](const GenericTypeParameter&) static noexcept {},
                     [&](const GenericArrayType& array) noexcept { self(self, array.element); },
                     [&](const GenericSliceType& slice) noexcept { self(self, slice.element); },
+                    [&](const GenericOwnedSequenceType& sequence) noexcept {
+                        self(self, sequence.element);
+                    },
                     [&](const GenericPointerType& pointer) noexcept { self(self, pointer.target); },
                     [&](const GenericNominalApplication& application) noexcept {
                         definitions.push_back(application.definition);

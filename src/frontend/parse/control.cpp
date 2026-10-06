@@ -358,12 +358,12 @@ auto Parser::parse_catch_pattern_atom() noexcept -> std::optional<ASTCatchPatter
     };
 }
 
-auto Parser::parse_pattern() noexcept -> std::optional<ASTPatternID> {
+auto Parser::parse_pattern(bool case_payload) noexcept -> std::optional<ASTPatternID> {
     const auto nesting = enter_syntax_nesting();
     if (!nesting) {
         return std::nullopt;
     }
-    const auto first = parse_primary_pattern();
+    const auto first = parse_primary_pattern(case_payload);
     if (!first || !check(TokenKind::Pipe)) {
         return first;
     }
@@ -372,7 +372,7 @@ auto Parser::parse_pattern() noexcept -> std::optional<ASTPatternID> {
     auto pipes = std::vector<Span> {};
     while (const auto pipe = match(TokenKind::Pipe)) {
         pipes.push_back(pipe->span);
-        auto alternative = parse_primary_pattern();
+        auto alternative = parse_primary_pattern(case_payload);
         if (!alternative) {
             return std::nullopt;
         }
@@ -390,8 +390,32 @@ auto Parser::parse_pattern() noexcept -> std::optional<ASTPatternID> {
     );
 }
 
-auto Parser::parse_primary_pattern() noexcept -> std::optional<ASTPatternID> {
+auto Parser::parse_primary_pattern(bool case_payload) noexcept -> std::optional<ASTPatternID> {
     const auto start = current().span;
+    const auto read_alias = check(TokenKind::Identifier)
+        && slice(source, current().span) == "ref"
+        && check_next(TokenKind::Identifier);
+    if (read_alias || check(TokenKind::Ampersand)) {
+        const auto marker = consume();
+        if (!case_payload) {
+            fail("borrowed bindings require an enum case payload", marker.span);
+            return std::nullopt;
+        }
+        const auto name = expect(TokenKind::Identifier, "expected borrowed payload binding name");
+        if (failed) {
+            return std::nullopt;
+        }
+        return builder.append_pattern(
+            ASTPattern {
+                .span = join(marker.span, name.span),
+                .value = ASTBindingPattern {
+                    .mode = read_alias ? ASTPatternBindingMode::Read : ASTPatternBindingMode::Write,
+                    .marker_span = marker.span,
+                    .name_span = name.span,
+                },
+            }
+        );
+    }
     const auto checkpoint = begin_speculation();
     auto begin = std::optional<ASTExprID>();
     if (!check(TokenKind::DotDot) && !check(TokenKind::DotDotEqual)) {
@@ -523,7 +547,11 @@ auto Parser::parse_primary_pattern() noexcept -> std::optional<ASTPatternID> {
             return builder.append_pattern(
                 ASTPattern {
                     .span = components.front(),
-                    .value = ASTBindingPattern {.name_span = components.front()},
+                    .value = ASTBindingPattern {
+                        .mode = ASTPatternBindingMode::Value,
+                        .marker_span = std::nullopt,
+                        .name_span = components.front(),
+                    },
                 }
             );
         }
@@ -550,7 +578,7 @@ auto Parser::finish_case_pattern(Span start, ASTCaseQualifier qualifier, Span na
     if (const auto left = match(TokenKind::LeftParen)) {
         auto patterns = std::vector<ASTPatternID> {};
         while (!failed && !check(TokenKind::RightParen)) {
-            auto pattern = parse_pattern();
+            auto pattern = parse_pattern(true);
             if (!pattern) {
                 return std::nullopt;
             }

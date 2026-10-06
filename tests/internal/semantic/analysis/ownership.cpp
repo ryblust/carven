@@ -287,13 +287,15 @@ const TestSuite suite([] static noexcept {
         const auto prelude =
             std::string("fn pair(value: i32, &&owner: i32) -> i32 { return value + owner; }\n")
             + "fn identity(value: i32) -> i32 { return value; }\n";
-        for (const auto* expression : {"x + 1", "identity(x)"}) {
+        for (const auto* expression : {"x", "x + 1", "identity(x)"}) {
             static_cast<void>(analyze_test_program(
                 prelude + "fn valid() { let x = 2; let result = pair(" + expression + ", &&x); }"
             ));
         }
-        const auto direct =
-            analyze_test_errors(prelude + "fn invalid() { let x = 2; let result = pair(x, &&x); }");
+        const auto direct = analyze_test_errors(
+            "fn pair(value: String, &&owner: String) {}\n"
+            "fn invalid() { let x: String = \"text\"; pair(x, &&x); }"
+        );
         expect_diagnostic(direct, DiagnosticCode::AccessOperationConflict);
     };
 

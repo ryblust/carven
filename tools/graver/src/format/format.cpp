@@ -708,7 +708,10 @@ auto SyntaxFormatter::annotate() noexcept -> void {
         });
     }
     for (const auto& pattern : syntax.patterns()) {
-        if (const auto* negative = std::get_if<ASTNegativeNumberPattern>(&pattern.value)) {
+        if (const auto* binding = std::get_if<ASTBindingPattern>(&pattern.value);
+            binding && binding->mode == ASTPatternBindingMode::Write) {
+            prefix_operators[token_at(binding->marker_span->start())] = true;
+        } else if (const auto* negative = std::get_if<ASTNegativeNumberPattern>(&pattern.value)) {
             prefix_operators[token_at(negative->minus_span.start())] = true;
         } else if (const auto* alternatives = std::get_if<ASTOrPattern>(&pattern.value)) {
             for (const auto pipe : alternatives->pipe_spans) {

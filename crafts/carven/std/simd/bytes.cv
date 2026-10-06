@@ -1,4 +1,4 @@
-// Explicit 32-byte operations; no automatic vectorization or runtime dispatch.
+// Explicit 32-byte logical operations; no runtime dispatch.
 export struct ByteBlock {
     value: u8x32,
     active: mask32,

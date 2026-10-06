@@ -184,6 +184,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                 [&](const SliceTypeValue& value) noexcept {
                     self(value.element, destination, active_types);
                 },
+                [](const OwnedSequenceTypeValue&) static noexcept {},
                 [&](const RangeTypeValue& value) noexcept {
                     self(value.element, destination, active_types);
                 },

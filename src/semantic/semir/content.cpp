@@ -254,7 +254,8 @@ auto ContentWriter::type(TypeID id) noexcept -> ContentTask {
             } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
                 co_await type(value.element);
                 number(value.extent);
-            } else if constexpr (std::same_as<Value, SliceTypeValue>
+            } else if constexpr (std::same_as<Value, OwnedSequenceTypeValue>
+                                 || std::same_as<Value, SliceTypeValue>
                                  || std::same_as<Value, RangeTypeValue>) {
                 co_await type(value.element);
             } else if constexpr (std::same_as<Value, PointerTypeValue>) {

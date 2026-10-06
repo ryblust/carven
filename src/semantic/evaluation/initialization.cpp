@@ -13,6 +13,13 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
         co_return std::unexpected(std::move(checked.error()));
     }
     const auto canonical = values.type_copy(target);
+    if (std::holds_alternative<OwnedSequenceTypeValue>(canonical.value)) {
+        co_return std::unexpected(fail(
+            origin,
+            ExecutionReason::Admission,
+            "Sequence storage is not supported in compile-time execution"
+        ));
+    }
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
         if (builtin_is_integer(builtin->kind)) {
             co_return ConstantAtom {.type = target, .value = IntegerConstant::zero()};

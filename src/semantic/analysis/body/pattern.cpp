@@ -21,6 +21,7 @@ import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.semir.completion;
+import :semantic.semir.body;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
@@ -36,7 +37,8 @@ auto BodyElaborator::build_pattern(
     bool allow_new_bindings,
     std::flat_set<std::string, std::less<>>& used_bindings,
     std::vector<SemPatternBounds>& pattern_bounds,
-    CompletionQuery& completion
+    CompletionQuery& completion,
+    std::optional<AccessMode> subject_access
 ) noexcept -> AnalysisTask<BuiltPattern> {
     // Predicate attempts have their own normal path. Their caller chooses the
     // execution entry through reference_path_reachable.
@@ -246,6 +248,26 @@ auto BodyElaborator::build_pattern(
             },
             [&](const ASTBindingPattern& binding) noexcept -> AnalysisTask<BuiltPattern> {
                 const auto name = spelling(binding.name_span);
+                const auto alias_access = binding.mode == ASTPatternBindingMode::Value
+                    ? std::optional<AccessMode>()
+                    : std::optional(
+                          binding.mode == ASTPatternBindingMode::Write ? AccessMode::Write
+                                                                       : AccessMode::Read
+                      );
+                if (alias_access && !subject_access) {
+                    co_return std::unexpected(fail(
+                        binding.name_span,
+                        DiagnosticCode::AccessExpression,
+                        "payload borrowing requires a tracked storage subject"
+                    ));
+                }
+                if (alias_access == AccessMode::Write && subject_access != AccessMode::Write) {
+                    co_return std::unexpected(fail(
+                        binding.name_span,
+                        DiagnosticCode::AccessImmutable,
+                        "writable payload borrowing requires a writable subject"
+                    ));
+                }
                 if (!used_bindings.insert(name).second) {
                     co_return std::unexpected(fail(
                         binding.name_span,
@@ -262,20 +284,27 @@ auto BodyElaborator::build_pattern(
                             "or-pattern alternatives must bind the same names"
                         ));
                     }
-                    const auto storage = body_builder.add_owner_binding(
-                        draft().intern_spelling(name),
-                        type,
-                        frames.back().lifetime,
-                        false,
-                        origin(binding.name_span)
-                    );
+                    const auto storage = alias_access ? body_builder.add_alias_binding(
+                                                            draft().intern_spelling(name),
+                                                            type,
+                                                            frames.back().lifetime,
+                                                            *alias_access,
+                                                            origin(binding.name_span)
+                                                        )
+                                                      : body_builder.add_owner_binding(
+                                                            draft().intern_spelling(name),
+                                                            type,
+                                                            frames.back().lifetime,
+                                                            false,
+                                                            origin(binding.name_span)
+                                                        );
                     auto published = bind_local(
                         binding.name_span,
                         BodyLocalStorage {
                             .storage = storage,
                             .type = type,
                             .used = false,
-                            .takeable = true,
+                            .takeable = !alias_access.has_value(),
                             .static_source = false,
                             .role = BodyLocalRole::Local,
                             .unused_candidate = std::nullopt,
@@ -296,6 +325,16 @@ auto BodyElaborator::build_pattern(
                         binding.name_span,
                         DiagnosticCode::MatchBindingMismatch,
                         "or-pattern binding has a different type in another alternative"
+                    ));
+                }
+                const auto stored = body_builder.binding_copy(found->second.storage.binding);
+                const auto* alias = std::get_if<AliasBindingStorage>(&stored.storage);
+                if ((alias != nullptr) != alias_access.has_value()
+                    || (alias != nullptr && alias->access != *alias_access)) {
+                    co_return std::unexpected(fail(
+                        binding.name_span,
+                        DiagnosticCode::MatchBindingMismatch,
+                        "or-pattern binding has a different access mode in another alternative"
                     ));
                 }
                 co_return BuiltPattern {
@@ -400,7 +439,8 @@ auto BodyElaborator::build_pattern(
                         allow_new_bindings,
                         used_bindings,
                         pattern_bounds,
-                        completion
+                        completion,
+                        subject_access
                     ));
                     if (!child.has_value()) {
                         co_return std::unexpected(child.error());
@@ -442,7 +482,8 @@ auto BodyElaborator::build_pattern(
                         index == 0uz && allow_new_bindings,
                         alternative_names,
                         pattern_bounds,
-                        completion
+                        completion,
+                        subject_access
                     ));
                     if (!alternative.has_value()) {
                         co_return std::unexpected(alternative.error());
@@ -532,6 +573,10 @@ auto BodyElaborator::build_match(
         ));
     }
     const auto subject_is_place = std::holds_alternative<PlaceExpression>(*subject->storage);
+    const auto* subject_place = std::get_if<PlaceExpression>(&*subject->storage);
+    const auto subject_access = subject_place != nullptr && subject_place->root.has_value()
+        ? std::optional(subject_place->access)
+        : std::nullopt;
     auto subject_tree = take_built(*subject, ast.expression(source.subject).span);
     if (source.arms.empty()) {
         co_return std::unexpected(
@@ -570,7 +615,8 @@ auto BodyElaborator::build_match(
             true,
             used,
             pattern_bounds,
-            completion
+            completion,
+            subject_access
         ));
         failure_contexts.pop_back();
         if (!pattern.has_value()) {

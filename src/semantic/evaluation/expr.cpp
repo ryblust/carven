@@ -961,6 +961,15 @@ auto SemanticExecutor::matches(
                     if constexpr (std::same_as<Pattern, WildcardPattern>) {
                         co_return true;
                     } else if constexpr (std::same_as<Pattern, BindingPattern>) {
+                        if (std::holds_alternative<AliasBindingStorage>(
+                                frame.body->binding_storage(pattern_value.binding)
+                            )) {
+                            co_return std::unexpected(fail(
+                                pattern.origin,
+                                ExecutionReason::Admission,
+                                "borrowed pattern bindings are not supported in compile-time execution"
+                            ));
+                        }
                         auto copied = copy_value(subject, pattern.origin);
                         if (!copied) {
                             co_return std::unexpected(std::move(copied.error()));

@@ -151,7 +151,7 @@ auto OwnershipBodyAnalyzer::statement(
                     write_access(target, value.target.origin);
                     if (!target.path.empty() || value.compound) {
                         require_available(result.normal->state, target, value.target.origin);
-                        accesses.push_back({target, false});
+                        accesses.push_back({target, selected_access_kind(value.target)});
                     }
                 }
                 (co_await evaluate(value.value));

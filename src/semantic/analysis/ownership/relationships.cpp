@@ -32,7 +32,8 @@ auto select_element_storage(
     TypeID sequence,
     std::span<const OwnershipPlace> storage,
     const OwnershipRelationships& relationships,
-    std::optional<std::uint64_t> index
+    std::optional<std::uint64_t> index,
+    ProgramOriginID selection
 ) noexcept -> std::vector<OwnershipPlace> {
     auto result = std::vector<OwnershipPlace>();
     if (std::holds_alternative<SliceTypeValue>(types.type(sequence).value)) {
@@ -47,6 +48,9 @@ auto select_element_storage(
         result.assign(storage.begin(), storage.end());
     }
     for (auto& selected : result) {
+        if (const auto* owner = std::get_if<OwnedSequenceTypeValue>(&types.type(sequence).value)) {
+            selected.indirections.push_back({selected.path.size(), owner->element, selection});
+        }
         selected.path.push_back(index);
     }
     std::ranges::sort(result);
@@ -68,6 +72,124 @@ auto overlaps(
 
 auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept -> bool {
     return left.object == right.object && overlaps(left.path, right.path);
+}
+
+auto storage_region_ancestor(
+    std::span<const OwnershipStorageEdge> edges,
+    const OwnershipPlace& owner,
+    const OwnershipPlace& referent,
+    bool strict
+) noexcept -> bool {
+    if (owner.object == referent.object) {
+        return overlaps(owner.path, referent.path)
+            && (strict ? owner.path.size() < referent.path.size()
+                       : owner.path.size() <= referent.path.size());
+    }
+    auto pending = std::vector<std::size_t> {referent.object};
+    auto visited = std::flat_set<std::size_t>();
+    while (!pending.empty()) {
+        const auto next = pending.back();
+        pending.pop_back();
+        if (!visited.insert(next).second) {
+            continue;
+        }
+        for (const auto& edge : edges) {
+            if (edge.element != next) {
+                continue;
+            }
+            if (owner.object == edge.carrier.object && overlaps(owner.path, edge.carrier.path)) {
+                if (owner.path.size() <= edge.carrier.path.size()) {
+                    return true;
+                }
+                const auto offset = edge.carrier.path.size();
+                if (owner.path.size() > offset) {
+                    const auto index = owner.path[offset];
+                    if (index && edge.index && index != edge.index) {
+                        continue;
+                    }
+                    if (next != referent.object || !edge.direct) {
+                        // The intermediate suffix is deliberately summarized.
+                        // It cannot prove that this write misses a descendant.
+                        return true;
+                    }
+                    const auto suffix = std::span(owner.path).subspan(offset + 1uz);
+                    if (overlaps(suffix, referent.path)
+                        && (strict ? suffix.size() < referent.path.size()
+                                   : suffix.size() <= referent.path.size())) {
+                        return true;
+                    }
+                }
+            }
+            pending.push_back(edge.carrier.object);
+        }
+    }
+    // A collapsed descendant may be below an independently selected first-level
+    // element of the same carrier. Unknown indices cannot prove disjointness.
+    for (const auto& a : edges) {
+        if (a.element != owner.object) {
+            continue;
+        }
+        for (const auto& b : edges) {
+            if (b.element == referent.object
+                && !b.direct
+                && overlaps(a.carrier, b.carrier)
+                && (!a.index || !b.index || a.index == b.index)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+auto storage_regions_overlap(
+    std::span<const OwnershipStorageEdge> edges,
+    const OwnershipPlace& left,
+    const OwnershipPlace& right
+) noexcept -> bool {
+    if (overlaps(left, right)
+        || storage_region_ancestor(edges, left, right, false)
+        || storage_region_ancestor(edges, right, left, false)) {
+        return true;
+    }
+    const auto embedded = [&](const OwnershipPlace& carrier,
+                              const OwnershipPlace& element) noexcept {
+        for (const auto& edge : edges) {
+            if (edge.carrier.object != carrier.object
+                || edge.element != element.object
+                || carrier.path.size() <= edge.carrier.path.size()
+                || !overlaps(edge.carrier.path, carrier.path)) {
+                continue;
+            }
+            const auto index = carrier.path[edge.carrier.path.size()];
+            if (index && edge.index && index != edge.index) {
+                continue;
+            }
+            if (!edge.direct
+                || overlaps(
+                    std::span(carrier.path).subspan(edge.carrier.path.size() + 1uz),
+                    element.path
+                )) {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (embedded(left, right) || embedded(right, left)) {
+        return true;
+    }
+    for (const auto& a : edges) {
+        if (a.element != left.object) {
+            continue;
+        }
+        for (const auto& b : edges) {
+            if (b.element == right.object
+                && overlaps(a.carrier, b.carrier)
+                && (!a.index || !b.index || a.index == b.index)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 auto normalize_storage_loans(std::vector<OwnershipStorageLoan>& loans) noexcept -> void {

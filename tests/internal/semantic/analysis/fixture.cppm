@@ -39,7 +39,10 @@ auto analyze_test_errors(std::string source_text) noexcept -> Diagnostics {
     return std::move(analyzed.error());
 }
 
-auto analyze_test_program(std::string source_text) noexcept -> SemIRProgram {
+auto analyze_test_program(
+    std::string source_text,
+    std::source_location location = std::source_location::current()
+) noexcept -> SemIRProgram {
     auto sources = SourceManager();
     const auto source_id = sources.append_virtual("analysis.cv", std::move(source_text));
     require(source_id.has_value());
@@ -49,9 +52,25 @@ auto analyze_test_program(std::string source_text) noexcept -> SemIRProgram {
         .module_path = semantic_test_module_path(),
     }};
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
-    require(parsed.has_value()).note("source = ", source_view.text);
+    require(parsed.has_value(), location).note("source = ", source_view.text);
     auto analyzed = analyze(std::move(*parsed));
-    require(analyzed.has_value()).note("source = ", source_view.text);
+    require(analyzed.has_value(), location)
+        .note("source = ", source_view.text)
+        .note([&]() noexcept {
+            auto errors = std::string();
+            if (!analyzed.has_value()) {
+                for (const auto& diagnostic : analyzed.error()) {
+                    if (diagnostic.finding.severity == DiagnosticSeverity::Error) {
+                        errors += std::format(
+                            "\n  {}: {}",
+                            diagnostic_code_info(diagnostic.finding.code).name,
+                            diagnostic.finding.message
+                        );
+                    }
+                }
+            }
+            return errors;
+        });
     return std::move(analyzed->value);
 }
 

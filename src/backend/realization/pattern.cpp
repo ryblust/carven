@@ -237,6 +237,8 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
     }
     auto destination = LoweringStmtBuilder();
     for (const auto binding : joined) {
+        const auto* alias = std::get_if<AliasBindingStorage>(&body.binding(binding).storage);
+        const auto writable = alias != nullptr && alias->access == AccessMode::Write;
         const auto address =
             context.target().add_local(names.fresh(TargetTemporaryNameKind::Operand));
         destination.emit(generated_statement(
@@ -244,14 +246,18 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
                 .local = address,
-                .type = context.pointer_type(context.target().intern_type(
-                    {.value =
-                         TargetIntrinsicType {
-                             .symbol = TargetSymbol::StdAddConst,
-                             .type_argument_ids = {context.lower_type(body.binding(binding).type)}
-                         },
-                     .const_qualified = false}
-                )),
+                .type = context.pointer_type(
+                    writable ? context.lower_type(body.binding(binding).type)
+                             : context.target().intern_type(
+                                   {.value =
+                                        TargetIntrinsicType {
+                                            .symbol = TargetSymbol::StdAddConst,
+                                            .type_argument_ids =
+                                                {context.lower_type(body.binding(binding).type)}
+                                        },
+                                    .const_qualified = false}
+                               )
+                ),
                 .initializer = intrinsic_expression(TargetSymbol::StdNullptr)
             }
         ));
@@ -471,8 +477,7 @@ auto PatternRealizer::match(
                         .binding = TargetVariableBinding::ConstValue,
                         .maybe_unused = false,
                         .local = projection,
-                        .type =
-                            context.pointer_type(context.intrinsic_type(TargetSymbol::Auto, true)),
+                        .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto)),
                         .initializer = call_member(
                             subject_expression(subject),
                             context.payload_enum(declaration.owner)

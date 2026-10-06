@@ -6,7 +6,9 @@ import std::simd.scan using {
     match_set,
     count_where,
     find_where,
+    find_from,
     prefix_where,
+    prefix_end,
 };
 
 private const chosen = one_of([0u8, 0x0f, 0x10, 0x70, 0x80, 0x8f, 0xf0, 0xff, 0xff]);
@@ -131,6 +133,27 @@ const fn verify_queries() -> bool {
     }
     let leading: [u8; 5] = [0x30, 0x31, 0x39, 0, 0x35];
     assert(prefix_where(leading, digits) == 3);
+    assert(prefix_end(leading, 1, digits) == 3);
+    assert(prefix_end(leading, 3, digits) == 3);
+    assert(prefix_end(leading, 4, digits) == 5);
+    assert(prefix_end(leading, 5, digits) == 5);
+    for start in [0usize, 1, 15, 16, 31, 32, 63, 64, 65, 96, 97] {
+        var first = data.as_slice().len();
+        for index in start..data.as_slice().len() {
+            if data[index] == 0xff {
+                first = index;
+                break;
+            }
+        }
+        if first == data.as_slice().len() {
+            assert(find_from(data, start, one_of([0xff])) == .Missing);
+        } else {
+            assert(find_from(data, start, one_of([0xff])) == .Found(first));
+        }
+        assert(find_from(data, start, no_bytes) == .Missing);
+        assert(prefix_end(data, start, no_bytes) == start);
+        assert(prefix_end(data, start, every_byte) == data.as_slice().len());
+    }
     let general: [u8; 5] = [0x0f, 0x80, 0xff, 0x81, 0x70];
     assert(count_where(general, chosen) == 4);
     assert(prefix_where(general, chosen) == 3);

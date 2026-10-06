@@ -195,6 +195,11 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
             return runtime_symbol_info("::carven::runtime::Range", "carven/runtime/range.hpp");
         case TargetSymbol::RuntimeSlice:
             return runtime_symbol_info("::carven::runtime::Slice", "carven/runtime/slice.hpp");
+        case TargetSymbol::RuntimeSequence:
+            return runtime_symbol_info(
+                "::carven::runtime::Sequence",
+                "carven/runtime/sequence.hpp"
+            );
         case TargetSymbol::RuntimeString:
             return runtime_symbol_info("::carven::runtime::String", "carven/runtime/string.hpp");
         case TargetSymbol::RuntimeF32x4:
@@ -333,6 +338,12 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
             return runtime_symbol_info(
                 "::carven::runtime::checked_slice_index",
                 "carven/runtime/slice.hpp",
+                true
+            );
+        case TargetSymbol::RuntimeCheckedSequenceIndex:
+            return runtime_symbol_info(
+                "::carven::runtime::checked_sequence_index",
+                "carven/runtime/sequence.hpp",
                 true
             );
         case TargetSymbol::RuntimeSourceSite:

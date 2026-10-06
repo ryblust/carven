@@ -9,6 +9,7 @@ import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.initialization;
+import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :support.invariant;
 import std;
@@ -308,13 +309,19 @@ auto construct_slice_value(
 ) noexcept -> ExpressionResult<typename Site::Value> {
     const auto contract = slice_intrinsic_contract(intrinsic);
     const auto shape = sequence_shape(site.draft(), receiver_type);
-    if (!shape || shape->extent.has_value() != (contract.receiver == SliceIntrinsicShape::Array)) {
+    if (!shape
+        || shape->kind == SequenceShapeKind::OwnedSequence
+        || !slice_intrinsic_accepts_receiver(
+            contract.receiver,
+            shape->kind == SequenceShapeKind::Array ? SliceIntrinsicShape::Array
+                                                    : SliceIntrinsicShape::Slice
+        )) {
         invariant_violation("slice construction receiver mismatch");
     }
     auto result_type = receiver_type;
     if (const auto* builtin = std::get_if<BuiltinType>(&contract.result)) {
         result_type = site.draft().builtin_type(*builtin);
-    } else if (contract.receiver == SliceIntrinsicShape::Array) {
+    } else if (shape->kind == SequenceShapeKind::Array) {
         if (const auto* concrete = std::get_if<TypeID>(&shape->element)) {
             result_type =
                 site.draft().intern_type({.value = SliceTypeValue {.element = *concrete}});

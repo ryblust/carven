@@ -23,7 +23,7 @@ use the same name representation.
 These describe native C++ syntax, with type dependencies visited normally.
 
 Structure declarations lower to C++ aggregates containing their declared fields.
-Payload enum factories, storage constructors, and projections are ordinary C++
+Payload enum factories and projections are ordinary C++
 functions. Carven evaluates source constants during semantic analysis; their
 uses reconstruct the normalized values through the same target operations.
 
@@ -77,7 +77,7 @@ The qualifier alone supplies no call-result fact or permission to discard a call
 ## Parameters and access
 
 Read parameters, Read argument temporaries, and Read range bindings preserve
-Carven array, String, and closure storage, including storage in Carven aggregate
+Carven array, Sequence, String, and closure storage, including storage in Carven aggregate
 fields, through const references. Lowering uses the resolved type-contents query
 shared with ownership analysis. Other pure Carven Read parameters use const
 values. Types containing native C++ values by value use

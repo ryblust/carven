@@ -263,6 +263,7 @@ const TestSuite suite([] static noexcept {
             const auto inner_name =
                 compilation.target().names().structure_identifier(inner).spelling();
             auto hidden_forward_paths = std::vector<std::vector<std::string>>();
+            auto interface_has_hidden_forward = false;
             auto hidden_definition_paths = std::vector<std::vector<std::string>>();
             auto inner_definition_paths = std::vector<std::vector<std::string>>();
             for (const auto artifact : compilation.target().artifacts()) {
@@ -290,9 +291,8 @@ const TestSuite suite([] static noexcept {
                         if (const auto* forward = std::get_if<TargetStructForwardDecl>(declaration);
                             forward && forward->name.spelling() == hidden_name) {
                             expect(!anonymous);
-                            expect(
-                                artifact_role(artifact.value) == GeneratedArtifactRole::Interface
-                            );
+                            interface_has_hidden_forward |=
+                                artifact_role(artifact.value) == GeneratedArtifactRole::Interface;
                             hidden_forward_paths.push_back(namespace_path);
                         }
                         if (const auto* definition = std::get_if<TargetStructDecl>(declaration)) {
@@ -316,12 +316,14 @@ const TestSuite suite([] static noexcept {
                 };
                 inspect(inspect, unit.sections().body, false);
             }
-            if (!expect_equal(hidden_forward_paths.size(), 1uz)
+            if (!expect(interface_has_hidden_forward && !hidden_forward_paths.empty())
                 || !expect_equal(hidden_definition_paths.size(), 1uz)
                 || !expect_equal(inner_definition_paths.size(), 1uz)) {
                 return;
             }
-            expect(hidden_forward_paths.front() == hidden_definition_paths.front());
+            for (const auto& path : hidden_forward_paths) {
+                expect(path == hidden_definition_paths.front());
+            }
             expect(inner_definition_paths.front() == hidden_definition_paths.front());
             auto owner_namespace = std::vector<std::string>();
             for (const auto& component : compilation.target()

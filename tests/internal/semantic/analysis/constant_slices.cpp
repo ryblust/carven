@@ -99,6 +99,34 @@ const TestSuite suite([] static noexcept {
             expect(checked == 12uz);
         };
 
+    "Array queries: direct extents use ordinary constant and body execution"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+                const fn inspect() -> bool {
+                    var values = [3, 5, 7];
+                    let empty: [i32; 0] = [];
+                    return values.len() == 3 && !values.is_empty()
+                        && empty.len() == 0 && empty.is_empty();
+                }
+                const count = [1, 2, 3].len();
+                const nonempty = [1, 2, 3].is_empty();
+                const executed = inspect();
+            )");
+            auto checked = 0uz;
+            for (const auto [id, declaration] : program.declarations().module_constants()) {
+                static_cast<void>(id);
+                const auto name = program.provenance().spelling(declaration.name);
+                const auto& fact = program.constants().constant(declaration.value);
+                if (name == "count") {
+                    expect(std::get<IntegerConstant>(fact.value).as_unsigned() == 3u);
+                } else {
+                    expect(std::get<BooleanConstant>(fact.value).value == (name == "executed"));
+                }
+                ++checked;
+            }
+            expect(checked == 3uz);
+        };
+
     "Constant slices: type access and bounds failures remain source diagnostics"_test =
         [] static noexcept {
             struct Case final {
@@ -142,6 +170,22 @@ const TestSuite suite([] static noexcept {
                 Case {
                     .source = "const value = [1, 2].as_slice().len(0);",
                     .code = DiagnosticCode::TypeMethodCallArity
+                },
+                Case {
+                    .source = "const value = [1, 2].len(0);",
+                    .code = DiagnosticCode::TypeMethodCallArity
+                },
+                Case {
+                    .source = "const value = [1, 2].is_empty(0);",
+                    .code = DiagnosticCode::TypeMethodCallArity
+                },
+                Case {
+                    .source = "const value = [1, 2].slice(0, 1);",
+                    .code = DiagnosticCode::TypeMethodCall
+                },
+                Case {
+                    .source = "const value = [1, 2].as_slice().as_slice();",
+                    .code = DiagnosticCode::TypeMethodCall
                 },
                 Case {
                     .source = "const a: [i32] = [1]; const equal = a == a;",

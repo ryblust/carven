@@ -218,6 +218,25 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                         return;
                     }
                     if (expression->operation_reachable) {
+                        if (const auto* match = std::get_if<SemMatch>(&expression->value)) {
+                            for (const auto& arm : match->arms) {
+                                if (arm.reachable
+                                    && std::ranges::any_of(
+                                        arm.bindings,
+                                        [&](LocalBindingID binding) noexcept {
+                                            return std::holds_alternative<AliasBindingStorage>(
+                                                body.bindings.get(binding).storage
+                                            );
+                                        }
+                                    )) {
+                                    reject(
+                                        expression->origin,
+                                        "borrowed pattern bindings are not supported in compile-time execution"
+                                    );
+                                    return;
+                                }
+                            }
+                        }
                         if (const auto reason = unsupported_execution_expression(*expression)) {
                             reject(expression->origin, std::string(*reason));
                             return;

@@ -1,0 +1,34 @@
+private enum Choice {
+    Left(String),
+    Right(String),
+}
+
+private struct Holder {
+    choice: Choice
+}
+
+private fn append_selected(&holder: Holder) {
+    match holder.choice {
+        .Left(&text) | .Right(&text) => text.append("!"),
+    }
+}
+
+private fn read_selected(holder: Holder) -> String => match holder.choice {
+    .Left(ref text) | .Right(ref text) if text.is_empty() => "empty" as String,
+    .Left(ref text) | .Right(ref text) => text,
+};
+
+test "Payload borrowing: alternatives select original storage and guards release aliases" {
+    var left = Holder { choice:.Left("left" as String) };
+    var right = Holder { choice:.Right("right" as String) };
+    append_selected(&left);
+    append_selected(&right);
+    check(read_selected(left).as_str() == "left!");
+    check(read_selected(right).as_str() == "right!");
+    let copied = read_selected(left);
+    left.choice = .Right("replaced" as String);
+    check(copied.as_str() == "left!");
+    check(read_selected(left).as_str() == "replaced");
+    let empty = Holder { choice:.Right(String {}) };
+    check(read_selected(empty).as_str() == "empty");
+}

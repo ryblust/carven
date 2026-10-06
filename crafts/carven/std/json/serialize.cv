@@ -1,6 +1,6 @@
-import "carven/std/json/value.hpp";
+import .node using Node;
 import .error using ValueError;
-import std::simd.scan using { one_of, byte_range, set_union, find_where };
+import std::simd.scan using { one_of, byte_range, set_union, find_from };
 
 private const escaped_bytes = set_union(byte_range(0, 0x1f), one_of([0x22, 0x5c]));
 
@@ -10,9 +10,9 @@ private fn append_quoted(text: str, &output: String) {
     var offset: usize = 0;
     while offset < bytes.len() {
         var stop = bytes.len();
-        match find_where(bytes.slice(offset, bytes.len()), escaped_bytes) {
+        match find_from(bytes, offset, escaped_bytes) {
             .Missing => {},
-            .Found(position) => { stop = offset + position; },
+            .Found(position) => { stop = position; },
         }
         // ASCII escape boundaries cannot split a scalar in valid UTF-8.
         output.append(str::from_utf8_unchecked(bytes.slice(offset, stop)));
@@ -38,45 +38,38 @@ private fn append_quoted(text: str, &output: String) {
     output.push('"');
 }
 
-private fn append_value(
-    value: ::carven::json::StorageReference,
-    &output: String,
-    depth: usize
-) -> void throw ValueError {
-    let kind = value.get().kind() as u8;
-    match kind {
-        0 => output.append("null"),
-        1 => {
-            if value.get().boolean_value() {
-                output.append("true");
-            } else {
-                output.append("false");
-            }
-        },
-        2 => output.append(value.get().text().as_str()),
-        3 => append_quoted(value.get().text().as_str(), &output),
-        4 | 5 => {
+private fn append_value(value: Node, &output: String, depth: usize) -> void throw ValueError {
+    match value {
+        .Null => output.append("null"),
+        .Boolean(boolean) => output.append(if boolean { "true" } else { "false" }),
+        .Number(ref text) => output.append(text.as_str()),
+        .Text(ref text) => append_quoted(text.as_str(), &output),
+        .Array(ref items) => {
             if depth == 64 { throw ValueError::DepthLimit; }
-            let object = kind == 5;
-            output.push(if object { '{' } else { '[' });
-            let size: usize = value.get().size();
-            for index in 0usize..size {
-                if index != 0 { output.push(','); }
-                if object {
-                    append_quoted(value.get().member_key(index).as_str(), &output);
-                    output.push(':');
-                    append_value(::std::cref(value.get().member_value(index)), &output, depth + 1)?;
-                } else {
-                    append_value(::std::cref(value.get().element(index)), &output, depth + 1)?;
-                }
+            output.push('[');
+            var first = true;
+            for item in items {
+                if first { first = false; } else { output.push(','); }
+                append_value(item, &output, depth + 1)?;
             }
-            output.push(if object { '}' } else { ']' });
+            output.push(']');
         },
-        _ => assert(false),
+        .Object(ref members) => {
+            if depth == 64 { throw ValueError::DepthLimit; }
+            output.push('{');
+            var first = true;
+            for member in members {
+                if first { first = false; } else { output.push(','); }
+                append_quoted(member.key.as_str(), &output);
+                output.push(':');
+                append_value(member.value, &output, depth + 1)?;
+            }
+            output.push('}');
+        },
     }
 }
 
-fn serialize_storage(value: ::carven::json::StorageReference) -> String throw ValueError {
+fn serialize_node(value: Node) -> String throw ValueError {
     var output = String {};
     append_value(value, &output, 0)?;
     return &&output;

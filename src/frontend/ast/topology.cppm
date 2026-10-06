@@ -203,7 +203,10 @@ private:
         visit_fields(value.minus_span, value.number_span);
     }
 
-    auto visit(const ASTBindingPattern& value) noexcept -> void { visit(value.name_span); }
+    auto visit(const ASTBindingPattern& value) noexcept -> void {
+        visit(value.marker_span);
+        visit(value.name_span);
+    }
 
     auto visit(const ASTQualifiedName& value) noexcept -> void {
         visit_fields(value.span, value.components);

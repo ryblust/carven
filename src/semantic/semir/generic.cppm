@@ -23,6 +23,11 @@ struct GenericSliceType final {
     auto operator<=>(const GenericSliceType&) const noexcept = default;
 };
 
+struct GenericOwnedSequenceType final {
+    GenericTypeID element;
+    auto operator<=>(const GenericOwnedSequenceType&) const noexcept = default;
+};
+
 struct GenericPointerType final {
     GenericTypeID target;
     PointerAccess access;
@@ -40,6 +45,7 @@ using GenericTypeExpression = std::variant<
     GenericTypeParameter,
     GenericArrayType,
     GenericSliceType,
+    GenericOwnedSequenceType,
     GenericPointerType,
     GenericNominalApplication>;
 

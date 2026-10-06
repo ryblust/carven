@@ -78,7 +78,7 @@ ascends; a reversed range is empty, and equal endpoints produce zero elements
 for `..` or one for `..=`. Closed intervals may include the type maximum without
 overflow. Integer-range bindings cannot use Write access.
 
-Arrays support Read and, for a mutable source, Write range bindings. Slices
+Arrays and owning sequences support Read and, for a mutable source, Write range bindings. Slices
 and `str.chars` support Read bindings only. A range binding is scoped to the
 loop and cannot be taken. Its name is not visible in its declared type or range
 source; it is published only after those inputs complete and is then visible
@@ -128,10 +128,18 @@ are not supported. Payload arity must be exact. A bare identifier creates an imm
 owning binding and never pins a constant. The selected payload is copied once
 after its case matches and before the guard runs.
 
+In an enum payload position, `ref name` borrows the payload with Read access,
+and `&name` borrows it with Write access. Borrowing requires a tracked storage
+subject; Write also requires a writable subject. Borrowed bindings cannot be
+taken or captured with Write access. The selected arm pins the payload's enclosing
+storage, so replacing or taking its ancestors is invalid. Updates within a
+writable payload remain valid. Match guards cannot mutate the subject through
+an alias. These bindings are scoped to their selected arm.
+
 `is T` constrains the subject to `T`. The subject must already have a compatible
 canonical type, so the constraint covers that type.
 
-Or-pattern alternatives must bind the same names with the same types; an
+Or-pattern alternatives must bind the same names with the same types and access modes; an
 alternative cannot bind one name twice. Guards run after pattern bindings are
 available. They affect arm selection but do not contribute exhaustiveness
 coverage.

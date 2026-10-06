@@ -8,6 +8,7 @@ import :semantic.analysis.expr.interpolation;
 import :semantic.analysis.expr.member;
 import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.simd;
+import :semantic.analysis.expr.sequence;
 import :semantic.analysis.expr.text;
 import :semantic.analysis.operations;
 import :semantic.semir.structured;
@@ -155,6 +156,26 @@ auto interpret_call(
                     span
                 );
             }
+        }
+        const auto sequence = decide_sequence_method(
+            site.draft(),
+            site.type(*operand),
+            site.spelling(member->name_span),
+            source.arguments.size()
+        );
+        if (!sequence) {
+            co_return std::unexpected(
+                site.fail(span, sequence.error().code, std::string(sequence.error().message))
+            );
+        }
+        if (sequence->has_value()) {
+            co_return (co_await construct_sequence_call(
+                site,
+                **sequence,
+                std::move(*operand),
+                source.arguments,
+                span
+            ));
         }
         const auto slice = decide_slice_method(
             site.draft(),

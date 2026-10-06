@@ -118,6 +118,7 @@ public:
     auto validate_generic_definitions(
         std::optional<GenericDeclarationID> root = std::nullopt
     ) noexcept -> AnalysisResult<void>;
+    auto validate_generic_sequence_elements() noexcept -> AnalysisResult<void>;
     auto generic_nominal_instance_copy(NominalDeclarationRef declaration) const noexcept
         -> std::optional<GenericNominalInstance>;
     auto generic_declaration_contract_copy(GenericDeclarationID definition) const noexcept

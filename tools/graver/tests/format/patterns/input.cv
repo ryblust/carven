@@ -1,1 +1,1 @@
-fn f(){match x{.A|.B=>{},-1|0=>{},_=>{},}try{}catch{E(_)|F(_)=>{},}}
+fn f(){match x{.A|.B=>{},-1|0=>{},_=>{},}try{}catch{E(_)|F(_)=>{},}}fn inspect(v){match v{.Some(ref read,&write,copy)=>{},.Nested(.Some(ref inner))=>{},.One(ref)=>{},}}

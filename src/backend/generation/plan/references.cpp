@@ -28,7 +28,10 @@ private:
     ) noexcept -> void;
     auto collect_failure_set(FailureSetID failure_set, TargetTypeCompleteness completeness) noexcept
         -> void;
-    auto collect_signature(CallableSignatureID signature_id) noexcept -> void;
+    auto collect_signature(
+        CallableSignatureID signature_id,
+        TargetTypeCompleteness value_completeness = TargetTypeCompleteness::Declaration
+    ) noexcept -> void;
     auto collect_callable(CallableID callable) noexcept -> void;
     auto collect_type(TypeID type_id, TargetTypeCompleteness completeness) noexcept -> void;
     auto collect_surface(CallableID callable) noexcept -> void;
@@ -43,7 +46,7 @@ private:
     std::flat_map<CallableID, FunctionID> module_functions;
     DeclarationReferenceFacts result;
     std::set<std::pair<TypeID, TargetTypeCompleteness>> visited_types;
-    std::set<CallableSignatureID> visited_signatures;
+    std::set<std::pair<CallableSignatureID, TargetTypeCompleteness>> visited_signatures;
     std::set<CallableID> visited_surfaces;
 };
 
@@ -79,7 +82,7 @@ auto DeclarationReferenceCollector::require_nominal(
     const auto found = requirements.find(nominal);
     if (found == requirements.end()) {
         requirements.emplace(nominal, completeness);
-    } else if (completeness == TargetTypeCompleteness::CompleteDefinition) {
+    } else if (completeness > found->second) {
         found->second = completeness;
     }
 }
@@ -93,9 +96,11 @@ auto DeclarationReferenceCollector::collect_failure_set(
     }
 }
 
-auto DeclarationReferenceCollector::collect_signature(CallableSignatureID signature_id) noexcept
-    -> void {
-    if (!visited_signatures.insert(signature_id).second) {
+auto DeclarationReferenceCollector::collect_signature(
+    CallableSignatureID signature_id,
+    TargetTypeCompleteness value_completeness
+) noexcept -> void {
+    if (!visited_signatures.emplace(signature_id, value_completeness).second) {
         return;
     }
     const auto& signature = semantic.callable_signatures().signature(signature_id);
@@ -105,13 +110,13 @@ auto DeclarationReferenceCollector::collect_signature(CallableSignatureID signat
         }
         collect_type(
             parameter.type,
-            parameter.access == AccessMode::Read ? TargetTypeCompleteness::CompleteDefinition
-                                                 : TargetTypeCompleteness::Declaration
+            parameter.access == AccessMode::Read       ? TargetTypeCompleteness::CompleteDefinition
+                : parameter.access == AccessMode::Take ? value_completeness
+                                                       : TargetTypeCompleteness::Declaration
         );
     }
-    const auto result_completeness = TargetTypeCompleteness::Declaration;
-    collect_type(signature.result, result_completeness);
-    collect_failure_set(signature.failures, result_completeness);
+    collect_type(signature.result, value_completeness);
+    collect_failure_set(signature.failures, value_completeness);
 }
 
 auto DeclarationReferenceCollector::collect_callable(CallableID callable) noexcept -> void {
@@ -130,6 +135,14 @@ auto DeclarationReferenceCollector::collect_type(
 
             [&](const SliceTypeValue& value) noexcept {
                 collect_type(value.element, TargetTypeCompleteness::Declaration);
+            },
+            [&](const OwnedSequenceTypeValue& value) noexcept {
+                collect_type(
+                    value.element,
+                    completeness == TargetTypeCompleteness::Declaration
+                        ? TargetTypeCompleteness::Declaration
+                        : TargetTypeCompleteness::DeferredCompleteDefinition
+                );
             },
             [&](const RangeTypeValue& value) noexcept {
                 collect_type(value.element, TargetTypeCompleteness::Declaration);
@@ -152,7 +165,14 @@ auto DeclarationReferenceCollector::collect_type(
             [&](const ArrayTypeValue& value) noexcept {
                 collect_type(value.element, completeness);
             },
-            [&](const FunctionTypeValue& value) noexcept { collect_callable(value.callable); },
+            [&](const FunctionTypeValue& value) noexcept {
+                collect_signature(
+                    semantic.declarations().callable(value.callable).signature,
+                    completeness == TargetTypeCompleteness::Declaration
+                        ? completeness
+                        : TargetTypeCompleteness::DeferredCompleteDefinition
+                );
+            },
             [&](const ClosureTypeValue& value) noexcept {
                 result.callables.insert(value.callable);
                 collect_callable(value.callable);
@@ -166,7 +186,12 @@ auto DeclarationReferenceCollector::collect_type(
                 }
             },
             [&](const CallableViewTypeValue& value) noexcept {
-                collect_signature(value.signature);
+                collect_signature(
+                    value.signature,
+                    completeness == TargetTypeCompleteness::Declaration
+                        ? completeness
+                        : TargetTypeCompleteness::DeferredCompleteDefinition
+                );
             },
         }
     );

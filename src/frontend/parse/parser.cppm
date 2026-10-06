@@ -203,8 +203,8 @@ private:
     auto parse_catch_arm() noexcept -> std::optional<ASTCatchArm>;
     auto parse_catch_pattern() noexcept -> std::optional<ASTCatchPattern>;
     auto parse_catch_pattern_atom() noexcept -> std::optional<ASTCatchPatternAtom>;
-    auto parse_pattern() noexcept -> std::optional<ASTPatternID>;
-    auto parse_primary_pattern() noexcept -> std::optional<ASTPatternID>;
+    auto parse_pattern(bool case_payload = false) noexcept -> std::optional<ASTPatternID>;
+    auto parse_primary_pattern(bool case_payload = false) noexcept -> std::optional<ASTPatternID>;
     auto finish_case_pattern(Span start, ASTCaseQualifier qualifier, Span name_span) noexcept
         -> std::optional<ASTPatternID>;
     auto parse_qualified_name() noexcept -> ASTQualifiedName;

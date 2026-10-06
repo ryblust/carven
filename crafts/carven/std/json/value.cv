@@ -1,8 +1,9 @@
-import "carven/std/json/value.hpp";
+import "carven/runtime/number_text.hpp";
 import <cmath>;
 import .error using { JSONError, ValueError };
-import .parse using { parse_storage, parse_storage_bytes, parse_number_storage };
-import .serialize using serialize_storage;
+import .node using { Node, Member };
+import .parse using { parse_node, parse_node_bytes, parse_number_node };
+import .serialize using serialize_node;
 import std::utf.error using UTF8Error;
 
 export enum ValueKind: u8 {
@@ -14,163 +15,239 @@ export enum ValueKind: u8 {
     Object,
 }
 
-// One owning tree. Reads of children and text return independent values.
+private fn find_member(members: Sequence<Member>, key: str) -> usize {
+    var index = members.len();
+    while index != 0 {
+        index -= 1;
+        if members[index].key.as_str() == key { return index; }
+    }
+    return members.len();
+}
+
+// Child and text access returns independent values.
 export class Value {
-    storage: ::carven::json::Storage,
+    node: Node,
 
-    fn null() -> Value => { storage: ::carven::json::Storage::make_null() };
-    fn boolean(value: bool) -> Value => { storage: ::carven::json::Storage::make_boolean(value) };
-    fn number(text: str) -> Value throw JSONError => { storage: parse_number_storage(text)? };
-    fn integer(value: i64) -> Value => { storage: ::carven::json::Storage::make_integer(value) };
-
-    fn unsigned_integer(value: u64) -> Value => {
-        storage: ::carven::json::Storage::make_unsigned_integer(value),
-    };
+    fn null() -> Value => { node:.Null };
+    fn boolean(value: bool) -> Value => { node:.Boolean(value) };
+    fn number(text: str) -> Value throw JSONError => { node: parse_number_node(text)? };
+    fn integer(value: i64) -> Value => { node:.Number(f"{value}") };
+    fn unsigned_integer(value: u64) -> Value => { node:.Number(f"{value}") };
 
     fn real(value: f64) -> Value throw ValueError {
         if (::std::isfinite(value) as bool) == false { throw ValueError::NumberConversion; }
-        return { storage: ::carven::json::Storage::make_real(value) };
+        return { node:.Number(f"{value}") };
     }
 
-    fn string(text: str) -> Value {
-        let owned = text as String;
-        return { storage: ::carven::json::Storage::make_string(&&owned) };
-    }
-
-    fn array() -> Value => { storage: ::carven::json::Storage::make_array() };
-    fn object() -> Value => { storage: ::carven::json::Storage::make_object() };
-    fn parse(text: str) -> Value throw JSONError => { storage: parse_storage(text)? };
+    fn string(text: str) -> Value => { node:.Text(text as String) };
+    fn array() -> Value => { node:.Array(Sequence<Node> {}) };
+    fn object() -> Value => { node:.Object(Sequence<Member> {}) };
+    fn parse(text: str) -> Value throw JSONError => { node: parse_node(text)? };
 
     fn parse_bytes(bytes: [u8]) -> Value throw JSONError + UTF8Error => {
-        storage: parse_storage_bytes(bytes)?,
+        node: parse_node_bytes(bytes)?,
     };
 
-    fn to_json(self) -> String throw ValueError => serialize_storage(::std::cref(self.storage))?;
+    fn to_json(self) -> String throw ValueError => serialize_node(self.node)?;
 
     fn kind(self) -> ValueKind {
-        return match self.storage.kind() as u8 {
-            0 => .Null,
-            1 => .Boolean,
-            2 => .Number,
-            3 => .String,
-            4 => .Array,
-            _ => .Object,
+        return match self.node {
+            .Null => .Null,
+            .Boolean(_) => .Boolean,
+            .Number(_) => .Number,
+            .Text(_) => .String,
+            .Array(_) => .Array,
+            .Object(_) => .Object,
         };
     }
 
-    private fn require_kind(self, expected: ValueKind) throw ValueError {
-        if self.kind() != expected { throw ValueError::WrongKind; }
-    }
-
-    private fn require_index(self, index: usize) throw ValueError {
-        if index >= self.storage.size() { throw ValueError::IndexOutOfBounds; }
-    }
-
     fn as_bool(self) -> bool throw ValueError {
-        self.require_kind(.Boolean)?;
-        return self.storage.boolean_value();
+        match self.node {
+            .Boolean(value) => return value,
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn as_string(self) -> String throw ValueError {
-        self.require_kind(.String)?;
-        return self.storage.text();
+        match self.node {
+            .Text(ref text) => return text,
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn number_text(self) -> String throw ValueError {
-        self.require_kind(.Number)?;
-        return self.storage.text();
+        match self.node {
+            .Number(ref text) => return text,
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn as_i64(self) -> i64 throw ValueError {
-        self.require_kind(.Number)?;
-        let converted = self.storage.to_i64();
-        if converted.has_value() { return converted.value() as i64; }
-        throw ValueError::NumberConversion;
+        match self.node {
+            .Number(ref text) => {
+                let converted = ::carven::runtime::parse_i64(text.as_str());
+                if converted.has_value() { return converted.value() as i64; }
+                throw ValueError::NumberConversion;
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn as_u64(self) -> u64 throw ValueError {
-        self.require_kind(.Number)?;
-        let converted = self.storage.to_u64();
-        if converted.has_value() { return converted.value() as u64; }
-        throw ValueError::NumberConversion;
+        match self.node {
+            .Number(ref text) => {
+                let converted = ::carven::runtime::parse_u64(text.as_str());
+                if converted.has_value() { return converted.value() as u64; }
+                throw ValueError::NumberConversion;
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn as_f64(self) -> f64 throw ValueError {
-        self.require_kind(.Number)?;
-        let converted = self.storage.to_f64();
-        if converted.has_value() { return converted.value() as f64; }
-        throw ValueError::NumberConversion;
+        match self.node {
+            .Number(ref text) => {
+                let converted = ::carven::runtime::parse_f64(text.as_str());
+                if converted.has_value() { return converted.value() as f64; }
+                throw ValueError::NumberConversion;
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn len(self) -> usize throw ValueError {
-        if self.kind() != .Array && self.kind() != .Object { throw ValueError::WrongKind; }
-        return self.storage.size() as usize;
+        return match self.node {
+            .Array(ref items) => items.len(),
+            .Object(ref members) => members.len(),
+            _ => throw ValueError::WrongKind,
+        };
     }
 
     fn at(self, index: usize) -> Value throw ValueError {
-        self.require_kind(.Array)?;
-        self.require_index(index)?;
-        return { storage: self.storage.element(index) };
+        match self.node {
+            .Array(ref items) => {
+                if index >= items.len() { throw ValueError::IndexOutOfBounds; }
+                return { node: items[index] };
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn push(&self, &&value: Value) throw ValueError {
-        self.require_kind(.Array)?;
-        let child = (&&value).storage;
-        self.storage.append_element(&&child);
+        match self.node {
+            .Array(&items) => {
+                let child = (&&value).node;
+                items.push(&&child);
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn set_at(&self, index: usize, &&value: Value) throw ValueError {
-        self.require_kind(.Array)?;
-        self.require_index(index)?;
-        let child = (&&value).storage;
-        self.storage.replace_element(index, &&child);
+        match self.node {
+            .Array(&items) => {
+                if index >= items.len() { throw ValueError::IndexOutOfBounds; }
+                items[index] = (&&value).node;
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn remove_at(&self, index: usize) throw ValueError {
-        self.require_kind(.Array)?;
-        self.require_index(index)?;
-        self.storage.erase_element(index);
+        match self.node {
+            .Array(&items) => {
+                if index >= items.len() { throw ValueError::IndexOutOfBounds; }
+                items.remove(index);
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn key_at(self, index: usize) -> String throw ValueError {
-        self.require_kind(.Object)?;
-        self.require_index(index)?;
-        return self.storage.member_key(index);
+        match self.node {
+            .Object(ref members) => {
+                if index >= members.len() { throw ValueError::IndexOutOfBounds; }
+                return members[index].key;
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn member_at(self, index: usize) -> Value throw ValueError {
-        self.require_kind(.Object)?;
-        self.require_index(index)?;
-        return { storage: self.storage.member_value(index) };
+        match self.node {
+            .Object(ref members) => {
+                if index >= members.len() { throw ValueError::IndexOutOfBounds; }
+                return { node: members[index].value };
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn has(self, key: str) -> bool throw ValueError {
-        self.require_kind(.Object)?;
-        return (self.storage.find_member(key) < self.storage.size()) as bool;
+        return match self.node {
+            .Object(ref members) => find_member(members, key) != members.len(),
+            _ => throw ValueError::WrongKind,
+        };
     }
 
     fn get(self, key: str) -> Value throw ValueError {
-        self.require_kind(.Object)?;
-        let index = self.storage.find_member(key) as usize;
-        if index == self.storage.size() { throw ValueError::MissingKey; }
-        return { storage: self.storage.member_value(index) };
+        match self.node {
+            .Object(ref members) => {
+                let index = find_member(members, key);
+                if index == members.len() { throw ValueError::MissingKey; }
+                return { node: members[index].value };
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn append_member(&self, key: str, &&value: Value) throw ValueError {
-        self.require_kind(.Object)?;
-        let owned_key = key as String;
-        let child = (&&value).storage;
-        self.storage.append_member(&&owned_key, &&child);
+        match self.node {
+            .Object(&members) => {
+                let member = Member {
+                    key: key as String,
+                    value: (&&value).node
+                };
+                members.push(&&member);
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn set(&self, key: str, &&value: Value) throw ValueError {
-        self.require_kind(.Object)?;
-        let child = (&&value).storage;
-        self.storage.set_member(key, &&child);
+        match self.node {
+            .Object(&members) => {
+                let index = find_member(members, key);
+                if index == members.len() {
+                    let member = Member {
+                        key: key as String,
+                        value: (&&value).node
+                    };
+                    members.push(&&member);
+                } else {
+                    members[index].value = (&&value).node;
+                }
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 
     fn erase(&self, key: str) -> usize throw ValueError {
-        self.require_kind(.Object)?;
-        return self.storage.erase_key(key) as usize;
+        match self.node {
+            .Object(&members) => {
+                var removed: usize = 0;
+                var index: usize = 0;
+                while index < members.len() {
+                    if members[index].key.as_str() == key {
+                        members.remove(index);
+                        removed += 1;
+                    } else {
+                        index += 1;
+                    }
+                }
+                return removed;
+            },
+            _ => throw ValueError::WrongKind,
+        }
     }
 }

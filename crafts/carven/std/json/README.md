@@ -53,8 +53,11 @@ missing keys, invalid indices, and unsuccessful numeric conversions produce
 Validation and parsing share one bounded syntax machine. String events carry
 ordinary byte spans and decoded escape scalars, so parsing builds owned text
 during the same scan. SIMD classifies string stops, whitespace, and digit runs;
-loads remain within the supplied input. The owning representation uses C++
-standard value containers; grammar and writing remain Carven operations.
+loads remain within the supplied input. A Carven enum represents each value;
+`Sequence` owns array elements and ordered object members. Parsing transfers
+constructed children into their containers. Writing borrows enum payloads and
+sequence elements while traversing the tree. Numeric conversions use the
+standard character-conversion facility.
 
 Whitespace is space, tab, LF, or CR. Escaped surrogate pairs decode to Unicode
 scalars; unpaired surrogates are rejected. Input nesting and writing are limited

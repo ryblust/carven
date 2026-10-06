@@ -174,6 +174,11 @@ check the remaining bytes individually; input padding is unnecessary.
 `count_where` accumulates matching lanes across blocks and takes an exact vector
 sum before the byte accumulators can wrap.
 
+`find_from(bytes, start, set)` searches from `start` and returns a position in
+the original input. `prefix_end(bytes, start, set)` returns the end of the
+matching run starting there. Both accept `start <= bytes.len()`, including an
+empty suffix. `find_where` and `prefix_where` use the same scans from zero.
+
 ## Floating execution
 
 Floating arithmetic follows scalar `f32` execution per lane. Signed zeros compare

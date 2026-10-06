@@ -44,6 +44,10 @@ auto source_builtin_type(std::string_view name) noexcept -> std::optional<Builti
     return found == names.end() ? std::nullopt : std::optional(found->second);
 }
 
+auto source_type_name_is_reserved(std::string_view name) noexcept -> bool {
+    return name == "ptr" || name == "range" || name == "Sequence" || source_builtin_type(name);
+}
+
 namespace {
 
 auto source_id(const ProgramDraft& draft, ProgramModuleID module_id) noexcept -> SourceID {
@@ -144,6 +148,41 @@ auto resolve_named(
             DiagnosticCode::TypeGenericDefinition,
             "this type position requires a concrete type rather than a type parameter"
         ));
+    }
+    if (!named.global_root && named.components.size() == 1uz && root == "Sequence") {
+        if (named.arguments.size() != 1uz) {
+            co_return std::unexpected(fail(
+                draft,
+                module_id,
+                origin,
+                DiagnosticCode::TypeUnresolved,
+                "Sequence requires one element type"
+            ));
+        }
+        auto element = (co_await resolve_source_type(
+            draft,
+            catalog,
+            import_usage,
+            module_id,
+            syntax,
+            named.arguments.front(),
+            resolve_extent,
+            requests,
+            generic_context
+        ));
+        if (!element) {
+            co_return std::unexpected(element.error());
+        }
+        if (auto checked =
+                require_source_value_type(draft, *element, module_id, origin, "Sequence element");
+            !checked) {
+            co_return std::unexpected(checked.error());
+        }
+        co_return ConstructionTypeRef {draft.intern_type({
+            .value = OwnedSequenceTypeValue {
+                .element = draft.canonicalize_declared_type(*element),
+            },
+        })};
     }
     if (!named.global_root && named.components.size() == 1uz && root == "range") {
         if (named.arguments.size() != 1uz) {
@@ -637,6 +676,35 @@ auto resolve_generic_source_type(
                             GenericTypeParameter {.definition = context.definition, .index = *index}
                         );
                     }
+                    if (name == "Sequence") {
+                        if (named.arguments.size() != 1uz) {
+                            co_return std::unexpected(fail(
+                                draft,
+                                module_id,
+                                source.span,
+                                DiagnosticCode::TypeUnresolved,
+                                "Sequence requires one element type"
+                            ));
+                        }
+                        auto element = (co_await resolve_generic_source_type(
+                            draft,
+                            catalog,
+                            import_usage,
+                            module_id,
+                            syntax,
+                            named.arguments.front(),
+                            context,
+                            resolve_extent,
+                            true,
+                            requests
+                        ));
+                        if (!element) {
+                            co_return std::unexpected(element.error());
+                        }
+                        co_return draft.intern_generic_type(
+                            GenericOwnedSequenceType {.element = *element}
+                        );
+                    }
                     if (!catalog.lookup(module_id, name).empty()) {
                         const auto selected = select_global_symbol(
                             draft,
@@ -1055,6 +1123,7 @@ auto resolve_failure_types(
                                   || std::same_as<Value, CallableViewTypeValue>
                                   || std::same_as<Value, CppTypeValue>
                                   || std::same_as<Value, PointerTypeValue>
+                                  || std::same_as<Value, OwnedSequenceTypeValue>
                                   || std::same_as<Value, SliceTypeValue>
                                   || std::same_as<Value, RangeTypeValue>,
                               "unhandled non-nominal failure type"

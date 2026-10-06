@@ -110,6 +110,9 @@ auto BodyExprSite::finish_index(
     Value index,
     Span span
 ) noexcept -> ExpressionResult<Value> {
+    const auto receiver_shape = sequence_shape(draft(), receiver.type());
+    const auto takeable =
+        receiver.takeable && receiver_shape && receiver_shape->kind == SequenceShapeKind::Array;
     const auto known = element_constant(draft(), receiver.constant(), index.constant());
     auto state = operand_state();
     state.completes = receiver.completes;
@@ -132,7 +135,7 @@ auto BodyExprSite::finish_index(
                 body.origin(span)
             )}},
             .pending_failures = std::move(state.pending),
-            .takeable = true,
+            .takeable = takeable,
             .completes = state.completes
         };
     }
@@ -188,7 +191,7 @@ auto BodyExprSite::finish_field(
                 body.origin(span)
             )}},
             .pending_failures = take_pending_failures(receiver),
-            .takeable = true,
+            .takeable = receiver.takeable,
             .completes = receiver.completes
         };
     }

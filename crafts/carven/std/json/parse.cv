@@ -1,4 +1,4 @@
-import "carven/std/json/value.hpp" using carven::json::Storage;
+import .node using { Node, Member };
 import .error using JSONError;
 import .syntax using { SyntaxState, SyntaxEvent, syntax_state, next_event, validate_number };
 import std::utf.validation using validate_utf8;
@@ -26,44 +26,46 @@ private fn read_value(
     bytes: [u8],
     &state: SyntaxState,
     event: SyntaxEvent
-) -> Storage throw JSONError {
+) -> Node throw JSONError {
     match event {
-        .Null => return ::carven::json::Storage::make_null(),
-        .Boolean(value) => return ::carven::json::Storage::make_boolean(value),
+        .Null => return .Null,
+        .Boolean(value) => return .Boolean(value),
         .Number(start, end) => {
-            return ::carven::json::Storage::make_number(
-                str::from_utf8_unchecked(bytes.slice(start, end))
-            );
+            return .Number(str::from_utf8_unchecked(bytes.slice(start, end)) as String);
         },
         .StringBegin(is_key) => {
             assert(is_key == false);
             let text = read_string(bytes, &state)?;
-            return ::carven::json::Storage::make_string(&&text);
+            return .Text(&&text);
         },
         .ArrayBegin => {
-            var result = ::carven::json::Storage::make_array();
+            var result: Sequence<Node> = {};
             while {
                 let element = next_event(bytes, &state)?;
                 match element {
-                    .ArrayEnd => return &&result,
+                    .ArrayEnd => return .Array(&&result),
                     _ => {
                         let child = read_value(bytes, &state, element)?;
-                        result.append_element(&&child);
+                        result.push(&&child);
                     },
                 }
             }
         },
         .ObjectBegin => {
-            var result = ::carven::json::Storage::make_object();
+            var result: Sequence<Member> = {};
             while {
                 match next_event(bytes, &state)? {
-                    .ObjectEnd => return &&result,
+                    .ObjectEnd => return .Object(&&result),
                     .StringBegin(is_key) => {
                         assert(is_key);
                         let key = read_string(bytes, &state)?;
                         let element = next_event(bytes, &state)?;
                         let child = read_value(bytes, &state, element)?;
-                        result.append_member(&&key, &&child);
+                        let member = Member {
+                            key: (&&key),
+                            value: (&&child)
+                        };
+                        result.push(&&member);
                     },
                     _ => assert(false),
                 }
@@ -71,10 +73,10 @@ private fn read_value(
         },
         _ => assert(false),
     }
-    return ::carven::json::Storage::make_null();
+    return .Null;
 }
 
-fn parse_storage(text: str) -> Storage throw JSONError {
+fn parse_node(text: str) -> Node throw JSONError {
     var state = syntax_state();
     let event = next_event(text.bytes, &state)?;
     let result = read_value(text.bytes, &state, event)?;
@@ -82,12 +84,12 @@ fn parse_storage(text: str) -> Storage throw JSONError {
     return &&result;
 }
 
-fn parse_storage_bytes(bytes: [u8]) -> Storage throw JSONError + UTF8Error {
+fn parse_node_bytes(bytes: [u8]) -> Node throw JSONError + UTF8Error {
     validate_utf8(bytes)?;
-    return parse_storage(str::from_utf8_unchecked(bytes))?;
+    return parse_node(str::from_utf8_unchecked(bytes))?;
 }
 
-fn parse_number_storage(text: str) -> Storage throw JSONError {
+fn parse_number_node(text: str) -> Node throw JSONError {
     validate_number(text.bytes)?;
-    return ::carven::json::Storage::make_number(text);
+    return .Number(text as String);
 }

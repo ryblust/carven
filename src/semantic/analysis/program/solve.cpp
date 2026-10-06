@@ -155,6 +155,10 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
             );
         });
     }
+    const auto valid_sequence_elements = validate_generic_sequence_elements();
+    if (!valid_sequence_elements) {
+        return std::unexpected(valid_sequence_elements.error());
+    }
     auto enum_roots = std::vector<TypeID>();
     for (const auto enumeration : enum_declaration_ids()) {
         enum_roots.push_back(intern_type({.value = EnumTypeValue {enumeration}}));
