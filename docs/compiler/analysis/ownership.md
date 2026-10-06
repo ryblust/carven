@@ -118,21 +118,32 @@ chains. Allocation identity is separate from diagnostic provenance.
 
 Sequence selections record checked element types before normalization, including
 when enum payload slots have different types. Call boundaries cut these
-indirections into element referents with finite inline paths. Carrier ownership
-is a separate topology and is not copied with a value. Observable roots retain
-transitive carrier relations; inaccessible intermediate ancestors are discarded.
-An inherited structural pin is removed only when a retained child's protection
-covers it through exact inline positions and direct selections. Other hidden pins
-and reader loans retain protected element regions. Unknown selections remain
-many, may overlap, and receive weak updates.
+indirections into element referents with finite inline paths. Checked Sequence
+elements contain no loans or callable storage and cannot be taken, including
+through their fields. Referent state is therefore initialized and available,
+without copied carrier relationships.
+
+Carrier ownership is a separate topology and is not copied with a value.
+Carrier ancestors remain reachable evidence even without parameter roles;
+non-interface ancestors use the same storage-site grouping as other summaries.
+Repeated recursive sites form graph cycles rather than extending an ancestor
+chain. Element identity uses carrier, index, and checked element type; unknown
+indices denote a many region, independently of the source selection site.
+
+One region projection supplies overlap and ancestor checks, hidden reader loans,
+and retained accesses. Direct edges preserve the inline suffix after the selected
+index, allowing independent fields to remain disjoint. Recursive cycles widen
+to a selected descendant region for structural protection. A common widened
+bound does not identify the fields of two referents. Different paths to the same
+carrier remain alternatives; cycle summaries continue to external ancestors.
 
 Restoration maps modified referents to their actual caller projection, rather
-than replacing the entire carrier. Returned storage loans retain the first
-selected element index and protect that element's descendants. Recursive suffixes
-are summarized in this region, keeping returned borrowing relationships finite.
+than replacing the entire carrier. Returned storage loans retain a single checked
+selection and its finite inline field suffix. Across further indirections they
+protect the first selected element's descendants, keeping recursive borrowing
+relationships finite.
 Known different indices remain disjoint for element updates; structural carrier
-mutation invalidates their loans. Exact storage identity uses carrier, index, and
-element type, independently of diagnostic witnesses and selection roles.
+mutation invalidates their loans.
 
 ### Joins and solver completion
 

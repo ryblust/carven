@@ -255,12 +255,9 @@ auto OwnershipBodyAnalyzer::call(
                     return !part;
                 });
             const auto found = std::ranges::find_if(edges, [&](const auto& edge) noexcept {
-                return edge.direct
-                    && edge.carrier == carrier
+                return edge.carrier == carrier
                     && edge.index == index
-                    && graph_objects[edge.element].type == boundary.element
-                    && (!uncertain
-                        || graph_objects[edge.element].site.element_selection == boundary.site);
+                    && graph_objects[edge.element].type == boundary.element;
             });
             auto element = graph_objects.size();
             if (found != edges.end()) {
@@ -274,18 +271,21 @@ auto OwnershipBodyAnalyzer::call(
                 actual.indirections.push_back(
                     {base + carrier.path.size(), boundary.element, boundary.site}
                 );
-                auto projected = graph_objects[object].state;
-                projected.relationships = project_relationships(projected.relationships, selected);
-                projected.modified = false;
+                // Checked Sequence elements are initialized, cannot be taken, and
+                // cannot contain loans or callable storage. A referent names storage;
+                // it does not copy the carrier's value state.
                 graph_objects.push_back(
                     {boundary.element,
                      boundary.site,
-                     std::move(projected),
+                     {.available = true,
+                      .taken = std::nullopt,
+                      .relationships = {},
+                      .modified = false},
                      {body.id(), boundary.site.index(), false, boundary.site},
                      graph_objects[object].many || uncertain}
                 );
                 actual_sources.push_back(std::move(actual));
-                edges.push_back({std::move(carrier), element, index, true});
+                edges.push_back({std::move(carrier), element, index});
             }
             object = element;
             offset = boundary.offset + 1uz;
@@ -454,7 +454,16 @@ auto OwnershipBodyAnalyzer::call(
         inline_facts(graph_objects[inline_roots[cursor]].state.relationships);
     }
     for (auto cursor = 0uz; cursor < reachable.size(); ++cursor) {
-        visit_facts(graph_objects[reachable[cursor]].state.relationships);
+        const auto object = reachable[cursor];
+        visit_facts(graph_objects[object].state.relationships);
+        // A carrier is evidence for storage relationships even when it has no
+        // parameter role. Non-interface ancestors remain site summaries, so
+        // recursive descent retains a finite graph rather than a growing chain.
+        for (const auto& edge : edges) {
+            if (edge.element == object) {
+                discover(edge.carrier.object);
+            }
+        }
     }
     auto sources = std::vector<std::vector<std::size_t>>();
     auto normalized = std::flat_map<std::size_t, std::size_t>();
@@ -549,43 +558,12 @@ auto OwnershipBodyAnalyzer::call(
                 call_input.storage_readers.push_back(std::move(loan));
                 continue;
             }
-            for (const auto element : reachable) {
-                if (storage_regions_overlap(edges, loan.backing, {element, {}})) {
-                    auto copy = loan;
-                    copy.backing = {normalized.at(element), {}};
-                    copy.holder.clear();
-                    // Preserve a known outer index when the retained root is
-                    // an ancestor carrier, so other elements remain writable.
-                    auto regions = std::vector<OwnershipPlace>();
-                    auto pending = std::vector<std::size_t> {loan.backing.object};
-                    auto seen = std::flat_set<std::size_t>();
-                    while (!pending.empty()) {
-                        const auto next = pending.back();
-                        pending.pop_back();
-                        if (!seen.insert(next).second) {
-                            continue;
-                        }
-                        for (const auto& edge : edges) {
-                            if (edge.element != next) {
-                                continue;
-                            }
-                            if (edge.carrier.object == element) {
-                                auto region = edge.carrier;
-                                region.path.push_back(edge.index);
-                                regions.push_back(map_place(std::move(region)));
-                            }
-                            pending.push_back(edge.carrier.object);
-                        }
-                    }
-                    if (regions.empty()) {
-                        call_input.storage_readers.push_back(std::move(copy));
-                    } else {
-                        for (const auto& region : regions) {
-                            auto projected = copy;
-                            projected.backing = region;
-                            call_input.storage_readers.push_back(std::move(projected));
-                        }
-                    }
+            for (const auto& region : project_storage_region(edges, loan.backing)) {
+                if (normalized.contains(region.place.object)) {
+                    auto projected = loan;
+                    projected.backing = map_place(region.place);
+                    projected.holder.clear();
+                    call_input.storage_readers.push_back(std::move(projected));
                 }
             }
         }
@@ -610,128 +588,26 @@ auto OwnershipBodyAnalyzer::call(
         }
         call_input.outlives.push_back(std::move(row));
     }
-    // Keep only observable roots. Intermediate recursive ancestors become
-    // transitive carrier relations, rather than ever longer object chains.
-    const auto ancestors = [&](std::size_t element, auto&& visit) noexcept {
-        auto pending = std::vector<std::pair<std::size_t, bool>> {{element, true}};
-        auto seen = std::flat_set<std::size_t>();
-        while (!pending.empty()) {
-            const auto [next, direct] = pending.back();
-            pending.pop_back();
-            if (!seen.insert(next).second) {
-                continue;
-            }
-            for (const auto& edge : edges) {
-                if (edge.element != next) {
-                    continue;
-                }
-                visit(edge, direct && edge.direct);
-                pending.push_back({edge.carrier.object, false});
-            }
+    for (const auto& edge : edges) {
+        if (normalized.contains(edge.element) && normalized.contains(edge.carrier.object)) {
+            call_input.owns.push_back(
+                {map_place(edge.carrier), normalized.at(edge.element), edge.index}
+            );
         }
-    };
-    for (const auto element : reachable) {
-        ancestors(element, [&](const OwnershipStorageEdge& edge, bool direct) noexcept {
-            if (normalized.contains(edge.carrier.object)) {
-                call_input.owns.push_back(
-                    {map_place(edge.carrier), normalized.at(element), edge.index, direct}
-                );
-            }
-        });
     }
     std::ranges::sort(call_input.owns);
     call_input.owns.erase(std::ranges::unique(call_input.owns).begin(), call_input.owns.end());
-    const auto must_ancestor = [&](const OwnershipPlace& owner,
-                                   const OwnershipPlace& referent) noexcept {
-        const auto exact_prefix = [&](const OwnershipPlace& selected) noexcept {
-            return owner.object == selected.object
-                && owner.path.size() <= selected.path.size()
-                && std::ranges::all_of(
-                       selected.path,
-                       [](const auto& part) noexcept { return part.has_value(); }
-                )
-                && std::ranges::equal(
-                       owner.path,
-                       std::span(selected.path).first(owner.path.size())
-                );
-        };
-        if (exact_prefix(referent)) {
-            return true;
-        }
-        auto pending = std::vector<std::size_t> {referent.object};
-        auto seen = std::flat_set<std::size_t>();
-        while (!pending.empty()) {
-            const auto next = pending.back();
-            pending.pop_back();
-            if (!seen.insert(next).second) {
-                continue;
-            }
-            const auto carriers = std::ranges::count_if(edges, [&](const auto& edge) noexcept {
-                return edge.element == next;
-            });
-            if (carriers != 1) {
-                continue;
-            }
-            for (const auto& edge : edges) {
-                if (edge.element != next || !edge.direct) {
-                    continue;
-                }
-                if (exact_prefix(edge.carrier)) {
-                    return true;
-                }
-                // A concrete root role preserves this direct selection's
-                // relative owner identity, even if the selected index is unknown.
-                pending.push_back(edge.carrier.object);
-            }
-        }
-        return false;
-    };
     for (const auto& access : projected_accesses) {
         if (normalized.contains(access.place.object)) {
             auto mapped = access;
             mapped.place = map_place(std::move(mapped.place));
             call_input.accesses.push_back(std::move(mapped));
         } else {
-            const auto covered = access.kind == OwnershipAccessKind::Structural
-                && std::ranges::any_of(
-                                     projected_accesses,
-                                     [&](const OwnershipAccess& child) noexcept {
-                                         return child.kind == OwnershipAccessKind::Structural
-                                             && normalized.contains(child.place.object)
-                                             && must_ancestor(access.place, child.place);
-                                     }
-                );
-            if (covered) {
-                continue;
-            }
-            // A direct selection still has its exact finite inline suffix. Only
-            // a summarized descendant needs protection over the whole region.
-            ancestors(
-                access.place.object,
-                [&](const OwnershipStorageEdge& edge, bool direct) noexcept {
-                    if (normalized.contains(edge.carrier.object)) {
-                        auto region = edge.carrier;
-                        region.path.push_back(edge.index);
-                        if (direct) {
-                            region.path.append_range(access.place.path);
-                        }
-                        call_input.accesses.push_back(
-                            {map_place(std::move(region)),
-                             access.kind,
-                             access.descendants || !direct}
-                        );
-                    }
-                }
-            );
-            if (access.kind == OwnershipAccessKind::Stable) {
-                for (const auto element : reachable) {
-                    ancestors(element, [&](const OwnershipStorageEdge& edge, bool) noexcept {
-                        if (overlaps(access.place, edge.carrier)) {
-                            call_input.accesses.push_back(
-                                {{normalized.at(element), {}}, access.kind, true}
-                            );
-                        }
-                    });
+            for (const auto& region : project_storage_region(edges, access.place)) {
+                if (normalized.contains(region.place.object)) {
+                    call_input.accesses.push_back(
+                        {map_place(region.place), access.kind, access.descendants || !region.exact}
+                    );
                 }
             }
         }
@@ -749,9 +625,9 @@ auto OwnershipBodyAnalyzer::call(
             boundary.offset += offset;
             actual.indirections.push_back(boundary);
         }
-        if (loan && !actual.indirections.empty()) {
-            // A borrowed descendant protects its first selected element. This deliberately
-            // broadens the region, and makes recursive returned loans finite.
+        if (loan && actual.indirections.size() > 1uz) {
+            // One selection retains its finite inline suffix. Recursive descendants
+            // protect the first selected element, bounding returned loan paths.
             actual.path.resize(actual.indirections.front().offset + 1uz);
             actual.indirections.clear();
         }

@@ -10,6 +10,7 @@ import :backend.lower;
 import :backend.target;
 import :frontend.program.parse;
 import :semantic.analyze;
+import :semantic.semir.content;
 import :semantic.semir.decl;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
@@ -100,27 +101,6 @@ auto function_named(const SemIRProgram& semantic, std::string_view name) noexcep
         return function.id;
     }
     std::unreachable();
-}
-
-auto failure_name(const SemIRProgram& semantic, TypeID type) noexcept -> std::string_view {
-    return semantic.types().type(type).value.visit(
-        Overloaded {
-            [&](const StructTypeValue& value) noexcept {
-                return semantic.provenance().spelling(
-                    semantic.declarations().structure(value.structure).name
-                );
-            },
-            [&](const EnumTypeValue& value) noexcept {
-                return semantic.provenance().spelling(
-                    semantic.declarations().enumeration(value.enumeration).name
-                );
-            },
-            [](const auto&) static noexcept -> std::string_view {
-                expect(false).note("failure ABI member is not nominal");
-                return {};
-            },
-        }
-    );
 }
 
 auto public_names(std::string source_text) noexcept -> std::array<std::string, 2> {
@@ -345,14 +325,13 @@ const TestSuite suite([] static noexcept {
         const auto signature = compilation.semantic().declarations().callable(callable).signature;
         const auto failures =
             compilation.semantic().callable_signatures().signature(signature).failures;
-        auto names = std::vector<std::string_view>();
+        auto identities = std::vector<std::string>();
         for (const auto type : compilation.target().failure_abi().members(failures)) {
-            names.push_back(failure_name(compilation.semantic(), type));
+            identities.push_back(type_content_key(compilation.semantic(), type));
         }
-
-        expect((
-            names == std::vector<std::string_view> {"ZFailure", "BFailure", "YFailure", "AFailure"}
-        ));
+        expect_equal(identities.size(), 4uz);
+        expect(std::ranges::is_sorted(identities));
+        expect(std::ranges::adjacent_find(identities) == identities.end());
         expect((compilation.target().semantic_identity() == compilation.semantic().identity()));
     };
 

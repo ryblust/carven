@@ -184,10 +184,11 @@ by their interoperation contracts.
 
 ## Failure and test-stop ABI
 
-`FailureABI` gives each failure set a deterministic member order. Failing
-results use `Outcome`; other results are direct. Widening accepts identity or a
-strict failure-set superset. Calls, propagation, handlers, and callable
-adaptation use this one contract.
+`FailureABI` orders failure members by the shared canonical type content identity,
+including the source declaration and normalized generic arguments. Generic
+nominal target naming uses the same identity. Failing results use `Outcome`;
+other results are direct. Widening accepts identity or a strict failure-set superset.
+Calls, propagation, handlers, and callable adaptation use this one contract.
 
 A concrete callable whose published effect admits
 test stop returns `Outcome<Result, TestStopped, Failures...>`. Callable views

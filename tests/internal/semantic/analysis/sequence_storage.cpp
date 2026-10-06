@@ -1,6 +1,9 @@
 module carven:test.internal.semantic.analysis.sequence_storage;
 
 import :diagnostics.code;
+import :diagnostics.sink;
+import :semantic.analysis.diagnostics;
+import :semantic.analysis.ownership.context;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
@@ -500,6 +503,142 @@ const TestSuite suite([] static noexcept {
                     let observed = view.len();
                 }
             )"));
+        };
+
+    "Sequence ownership: element origins preserve aliasing and inline field separation"_test =
+        [] static noexcept {
+            for (const auto first : {"index", "0usize"}) {
+                for (const auto second : {"index", "0usize"}) {
+                    const auto source = std::format(
+                        R"(
+                        fn replace(first: String, &second: String) -> usize {{
+                            let view = first.as_str();
+                            second = "replacement" as String;
+                            return view.len();
+                        }}
+                        fn invalid(index: usize) -> usize {{
+                            var values = Sequence<String> {{}};
+                            values.push("first" as String);
+                            return replace(values[{}], &values[{}]);
+                        }}
+                    )",
+                        first,
+                        second
+                    );
+                    expect_diagnostic(
+                        analyze_test_errors(source),
+                        DiagnosticCode::AccessBorrowConflict
+                    );
+                    for (const auto whole : {false, true}) {
+                        static_cast<void>(analyze_test_program(
+                            std::format(
+                                R"(
+                            struct Pair {{ first: String, second: String }}
+                            fn replace(first: String, &second: String{}) -> usize {{
+                                let view = first.as_str();
+                                second = "replacement" as String;
+                                return view.len();
+                            }}
+                            fn accepted(index: usize) -> usize {{
+                                var values = Sequence<Pair> {{}};
+                                values.push(Pair {{ first: "first" as String, second: "second" as String }});
+                                return replace(values[{}].first, &values[{}].second{});
+                            }}
+                        )",
+                                whole ? ", whole: Sequence<Pair>" : "",
+                                first,
+                                second,
+                                whole ? ", values" : ""
+                            )
+                        ));
+                    }
+                }
+            }
+            static_cast<void>(analyze_test_program(R"(
+                fn replace(first: String, &second: String) -> usize {
+                    let view = first.as_str();
+                    second = "replacement" as String;
+                    return view.len();
+                }
+                fn accepted(index: usize) -> usize {
+                    var values = Sequence<String> {};
+                    values.push("first" as String);
+                    values.push("second" as String);
+                    var copied = values;
+                    let count = replace(values[0], &values[1]);
+                    let independent = replace(values[index], &copied[index]);
+                    return count;
+                }
+            )"));
+        };
+
+    "Sequence ownership: returned direct field loans retain their selected suffix"_test =
+        [] static noexcept {
+            static_cast<void>(analyze_test_program(R"(
+                struct Pair { first: String, second: String }
+                fn first(values: Sequence<Pair>, index: usize) -> str => values[index].first.as_str();
+                fn accepted(index: usize) -> usize {
+                    var values = Sequence<Pair> {};
+                    values.push(Pair { first: "first" as String, second: "second" as String });
+                    let view = first(values, index);
+                    values[index].second = "replacement" as String;
+                    return view.len();
+                }
+            )"));
+            expect_diagnostic(
+                analyze_test_errors(R"(
+                struct Pair { first: String, second: String }
+                fn first(values: Sequence<Pair>, index: usize) -> str => values[index].first.as_str();
+                fn invalid(index: usize) -> usize {
+                    var values = Sequence<Pair> {};
+                    let view = first(values, index);
+                    values[index].first = "replacement" as String;
+                    return view.len();
+                }
+            )"),
+                DiagnosticCode::AccessBorrowConflict
+            );
+        };
+
+    "Sequence ownership: recursive carrier graphs have a bounded query domain"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+            struct Node { text: String, other: String, children: Sequence<Node> }
+            fn count(node: Node) -> usize {
+                var result: usize = node.text.len();
+                for child in node.children { result += count(child); }
+                return result;
+            }
+            fn update(&node: Node) -> void {
+                let view = node.text.as_str();
+                for index in 0usize..node.children.len() { update(&node.children[index]); }
+                node.other.append("suffix");
+                let observed = view.len();
+            }
+            fn accepted(&node: Node) -> usize {
+                update(&node);
+                return count(node);
+            }
+        )");
+            auto diagnostics = DiagnosticSink();
+            const auto result =
+                OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
+            if (!expect(result.has_value())) {
+                return;
+            }
+            // Three bodies and their finite selection sites bound the recursive graph;
+            // runtime tree depth does not create additional allocation identities.
+            expect(result->query_count <= 128uz);
+            expect(result->evaluation_count <= 512uz);
+            expect_diagnostic(
+                analyze_test_errors(R"(
+            struct Record { text: String, items: [String; 1] }
+            fn invalid(&values: Sequence<Record>) {
+                let taken = &&values[0].items[0];
+            }
+        )"),
+                DiagnosticCode::AccessTakeOperand
+            );
         };
 
     "Sequence execution: runtime ownership does not promise constant storage"_test =

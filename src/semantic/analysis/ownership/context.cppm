@@ -196,7 +196,6 @@ struct OwnershipStorageEdge final {
     OwnershipPlace carrier;
     std::size_t element;
     std::optional<std::uint64_t> index;
-    bool direct;
     auto operator<=>(const OwnershipStorageEdge&) const noexcept = default;
 };
 
@@ -305,6 +304,18 @@ auto overlaps(
     std::span<const std::optional<std::uint64_t>> right
 ) noexcept -> bool;
 auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept -> bool;
+
+// Carrier projections preserve inline suffixes. Recursive cycles widen to a
+// descendant region for structural protection, without equating its contents.
+struct OwnershipRegionProjection final {
+    OwnershipPlace place;
+    bool exact;
+};
+
+auto project_storage_region(
+    std::span<const OwnershipStorageEdge> edges,
+    const OwnershipPlace& source
+) noexcept -> std::vector<OwnershipRegionProjection>;
 
 auto storage_region_ancestor(
     std::span<const OwnershipStorageEdge> edges,

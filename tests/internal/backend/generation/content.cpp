@@ -70,6 +70,45 @@ const TestSuite suite([] static noexcept {
             }
         };
 
+    "Failure content: generic arguments determine stable transport order"_test =
+        [] static noexcept {
+            const auto build = [](bool reverse) noexcept {
+                return PlannedCompilation::build(
+                    analyze_test_program(
+                        std::format(
+                            "struct Error<T> {{ value: T }} struct Box<T> {{ value: T }} "
+                            "enum Failure<T> {{ Item(T) }} "
+                            "fn fail() throw {} {{}}",
+                            reverse
+                                ? "Failure<Box<u32>> + Failure<Box<i32>> + Error<u32> + Error<i32>"
+                                : "Error<i32> + Error<u32> + Failure<Box<i32>> + Failure<Box<u32>>"
+                        )
+                    ),
+                    {.test_mode = TestGenerationMode::None,
+                     .linkage_domain = *LinkageDomain::explicit_value("failure_content")}
+                );
+            };
+            const auto keys = [](const PlannedCompilation& compilation) noexcept {
+                auto result = std::vector<std::string>();
+                for (const auto entry : compilation.semantic().failure_sets().entries()) {
+                    if (entry.value.members.size() != 4uz) {
+                        continue;
+                    }
+                    for (const auto type : compilation.target().failure_abi().members(entry.id)) {
+                        result.push_back(type_content_key(compilation.semantic(), type));
+                    }
+                }
+                return result;
+            };
+            const auto first = build(false);
+            const auto second = build(true);
+            const auto identities = keys(first);
+            expect_equal(identities.size(), 4uz);
+            expect(std::ranges::is_sorted(identities));
+            expect(std::ranges::adjacent_find(identities) == identities.end());
+            expect(identities == keys(second));
+        };
+
     "Content identity: deep canonical queries have bounded traversal and encoding"_test =
         [] static noexcept {
             constexpr auto depth = 20'000uz;

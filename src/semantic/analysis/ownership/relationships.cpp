@@ -74,71 +74,73 @@ auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept 
     return left.object == right.object && overlaps(left.path, right.path);
 }
 
+auto project_storage_region(
+    std::span<const OwnershipStorageEdge> edges,
+    const OwnershipPlace& source
+) noexcept -> std::vector<OwnershipRegionProjection> {
+    struct Frame final {
+        OwnershipRegionProjection region;
+        std::vector<std::size_t> ancestors;
+    };
+
+    auto result = std::vector<OwnershipRegionProjection>();
+    auto pending = std::vector<Frame> {{{source, true}, {source.object}}};
+    auto visited = std::flat_set<std::pair<OwnershipPlace, bool>>();
+    for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {
+        const auto current = pending[cursor];
+        if (!visited.emplace(current.region.place, current.region.exact).second) {
+            continue;
+        }
+        result.push_back(current.region);
+        for (const auto& edge : edges) {
+            if (edge.element != current.region.place.object) {
+                continue;
+            }
+            auto projected = edge.carrier;
+            projected.path.push_back(edge.index);
+            const auto exact = current.region.exact
+                && !std::ranges::contains(current.ancestors, edge.carrier.object);
+            if (exact) {
+                projected.path.append_range(current.region.place.path);
+            }
+            auto ancestors = current.ancestors;
+            if (exact) {
+                ancestors.push_back(edge.carrier.object);
+            } else {
+                // Recursive paths widen to a finite edge region. They still
+                // propagate to external ancestors instead of stopping at a cycle.
+                ancestors.clear();
+            }
+            pending.push_back({{std::move(projected), exact}, std::move(ancestors)});
+        }
+    }
+    return result;
+}
+
 auto storage_region_ancestor(
     std::span<const OwnershipStorageEdge> edges,
     const OwnershipPlace& owner,
     const OwnershipPlace& referent,
     bool strict
 ) noexcept -> bool {
-    if (owner.object == referent.object) {
-        return overlaps(owner.path, referent.path)
-            && (strict ? owner.path.size() < referent.path.size()
-                       : owner.path.size() <= referent.path.size());
-    }
-    auto pending = std::vector<std::size_t> {referent.object};
-    auto visited = std::flat_set<std::size_t>();
-    while (!pending.empty()) {
-        const auto next = pending.back();
-        pending.pop_back();
-        if (!visited.insert(next).second) {
-            continue;
-        }
-        for (const auto& edge : edges) {
-            if (edge.element != next) {
-                continue;
-            }
-            if (owner.object == edge.carrier.object && overlaps(owner.path, edge.carrier.path)) {
-                if (owner.path.size() <= edge.carrier.path.size()) {
-                    return true;
-                }
-                const auto offset = edge.carrier.path.size();
-                if (owner.path.size() > offset) {
-                    const auto index = owner.path[offset];
-                    if (index && edge.index && index != edge.index) {
-                        continue;
-                    }
-                    if (next != referent.object || !edge.direct) {
-                        // The intermediate suffix is deliberately summarized.
-                        // It cannot prove that this write misses a descendant.
-                        return true;
-                    }
-                    const auto suffix = std::span(owner.path).subspan(offset + 1uz);
-                    if (overlaps(suffix, referent.path)
-                        && (strict ? suffix.size() < referent.path.size()
-                                   : suffix.size() <= referent.path.size())) {
-                        return true;
-                    }
-                }
-            }
-            pending.push_back(edge.carrier.object);
-        }
-    }
-    // A collapsed descendant may be below an independently selected first-level
-    // element of the same carrier. Unknown indices cannot prove disjointness.
-    for (const auto& a : edges) {
-        if (a.element != owner.object) {
-            continue;
-        }
-        for (const auto& b : edges) {
-            if (b.element == referent.object
-                && !b.direct
-                && overlaps(a.carrier, b.carrier)
-                && (!a.index || !b.index || a.index == b.index)) {
+    const auto owners = project_storage_region(edges, owner);
+    const auto referents = project_storage_region(edges, referent);
+    for (const auto& a : owners) {
+        for (const auto& b : referents) {
+            if (a.exact
+                && b.exact
+                && overlaps(a.place, b.place)
+                && (strict ? a.place.path.size() < b.place.path.size()
+                           : a.place.path.size() <= b.place.path.size())) {
                 return true;
             }
         }
     }
-    return false;
+    // A cycle region can protect descendants from an actual ancestor write.
+    // Two independently widened regions do not establish containment.
+    return std::ranges::any_of(referents, [&](const auto& region) noexcept {
+        return !region.exact && overlaps(owner, region.place);
+    });
 }
 
 auto storage_regions_overlap(
@@ -146,50 +148,26 @@ auto storage_regions_overlap(
     const OwnershipPlace& left,
     const OwnershipPlace& right
 ) noexcept -> bool {
-    if (overlaps(left, right)
-        || storage_region_ancestor(edges, left, right, false)
-        || storage_region_ancestor(edges, right, left, false)) {
-        return true;
-    }
-    const auto embedded = [&](const OwnershipPlace& carrier,
-                              const OwnershipPlace& element) noexcept {
-        for (const auto& edge : edges) {
-            if (edge.carrier.object != carrier.object
-                || edge.element != element.object
-                || carrier.path.size() <= edge.carrier.path.size()
-                || !overlaps(edge.carrier.path, carrier.path)) {
-                continue;
-            }
-            const auto index = carrier.path[edge.carrier.path.size()];
-            if (index && edge.index && index != edge.index) {
-                continue;
-            }
-            if (!edge.direct
-                || overlaps(
-                    std::span(carrier.path).subspan(edge.carrier.path.size() + 1uz),
-                    element.path
-                )) {
-                return true;
-            }
-        }
-        return false;
-    };
-    if (embedded(left, right) || embedded(right, left)) {
-        return true;
-    }
-    for (const auto& a : edges) {
-        if (a.element != left.object) {
-            continue;
-        }
-        for (const auto& b : edges) {
-            if (b.element == right.object
-                && overlaps(a.carrier, b.carrier)
-                && (!a.index || !b.index || a.index == b.index)) {
+    const auto left_regions = project_storage_region(edges, left);
+    const auto right_regions = project_storage_region(edges, right);
+    for (const auto& a : left_regions) {
+        for (const auto& b : right_regions) {
+            if (a.exact && b.exact && overlaps(a.place, b.place)) {
                 return true;
             }
         }
     }
-    return false;
+    // Widening bounds one referent; a shared bound of two referents does not
+    // erase their original field separation.
+    return std::ranges::any_of(
+               left_regions,
+               [&](const auto& region) noexcept {
+                   return !region.exact && overlaps(region.place, right);
+               }
+           )
+        || std::ranges::any_of(right_regions, [&](const auto& region) noexcept {
+               return !region.exact && overlaps(left, region.place);
+           });
 }
 
 auto normalize_storage_loans(std::vector<OwnershipStorageLoan>& loans) noexcept -> void {
