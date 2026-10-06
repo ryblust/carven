@@ -1,6 +1,8 @@
 module carven:backend.lowering.context.environment.impl;
 
 import :backend.lowering.context;
+import :backend.target.header;
+import :backend.target.unit;
 import std;
 
 auto ArtifactLowering::require_cpp_environment(
@@ -14,24 +16,34 @@ auto ArtifactLowering::require_cpp_environment(
     }
 }
 
-auto ArtifactLowering::materialize_cpp_environments(
+auto ArtifactLowering::lower_cpp_environments(
     TargetUnitSections& sections,
     TargetDirectiveInputs& directives
 ) noexcept -> void {
     auto imports = std::vector<TargetItem>();
-    for (const auto& [provider, requirement] : cpp_environments) {
+    auto providers = cpp_environments | std::views::keys | std::ranges::to<std::vector>();
+    std::ranges::sort(providers, {}, [&](ModuleID id) noexcept {
+        const auto& declaration = semantic().declarations().module_decl(id);
+        return semantic().provenance().module_record(declaration.provenance_module).path.value();
+    });
+    for (const auto provider : providers) {
+        const auto requirement = cpp_environments.at(provider);
         auto bindings = std::vector<TargetItem>();
-        for (const auto& header : semantic().declarations().module_decl(provider).cpp_headers) {
+        const auto& declaration = semantic().declarations().module_decl(provider);
+        for (const auto& header : declaration.cpp_headers) {
             const auto name = semantic().provenance().spelling(header.name);
-            directives.prefix_groups.push_back(
-                {.directives =
-                     {{.bytes = header.delimiter == CppHeaderDelimiter::AngleBrackets
-                           ? std::format("#include <{}>", name)
-                           : std::format("#include \"{}\"", name)}},
-                 .attribution = TargetRawSourceAttribution {
-                     .origin = target_source_origin(semantic().provenance(), header.origin),
-                 }}
-            );
+            directives.native_headers.push_back({
+                .header =
+                    {
+                        .delimiter = header.delimiter == CppHeaderDelimiter::AngleBrackets
+                            ? TargetHeaderDelimiter::AngleBrackets
+                            : TargetHeaderDelimiter::Quotes,
+                        .path = std::string(name),
+                    },
+                .attribution = TargetRawSourceAttribution {
+                    .origin = target_source_origin(semantic().provenance(), header.origin),
+                },
+            });
             if (requirement == CppEnvironmentRequirement::Declarations) {
                 continue;
             }

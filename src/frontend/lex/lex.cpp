@@ -563,7 +563,9 @@ auto Lexer::scan_character() noexcept -> void {
 
 auto Lexer::scan_cpp_header_name(char closing, TokenKind kind) noexcept -> void {
     const auto content_start = position;
+    auto contains_null = false;
     while (!at_end() && current() != closing && current() != '\n' && current() != '\r') {
+        contains_null |= current() == '\0';
         if (static_cast<unsigned char>(current()) >= 0x80) {
             consume_utf8();
         } else {
@@ -582,6 +584,10 @@ auto Lexer::scan_cpp_header_name(char closing, TokenKind kind) noexcept -> void 
         return;
     }
     ++position;
+    if (contains_null) {
+        diagnose_invalid("a C++ header name must not contain a null byte");
+        return;
+    }
     append_token(kind);
 }
 

@@ -4,6 +4,7 @@ import :backend.target.builder;
 import :backend.target.decl;
 import :backend.target.dependencies;
 import :backend.target.expr;
+import :backend.target.header;
 import :backend.target.item;
 import :backend.target.name;
 import :backend.target.origin;
@@ -95,8 +96,7 @@ const TestSuite suite([] static noexcept {
                 if (!(expect(dependencies.size() == 1uz).note("header: ", header))) {
                     return;
                 }
-                expect(dependencies.front().bytes == std::format("#include <{}>", header))
-                    .note("header: ", header);
+                expect(dependencies.front().header.path == header).note("header: ", header);
             }
         };
 

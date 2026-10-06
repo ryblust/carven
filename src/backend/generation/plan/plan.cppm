@@ -184,7 +184,7 @@ struct TargetCppAPIHeaderArtifact final {
 struct TargetModuleImplementationArtifact final {
     std::string logical_path;
     TargetModuleSchedule schedule;
-    std::vector<TargetArtifactID> interface_dependencies;
+    std::optional<TargetArtifactID> associated_interface;
 };
 
 struct TargetTestRunnerHeaderArtifact final {
@@ -208,6 +208,8 @@ auto artifact_logical_path(const TargetArtifactPlan& artifact) noexcept -> std::
 auto artifact_role(const TargetArtifactPlan& artifact) noexcept -> GeneratedArtifactRole;
 auto artifact_source_mapping(const TargetArtifactPlan& artifact) noexcept
     -> ArtifactSourceMappingPolicy;
+auto artifact_associated_header(const TargetArtifactPlan& artifact) noexcept
+    -> std::optional<TargetArtifactID>;
 auto artifact_dependencies(const TargetArtifactPlan& artifact) noexcept
     -> std::vector<TargetArtifactID>;
 auto verify_target_artifact_logical_paths(std::span<const std::string> logical_paths) noexcept
@@ -303,7 +305,7 @@ auto interface_component_logical_path(std::span<const std::string> anchor_compon
 auto cpp_api_header_logical_path(std::span<const std::string> canonical_components) noexcept
     -> std::string;
 
-auto materialize_directives(
+auto artifact_directive_inputs(
     const TargetPlan& plan,
     TargetArtifactID artifact,
     std::span<const TargetArtifactID> lowering_dependencies = {}

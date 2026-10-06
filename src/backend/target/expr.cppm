@@ -69,6 +69,8 @@ struct TargetNameExpr final {
 
 struct TargetIntrinsicNameExpr final {
     TargetSymbol symbol;
+
+    constexpr auto native_symbol() const noexcept -> TargetSymbol { return symbol; }
 };
 
 enum class TargetIntegerSuffix {
@@ -101,6 +103,7 @@ enum class TargetStringLiteralKind {
 struct TargetStringLiteral final {
     std::string bytes;
     TargetStringLiteralKind kind;
+    auto native_symbol() const noexcept -> std::optional<TargetSymbol>;
 };
 
 using TargetLiteralValue = std::variant<
@@ -112,6 +115,7 @@ using TargetLiteralValue = std::variant<
 
 struct TargetLiteralExpr final {
     TargetLiteralValue value;
+    auto native_symbol() const noexcept -> std::optional<TargetSymbol>;
 };
 
 struct TargetPrefixExpr final {
@@ -147,6 +151,10 @@ struct TargetArrayExpr final {
     TargetTypeID element_type_id;
     UniqueIndirect<TargetExpr> extent;
     std::vector<TargetExpr> elements;
+
+    static constexpr auto native_symbol() noexcept -> TargetSymbol {
+        return TargetSymbol::StdArray;
+    }
 };
 
 struct TargetFieldInitializer final {
