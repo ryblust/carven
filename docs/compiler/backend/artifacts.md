@@ -15,9 +15,9 @@ borrowed by these local allocators. `ModuleLowering::field_identifier` derives
 nominal member names from their semantic identity and planned enclosing name.
 Source encoding is injective: reserved C++ names and source spellings in its escape
 domain are encoded. The plan also owns encoded public namespace and function names
-shared by API headers and export façades. Artifact paths retain canonical source names. Closure types are
-numbered by their discovery order within the owner module, so other modules
-cannot renumber them.
+shared by API headers and export façades. Artifact paths retain canonical source names.
+Closure types are numbered by their discovery order within the owner module, so other
+modules cannot renumber them.
 
 Semantic visibility and C++ definition requirements determine interface
 artifacts. Declaration-only dependencies use forward declarations. Complete
@@ -39,7 +39,9 @@ no native declarations or definitions. Static execution retains its SemIR bodies
 independently of this native selection.
 
 Lowering also records providers of emitted names and types. These transient
-provider sets are consumed into include directives.
+provider sets become header requirements and ordered native imports.
+Implementation artifacts retain their associated interface identity; test entries
+retain their runner header. These relationships identify associated headers.
 
 ### Staged bodies
 
@@ -145,7 +147,16 @@ stack to clear descendants, including partially moved trees, statement bodies,
 and namespace items. Child cleanup also bounds the stack depth of variant
 replacement. Traversal preserves scope order through enter/leave events.
 Dependency collection visits the finished tree and referenced types to derive
-the required standard and runtime headers.
+standard and runtime header requirements. Target nodes identify their native
+facilities; shared symbol metadata supplies their C++ spelling and header provider
+to rendering and dependency collection. Unused interned types contribute no
+requirements.
+
+`TargetUnitBuilder::finish` combines these requirements with planned artifact
+references and ordered native imports. Header references retain their delimiter
+and path. Automatic requirements merge by reference; source imports retain their
+order, repetitions, and attribution. The completed unit owns structured include
+and pragma-once directives; emission serializes them.
 
 The renderer builds completed layout tables in postorder for expressions,
 statements, items and the type dependency DAG, including decltype expressions.
@@ -156,9 +167,9 @@ boundary; command links and explicit choice frames share the remaining work. Bin
 preserves the expression tree using C++ precedence and associativity. Nested
 comparisons on either side receive explicit parentheses to make their grouping
 visible. An `else` body that contains only a generated conditional renders as
-`else if`; realization composes two-way conditionals. Semantic inference and target syntax construction finish
-before rendering. Artifact collection checks logical paths, uniqueness, and prefix
-safety.
+`else if`; realization composes two-way conditionals. Semantic inference and
+target syntax construction finish before rendering. Artifact collection checks
+logical paths, uniqueness, and prefix safety.
 
 Continuation indentation is bounded by half the configured line width, keeping
 whitespace proportional to syntax size. Child-before-parent width summaries

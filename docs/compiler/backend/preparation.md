@@ -118,8 +118,8 @@ implementations from published source facts and local operation contracts.
 ## Native construction operands
 
 `PreparedNativeConstruction` maps each native construction argument to a retained
-operand index or a borrowed constant argument from its result query. Operand demands and final argument
-delivery consume this mapping.
+operand index or a borrowed constant argument from its result query. Operand demands and
+final argument delivery consume this mapping.
 
 Native construction retains type, access, and known scalar facts for both queries
 and execution.

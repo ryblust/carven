@@ -113,15 +113,12 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
     if (!sources) {
         return emit_driver_error(sources.error());
     }
-    auto semantic = load_and_analyze_sources(
-        sources->carven,
-        [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
-            const auto to_error = stream == ExecutionOutputStream::Error
-                || std::holds_alternative<StandardOutputArtifactDestination>(request->destination);
-            std::print(to_error ? std::cerr : std::cout, "{}", bytes);
-        },
-        timings.output()
-    );
+    const auto write_output = [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
+        const auto to_error = stream == ExecutionOutputStream::Error
+            || std::holds_alternative<StandardOutputArtifactDestination>(request->destination);
+        std::print(to_error ? std::cerr : std::cout, "{}", bytes);
+    };
+    auto semantic = load_and_analyze_sources(sources->carven, write_output, timings.output());
     if (!semantic) {
         return 1;
     }

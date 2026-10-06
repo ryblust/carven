@@ -219,17 +219,17 @@ CPP_ANGLE_HEADER_NAME = "<", cpp-angle-header-content, ">";
 CPP_QUOTE_HEADER_NAME = "\"", cpp-quote-header-content, "\"";
 cpp-angle-header-content = cpp-angle-header-character,
                            { cpp-angle-header-character };
-cpp-angle-header-character = source-character - ">" - line-terminator;
+cpp-angle-header-character = source-character - ">" - line-terminator - U+0000;
 cpp-quote-header-content = cpp-quote-header-character,
                            { cpp-quote-header-character };
-cpp-quote-header-character = source-character - "\"" - line-terminator;
+cpp-quote-header-character = source-character - "\"" - line-terminator - U+0000;
 ```
 
 Immediately after an `import` token and intervening whitespace or line comments,
 `<` and `"` begin dedicated C++ header-name tokens. Their content is nonempty,
-ends at the matching delimiter, and cannot contain a line terminator. No Carven
-escape decoding or interpolation occurs. Outside that lexical context, `<` is
-an operator token and `"` begins an ordinary Carven string literal.
+ends at the matching delimiter, and cannot contain a line terminator or NUL.
+No Carven escape decoding or interpolation occurs. Outside that lexical context,
+`<` is an operator token and `"` begins an ordinary Carven string literal.
 
 ### 2.6 C++ Source Fragments
 

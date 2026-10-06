@@ -20,53 +20,38 @@ configuration.
 | [`benchmark/report.lua`](benchmark/report.lua) | Shared sample progress and result tables |
 | [`benchmark/timings.lua`](benchmark/timings.lua) | Carven timing reports, rounded durations, and bounds |
 
-## Build and maintenance commands
+## Formatting
 
-Run commands from the repository root using `./xmakew`; on Windows, use
-`.\xmakew.ps1` with the same arguments.
-
-```shell
-./xmakew build
-./xmakew test
-./xmakew check clang.tidy
-./xmakew format-check
-./xmakew format
-```
-
-`format-check` reports formatting violations; `format` applies formatting.
+`format.lua` implements `format-check` to report formatting violations and
+`format` to apply formatting.
 Both use clang-format for `.cpp`, `.cppm`, `.h`, and `.hpp` files under `src/`,
 `tests/`, `crafts/`, `examples/`, and Graver's source and test directories.
 On macOS, the script queries Homebrew's local installation prefix and looks in
 `opt/llvm/bin`, then falls back to PATH. Other platforms use PATH.
 
-Build Graver with `./xmakew build graver`. Both commands use it for `.cv` files
+Both formatting commands require a built Graver and use it for `.cv` files
 under `crafts/`, `examples/`, and `tests/`, plus Graver's expected-output fixtures.
 Deliberately unformatted Graver inputs and the three lexical/syntax rejection fixtures listed in
 `format.lua` are excluded. Other formatting or parse failures fail the command.
-See [C++ conventions](../docs/development/conventions.md) for source conventions and
-[Testing](../docs/development/testing.md) for test responsibilities and validation workflow.
+
+## Generated-code analysis profile
 
 The root build copies `.clang-tidy` into each target's generated directory and
 `generated.clang-tidy` into its `rules/` subdirectory. The latter inherits the
 parent configuration and adjusts parameter, borrow, and embedded-NUL checks
-for generated C++. Copy-initialization checks are enabled; emission adds a local
-annotation to owning pattern snapshots.
+for generated C++.
 
-The wrappers apply the versioned overlay in `clang-module-pipeline/`. See its
-[README](clang-module-pipeline/README.md) for supported Xmake versions,
-prerequisites, dependency behavior, and stock-Xmake fallback. For unexpected
-compiler, module, or dependency-order failures, clean and rebuild before
-diagnosing implementation code:
+## Module build support
 
-```shell
-./xmakew clean
-./xmakew build
-```
+`clang-module-pipeline/` supplies the versioned Xmake overlay for Clang module
+compilation and incremental dependency checks. The root `xmakew` and `xmakew.ps1`
+entry points launch its wrappers.
 
 ## Benchmarks
 
-Run either benchmark without additional flags. Each invocation updates the
-configured compiler before measuring:
+Benchmark commands run from the repository root through `./xmakew`; Windows uses
+`.\xmakew.ps1` with the same arguments. Each invocation updates the configured
+compiler before measuring:
 
 ```shell
 ./xmakew bench compile

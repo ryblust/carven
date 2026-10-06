@@ -912,6 +912,7 @@ private:
     }
 
     Visitor& visitor;
+    // Enqueued closures outlive the scheduling call and own their captures.
     std::vector<std::function<bool()>> events;
 };
 

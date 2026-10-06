@@ -11,13 +11,12 @@ to one body. Name frames exist only during name resolution; bound operations
 retain binding identities and lifetimes. Owning query surfaces validate identity
 and range. Expression, statement, and region occurrences are recursively owned
 values, including during construction. Their shared owning-edge topology supports
-iterative cleanup, including failed drafts and partially moved values. Each binding selection creates a new
-occurrence; projections own their receiver and index. Function names construct
-callable occurrences directly.
-Construction results read types and constants from their owned expressions.
-`BodyType` and `BodyFailures` store construction or resolved facts; their accessors
-explicitly select the required stage. Published bodies expose only const access to
-the completed tree.
+iterative cleanup, including failed drafts and partially moved values. Each
+binding selection creates a new occurrence; projections own their receiver and index.
+Function names construct callable occurrences directly. Construction results read
+types and constants from their owned expressions. `BodyType` and `BodyFailures` store
+construction or resolved facts; their accessors explicitly select the required stage.
+Published bodies expose only const access to the completed tree.
 
 Provenance resolves an origin directly to `ProgramSourceID` and `Span`.
 Only diagnostic transport converts that identity to the source manager domain.
@@ -270,9 +269,10 @@ the selected callable and contains only runtime arguments. Execution and
 realization select its executable body through the ordinary callable interface.
 `SemConstBlock` holds the region of a `const` block written in a body.
 `SemStaticBinding` and `SemConstBlock` are consumed during specialization and
-rejected at residual publication. Runtime initialization remains a separate `SemInitialize` operation
-with an initializer of exactly the binding type. Structural traversal includes
-static initializer roots; ordinary evaluation-child traversal excludes them.
+rejected at residual publication. Runtime initialization remains a separate
+`SemInitialize` operation with an initializer of exactly the binding type.
+Structural traversal includes static initializer roots; ordinary
+evaluation-child traversal excludes them.
 
 Publication records each source template's callable and type surface after
 validation, together with closure reference order for each callable.
@@ -311,12 +311,13 @@ bounds, unknown parameters, native results, control-flow joins, and
 interprocedural propagation supply no additional extent facts. Extent metadata
 describes storage shape and does not make a runtime receiver's `len` or `is_empty`
 query a static expression. Queries retain receiver execution, bounds checks, and
-backing loans. Publication requires array views to report the exact array extent and rejects extent metadata on
-scalar query results. Extents do not change slice type identity.
+backing loans. Publication requires array views to report the exact array extent and
+rejects extent metadata on scalar query results. Extents do not change slice type identity.
 
 `SemPrint` retains the original Read operands and normal-completion facts.
 Optional conversion of known numeric, bool, or char values into print text
-belongs to backend preparation. Text, String, unknown scalars, and dynamic calls through builtin callable values keep their ordinary conversion paths.
+belongs to backend preparation. Text, String, unknown scalars, and dynamic
+calls through builtin callable values keep their ordinary conversion paths.
 
 The read-only SemIR evaluation contract classifies an operation as requiring
 execution, requiring only its executed operands, selecting short-circuit

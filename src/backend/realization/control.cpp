@@ -305,15 +305,12 @@ auto BodyRealizer::lower_match(
             if (!arm.reachable) {
                 continue;
             }
-            auto matcher = PatternRealizer(
-                context,
-                names,
-                metadata,
-                arm.pattern_bounds,
+            const auto realize_bound =
                 [&](PatternID pattern, bool upper, LoweringStmtBuilder& destination) noexcept {
                     return pattern_bound(arm.pattern_bounds, pattern, upper, destination);
-                }
-            );
+                };
+            auto matcher =
+                PatternRealizer(context, names, metadata, arm.pattern_bounds, realize_bound);
             auto pattern = co_await matcher.match(
                 arm.pattern,
                 {.root = subject, .dereference_root = false, .payload_index = std::nullopt},
@@ -549,15 +546,11 @@ auto BodyRealizer::failure_handler(
             CaughtFailure {.source = source, .failures = arm.accepted_failures.resolved()}
         );
         auto statements = LoweringStmtBuilder();
-        auto matcher = PatternRealizer(
-            context,
-            names,
-            metadata,
-            arm.pattern_bounds,
+        const auto realize_bound =
             [&](PatternID pattern, bool upper, LoweringStmtBuilder& destination) noexcept {
                 return pattern_bound(arm.pattern_bounds, pattern, upper, destination);
-            }
-        );
+            };
+        auto matcher = PatternRealizer(context, names, metadata, arm.pattern_bounds, realize_bound);
         auto choices = std::vector<PatternSelection>();
         for (const auto& alternative : arm.alternatives) {
             if (!alternative.reachable) {

@@ -259,32 +259,34 @@ auto run_interpret_command(std::string_view executable, std::span<const char* co
         );
     }
     auto options = InterpreterOptions {.limits = limits, .trace = {}, .report = {}};
+    const auto trace_event = [&](const ExecutionTraceEvent& event) noexcept {
+        const auto provenance = program->provenance();
+        const auto origin = provenance.source_origin(event.origin);
+        const auto& source = provenance.source_snapshot(origin.source_id);
+        const auto kind = event.kind == ExecutionTraceKind::Call ? "call"
+            : event.kind == ExecutionTraceKind::Return           ? "return"
+                                                                 : "statement";
+        const auto name = event.function
+            ? provenance.spelling(program->declarations().function(*event.function).name)
+            : std::string_view();
+        std::println(
+            std::cerr,
+            "{}{}:{}: {}{}{}",
+            std::string(event.depth * 2, ' '),
+            source.display_origin(),
+            source.location(origin.span),
+            kind,
+            name.empty() ? "" : " ",
+            name
+        );
+    };
     if (trace) {
-        options.trace = [&](const ExecutionTraceEvent& event) noexcept {
-            const auto provenance = program->provenance();
-            const auto origin = provenance.source_origin(event.origin);
-            const auto& source = provenance.source_snapshot(origin.source_id);
-            const auto kind = event.kind == ExecutionTraceKind::Call ? "call"
-                : event.kind == ExecutionTraceKind::Return           ? "return"
-                                                                     : "statement";
-            const auto name = event.function
-                ? provenance.spelling(program->declarations().function(*event.function).name)
-                : std::string_view();
-            std::println(
-                std::cerr,
-                "{}{}:{}: {}{}{}",
-                std::string(event.depth * 2, ' '),
-                source.display_origin(),
-                source.location(origin.span),
-                kind,
-                name.empty() ? "" : " ",
-                name
-            );
-        };
+        options.trace = trace_event;
     }
-    options.report = [&](std::optional<TestID> id, const ExecutionEvent& event) noexcept {
+    const auto report_event = [&](std::optional<TestID> id, const ExecutionEvent& event) noexcept {
         report_execution_error(*program, event, diagnostic_sources, !tests, id);
     };
+    options.report = report_event;
     auto execution = TimingScope(timings.output(), TimingStage::Execution);
     if (tests) {
         const auto results = interpret_tests(*program, output, options);

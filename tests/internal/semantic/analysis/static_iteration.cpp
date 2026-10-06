@@ -24,14 +24,12 @@ auto with_iteration(std::string_view text, Check check) noexcept -> void {
         .module_path = *CanonicalModulePath::from_value("iteration"),
     };
     auto output = std::string();
-    auto result = analyze_compilation(
-        sources,
-        SourceBatch {.modules = std::span(&input, 1uz)},
-        [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
-            require(stream == ExecutionOutputStream::Standard);
-            output.append(bytes);
-        }
-    );
+    const auto write_output = [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
+        require(stream == ExecutionOutputStream::Standard);
+        output.append(bytes);
+    };
+    auto result =
+        analyze_compilation(sources, SourceBatch {.modules = std::span(&input, 1uz)}, write_output);
     require(result.has_value()).note("source = ", text);
     check(result->value, output);
 }

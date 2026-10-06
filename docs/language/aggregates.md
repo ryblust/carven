@@ -136,10 +136,11 @@ follow the native boundary's requirements.
 
 An empty `T {}` requests this operation for types accepted by construction
 syntax, including builtin types such as `i32 {}` and `String {}`. Nonempty Carven
-construction requires a structure or authorized class representation; enum-case construction and callable adoption
-retain their separate forms. Every completed structure construction still
-initializes every field exactly once. Local binding declarations continue to
-require an initializer, and array literals retain their exact element-count rules.
+construction requires a structure or authorized class representation; enum-case
+construction and callable adoption retain their separate forms. Every completed
+structure construction still initializes every field exactly once. Local binding
+declarations continue to require an initializer, and array literals retain their
+exact element-count rules.
 
 The same defaults apply during runtime, interpretation and static
 execution, within each execution mode's admitted type and operation subset.

@@ -19,7 +19,7 @@ auto ProgramDraft::begin(
     DiagnosticSink& sink,
     ExecutionOutput output
 ) noexcept -> ProgramDraft {
-    return ProgramDraft(std::move(syntax).decompose(), sink, std::move(output));
+    return ProgramDraft(std::move(syntax).decompose(), sink, output);
 }
 
 ProgramDraft::ProgramDraft(
@@ -30,7 +30,7 @@ ProgramDraft::ProgramDraft(
     : program_identity(ProgramIdentity::fresh()),
       provenance_appender(std::move(parts.provenance)),
       analysis_diagnostics(sink),
-      output(std::move(output)),
+      output(output),
       state(State::Declarations),
       storage(
           program_identity,

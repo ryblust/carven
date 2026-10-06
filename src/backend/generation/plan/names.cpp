@@ -9,6 +9,7 @@ import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :semantic.visibility;
 import :source.provenance;
+import :support.function_ref;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -121,7 +122,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
         (test ? tests : production)[callable.index()] = 1;
     };
 
-    auto visit_callable = std::function<void(CallableID, bool)>();
+    auto visit_callable = FunctionRef<void(CallableID, bool) noexcept>();
     const auto visit_closure = [&](CallableID closure, bool test) noexcept {
         record(closure, test);
         auto& scanned = (test ? scanned_tests : scanned_production)[closure.index()];
@@ -130,11 +131,12 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
             visit_callable(closure, test);
         }
     };
-    visit_callable = [&](CallableID callable, bool test) noexcept {
+    const auto visit_callable_body = [&](CallableID callable, bool test) noexcept {
         for (const auto closure : semantic.callable_surface(callable).closures) {
             visit_closure(closure, test);
         }
     };
+    visit_callable = visit_callable_body;
     const auto visit_body = [&](BodyID body_id, bool test) noexcept {
         for (const auto closure :
              body_closure_references(semantic, semantic.bodies().body(body_id))) {

@@ -391,7 +391,7 @@ is a build question. “Importers rebuilt after an implementation-only edit” i
 an invalidation-policy question. Treating them as the same problem makes all
 three harder to solve.
 
-## Sources and further reading
+## References
 
 The language model is specified by these C++ working-draft sections:
 [`[module.unit]`](https://eel.is/c++draft/module.unit),

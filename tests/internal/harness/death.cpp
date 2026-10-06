@@ -204,7 +204,6 @@ auto run_child(std::string_view test_case, std::chrono::milliseconds timeout) no
 auto expect_windows_termination(
     std::string_view scenario,
     DeathTestAction action,
-    void* context,
     std::chrono::milliseconds timeout
 ) noexcept -> bool {
     const auto* selected_scenario = std::getenv(scenario_environment);
@@ -224,7 +223,7 @@ auto expect_windows_termination(
         if (termination_event == nullptr || std::signal(SIGABRT, record_abort) == SIG_ERR) {
             std::_Exit(125);
         }
-        action(context);
+        action();
         std::_Exit(0);
     }
 
@@ -264,11 +263,8 @@ auto expect_windows_termination(
 
 #else
 
-auto expect_posix_termination(
-    DeathTestAction action,
-    void* context,
-    std::chrono::milliseconds timeout
-) noexcept -> bool {
+auto expect_posix_termination(DeathTestAction action, std::chrono::milliseconds timeout) noexcept
+    -> bool {
     std::fflush(nullptr);
     const auto child = fork();
     if (child == 0) {
@@ -278,7 +274,7 @@ auto expect_posix_termination(
                 _exit(125);
             }
         }
-        action(context);
+        action();
         _exit(0);
     }
     if (child < 0) {
@@ -313,10 +309,10 @@ auto expect_posix_termination(
 auto run_death_test(
     std::string_view scenario,
     DeathTestAction action,
-    void* context,
     std::chrono::milliseconds timeout
 ) noexcept -> bool {
-    if (scenario.empty()
+    if (!action
+        || scenario.empty()
         || timeout.count() <= 0
         || timeout.count() >= std::numeric_limits<std::uint32_t>::max()) {
         return false;
@@ -329,8 +325,8 @@ auto run_death_test(
         return false;
     }
 #if defined(_WIN32)
-    return expect_windows_termination(scenario, action, context, timeout);
+    return expect_windows_termination(scenario, action, timeout);
 #else
-    return expect_posix_termination(action, context, timeout);
+    return expect_posix_termination(action, timeout);
 #endif
 }

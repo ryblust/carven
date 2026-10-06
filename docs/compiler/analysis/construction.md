@@ -43,8 +43,9 @@ source operand order for execution.
 `semir.initialization` defines default availability and native-construction
 classification over type shapes. Construction queries and published-program
 queries share the traversal, with unresolved array and slice type terms supported
-during construction. Published queries read `SemIRProgram` directly. Empty arrays have no element-construction requirement. Enum and
-callable types have no implicit selected value.
+during construction. Published queries read `SemIRProgram` directly. Empty
+arrays have no element-construction requirement. Enum and callable types have no
+implicit selected value.
 
 Nonempty structure construction maps source expressions to declared fields in
 source order and requires every field exactly once. Published `SemStruct` values
@@ -101,8 +102,8 @@ during construction. The read follows binding identities, computes a copy of the
 initializer with its output discarded, and records the frozen value by binding;
 later reads reuse it. The source initializer is unchanged and executes during
 specialization. An unbound static input cannot determine a fixed type or
-implicitly enter a separate body. Local owning text freezes to `str`; static call inputs retain their
-declared types. Explicit captures require runtime local storage.
+implicitly enter a separate body. Local owning text freezes to `str`; static call
+inputs retain their declared types. Explicit captures require runtime local storage.
 C++ construction queries resolve explicit static references and propagate pure
 operand facts; ordinary runtime calls retain their execution obligations.
 
@@ -110,9 +111,9 @@ operand facts; ordinary runtime calls retain their execution obligations.
 binding environment. Static values become constant expressions; selected
 `const if` regions replace their control; `const for` becomes `SemExpandedLoop`
 with an ordered region per index. Local roots and `const` blocks execute once
-per selected instance or expanded source occurrence, in source order. Ordinary control retains its static roots and static
-arguments. Explicit instance, iteration, node, and depth budgets bound this work
-per specialization root.
+per selected instance or expanded source occurrence, in source order. Ordinary
+control retains its static roots and static arguments. Explicit instance, iteration,
+node, and depth budgets bound this work per specialization root.
 
 Type formation precedes selection and expansion, so a root read by a type is
 computed even in an unselected arm. A `const` block in a body is constructed in

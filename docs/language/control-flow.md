@@ -38,11 +38,11 @@ operands or branches.
 
 Every source operand and branch receives operation, result-compatibility, and
 failure-consumption checks, including after a terminal statement. Source that
-follows a terminal statement contributes no runtime evaluation, outward
-failure, ownership transition, or reachable-use evidence. A nonreturning expression can occupy a position whose type is already
-known. If its type cannot be determined, the enclosing operation is rejected;
-for example, a call still needs a callable type and match still needs a subject
-type. Nonreturning control does not exempt later source from type checking.
+follows a terminal statement contributes no runtime evaluation, outward failure,
+ownership transition, or reachable-use evidence. A nonreturning expression can occupy
+a position whose type is already known. If its type cannot be determined, the enclosing
+operation is rejected; for example, a call still needs a callable type and match still
+needs a subject type. Nonreturning control does not exempt later source from type checking.
 
 ## Control flow and loops
 

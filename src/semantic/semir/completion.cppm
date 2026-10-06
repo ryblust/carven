@@ -54,6 +54,7 @@ private:
 
 // Pattern identities belong to the body, rather than its expression tree.
 // These synchronous queries borrow the owner while completion is calculated.
+// The query owns its closures, including closures returned by reader factories.
 struct CompletionPatterns final {
     std::function<std::variant<PatternValue, ElaboratedPatternValue>(PatternID)> read;
     std::function<bool(EnumCaseID)> single_case;

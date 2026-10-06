@@ -185,8 +185,8 @@ An expression body follows `=>` and implicitly returns that expression. Its
 result type can be inferred, as in `next`. Block bodies use the same inference
 rule: return operands must independently determine a consistent type. An explicit
 annotation supplies type context, for example when returning unsuffixed literals.
-A body with no return operands infers `void`. A `void` call can be used as an expression body too. Recursive
-result dependencies require enough explicit result types to break the cycle.
+A body with no return operands infers `void`. A `void` call can be used as an expression
+body too. Recursive result dependencies require enough explicit result types to break the cycle.
 
 ## Read, Write, and Take
 
@@ -299,8 +299,8 @@ Bounds can also be runtime expressions; then include a fallback unless the
 remaining constant patterns already cover the domain. Favor `match` for classifying
 one value and `if` for deciding actions from computed conditions.
 
-A range loop can also traverse an array, `text.bytes`, or `text.chars`. `break` exits a loop and `continue` advances to
-its next iteration. C-style loops use `for var i = 0; i < 3; ++i { ... }`.
+A range loop can also traverse an array, `text.bytes`, or `text.chars`. `break` exits a loop
+and `continue` advances to its next iteration. C-style loops use `for var i = 0; i < 3; ++i { ... }`.
 
 Value branches end with a result expression without a semicolon. Logical
 `&&` and `||` short-circuit; ordinary operands evaluate left to right.
@@ -436,8 +436,8 @@ fn port(text: str) -> i32 throw InvalidPort => parse_port_native(text, {})?;
 ```
 
 Implement `parse_port_native` as a C++ function template that deduces the generated
-failure type from `invalid`. It returns a success value or that failure; Carven's `?` and `catch` then operate
-on the declared failure contract. There is no automatic exception conversion.
+failure type from `invalid`. It returns a success value or that failure; Carven's `?` and
+`catch` then operate on the declared failure contract. There is no automatic exception conversion.
 The adapter must catch any C++ exception it intends to recover from before it
 escapes a generated `noexcept` boundary. Enable exceptions in the native build
 for sources containing `try`/`throw`.
@@ -545,9 +545,9 @@ with them has one instance for each distinct list of static arguments it is
 called with. Calling the function does not repeat the block. They cannot use
 runtime parameters or locals, and their own locals stay inside the block.
 Blocks in one body execute in source order; blocks in different bodies and at
-module scope have no guaranteed order. Their locals and control flow follow the same supported execution
-rules as `const fn` calls. Add a string before `{` when a block needs a label in
-diagnostics: `const "prepare table" { ... }`. Labels need not be unique.
+module scope have no guaranteed order. Their locals and control flow follow the same
+supported execution rules as `const fn` calls. Add a string before `{` when a block
+needs a label in diagnostics: `const "prepare table" { ... }`. Labels need not be unique.
 
 Use `const test` to execute a test during compilation. Both `test` and
 `const test` may omit the name; an anonymous failure reports its source location.

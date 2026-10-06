@@ -8,11 +8,13 @@ import :semantic.analysis.catalog;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
 import :semantic.semir.program;
+import :support.function_ref;
 import std;
 
 auto source_builtin_type(std::string_view name) noexcept -> std::optional<BuiltinType>;
 
-using ArrayExtentResolver = std::function<AnalysisTask<std::uint64_t>(ASTExprID)>;
+// The callable outlives each returned task, including nested type resolution.
+using ArrayExtentResolver = FunctionRef<AnalysisTask<std::uint64_t>(ASTExprID) noexcept>;
 
 auto semantic_access_mode(ASTAccessSyntax access) noexcept -> AccessMode;
 
@@ -23,7 +25,7 @@ auto resolve_source_type(
     ProgramModuleID module_id,
     ASTView syntax,
     ASTTypeID source_type,
-    const ArrayExtentResolver& resolve_extent
+    ArrayExtentResolver resolve_extent
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_construction_type(
@@ -33,7 +35,7 @@ auto resolve_source_construction_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstructionType& source_type,
-    const ArrayExtentResolver& resolve_extent
+    ArrayExtentResolver resolve_extent
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_constraint_type(
@@ -43,7 +45,7 @@ auto resolve_source_constraint_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstraintOperand& source_type,
-    const ArrayExtentResolver& resolve_extent
+    ArrayExtentResolver resolve_extent
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto require_source_value_type(
@@ -61,5 +63,5 @@ auto resolve_failure_types(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTThrowClause& clause,
-    const ArrayExtentResolver& resolve_extent
+    ArrayExtentResolver resolve_extent
 ) noexcept -> AnalysisTask<std::vector<TypeID>>;
