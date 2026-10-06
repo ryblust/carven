@@ -222,52 +222,67 @@ auto ProgramDraft::substitute_generic_type(
     );
 }
 
-auto ProgramDraft::resolve_generic_type(GenericTypeID type, ProgramOriginID origin) noexcept
-    -> AnalysisResult<TypeID> {
+auto ProgramDraft::resolve_generic_type(
+    GenericTypeID type,
+    GenericDeclarationID definition,
+    std::span<const TypeID> arguments,
+    ProgramOriginID origin
+) noexcept -> AnalysisResult<TypeID> {
     return generic_type_copy(type).visit(
         Overloaded {
             [](TypeID concrete) static noexcept -> AnalysisResult<TypeID> { return concrete; },
-            [](const GenericTypeParameter&) static noexcept -> AnalysisResult<TypeID> {
-                invariant_violation("concrete nominal instance retains a rigid type parameter");
+            [&](const GenericTypeParameter& parameter) noexcept -> AnalysisResult<TypeID> {
+                if (parameter.definition != definition || parameter.index >= arguments.size()) {
+                    invariant_violation(
+                        "concrete generic resolution requires the declaring parameter environment"
+                    );
+                }
+                return arguments[parameter.index];
             },
             [&](const GenericArrayType& array) noexcept -> AnalysisResult<TypeID> {
-                auto element = resolve_generic_type(array.element, origin);
+                auto element = resolve_generic_type(array.element, definition, arguments, origin);
                 if (!element) {
                     return std::unexpected(element.error());
                 }
                 return intern_type({.value = ArrayTypeValue {*element, array.extent}});
             },
             [&](const GenericSliceType& slice) noexcept -> AnalysisResult<TypeID> {
-                auto element = resolve_generic_type(slice.element, origin);
+                auto element = resolve_generic_type(slice.element, definition, arguments, origin);
                 if (!element) {
                     return std::unexpected(element.error());
                 }
                 return intern_type({.value = SliceTypeValue {*element}});
             },
             [&](const GenericOwnedSequenceType& sequence) noexcept -> AnalysisResult<TypeID> {
-                auto element = resolve_generic_type(sequence.element, origin);
+                auto element =
+                    resolve_generic_type(sequence.element, definition, arguments, origin);
                 if (!element) {
                     return std::unexpected(element.error());
                 }
+                record_sequence_element(*element, origin);
                 return intern_type({.value = OwnedSequenceTypeValue {*element}});
             },
             [&](const GenericPointerType& pointer) noexcept -> AnalysisResult<TypeID> {
-                auto target = resolve_generic_type(pointer.target, origin);
+                auto target = resolve_generic_type(pointer.target, definition, arguments, origin);
                 if (!target) {
                     return std::unexpected(target.error());
                 }
                 return intern_type({.value = PointerTypeValue {*target, pointer.access}});
             },
             [&](const GenericNominalApplication& application) noexcept -> AnalysisResult<TypeID> {
-                auto arguments = std::vector<TypeID>();
+                auto resolved_arguments = std::vector<TypeID>();
                 for (const auto argument : application.arguments) {
-                    auto resolved = resolve_generic_type(argument, origin);
+                    auto resolved = resolve_generic_type(argument, definition, arguments, origin);
                     if (!resolved) {
                         return std::unexpected(resolved.error());
                     }
-                    arguments.push_back(*resolved);
+                    resolved_arguments.push_back(*resolved);
                 }
-                return instantiate_generic_nominal(application.definition, arguments, origin);
+                return instantiate_generic_nominal(
+                    application.definition,
+                    resolved_arguments,
+                    origin
+                );
             },
         }
     );
@@ -375,19 +390,14 @@ auto ProgramDraft::instantiate_generic_nominal(
         .instance = {.definition = definition, .arguments = key.second, .declaration = declaration},
         .state = ConstructionStorage::GenericInstanceSlot::Progress::Instantiating,
     });
-    auto substitutions = std::vector<GenericTypeID>();
-    for (const auto argument : arguments) {
-        substitutions.push_back(intern_generic_type(argument));
-    }
+    // The owned key keeps this environment stable while nested instances grow storage.
     auto completion = source.visit(
         Overloaded {
             [&](const GenericRecordDefinition& record) noexcept -> AnalysisResult<void> {
                 auto fields = std::vector<ConstructionStructField>();
                 for (const auto& field : record.fields) {
-                    auto resolved = resolve_generic_type(
-                        substitute_generic_type(field.type, definition, substitutions),
-                        field.origin
-                    );
+                    auto resolved =
+                        resolve_generic_type(field.type, definition, key.second, field.origin);
                     if (!resolved) {
                         return std::unexpected(resolved.error());
                     }
@@ -415,10 +425,8 @@ auto ProgramDraft::instantiate_generic_nominal(
                     const auto id = storage.declarations.reserve_enum_case();
                     auto payload = std::vector<ConstructionTypeRef>();
                     for (const auto type : member.payload_types) {
-                        auto resolved = resolve_generic_type(
-                            substitute_generic_type(type, definition, substitutions),
-                            member.origin
-                        );
+                        auto resolved =
+                            resolve_generic_type(type, definition, key.second, member.origin);
                         if (!resolved) {
                             return std::unexpected(resolved.error());
                         }

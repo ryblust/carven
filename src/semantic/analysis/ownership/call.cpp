@@ -54,7 +54,10 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                 return;
             }
             for (const auto& capture : relationships.view().captures) {
-                if (capture.target.object >= input.objects.size()) {
+                if (std::ranges::any_of(
+                        topology.roots[capture.target.object],
+                        [&](const auto root) noexcept { return root >= input.objects.size(); }
+                    )) {
                     escape = OwnershipEscape {
                         "escaping closure outlives its captured owner",
                         body.region().origin,
@@ -64,7 +67,10 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                 }
             }
             for (const auto& loan : relationships.view().storage_loans) {
-                if (loan.backing.object >= input.objects.size()) {
+                if (std::ranges::any_of(
+                        topology.roots[loan.backing.object],
+                        [&](const auto root) noexcept { return root >= input.objects.size(); }
+                    )) {
                     escape = OwnershipEscape {
                         "escaping view outlives its backing",
                         body.region().origin,
@@ -74,7 +80,11 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                 }
             }
             for (const auto& loan : relationships.view().callable_loans) {
-                if (loan.backing.has_value() && loan.backing->object >= input.objects.size()) {
+                if (loan.backing.has_value()
+                    && std::ranges::any_of(
+                        topology.roots[loan.backing->object],
+                        [&](const auto root) noexcept { return root >= input.objects.size(); }
+                    )) {
                     escape = OwnershipEscape {
                         "escaping callable storage outlives its backing",
                         body.region().origin,
@@ -85,9 +95,9 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
             }
         };
         check(value);
-        state.objects.resize(input.objects.size());
-        for (const auto& object : state.objects) {
-            check(object.relationships);
+        synchronize_storage(state);
+        for (auto index = 0uz; index < input.objects.size(); ++index) {
+            check(state.objects[index].relationships);
         }
         if (escape.has_value()) {
             return;
@@ -140,10 +150,51 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
             .diagnosis = std::move(diagnosis)
         };
     }
+    const auto base = input.objects.size() + facts.locals.size();
+    const auto publish_place = [&](OwnershipPlace place) noexcept {
+        if (place.object >= base) {
+            place.object -= facts.locals.size();
+        }
+        return place;
+    };
+    auto published_edges = std::vector<OwnershipStorageEdge>();
+    for (const auto& edge : topology.owns) {
+        if (std::ranges::any_of(
+                topology.roots[edge.element],
+                [&](const auto root) noexcept { return root >= input.objects.size(); }
+            )
+            || std::ranges::any_of(
+                topology.roots[edge.carrier.object],
+                [&](const auto root) noexcept { return root >= input.objects.size(); }
+            )) {
+            continue;
+        }
+        auto copy = edge;
+        copy.carrier = publish_place(std::move(copy.carrier));
+        copy.element = publish_place({copy.element, {}}).object;
+        published_edges.push_back(std::move(copy));
+    }
+    std::ranges::sort(published_edges);
+    published_edges.erase(std::ranges::unique(published_edges).begin(), published_edges.end());
     for (auto& completion : result) {
+        synchronize_storage(completion.state);
+        completion.state.objects.erase(
+            completion.state.objects.begin() + static_cast<std::ptrdiff_t>(input.objects.size()),
+            completion.state.objects.begin() + static_cast<std::ptrdiff_t>(base)
+        );
+        completion.value = map_relationships(completion.value, publish_place);
+        // Keep domain slots stable across reevaluations, including local-only
+        // nodes. Their owns edges are unpublished and restoration leaves their
+        // source lists empty, so they cannot enter caller contexts.
+        for (auto index = base; index < topology.objects.size(); ++index) {
+            auto node = topology.objects[index];
+            node.state = {};
+            completion.referents.push_back(std::move(node));
+        }
+        completion.owns = published_edges;
         normalize_relationships(completion.value);
         for (auto& object : completion.state.objects) {
-            normalize_relationships(object.relationships);
+            object.relationships = map_relationships(object.relationships, publish_place);
         }
     }
     std::ranges::sort(result, {}, [](const auto& answer) static noexcept {
@@ -221,129 +272,13 @@ auto OwnershipBodyAnalyzer::call(
         raw_captures.push_back({alias, std::move(value), std::move(storage), holder});
     }
 
-    auto graph_objects = std::vector<OwnershipExternalObject>();
-    auto actual_sources = std::vector<OwnershipPlace>();
-    auto edges = input.owns;
-    for (auto object = 0uz; object < state.objects.size(); ++object) {
-        graph_objects.push_back(
-            {object_type(object),
-             object_origin(object),
-             state.objects[object],
-             object < input.objects.size()
-                 ? input.objects[object].site
-                 : OwnershipStorageSite {body.id(), object - input.objects.size(), false},
-             object < input.objects.size() && input.objects[object].many}
-        );
-        actual_sources.push_back({object, {}});
-    }
-    // Split at checked storage edges, never by guessing an enum payload type.
-    // The caller coordinates live only in this frame's restoration map.
-    const auto project_place = [&](OwnershipPlace place) noexcept {
-        auto offset = 0uz;
-        auto object = place.object;
-        for (const auto& boundary : place.indirections) {
-            auto carrier = OwnershipPlace {
-                object,
-                OwnershipProjectionPath(
-                    place.path.begin() + static_cast<std::ptrdiff_t>(offset),
-                    place.path.begin() + static_cast<std::ptrdiff_t>(boundary.offset)
-                )
-            };
-            const auto index = place.path[boundary.offset];
-            const auto uncertain =
-                !index || std::ranges::any_of(carrier.path, [](const auto& part) noexcept {
-                    return !part;
-                });
-            const auto found = std::ranges::find_if(edges, [&](const auto& edge) noexcept {
-                return edge.carrier == carrier
-                    && edge.index == index
-                    && graph_objects[edge.element].type == boundary.element;
-            });
-            auto element = graph_objects.size();
-            if (found != edges.end()) {
-                element = found->element;
-            } else {
-                auto selected = carrier.path;
-                selected.push_back(index);
-                auto actual = actual_sources[object];
-                const auto base = actual.path.size();
-                actual.path.append_range(selected);
-                actual.indirections.push_back(
-                    {base + carrier.path.size(), boundary.element, boundary.site}
-                );
-                // Checked Sequence elements are initialized, cannot be taken, and
-                // cannot contain loans or callable storage. A referent names storage;
-                // it does not copy the carrier's value state.
-                graph_objects.push_back(
-                    {boundary.element,
-                     boundary.site,
-                     {.available = true,
-                      .taken = std::nullopt,
-                      .relationships = {},
-                      .modified = false},
-                     {body.id(), boundary.site.index(), false, boundary.site},
-                     graph_objects[object].many || uncertain}
-                );
-                actual_sources.push_back(std::move(actual));
-                edges.push_back({std::move(carrier), element, index});
-            }
-            object = element;
-            offset = boundary.offset + 1uz;
-        }
-        place.object = object;
-        place.path.erase(
-            place.path.begin(),
-            place.path.begin() + static_cast<std::ptrdiff_t>(offset)
-        );
-        place.indirections.clear();
-        return place;
-    };
-    const auto project_facts = [&](OwnershipRelationships value) noexcept {
-        if (auto* rows = value.edit_existing()) {
-            for (auto& row : rows->captures) {
-                row.target = project_place(std::move(row.target));
-            }
-            for (auto& row : rows->storage_loans) {
-                row.backing = project_place(std::move(row.backing));
-            }
-            for (auto& row : rows->callable_loans) {
-                if (row.backing) {
-                    row.backing = project_place(std::move(*row.backing));
-                }
-            }
-        }
-        return value;
-    };
-    const auto project_argument = [&](OwnershipCallArgument& argument) noexcept {
-        if (argument.alias) {
-            argument.alias = project_place(std::move(*argument.alias));
-        }
-        if (argument.capture_holder) {
-            argument.capture_holder = project_place(std::move(*argument.capture_holder));
-        }
-        for (auto& place : argument.storage) {
-            place = project_place(std::move(place));
-        }
-        argument.value = project_facts(std::move(argument.value));
-    };
-    for (auto& argument : parameters) {
-        project_argument(argument);
-    }
-    for (auto& argument : raw_captures) {
-        project_argument(argument);
-    }
-    auto projected_accesses = accesses;
-    for (auto& access : projected_accesses) {
-        access.place = project_place(std::move(access.place));
-    }
-    auto projected_readers = storage_readers;
-    for (auto& loan : projected_readers) {
-        loan.backing = project_place(std::move(loan.backing));
-    }
-    for (auto object = 0uz; object < graph_objects.size(); ++object) {
-        auto relationships = project_facts(graph_objects[object].state.relationships);
-        graph_objects[object].state.relationships = std::move(relationships);
-    }
+    synchronize_storage(state);
+    // Input projection is read-only until query returns. Keep shape and current
+    // flow state separate instead of deep-copying the complete retained domain.
+    const auto& graph_objects = topology.objects;
+    const auto& edges = topology.owns;
+    const auto& projected_accesses = accesses;
+    const auto& projected_readers = storage_readers;
     const auto site_for = [&](std::size_t object) noexcept {
         return graph_objects[object].site;
     };
@@ -451,11 +386,11 @@ auto OwnershipBodyAnalyzer::call(
         inline_facts(argument.value);
     }
     for (auto cursor = 0uz; cursor < inline_roots.size(); ++cursor) {
-        inline_facts(graph_objects[inline_roots[cursor]].state.relationships);
+        inline_facts(state.objects[inline_roots[cursor]].relationships);
     }
     for (auto cursor = 0uz; cursor < reachable.size(); ++cursor) {
         const auto object = reachable[cursor];
-        visit_facts(graph_objects[object].state.relationships);
+        visit_facts(state.objects[object].relationships);
         // A carrier is evidence for storage relationships even when it has no
         // parameter role. Non-interface ancestors remain site summaries, so
         // recursive descent retains a finite graph rather than a growing chain.
@@ -470,7 +405,8 @@ auto OwnershipBodyAnalyzer::call(
     auto summaries = std::flat_map<OwnershipStorageSite, std::size_t>();
     for (const auto source : reachable) {
         auto index = sources.size();
-        if (!distinguished.contains(source)) {
+        if (!distinguished.contains(source)
+            && analysis.recursive_storage_site(site_for(source), target.id())) {
             const auto [found, inserted] = summaries.emplace(site_for(source), index);
             index = found->second;
         }
@@ -539,13 +475,13 @@ auto OwnershipBodyAnalyzer::call(
         };
         for (const auto source : group) {
             object.many |= many_for(source);
-            object.state.available &= graph_objects[source].state.available;
-            if (graph_objects[source].state.taken) {
-                object.state.taken = graph_objects[source].state.taken;
+            object.state.available &= state.objects[source].available;
+            if (state.objects[source].taken) {
+                object.state.taken = state.objects[source].taken;
             }
             merge_relationships(
                 object.state.relationships,
-                map_facts(graph_objects[source].state.relationships)
+                map_facts(state.objects[source].relationships)
             );
         }
         call_input.objects.push_back(std::move(object));
@@ -558,7 +494,7 @@ auto OwnershipBodyAnalyzer::call(
                 call_input.storage_readers.push_back(std::move(loan));
                 continue;
             }
-            for (const auto& region : project_storage_region(edges, loan.backing)) {
+            for (const auto& region : storage_regions(loan.backing)) {
                 if (normalized.contains(region.place.object)) {
                     auto projected = loan;
                     projected.backing = map_place(region.place);
@@ -569,9 +505,9 @@ auto OwnershipBodyAnalyzer::call(
         }
     };
     protect_external(projected_readers);
-    for (const auto& [holder, object] : std::views::enumerate(graph_objects)) {
+    for (const auto& [holder, object] : std::views::enumerate(state.objects)) {
         if (!normalized.contains(static_cast<std::size_t>(holder))) {
-            protect_external(object.state.relationships.view().storage_loans);
+            protect_external(object.relationships.view().storage_loans);
         }
     }
     for (const auto& from : sources) {
@@ -580,8 +516,7 @@ auto OwnershipBodyAnalyzer::call(
             auto valid = true;
             for (const auto source : from) {
                 for (const auto destination : to) {
-                    valid &=
-                        outlives(actual_sources[source].object, actual_sources[destination].object);
+                    valid &= outlives(source, destination);
                 }
             }
             row.push_back(valid);
@@ -603,7 +538,7 @@ auto OwnershipBodyAnalyzer::call(
             mapped.place = map_place(std::move(mapped.place));
             call_input.accesses.push_back(std::move(mapped));
         } else {
-            for (const auto& region : project_storage_region(edges, access.place)) {
+            for (const auto& region : storage_regions(access.place)) {
                 if (normalized.contains(region.place.object)) {
                     call_input.accesses.push_back(
                         {map_place(region.place), access.kind, access.descendants || !region.exact}
@@ -617,35 +552,24 @@ auto OwnershipBodyAnalyzer::call(
         std::ranges::unique(call_input.accesses).begin(),
         call_input.accesses.end()
     );
-    const auto restore_place = [&](OwnershipPlace place, std::size_t source, bool loan) noexcept {
-        auto actual = actual_sources[source];
-        const auto offset = actual.path.size();
-        actual.path.append_range(place.path);
-        for (auto boundary : place.indirections) {
-            boundary.offset += offset;
-            actual.indirections.push_back(boundary);
-        }
-        if (loan && actual.indirections.size() > 1uz) {
-            // One selection retains its finite inline suffix. Recursive descendants
-            // protect the first selected element, bounding returned loan paths.
-            actual.path.resize(actual.indirections.front().offset + 1uz);
-            actual.indirections.clear();
-        }
-        return actual;
+    auto restored_sources = sources;
+    const auto restore_place = [&](OwnershipPlace place, std::size_t source) noexcept {
+        place.object = source;
+        return place;
     };
     const auto restore_facts = [&](const OwnershipRelationships& value) noexcept {
         auto restored = OwnershipRelationships {};
         for (const auto& row : value.view().captures) {
-            for (const auto source : sources[row.target.object]) {
+            for (const auto source : restored_sources[row.target.object]) {
                 auto copy = row;
-                copy.target = restore_place(copy.target, source, false);
+                copy.target = restore_place(copy.target, source);
                 restored.edit().captures.push_back(std::move(copy));
             }
         }
         for (const auto& row : value.view().storage_loans) {
-            for (const auto source : sources[row.backing.object]) {
+            for (const auto source : restored_sources[row.backing.object]) {
                 auto copy = row;
-                copy.backing = restore_place(copy.backing, source, true);
+                copy.backing = restore_place(copy.backing, source);
                 restored.edit().storage_loans.push_back(std::move(copy));
             }
         }
@@ -653,9 +577,9 @@ auto OwnershipBodyAnalyzer::call(
             if (!row.backing) {
                 restored.edit().callable_loans.push_back(row);
             } else {
-                for (const auto source : sources[row.backing->object]) {
+                for (const auto source : restored_sources[row.backing->object]) {
                     auto copy = row;
-                    *copy.backing = restore_place(*copy.backing, source, false);
+                    *copy.backing = restore_place(*copy.backing, source);
                     restored.edit().callable_loans.push_back(std::move(copy));
                 }
             }
@@ -667,27 +591,83 @@ auto OwnershipBodyAnalyzer::call(
         | std::views::transform([](const auto& object) static noexcept { return object.many; })
         | std::ranges::to<std::vector>();
     auto result = OwnershipFlow {};
+    const auto input_edges = call_input.owns;
     const auto answers = analysis.query(std::move(call_input));
     for (const auto [answer_index, answer] : std::views::enumerate(answers)) {
+        restored_sources = sources;
+        restored_sources.resize(sources.size() + answer.referents.size());
+        // New callee descendants retain their referent identity. Restore the
+        // reachable graph once; never flatten owns edges back into a long path.
+        const auto previous_edges = topology.owns.size();
+        auto remaining = answer.owns;
+        // Existing input edges already have concrete caller associations. A
+        // grouped input describes alternatives; rebuilding its edges as a
+        // cross product would invent aliases between independent owners.
+        std::erase_if(remaining, [&](const auto& edge) noexcept {
+            return std::ranges::binary_search(input_edges, edge);
+        });
+        for (;;) {
+            auto progress = false;
+            for (auto edge = remaining.begin(); edge != remaining.end();) {
+                const auto parents = restored_sources[edge->carrier.object];
+                if (parents.empty()) {
+                    ++edge;
+                    continue;
+                }
+                auto& destinations = restored_sources[edge->element];
+                if (destinations.empty()) {
+                    const auto& node = answer.referents[edge->element - sources.size()];
+                    for (const auto parent : parents) {
+                        auto carrier = edge->carrier;
+                        carrier.object = parent;
+                        const auto selected = select_owned_storage(
+                            carrier,
+                            node.type,
+                            edge->index,
+                            node.origin,
+                            state,
+                            node.many
+                        );
+                        for (const auto& place : selected) {
+                            destinations.push_back(place.object);
+                        }
+                    }
+                } else {
+                    for (const auto parent : parents) {
+                        auto carrier = edge->carrier;
+                        carrier.object = parent;
+                        for (const auto destination : destinations) {
+                            topology.owns.push_back({carrier, destination, edge->index});
+                        }
+                    }
+                }
+                edge = remaining.erase(edge);
+                progress = true;
+            }
+            if (!progress) {
+                break;
+            }
+        }
+        std::ranges::sort(topology.owns);
+        topology.owns.erase(std::ranges::unique(topology.owns).begin(), topology.owns.end());
+        if (topology.owns.size() != previous_edges) {
+            ++topology.revision;
+        }
+        propagate_storage_facts();
+        synchronize_storage(state);
         // Move only on the final answer; no later iteration can use state.
         // NOLINTNEXTLINE(bugprone-use-after-move)
         auto returned = answer_index + 1uz == answers.size() ? std::move(state) : state;
-        for (auto index = 0uz; index < sources.size(); ++index) {
+        for (auto index = 0uz; index < restored_sources.size(); ++index) {
             const auto& object = answer.state.objects[index];
             if (!object.modified) {
                 continue;
             }
             auto restored = object;
             restored.relationships = restore_facts(object.relationships);
-            for (const auto source : sources[index]) {
-                const auto& actual = actual_sources[source];
-                auto& destination = returned.objects[actual.object];
-                if (!actual.path.empty()) {
-                    // A projected write updates only that source subregion.
-                    store(returned, actual, restored.relationships, origin, !many[index]);
-                    continue;
-                }
-                if (many[index]) {
+            for (const auto source : restored_sources[index]) {
+                auto& destination = returned.objects[source];
+                if (topology.objects[source].many || (index < many.size() && many[index])) {
                     destination.available &= restored.available;
                     destination.modified = true;
                     if (restored.taken) {

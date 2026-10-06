@@ -6,15 +6,37 @@ import std;
 
 OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
     OwnershipBatchAnalyzer& analysis,
-    const OwnershipCallInput& input
+    const OwnershipCallInput& input,
+    OwnershipStorageTopology* storage
 ) noexcept
     : analysis(analysis),
       input(input),
       body(analysis.body(input.body_id)),
       program(analysis.program),
       facts(analysis.facts_for_body(input.body_id)),
+      topology(storage ? *storage : local_topology),
       accesses(input.accesses),
       storage_readers(input.storage_readers) {
+    if (topology.objects.empty()) {
+        topology.objects = input.objects;
+        for (auto& object : topology.objects) {
+            object.state = {};
+        }
+        topology.owns = input.owns;
+        for (const auto [index, local] : std::views::enumerate(facts.locals)) {
+            topology.objects.push_back(
+                {local.type,
+                 local.origin,
+                 {},
+                 {body.id(), static_cast<std::size_t>(index), false},
+                 false}
+            );
+        }
+        for (auto index = 0uz; index < topology.objects.size(); ++index) {
+            topology.roots.push_back({index});
+            topology.anchors.push_back({index, {}});
+        }
+    }
     const auto bind = [&](std::span<const LocalBindingID> bindings,
                           std::span<const OwnershipCallArgument> values) noexcept {
         for (const auto& [id, value] : std::views::zip(bindings, values)) {
@@ -41,13 +63,11 @@ OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
 }
 
 auto OwnershipBodyAnalyzer::object_type(std::size_t object) const noexcept -> TypeID {
-    return object < input.objects.size() ? input.objects[object].type
-                                         : facts.locals[object - input.objects.size()].type;
+    return topology.objects[object].type;
 }
 
 auto OwnershipBodyAnalyzer::object_origin(std::size_t object) const noexcept -> ProgramOriginID {
-    return object < input.objects.size() ? input.objects[object].origin
-                                         : facts.locals[object - input.objects.size()].origin;
+    return topology.objects[object].origin;
 }
 
 auto OwnershipBodyAnalyzer::diagnosis_record() noexcept -> OwnershipDiagnosisRecord& {
@@ -83,20 +103,33 @@ auto OwnershipBodyAnalyzer::diagnose(
 
 auto OwnershipBodyAnalyzer::outlives(std::size_t source, std::size_t destination) const noexcept
     -> bool {
-    if (source < input.objects.size()) {
-        return destination >= input.objects.size() || input.outlives[source][destination];
+    for (const auto source_root : topology.roots[source]) {
+        for (const auto destination_root : topology.roots[destination]) {
+            if (source_root < input.objects.size()) {
+                if (destination_root < input.objects.size()
+                    && !input.outlives[source_root][destination_root]) {
+                    return false;
+                }
+            } else if (destination_root < input.objects.size()
+                       || !body.lifetime_regions().outlives(
+                           facts.locals[source_root - input.objects.size()].lifetime,
+                           facts.locals[destination_root - input.objects.size()].lifetime
+                       )) {
+                return false;
+            }
+        }
     }
-    return destination >= input.objects.size()
-        && body.lifetime_regions().outlives(
-            facts.locals[source - input.objects.size()].lifetime,
-            facts.locals[destination - input.objects.size()].lifetime
-        );
+    return true;
 }
 
 auto OwnershipBodyAnalyzer::full_expression_storage(std::size_t object) const noexcept -> bool {
-    return object >= input.objects.size()
-        && body.lifetime_regions().region(facts.locals[object - input.objects.size()].lifetime).kind
-        == LifetimeRegionKind::FullExpression;
+    return std::ranges::any_of(topology.roots[object], [&](const auto root) noexcept {
+        return root >= input.objects.size()
+            && body.lifetime_regions()
+                   .region(facts.locals[root - input.objects.size()].lifetime)
+                   .kind
+            == LifetimeRegionKind::FullExpression;
+    });
 }
 
 auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime) noexcept -> void {
@@ -108,11 +141,18 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
         for (const auto object : found->second) {
             state.objects[input.objects.size() + object] = {};
         }
+        for (auto object = input.objects.size() + facts.locals.size();
+             object < state.objects.size();
+             ++object) {
+            if (!storage_available(state, object)) {
+                state.objects[object] = {};
+            }
+        }
     };
     const auto check = [&](const OwnershipRelationships& value,
                            const OwnershipState& state) noexcept {
         for (const auto& loan : value.view().storage_loans) {
-            if (!state.objects[loan.backing.object].available) {
+            if (!storage_available(state, loan.backing.object)) {
                 diagnose(
                     DiagnosticCode::AccessBorrowConflict,
                     "borrowed view escapes the lifetime of its backing",
@@ -234,7 +274,7 @@ auto OwnershipBodyAnalyzer::use(
         return;
     }
     for (const auto& loan : relationships.view().storage_loans) {
-        if (!state.objects[loan.backing.object].available) {
+        if (!storage_available(state, loan.backing.object)) {
             diagnose(
                 DiagnosticCode::AccessBorrowConflict,
                 "borrowed view has unavailable or expired backing",
@@ -244,7 +284,7 @@ auto OwnershipBodyAnalyzer::use(
         }
     }
     for (const auto& loan : relationships.view().callable_loans) {
-        if (loan.backing.has_value() && !state.objects[loan.backing->object].available) {
+        if (loan.backing.has_value() && !storage_available(state, loan.backing->object)) {
             diagnose(
                 DiagnosticCode::AccessBorrowConflict,
                 "callable view has unavailable or expired backing",
@@ -261,7 +301,7 @@ auto OwnershipBodyAnalyzer::use(
         }
     }
     for (const auto& capture : references(relationships, state)) {
-        if (!state.objects[capture.target.object].available) {
+        if (!storage_available(state, capture.target.object)) {
             diagnose(
                 DiagnosticCode::AccessBorrowConflict,
                 "closure has unavailable or expired Write capture",
@@ -317,8 +357,7 @@ auto OwnershipBodyAnalyzer::store(
     }
     auto& destination = state.objects[target.object];
     destination.modified = true;
-    const auto singleton =
-        definite && (target.object >= input.objects.size() || !input.objects[target.object].many);
+    const auto singleton = definite && !topology.objects[target.object].many;
     if (singleton && target.path.empty()) {
         destination = {
             .available = true,
@@ -396,14 +435,19 @@ auto OwnershipBodyAnalyzer::storage_ancestor(
     const OwnershipPlace& referent,
     bool strict
 ) const noexcept -> bool {
-    return storage_region_ancestor(input.owns, owner, referent, strict);
+    return storage_region_ancestor(
+        owner,
+        storage_regions(owner),
+        storage_regions(referent),
+        strict
+    );
 }
 
 auto OwnershipBodyAnalyzer::storage_overlaps(
     const OwnershipPlace& left,
     const OwnershipPlace& right
 ) const noexcept -> bool {
-    return storage_regions_overlap(input.owns, left, right);
+    return storage_regions_overlap(left, right, storage_regions(left), storage_regions(right));
 }
 
 auto OwnershipBodyAnalyzer::write_access(
@@ -442,12 +486,13 @@ auto OwnershipBodyAnalyzer::require_available(
     const OwnershipPlace& target,
     ProgramOriginID origin
 ) noexcept -> void {
-    if (diagnosing && !state.objects[target.object].available) {
+    const auto object = target.object;
+    if (diagnosing && !state.objects[object].available) {
         diagnose(
             DiagnosticCode::AccessUnavailable,
             "binding is unavailable before initialization or after Take",
             origin,
-            state.objects[target.object].taken
+            state.objects[object].taken
         );
     }
 }

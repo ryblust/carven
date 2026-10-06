@@ -641,6 +641,247 @@ const TestSuite suite([] static noexcept {
             );
         };
 
+    "Sequence ownership: finite returned descendants preserve fields and siblings"_test =
+        [] static noexcept {
+            for (const auto depth : {1uz, 2uz, 4uz, 8uz}) {
+                auto declarations = std::string("struct Leaf { text: String, other: i32 }\n");
+                auto selected = std::string("root");
+                for (auto index = 0uz; index < depth; ++index) {
+                    declarations += std::format(
+                        "struct Layer{} {{ children: Sequence<{}>, other: i32 }}\n",
+                        index,
+                        index == 0uz ? std::string("Leaf") : std::format("Layer{}", index - 1uz)
+                    );
+                    selected += ".children[0]";
+                }
+                const auto owner = std::format("Layer{}", depth - 1uz);
+                declarations +=
+                    std::format("fn text(root: {}) -> str => {}.text.as_str();\n", owner, selected);
+                for (const auto inline_read : {false, true}) {
+                    const auto read =
+                        inline_read ? selected + ".text.as_str()" : std::string("text(root)");
+                    static_cast<void>(analyze_test_program(
+                        declarations
+                        + std::format(
+                            "fn accepted(&root: {}) -> usize {{ let view = {}; {}.other = 42; root.children[1] = {} {{}}; return view.len(); }}",
+                            owner,
+                            read,
+                            selected,
+                            depth == 1uz ? std::string("Leaf") : std::format("Layer{}", depth - 2uz)
+                        )
+                    ));
+                    for (const auto& write :
+                         {selected + ".text = \"changed\" as String;",
+                          std::string("root.children.clear();")}) {
+                        expect_diagnostic(
+                            analyze_test_errors(
+                                declarations
+                                + std::format(
+                                    "fn invalid(&root: {}) -> usize {{ let view = {}; {} return view.len(); }}",
+                                    owner,
+                                    read,
+                                    write
+                                )
+                            ),
+                            DiagnosticCode::AccessBorrowConflict
+                        );
+                    }
+                }
+            }
+        };
+
+    "Sequence ownership: finite same-type selections and wrapper returns stay precise"_test =
+        [] static noexcept {
+            for (const auto depth : {1uz, 2uz, 4uz, 8uz}) {
+                auto selected = std::string("root");
+                for (auto index = 0uz; index < depth; ++index) {
+                    selected += ".children[0]";
+                }
+                const auto prelude = std::format(
+                    "struct Node {{ text: String, other: i32, children: Sequence<Node> }}\n"
+                    "fn text(root: Node) -> str => {}.text.as_str();\n"
+                    "fn forward(root: Node) -> str => text(root);\n"
+                    "fn wrapped(root: Node) -> str => forward(root);\n",
+                    selected
+                );
+                for (const auto& read :
+                     {selected + ".text.as_str()", std::string("wrapped(root)")}) {
+                    static_cast<void>(analyze_test_program(
+                        prelude
+                        + std::format(
+                            "fn accepted(&root: Node) -> usize {{ let view = {}; {}.other = 42; root.children[1].text.clear(); return view.len(); }}",
+                            read,
+                            selected
+                        )
+                    ));
+                    expect_diagnostic(
+                        analyze_test_errors(
+                            prelude
+                            + std::format(
+                                "fn invalid(&root: Node) -> usize {{ let view = {}; {}.text.clear(); return view.len(); }}",
+                                read,
+                                selected
+                            )
+                        ),
+                        DiagnosticCode::AccessBorrowConflict
+                    );
+                }
+                static_cast<void>(analyze_test_program(prelude + R"(
+                    fn siblings(&root: Node) -> usize {
+                        let first = wrapped(root.children[0]);
+                        let second = wrapped(root.children[1]);
+                        root.children[0].other = 1;
+                        root.children[1].other = 2;
+                        return first.len() + second.len();
+                    }
+                )"));
+            }
+        };
+
+    "Sequence ownership: new descendant referents survive failure delivery and loop exits"_test =
+        [] static noexcept {
+            const auto prelude = std::string(R"(
+                struct Node { text: String, other: i32, children: Sequence<Node> }
+                struct ViewError { text: str }
+                fn nested(root: Node) -> str => root.children[0].children[0].text.as_str();
+                fn maybe(root: Node, stop: bool) -> str throw ViewError {
+                    let view = nested(root);
+                    if stop { throw ViewError { text: view }; }
+                    return view;
+                }
+            )");
+            for (const auto same_field : {false, true}) {
+                const auto write = same_field ? "root.children[0].children[0].text.clear();"
+                                              : "root.children[0].children[0].other = 42;";
+                const auto source = prelude
+                    + std::format(R"(
+                    fn probe(&root: Node, stop: bool) {{
+                        try {{ let view = maybe(root, stop)?; {} let observed = view.len(); }}
+                        catch {{ ViewError(error) => {{ {} let observed = error.text.len(); }}, }}
+                    }}
+                )",
+                                  write,
+                                  write);
+                if (same_field) {
+                    expect_diagnostic(
+                        analyze_test_errors(source),
+                        DiagnosticCode::AccessBorrowConflict
+                    );
+                } else {
+                    static_cast<void>(analyze_test_program(source));
+                }
+                const auto loop = prelude
+                    + std::format(R"(
+                    fn loop_probe(&root: Node, depth: usize) -> usize {{
+                        var view: str = "";
+                        for index in 0usize..depth {{ view = nested(root); if index > 2 {{ break; }} continue; }}
+                        {} return view.len();
+                    }}
+                )",
+                                  write);
+                if (same_field) {
+                    expect_diagnostic(
+                        analyze_test_errors(loop),
+                        DiagnosticCode::AccessBorrowConflict
+                    );
+                } else {
+                    static_cast<void>(analyze_test_program(loop));
+                }
+            }
+        };
+
+    "Sequence ownership: owned array feedback stabilizes graph queries and exits"_test = [] static noexcept {
+        const auto prelude = std::string(
+            "struct Node { children: Sequence<[Node; 1]> }\n"
+            "fn children(node: Node) -> [Node] => node.children[0];\n"
+        );
+        for (
+            const auto control : {
+                "for index in 0usize..depth { current = children(current[0]); }",
+                "while depth > 0 { current = children(current[0]); depth -= 1; }",
+                "for index in 0usize..depth { current = children(current[0]); if index > 2 { continue; } if index > 1 { break; } }",
+                "for index in 0usize..depth { current = children(current[0]); if index > 2 { return current.len(); } }",
+                "for outer in 0usize..depth { for inner in 0usize..depth { current = children(current[0]); } }",
+            }) {
+            const auto program = analyze_test_program(
+                prelude
+                + std::format(
+                    "fn walk(root: [Node; 1], input: usize) -> usize {{ var depth = input; var current: [Node] = root; {} return current.len(); }}",
+                    control
+                )
+            );
+            auto diagnostics = DiagnosticSink();
+            const auto result =
+                OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
+            if (!expect(result.has_value())) {
+                return;
+            }
+            expect(result->query_count <= 128uz);
+            expect(result->evaluation_count <= 512uz);
+            expect(result->storage_node_count <= 2048uz);
+            expect(result->storage_edge_count <= 512uz);
+            const auto repeated =
+                OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
+            if (!expect(repeated.has_value())) {
+                return;
+            }
+            expect_equal(repeated->query_count, result->query_count);
+            expect_equal(repeated->storage_node_count, result->storage_node_count);
+            expect_equal(repeated->storage_edge_count, result->storage_edge_count);
+        }
+        for (
+            const auto invalid : {
+                "fn invalid() -> [Node] { var local: [Node; 1] = [Node {}]; return children(local[0]); }",
+                "fn invalid(&root: [Node; 1]) -> usize { let view = children(root[0]); root[0].children.clear(); return view.len(); }",
+            }) {
+            expect_diagnostic(
+                analyze_test_errors(prelude + invalid),
+                DiagnosticCode::AccessBorrowConflict
+            );
+        }
+    };
+
+    "Sequence ownership: recursive descendant returns share a finite graph domain"_test =
+        [] static noexcept {
+            for (
+                const auto recursive : {
+                    "fn walk(node: Node, depth: usize) -> [Node] { if depth == 0 { return node.children[0]; } return walk(node.children[0][0], depth - 1); }",
+                    "fn walk(node: Node, depth: usize) -> [Node] { if depth == 0 { return node.children[0]; } return other(node.children[0][0], depth - 1); } fn other(node: Node, depth: usize) -> [Node] => walk(node, depth);",
+                }) {
+                const auto program = analyze_test_program(
+                    std::string("struct Node { children: Sequence<[Node; 1]> }\n") + recursive
+                );
+                auto diagnostics = DiagnosticSink();
+                const auto result =
+                    OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
+                if (!expect(result.has_value())) {
+                    return;
+                }
+                expect(result->query_count <= 128uz);
+                expect(result->evaluation_count <= 512uz);
+                expect(result->storage_node_count <= 2048uz);
+                expect(result->storage_edge_count <= 512uz);
+            }
+        };
+
+    "Sequence ownership: recursive mixed roots retain local escape constraints"_test =
+        [] static noexcept {
+            expect_diagnostic(
+                analyze_test_errors(R"(
+            struct Node { text: String, children: Sequence<[Node; 1]> }
+            fn cross(external: [Node; 1], depth: usize) -> str {
+                if depth == 0 { return ""; }
+                var local: [Node; 1] = [Node {}];
+                var current: [Node] = external;
+                if depth > 1 { current = local; }
+                let observed = cross(current[0].children[0], depth - 1);
+                return local[0].children[0][0].text.as_str();
+            }
+        )"),
+                DiagnosticCode::AccessBorrowConflict
+            );
+        };
+
     "Sequence execution: runtime ownership does not promise constant storage"_test =
         [] static noexcept {
             expect_diagnostic(

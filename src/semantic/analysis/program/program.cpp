@@ -70,6 +70,11 @@ auto ProgramDraft::intern_type(const CanonicalType& type) noexcept -> TypeID {
     return storage.types.intern(type);
 }
 
+auto ProgramDraft::record_sequence_element(TypeID element, ProgramOriginID origin) noexcept
+    -> void {
+    storage.sequence_elements.emplace_back(element, origin);
+}
+
 auto ProgramDraft::builtin_type(BuiltinType type) const noexcept -> TypeID {
     return storage.types.builtin_type(type);
 }

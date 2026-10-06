@@ -73,16 +73,20 @@ tokens, independently of expected types.
 
 The source catalog reserves a generic definition identity rather than a concrete
 struct or enum identity. Declaration construction binds parameter references,
-nominal applications, and array, slice, and pointer constructors into checked
-type expressions. These descriptors contain semantic identities rather than AST
-nodes or unresolved names. Definition checking validates application arity,
-parameter-flow growth, and symbolic by-value storage cycles, including unused
-definitions.
+nominal applications, and array, slice, Sequence, and pointer constructors into
+checked type expressions. These descriptors contain semantic identities rather
+than AST nodes or unresolved names. Definition checking validates application
+arity, parameter-flow growth, and symbolic by-value storage cycles, including
+unused definitions.
 
-Instance formation substitutes canonical arguments and reserves an ordinary
-concrete nominal declaration before completing its fields or cases. The key is
-the definition and its ordered arguments; recursive references reuse that
-reservation. Failed instances retain their diagnosed failure. Source-head
+Instance formation keys an ordinary concrete nominal declaration by its
+definition and ordered canonical arguments. It reserves that declaration before
+completing its fields or cases; recursive references reuse the reservation.
+Field and payload resolution reads the checked type expressions under the
+canonical argument environment and directly interns each resulting concrete
+type. The owned key keeps that environment stable during nested instance
+construction. Symbolic definition checks retain substitution over rigid type
+expressions. Failed instances retain their diagnosed failure. Source-head
 completion and the concrete instance closure are separate gates.
 
 Concrete declarations pass ordinary type, storage, ownership, and publication

@@ -89,6 +89,7 @@ public:
     auto append_expansion_origin(ProgramOriginID parent, ProgramExpansionReason reason) noexcept
         -> ProgramOriginID;
     auto intern_type(const CanonicalType& type) noexcept -> TypeID;
+    auto record_sequence_element(TypeID element, ProgramOriginID origin) noexcept -> void;
     auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
     auto try_canonicalize_declared_type(ConstructionTypeRef type) noexcept -> std::optional<TypeID>;
     auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
@@ -295,8 +296,12 @@ private:
         GenericDeclarationID definition,
         std::span<const GenericTypeID> arguments
     ) noexcept -> GenericTypeID;
-    auto resolve_generic_type(GenericTypeID type, ProgramOriginID origin) noexcept
-        -> AnalysisResult<TypeID>;
+    auto resolve_generic_type(
+        GenericTypeID type,
+        GenericDeclarationID definition,
+        std::span<const TypeID> arguments,
+        ProgramOriginID origin
+    ) noexcept -> AnalysisResult<TypeID>;
     ProgramIdentity program_identity;
     std::uint32_t next_evaluation_root = 0;
     CompilationProvenanceAppender provenance_appender;
@@ -348,6 +353,7 @@ private:
         std::vector<GenericTypeExpression> generic_types;
         std::map<GenericTypeExpression, GenericTypeID> generic_type_index;
         std::vector<GenericInstanceSlot> generic_instances;
+        std::vector<std::pair<TypeID, ProgramOriginID>> sequence_elements;
         std::map<std::pair<GenericDeclarationID, std::vector<TypeID>>, std::size_t>
             generic_instance_index;
         std::map<NominalDeclarationRef, std::size_t> generic_instance_nominals;

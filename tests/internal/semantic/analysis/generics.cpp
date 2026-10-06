@@ -94,6 +94,33 @@ const TestSuite suite([] static noexcept {
             }
         };
 
+    "Generic instances: nested fields retain their declaring argument environment"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+            struct Pair<T, U> { first: T, second: U }
+            struct Group<T, U> {
+                values: Pair<T, U>,
+                swapped: Pair<U, T>,
+                repeated: Pair<T, T>,
+                nested: Pair<Pair<T, U>, Pair<U, T>>,
+                arrays: Pair<[T; 2], [U; 3]>,
+                views: Pair<[T], ptr<&U>>,
+                sequence: Sequence<Pair<T, U>>,
+                next: ptr<Group<T, U>>,
+            }
+            fn values(value: Group<i32, u8>) -> Pair<i32, u8> => value.values;
+            fn swapped(value: Group<i32, u8>) -> Pair<u8, i32> => value.swapped;
+            fn repeated(value: Group<i32, u8>) -> Pair<i32, i32> => value.repeated;
+            fn nested(value: Group<i32, u8>) -> Pair<Pair<i32, u8>, Pair<u8, i32>> => value.nested;
+            fn arrays(value: Group<i32, u8>) -> Pair<[i32; 2], [u8; 3]> => value.arrays;
+            fn views(value: Group<i32, u8>) -> Pair<[i32], ptr<&u8>> => value.views;
+            fn sequence(value: Group<i32, u8>) -> Sequence<Pair<i32, u8>> => value.sequence;
+            fn next(value: Group<i32, u8>) -> ptr<Group<i32, u8>> => value.next;
+        )");
+            // Explicit result types and substituted fields select the same seven nominals.
+            expect_equal(program.generic_nominal_instances().size(), 7uz);
+        };
+
     "Callable views: canonical signatures obey adoption subsets and storage invariance"_test =
         [] static noexcept {
             const auto prelude = std::string(R"(

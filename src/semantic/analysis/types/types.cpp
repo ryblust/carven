@@ -178,11 +178,14 @@ auto resolve_named(
             !checked) {
             co_return std::unexpected(checked.error());
         }
-        co_return ConstructionTypeRef {draft.intern_type({
-            .value = OwnedSequenceTypeValue {
-                .element = draft.canonicalize_declared_type(*element),
-            },
-        })};
+        const auto concrete = draft.canonicalize_declared_type(*element);
+        draft.record_sequence_element(
+            concrete,
+            draft.append_source_origin(draft.module_source(module_id), origin)
+        );
+        co_return ConstructionTypeRef {
+            draft.intern_type({.value = OwnedSequenceTypeValue {.element = concrete}})
+        };
     }
     if (!named.global_root && named.components.size() == 1uz && root == "range") {
         if (named.arguments.size() != 1uz) {

@@ -66,6 +66,7 @@ auto OwnershipBodyAnalyzer::place(
     OwnershipState state,
     bool read
 ) noexcept -> ContinuationTask<OwnershipFlow> {
+    synchronize_storage(state);
     auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
     if (const auto* dereference = std::get_if<SemDereference>(&source.value)) {
         auto next = (co_await expression(*dereference->source, std::move(result.normal->state)));
@@ -110,12 +111,12 @@ auto OwnershipBodyAnalyzer::place(
         if (result.normal.has_value()) {
             const auto relationships = std::move(result.normal->value);
             auto storage = select_element_storage(
-                program.types(),
                 index->source->type.resolved(),
                 result.normal->storage,
                 relationships,
                 constant_index(*index->index),
-                source.origin
+                source.origin,
+                result.normal->state
             );
             const auto previous = accesses.size();
             const auto previous_readers = storage_readers.size();
@@ -198,6 +199,7 @@ auto OwnershipBodyAnalyzer::expression(
     OwnershipState state,
     bool direct
 ) noexcept -> ContinuationTask<OwnershipFlow> {
+    synchronize_storage(state);
     auto flow = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
     auto operand_storage = std::vector<OwnershipPlace>();
     const auto evaluate = [&](const SemanticExpression& child,
@@ -417,13 +419,16 @@ auto OwnershipBodyAnalyzer::expression(
                 [&](const SemIndex& value) noexcept -> ContinuationTask<std::monostate> {
                     const auto previous_readers = storage_readers.size();
                     const auto relationships = (co_await evaluate(*value.source));
+                    if (!flow.normal) {
+                        co_return {};
+                    }
                     auto storage = select_element_storage(
-                        program.types(),
                         value.source->type.resolved(),
                         operand_storage,
                         relationships,
                         constant_index(*value.index),
-                        source.origin
+                        source.origin,
+                        flow.normal->state
                     );
                     protect_storage(relationships);
                     const auto previous_accesses = accesses.size();

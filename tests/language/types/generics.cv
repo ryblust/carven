@@ -28,6 +28,13 @@ private enum Maybe<T> {
     Some(T),
 }
 
+private enum NestedChoice<T, U> {
+    Pair(Pair<U, T>),
+    Repeated(Pair<T, T>),
+    Array([T; 2]),
+    Many(Sequence<T>),
+}
+
 private const fn maybe_number(value: Maybe<i32>) -> i32 => match value {
     .None => 0,
     .Some(number) => number,
@@ -59,6 +66,42 @@ test "Generics: owned concrete fields copy and transfer using ordinary value sem
     check(moved.value.as_str() == "first second");
     original = Box<String> { value: "restored" as String };
     check(original.value.as_str() == "restored");
+}
+
+test "Generics: nested enum payloads preserve argument order and container values" {
+    let pair = NestedChoice<i32, u8>::Pair(
+        {
+            first: 7u8,
+            second: 35
+        }
+    );
+    match pair {
+        .Pair(values) => check((values.first as i32) + values.second == 42),
+        _ => check(false),
+    }
+    let repeated = NestedChoice<i32, u8>::Repeated(
+        {
+            first: 20,
+            second: 22
+        }
+    );
+    match repeated {
+        .Repeated(values) => check(values.first + values.second == 42),
+        _ => check(false),
+    }
+    let array = NestedChoice<i32, u8>::Array([19, 23]);
+    match array {
+        .Array(values) => check(values[0] + values[1] == 42),
+        _ => check(false),
+    }
+    var values = Sequence<i32> {};
+    values.push(17);
+    values.push(25);
+    let many = NestedChoice<i32, u8>::Many(&&values);
+    match many {
+        .Many(ref items) => check(items.len() == 2 && items[0] + items[1] == 42),
+        _ => check(false),
+    }
 }
 
 test "Generics: concrete fields and pointer targets retain their ordinary contracts" {

@@ -116,34 +116,50 @@ stops at slice backing and ambiguous or unknown-index targets. The semantic rest
 on callable-view storage in nominal types and captures bound inline callable
 chains. Allocation identity is separate from diagnostic provenance.
 
-Sequence selections record checked element types before normalization, including
-when enum payload slots have different types. Call boundaries cut these
-indirections into element referents with finite inline paths. Checked Sequence
-elements contain no loans or callable storage and cannot be taken, including
-through their fields. Referent state is therefore initialized and available,
-without copied carrier relationships.
+Body evaluation and call normalization share a referent graph. A place names
+one storage node and its inline fields or array elements; selecting a checked
+Sequence element follows an owns edge immediately. The checked type remains
+part of selection identity, including when enum payload slots have different
+types. Checked Sequence elements contain no loans or callable storage and cannot
+be taken through their fields. Their availability follows all possible owning
+sources in the current flow state, including after a retained query domain is
+reused before local initialization.
 
 Carrier ownership is a separate topology and is not copied with a value.
+Straight-line selection uses carrier, index, and checked element type without
+folding repeated types or limiting traversal depth. At loop feedback or recursive
+summary boundaries, an allocation site and its first owned-selection family name
+a finite node. Source and feedback sites, inline carrier paths, and constant or
+unknown indices contribute to this key; owned ancestry and caller history do not.
+A reused summary is many, and that property propagates through existing owns
+edges. Owning-source sets contain only the query's fixed input and local roles;
+unioning them preserves local lifetime and escape restrictions across aliases.
+
 Carrier ancestors remain reachable evidence even without parameter roles;
-non-interface ancestors use the same storage-site grouping as other summaries.
-Repeated recursive sites form graph cycles rather than extending an ancestor
-chain. Element identity uses carrier, index, and checked element type; unknown
-indices denote a many region, independently of the source selection site.
+non-interface recursive ancestors use storage-site grouping. Repeated recursive
+sites form graph cycles rather than extending an ancestor chain. Unknown indices
+denote many regions. Every known destination for a carrier/index/type selection
+remains an alternative; selecting the first edge would make graph growth withdraw
+previous backing facts.
 
 One region projection supplies overlap and ancestor checks, hidden reader loans,
-and retained accesses. Direct edges preserve the inline suffix after the selected
-index, allowing independent fields to remain disjoint. Recursive cycles widen
-to a selected descendant region for structural protection. A common widened
-bound does not identify the fields of two referents. Different paths to the same
-carrier remain alternatives; cycle summaries continue to external ancestors.
+and retained accesses. Direct edges preserve the complete inline suffix after
+an index, allowing independent fields to remain disjoint at arbitrary finite
+depth. Recursive cycles widen to a selected descendant region for structural
+protection. A common widened bound does not identify the fields of two referents.
+Different paths to the same carrier remain alternatives; cycle summaries continue
+to external ancestors.
 
-Restoration maps modified referents to their actual caller projection, rather
-than replacing the entire carrier. Returned storage loans retain a single checked
-selection and its finite inline field suffix. Across further indirections they
-protect the first selected element's descendants, keeping recursive borrowing
-relationships finite.
-Known different indices remain disjoint for element updates; structural carrier
-mutation invalidates their loans.
+Call completion retains new referents and their owns edges as well as result,
+failure, and modified-storage relationships. Restoration maps all possible
+referents to the caller graph and preserves finite returned field suffixes. Only
+new callee edges are restored: existing input edges already have concrete caller
+associations, and rebuilding grouped input edges as a cross product would invent
+aliases. New summary relationships union all possible sources and use weak
+updates. Known different indices remain disjoint for element updates; structural
+carrier mutation invalidates their loans. Local-only domain slots stay stable
+across reevaluation but have no published edges or restored sources, so they do
+not enter later caller contexts.
 
 ### Joins and solver completion
 
@@ -160,9 +176,14 @@ The ownership solver records a dependency whenever an active query reads a call
 answer. Recursive calls read the current answer; changed semantic answers schedule
 their readers again. Normal, typed-failure and test-stop answers join monotonically.
 The finite source sites, inline paths, distinguished roles, and graph relations
-bound query identity. Internal query and worklist evaluation counts measure solver
-growth; evaluation counts exclude contract checks and do not count individual loop
-iterations.
+bound query identity. Internal query, worklist evaluation, storage-node, and storage-edge counts
+measure solver growth; evaluation counts exclude contract checks and do not count
+individual loop iterations. Loop headers accumulate the entry and all reached
+backedges instead of discarding earlier facts when a pending call has no answer.
+Break, return, failure, and test-stop exits accumulate alongside the header.
+Convergence requires both state equality and an unchanged topology revision;
+new owns edges, owning sources, and many upgrades affect the next transfer even
+if the current object rows happen to be equal.
 
 Each evaluation returns its transfer answer, local errors, and return-copy
 observations. Diagnostic checks preserve transfers, including access and lifetime

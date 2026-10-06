@@ -306,6 +306,8 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     }
     const auto entry = std::move(result.normal->state);
     auto header = entry;
+    const auto previous_feedback = feedback_origin;
+    feedback_origin = value.body->origin;
     const auto iterate = [&](OwnershipState input) noexcept -> ContinuationTask<OwnershipFlow> {
         auto pass =
             OwnershipFlow {.normal = OwnershipNormal {std::move(input), {}, {}}, .exits = {}};
@@ -342,13 +344,19 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     const auto previous = diagnosing;
     diagnosing = false;
     auto pass = OwnershipFlow {};
+    auto reached_exits = OwnershipFlow {};
     for (;;) {
+        const auto revision = topology.revision;
         pass = (co_await iterate(header));
-        auto next = entry;
+        auto next = header;
         if (pass.normal.has_value()) {
             join_ownership_state(next, pass.normal->state);
         }
-        const auto converged = next == header;
+        synchronize_storage(next);
+        synchronize_storage(header);
+        const auto converged = next == header && revision == topology.revision;
+        append_ownership_exits(reached_exits, pass);
+        pass.exits.clear();
         // Semantic equality excludes diagnostic origins. Retain the witnesses
         // selected by this join even when no semantic fact changed.
         header = std::move(next);
@@ -360,6 +368,9 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     if (diagnosing) {
         pass = (co_await iterate(std::move(header)));
     }
+    append_ownership_exits(reached_exits, pass);
+    pass.exits = std::move(reached_exits.exits);
+    feedback_origin = previous_feedback;
     result.normal.reset();
     for (auto& exit : pass.exits) {
         if (std::holds_alternative<OwnershipBreak>(exit.payload)) {
@@ -395,12 +406,12 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     );
     auto elements = range_value ? std::vector<OwnershipPlace>()
                                 : select_element_storage(
-                                      program.types(),
                                       iterable.type.resolved(),
                                       result.normal->storage,
                                       result.normal->value,
                                       std::nullopt,
-                                      iterable.origin
+                                      iterable.origin,
+                                      result.normal->state
                                   );
     if (!range_value) {
         const auto sequence_value = std::holds_alternative<OwnedSequenceTypeValue>(
@@ -425,6 +436,8 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     }
     const auto entry = std::move(result.normal->state);
     auto header = entry;
+    const auto previous_feedback = feedback_origin;
+    feedback_origin = value.body->origin;
     auto initial_elements = OwnershipRelationships {};
     if (slice_value) {
         for (const auto& selected : elements) {
@@ -458,9 +471,11 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     const auto previous_diagnosing = diagnosing;
     diagnosing = false;
     auto pass = OwnershipFlow {};
+    auto reached_exits = OwnershipFlow {};
     for (;;) {
+        const auto revision = topology.revision;
         pass = (co_await iterate(header));
-        auto next = entry;
+        auto next = header;
         if (pass.normal.has_value()) {
             join_ownership_state(next, pass.normal->state);
         }
@@ -469,7 +484,11 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
                 join_ownership_state(next, exit.state);
             }
         }
-        const auto converged = next == header;
+        synchronize_storage(next);
+        synchronize_storage(header);
+        const auto converged = next == header && revision == topology.revision;
+        append_ownership_exits(reached_exits, pass);
+        pass.exits.clear();
         header = std::move(next);
         if (converged) {
             break;
@@ -479,6 +498,9 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     if (diagnosing) {
         pass = (co_await iterate(header));
     }
+    append_ownership_exits(reached_exits, pass);
+    pass.exits = std::move(reached_exits.exits);
+    feedback_origin = previous_feedback;
     result.normal = OwnershipNormal {std::move(header), {}, {}};
     for (auto& exit : pass.exits) {
         if (std::holds_alternative<OwnershipBreak>(exit.payload)) {

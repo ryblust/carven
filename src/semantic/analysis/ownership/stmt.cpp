@@ -7,6 +7,7 @@ auto OwnershipBodyAnalyzer::complete_expression(
     const SemanticExpression& source,
     OwnershipState state
 ) noexcept -> ContinuationTask<OwnershipFlow> {
+    synchronize_storage(state);
     const auto previous = full_expression;
     const auto owns = full_expression != source.lifetime
         && body.lifetime_regions().region(source.lifetime).kind
@@ -30,6 +31,7 @@ auto OwnershipBodyAnalyzer::region(
     OwnershipState state,
     bool release
 ) noexcept -> ContinuationTask<OwnershipFlow> {
+    synchronize_storage(state);
     auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
     for (const auto& item : source.statements) {
         if (!result.normal.has_value()) {
@@ -58,6 +60,7 @@ auto OwnershipBodyAnalyzer::statement(
     const SemanticStatement& source,
     OwnershipState state
 ) noexcept -> ContinuationTask<OwnershipFlow> {
+    synchronize_storage(state);
     const auto previous_full_expression = full_expression;
     const auto owns =
         body.lifetime_regions().region(source.lifetime).kind == LifetimeRegionKind::FullExpression
@@ -149,7 +152,9 @@ auto OwnershipBodyAnalyzer::statement(
                 const auto previous = accesses.size();
                 for (const auto& target : targets) {
                     write_access(target, value.target.origin);
-                    if (!target.path.empty() || value.compound) {
+                    if (!target.path.empty()
+                        || value.compound
+                        || selected_access_kind(value.target) == OwnershipAccessKind::Structural) {
                         require_available(result.normal->state, target, value.target.origin);
                         accesses.push_back({target, selected_access_kind(value.target)});
                     }

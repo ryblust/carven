@@ -24,6 +24,13 @@ auto OwnershipBatchAnalyzer::contents(TypeID type) const noexcept -> TypeContent
     return program.type_contents(type);
 }
 
+auto OwnershipBatchAnalyzer::recursive_storage_site(
+    const OwnershipStorageSite& site,
+    BodyID target
+) const noexcept -> bool {
+    return !site.input && recursion_components.at(site.body) == recursion_components.at(target);
+}
+
 auto OwnershipBatchAnalyzer::body(BodyID id) const noexcept -> const SemIRBody& {
     return bodies.body(id);
 }
@@ -315,7 +322,7 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
         query.queued = false;
         active_query = index;
         ++evaluation_count;
-        auto result = OwnershipBodyAnalyzer(*this, query.input).run();
+        auto result = OwnershipBodyAnalyzer(*this, query.input, &query.topology).run();
         active_query.reset();
         if (!result.answer.has_value()) {
             // An invalid completion keeps priority over every deferred query.
@@ -338,6 +345,8 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
                 joined.push_back(completion);
             } else {
                 join_ownership_state(found->state, completion.state);
+                found->referents = completion.referents;
+                found->owns = completion.owns;
                 merge_relationships(found->value, completion.value);
             }
         }
@@ -377,9 +386,17 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
             );
         }
     }
+    auto nodes = 0uz;
+    auto edges = 0uz;
+    for (const auto& query : queries) {
+        nodes += query->topology.objects.size();
+        edges += query->topology.owns.size();
+    }
     return OwnershipAnalysisSummary {
         .query_count = queries.size(),
         .evaluation_count = evaluation_count,
+        .storage_node_count = nodes,
+        .storage_edge_count = edges,
     };
 }
 

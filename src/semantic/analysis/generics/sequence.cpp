@@ -20,6 +20,14 @@ auto ProgramDraft::validate_generic_sequence_elements() noexcept -> AnalysisResu
                 .build()
         );
     };
+    // Canonical identity does not own source attribution. Keep each checked use
+    // until all nominal fields are complete, then diagnose at that use.
+    for (const auto& [element, origin] : storage.sequence_elements) {
+        if (const auto reason = unsupported_sequence_element(*this, element)) {
+            reject(*reason, origin);
+            return std::unexpected(*failure);
+        }
+    }
     const auto visit = [&](this const auto& self,
                            GenericTypeID type,
                            bool element_storage,
