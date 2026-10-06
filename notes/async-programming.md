@@ -1,13 +1,8 @@
-# Async Programming: Control, Execution, and Lifetime
+# Coroutines, execution, and lifetime
 
-Async syntax makes sequential reasoning possible in a world where work may
-finish later. That is its great ergonomic success, but also the source of many
-bad mental models. An `await` looks like a function call even though it may
-split control flow, move execution elsewhere, and keep state alive after the
-current stack has unwound.
-
-The most useful way to reason about async code is to keep three questions
-separate:
+Async syntax expresses work that may finish later as sequential control flow.
+An `await` may suspend execution, move its continuation elsewhere, and retain
+state after the current stack has unwound. Three questions describe that behavior:
 
 | Question | What it asks |
 | --- | --- |
@@ -15,12 +10,10 @@ separate:
 | Execution | Which resource runs the work and its continuation? |
 | Lifetime | Who owns the running state, and when is it safe to destroy? |
 
-A coroutine answers part of the control question. It does not, by itself,
-answer the other two.
+A coroutine supplies suspension and resumption. Its surrounding protocol
+defines execution and lifetime.
 
 ## Async operation lifecycle
-
-It helps to begin with a deliberately plain lifecycle:
 
 ```text
 description or task value
@@ -51,9 +44,9 @@ separate answer about who still owns the running state.
 
 ## C++20 coroutine mechanisms
 
-C++20 supplies a language transformation for suspension and resumption. It
-does not supply a task type, event loop, scheduler, I/O system, cancellation
-model, or structured-concurrency policy.
+C++20 supplies a language transformation for suspension and resumption. Task
+types, event loops, schedulers, I/O, cancellation, and structured-concurrency
+policies are supplied by the surrounding program or library.
 
 A function containing `co_await`, `co_yield`, or `co_return` becomes a
 coroutine. Its return type and parameters select a `promise_type` through
@@ -71,16 +64,13 @@ let an owner destroy the coroutine state at a valid time
 ```
 
 The coroutine state, often called the frame, contains the promise, parameter
-copies, suspension state, and locals that survive a suspension point. An
-implementation may allocate additional storage for it; allocation elision is
-an optimization opportunity, not the source-level meaning. A reference copied
-into the frame is still only a reference and does not extend its referent's
-lifetime.
+copies, suspension state, and locals that survive a suspension point. Its storage
+may be allocated or elided according to the implementation and program. Reference
+parameters retain their referents' existing lifetime requirements.
 
 The promise controls the caller-facing object, initial and final suspension,
-`co_return`, exception handling, and optional `await_transform`. This is why
-the presence of `co_await` alone does not tell us whether a task is hot or cold
-or how its result is represented.
+`co_return`, exception handling, and optional `await_transform`. Its policies
+determine hot or cold start and result representation.
 
 The await protocol is compact:
 
@@ -89,13 +79,14 @@ await_ready()
   true  -> continue directly to await_resume()
   false -> mark the coroutine suspended
            call await_suspend(current_handle)
-           resume later
+           continue when resumed, possibly immediately
            continue through await_resume()
 ```
 
-`await_suspend` may return `void`, `bool`, or another coroutine handle. The
-handle form supports symmetric transfer: one coroutine can hand control
-directly to another without first returning through an external scheduler.
+`await_suspend` may return `void`, `bool`, or another coroutine handle. A `false`
+boolean result resumes the awaiting coroutine immediately. The handle form
+supports symmetric transfer: one coroutine can hand control directly to another
+without first returning through an external scheduler.
 
 An awaiter may publish the suspended handle to another thread. That thread can
 resume the coroutine before `await_suspend` has returned, so code that has
@@ -106,6 +97,39 @@ concurrent resumption of one coroutine can cause a data race.
 Finally, reaching `final_suspend` is not the same as destroying the frame.
 Destruction remains an ownership operation and must not race with a possible
 resume or external callback.
+
+## Semantic compilation and library protocols
+
+A semantic compiler can analyze source owners, lifetime exits, failure edges,
+suspension sites, and statically bounded children before choosing a target
+representation. A C++ library receives composition and lifetime intent through
+calls, types, and protocol contracts. Both approaches can specialize concrete
+result types and eliminate wrappers when the available facts permit it.
+
+The surrounding protocol still provides a caller-facing object, promise and
+awaiters, completion delivery, handle ownership, and the cancellation and
+execution support its contract requires. These responsibilities can use private
+concrete types, templates, or reusable library abstractions. Generated artifacts
+and workload measurements establish their costs.
+
+## Closing before destruction
+
+Async closure may need to suspend while children stop. It must run while every
+object those children can still reach remains alive. `co_return` exits the body,
+destroying its automatic objects before the final suspend point. An earlier
+nested scope can end a borrowed local's lifetime even sooner. A lowering must
+therefore arrange closure before each relevant lifetime exit, preserve backing
+storage elsewhere, or prove that no child can still access it.
+
+An ordinary destructor cannot be a coroutine, so it cannot supply a hidden
+asynchronous join. Final suspension can transfer control to a continuation, but
+its expression is required not to be potentially throwing. Cancellation and
+external callback revocation belong to the operation protocol.
+
+Native C++20 `co_await` cannot occur inside an exception handler. A bridge that
+catches exceptions and then needs asynchronous cleanup can first map the error
+to retained state and perform cleanup after leaving the handler. A source
+language's typed-failure branch need not become a native C++ exception handler.
 
 ## Suspension and persistent state
 
@@ -118,10 +142,8 @@ continuation or operation representation has to carry them.
 The same distinction applies to terminal completion. A synchronously completed
 child may transfer value, failure, or cancellation directly through control
 flow. If completion arrives after its parent suspends, the selected result and
-the state required to resume the parent must persist until observation. This
-does not prescribe a general task object, heap allocation, or one universal
-completion carrier; it identifies the lifetime that a selected backend must
-realize.
+the state required to resume the parent must persist until observation. Its
+representation can be specialized to the completion and lifetime contract.
 
 Kotlin's specified CPS transformation makes this boundary concrete: a
 suspendable function receives a continuation, and a suspendable lambda becomes
@@ -130,15 +152,12 @@ semantics similarly record an asynchronous exception in a faulted task until
 an `await` observes and rethrows it. Both cases turn sequential-looking source
 control into stored state only where temporal separation requires it.
 
-Failure transport raises the same question about which distinctions must
-survive for later observation.
-
 ## Logical tasks and threads
 
 A logical task is the causal path currently being advanced through an async
 operation tree, together with context such as cancellation, scheduling,
-allocation, tracing, or deadlines. It is not an OS thread, a single coroutine
-frame, or every child that the frame has spawned.
+allocation, tracing, or deadlines. Its identity can span coroutine frames and
+execution resources.
 
 One logical task can resume on several threads. One thread can advance many
 logical tasks. Thread-local state therefore does not automatically become
@@ -162,24 +181,19 @@ parent operation or async scope
 └── child C
 ```
 
-The parent cannot finish while a child can still access the parent's frame,
-locals, buffers, or other owned resources. Before the parent closes, each
-child must become terminal or its ownership must move to a longer-lived owner.
+Before reclaiming its frame, locals, buffers, or other resources, the parent
+establishes that every child has stopped accessing them. This may require an
+asynchronous join or synchronous revocation. Ownership transfer is another
+option when a longer-lived owner also retains every resource the child needs.
+Terminal completion suffices only when its protocol guarantees that access has
+ended.
 
-This resembles RAII, but async cleanup exposes an important mismatch: an
-ordinary C++ destructor cannot suspend to wait for a child. Async scopes often
-need an explicit asynchronous join, or a contract that makes destroying an
-active scope invalid. The invariant is more general than a particular
-`join()` call—the owner must establish quiescence before reclaiming state.
+Detached work belongs to a runtime, service, process, background scope, or
+self-owned state with defined shutdown, error observation, and resource limits.
 
-Detached work is not ownerless work. A runtime, service, process, background
-scope, or self-owned state still has to own it and define shutdown, error
-observation, and resource limits.
-
-Coroutines also make borrowed lifetime bugs easy to hide. A frame preserves
-objects stored in it, not the targets of `string_view`, `span`, raw pointers,
-iterators, references, or `this`. Capturing coroutine lambdas are especially
-subtle because captures belong to the closure object rather than being
+A frame retains its stored objects. The targets of `string_view`, `span`, raw
+pointers, iterators, references, and `this` need separate lifetime coverage.
+Coroutine lambda captures belong to the closure object rather than being
 automatically promoted into the coroutine frame. If the closure dies after
 the first suspension, later access can be a use-after-free.
 
@@ -211,14 +225,13 @@ mechanism.
 
 The sender/receiver vocabulary in `std::execution` makes three terminal
 channels explicit: `set_value`, `set_error`, and `set_stopped`. Other systems
-may use exceptions, error codes, `expected`, or a tagged result. The important
-property is not the spelling but a closed set of outcomes with clear ownership
-after each one.
+may use exceptions, error codes, `expected`, or a tagged result. Each protocol
+defines its completion channels and ownership after delivery.
 
 ## Composition semantics
 
-`when_all` is not merely “run these at once.” It defines start order, result
-shape, error arbitration, cancellation propagation, and lifetime closure. One
+`when_all` defines start order, result shape, error arbitration, cancellation
+propagation, and lifetime closure. One
 structured design starts every child, requests sibling stop after an error or
 stopped completion, and waits for every child to finish before completing the
 outer operation.
@@ -244,8 +257,8 @@ already complete is another policy decision.
 A timeout is the same shape with a timer as one candidate. The winner needs a
 linearization rule; the loser needs cancellation and drainage or an ownership
 transfer. A deadline can stop observation immediately without proving that the
-underlying work has stopped. Calling both behaviors “timeout” hides a material
-semantic difference.
+underlying work has stopped. A timeout contract specifies whether return waits
+for that work to close or transfers its ownership.
 
 ## Execution context
 
@@ -279,80 +292,62 @@ operation state
 set_value(...) | set_error(error) | set_stopped()
 ```
 
-The operation state must outlive completion. A sender advertises completion
-signatures; a receiver supplies completion operations and an environment. The
-environment is an open-ended place for schedulers, stop tokens, allocators,
+In the C++ execution protocol, the operation state must remain alive until the
+completion operation begins. The receiver may destroy it during completion, so
+the producer must finish accessing that state before invoking the completion
+handler. A sender advertises completion signatures; a receiver supplies
+completion operations and an environment. The environment is an open-ended place for schedulers, stop tokens, allocators,
 domains, and other contextual queries.
 
-This is a protocol, not a required runtime layout. It does not inherently need
-virtual dispatch, heap allocation, or one executor type, and a lazy sender
-graph can be specialized for a CPU pool, an I/O backend, or a GPU. Its cost is
-primarily conceptual and compile-time complexity: customization and deeply
-nested template types can become a language within the language.
+The protocol supports different runtime layouts. A lazy sender graph can be
+specialized for a CPU pool, an I/O backend, or a GPU. Customization and deeply
+nested template types introduce API and compilation complexity; allocation,
+dispatch, and runtime costs depend on the implementation and workload.
 
-Coroutines and senders are not exclusive alternatives. An adapter can make an
-operation protocol awaitable, while a coroutine-backed task can expose an
-operation protocol to non-coroutine consumers.
+An adapter can make an operation protocol awaitable, while a coroutine-backed
+task can expose an operation protocol to non-coroutine consumers.
 
 ## Implementations and libraries
 
-The sender/receiver model specified by P2300 is represented in the C++
-execution control library through schedulers, senders, receivers, operation
-states, environments, completion signatures, and the value, error, and stopped
-completion channels.
-
-[stdexec](https://github.com/NVIDIA/stdexec) is the main implementation specimen
-for that model and describes itself as a C++26 reference implementation of
-`std::execution`. It is important to distinguish three layers when studying it:
+stdexec describes itself as a C++26 reference implementation of `std::execution`.
+It contains three layers:
 
 - the standard `std::execution` model and operations;
 - the `stdexec` spelling used by the reference implementation;
 - non-standard `exec::` and `nvexec::` extensions for scopes, tasks, I/O,
   thread pools, and GPU execution.
 
-The extensions are valuable experiments, but their presence in stdexec does
-not make them standard facilities. The implementation is most useful for
-studying lazy composition, environment propagation, scheduler customization,
-operation-state ownership, cancellation, coroutine interoperation, and how a
-generic protocol specializes without requiring one runtime layout.
+Its extensions provide implementation examples for environment propagation,
+operation-state ownership, cancellation, coroutine adapters, and specialization.
 
 Other libraries provide useful contrasts:
 
 | Project | Useful subject of study |
 | --- | --- |
-| [async_simple](https://github.com/alibaba/async_simple) | Lazy coroutines, futures, executors, and cooperative cancellation |
-| [libcoro](https://github.com/jbaldwin/libcoro) | Coroutine tasks, I/O scheduling, task groups, and thread migration |
-| [Boost.Asio](https://www.boost.org/doc/libs/latest/doc/html/boost_asio/overview/composition/cpp20_coroutines.html) | Coroutine adapters over an established I/O and executor model |
-| [cppcoro](https://github.com/lewissbaker/cppcoro) | Coroutine-first tasks, shared tasks, async primitives, and cancellation tokens |
+| async_simple | Lazy coroutines, futures, executors, and cooperative cancellation |
+| libcoro | Coroutine tasks, I/O scheduling, task groups, and thread migration |
+| Boost.Asio | Coroutine adapters over an established I/O and executor model |
+| cppcoro | Coroutine-first tasks, shared tasks, async primitives, and cancellation tokens |
 
-Library vocabulary alone does not establish semantics. A useful comparison
-follows one operation through construction, start, completion, cancellation,
-and destruction, then asks who owns each transition and which execution context
-may perform it.
+Compare libraries by following one operation through construction, start,
+completion, cancellation, and destruction. Ask who owns each transition and
+which execution context may perform it.
 
-## Common misconceptions
+## References
 
-- `co_await` does not mean “switch to a background thread”; the awaiter decides
-  whether to suspend and who resumes the coroutine.
-- A coroutine frame does not extend the lifetime of objects reached through
-  references or views.
-- A successful stop request is not a stopped completion.
-- A `when_any` result does not prove that losing work disappeared.
-- A timeout does not necessarily stop the operation it stopped observing.
-- A single-threaded event loop still permits reentrant control flow.
-- Structured concurrency does not forbid spawning; it gives spawned work an
-  owner and a closure boundary.
-- Destroying a coroutine handle destroys a frame, not necessarily the external
-  operation that may still hold or use it.
+### C++ coroutine language rules
 
-## Sources
-
-The primary language and library references behind this article are:
-
+- C++20 draft N4861: [coroutine transformation](https://timsong-cpp.github.io/cppwp/n4861/dcl.fct.def.coroutine),
+  [await protocol and restrictions](https://timsong-cpp.github.io/cppwp/n4861/expr.await),
+  [coroutine return](https://timsong-cpp.github.io/cppwp/n4861/stmt.return.coroutine), and
+  [destructor restrictions](https://timsong-cpp.github.io/cppwp/n4861/class.dtor).
 - C++ working draft: [coroutine definitions](https://eel.is/c++draft/dcl.fct.def.coroutine),
   [`co_await`](https://eel.is/c++draft/expr.await),
-  [`coroutine_handle`](https://eel.is/c++draft/coroutine.handle.resumption),
-  [async operation requirements](https://eel.is/c++draft/exec.async.ops),
+  [`coroutine_handle`](https://eel.is/c++draft/coroutine.handle.resumption).
+
+### Completion, composition, and structured lifetime
+
+- C++ working draft: [async operation requirements](https://eel.is/c++draft/exec.async.ops),
   [`when_all`](https://eel.is/c++draft/exec.when.all),
   [schedulers](https://eel.is/c++draft/exec.sched), and
   [async scopes](https://eel.is/c++draft/exec.scope).
@@ -361,10 +356,22 @@ The primary language and library references behind this article are:
   [P3149R11](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3149r11.html),
   [P3552R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3552r3.html), and
   [P4007R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4007r3.pdf).
-- The [stdexec reference implementation](https://github.com/NVIDIA/stdexec)
-  and its distinction between standard-facing facilities and extensions.
-- [C++ Core Guidelines coroutine-lambda
-  guidance](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rcoro-capture).
-- Cross-language materialization references: the
-  [Kotlin coroutine specification](https://kotlinlang.org/spec/asynchronous-programming-with-coroutines.html)
+
+### Implementation examples
+
+- [stdexec reference implementation](https://github.com/NVIDIA/stdexec): standard-facing facilities and extensions.
+- [async_simple](https://github.com/alibaba/async_simple): lazy coroutines, futures, executors, and cancellation.
+- [libcoro](https://github.com/jbaldwin/libcoro): coroutine tasks, scheduling, and task groups.
+- [Boost.Asio coroutine adapters](https://www.boost.org/doc/libs/latest/doc/html/boost_asio/overview/composition/cpp20_coroutines.html).
+- [cppcoro](https://github.com/lewissbaker/cppcoro): tasks, async primitives, and cancellation tokens.
+
+### Borrowing and cross-language state
+
+- [C++ Core Guidelines coroutine-lambda guidance](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Rcoro-capture).
+- The [Kotlin coroutine specification](https://kotlinlang.org/spec/asynchronous-programming-with-coroutines.html)
   and [.NET async exception behavior](https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/).
+
+### Related reading
+
+- [Failure models](failure-models.md): completion state and failure transport.
+- [Compiler architecture](compiler-architecture.md): semantic knowledge and representation boundaries.

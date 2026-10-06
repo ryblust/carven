@@ -3,12 +3,13 @@ module carven:interpreter.execute;
 import :diagnostics.code;
 import :semantic.evaluation.execution;
 import :semantic.semir.program;
+import :support.function_ref;
 import std;
 
 struct InterpreterOptions final {
     ExecutionLimits limits;
-    std::function<void(const ExecutionTraceEvent&)> trace;
-    std::function<void(std::optional<TestID>, const ExecutionEvent&)> report;
+    FunctionRef<void(const ExecutionTraceEvent&) noexcept> trace;
+    FunctionRef<void(std::optional<TestID>, const ExecutionEvent&) noexcept> report;
 };
 
 // The published program and callback recipients outlive synchronous execution.
@@ -16,7 +17,7 @@ struct InterpreterOptions final {
 auto interpret(
     const SemIRProgram& program,
     FunctionID entry,
-    const ExecutionOutput& output,
+    ExecutionOutput output,
     const InterpreterOptions& options
 ) noexcept -> std::expected<void, ExecutionHalt>;
 
@@ -35,6 +36,6 @@ struct InterpreterTestResult final {
 // A trap or fatal assertion ends the returned prefix with an aborted completion.
 auto interpret_tests(
     const SemIRProgram& program,
-    const ExecutionOutput& output,
+    ExecutionOutput output,
     const InterpreterOptions& options
 ) noexcept -> std::expected<std::vector<InterpreterTestResult>, ExecutionHalt>;

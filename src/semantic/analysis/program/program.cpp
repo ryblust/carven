@@ -20,7 +20,7 @@ auto ProgramDraft::begin(
     ExecutionOutput output,
     SourceAnalysisBuilder* source_analysis
 ) noexcept -> ProgramDraft {
-    return ProgramDraft(std::move(syntax).decompose(), sink, std::move(output), source_analysis);
+    return ProgramDraft(std::move(syntax).decompose(), sink, output, source_analysis);
 }
 
 ProgramDraft::ProgramDraft(
@@ -32,7 +32,7 @@ ProgramDraft::ProgramDraft(
     : program_identity(ProgramIdentity::fresh()),
       provenance_appender(std::move(parts.provenance)),
       analysis_diagnostics(sink),
-      output(std::move(output)),
+      output(output),
       source_observer(source_analysis),
       state(State::Declarations),
       storage(

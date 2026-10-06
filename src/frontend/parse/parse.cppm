@@ -12,7 +12,7 @@ import std;
 auto parse(
     const SourceManager& sources,
     const TokenBuffer& tokens,
-    const TimingOutput& timings = {}
+    TimingOutput timings = {}
 ) noexcept -> std::expected<SyntaxTree, Diagnostics>;
 
 // Retains complete top-level items around recoverable syntax errors. A null
@@ -21,5 +21,5 @@ auto parse(
 auto parse_recovering(
     const SourceManager& sources,
     const TokenBuffer& tokens,
-    const TimingOutput& timings = {}
+    TimingOutput timings = {}
 ) noexcept -> Diagnosed<std::optional<SyntaxTree>>;

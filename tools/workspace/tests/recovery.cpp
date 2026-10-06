@@ -241,7 +241,7 @@ const TestSuite tests([] static noexcept {
             expect(semantic.result->program() == nullptr);
             expect_diagnostic(semantic.result->diagnostics(), DiagnosticCode::Syntax);
             const auto hover =
-                after.hover(project, "a.cv", static_cast<std::uint32_t>(second_text.find("1")));
+                after.hover(project, "a.cv", static_cast<std::uint32_t>(second_text.find('1')));
             const auto definition = after.definition(
                 project,
                 "a.cv",

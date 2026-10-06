@@ -4,6 +4,7 @@ import :artifacts;
 import :backend.generation.plan;
 import :backend.generation.plan.references;
 import :backend.generation.request;
+import :backend.target.header;
 import :semantic.visibility;
 import :support.graph;
 import :support.invariant;
@@ -534,10 +535,10 @@ auto plan_artifacts(
         if (!schedules[module_id.index()]->emitted_tests.empty()) {
             test_runner_modules.push_back(module_id);
         }
-        auto interface_dependencies = std::vector<TargetArtifactID>();
+        auto associated_interface = std::optional<TargetArtifactID>();
         if (module_component[module_id.index()].has_value()) {
             const auto component = *module_component[module_id.index()];
-            interface_dependencies.push_back(*component_artifacts[component]);
+            associated_interface = *component_artifacts[component];
         }
         const auto& declaration = declarations.module_decl(module_id);
         const auto& path = provenance.module_record(declaration.provenance_module).path;
@@ -545,7 +546,7 @@ auto plan_artifacts(
             TargetModuleImplementationArtifact {
                 .logical_path = module_implementation_logical_path(path.components()),
                 .schedule = std::move(*schedules[module_id.index()]),
-                .interface_dependencies = std::move(interface_dependencies),
+                .associated_interface = associated_interface,
             }
         ));
     }
@@ -569,21 +570,20 @@ auto plan_artifacts(
     return std::move(artifacts).seal();
 }
 
-auto materialize_directives(
+auto artifact_directive_inputs(
     const TargetPlan& plan,
     TargetArtifactID artifact_id,
     std::span<const TargetArtifactID> lowering_dependencies
 ) noexcept -> TargetDirectiveInputs {
     const auto& artifact = plan.artifact(artifact_id);
-    auto result = TargetDirectiveInputs();
-    if (artifact_source_mapping(artifact) == ArtifactSourceMappingPolicy::StableInterface) {
-        result.prefix_groups.push_back({
-            .directives = {TargetDirective {.bytes = "#pragma once"}},
-            .attribution = TargetCompilerOwnedAttribution {
-                .reason = TargetCompilerReason::ArtifactScaffolding,
-            },
-        });
-    }
+    const auto role = artifact_role(artifact);
+    auto result = TargetDirectiveInputs {
+        .pragma_once = role == GeneratedArtifactRole::Interface
+            || role == GeneratedArtifactRole::CppAPIHeader
+            || role == GeneratedArtifactRole::TestRunnerHeader,
+        .requirements = {},
+        .native_headers = {},
+    };
     auto dependencies = std::flat_set<TargetArtifactID>();
     for (const auto dependency : artifact_dependencies(artifact)) {
         dependencies.insert(dependency);
@@ -595,15 +595,16 @@ auto materialize_directives(
         static_cast<void>(plan.artifact(dependency));
         dependencies.insert(dependency);
     }
+    const auto associated = artifact_associated_header(artifact);
     for (const auto dependency : dependencies) {
-        result.suffix_groups.push_back({
-            .directives = {TargetDirective {
-                .bytes =
-                    std::format("#include <{}>", artifact_logical_path(plan.artifact(dependency))),
-            }},
-            .attribution = TargetCompilerOwnedAttribution {
-                .reason = TargetCompilerReason::ArtifactScaffolding,
-            },
+        result.requirements.push_back({
+            .header =
+                {
+                    .delimiter = TargetHeaderDelimiter::AngleBrackets,
+                    .path = std::string(artifact_logical_path(plan.artifact(dependency))),
+                },
+            .group = associated == dependency ? TargetHeaderGroup::Associated
+                                              : TargetHeaderGroup::Generated,
         });
     }
     return result;

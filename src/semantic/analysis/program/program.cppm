@@ -43,6 +43,8 @@ struct PendingFunctionContract final {
 
 class ProgramDraft final : public ExecutionValueAccess {
 public:
+    // The output callable and source observer are borrowed until the draft is
+    // destroyed or consumed.
     static auto begin(
         SyntaxProgram&& syntax,
         DiagnosticSink& sink,

@@ -19,10 +19,10 @@ its Unicode scalar number. The UTF library provides checked integer-to-char
 conversion.
 
 `str` is an immutable, copyable, value-passed UTF-8 view represented by a pointer
-and byte length. Length defines its contents, including internal NUL bytes;
-the view does not promise a trailing NUL. It has no owning
-storage, `&str` type, or source lifetime syntax. Its backing can be static
-literal storage, a checked borrow of a `String`, or externally supplied storage. Copying a view preserves its known backing relationship.
+and byte length. Length defines its contents, including internal NUL bytes; the view
+does not promise a trailing NUL. It has no owning storage, `&str` type, or source
+lifetime syntax. Its backing can be static literal storage, a checked borrow of a `String`,
+or externally supplied storage. Copying a view preserves its known backing relationship.
 
 Decoded string and character literal values are not Unicode-normalized.
 
@@ -35,8 +35,8 @@ Both `str` and `String` provide:
 
 `bytes` and `chars` are computed projections, not general properties.
 The `chars` view type cannot be spelled and supports only Read range iteration
-and inferred value bindings. Byte views support all slice operations. User structures may declare same-named fields because member
-resolution depends on the receiver type.
+and inferred value bindings. Byte views support all slice operations. User structures may
+declare same-named fields because member resolution depends on the receiver type.
 
 
 ## String literals and multiline layout

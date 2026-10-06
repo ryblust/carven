@@ -17,9 +17,9 @@ import std;
 
 auto analyze(
     SyntaxProgram syntax,
-    const ExecutionOutput& output,
-    const TimingOutput& timings,
-    const SourceAnalysisOutput& source_output
+    ExecutionOutput output,
+    TimingOutput timings,
+    SourceAnalysisOutput source_output
 ) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
     const auto scope = TimingScope(timings, TimingStage::SemanticAnalysis);
     auto observations = std::optional<SourceAnalysisBuilder>();

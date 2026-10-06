@@ -86,7 +86,7 @@ public:
     template<typename... Messages>
     auto note(const Messages&... messages) noexcept -> TestAssertion& {
         if (!passed) {
-            test_failure_output() << "\n  note:";
+            std::print(test_failure_output(), "\n  note:");
             (write_note(messages), ...);
         }
         return *this;
@@ -95,12 +95,28 @@ public:
 private:
     template<typename Message>
     static auto write_note(const Message& message) noexcept -> void {
-        test_failure_output() << ' ';
+        std::print(test_failure_output(), " ");
         if constexpr (std::invocable<const Message&>) {
             static_assert(std::is_nothrow_invocable_v<const Message&>);
-            test_failure_output() << std::invoke(message);
+            write_note_value(std::invoke(message));
         } else {
-            test_failure_output() << message;
+            write_note_value(message);
+        }
+    }
+
+    template<typename Value>
+    static auto write_note_value(const Value& value) noexcept -> void {
+        if constexpr (std::same_as<Value, bool>) {
+            std::print(test_failure_output(), "{}", static_cast<int>(value));
+        } else if constexpr (std::same_as<Value, signed char>
+                             || std::same_as<Value, unsigned char>) {
+            std::print(test_failure_output(), "{}", static_cast<char>(value));
+        } else if constexpr (std::formattable<Value, char>) {
+            std::print(test_failure_output(), "{}", value);
+        } else {
+            auto text = std::ostringstream();
+            text << value;
+            std::print(test_failure_output(), "{}", std::move(text).str());
         }
     }
 
@@ -144,19 +160,23 @@ template<typename Value>
 auto write_test_value(std::ostream& output, const Value& value) noexcept -> void {
     if constexpr (is_test_text<Value>) {
         const auto text = test_text_view(value);
-        output << (text ? quote_text(*text) : "<null>");
+        std::print(output, "{}", text ? quote_text(*text) : "<null>");
     } else if constexpr (std::integral<Value>
                          && !std::same_as<Value, bool>
                          && !std::same_as<Value, char>) {
-        output << +value;
+        std::print(output, "{}", +value);
     } else if constexpr (std::is_enum_v<Value> && std::formattable<Value, char>) {
-        output << std::format("{}", value);
+        std::print(output, "{}", value);
     } else if constexpr (std::is_enum_v<Value>) {
-        output << +std::to_underlying(value);
-    } else if constexpr (requires { output << value; }) {
-        output << value;
+        std::print(output, "{}", +std::to_underlying(value));
+    } else if constexpr (std::same_as<Value, bool>) {
+        std::print(output, "{}", static_cast<int>(value));
     } else if constexpr (std::formattable<Value, char>) {
-        output << std::format("{}", value);
+        std::print(output, "{}", value);
+    } else if constexpr (requires { output << value; }) {
+        auto text = std::ostringstream();
+        text << value;
+        std::print(output, "{}", std::move(text).str());
     } else {
         static_assert(sizeof(Value) == 0, "assertion value has no printable representation");
     }
@@ -193,12 +213,12 @@ auto compare_test_values(
                 return;
             }
         }
-        output << "\n  actual:   ";
+        std::print(output, "\n  actual:   ");
         write_test_value(output, actual);
-        output << "\n  expected: ";
+        std::print(output, "\n  expected: ");
         write_test_value(output, expected);
         if (relation != "==") {
-            output << "\n  relation: actual " << relation << " expected";
+            std::print(output, "\n  relation: actual {} expected", relation);
         }
     });
 }
@@ -292,14 +312,19 @@ auto expect_range_equal(
     const auto passed =
         actual_it == std::ranges::end(actual) && expected_it == std::ranges::end(expected);
     return TestAssertion(passed, false, location, [&](std::ostream& output) noexcept {
-        output << "\n  lengths: actual " << actual_size << ", expected " << expected_size
-               << "\n  first difference at index " << index;
+        std::print(
+            output,
+            "\n  lengths: actual {}, expected {}\n  first difference at index {}",
+            actual_size,
+            expected_size,
+            index
+        );
         if (actual_it != std::ranges::end(actual)) {
-            output << "\n  actual element:   ";
+            std::print(output, "\n  actual element:   ");
             write_test_value(output, *actual_it);
         }
         if (expected_it != std::ranges::end(expected)) {
-            output << "\n  expected element: ";
+            std::print(output, "\n  expected element: ");
             write_test_value(output, *expected_it);
         }
     });

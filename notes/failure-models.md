@@ -1,13 +1,8 @@
 # Failure Models: Effects, Control, and Runtime Representation
 
-Failure handling often collapses several different questions into one word:
-what callers must know, which exits a body can take, how handlers receive
-control, and how a target ABI transports a value. Keeping those questions
-separate is the key to understanding both language designs and their
-implementations.
-
-This article supplies a comparative compiler model and research questions. It
-does not select a failure model for any particular language or compiler.
+Failure handling connects caller obligations, body exits, handler control, and
+ABI transport. These layers describe different parts of a language contract
+and its implementation.
 
 ## Four distinct layers
 
@@ -18,9 +13,9 @@ does not select a failure model for any particular language or compiler.
 | Flow analysis | Which normal and failure paths affect ownership, availability, or reachability? |
 | Runtime transport | Which result or payload must cross a callable, suspension, or interop boundary? |
 
-A source construct may affect the first two layers and disappear before the
-last. Conversely, a runtime result can remain unknown without requiring a
-source-shaped object: a direct operation or control edge may be sufficient.
+A source construct may establish a semantic fact and then disappear. Dynamic
+evaluation can remain a direct operation or control edge, with stored state
+introduced where a later consumer needs it.
 
 This gives three broad language models.
 
@@ -36,15 +31,13 @@ This gives three broad language models.
   function type may retain little or no static information about that channel.
 
 These models can offer similar surface conveniences while giving a compiler
-very different knowledge and realization freedom.
+different information and representation choices.
 
 ## Runtime materialization boundaries
 
-An action that depends on runtime input belongs in generated runtime behavior.
-It does not follow that the compiler needs a persistent CFG or that the program
-needs a source-shaped object representing the action. Structured control can
-go directly to a handler, while a callable boundary can use one compact
-carrier.
+Structured control can deliver a failure directly to a known handler. A
+callable boundary can instead transport its result through a compact carrier.
+Both forms preserve behavior that depends on runtime input.
 
 Runtime materialization becomes necessary when execution must preserve
 something for later use. Common reasons include:
@@ -63,15 +56,13 @@ types may need a tag while none needs payload storage. Constructing a discarded
 payload may still require evaluating its effectful inputs even when no aggregate
 failure object remains.
 
-Physical memory is not the criterion. A materialized value may be passed in a
-register, while a direct operation may write memory. The criterion is
-whether runtime execution must continue to carry the semantic distinction.
+Materialization concerns a distinction carried through execution. A materialized
+value may be passed in a register, while a direct operation may write memory.
 
-Nor is every generated C++ boundary authoritative. A published ABI or opaque
-interop call is a real constraint. A private helper can potentially be
-specialized, and an IIFE introduced only to spell a C++ value expression is a
-lowering device. Such a device cannot, by itself, justify a source-shaped
-carrier.
+Published ABIs and opaque interoperation calls constrain transport. Private
+helpers can be specialized; an IIFE used to spell a C++ value expression is an
+internal lowering choice. Such private boundaries leave room to preserve a
+control effect without constructing a general result object.
 
 ## Swift: an error result with control successors
 
@@ -93,9 +84,8 @@ retains freedom to choose conventions for internal calls. Typed and existential
 throws may use different ABI forms because precise type knowledge changes the
 available representation.
 
-The important lesson is not Swift's particular register. It is that the IR
-retains an error exit and payload without first requiring one general
-success-or-failure object.
+SIL retains the error exit and payload until the target calling convention
+selects their transport.
 
 ## Rust: recoverable failure as an ordinary value
 
@@ -103,8 +93,7 @@ Rust represents recoverable failure with the ordinary enum `Result<T, E>`.
 The `?` operator uses Rust's `Try` protocol to produce the success output or
 perform an early return after an allowed conversion. MIR is a control-flow
 graph, and matching an enum generally becomes a discriminant test and successor
-blocks. This is Rust's source-value model, not a compiler-stage requirement for
-every language.
+blocks.
 
 Optimization can scalarize a `Result`, eliminate a discriminant, inline a
 callee, or forward a return value unchanged. Nevertheless, success-or-failure
@@ -112,10 +101,6 @@ is already a first-class source value. A program can store several results,
 put them in a container, pass them without inspecting them, or match them much
 later. The compiler must preserve those value semantics whenever they remain
 observable.
-
-Rust is therefore a useful model for a compact boundary carrier and visible
-early propagation, but not evidence that every typed failure effect should be
-defined as a carrier value.
 
 Rust also separates recoverable `Result` failure from panic. Panic has its own
 abort or unwind behavior and is not encoded in the `Result<T, E>` contract.
@@ -136,11 +121,10 @@ languages such as Java; it does not turn Kotlin exceptions into a closed
 effect set. Kotlin's `Result<T>` is a separate library value that can contain
 an arbitrary `Throwable`.
 
-These systems can make the normal path independent of an explicit result tag,
-but they gain that property through a managed runtime, exception objects,
-unwind metadata, and an open dynamic channel. Without a static closed set, the
-compiler has less authority to prove exhaustive handling or erase individual
-failure alternatives.
+These systems can make the normal path independent of an explicit result tag
+through exception objects, platform-specific handler machinery, and an open
+dynamic channel. Without a static closed set, the compiler has less authority
+to prove exhaustive handling or erase individual failure alternatives.
 
 Their async behavior exposes a useful boundary. A synchronous exception can
 travel through the active call stack. Once asynchronous work outlives that
@@ -156,10 +140,9 @@ Zig has error-set types, error unions, set merging, inferred error sets,
 failure effect: the compiler knows which error names belong to a set, and a
 subset can coerce to a superset.
 
-Zig errors are lightweight named error codes rather than arbitrary
-per-alternative payload values. That permits a compact representation but does
-not directly answer how a source language should transport nominal failures
-with different sizes, alignments, ownership, and destruction behavior.
+Zig errors are lightweight named codes with a compact representation. Nominal
+failures with per-alternative payloads, sizes, alignments, ownership, and
+destruction need additional transport rules.
 
 Error-set inference also interacts with genericity and recursion policy. A
 compiler that solves recursive failure sets as a least fixed point has a
@@ -174,16 +157,14 @@ return channel. P3166 later explores static exception specifications that
 retain complete sets of possible exception types and leave room for register
 or stack transport.
 
-These proposals are valuable evidence that exception-like source control need
-not imply today's C++ exception ABI. They are still C++ proposals with C++
-compatibility constraints. They motivate source-to-C++ design questions but do
-not define another language's semantics or require it to mirror a proposed C++
-spelling.
+These are research proposals shaped by C++ compatibility requirements. They
+explore alternate transport for exception-like source control; their contracts
+remain separate from the existing C++ dynamic exception ABI.
 
 ## Realization choices for a source-to-C++ compiler
 
-A closed failure set gives a compiler more information than an open exception
-channel, but it does not select one C++ mechanism. Common choices include:
+A closed failure set supplies exact alternatives for control and transport
+planning. Several C++ mechanisms can implement that knowledge:
 
 | Choice | Natural fit | Main cost |
 | --- | --- | --- |
@@ -200,8 +181,8 @@ selected transport.
 
 The implementation should preserve exact failure identity until every
 consumer that needs it has made its decision. Path-sensitive analysis may use a
-temporary graph, while generated control may remain structured. Neither choice
-requires the analysis graph or a source-shaped failure object to persist.
+temporary graph and publish the required facts into structured generated
+control. The analysis graph can then be released.
 
 ## Failure across async boundaries
 
@@ -211,12 +192,10 @@ does not need to enter a frame. State whose value, ownership, or destruction is
 needed after resumption must survive somewhere. The same applies to a failure
 or cancellation completion delivered after the awaiting operation suspended.
 
-This does not mean every high-level async construct requires a general task
-object, heap allocation, or one universal outcome carrier. A synchronously
-completed operation may continue through direct control. A fixed composition
-may use a specialized frame. A genuinely suspended operation needs enough
-persistent state to resume correctly, but the source contract need not expose
-that representation.
+Synchronous completion may continue through direct control. Fixed composition
+can use specialized state. A suspended operation retains the completion and
+continuation state needed to resume correctly; allocation and carrier layout
+depend on the implementation.
 
 A source language may define typed failure and cancellation as different
 semantic channels even if a selected backend stores both in one completion
@@ -237,7 +216,7 @@ state. Backend co-location does not decide source identity.
 - How do move-only or managed failure values change transport and lifetime
   planning?
 
-## Sources
+## References
 
 - Swift: [SE-0413 Typed Throws](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md),
   [SIL instruction reference](https://github.com/swiftlang/swift/blob/main/docs/SIL/Instructions.md),
@@ -257,3 +236,8 @@ state. Backend co-location does not decide source identity.
   [error sets and error unions](https://ziglang.org/documentation/master/#Errors).
 - WG21: [P0709R4 Zero-overhead deterministic exceptions](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p0709r4.pdf)
   and [P3166R0 Static exception specifications](https://www9.open-std.org/JTC1/SC22/WG21/docs/papers/2024/p3166r0.html).
+
+### Related reading
+
+- [Compiler architecture](compiler-architecture.md): authority and lifetime across compiler stages.
+- [Coroutines, execution, and lifetime](async-programming.md): suspension, cancellation, and operation ownership.

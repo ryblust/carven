@@ -246,11 +246,8 @@ auto validate_inputs(
 
 } // namespace
 
-auto parse_program(
-    const SourceManager& sources,
-    SourceBatch batch,
-    const TimingOutput& timings
-) noexcept -> std::expected<SyntaxProgram, Diagnostics> {
+auto parse_program(const SourceManager& sources, SourceBatch batch, TimingOutput timings) noexcept
+    -> std::expected<SyntaxProgram, Diagnostics> {
     const auto inputs = batch.modules;
     auto input_diagnostics = validate_inputs(sources, inputs);
     if (!input_diagnostics.empty()) {

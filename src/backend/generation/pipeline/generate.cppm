@@ -11,5 +11,5 @@ auto generate_artifacts(
     SemIRProgram semantic,
     const TargetPlanningRequest& request,
     std::optional<std::span<const CanonicalModulePath>> selected_modules = std::nullopt,
-    const TimingOutput& timings = {}
+    TimingOutput timings = {}
 ) noexcept -> GeneratedArtifactSet;

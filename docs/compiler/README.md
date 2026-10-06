@@ -63,12 +63,10 @@ SourceBatch → SyntaxProgram → ProgramDraft → SemIRProgram
 provides node storage and read-only views. `frontend.ast.topology` supplies
 structural traversal for syntax construction and validation.
 
-`parse_recovering` exposes complete top-level syntax items retained after parser
-recovery, together with error diagnostics. Delimiter preflight and initial import
-failures provide no tree. The `parse` entry remains strict and rejects these
-recovered results when diagnostics are present; recovery does not admit incomplete
-source into compilation. Workspace queries can consume retained declarations while
-keeping the source and tree owners alive.
+`parse_recovering` returns complete top-level items retained after parser recovery
+with their diagnostics. Delimiter preflight and initial import failures provide no
+tree. `parse` requires a tree and no diagnostics. Source queries retain the source
+and tree owners while reading recovered declarations.
 
 `parse_program` parses the closed source batch and resolves module imports.
 `analyze` constructs declarations and typed structured bodies, solves types and
@@ -76,17 +74,17 @@ failure sets, validates contracts, checks ownership and callable loans, and
 publishes an immutable semantic program. Errors prevent delivery; warnings accompany
 a successful result.
 
-`semantic.analysis.source` defines `SourceOccurrence` and its optional synchronous
-recipient, `SourceAnalysisOutput`. Analysis records source occurrences at identity
-resolution sites. Declaration and nominal gates control delivery of declaration
-names; each successfully constructed body contributes its own observations.
-Type occurrences use direct AST token spans rather than enclosing expression
-ranges. Locations and definitions can survive an unrelated body error. After successful
-publication, types use `TypeID` values owned by the same semantic program. Failed
-analysis retains only known `BuiltinType` values. Observation records contain no
-draft identities or borrows, and do not establish solved failure or ownership
-contracts. An empty recipient performs no recording. The analysis entry delivers
-one observation batch at completion; publication gates remain unchanged.
+`semantic.analysis.source` defines `SourceOccurrence` and the optional recipient
+`SourceAnalysisOutput`, a `FunctionRef` borrowed for the analysis call. An empty
+recipient skips recording. Analysis records source occurrences at identity
+resolution sites, using direct AST token spans. Declaration and nominal gates
+admit declaration observations; each successfully constructed body contributes its
+own observations. Locations and definitions survive an unrelated body error.
+Successful publication supplies `TypeID` values owned by the delivered program;
+failed analysis retains only known `BuiltinType` values. Analysis delivers one
+batch before returning. The recipient copies retained records from the borrowed
+span and retains the program owner for type queries. Records contain no draft
+identities; source observations do not establish program validity.
 
 `tools/workspace` owns document revisions, retained snapshots, lazy source queries,
 and content caching. Its provider analyzes an explicit closed module set in full
@@ -151,6 +149,12 @@ target syntax types. Backend preparation consumes published constants and operat
 facts.
 
 ## Ownership and identity
+
+`FunctionRef<R(Args...) noexcept>` copies function pointers and borrows lvalue
+callable objects. Borrowed objects must outlive all invocations, including those
+made after coroutine suspension. Empty views represent optional recipients;
+invoking an empty view violates an internal invariant. Exceptions escaping a
+callback terminate at the invocation boundary.
 
 `SyntaxProgram` owns source provenance, syntax trees, and resolved imports.
 `ProgramDraft` consumes it and owns mutable declarations, canonical interning,

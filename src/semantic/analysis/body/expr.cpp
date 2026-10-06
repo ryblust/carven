@@ -164,6 +164,9 @@ auto BodyElaborator::lambda_expression(
     auto signature_failures = actual_failures;
     auto failure_policy = FailureContractPolicy::Inferred;
     if (source.throw_clause.has_value()) {
+        const auto resolve_extent = [&](ASTExprID extent) noexcept {
+            return resolve_array_extent(extent);
+        };
         auto members = (co_await resolve_failure_types(
             draft(),
             catalog(),
@@ -171,7 +174,7 @@ auto BodyElaborator::lambda_expression(
             source_module_id,
             ast,
             *source.throw_clause,
-            [&](ASTExprID extent) noexcept { return resolve_array_extent(extent); }
+            resolve_extent
         ));
         if (!members.has_value()) {
             co_return std::unexpected(members.error());

@@ -15,7 +15,7 @@ import std;
 
 namespace {
 
-auto analyze_observed(std::string text, const SourceAnalysisOutput& observation) noexcept
+auto analyze_observed(std::string text, SourceAnalysisOutput observation) noexcept
     -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
     auto sources = SourceManager();
     const auto source = sources.append_virtual("observed.cv", std::move(text));
@@ -33,12 +33,13 @@ const TestSuite tests([] static noexcept {
             auto calls = 0uz;
             auto retained = std::vector<SourceOccurrence>();
             const auto moved = [&]() noexcept {
+                const auto collect = [&](std::span<const SourceOccurrence> occurrences) noexcept {
+                    ++calls;
+                    retained.assign(occurrences.begin(), occurrences.end());
+                };
                 auto result = analyze_observed(
                     "fn f(value: i32) -> i32 { let local = value; return local; }",
-                    [&](std::span<const SourceOccurrence> occurrences) noexcept {
-                        ++calls;
-                        retained.assign(occurrences.begin(), occurrences.end());
-                    }
+                    collect
                 );
                 require(result.has_value());
                 expect_equal(calls, 1uz);
@@ -106,13 +107,11 @@ const TestSuite tests([] static noexcept {
         each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
             auto calls = 0uz;
             auto retained = std::vector<SourceOccurrence>();
-            const auto result = analyze_observed(
-                std::string(scenario.source),
-                [&](std::span<const SourceOccurrence> occurrences) noexcept {
-                    ++calls;
-                    retained.assign(occurrences.begin(), occurrences.end());
-                }
-            );
+            const auto collect = [&](std::span<const SourceOccurrence> occurrences) noexcept {
+                ++calls;
+                retained.assign(occurrences.begin(), occurrences.end());
+            };
+            const auto result = analyze_observed(std::string(scenario.source), collect);
             require(!result.has_value());
             expect_diagnostic(result.error(), scenario.diagnostic);
             expect_equal(calls, scenario.calls);

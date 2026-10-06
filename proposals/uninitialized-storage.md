@@ -16,6 +16,9 @@ adapters could manage progress and cleanup. Names such as `Uninit<T>`, `construc
 and `assume_init` are conceptual. The public surface and checking rules remain open.
 Evaluate candidates with concrete synchronous native adapters.
 
+An implementation experiment selects a complete adapter and any consumers
+needed to establish its shared interface.
+
 The intended result is direct construction in final storage, preserving evaluation
 and destruction while avoiding redundant initialization, temporaries, and state.
 Runtime progress remains explicit when the operation needs it, such as a count of
@@ -39,6 +42,11 @@ lifetime checks.
 The backend already constructs results in final storage and uses `DeferredResult`
 for delayed construction and cleanup. A source-level raw-storage API remains open.
 Generated C++ has a C++20 baseline.
+
+An immovable native component completed in separate operand storage across a
+failure barrier cannot then be transferred into the final aggregate. Existing
+operand storage does not model partial-object initialization and cleanup. This
+boundary is a concrete use case for explicit construction destinations.
 
 ## Candidate contracts
 
@@ -81,14 +89,15 @@ invalidation by writes, callbacks, escaping aliases, or owner movement, and the
 facts retained at control-flow joins. Examples must identify checked facts and
 caller assertions.
 
-Evaluate the surface against three consumers:
+Candidate consumers include:
 
 - **Byte output:** One bounded native call writes a reported prefix. Define count
   bounds, how they are checked or asserted, and which prefix is initialized and
   readable after success, short writes, or failure. Specify how movement, reuse,
   release, retention, and reentry affect addresses and views.
 - **Object output:** A provider constructs a concrete non-default-constructible
-  object in aligned storage. Success exposes it; failure defines cleanup.
+  or immovable object in aligned final storage. Success exposes it; failure
+  defines cleanup.
 - **Fallible sequence construction:** A builder constructs elements in order,
   cleans completed elements on failure, and hands off the completed sequence
   without constructing it again.
@@ -103,20 +112,16 @@ recovery occurs before a `noexcept` boundary.
 The chosen source contract determines the semantic facts and checks needed by
 analysis, publication, and realization. Shared native lifetime mechanisms belong
 to runtime support; buffer policy and container algorithms belong to their craft.
+Each selected use must account for empty, partial, live, and consumed states,
+completion evidence, and cleanup ownership on every supported exit. A direct
+delivery experiment preserves operand evaluation and destruction order, including
+temporary backing and failure before later operands.
 
-## Related work
-
-The selected storage surface determines its prerequisites; generic classes remain
-unimplemented. Concrete native adapters can use the existing explicit C++ boundary.
-Evaluate storage candidates for both runtime and constant execution, including
-operation admission and retained-result eligibility.
-
-Suspending operations need a lifetime-closure contract before reusing their storage;
-cross-thread use requires synchronization and visibility guarantees. Erased holders
-need defined ownership before consuming construction primitives. Text output
-requires UTF-8 validity and a failure policy in addition to initialized byte extents.
-Multi-field consuming decomposition starts from an initialized owner and needs
-its own transfer and cleanup contract.
+Concrete native adapters can use the existing explicit C++ boundary. The selected
+storage surface determines any generic prerequisites; generic classes remain
+unimplemented. Runtime and constant execution need their respective operation
+admission and retained-result rules. Text output also needs UTF-8 validity and a
+failure policy beyond initialized byte extents.
 
 ## Open decisions
 
@@ -125,18 +130,22 @@ its own transfer and cleanup contract.
 - **Status:** Active
 - **Question:** Builtin storage, semantic operations wrapped by a craft, or concrete native adapters first?
 - **Required decision:** Empty/live/consumed states, cleanup ownership, Copy and Take, address stability, and native type capabilities.
-- **Evidence:** Accepted and rejected byte-output and object-output examples, including final-location construction of an immovable object. State the selected surface's generic prerequisites.
+- **Evidence:** Accepted and rejected examples for the selected consumer,
+  including final-location construction of an immovable object for object output.
+  State generic prerequisites and any additional consumers needed to establish
+  the shared interface.
 
 ### OPEN-02 — Define construction handoff and completion evidence
 
-- **Status:** Blocked by `OPEN-01`
+- **Status:** Blocked by OPEN-01
 - **Question:** Scoped destinations, raw-address adapters with assertions, or separate modeled and native operations?
 - **Required decision:** Aliasing, retention, reentry, movement, partial failure, stale handles, and returned-view backing. Select runtime state only where the protocol needs it.
-- **Evidence:** The three consumer contracts have implementable source operations and C++20 realizations.
+- **Evidence:** The selected consumer contract has implementable source operations
+  and a C++20 realization, including its failure and cleanup paths.
 
 ### OPEN-03 — Express unchecked obligations
 
-- **Status:** Blocked by `OPEN-02`
+- **Status:** Blocked by OPEN-02
 - **Question:** Explicitly named operations or a declaration/call-site marker?
 - **Required decision:** Distinguish checked facts from provider and caller obligations while retaining existing access and lifetime checks.
 - **Evidence:** An adapter can expose an ordinary result without requiring callers to repeat its internal assertions.
@@ -145,7 +154,8 @@ its own transfer and cleanup contract.
 
 ### DEFER-01 — Adopting existing byte representations
 
-- **Reason deferred:** Direct construction and byte output do not require typed byte adoption.
+- **Reason deferred:** Byte adoption requires a representation-eligibility and
+  lifetime contract beyond construction and initialized byte output.
 - **Reactivation condition:** A mapped-memory or native binary-layout consumer specifies valid representations, eligible types, alignment, extent, ownership, and target support.
 
 The consumer must identify a native operation that establishes the required
@@ -160,7 +170,7 @@ Its success and failure examples determine the field-state requirements.
 
 ## Validation
 
-Implementation follows `OPEN-01` through `OPEN-03`. The selected slice must deliver
+Implementation follows OPEN-01 through OPEN-03. The selected slice must deliver
 source operations, the facts and checks they require, native realization, and
 support together. Validation covers:
 
@@ -183,4 +193,16 @@ support together. Validation covers:
 Compare direct fill and construction with default initialization followed by
 writes under equal results and effects. Inspect generated and optimized native
 code, then measure initialization traffic, constructor calls, bookkeeping, and
-compilation cost separately. Update permanent references with delivered behavior.
+compilation cost separately.
+
+## References
+
+- [C++ interoperation](../docs/language/interop.md): existing concrete native
+  adapters and provider obligations.
+- [Generics](generics.md): prerequisites for a generic storage surface.
+- [Constant storage](constant-storage.md): operation admission and retained
+  results during constant execution.
+- [Async](async.md): lifetime closure before suspending operations release or
+  reuse storage.
+- [Concurrency](concurrency.md): synchronization and visibility for cross-thread
+  construction and access.

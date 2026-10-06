@@ -231,16 +231,15 @@ recursive direct-call graph without proving termination.
 Text operations include `String {}`, `String::from_str`, the owning
 `str as String` conversion, `as_str`, `len`, `is_empty`, `append`, `append_format`,
 `push`, `clear`, byte views and iteration, and interpolation. Constant formatting
-accepts default integer, bool, char and text formatting, including known C string contents, plus integer
-`b`, `B`, `o`, `d`, `x` and `X` presentations with decimal width and optional zero
+accepts default integer, bool, char and text formatting, including known C string contents,
+plus integer `b`, `B`, `o`, `d`, `x` and `X` presentations with decimal width and optional zero
 padding. Floating formatting and printing use native standard-library conversion
-for f32/f64. Floating specifications accept alignment, Unicode fill, sign,
-alternate form, zero padding, width, precision,
-and `a/A/e/E/f/F/g/G` presentations, without locale-dependent `L` formatting.
-Dynamic integer widths and floating widths/precisions evaluate before formatting;
-their values must be nonnegative integers. Width, precision, and output bytes are
-bounded by the constant text budget. Static execution reports invalid
-or unsupported specifications instead of deferring them to runtime.
+for f32/f64. Floating specifications accept alignment, Unicode fill, sign, alternate form,
+zero padding, width, precision, and `a/A/e/E/f/F/g/G` presentations, without locale-dependent
+`L` formatting. Dynamic integer widths and floating widths/precisions evaluate before formatting;
+their values must be nonnegative integers. Width, precision, and output bytes are bounded by
+the constant text budget. Static execution reports invalid or unsupported specifications
+instead of deferring them to runtime.
 
 Fixed arrays support construction, indexing, element assignment, equality,
 independent copies, Read and Write iteration, whole-binding Take, and function
@@ -295,14 +294,14 @@ storage is assigned again. An ordinary assignment to a live object preserves
 its identity. Non-null local pointers cannot become published constant values.
 
 Native operations, calls through callable values without an executable Carven
-body, text character iteration, and unchecked borrowed text construction remain outside
-the static execution subset. Ordinary type, access, ownership and lifetime
+body, text character iteration, and unchecked borrowed text construction remain
+outside the static execution subset. Ordinary type, access, ownership and lifetime
 validation applies throughout execution.
 
-Integer operations during static execution use the same wrapping
-arithmetic as runtime calls. Division by zero and invalid shifts produce
-diagnostics when executed during compilation. Short-circuiting and control flow select what executes, while all
-source remains subject to ordinary semantic validation.
+Integer operations during static execution use the same wrapping arithmetic
+as runtime calls. Division by zero and invalid shifts produce diagnostics when
+executed during compilation. Short-circuiting and control flow select what
+executes, while all source remains subject to ordinary semantic validation.
 
 Each evaluated call tree has a budget of 100,000 execution steps and 128 nested
 calls. Text construction is limited to 1 MiB per value and 8 MiB of accumulated

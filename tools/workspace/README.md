@@ -1,9 +1,8 @@
 # Workspace analysis
 
-`tools/workspace` provides document revisions, snapshots, and cached source queries
-on top of compiler analysis. The compiler retains its full compilation path and
-has no dependency on this library. The [analyzer](../analyzer/README.md)
-consumes these queries in a resident process.
+`tools/workspace` owns document revisions, snapshots, and cached source queries.
+It depends on compiler analysis, which analyzes each supplied source batch in full.
+The [analyzer](../analyzer/README.md) consumes these queries in a resident process.
 
 ## Inputs and ownership
 
@@ -36,8 +35,8 @@ serialized; the library does not synchronize shared caches.
 | `references` | Recorded occurrences identifying the same declaration, including the declaration itself. |
 
 Hover, definition, and references consume one source occurrence index. Semantic
-construction records source locations while resolving identities; the query layer
-does not reconstruct name resolution from spelling or executable operations.
+construction records source locations and resolved identities; the query layer
+indexes these observations.
 Types are attached to direct source tokens: binding and reference names, literals,
 operators, access markers, and control keywords. Queries match these token ranges.
 Published composite values without their own token anchor expose their types at

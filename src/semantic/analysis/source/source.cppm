@@ -3,6 +3,7 @@ module carven:semantic.analysis.source;
 import :semantic.semir.ids;
 import :semantic.semir.type;
 import :source.text;
+import :support.function_ref;
 import std;
 
 // Builtin values describe construction. TypeIDs are emitted only with a
@@ -19,4 +20,4 @@ struct SourceOccurrence final {
 // storage. Recipients copy retained values and keep any accompanying program alive.
 // Declaration/nominal failures contribute no occurrences; failed bodies contribute
 // none of their local observations. Definitions do not depend on type availability.
-using SourceAnalysisOutput = std::function<void(std::span<const SourceOccurrence>)>;
+using SourceAnalysisOutput = FunctionRef<void(std::span<const SourceOccurrence>) noexcept>;

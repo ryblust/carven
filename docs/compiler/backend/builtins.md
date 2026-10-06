@@ -81,9 +81,9 @@ prepared `PreparedDelegatedFormat::encoding` selects `format_valid_utf8` for
 `ValidUTF8` and `format` for `Unproven`. Realization embeds the prepared bytes as a
 compile-time `std::string_view` with an explicit byte length. Inside that call, String
 aliases provide text views and `char` values encode to UTF-8 Strings. C++ checks
-`std::format_string` and formatter availability; source directives attribute those diagnostics to the
-interpolation. Both entries are `noexcept` and use the same argument adapters
-and `std::format` call. The general entry passes the completed buffer through
+`std::format_string` and formatter availability; source directives attribute those
+diagnostics to the interpolation. Both entries are `noexcept` and use the same argument
+adapters and `std::format` call. The general entry passes the completed buffer through
 `String::from_utf8`; the proved entry adopts it without scanning it again.
 `StringFormatAccess` privately adopts that buffer using the shared String move
 constructor, without an additional byte copy or allocation. Entry selection
@@ -159,9 +159,9 @@ Structural print operands use a synchronous borrowing wrapper. The compiler
 selects an emitter type from published semantic types; scalar, sequence, and
 range emitters compose child types, while `realization.display` generates nominal
 field accesses and enum selection. An enum's closed case set makes the final
-alternative unconditional; a single-case enum needs no selection. Module lowering shares a content-named
-nominal helper across its use sites. Type-selected emitters use the shared
-`stateless_value` instance.
+alternative unconditional; a single-case enum needs no selection. Module lowering
+shares a content-named nominal helper across its use sites. Type-selected emitters
+use the shared `stateless_value` instance.
 
 Emitters take `(writer, value, depth)`. Each displayed root starts at depth zero;
 children receive `depth + 1`. Indentation uses that absolute depth. The writer

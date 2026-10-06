@@ -1,6 +1,7 @@
 module carven:backend.emission.stmt.impl;
 
 import :backend.emission.render;
+import :backend.target.symbol;
 import :support.visit;
 import std;
 
@@ -119,10 +120,16 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
             },
             [&](const TargetBreakStmt&) noexcept { return text("break;"); },
             [&](const TargetContinueStmt&) noexcept { return text("continue;"); },
-            [&](const TargetUnreachableStmt&) noexcept {
-                return text("::carven::runtime::unreachable();");
+            [&](const TargetUnreachableStmt& value) noexcept {
+                return text(
+                    std::format("{}();", target_symbol_info(value.native_symbol()).spelling)
+                );
             },
-            [&](const TargetRuntimeTrapStmt&) noexcept { return text("::std::abort();"); },
+            [&](const TargetRuntimeTrapStmt& value) noexcept {
+                return text(
+                    std::format("{}();", target_symbol_info(value.native_symbol()).spelling)
+                );
+            },
             [&](const TargetGotoStmt& value) noexcept {
                 return concat({text("goto "), render_identifier(value.label), text(";")});
             },
