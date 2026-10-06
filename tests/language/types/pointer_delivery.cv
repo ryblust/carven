@@ -54,12 +54,49 @@ const fn copied_nested_nulls() -> [[ptr<fn() -> i32>; 2]; 1] {
     return copied;
 }
 
+const fn backed_nonnull_delivery() -> bool {
+    let callable = delivery_target;
+    let original = [
+        DeliveredPointers {
+            pointer: addressof(callable),
+            nested: [[addressof(callable), addressof(callable)]]
+        }
+    ];
+    let copied = original;
+    let view: [DeliveredPointers] = copied;
+    let pointer = view[0].nested[0][1];
+    if pointer == nullptr { return false; }
+    let selected = *pointer;
+    return addressof(selected) != nullptr;
+}
+
+const fn raised_pointer(raise: bool) -> ptr<fn() -> i32> throw DeliveredPointers {
+    let pointers = copied_pointer_aggregate();
+    if raise { throw pointers; }
+    return pointers.pointer;
+}
+
+const fn recovered_pointer(raise: bool) -> ptr<fn() -> i32> {
+    return try {
+        raised_pointer(raise)?
+    } catch {
+        DeliveredPointers(pointers) => pointers.nested[0][1],
+    };
+}
+
+const nonnull_delivery = backed_nonnull_delivery();
+const returned_pointer = recovered_pointer(false);
+const caught_pointer = recovered_pointer(true);
+
 const copied_pointers = copied_pointer_aggregate();
 const selected_payload = delivered_payload(true);
 const nested_nulls = copied_nested_nulls();
 const contextual_nulls: [ptr<fn() -> i32>] = inferred_nulls();
 
 const test "Pointer delivery: frozen copies preserve nested destination types" {
+    check(nonnull_delivery);
+    check(returned_pointer == nullptr);
+    check(caught_pointer == nullptr);
     check(copied_pointers.pointer == nullptr);
     check(copied_pointers.nested[0][0] == nullptr);
     check(copied_pointers.nested[0][1] == nullptr);
@@ -72,6 +109,20 @@ const test "Pointer delivery: frozen copies preserve nested destination types" {
 }
 
 test "Pointer delivery: execution preserves aggregate copies and selected payloads" {
+    check(backed_nonnull_delivery());
+    let callable = delivery_target;
+    let original = [addressof(callable)];
+    let copied = original;
+    let view: [ptr<fn() -> i32>] = copied;
+    let pointer = view[0];
+    if pointer != nullptr {
+        let selected = *pointer;
+        check(selected() == 7);
+    } else {
+        check(false);
+    }
+    check(recovered_pointer(false) == nullptr);
+    check(recovered_pointer(true) == nullptr);
     let pointers = copied_pointer_aggregate();
     let nested = copied_nested_nulls();
     let backing = inferred_nulls();
