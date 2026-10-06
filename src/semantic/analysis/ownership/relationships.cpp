@@ -43,47 +43,108 @@ auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept 
     return left.object == right.object && overlaps(left.path, right.path);
 }
 
-auto project_storage_region(
+auto storage_region_automaton(
     std::span<const OwnershipStorageEdge> edges,
     const OwnershipPlace& source
-) noexcept -> std::vector<OwnershipRegionProjection> {
-    struct Frame final {
-        OwnershipRegionProjection region;
-        std::vector<std::size_t> ancestors;
-    };
-
-    auto result = std::vector<OwnershipRegionProjection>();
-    auto pending = std::vector<Frame> {{{source, true}, {source.object}}};
-    auto visited = std::flat_set<std::pair<OwnershipPlace, bool>>();
-    for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {
-        const auto current = pending[cursor];
-        if (!visited.emplace(current.region.place, current.region.exact).second) {
-            continue;
-        }
-        result.push_back(current.region);
-        for (const auto& edge : edges) {
-            if (edge.element != current.region.place.object) {
-                continue;
-            }
-            auto projected = edge.carrier;
-            projected.path.push_back(edge.index);
-            const auto exact = current.region.exact
-                && !std::ranges::contains(current.ancestors, edge.carrier.object);
-            if (exact) {
-                projected.path.append_range(current.region.place.path);
-            }
-            auto ancestors = current.ancestors;
-            if (exact) {
-                ancestors.push_back(edge.carrier.object);
+) noexcept -> OwnershipRegionAutomaton {
+    auto objects = source.object + 1uz;
+    for (const auto& edge : edges) {
+        objects = std::max(objects, std::max(edge.carrier.object, edge.element) + 1uz);
+    }
+    auto result = OwnershipRegionAutomaton {objects, source.object, {}, {}};
+    result.transitions.resize(objects);
+    const auto append = [&](std::size_t from,
+                            const OwnershipProjectionPath& word,
+                            std::optional<std::size_t> destination) noexcept {
+        auto current = from;
+        for (const auto [index, label] : std::views::enumerate(word)) {
+            auto next = result.transitions.size();
+            if (destination && index + 1uz == word.size()) {
+                next = *destination;
             } else {
-                // Recursive paths widen to a finite edge region. They still
-                // propagate to external ancestors instead of stopping at a cycle.
-                ancestors.clear();
+                result.transitions.emplace_back();
             }
-            pending.push_back({{std::move(projected), exact}, std::move(ancestors)});
+            result.transitions[current].push_back({label, next});
+            current = next;
+        }
+        return current;
+    };
+    for (const auto& edge : edges) {
+        auto word = edge.carrier.path;
+        word.push_back(edge.index);
+        static_cast<void>(append(edge.carrier.object, word, edge.element));
+    }
+    result.accept = append(source.object, source.path, std::nullopt);
+    result.reaches_accept.resize(result.transitions.size(), false);
+    result.reaches_accept[result.accept] = true;
+    auto incoming = std::vector<std::vector<std::size_t>>(result.transitions.size());
+    for (const auto [index, outgoing] : std::views::enumerate(result.transitions)) {
+        for (const auto& edge : outgoing) {
+            incoming[edge.target].push_back(static_cast<std::size_t>(index));
+        }
+    }
+    auto pending = std::vector<std::size_t> {result.accept};
+    for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {
+        for (const auto previous : incoming[pending[cursor]]) {
+            if (!result.reaches_accept[previous]) {
+                result.reaches_accept[previous] = true;
+                pending.push_back(previous);
+            }
         }
     }
     return result;
+}
+
+auto storage_region_matches(
+    const OwnershipRegionAutomaton& left,
+    const OwnershipRegionAutomaton& right,
+    bool ancestor,
+    bool strict,
+    bool equal
+) noexcept -> bool {
+    using Pair = std::pair<std::size_t, std::size_t>;
+    auto pending = std::vector<Pair>();
+    auto visited = std::set<Pair>();
+    const auto enqueue = [&](std::size_t a, std::size_t b) noexcept {
+        if (visited.emplace(a, b).second) {
+            pending.emplace_back(a, b);
+        }
+    };
+    for (auto root = 0uz; root < std::min(left.objects, right.objects); ++root) {
+        if (left.reaches_accept[root] && right.reaches_accept[root]) {
+            enqueue(root, root);
+        }
+    }
+    for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {
+        const auto [a, b] = pending[cursor];
+        if (equal && a == left.accept && b == right.accept) {
+            return true;
+        }
+        if (!equal && a == left.accept && right.reaches_accept[b]) {
+            if (!ancestor
+                || !strict
+                || std::ranges::any_of(right.transitions[b], [&](const auto& edge) noexcept {
+                       return right.reaches_accept[edge.target];
+                   })) {
+                return true;
+            }
+        }
+        if (!equal && !ancestor && b == right.accept && left.reaches_accept[a]) {
+            return true;
+        }
+        for (const auto& x : left.transitions[a]) {
+            if (!left.reaches_accept[x.target]) {
+                continue;
+            }
+            for (const auto& y : right.transitions[b]) {
+                if (right.reaches_accept[y.target]
+                    && (!x.label || !y.label || x.label == y.label)) {
+                    enqueue(x.target, y.target);
+                }
+            }
+        }
+    }
+    return false;
 }
 
 auto storage_region_ancestor(
@@ -92,36 +153,12 @@ auto storage_region_ancestor(
     const OwnershipPlace& referent,
     bool strict
 ) noexcept -> bool {
-    return storage_region_ancestor(
-        owner,
-        project_storage_region(edges, owner),
-        project_storage_region(edges, referent),
+    return storage_region_matches(
+        storage_region_automaton(edges, owner),
+        storage_region_automaton(edges, referent),
+        true,
         strict
     );
-}
-
-auto storage_region_ancestor(
-    const OwnershipPlace& owner,
-    std::span<const OwnershipRegionProjection> owners,
-    std::span<const OwnershipRegionProjection> referents,
-    bool strict
-) noexcept -> bool {
-    for (const auto& a : owners) {
-        for (const auto& b : referents) {
-            if (a.exact
-                && b.exact
-                && overlaps(a.place, b.place)
-                && (strict ? a.place.path.size() < b.place.path.size()
-                           : a.place.path.size() <= b.place.path.size())) {
-                return true;
-            }
-        }
-    }
-    // A cycle region can protect descendants from an actual ancestor write.
-    // Two independently widened regions do not establish containment.
-    return std::ranges::any_of(referents, [&](const auto& region) noexcept {
-        return !region.exact && overlaps(owner, region.place);
-    });
 }
 
 auto storage_regions_overlap(
@@ -129,38 +166,12 @@ auto storage_regions_overlap(
     const OwnershipPlace& left,
     const OwnershipPlace& right
 ) noexcept -> bool {
-    return storage_regions_overlap(
-        left,
-        right,
-        project_storage_region(edges, left),
-        project_storage_region(edges, right)
+    return storage_region_matches(
+        storage_region_automaton(edges, left),
+        storage_region_automaton(edges, right),
+        false,
+        false
     );
-}
-
-auto storage_regions_overlap(
-    const OwnershipPlace& left,
-    const OwnershipPlace& right,
-    std::span<const OwnershipRegionProjection> left_regions,
-    std::span<const OwnershipRegionProjection> right_regions
-) noexcept -> bool {
-    for (const auto& a : left_regions) {
-        for (const auto& b : right_regions) {
-            if (a.exact && b.exact && overlaps(a.place, b.place)) {
-                return true;
-            }
-        }
-    }
-    // Widening bounds one referent; a shared bound of two referents does not
-    // erase their original field separation.
-    return std::ranges::any_of(
-               left_regions,
-               [&](const auto& region) noexcept {
-                   return !region.exact && overlaps(region.place, right);
-               }
-           )
-        || std::ranges::any_of(right_regions, [&](const auto& region) noexcept {
-               return !region.exact && overlaps(left, region.place);
-           });
 }
 
 auto normalize_storage_loans(std::vector<OwnershipStorageLoan>& loans) noexcept -> void {

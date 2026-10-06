@@ -4,14 +4,16 @@ import :semantic.analysis.ownership.context;
 import std;
 
 auto OwnershipBodyAnalyzer::storage_regions(const OwnershipPlace& place) const noexcept
-    -> const std::vector<OwnershipRegionProjection>& {
+    -> const OwnershipRegionAutomaton& {
     if (cached_region_revision != topology.revision) {
         region_cache.clear();
+        relation_cache.clear();
+        alias_cache.clear();
         cached_region_revision = topology.revision;
     }
     const auto [found, inserted] = region_cache.try_emplace(place);
     if (inserted) {
-        found->second = project_storage_region(topology.owns, place);
+        found->second = storage_region_automaton(topology.owns, place);
     }
     return found->second;
 }
@@ -97,6 +99,7 @@ auto OwnershipBodyAnalyzer::select_owned_storage(
     std::optional<std::uint64_t> index,
     ProgramOriginID selection,
     OwnershipState& state,
+    bool many,
     bool summarized
 ) noexcept -> std::vector<OwnershipPlace> {
     synchronize_storage(state);
@@ -108,8 +111,7 @@ auto OwnershipBodyAnalyzer::select_owned_storage(
             continue;
         }
         const auto object = edge.element;
-        if ((summarized || topology.objects[carrier.object].many)
-            && !topology.objects[object].many) {
+        if ((many || topology.objects[carrier.object].many) && !topology.objects[object].many) {
             topology.objects[object].many = true;
             ++topology.revision;
         }
@@ -132,6 +134,10 @@ auto OwnershipBodyAnalyzer::select_owned_storage(
     if (!known.empty()) {
         if (feedback) {
             const auto [found, inserted] = topology.feedback.emplace(key, known.front().object);
+            if (!inserted && !topology.objects[found->second].feedback) {
+                topology.objects[found->second].feedback = true;
+                ++topology.revision;
+            }
             if (!inserted && !topology.objects[found->second].many) {
                 topology.objects[found->second].many = true;
                 ++topology.revision;
@@ -152,6 +158,10 @@ auto OwnershipBodyAnalyzer::select_owned_storage(
     if (feedback) {
         const auto [found, inserted] = topology.feedback.emplace(key, object);
         object = found->second;
+        if (!inserted && !topology.objects[object].feedback) {
+            topology.objects[object].feedback = true;
+            ++topology.revision;
+        }
         if (!inserted && !topology.objects[object].many) {
             topology.objects[object].many = true;
             ++topology.revision;
@@ -167,7 +177,8 @@ auto OwnershipBodyAnalyzer::select_owned_storage(
              selection,
              {},
              {body.id(), selection.index(), false, selection},
-             summarized || uncertain || topology.objects[carrier.object].many}
+             many || uncertain || topology.objects[carrier.object].many,
+             feedback}
         );
         topology.roots.push_back(topology.roots[carrier.object]);
         topology.anchors.push_back(std::move(anchor));

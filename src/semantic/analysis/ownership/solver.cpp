@@ -102,8 +102,21 @@ auto OwnershipBatchAnalyzer::enqueue(std::size_t index) noexcept -> void {
 }
 
 auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
-    -> std::span<const OwnershipCallCompletion> {
+    -> const OwnershipCallSummary& {
     normalize_storage_loans(input.storage_readers);
+    for (auto&& [binding, parameter] :
+         std::views::zip(body(input.body_id).inputs().parameters, input.parameters)) {
+        const auto& source = body(input.body_id).binding(binding);
+        const auto* mode = std::get_if<ParameterBindingStorage>(&source.storage);
+        if (mode
+            && mode->access == AccessMode::Read
+            && contents(source.type).read_borrows_storage()) {
+            if (parameter.alias) {
+                parameter.storage.push_back(*parameter.alias);
+                parameter.alias.reset();
+            }
+        }
+    }
     for (auto& parameter : input.parameters) {
         normalize_relationships(parameter.value);
         std::ranges::sort(parameter.storage);
@@ -122,9 +135,9 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
     auto canonical_sites = std::flat_map<OwnershipStorageSite, OwnershipStorageSite>();
     for (auto& object : input.objects) {
         normalize_relationships(object.state.relationships);
-        if (!object.site.input
-            && recursion_components.at(object.site.body)
-                == recursion_components.at(input.body_id)) {
+        // SCC-local formal roles remain stable when they become connector
+        // nodes on the next recursive descent, just like allocation sites.
+        if (recursion_components.at(object.site.body) == recursion_components.at(input.body_id)) {
             continue;
         }
         const auto canonical = OwnershipStorageSite {
@@ -336,23 +349,39 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
             continue;
         }
         auto joined = query.answer;
-        for (const auto& completion : *answer) {
-            const auto found = std::ranges::find_if(joined, [&](const auto& previous) noexcept {
-                return previous.test_stopped == completion.test_stopped
-                    && previous.failure == completion.failure;
-            });
-            if (found == joined.end()) {
-                joined.push_back(completion);
+        for (const auto& completion : answer->completions) {
+            const auto found =
+                std::ranges::find_if(joined.completions, [&](const auto& previous) noexcept {
+                    return previous.test_stopped == completion.test_stopped
+                        && previous.failure == completion.failure;
+                });
+            if (found == joined.completions.end()) {
+                joined.completions.push_back(completion);
             } else {
                 join_ownership_state(found->state, completion.state);
-                found->referents = completion.referents;
-                found->owns = completion.owns;
                 merge_relationships(found->value, completion.value);
             }
         }
-        std::ranges::sort(joined, {}, [](const auto& completion) static noexcept {
+        joined.referents = answer->referents;
+        joined.owns = answer->owns;
+        for (const auto& effect : answer->effects) {
+            if (!std::ranges::contains(joined.effects, effect)) {
+                joined.effects.push_back(effect);
+            }
+        }
+        std::ranges::sort(joined.effects, {}, [](const auto& effect) static noexcept {
+            return std::tuple(effect.place, effect.invalidates, effect.storage, effect.take);
+        });
+        std::ranges::sort(joined.completions, {}, [](const auto& completion) static noexcept {
             return std::pair(completion.test_stopped, completion.failure);
         });
+        const auto domain = query.input.objects.size() + joined.referents.size();
+        for (auto& completion : joined.completions) {
+            completion.state.objects.resize(
+                domain,
+                {.available = true, .taken = std::nullopt, .relationships = {}, .modified = false}
+            );
+        }
         query.evaluation_matches_answer = *answer == joined;
         if (joined != query.answer) {
             query.answer = std::move(joined);

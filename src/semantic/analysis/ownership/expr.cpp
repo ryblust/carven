@@ -829,6 +829,11 @@ auto OwnershipBodyAnalyzer::expression(
                         co_return {};
                     }
                     const auto target = flow.normal->storage.front();
+                    const auto effect =
+                        OwnershipWriteEffect {target, true, true, source.origin, true};
+                    if (!std::ranges::contains(effects, effect)) {
+                        effects.push_back(effect);
+                    }
                     if (diagnosing) {
                         if (const auto conflict = take_conflict(flow.normal->state, target)) {
                             diagnose(

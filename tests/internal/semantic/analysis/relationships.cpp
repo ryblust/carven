@@ -33,7 +33,7 @@ const TestSuite suite([] static noexcept {
             expect(!storage_regions_overlap(edges, {0uz, {1uz}}, {0uz, {2uz}}));
             expect(!storage_region_ancestor(edges, {0uz, {1uz}}, {0uz, {2uz}}, true));
             expect(storage_regions_overlap(edges, {1uz, {0uz, 0uz}}, {0uz, {1uz}}));
-            expect(project_storage_region(edges, {0uz, {1uz}}).size() <= 6uz);
+            expect(storage_region_automaton(edges, {0uz, {1uz}}).transitions.size() <= 6uz);
         };
 
     "Storage regions: multi-node cycles preserve external carrier protection"_test =
@@ -46,7 +46,42 @@ const TestSuite suite([] static noexcept {
             expect(storage_region_ancestor(edges, {2uz, {0uz, 0uz}}, {1uz, {1uz}}, true));
             expect(!storage_regions_overlap(edges, {1uz, {1uz}}, {1uz, {2uz}}));
             expect(!storage_region_ancestor(edges, {1uz, {1uz}}, {1uz, {2uz}}, true));
-            expect(project_storage_region(edges, {1uz, {1uz}}).size() <= 12uz);
+            expect(storage_region_automaton(edges, {1uz, {1uz}}).transitions.size() <= 12uz);
+        };
+
+    "Storage regions: cyclic language products preserve terminal fields and exact aliases"_test =
+        [] static noexcept {
+            const auto edges = std::vector<OwnershipStorageEdge> {
+                {{0uz, {1uz}}, 1uz, 0uz},
+                {{1uz, {1uz}}, 1uz, 0uz},
+                {{0uz, {2uz}}, 2uz, 0uz},
+                {{2uz, {1uz}}, 2uz, 0uz},
+            };
+            expect(storage_regions_overlap(edges, {1uz, {0uz}}, {0uz, {1uz, 0uz, 1uz, 0uz, 0uz}}));
+            expect(!storage_regions_overlap(edges, {1uz, {0uz}}, {1uz, {3uz}}));
+            expect(!storage_regions_overlap(edges, {1uz, {0uz}}, {2uz, {0uz}}));
+            expect(storage_region_ancestor(edges, {0uz, {}}, {1uz, {0uz}}, true));
+            expect(storage_region_ancestor(edges, {1uz, {}}, {1uz, {}}, true));
+            expect(!storage_region_ancestor({}, {0uz, {}}, {0uz, {}}, true));
+            const auto unknown = std::vector<OwnershipStorageEdge> {
+                {{0uz, {1uz}}, 1uz, std::nullopt},
+                {{0uz, {1uz}}, 2uz, 0uz},
+                {{0uz, {1uz}}, 3uz, 1uz},
+            };
+            expect(storage_region_matches(
+                storage_region_automaton(unknown, {1uz, {}}),
+                storage_region_automaton(unknown, {2uz, {}}),
+                false,
+                false,
+                true
+            ));
+            expect(!storage_region_matches(
+                storage_region_automaton(unknown, {2uz, {}}),
+                storage_region_automaton(unknown, {3uz, {}}),
+                false,
+                false,
+                true
+            ));
         };
 
     "Semantic relationships: unknown element projection preserves set identity"_test =

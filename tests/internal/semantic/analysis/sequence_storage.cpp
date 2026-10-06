@@ -882,6 +882,242 @@ const TestSuite suite([] static noexcept {
             );
         };
 
+    "Sequence ownership: repeated finite helpers preserve exact backing and sibling separation"_test =
+        [] static noexcept {
+            const auto prelude = std::string(R"(
+            struct Node { text: String, other: String, children: Sequence<[Node; 1]> }
+            fn children(node: Node) -> [Node] => node.children[0];
+            fn other_children(node: Node) -> [Node] => node.children[0];
+        )");
+            for (const auto depth : {1uz, 2uz, 4uz, 8uz}) {
+                for (const auto style : {0, 1, 2, 3}) {
+                    auto steps = std::string();
+                    auto exact = std::string("root[0]");
+                    for (auto index = 0uz; index < depth; ++index) {
+                        const auto helper = style == 1 ? "other_children" : "children";
+                        steps += style == 2 || (style == 3 && index % 2 == 0)
+                            ? "current = current[0].children[0];"
+                            : std::format("current = {}(current[0]);", helper);
+                        exact += ".children[0][0]";
+                    }
+                    for (const auto same_field : {false, true}) {
+                        const auto source = prelude
+                            + std::format(R"(
+                        fn probe(&root: [Node; 1]) -> usize {{
+                            let empty: [Node; 0] = [];
+                            var current: [Node] = root;
+                            {}
+                            let view = current[0].text.as_str();
+                            current = empty;
+                            {}.{}.clear();
+                            return view.len();
+                        }}
+                    )",
+                                          steps,
+                                          exact,
+                                          same_field ? "text" : "other");
+                        if (same_field) {
+                            expect_diagnostic(
+                                analyze_test_errors(source),
+                                DiagnosticCode::AccessBorrowConflict
+                            );
+                        } else {
+                            static_cast<void>(analyze_test_program(source));
+                        }
+                    }
+                }
+            }
+            static_cast<void>(analyze_test_program(prelude + R"(
+            fn copied(&root: [Node; 1]) -> usize {
+                var copy = root;
+                let view = children(children(copy[0])[0])[0].text.as_str();
+                root[0].children[0][0].children[0][0].text.clear();
+                return view.len();
+            }
+            fn independent(&root: [Node; 1]) -> usize {
+                let view = children(children(root[0])[0])[0].text.as_str();
+                root[0].children[1][0].text.clear();
+                return view.len();
+            }
+        )"));
+        };
+
+    "Sequence ownership: function effects retain caller readers and alias roles"_test =
+        [] static noexcept {
+            const auto prelude = std::string(R"(
+            struct Node { text: String, other: String, children: Sequence<Node> }
+            struct Error {}
+            fn change(&node: Node) { node.text.clear(); }
+            fn maybe_change(&node: Node, fail: bool) throw Error {
+                node.text.clear(); if fail { throw Error {}; }
+            }
+            fn borrow_change(a: Node, &b: Node) -> usize {
+                let view = a.text.as_str(); b.text.clear(); return view.len();
+            }
+            fn reset(&node: Node) { node.children.clear(); }
+        )");
+            for (const auto call :
+                 {"change(&root.children[0]);",
+                  "try { maybe_change(&root.children[0], fail)?; } catch { Error(error) => {}, }",
+                  "reset(&root);"}) {
+                expect_diagnostic(
+                    analyze_test_errors(
+                        prelude
+                        + std::format(
+                            R"(
+                fn invalid(&root: Node, fail: bool) -> usize {{
+                    let view = root.children[0].text.as_str(); {} return view.len();
+                }}
+            )",
+                            call
+                        )
+                    ),
+                    DiagnosticCode::AccessBorrowConflict
+                );
+            }
+            expect_diagnostic(
+                analyze_test_errors(prelude + R"(
+            fn unknown(&root: Node, index: usize) -> usize {
+                return borrow_change(root.children[index], &root.children[0]);
+            }
+        )"),
+                DiagnosticCode::AccessBorrowConflict
+            );
+            static_cast<void>(analyze_test_program(prelude + R"(
+            fn separate(&root: Node) -> usize {
+                return borrow_change(root.children[0], &root.children[1]);
+            }
+            fn release(&held: str, &text: String) {
+                held = ""; text.clear();
+            }
+            fn released(&text: String) -> usize {
+                var held = text.as_str(); release(&held, &text); return held.len();
+            }
+        )"));
+            expect_diagnostic(
+                analyze_test_errors(R"(
+            fn release(&held: str, &text: String) { held = ""; text.clear(); }
+            fn still_borrowed(&text: String) -> usize {
+                var held = text.as_str(); let independent = text.as_str();
+                release(&held, &text); return independent.len();
+            }
+        )"),
+                DiagnosticCode::AccessBorrowConflict
+            );
+        };
+
+    "Sequence ownership: acquisition protects guards without invalidating readers"_test =
+        [] static noexcept {
+            expect_diagnostic(
+                analyze_test_errors(R"(
+            fn relay(predicate: fn() -> bool) -> bool => predicate();
+            fn invalid(&selected: i32) {
+                let callback = [&selected]() { return true; };
+                match selected { _ if relay(callback) => {}, _ => {}, }
+            }
+        )"),
+                DiagnosticCode::AccessOperationConflict
+            );
+            static_cast<void>(analyze_test_program(R"(
+            fn noop(&text: String) {}
+            fn accepted(&text: String) -> usize {
+                let view = text.as_str(); noop(&text); return view.len();
+            }
+            fn untouched(&values: Sequence<i32>) {}
+            fn iterate(&values: Sequence<i32>) {
+                for value in values { untouched(&values); }
+            }
+        )"));
+        };
+
+    "Sequence ownership: divergence retains reached writes without a completion"_test =
+        [] static noexcept {
+            expect_diagnostic(
+                analyze_test_errors(R"(
+            fn spin(&text: String) { text.clear(); while true {} }
+            fn caller(&text: String) { let view = text.as_str(); spin(&text); }
+        )"),
+                DiagnosticCode::AccessBorrowConflict
+            );
+        };
+
+    "Sequence ownership: branching recursive components reuse formal interfaces"_test =
+        [] static noexcept {
+            for (const auto count : {1uz, 2uz, 4uz}) {
+                auto source = std::string(
+                    "struct Node { text: String, left: Sequence<Node>, right: Sequence<Node> }\n"
+                );
+                for (auto index = 0uz; index < count; ++index) {
+                    source += std::format(
+                        R"(
+                    fn f{}(node: Node, depth: usize, choose: bool) -> str {{
+                        if depth == 0 {{ return node.text.as_str(); }}
+                        if choose {{ return f{}(node.left[0], depth - 1, choose); }}
+                        return f{}(node.right[0], depth - 1, choose);
+                    }}
+                )",
+                        index,
+                        (index + 1uz) % count,
+                        (index + 1uz) % count
+                    );
+                }
+                const auto program = analyze_test_program(source);
+                auto diagnostics = DiagnosticSink();
+                const auto summary =
+                    OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
+                if (!expect(summary.has_value())) {
+                    return;
+                }
+                expect(summary->query_count <= 4uz * count);
+                expect(summary->evaluation_count <= 32uz * count);
+                expect(summary->storage_node_count <= 64uz * count);
+                expect(summary->storage_edge_count <= 128uz * count);
+            }
+        };
+
+    "Sequence ownership: recursive child and whole roles bound connector growth"_test =
+        [] static noexcept {
+            for (const auto count : {1uz, 2uz, 4uz}) {
+                auto source = std::string(
+                    "struct Node { value: i32, left: Sequence<Node>, right: Sequence<Node> }\n"
+                );
+                for (auto index = 0uz; index < count; ++index) {
+                    source += std::format(
+                        R"(
+                    fn increment{}(&node: Node, &whole: Node, choose: bool, depth: usize) -> void {{
+                        node.value += 1;
+                        if depth == 0 {{ return; }}
+                        if choose {{ increment{}(&node.left[0], &whole, choose, depth - 1); }}
+                        else {{ increment{}(&node.right[0], &whole, choose, depth - 1); }}
+                    }}
+                )",
+                        index,
+                        (index + 1uz) % count,
+                        (index + 1uz) % count
+                    );
+                }
+                source += R"(
+                fn caller(&first: Node, &second: Node, choose: bool, depth: usize) {
+                    increment0(&first, &first, choose, depth);
+                    increment0(&first, &second, choose, depth);
+                }
+            )";
+                const auto program = analyze_test_program(source);
+                auto diagnostics = DiagnosticSink();
+                const auto summary =
+                    OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
+                if (!expect(summary.has_value())) {
+                    return;
+                }
+                // Fixed child/whole roles cover aliasing and disjoint callers; the
+                // interface graph grows with SCC size rather than caller histories.
+                expect(summary->query_count <= 96uz * count);
+                expect(summary->evaluation_count <= 256uz * count);
+                expect(summary->storage_node_count <= 768uz * count);
+                expect(summary->storage_edge_count <= 1024uz * count);
+            }
+        };
+
     "Sequence execution: runtime ownership does not promise constant storage"_test =
         [] static noexcept {
             expect_diagnostic(

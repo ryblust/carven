@@ -150,8 +150,17 @@ auto OwnershipBodyAnalyzer::statement(
                 }
                 const auto targets = result.normal->storage;
                 const auto previous = accesses.size();
+                const auto target_type = value.target.type.resolved();
+                // Scalar leaf writes cannot reconstruct a selected ancestor.
+                // Aggregate replacement can invalidate an inline field even
+                // when the aggregate contains no owning storage.
+                const auto scalar = std::holds_alternative<BuiltinTypeValue>(
+                                        program.types().type(target_type).value
+                                    )
+                    && analysis.contents(target_type).read_is_value_snapshot();
+                const auto invalidates = !scalar;
                 for (const auto& target : targets) {
-                    write_access(target, value.target.origin);
+                    write_access(target, value.target.origin, invalidates);
                     if (!target.path.empty()
                         || value.compound
                         || selected_access_kind(value.target) == OwnershipAccessKind::Structural) {

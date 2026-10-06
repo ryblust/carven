@@ -29,6 +29,7 @@ OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
                  local.origin,
                  {},
                  {body.id(), static_cast<std::size_t>(index), false},
+                 false,
                  false}
             );
         }
@@ -312,6 +313,73 @@ auto OwnershipBodyAnalyzer::use(
     }
 }
 
+auto OwnershipBodyAnalyzer::storage_alias_alternatives(const OwnershipPlace& target) const noexcept
+    -> std::vector<OwnershipPlace> {
+    if (cached_region_revision != topology.revision) {
+        region_cache.clear();
+        relation_cache.clear();
+        alias_cache.clear();
+        cached_region_revision = topology.revision;
+    }
+    if (const auto found = alias_cache.find(target); found != alias_cache.end()) {
+        return found->second;
+    }
+    auto result = std::vector<OwnershipPlace> {target};
+    // Edge words are nonempty. With the same terminal suffix, a root without
+    // incoming owns edges cannot equal a different node's region language.
+    if (std::ranges::none_of(topology.owns, [&](const auto& edge) noexcept {
+            return edge.element == target.object;
+        })) {
+        alias_cache.emplace(target, result);
+        return result;
+    }
+    for (auto cursor = 0uz; cursor < result.size(); ++cursor) {
+        const auto source = result[cursor];
+        for (auto object = 0uz; object < topology.objects.size(); ++object) {
+            auto alternative = target;
+            alternative.object = object;
+            if (object_type(object) == object_type(target.object)
+                && std::ranges::any_of(
+                    topology.owns,
+                    [&](const auto& edge) noexcept { return edge.element == object; }
+                )
+                && !std::ranges::contains(result, alternative)
+                && storage_aliases(source, alternative)) {
+                result.push_back(std::move(alternative));
+            }
+        }
+    }
+    std::ranges::sort(result);
+    for (const auto& member : result) {
+        alias_cache.emplace(member, result);
+    }
+    return result;
+}
+
+auto OwnershipBodyAnalyzer::merge_storage_aliases(OwnershipState& state) const noexcept -> void {
+    synchronize_storage(state);
+    auto visited = std::vector<bool>(state.objects.size(), false);
+    for (auto object = 0uz; object < state.objects.size(); ++object) {
+        if (visited[object] || !state.objects[object].modified) {
+            continue;
+        }
+        const auto alternatives = storage_alias_alternatives({object, {}});
+        auto joined = state.objects[object];
+        for (const auto& place : alternatives) {
+            const auto& incoming = state.objects[place.object];
+            joined.available &= incoming.available;
+            if (incoming.taken && (!joined.taken || *incoming.taken < *joined.taken)) {
+                joined.taken = incoming.taken;
+            }
+            merge_relationships(joined.relationships, incoming.relationships);
+        }
+        for (const auto& place : alternatives) {
+            state.objects[place.object] = joined;
+            visited[place.object] = true;
+        }
+    }
+}
+
 auto OwnershipBodyAnalyzer::store(
     OwnershipState& state,
     const OwnershipPlace& target,
@@ -320,9 +388,9 @@ auto OwnershipBodyAnalyzer::store(
     bool definite
 ) noexcept -> void {
     // Loop convergence still updates storage while diagnostic scans are suspended.
+    check_storage_write(state, target, origin);
     if (diagnosing) {
         use(relationships, state, origin);
-        check_storage_write(state, target, origin);
         for (const auto& loan : relationships.view().storage_loans) {
             if (loan.backing.object == target.object
                 || !outlives(loan.backing.object, target.object)) {
@@ -355,32 +423,39 @@ auto OwnershipBodyAnalyzer::store(
             }
         }
     }
-    auto& destination = state.objects[target.object];
-    destination.modified = true;
-    const auto singleton = definite && !topology.objects[target.object].many;
-    if (singleton && target.path.empty()) {
-        destination = {
-            .available = true,
-            .taken = std::nullopt,
-            .relationships = relationships,
-            .modified = true
-        };
-        return;
-    }
-    if (singleton && std::ranges::all_of(target.path, [](const auto& part) static noexcept {
-            return part.has_value();
-        })) {
-        const auto replaced = [&](const auto& row) noexcept {
-            return row.holder.size() >= target.path.size()
-                && std::equal(target.path.begin(), target.path.end(), row.holder.begin());
-        };
-        if (auto* rows = destination.relationships.edit_existing()) {
-            std::erase_if(rows->callable_loans, replaced);
-            std::erase_if(rows->captures, replaced);
-            std::erase_if(rows->storage_loans, replaced);
+    const auto alternatives = storage_alias_alternatives(target);
+    for (const auto& place : alternatives) {
+        auto& destination = state.objects[place.object];
+        destination.modified = true;
+        const auto singleton =
+            definite && alternatives.size() == 1uz && !topology.objects[place.object].many;
+        if (singleton && place.path.empty()) {
+            destination = {
+                .available = true,
+                .taken = std::nullopt,
+                .relationships = relationships,
+                .modified = true
+            };
+            continue;
         }
+        if (singleton && std::ranges::all_of(place.path, [](const auto& part) static noexcept {
+                return part.has_value();
+            })) {
+            const auto replaced = [&](const auto& row) noexcept {
+                return row.holder.size() >= place.path.size()
+                    && std::equal(place.path.begin(), place.path.end(), row.holder.begin());
+            };
+            if (auto* rows = destination.relationships.edit_existing()) {
+                std::erase_if(rows->callable_loans, replaced);
+                std::erase_if(rows->captures, replaced);
+                std::erase_if(rows->storage_loans, replaced);
+            }
+        }
+        merge_relationships(
+            destination.relationships,
+            nest_relationships(relationships, place.path)
+        );
     }
-    merge_relationships(destination.relationships, nest_relationships(relationships, target.path));
 }
 
 auto OwnershipBodyAnalyzer::binding_place(LocalBindingID binding) const noexcept -> OwnershipPlace {
@@ -435,19 +510,55 @@ auto OwnershipBodyAnalyzer::storage_ancestor(
     const OwnershipPlace& referent,
     bool strict
 ) const noexcept -> bool {
-    return storage_region_ancestor(
-        owner,
-        storage_regions(owner),
-        storage_regions(referent),
-        strict
-    );
+    const auto& owners = storage_regions(owner);
+    const auto& referents = storage_regions(referent);
+    const auto key = std::tuple(owner, referent, true, strict);
+    const auto [found, inserted] = relation_cache.try_emplace(key);
+    if (inserted) {
+        found->second = storage_region_matches(owners, referents, true, strict);
+    }
+    return found->second;
+}
+
+auto OwnershipBodyAnalyzer::storage_aliases(
+    const OwnershipPlace& left,
+    const OwnershipPlace& right
+) const noexcept -> bool {
+    // Every owns word consumes at least one symbol. Equal-length terminal
+    // suffixes cannot meet different roots when one has no incoming edge.
+    if (left.object != right.object
+        && left.path.size() == right.path.size()
+        && (std::ranges::none_of(
+                topology.owns,
+                [&](const auto& edge) noexcept { return edge.element == left.object; }
+            )
+            || std::ranges::none_of(topology.owns, [&](const auto& edge) noexcept {
+                   return edge.element == right.object;
+               }))) {
+        return false;
+    }
+    const auto& a = storage_regions(left);
+    const auto& b = storage_regions(right);
+    const auto key = std::tuple(left, right, false, true);
+    const auto [found, inserted] = relation_cache.try_emplace(key);
+    if (inserted) {
+        found->second = storage_region_matches(a, b, false, false, true);
+    }
+    return found->second;
 }
 
 auto OwnershipBodyAnalyzer::storage_overlaps(
     const OwnershipPlace& left,
     const OwnershipPlace& right
 ) const noexcept -> bool {
-    return storage_regions_overlap(left, right, storage_regions(left), storage_regions(right));
+    const auto& a = storage_regions(left);
+    const auto& b = storage_regions(right);
+    const auto key = std::tuple(left, right, false, false);
+    const auto [found, inserted] = relation_cache.try_emplace(key);
+    if (inserted) {
+        found->second = storage_region_matches(a, b, false, false);
+    }
+    return found->second;
 }
 
 auto OwnershipBodyAnalyzer::write_access(
@@ -455,6 +566,10 @@ auto OwnershipBodyAnalyzer::write_access(
     ProgramOriginID origin,
     bool invalidates
 ) noexcept -> void {
+    const auto effect = OwnershipWriteEffect {target, invalidates, false, origin, false};
+    if (!std::ranges::contains(effects, effect)) {
+        effects.push_back(effect);
+    }
     if (!diagnosing) {
         return;
     }
@@ -640,6 +755,10 @@ auto OwnershipBodyAnalyzer::check_storage_write(
     const OwnershipPlace& target,
     ProgramOriginID origin
 ) noexcept -> void {
+    const auto effect = OwnershipWriteEffect {target, true, true, origin, false};
+    if (!std::ranges::contains(effects, effect)) {
+        effects.push_back(effect);
+    }
     if (!diagnosing) {
         return;
     }

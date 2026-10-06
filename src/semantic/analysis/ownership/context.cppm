@@ -173,6 +173,8 @@ struct OwnershipExternalObject final {
     OwnershipObjectState state;
     OwnershipStorageSite site;
     bool many;
+    // Cardinality never authorizes folding. Only real control/call feedback does.
+    bool feedback = false;
 
     auto operator==(const OwnershipExternalObject& other) const noexcept -> bool;
 };
@@ -226,14 +228,31 @@ struct OwnershipCallInput final {
     auto operator==(const OwnershipCallInput&) const noexcept -> bool = default;
 };
 
+struct OwnershipWriteEffect final {
+    OwnershipPlace place;
+    bool invalidates;
+    bool storage;
+    ProgramOriginID origin;
+    bool take = false;
+    auto operator==(const OwnershipWriteEffect& other) const noexcept -> bool;
+};
+
 struct OwnershipCallCompletion final {
     bool test_stopped;
     std::optional<TypeID> failure;
     OwnershipState state;
     OwnershipRelationships value;
-    std::vector<OwnershipExternalObject> referents {};
-    std::vector<OwnershipStorageEdge> owns {};
     auto operator==(const OwnershipCallCompletion&) const noexcept -> bool = default;
+};
+
+// Shape and effects are reachable-function facts, independent of whether the
+// function completes. In particular divergence does not erase an executed write.
+struct OwnershipCallSummary final {
+    std::vector<OwnershipCallCompletion> completions;
+    std::vector<OwnershipExternalObject> referents;
+    std::vector<OwnershipStorageEdge> owns;
+    std::vector<OwnershipWriteEffect> effects;
+    auto operator==(const OwnershipCallSummary&) const noexcept -> bool = default;
 };
 
 // Owned first-error fields defer publication without caching source text or a
@@ -254,7 +273,7 @@ struct OwnershipDiagnosisRecord final {
 
 struct OwnershipCallQuery final {
     OwnershipCallInput input;
-    std::vector<OwnershipCallCompletion> answer;
+    OwnershipCallSummary answer;
     std::flat_set<std::size_t> consumers;
     bool queued;
     // The last evaluation's transfer agrees with the accumulated answer.
@@ -312,18 +331,32 @@ auto overlaps(
 ) noexcept -> bool;
 auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept -> bool;
 
-// Carrier projections preserve inline suffixes. Recursive cycles widen to a
-// descendant region for structural protection, without equating its contents.
-struct OwnershipRegionProjection final {
-    OwnershipPlace place;
-    bool exact;
+// A finite NFA denotes every graph path to a place, including its terminal
+// inline suffix. A product query compares languages without dropping suffixes
+// at cycles. Missing labels match any index.
+struct OwnershipRegionTransition final {
+    std::optional<std::uint64_t> label;
+    std::size_t target;
 };
 
-auto project_storage_region(
+struct OwnershipRegionAutomaton final {
+    std::size_t objects;
+    std::size_t accept;
+    std::vector<std::vector<OwnershipRegionTransition>> transitions;
+    std::vector<bool> reaches_accept;
+};
+
+auto storage_region_automaton(
     std::span<const OwnershipStorageEdge> edges,
     const OwnershipPlace& source
-) noexcept -> std::vector<OwnershipRegionProjection>;
-
+) noexcept -> OwnershipRegionAutomaton;
+auto storage_region_matches(
+    const OwnershipRegionAutomaton& left,
+    const OwnershipRegionAutomaton& right,
+    bool ancestor,
+    bool strict,
+    bool equal = false
+) noexcept -> bool;
 auto storage_region_ancestor(
     std::span<const OwnershipStorageEdge> edges,
     const OwnershipPlace& owner,
@@ -334,18 +367,6 @@ auto storage_regions_overlap(
     std::span<const OwnershipStorageEdge> edges,
     const OwnershipPlace& left,
     const OwnershipPlace& right
-) noexcept -> bool;
-auto storage_region_ancestor(
-    const OwnershipPlace& owner,
-    std::span<const OwnershipRegionProjection> owners,
-    std::span<const OwnershipRegionProjection> referents,
-    bool strict
-) noexcept -> bool;
-auto storage_regions_overlap(
-    const OwnershipPlace& left,
-    const OwnershipPlace& right,
-    std::span<const OwnershipRegionProjection> left_regions,
-    std::span<const OwnershipRegionProjection> right_regions
 ) noexcept -> bool;
 auto normalize_storage_loans(std::vector<OwnershipStorageLoan>& loans) noexcept -> void;
 auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void;
@@ -379,7 +400,7 @@ struct OwnershipEscape final {
 };
 
 struct OwnershipBodyResult final {
-    std::expected<std::vector<OwnershipCallCompletion>, OwnershipEscape> answer;
+    std::expected<OwnershipCallSummary, OwnershipEscape> answer;
     // Events are owned by this evaluation and do not affect its transfer answer.
     std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
 };
@@ -396,7 +417,7 @@ public:
 
 private:
     auto storage_regions(const OwnershipPlace& place) const noexcept
-        -> const std::vector<OwnershipRegionProjection>&;
+        -> const OwnershipRegionAutomaton&;
     auto propagate_storage_facts() noexcept -> void;
     auto storage_available(const OwnershipState& state, std::size_t object) const noexcept -> bool;
     auto synchronize_storage(OwnershipState& state) const noexcept -> void;
@@ -406,6 +427,7 @@ private:
         std::optional<std::uint64_t> index,
         ProgramOriginID selection,
         OwnershipState& state,
+        bool many = false,
         bool summarized = false
     ) noexcept -> std::vector<OwnershipPlace>;
     auto select_element_storage(
@@ -447,6 +469,9 @@ private:
         ProgramOriginID origin,
         bool direct = false
     ) noexcept -> void;
+    auto storage_alias_alternatives(const OwnershipPlace& target) const noexcept
+        -> std::vector<OwnershipPlace>;
+    auto merge_storage_aliases(OwnershipState& state) const noexcept -> void;
     auto store(
         OwnershipState& state,
         const OwnershipPlace& target,
@@ -492,6 +517,8 @@ private:
         const OwnershipPlace& referent,
         bool strict
     ) const noexcept -> bool;
+    auto storage_aliases(const OwnershipPlace& left, const OwnershipPlace& right) const noexcept
+        -> bool;
     auto storage_overlaps(const OwnershipPlace& left, const OwnershipPlace& right) const noexcept
         -> bool;
     auto write_access(
@@ -579,7 +606,10 @@ private:
     std::optional<ProgramOriginID> feedback_origin;
     mutable std::optional<std::size_t> cached_region_revision;
     // map preserves the first operand's result when a second key is inserted.
-    mutable std::map<OwnershipPlace, std::vector<OwnershipRegionProjection>> region_cache;
+    mutable std::map<OwnershipPlace, OwnershipRegionAutomaton> region_cache;
+    mutable std::map<std::tuple<OwnershipPlace, OwnershipPlace, bool, bool>, bool> relation_cache;
+    mutable std::map<OwnershipPlace, std::vector<OwnershipPlace>> alias_cache;
+    std::vector<OwnershipWriteEffect> effects;
     bool diagnosing = true;
     std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
     std::flat_map<LocalBindingID, OwnershipPlace> aliases;
@@ -608,7 +638,7 @@ public:
     auto facts_for_body(BodyID id) const noexcept -> const OwnershipBodyFacts&;
     auto contents(TypeID type) const noexcept -> TypeContents;
     // Answers are borrowed during body evaluation, before the solver updates them.
-    auto query(OwnershipCallInput input) noexcept -> std::span<const OwnershipCallCompletion>;
+    auto query(OwnershipCallInput input) noexcept -> const OwnershipCallSummary&;
 
     auto recursive_storage_site(const OwnershipStorageSite& site, BodyID target) const noexcept
         -> bool;

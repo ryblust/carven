@@ -85,81 +85,96 @@ Read parameters discard outer aliases before reachable-object discovery, while
 retaining their contained loans and captures. Abstract root inputs use the same
 policy. Argument evaluation still checks direct Read/Take conflicts before this
 call-boundary normalization. Capture holders retain their existing storage rules.
-Unpassed holders that constrain reachable storage backing contribute reader loans
-without introducing holder identities into recursive queries. Passed Write
-holders retain their identity so exact replacement can release their loans.
-Aliases share one state, including the order of external writes. Call answers
-contain returned relationships and external state for normal and typed failure
-completion;
-completed locals are discarded. Equivalent query inputs share answers. Input
-normalization preserves reachable storage, aliasing, access, and relative
-lifetimes. Diagnostic provenance selects a deterministic witness without becoming
-part of semantic identity.
+Unpassed holders that constrain backing storage remain concrete caller readers.
+Passed Write holders retain their identity so exact replacement can release their
+loans inside the callee. Aliases share one state, including the order of external
+writes. Equivalent formal interfaces share answers; diagnostic provenance selects
+a deterministic witness without becoming part of semantic identity.
 
-### Recursive storage
+### Recursive storage and function interfaces
 
-Recursive storage uses direct backing edges. Call normalization preserves exact
-identities for unambiguous interface roots and their inline callable/capture
-storage. Other reachable objects are grouped by storage site
-`(BodyID, slot, input-or-local, element-selection)`. Selection roles bound
-abstract grouping; they do not establish exact storage identity. Query identity
-retains a local site only when its
-body shares the callee's recursion component, because only such a body can
-allocate at that site again during the callee's execution. Other sites are
-renamed to callee-relative input sites in first-occurrence order, preserving their
-equality within the input without recording which ancestor allocated them.
-Recursion components are strongly connected components of direct call targets;
-a call without a concrete target conservatively reaches every body that is used
-as a callable value outside an immediate call. A summary that may represent
-multiple objects retains that property through subsequent calls. Exact inline traversal
-stops at slice backing and ambiguous or unknown-index targets. The semantic restrictions
-on callable-view storage in nominal types and captures bound inline callable
-chains. Allocation identity is separate from diagnostic provenance.
+Body evaluation and calls share one referent graph. A place names a storage node
+and its inline field or array suffix. Selecting a checked Sequence element follows
+an owns edge immediately. Checked element type participates in selection identity,
+including enum payloads with different types. Sequence elements contain no loans
+or callable storage and cannot be taken through their fields. Availability follows
+all possible owning sources in the current flow, including when a retained query
+domain is reused before a local declaration has initialized its owner.
 
-Body evaluation and call normalization share a referent graph. A place names
-one storage node and its inline fields or array elements; selecting a checked
-Sequence element follows an owns edge immediately. The checked type remains
-part of selection identity, including when enum payload slots have different
-types. Checked Sequence elements contain no loans or callable storage and cannot
-be taken through their fields. Their availability follows all possible owning
-sources in the current flow state, including after a retained query domain is
-reused before local initialization.
+A call interface includes parameter and capture roles, their contained relationships,
+and owns paths connecting distinct referenced roles. Unrelated caller ancestors,
+active selections, and unpassed reader holders do not enlarge query identity.
+Direct empty owning-selection parameters receive callee-relative formal roles.
+Contained backing and capture objects keep allocation provenance in the current
+recursion component; otherwise recursive local arrays or closures would repeatedly
+introduce new formal roles. Recursion components are strongly connected components
+of direct calls. An unknown callable target conservatively reaches every body used
+as a callable value outside an immediate call.
 
-Carrier ownership is a separate topology and is not copied with a value.
-Straight-line selection uses carrier, index, and checked element type without
-folding repeated types or limiting traversal depth. At loop feedback or recursive
-summary boundaries, an allocation site and its first owned-selection family name
-a finite node. Source and feedback sites, inline carrier paths, and constant or
-unknown indices contribute to this key; owned ancestry and caller history do not.
-A reused summary is many, and that property propagates through existing owns
-edges. Owning-source sets contain only the query's fixed input and local roles;
-unioning them preserves local lifetime and escape restrictions across aliases.
+Exact current roles and definite inline callable/capture slots are protected from
+site-only merging; actual possible aliases share conservative state. At an actual
+SCC boundary, owning connectors between roles use the complete set of current
+owning-anchor and first-edge families plus checked type. Each family retains the
+first edge's full inline path and index. Current referenced roles stop propagation
+and restart their own anchors. Family and connector ordering are canonical, and
+historical SCC body sequences do not enlarge owning-context identity. The same
+possible-alias closure governs anchor groups and state normalization.
 
-Carrier ancestors remain reachable evidence even without parameter roles;
-non-interface recursive ancestors use storage-site grouping. Repeated recursive
-sites form graph cycles rather than extending an ancestor chain. Unknown indices
-denote many regions. Every known destination for a carrier/index/type selection
-remains an alternative; selecting the first edge would make graph growth withdraw
-previous backing facts.
+Non-owning contained backing and capture histories instead retain their finite
+allocation sites `(BodyID, slot, input-or-local, element-selection)` in the SCC.
+A former formal role that becomes a connector keeps its semantic site, rather than
+being renamed to the current object number. Outside SCC feedback, finite calls and
+selections retain arbitrary depth and distinguish same-type fields, indices,
+owners, and subtrees. Sites outside the callee's component are renamed in
+first-occurrence order without retaining caller history.
 
-One region projection supplies overlap and ancestor checks, hidden reader loans,
-and retained accesses. Direct edges preserve the complete inline suffix after
-an index, allowing independent fields to remain disjoint at arbitrary finite
-depth. Recursive cycles widen to a selected descendant region for structural
-protection. A common widened bound does not identify the fields of two referents.
-Different paths to the same carrier remain alternatives; cycle summaries continue
-to external ancestors.
+Carrier ownership is topology, separate from copied value contents. Cardinality
+and feedback provenance are separate facts: an unknown index is many and therefore
+uses weak updates, but does not authorize folding a later straight-line selection.
+Only loop or actual recursive feedback permits allocation/selection-site summaries.
+A reused feedback summary is many, and this property propagates through existing
+owns edges. Fixed input/local owning-role sets join by union and preserve every
+local lifetime restriction. All destinations for a carrier/index/type selection
+remain alternatives; selecting just one could withdraw previously possible aliases.
 
-Call completion retains new referents and their owns edges as well as result,
-failure, and modified-storage relationships. Restoration maps all possible
-referents to the caller graph and preserves finite returned field suffixes. Only
-new callee edges are restored: existing input edges already have concrete caller
-associations, and rebuilding grouped input edges as a cross product would invent
-aliases. New summary relationships union all possible sources and use weak
-updates. Known different indices remain disjoint for element updates; structural
-carrier mutation invalidates their loans. Local-only domain slots stay stable
-across reevaluation but have no published edges or restored sources, so they do
-not enter later caller contexts.
+Region relations use finite automata over the same graph. Each owns edge contributes
+its carrier's inline path and index; each queried place ends with its complete
+inline suffix. Cycles represent recursive path languages rather than dropping the
+terminal field or applying a depth threshold. A finite product walk starts at shared
+ancestor objects and matches equal symbols or unknown-index wildcards. Prefix
+intersection determines possible overlap; directed prefix intersection determines
+ancestor protection, with a nonempty remaining path for strict ancestry. Equal-length
+intersection alone identifies possible aliases for role grouping. Thus deep recursive
+text backing can overlap a finite selection while independent `text`/`other` suffixes
+and sibling owning paths remain disjoint. Scalar snapshot writes cannot reconstruct
+a selected ancestor; aggregate replacement retains structural protection even when
+its type contains no owning storage. Stable selection and loan checks still apply
+to every write.
+
+A query answer owns one retained referent domain and owns-edge set, a monotone union
+of reachable write effects, and its normal, typed-failure, and test-stop completions.
+Effects exist even when a function writes and then diverges without a completion.
+They preserve structural invalidation, ordinary backing writes, and Take obligations.
+Obtaining Write access is an independent guard obligation even for a known function
+that performs no mutation; it does not by itself invalidate a borrowed reader or
+iteration. Typed equal-length alias classes expand effect alternatives without
+removing original targets or their full inline suffixes. Store, restoration, and
+completion use the same alias domain for weak state updates, including modification
+bits, available/taken state, and contained loan/capture facts. Strong replacement
+requires a definite singleton with no other possible alias alternatives, so explicit
+replacement of an exact input holder can still release its loans.
+Callers instantiate them in the concrete caller graph against active selections and
+independent live storage/callable/capture loans. Input-holder loans are proved in the
+callee's ordered state, allowing an explicit replacement to release them.
+
+Restoration maps all possible referents, returned values, failure payloads, and
+modified relationships back to the caller graph. Only new callee owns edges are
+restored: existing input edges already have concrete caller associations, and a
+cross product of grouped input edges would invent aliases. Summary updates are weak.
+An edge or effect is hidden only when all owning sources are local; mixed external
+and local sources retain external obligations. Local-only domain slots stay stable
+across reevaluation but have no published edges or restored sources, so they cannot
+enter later caller contexts.
 
 ### Joins and solver completion
 
@@ -174,7 +189,9 @@ exact replacement requires a definite singleton target.
 
 The ownership solver records a dependency whenever an active query reads a call
 answer. Recursive calls read the current answer; changed semantic answers schedule
-their readers again. Normal, typed-failure and test-stop answers join monotonically.
+their readers again. Normal, typed-failure and test-stop completions and reachable effects join monotonically.
+All retained completion states expand to the shared referent domain, including
+exits temporarily absent while a newly requested callee answer is pending.
 The finite source sites, inline paths, distinguished roles, and graph relations
 bound query identity. Internal query, worklist evaluation, storage-node, and storage-edge counts
 measure solver growth; evaluation counts exclude contract checks and do not count
