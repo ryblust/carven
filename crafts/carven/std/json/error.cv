@@ -15,3 +15,11 @@ export struct JSONError {
     kind: JSONErrorKind,
     offset: usize,
 }
+
+export enum ValueError {
+    WrongKind,
+    MissingKey,
+    IndexOutOfBounds,
+    NumberConversion,
+    DepthLimit,
+}

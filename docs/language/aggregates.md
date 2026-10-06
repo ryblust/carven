@@ -61,9 +61,12 @@ Structural display prints the class name without expanding its fields. Generated
 C++ represents checked operations as ordinary functions. External C++
 implementations follow their explicit interoperation contracts.
 
-Static execution rejects class values and operations. Class
-representation patterns, nested class declarations, and C++ import/export
-methods are invalid.
+A class operation may be `const fn` under ordinary execution capability rules.
+It can construct and use class values inside `const fn` bodies, `const` blocks,
+and static tests, with the same representation access rules. Direct class-operation
+calls in module constant initializers, local `const` initializers outside a static block or test, and type-forming constant expressions
+require a `const fn` wrapper. Class representation patterns, nested class
+declarations, and C++ import/export methods are invalid.
 
 ## Contextual construction
 

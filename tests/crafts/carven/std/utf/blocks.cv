@@ -1,9 +1,9 @@
 import std::utf.error using { UTF8Error, UTF8ErrorKind };
-import std::utf.validation using { validate_utf8, UTF8Validator };
+import std::utf.validation using { validate_utf8, UTF8Validation };
 
 private fn compare_validation(bytes: [u8], split: usize) {
-    var vector = UTF8Validator::create();
-    var scalar = UTF8Validator::create();
+    var vector = UTF8Validation::create();
+    var scalar = UTF8Validation::create();
     var vector_failed = false;
     var scalar_failed = false;
     var vector_error = UTF8Error {

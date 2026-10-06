@@ -96,3 +96,29 @@ test "Classes: Take builder delivers its owning string" {
     check(result.as_str() == "Carven");
     check(TextBuilder::create().build().as_str() == "");
 }
+
+private class StaticCounter {
+    value: i32,
+
+    private const fn initial(value: i32) -> i32 => if value < 0 { 0 } else { value };
+
+    const fn create(value: i32) -> StaticCounter => { value: StaticCounter::initial(value) };
+
+    const fn increment(&self) {
+        self.value += 1;
+    }
+
+    const fn read(self) -> i32 => self.value;
+}
+
+private const fn static_counter_value() -> i32 {
+    var counter = StaticCounter::create(-1);
+    counter.increment();
+    var copy = counter;
+    copy.increment();
+    return counter.read() * 10 + copy.read();
+}
+
+const test "Classes: const operations preserve private construction, mutation and independent copies" {
+    check(static_counter_value() == 12);
+}

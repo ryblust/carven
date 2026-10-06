@@ -43,6 +43,37 @@ const TestSuite suite([] static noexcept {
             expect(!(function(result, 4).const_span.has_value()));
         };
 
+    "Parser declaration: class operations retain const qualifiers and private visibility"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "class Counter { value: i32, "
+                "const fn create() -> Counter => { value: 0 }; "
+                "private const fn read(self) -> i32 => self.value; "
+                "fn reset(&self) { self.value = 0; } }"
+            );
+            const auto result = parse_valid(text);
+            const auto ast = result.view();
+            const auto& record = get<ASTRecordDecl>(ast.item(root(result).items[0]));
+            if (!expect_equal(record.operations.size(), 3uz)) {
+                return;
+            }
+            for (const auto index : {0uz, 1uz}) {
+                const auto& operation = get<ASTFunctionDecl>(ast.item(record.operations[index]));
+                if (!expect(operation.const_span.has_value())) {
+                    return;
+                }
+                expect_equal(slice(text, *operation.const_span), std::string_view("const"));
+            }
+            expect(
+                is<ASTPrivateDeclarationVisibility>(
+                    get<ASTFunctionDecl>(ast.item(record.operations[1])).visibility
+                )
+            );
+            expect(!get<ASTFunctionDecl>(ast.item(record.operations[2])).const_span.has_value());
+            check_invalid("class Counter { const private fn read(self) -> i32 => 0; }");
+            check_invalid("class Counter { const value = 0; }");
+        };
+
     "Parser declaration: module root separates imports from ordered top-level items"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view(

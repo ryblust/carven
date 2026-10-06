@@ -1,0 +1,93 @@
+import "carven/std/json/value.hpp" using carven::json::Storage;
+import .error using JSONError;
+import .syntax using { SyntaxState, SyntaxEvent, syntax_state, next_event, validate_number };
+import std::utf.validation using validate_utf8;
+import std::utf.error using UTF8Error;
+
+private fn read_string(bytes: [u8], &state: SyntaxState) -> String throw JSONError {
+    var result = String {};
+    while {
+        match next_event(bytes, &state)? {
+            .StringEscape(start, end, character) => {
+                result.append(str::from_utf8_unchecked(bytes.slice(start, end)));
+                result.push(character);
+            },
+            .StringEnd(start, end) => {
+                result.append(str::from_utf8_unchecked(bytes.slice(start, end)));
+                return &&result;
+            },
+            _ => assert(false),
+        }
+    }
+}
+
+// Recursion builds the tree from checked events; syntax alone limits depth.
+private fn read_value(
+    bytes: [u8],
+    &state: SyntaxState,
+    event: SyntaxEvent
+) -> Storage throw JSONError {
+    match event {
+        .Null => return ::carven::json::Storage::make_null(),
+        .Boolean(value) => return ::carven::json::Storage::make_boolean(value),
+        .Number(start, end) => {
+            return ::carven::json::Storage::make_number(
+                str::from_utf8_unchecked(bytes.slice(start, end))
+            );
+        },
+        .StringBegin(is_key) => {
+            assert(is_key == false);
+            let text = read_string(bytes, &state)?;
+            return ::carven::json::Storage::make_string(&&text);
+        },
+        .ArrayBegin => {
+            var result = ::carven::json::Storage::make_array();
+            while {
+                let element = next_event(bytes, &state)?;
+                match element {
+                    .ArrayEnd => return &&result,
+                    _ => {
+                        let child = read_value(bytes, &state, element)?;
+                        result.append_element(&&child);
+                    },
+                }
+            }
+        },
+        .ObjectBegin => {
+            var result = ::carven::json::Storage::make_object();
+            while {
+                match next_event(bytes, &state)? {
+                    .ObjectEnd => return &&result,
+                    .StringBegin(is_key) => {
+                        assert(is_key);
+                        let key = read_string(bytes, &state)?;
+                        let element = next_event(bytes, &state)?;
+                        let child = read_value(bytes, &state, element)?;
+                        result.append_member(&&key, &&child);
+                    },
+                    _ => assert(false),
+                }
+            }
+        },
+        _ => assert(false),
+    }
+    return ::carven::json::Storage::make_null();
+}
+
+fn parse_storage(text: str) -> Storage throw JSONError {
+    var state = syntax_state();
+    let event = next_event(text.bytes, &state)?;
+    let result = read_value(text.bytes, &state, event)?;
+    assert(next_event(text.bytes, &state)? == .Complete);
+    return &&result;
+}
+
+fn parse_storage_bytes(bytes: [u8]) -> Storage throw JSONError + UTF8Error {
+    validate_utf8(bytes)?;
+    return parse_storage(str::from_utf8_unchecked(bytes))?;
+}
+
+fn parse_number_storage(text: str) -> Storage throw JSONError {
+    validate_number(text.bytes)?;
+    return ::carven::json::Storage::make_number(text);
+}

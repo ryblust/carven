@@ -1,52 +1,73 @@
 # JSON standard craft
 
-The JSON craft validates complete documents and decodes quoted strings.
+The JSON craft validates, reads, constructs, modifies, and writes JSON values.
 
 | Module | Public contract |
 | --- | --- |
-| `std::json.validation` | `validate(text: str) throw JSONError`; `validate_bytes(bytes: [u8]) throw JSONError + UTF8Error` |
-| `std::json.string` | `decode_string(text: str) -> String throw JSONError` |
-| `std::json.error` | `JSONErrorKind`; `JSONError { kind, offset }` |
+| `std::json.value` | Owning `Value` and `ValueKind` |
+| `std::json.validation` | `validate(str)`; `validate_bytes([u8])` |
+| `std::json.string` | `decode_string(str) -> String` |
+| `std::json.error` | `JSONError` with input byte offsets; `ValueError` for value operations |
 
-Both validators check every value, string, escape, number, container delimiter,
-and trailing byte. Any JSON value may be the root. Whitespace is space, tab,
-LF, or CR. Duplicate object keys are accepted. Numbers are checked syntactically
-without conversion, including magnitudes such as `1E400`. Nesting is limited to
-64 containers.
-
-`str` establishes valid UTF-8. `validate_bytes` first validates the entire input's
-encoding and preserves `UTF8Error`; an encoding error takes precedence over a
-JSON syntax error. Escaped UTF-16 surrogate pairs become Unicode scalars.
-Unpaired surrogates are rejected so decoded text satisfies Carven's scalar
-contract. This is a stricter requirement than JSON's escape grammar.
-
-`JSONError.offset` is a zero-based input byte offset. `UnexpectedEnd` points at
-the input length; `UnpairedSurrogate` points at the offending escape's backslash.
-The validators are `const fn`, subject to ordinary execution budgets.
-
-`decode_string` requires exactly one quoted string, without surrounding
-whitespace or trailing input. It validates and decodes in one pass, returning an
-independent `String`. Empty strings, escaped NUL, and all Unicode scalars are
-supported. Decoding requires runtime execution.
+`Value::parse(text)` returns an independent tree. `Value::parse_bytes(bytes)`
+first checks the entire input's UTF-8 encoding; an encoding error takes
+precedence over a JSON syntax error. Any JSON value may be the root.
+`value.to_json()` returns an independent, compact JSON string.
 
 ```carven
-import std::json.validation using validate;
-import std::json.string using decode_string;
-import std::json.error using JSONError;
+import std::json.value using Value;
+import std::json.error using { JSONError, ValueError };
 
-fn example() -> String throw JSONError {
-    validate(r#"{"message": "hello"}"#)?;
-    return decode_string(r#""hello\u0020world""#)?;
+fn update(text: str) -> String throw JSONError + ValueError {
+    var config = Value::parse(text)?;
+    config.set("enabled", &&Value::boolean(true))?;
+    config.set("attempts", &&Value::integer(3))?;
+    return config.to_json()?;
 }
 ```
 
-Validation uses a bounded stack of grammar expectations, without recursive calls
-or input-dependent allocation. String validation and decoding share one scanner
-that advances across ordinary byte runs, escapes, and the closing quote. SIMD
-classifies string stops, whitespace runs, and digit runs through the selected
-backend; loads remain inside the supplied input.
+`Value::null`, `boolean`, `string`, `number`, `integer`, `unsigned_integer`,
+`real`, `array`, and `object` construct values. `number` accepts exactly one
+JSON number spelling; `real` requires a finite value. Arrays support `push`,
+`at`, `set_at`, and `remove_at`. Objects support `get`, `has`, `set`, and
+`erase`. `len` reports the member or element count. `key_at` and `member_at`
+traverse object members in order; `append_member` appends a member, including
+a duplicate key.
 
-Tests in `tests/crafts/carven/std/json/` establish accepted and rejected syntax,
-error positions, Unicode decoding, depth limits, and independent output storage.
-Run them with `./xmakew test -g crafts`. The executable example is in
-`examples/json/`.
+Objects retain member order and duplicate keys. `get` selects the last matching
+member, `set` replaces that member or appends a new one, and `erase` removes
+all matching members. Child access returns an independent value. Copies can
+be modified independently; modifying a child copy requires assigning it back
+to its parent.
+
+Numbers retain their validated spelling as their sole representation. Reading
+and writing preserves large magnitudes such as `1E400`, integer precision,
+negative zero, and exponent spelling. `as_i64` requires integer spelling and a
+representable result; `as_u64`
+additionally requires nonnegative spelling. `as_f64` permits rounding but rejects
+out-of-range results. `number_text` returns the original spelling.
+`as_bool` and `as_string` read the corresponding scalar types. Wrong kinds,
+missing keys, invalid indices, and unsuccessful numeric conversions produce
+`ValueError`; they have no input byte offset.
+
+Validation and parsing share one bounded syntax machine. String events carry
+ordinary byte spans and decoded escape scalars, so parsing builds owned text
+during the same scan. SIMD classifies string stops, whitespace, and digit runs;
+loads remain within the supplied input. The owning representation uses C++
+standard value containers; grammar and writing remain Carven operations.
+
+Whitespace is space, tab, LF, or CR. Escaped surrogate pairs decode to Unicode
+scalars; unpaired surrogates are rejected. Input nesting and writing are limited
+to 64 containers. Writing escapes quotes, backslashes, and control characters;
+other Unicode scalars are written as UTF-8. Writing preserves member order and
+number spelling and does not normalize or sort them.
+
+`JSONError.offset` is a zero-based input byte offset. `UnexpectedEnd` points at
+the input length; `UnpairedSurrogate` points at the offending backslash.
+Validation is available in `const fn` under ordinary execution budgets.
+`decode_string` accepts exactly one quoted string without surrounding whitespace
+and returns independently owned text. Parsing, value storage, decoding, and
+writing require runtime execution.
+
+The contracts are in `tests/crafts/carven/std/json/`; the executable example is
+in `examples/json/`.

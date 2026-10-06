@@ -416,7 +416,7 @@ contain fields only.
 class-declaration = "class", IDENTIFIER, "{", { class-member }, "}";
 class-member = struct-field, ","
              | [ "private" ], class-operation;
-class-operation = "fn", IDENTIFIER,
+class-operation = [ "const" ], "fn", IDENTIFIER,
                   "(", [ class-parameter-list ], ")",
                   [ "->", function-result-type ], [ throw-clause ], function-body;
 class-parameter-list = receiver, [ ",", function-parameter-list ]

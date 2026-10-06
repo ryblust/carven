@@ -1,8 +1,8 @@
-# JSON and SIMD scanning
+# JSON document editing
 
-This example validates a complete JSON document, counts whitespace with a
-constant byte set, and decodes escaped and plain quoted strings into independent
-storage.
+This example reads an owned JSON object, accesses its decoded message, updates
+members, and writes the resulting document. JSON scanning uses the selected SIMD
+backend.
 
 From the repository root:
 
@@ -14,12 +14,9 @@ From the repository root:
 Expected output:
 
 ```text
-JSON is valid
-Whitespace bytes: 3
-Decoded: 你好 JSON
-Decoded plain: plain JSON
+你好 JSON
+{"message":"你好 JSON","ok":true,"attempts":3}
 ```
 
-See the [JSON API](../../crafts/carven/std/json/README.md) and
-[SIMD scanning API](../../crafts/carven/std/simd/README.md#byte-set-scanning)
-for input, error, and storage contracts.
+See the [JSON API](../../crafts/carven/std/json/README.md) for value, error, and
+storage contracts.

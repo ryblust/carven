@@ -1,0 +1,273 @@
+import .error using JSONError;
+import .string using { begin_string, next_string_part };
+import std::simd.scan using { one_of, byte_range, prefix_where };
+
+enum Expectation: u8 {
+    ArrayFirst,
+    ArrayValue,
+    ArraySeparator,
+    ObjectFirst,
+    ObjectKey,
+    ObjectColon,
+    ObjectValue,
+    ObjectSeparator,
+}
+
+// String chunks carry raw byte ranges and decoded escape scalars from one scan.
+enum SyntaxEvent {
+    ArrayBegin,
+    ArrayEnd,
+    ObjectBegin,
+    ObjectEnd,
+    StringBegin(bool),
+    StringEscape(usize, usize, char),
+    StringEnd(usize, usize),
+    Number(usize, usize),
+    Boolean(bool),
+    Null,
+    Complete,
+}
+
+struct SyntaxState {
+    frames: [Expectation; 64],
+    depth: usize,
+    offset: usize,
+    root_done: bool,
+    in_string: bool,
+}
+
+const fn syntax_state() -> SyntaxState => {
+    frames: [.ArrayFirst; 64],
+    depth: 0,
+    offset: 0,
+    root_done: false,
+    in_string: false
+};
+
+private const whitespace = one_of(" \t\r\n".bytes);
+private const digits = byte_range(0x30, 0x39);
+
+private const fn skip_space(bytes: [u8], &offset: usize) {
+    offset += prefix_where(bytes.slice(offset, bytes.len()), whitespace);
+}
+
+private const fn read_digits(bytes: [u8], &offset: usize) throw JSONError {
+    let count = prefix_where(bytes.slice(offset, bytes.len()), digits);
+    if count == 0 {
+        throw JSONError {
+            kind:.InvalidNumber,
+            offset: offset
+        };
+    }
+    offset += count;
+}
+
+private const fn read_number(bytes: [u8], &offset: usize) throw JSONError {
+    if bytes[offset] == 0x2d { offset += 1; }
+    if offset == bytes.len() {
+        throw JSONError {
+            kind:.InvalidNumber,
+            offset: offset
+        };
+    }
+    if bytes[offset] == 0x30 {
+        offset += 1;
+        if offset < bytes.len() && bytes[offset] >= 0x30 && bytes[offset] <= 0x39 {
+            throw JSONError {
+                kind:.InvalidNumber,
+                offset: offset
+            };
+        }
+    } else {
+        read_digits(bytes, &offset)?;
+    }
+    if offset < bytes.len() && bytes[offset] == 0x2e {
+        offset += 1;
+        read_digits(bytes, &offset)?;
+    }
+    if offset < bytes.len() && (bytes[offset] == 0x65 || bytes[offset] == 0x45) {
+        offset += 1;
+        if offset < bytes.len() && (bytes[offset] == 0x2b || bytes[offset] == 0x2d) { offset += 1; }
+        read_digits(bytes, &offset)?;
+    }
+}
+
+private const fn read_literal(bytes: [u8], &offset: usize, const literal: str) throw JSONError {
+    for byte in literal.bytes {
+        if offset == bytes.len() {
+            throw JSONError {
+                kind:.UnexpectedEnd,
+                offset: offset
+            };
+        }
+        if bytes[offset] != byte {
+            throw JSONError {
+                kind:.UnexpectedByte,
+                offset: offset
+            };
+        }
+        offset += 1;
+    }
+}
+
+// Container syntax and depth are checked here; consumers only handle events.
+const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONError {
+    if state.in_string {
+        let start = state.offset;
+        match next_string_part(bytes, &state.offset)? {
+            .End(end) => {
+                state.in_string = false;
+                return .StringEnd(start, end);
+            },
+            .Escape(end, character) => return .StringEscape(start, end, character),
+        }
+    }
+    while {
+        skip_space(bytes, &state.offset);
+        if state.depth == 0 && state.root_done {
+            if state.offset != bytes.len() {
+                throw JSONError {
+                    kind:.TrailingInput,
+                    offset: state.offset
+                };
+            }
+            return .Complete;
+        }
+        if state.offset == bytes.len() {
+            throw JSONError {
+                kind:.UnexpectedEnd,
+                offset: state.offset
+            };
+        }
+        let byte = bytes[state.offset];
+        if state.depth != 0 {
+            match state.frames[state.depth - 1] {
+                .ObjectFirst | .ObjectKey => {
+                    if state.frames[state.depth - 1] == .ObjectFirst && byte == 0x7d {
+                        state.depth -= 1;
+                        state.offset += 1;
+                        return .ObjectEnd;
+                    }
+                    begin_string(bytes, &state.offset)?;
+                    state.in_string = true;
+                    state.frames[state.depth - 1] = .ObjectColon;
+                    return .StringBegin(true);
+                },
+                .ObjectColon => {
+                    if byte != 0x3a {
+                        throw JSONError {
+                            kind:.UnexpectedByte,
+                            offset: state.offset
+                        };
+                    }
+                    state.offset += 1;
+                    state.frames[state.depth - 1] = .ObjectValue;
+                    continue;
+                },
+                .ObjectSeparator => {
+                    if byte == 0x7d {
+                        state.depth -= 1;
+                        state.offset += 1;
+                        return .ObjectEnd;
+                    }
+                    if byte != 0x2c {
+                        throw JSONError {
+                            kind:.UnexpectedByte,
+                            offset: state.offset
+                        };
+                    }
+                    state.offset += 1;
+                    state.frames[state.depth - 1] = .ObjectKey;
+                    continue;
+                },
+                .ObjectValue => {
+                    state.frames[state.depth - 1] = .ObjectSeparator;
+                },
+                .ArrayFirst | .ArrayValue => {
+                    if state.frames[state.depth - 1] == .ArrayFirst && byte == 0x5d {
+                        state.depth -= 1;
+                        state.offset += 1;
+                        return .ArrayEnd;
+                    }
+                    state.frames[state.depth - 1] = .ArraySeparator;
+                },
+                .ArraySeparator => {
+                    if byte == 0x5d {
+                        state.depth -= 1;
+                        state.offset += 1;
+                        return .ArrayEnd;
+                    }
+                    if byte != 0x2c {
+                        throw JSONError {
+                            kind:.UnexpectedByte,
+                            offset: state.offset
+                        };
+                    }
+                    state.offset += 1;
+                    state.frames[state.depth - 1] = .ArrayValue;
+                    continue;
+                },
+            }
+        } else {
+            state.root_done = true;
+        }
+        match byte {
+            0x7b | 0x5b => {
+                if state.depth == state.frames.as_slice().len() {
+                    throw JSONError {
+                        kind:.DepthLimit,
+                        offset: state.offset
+                    };
+                }
+                state.frames[state.depth] = if byte == 0x7b { .ObjectFirst } else { .ArrayFirst };
+                state.depth += 1;
+                state.offset += 1;
+                return if byte == 0x7b { .ObjectBegin } else { .ArrayBegin };
+            },
+            0x22 => {
+                begin_string(bytes, &state.offset)?;
+                state.in_string = true;
+                return .StringBegin(false);
+            },
+            0x74 => {
+                read_literal(bytes, &state.offset, "true")?;
+                return .Boolean(true);
+            },
+            0x66 => {
+                read_literal(bytes, &state.offset, "false")?;
+                return .Boolean(false);
+            },
+            0x6e => {
+                read_literal(bytes, &state.offset, "null")?;
+                return .Null;
+            },
+            0x2d | 0x30..=0x39 => {
+                let start = state.offset;
+                read_number(bytes, &state.offset)?;
+                return .Number(start, state.offset);
+            },
+            _ => throw JSONError {
+                kind:.UnexpectedByte,
+                offset: state.offset
+            },
+        }
+    }
+}
+
+// Runtime number construction shares the document's number grammar.
+const fn validate_number(bytes: [u8]) throw JSONError {
+    if bytes.is_empty() {
+        throw JSONError {
+            kind:.InvalidNumber,
+            offset: 0
+        };
+    }
+    var offset: usize = 0;
+    read_number(bytes, &offset)?;
+    if offset != bytes.len() {
+        throw JSONError {
+            kind:.InvalidNumber,
+            offset: offset
+        };
+    }
+}

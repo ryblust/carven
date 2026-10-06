@@ -2,7 +2,7 @@ import .error using JSONError;
 import std::simd.scan using { one_of, byte_range, set_union, find_where };
 
 // The payload ends the ordinary byte run; offset advances past the terminator.
-private enum StringPart {
+enum StringPart {
     End(usize),
     Escape(usize, char),
 }
@@ -92,7 +92,7 @@ private const fn read_escape(bytes: [u8], &offset: usize) -> char throw JSONErro
     return char::from_u32_unchecked(0x10000 + ((first - 0xd800) << 10) + second - 0xdc00);
 }
 
-private const fn begin_string(bytes: [u8], &offset: usize) throw JSONError {
+const fn begin_string(bytes: [u8], &offset: usize) throw JSONError {
     if offset == bytes.len() {
         throw JSONError {
             kind:.UnexpectedEnd,
@@ -109,7 +109,7 @@ private const fn begin_string(bytes: [u8], &offset: usize) throw JSONError {
 }
 
 // Raw bytes are not checked for UTF-8 here; each public ingress establishes it.
-private const fn next_string_part(bytes: [u8], &offset: usize) -> StringPart throw JSONError {
+const fn next_string_part(bytes: [u8], &offset: usize) -> StringPart throw JSONError {
     var end = offset;
     match find_where(bytes.slice(offset, bytes.len()), stops) {
         .Missing => throw JSONError {
@@ -130,16 +130,6 @@ private const fn next_string_part(bytes: [u8], &offset: usize) -> StringPart thr
     offset = end + 1;
     if byte == 0x22 { return .End(end); }
     return .Escape(end, read_escape(bytes, &offset)?);
-}
-
-const fn skip_string(bytes: [u8], &offset: usize) throw JSONError {
-    begin_string(bytes, &offset)?;
-    while {
-        match next_string_part(bytes, &offset)? {
-            .End(_) => return,
-            .Escape(_, _) => {},
-        }
-    }
 }
 
 // Exactly one quoted string. The result owns independent decoded storage.

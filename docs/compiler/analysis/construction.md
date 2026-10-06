@@ -160,7 +160,12 @@ The completed operation uses `SemCall` with an ordinary receiver argument.
 Declaration analysis checks the receiver contract; recursive default
 initialization rejects classes in both construction and published-program queries.
 Private representation remains available to type contents, ownership, and target
-realization. Static execution rejects class values and operations.
+realization. Class `const fn` operations use the same execution capability and
+lexical representation rules as ordinary function bodies. Direct class-operation
+calls in module constant initializers, local `const`
+initializers outside a static block or test, and type-forming constant expressions
+require a `const fn` wrapper. These entry sites do not grant class representation
+access.
 
 ## Completion requests
 

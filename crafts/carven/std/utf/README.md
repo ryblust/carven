@@ -13,7 +13,7 @@ the official package sources.
 | `std::utf.scalar` | Unicode scalar conversion and `UnicodeScalarError` |
 | `std::utf.codec` | UTF-8 encoding and prefix decoding; `UTF8Encoded` and `UTF8DecodeResult` |
 | `std::utf.error` | Shared `UTF8ErrorKind` and `UTF8Error` contracts |
-| `std::utf.validation` | Whole-buffer and incremental validation; `UTF8Validator` |
+| `std::utf.validation` | Whole-buffer and incremental validation; `UTF8Validation` |
 | `std::utf.text` | Borrowed and owning text construction |
 
 | Operation | Result |
@@ -26,7 +26,7 @@ the official package sources.
 | `encoded_bytes(encoded: UTF8Encoded) -> [u8]` | Borrow exactly the valid encoding prefix |
 | `char_from_u32(value: u32) -> char throw UnicodeScalarError` | Reject surrogates and values above U+10FFFF |
 | `character as u32` | Unicode scalar number |
-| `UTF8Validator::create() -> UTF8Validator` | Start an incremental validation attempt |
+| `UTF8Validation::create() -> UTF8Validation` | Start an incremental validation attempt |
 | `state.push(byte: u8) throw UTF8Error` | Accept one byte |
 | `state.feed(bytes: [u8]) throw UTF8Error` | Accept one block; its end is not EOF |
 | `state.check_complete() throw UTF8Error` | Check that no partial scalar remains; does not end the stream |
@@ -71,11 +71,14 @@ belong to the encoding, and the remaining bytes are zero.
 `encoded_bytes(encoded)` borrows that valid prefix. Bind the encoding before
 retaining its view; Carven tracks the backing storage's lifetime and mutation.
 
+`UTF8Validation` operations are also `const fn`. Incremental state can be
+created and updated inside `const fn` bodies, `const` blocks, and static tests.
+See the [class execution rules](../../../../docs/language/aggregates.md#ordinary-value-classes)
+for constant-expression entry boundaries.
+Static execution is subject to the language's ordinary resource budgets.
+
 `from_utf8` and `to_string` currently require runtime execution: the executor
-does not admit unchecked borrowed text construction. `UTF8Validator` also requires
-runtime execution because class values are outside the static-execution subset.
-Whole-buffer validation uses internal struct state. Static execution
-is subject to the language's ordinary resource budgets.
+does not admit unchecked borrowed text construction.
 
 ## Error and streaming contract
 
@@ -96,7 +99,7 @@ retrying with different bytes describes a different stream. An incomplete block
 is accepted, and only `check_complete` reports truncation. Logical stream length
 must fit `usize`.
 
-Initialize `UTF8Validator` through `UTF8Validator::create()` and change it through
+Initialize `UTF8Validation` through `UTF8Validation::create()` and change it through
 `push` or `feed`. Its private fields record byte positions and the pending
 sequence; it stores no input. `processed_bytes()` returns the accepted byte count,
 and `is_complete()` reports whether no partial scalar is pending. Both queries
@@ -117,7 +120,7 @@ declarations are available within `carven`, not exported to consumers. The
 `validation` and `codec` modules share `scan`; `text` composes the public
 validation API.
 
-`UTF8Validator` encapsulates the internal state in a class. Copies are independent
+`UTF8Validation` encapsulates the internal state in a class. Copies are independent
 validation attempts, including any pending sequence. The shared transition checks
 a candidate state before committing it, preserving every field on a rejected byte.
 Only the first continuation byte needs lead-specific range checks; subsequent
@@ -131,8 +134,8 @@ compiler tracks borrowed text backing.
 
 `tests/crafts/carven/std/utf/` uses static tests for exact encodings, scalar
 boundaries, invalid byte classes, error positions, and constant publication.
-Runtime tests cover the full Unicode scalar domain, incremental class state,
-and borrowed and owning text storage. Run it with
+Incremental class state also has a static execution contract. Runtime tests
+cover the full Unicode scalar domain and borrowed and owning text storage. Run it with
 `./xmakew test -g crafts`; native and portable SIMD binaries use the generated default test entry.
 Compiler diagnostic tests check returned text borrows at the public API.
 

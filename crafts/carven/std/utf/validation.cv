@@ -1,22 +1,22 @@
 import .error using UTF8Error;
 import .scan using { UTF8State, push_utf8, feed_utf8, check_utf8_complete };
 
-export class UTF8Validator {
+export class UTF8Validation {
     state: UTF8State,
 
-    fn create() -> UTF8Validator => { state: {} };
+    const fn create() -> UTF8Validation => { state: {} };
 
     // A rejected byte leaves the caller's state unchanged.
-    fn push(&self, byte: u8) throw UTF8Error => push_utf8(&self.state, byte)?;
+    const fn push(&self, byte: u8) throw UTF8Error => push_utf8(&self.state, byte)?;
 
     // A block boundary can split a scalar; check_complete checks for a pending scalar.
-    fn feed(&self, bytes: [u8]) throw UTF8Error => feed_utf8(&self.state, bytes)?;
+    const fn feed(&self, bytes: [u8]) throw UTF8Error => feed_utf8(&self.state, bytes)?;
 
-    fn check_complete(self) throw UTF8Error => check_utf8_complete(self.state)?;
+    const fn check_complete(self) throw UTF8Error => check_utf8_complete(self.state)?;
 
-    fn is_complete(self) -> bool => self.state.remaining == 0;
+    const fn is_complete(self) -> bool => self.state.remaining == 0;
 
-    fn processed_bytes(self) -> usize => self.state.offset;
+    const fn processed_bytes(self) -> usize => self.state.offset;
 }
 
 export const fn validate_utf8(bytes: [u8]) throw UTF8Error {

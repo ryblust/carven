@@ -461,13 +461,18 @@ auto Parser::parse_record(ASTDeclarationVisibility visibility) noexcept
     auto fields = std::vector<ASTRecordField> {};
     auto operations = std::vector<ASTItemID>();
     while (!failed && !check(TokenKind::RightBrace)) {
-        if (kind == ASTRecordKind::Class && (check(TokenKind::Fn) || check(TokenKind::Private))) {
+        if (kind == ASTRecordKind::Class
+            && (check(TokenKind::Fn) || check(TokenKind::Private) || check(TokenKind::Const))) {
             const auto start = current().span;
             auto access = ASTDeclarationVisibility(ASTBareDeclarationVisibility {});
             if (const auto keyword = match(TokenKind::Private)) {
                 access = ASTPrivateDeclarationVisibility {.keyword_span = keyword->span};
             }
-            auto operation = parse_function(access, std::nullopt, std::nullopt, std::nullopt);
+            const auto const_span =
+                match(TokenKind::Const).transform([](const Token& token) static {
+                    return token.span;
+                });
+            auto operation = parse_function(access, std::nullopt, std::nullopt, const_span);
             if (!operation) {
                 return std::nullopt;
             }

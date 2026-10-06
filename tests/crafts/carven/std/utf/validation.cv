@@ -1,12 +1,52 @@
 import std::utf.codec using decode_utf8_prefix;
 import std::utf.error using { UTF8Error, UTF8ErrorKind };
-import std::utf.validation using { validate_utf8, UTF8Validator };
+import std::utf.validation using { validate_utf8, UTF8Validation };
+
+private const fn incremental_static_state() -> bool {
+    var state = UTF8Validation::create();
+    if state.is_complete() == false || state.processed_bytes() != 0 { return false; }
+    try {
+        state.push(0xe2)?;
+        state.feed([0x82])?;
+    } catch {
+        UTF8Error(_) => return false,
+    }
+    var copy = state;
+    var truncated = false;
+    try {
+        state.check_complete()?;
+    } catch {
+        UTF8Error(error) => {
+            truncated = error.kind == .Truncated && error.offset == 2 && error.sequence_start == 0;
+        },
+    }
+    if truncated == false || state.is_complete() || state.processed_bytes() != 2 { return false; }
+    try {
+        state.push(0xac)?;
+        state.check_complete()?;
+    } catch {
+        UTF8Error(_) => return false,
+    }
+    if state.is_complete() == false || state.processed_bytes() != 3 { return false; }
+    if copy.is_complete() || copy.processed_bytes() != 2 { return false; }
+    try {
+        copy.feed([0xad])?;
+        copy.check_complete()?;
+    } catch {
+        UTF8Error(_) => return false,
+    }
+    return copy.is_complete() && copy.processed_bytes() == 3;
+}
+
+const test "UTF8: incremental class state executes statically with independent copies" {
+    check(incremental_static_state());
+}
 
 test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
     let bytes: [u8; 5] = [0x61, 0xf0, 0x9f, 0x98, 0x80];
     let view = bytes.as_slice();
     for split in 0..=view.len() {
-        var state = UTF8Validator::create();
+        var state = UTF8Validation::create();
         try {
             state.feed(view.slice(0, split))?;
             state.feed(view.slice(split, view.len()))?;
@@ -16,7 +56,7 @@ test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
             UTF8Error(_) => check(false),
         }
     }
-    var state = UTF8Validator::create();
+    var state = UTF8Validation::create();
     var rejected = false;
     try {
         state.push(0x61)?;
@@ -232,7 +272,7 @@ test "UTF8: chunk partitions preserve error positions and accepted progress" {
         var rejected = false;
         for first in 0..=bytes.len() {
             for second in first..=bytes.len() {
-                var state = UTF8Validator::create();
+                var state = UTF8Validation::create();
                 rejected = false;
                 try {
                     state.feed(bytes.slice(0, first))?;
@@ -252,7 +292,7 @@ test "UTF8: chunk partitions preserve error positions and accepted progress" {
             }
         }
         if item.error.offset < bytes.len() {
-            var state = UTF8Validator::create();
+            var state = UTF8Validation::create();
             try {
                 state.feed(bytes.slice(0, item.error.offset))?;
             } catch {
@@ -321,7 +361,7 @@ const test "UTF8: prefix decoding reports errors relative to its input" {
 }
 
 test "UTF8: copied validators and rejected operations preserve pending constraints" {
-    var state = UTF8Validator::create();
+    var state = UTF8Validation::create();
     try {
         state.push(0xe0)?;
         var copy = state;
@@ -413,7 +453,7 @@ test "UTF8: SIMD and byte pushes agree across block boundaries and recovery" {
                 data[prefix + index] = item.bytes[index];
             }
             let bytes = data.as_slice().slice(0, prefix + item.length);
-            var reference = UTF8Validator::create();
+            var reference = UTF8Validation::create();
             var scalar_rejected = false;
             var scalar_error = item.error;
             try {
@@ -429,7 +469,7 @@ test "UTF8: SIMD and byte pushes agree across block boundaries and recovery" {
             }
             check(scalar_rejected);
             for split in 0..=bytes.len() {
-                var vector = UTF8Validator::create();
+                var vector = UTF8Validation::create();
                 var scalar = reference;
                 var vector_rejected = false;
                 var vector_error = item.error;
@@ -472,7 +512,7 @@ test "UTF8: SIMD and byte pushes agree across block boundaries and recovery" {
     }
     let valid = "0123456789abcde😀0123456789abcdef你abcdefghijklmnop\u{0}abcdefghijklmnop".bytes;
     for split in 0..=valid.len() {
-        var validator = UTF8Validator::create();
+        var validator = UTF8Validation::create();
         try {
             validator.feed(valid.slice(0, split))?;
             validator.feed(valid.slice(split, valid.len()))?;

@@ -1,0 +1,176 @@
+import "carven/std/json/value.hpp";
+import <cmath>;
+import .error using { JSONError, ValueError };
+import .parse using { parse_storage, parse_storage_bytes, parse_number_storage };
+import .serialize using serialize_storage;
+import std::utf.error using UTF8Error;
+
+export enum ValueKind: u8 {
+    Null,
+    Boolean,
+    Number,
+    String,
+    Array,
+    Object,
+}
+
+// One owning tree. Reads of children and text return independent values.
+export class Value {
+    storage: ::carven::json::Storage,
+
+    fn null() -> Value => { storage: ::carven::json::Storage::make_null() };
+    fn boolean(value: bool) -> Value => { storage: ::carven::json::Storage::make_boolean(value) };
+    fn number(text: str) -> Value throw JSONError => { storage: parse_number_storage(text)? };
+    fn integer(value: i64) -> Value => { storage: ::carven::json::Storage::make_integer(value) };
+
+    fn unsigned_integer(value: u64) -> Value => {
+        storage: ::carven::json::Storage::make_unsigned_integer(value),
+    };
+
+    fn real(value: f64) -> Value throw ValueError {
+        if (::std::isfinite(value) as bool) == false { throw ValueError::NumberConversion; }
+        return { storage: ::carven::json::Storage::make_real(value) };
+    }
+
+    fn string(text: str) -> Value {
+        let owned = text as String;
+        return { storage: ::carven::json::Storage::make_string(&&owned) };
+    }
+
+    fn array() -> Value => { storage: ::carven::json::Storage::make_array() };
+    fn object() -> Value => { storage: ::carven::json::Storage::make_object() };
+    fn parse(text: str) -> Value throw JSONError => { storage: parse_storage(text)? };
+
+    fn parse_bytes(bytes: [u8]) -> Value throw JSONError + UTF8Error => {
+        storage: parse_storage_bytes(bytes)?,
+    };
+
+    fn to_json(self) -> String throw ValueError => serialize_storage(::std::cref(self.storage))?;
+
+    fn kind(self) -> ValueKind {
+        return match self.storage.kind() as u8 {
+            0 => .Null,
+            1 => .Boolean,
+            2 => .Number,
+            3 => .String,
+            4 => .Array,
+            _ => .Object,
+        };
+    }
+
+    private fn require_kind(self, expected: ValueKind) throw ValueError {
+        if self.kind() != expected { throw ValueError::WrongKind; }
+    }
+
+    private fn require_index(self, index: usize) throw ValueError {
+        if index >= self.storage.size() { throw ValueError::IndexOutOfBounds; }
+    }
+
+    fn as_bool(self) -> bool throw ValueError {
+        self.require_kind(.Boolean)?;
+        return self.storage.boolean_value();
+    }
+
+    fn as_string(self) -> String throw ValueError {
+        self.require_kind(.String)?;
+        return self.storage.text();
+    }
+
+    fn number_text(self) -> String throw ValueError {
+        self.require_kind(.Number)?;
+        return self.storage.text();
+    }
+
+    fn as_i64(self) -> i64 throw ValueError {
+        self.require_kind(.Number)?;
+        let converted = self.storage.to_i64();
+        if converted.has_value() { return converted.value() as i64; }
+        throw ValueError::NumberConversion;
+    }
+
+    fn as_u64(self) -> u64 throw ValueError {
+        self.require_kind(.Number)?;
+        let converted = self.storage.to_u64();
+        if converted.has_value() { return converted.value() as u64; }
+        throw ValueError::NumberConversion;
+    }
+
+    fn as_f64(self) -> f64 throw ValueError {
+        self.require_kind(.Number)?;
+        let converted = self.storage.to_f64();
+        if converted.has_value() { return converted.value() as f64; }
+        throw ValueError::NumberConversion;
+    }
+
+    fn len(self) -> usize throw ValueError {
+        if self.kind() != .Array && self.kind() != .Object { throw ValueError::WrongKind; }
+        return self.storage.size() as usize;
+    }
+
+    fn at(self, index: usize) -> Value throw ValueError {
+        self.require_kind(.Array)?;
+        self.require_index(index)?;
+        return { storage: self.storage.element(index) };
+    }
+
+    fn push(&self, &&value: Value) throw ValueError {
+        self.require_kind(.Array)?;
+        let child = (&&value).storage;
+        self.storage.append_element(&&child);
+    }
+
+    fn set_at(&self, index: usize, &&value: Value) throw ValueError {
+        self.require_kind(.Array)?;
+        self.require_index(index)?;
+        let child = (&&value).storage;
+        self.storage.replace_element(index, &&child);
+    }
+
+    fn remove_at(&self, index: usize) throw ValueError {
+        self.require_kind(.Array)?;
+        self.require_index(index)?;
+        self.storage.erase_element(index);
+    }
+
+    fn key_at(self, index: usize) -> String throw ValueError {
+        self.require_kind(.Object)?;
+        self.require_index(index)?;
+        return self.storage.member_key(index);
+    }
+
+    fn member_at(self, index: usize) -> Value throw ValueError {
+        self.require_kind(.Object)?;
+        self.require_index(index)?;
+        return { storage: self.storage.member_value(index) };
+    }
+
+    fn has(self, key: str) -> bool throw ValueError {
+        self.require_kind(.Object)?;
+        return (self.storage.find_member(key) < self.storage.size()) as bool;
+    }
+
+    fn get(self, key: str) -> Value throw ValueError {
+        self.require_kind(.Object)?;
+        let index = self.storage.find_member(key) as usize;
+        if index == self.storage.size() { throw ValueError::MissingKey; }
+        return { storage: self.storage.member_value(index) };
+    }
+
+    fn append_member(&self, key: str, &&value: Value) throw ValueError {
+        self.require_kind(.Object)?;
+        let owned_key = key as String;
+        let child = (&&value).storage;
+        self.storage.append_member(&&owned_key, &&child);
+    }
+
+    fn set(&self, key: str, &&value: Value) throw ValueError {
+        self.require_kind(.Object)?;
+        let child = (&&value).storage;
+        self.storage.set_member(key, &&child);
+    }
+
+    fn erase(&self, key: str) -> usize throw ValueError {
+        self.require_kind(.Object)?;
+        return self.storage.erase_key(key) as usize;
+    }
+}
