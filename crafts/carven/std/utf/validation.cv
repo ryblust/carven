@@ -1,10 +1,10 @@
 import .error using UTF8Error;
 import .scan using { UTF8State, push_utf8, feed_utf8, check_utf8_complete };
 
-export class UTF8Validation {
+export class UTF8Validator {
     state: UTF8State,
 
-    const fn create() -> UTF8Validation => { state: {} };
+    const fn create() -> UTF8Validator => { state: {} };
 
     // A rejected byte leaves the caller's state unchanged.
     const fn push(&self, byte: u8) throw UTF8Error => push_utf8(&self.state, byte)?;
