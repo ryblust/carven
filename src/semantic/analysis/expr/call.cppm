@@ -6,6 +6,7 @@ import :frontend.ast.storage;
 import :semantic.analysis.expr.aggregate;
 import :semantic.analysis.expr.interpolation;
 import :semantic.analysis.expr.member;
+import :semantic.analysis.expr.numeric;
 import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.simd;
 import :semantic.analysis.expr.sequence;
@@ -156,6 +157,20 @@ auto interpret_call(
                     span
                 );
             }
+        }
+        const auto floating = decide_float_method(
+            site.draft(),
+            site.type(*operand),
+            site.spelling(member->name_span),
+            source.arguments.size()
+        );
+        if (!floating) {
+            co_return std::unexpected(
+                site.fail(span, floating.error().code, std::string(floating.error().message))
+            );
+        }
+        if (floating->has_value()) {
+            co_return construct_float_query(site, **floating, std::move(*operand), span);
         }
         const auto sequence = decide_sequence_method(
             site.draft(),

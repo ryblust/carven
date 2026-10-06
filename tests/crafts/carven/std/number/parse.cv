@@ -1,0 +1,43 @@
+import std::number.parse using { ParseError, parse_i64, parse_u64, parse_f64 };
+
+test "Number parsing: complete representable decimal inputs produce scalars" {
+    try {
+        check(parse_i64("-9223372036854775808")? == -9223372036854775807i64 - 1);
+        check(parse_u64("18446744073709551615")? == 18446744073709551615u64);
+        check(parse_f64("1.25e2")? == 125.0);
+        check(parse_f64("inf")?.is_finite() == false);
+        check(parse_f64("nan")?.is_finite() == false);
+    } catch {
+        ParseError(_) => fail("representable inputs must parse"),
+    }
+}
+
+test "Number parsing: incomplete malformed and unrepresentable inputs fail" {
+    for input in ["", " 1", "+1", "1x", "1.5", "9223372036854775808"] {
+        var rejected = false;
+        try {
+            let ignored = parse_i64(input)?;
+        } catch {
+            ParseError(_) => { rejected = true; },
+        }
+        check(rejected);
+    }
+    for input in ["-0", "-1", "18446744073709551616"] {
+        var rejected = false;
+        try {
+            let ignored = parse_u64(input)?;
+        } catch {
+            ParseError(_) => { rejected = true; },
+        }
+        check(rejected);
+    }
+    for input in ["", " 1", "+1", "1e", "1x", "1e400"] {
+        var rejected = false;
+        try {
+            let ignored = parse_f64(input)?;
+        } catch {
+            ParseError(_) => { rejected = true; },
+        }
+        check(rejected);
+    }
+}

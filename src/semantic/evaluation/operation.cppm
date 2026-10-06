@@ -202,3 +202,10 @@ auto fold_simd_constant(
     std::span<const std::optional<ConstantID>> operands,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+
+auto evaluate_float_intrinsic_constant_value(
+    const ExecutionValueAccess& values,
+    FloatIntrinsic intrinsic,
+    const ConstantFact& operand,
+    TypeID result
+) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;

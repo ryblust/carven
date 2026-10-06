@@ -574,6 +574,16 @@ auto OwnershipBodyAnalyzer::expression(
                                 restore_storage_readers(previous_readers);
                                 co_return {};
                             },
+                            [&](const FloatIntrinsic&) noexcept
+                                -> ContinuationTask<std::monostate> {
+                                static_cast<void>(
+                                    co_await evaluate(value.operands.front().expression)
+                                );
+                                if (flow.normal) {
+                                    flow.normal->value = OwnershipRelationships {};
+                                }
+                                co_return {};
+                            },
                             [&](const SIMDIntrinsic&) noexcept -> ContinuationTask<std::monostate> {
                                 const auto previous_readers = storage_readers.size();
                                 for (const auto& operand : value.operands) {

@@ -258,6 +258,9 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                             }
                             return rule;
                         },
+                        [&](const FloatIntrinsic&) noexcept {
+                            return operands(value.operands.front().expression);
+                        },
                         [&](const SequenceIntrinsicOperation&) noexcept { return required; },
                         [&](const TextIntrinsic& family) noexcept {
                             return text_intrinsic_writes(family) || family == TextIntrinsic::FromStr

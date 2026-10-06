@@ -529,6 +529,24 @@ auto SemanticExecutor::expression_value(
             .payload = std::move(elements)
         };
     } else if constexpr (std::same_as<Operation, SemIntrinsic>) {
+        if (const auto* intrinsic = std::get_if<FloatIntrinsic>(&operation.operation)) {
+            auto input = co_await this->value(frame, operation.operands.front().expression);
+            if (!input) {
+                co_return std::unexpected(std::move(input.error()));
+            }
+            auto fact = read_fact(*input, source.origin);
+            if (!fact) {
+                co_return std::unexpected(std::move(fact.error()));
+            }
+            auto target = type(source.type.construction(), source.origin);
+            if (!target) {
+                co_return std::unexpected(std::move(target.error()));
+            }
+            co_return finish(
+                evaluate_float_intrinsic_constant_value(values, *intrinsic, *fact, *target),
+                source.origin
+            );
+        }
         if (std::holds_alternative<SIMDIntrinsic>(operation.operation)) {
             co_return co_await simd(frame, operation, source);
         }

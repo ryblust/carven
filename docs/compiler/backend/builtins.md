@@ -33,7 +33,7 @@ selected format; folded operands retain their execution obligations. String
 contents are observed after all holes complete.
 
 `PreparedWriterFormat` lowers through the shared statement builder in
-`realization.format` to `runtime::Writer` in `writer.hpp`. Formatted append emits
+`realization.format` to `runtime::FormatWriter` in `format_writer.hpp`. Formatted append emits
 ordinary statements after the expression builder completes its inputs and flushes
 pending earlier work. A direct owning return with the native return ABI creates a
 local String, writes its fields, and returns it by name, permitting C++ NRVO.

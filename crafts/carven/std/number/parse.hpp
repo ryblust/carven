@@ -1,19 +1,18 @@
 #pragma once
 
 #include <charconv>
-#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string_view>
 #include <system_error>
 #include <type_traits>
 
-namespace carven::runtime {
+namespace carven::number {
 
 namespace detail {
 
 template<typename Number>
-auto parse_number_text(std::string_view text) noexcept -> std::optional<Number> {
+auto parse(std::string_view text) noexcept -> std::optional<Number> {
     if (text.empty()) {
         return std::nullopt;
     }
@@ -33,26 +32,21 @@ auto parse_number_text(std::string_view text) noexcept -> std::optional<Number> 
     if (result.ec != std::errc {} || result.ptr != text.data() + text.size()) {
         return std::nullopt;
     }
-    if constexpr (std::is_floating_point_v<Number>) {
-        if (!std::isfinite(value)) {
-            return std::nullopt;
-        }
-    }
     return value;
 }
 
 } // namespace detail
 
 inline auto parse_i64(std::string_view text) noexcept -> std::optional<std::int64_t> {
-    return detail::parse_number_text<std::int64_t>(text);
+    return detail::parse<std::int64_t>(text);
 }
 
 inline auto parse_u64(std::string_view text) noexcept -> std::optional<std::uint64_t> {
-    return detail::parse_number_text<std::uint64_t>(text);
+    return detail::parse<std::uint64_t>(text);
 }
 
 inline auto parse_f64(std::string_view text) noexcept -> std::optional<double> {
-    return detail::parse_number_text<double>(text);
+    return detail::parse<double>(text);
 }
 
-} // namespace carven::runtime
+} // namespace carven::number

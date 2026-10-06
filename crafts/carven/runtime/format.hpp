@@ -1,6 +1,6 @@
 #pragma once
 
-#include "string.hpp"
+#include "text/text.hpp"
 
 #include <cstddef>
 #include <format>

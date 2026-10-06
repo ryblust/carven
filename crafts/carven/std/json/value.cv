@@ -1,5 +1,4 @@
-import "carven/runtime/number_text.hpp";
-import <cmath>;
+import std::number.parse using { ParseError, parse_i64, parse_u64, parse_f64 };
 import .error using { JSONError, ValueError };
 import .node using { Node, Member };
 import .parse using { parse_node, parse_node_bytes, parse_number_node };
@@ -35,7 +34,7 @@ export class Value {
     fn unsigned_integer(value: u64) -> Value => { node:.Number(f"{value}") };
 
     fn real(value: f64) -> Value throw ValueError {
-        if (::std::isfinite(value) as bool) == false { throw ValueError::NumberConversion; }
+        if value.is_finite() == false { throw ValueError::NumberConversion; }
         return { node:.Number(f"{value}") };
     }
 
@@ -85,9 +84,11 @@ export class Value {
     fn as_i64(self) -> i64 throw ValueError {
         match self.node {
             .Number(ref text) => {
-                let converted = ::carven::runtime::parse_i64(text.as_str());
-                if converted.has_value() { return converted.value() as i64; }
-                throw ValueError::NumberConversion;
+                return try {
+                    parse_i64(text.as_str())?
+                } catch {
+                    ParseError(_) => throw ValueError::NumberConversion,
+                };
             },
             _ => throw ValueError::WrongKind,
         }
@@ -96,9 +97,11 @@ export class Value {
     fn as_u64(self) -> u64 throw ValueError {
         match self.node {
             .Number(ref text) => {
-                let converted = ::carven::runtime::parse_u64(text.as_str());
-                if converted.has_value() { return converted.value() as u64; }
-                throw ValueError::NumberConversion;
+                return try {
+                    parse_u64(text.as_str())?
+                } catch {
+                    ParseError(_) => throw ValueError::NumberConversion,
+                };
             },
             _ => throw ValueError::WrongKind,
         }
@@ -107,9 +110,11 @@ export class Value {
     fn as_f64(self) -> f64 throw ValueError {
         match self.node {
             .Number(ref text) => {
-                let converted = ::carven::runtime::parse_f64(text.as_str());
-                if converted.has_value() { return converted.value() as f64; }
-                throw ValueError::NumberConversion;
+                return try {
+                    parse_f64(text.as_str())?
+                } catch {
+                    ParseError(_) => throw ValueError::NumberConversion,
+                };
             },
             _ => throw ValueError::WrongKind,
         }

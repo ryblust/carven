@@ -23,6 +23,7 @@ import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.frontend.parse.fixture;
 import :test.internal.semantic.analysis.fixture;
@@ -537,6 +538,29 @@ const TestSuite suite([] static noexcept {
             expect(!(constant_evaluation_diagnostic(ConstantEvaluationFailure::OperandNotConstant)
                          .has_value()));
         };
+
+    "Floating queries: receiver domains and arity are checked"_test = [] static noexcept {
+        auto fixture = OperationFixture();
+        auto& draft = fixture.compilation;
+        for (const auto kind : {BuiltinType::F32, BuiltinType::F64}) {
+            const auto selected =
+                decide_float_method(draft, draft.builtin_type(kind), "is_finite", 0);
+            require(selected.has_value() && selected->has_value());
+            expect(**selected == FloatIntrinsic::IsFinite);
+            const auto invalid =
+                decide_float_method(draft, draft.builtin_type(kind), "is_finite", 1);
+            require(!invalid.has_value());
+            expect_equal(invalid.error().code, DiagnosticCode::TypeMethodCallArity);
+        }
+        const auto invalid =
+            decide_float_method(draft, draft.builtin_type(BuiltinType::I32), "is_finite", 0);
+        require(invalid.has_value());
+        expect(!invalid->has_value());
+        expect_diagnostic(
+            analyze_test_errors("fn invalid(value: f64) { value.is_finite(1); }"),
+            DiagnosticCode::TypeMethodCallArity
+        );
+    };
 
     "Semantic equality: shared enum payload dependencies propagate unsupported leaves"_test =
         [] static noexcept {

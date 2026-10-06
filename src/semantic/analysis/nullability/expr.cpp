@@ -316,6 +316,11 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                             set_value({});
                             co_return {};
                         },
+                        [&](const FloatIntrinsic&) noexcept -> ContinuationTask<std::monostate> {
+                            static_cast<void>(co_await evaluate(value.operands.front().expression));
+                            set_value({});
+                            co_return {};
+                        },
                         [&](const SIMDIntrinsic&) noexcept -> ContinuationTask<std::monostate> {
                             for (const auto& operand : value.operands) {
                                 static_cast<void>(co_await evaluate(operand.expression));

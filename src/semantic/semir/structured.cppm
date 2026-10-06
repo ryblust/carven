@@ -3,6 +3,7 @@ module carven:semantic.semir.structured;
 import :semantic.semir.body;
 import :semantic.semir.format;
 import :semantic.semir.ids;
+import :semantic.semir.operation;
 import :semantic.semir.sequence;
 import :semantic.semir.simd;
 import :semantic.semir.type;
@@ -166,8 +167,12 @@ struct SliceIntrinsicOperation final {
     std::optional<std::uint64_t> result_extent;
 };
 
-using IntrinsicOperation =
-    std::variant<SliceIntrinsicOperation, TextIntrinsic, SIMDIntrinsic, SequenceIntrinsicOperation>;
+using IntrinsicOperation = std::variant<
+    SliceIntrinsicOperation,
+    TextIntrinsic,
+    SIMDIntrinsic,
+    SequenceIntrinsicOperation,
+    FloatIntrinsic>;
 
 struct SemIntrinsic final {
     IntrinsicOperation operation;

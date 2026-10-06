@@ -1273,3 +1273,31 @@ auto fold_simd_constant(
     }
     return evaluate_simd_constant_value(values, intrinsic, owner, inputs, result);
 }
+
+auto evaluate_float_intrinsic_constant_value(
+    const ExecutionValueAccess& values,
+    FloatIntrinsic intrinsic,
+    const ConstantFact& operand,
+    TypeID result
+) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+    validate_constant_fact(values, operand);
+    if (intrinsic != FloatIntrinsic::IsFinite) {
+        return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+    }
+    if (const auto* input = std::get_if<F32Constant>(&operand.value)) {
+        return constant_boolean(
+            values,
+            result,
+            (std::bit_cast<std::uint32_t>(input->value) & 0x7f800000u) != 0x7f800000u
+        );
+    }
+    if (const auto* input = std::get_if<F64Constant>(&operand.value)) {
+        return constant_boolean(
+            values,
+            result,
+            (std::bit_cast<std::uint64_t>(input->value) & 0x7ff0000000000000ull)
+                != 0x7ff0000000000000ull
+        );
+    }
+    return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+}

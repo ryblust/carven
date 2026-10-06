@@ -976,3 +976,28 @@ auto sequence_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcep
     }
     return std::nullopt;
 }
+
+auto decide_float_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<FloatIntrinsic>, OperationDiagnostic> {
+    const auto* type = std::get_if<TypeID>(&operand);
+    if (type == nullptr || name != "is_finite") {
+        return std::nullopt;
+    }
+    const auto canonical = draft.type_copy(*type);
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+    if (builtin == nullptr
+        || (builtin->kind != BuiltinType::F32 && builtin->kind != BuiltinType::F64)) {
+        return std::nullopt;
+    }
+    if (arguments != 0) {
+        return operation_error(
+            "is_finite requires no arguments",
+            DiagnosticCode::TypeMethodCallArity
+        );
+    }
+    return FloatIntrinsic::IsFinite;
+}

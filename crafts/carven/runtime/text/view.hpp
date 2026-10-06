@@ -1,8 +1,8 @@
 #pragma once
 
-#include "slice.hpp"
+#include "../slice.hpp"
 #include "string.hpp"
-#include "utf.hpp"
+#include "utf8.hpp"
 
 #include <cstddef>
 #include <cstdint>

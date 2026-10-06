@@ -1,6 +1,6 @@
 #include "provider.hpp"
 
-#include <carven/runtime/utf.hpp>
+#include <carven/runtime/text/text.hpp>
 
 #include <array>
 #include <cstdio>

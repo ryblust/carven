@@ -373,6 +373,26 @@ auto BodyContractVerifier::verify_expression(
             [&](const SemIntrinsic& value) noexcept {
                 return value.operation.visit(
                     Overloaded {
+                        [&](const FloatIntrinsic& family) noexcept {
+                            if (family != FloatIntrinsic::IsFinite
+                                || value.operands.size() != 1
+                                || value.operands.front().access != AccessMode::Read) {
+                                invariant_violation("floating query requires one Read operand");
+                            }
+                            const auto& receiver =
+                                require_type(value.operands.front().expression.type.resolved())
+                                    .value;
+                            const auto* builtin = std::get_if<BuiltinTypeValue>(&receiver);
+                            if (builtin == nullptr
+                                || (builtin->kind != BuiltinType::F32
+                                    && builtin->kind != BuiltinType::F64)) {
+                                invariant_violation("floating query receiver mismatch");
+                            }
+                            if (require_type(source.type.resolved()).value
+                                != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}}) {
+                                invariant_violation("floating query result mismatch");
+                            }
+                        },
                         [&](const SliceIntrinsicOperation& family) noexcept {
                             const auto contract = slice_intrinsic_contract(family.intrinsic);
                             if (value.operands.size() != contract.arguments.size() + 1) {

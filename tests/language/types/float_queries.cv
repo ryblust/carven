@@ -1,0 +1,41 @@
+const fn finite32(value: f32) -> bool => value.is_finite();
+const fn finite64(value: f64) -> bool => value.is_finite();
+
+const fn observe_float(&count: i32) -> f64 {
+    count += 1;
+    return 2.0;
+}
+
+const fn finite_receiver_effects() -> bool {
+    var count = 0;
+    let result = observe_float(&count).is_finite();
+    observe_float(&count).is_finite();
+    return result && count == 2;
+}
+
+const test "Floating queries: static classification preserves widths and receiver effects" {
+    check(finite32(0.0) && finite32(-0.0));
+    check(finite32(1.401298464324817e-45) && finite32(3.4028234663852886e38));
+    check(finite64(0.0) && finite64(-0.0));
+    check(finite64(4.9406564584124654e-324) && finite64(1.7976931348623157e308));
+    check(!finite32(1.0f32 / 0.0) && !finite32(-1.0f32 / 0.0));
+    check(!finite64(1.0f64 / 0.0) && !finite64(-1.0f64 / 0.0));
+    check(!finite32(0.0f32 / 0.0) && !finite64(0.0f64 / 0.0));
+    check(finite_receiver_effects());
+}
+
+test "Floating queries: native classification and effects follow the scalar contract" {
+    for value in [0.0f32, -0.0, 1.401298464324817e-45, 3.4028234663852886e38] {
+        check(finite32(value));
+    }
+    for value in [0.0f64, -0.0, 4.9406564584124654e-324, 1.7976931348623157e308] {
+        check(finite64(value));
+    }
+    for value in [1.0f32 / 0.0, -1.0f32 / 0.0, 0.0f32 / 0.0] {
+        check(!finite32(value));
+    }
+    for value in [1.0f64 / 0.0, -1.0f64 / 0.0, 0.0f64 / 0.0] {
+        check(!finite64(value));
+    }
+    check(finite_receiver_effects());
+}

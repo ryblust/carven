@@ -3,7 +3,7 @@
 #include <carven/runtime/array.hpp>
 #include <carven/runtime/callable.hpp>
 #include <carven/runtime/outcome.hpp>
-#include <carven/runtime/string.hpp>
+#include <carven/runtime/text/text.hpp>
 #include <carven/runtime/testing.hpp>
 
 #include <cstdint>

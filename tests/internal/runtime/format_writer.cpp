@@ -1,7 +1,7 @@
 module;
-#include <carven/runtime/writer.hpp>
+#include <carven/runtime/format_writer.hpp>
 
-module carven:test.internal.runtime.writer;
+module carven:test.internal.runtime.format_writer;
 
 import :test.harness.framework;
 import :test.internal.harness.death;
@@ -28,7 +28,7 @@ auto check_integer(Integer value, std::size_t width) noexcept -> void {
         std::string("我\0", 4uz) + std::vformat(specification, std::make_format_args(value)) + "!";
     auto output = carven::runtime::String::from_str(std::string_view("我\0", 4uz));
     const auto size = expected.size() - output.size();
-    auto writer = carven::runtime::Writer(output, size, size);
+    auto writer = carven::runtime::FormatWriter(output, size, size);
     writer.integer<Base, Uppercase, ZeroPad>(value, width);
     writer.append("!");
     expect_equal(output.as_str(), expected).note([&] noexcept {
@@ -76,7 +76,8 @@ const TestSuite suite([] static noexcept {
 
     "Runtime Writer: repeated writes retain owners across growth"_test = [] static noexcept {
         auto output = carven::runtime::String::from_str("prefix:");
-        auto writer = carven::runtime::Writer(output, 0uz, std::numeric_limits<std::size_t>::max());
+        auto writer =
+            carven::runtime::FormatWriter(output, 0uz, std::numeric_limits<std::size_t>::max());
         writer.integer<16, true, true>(42u, 16uz);
         writer.append(std::string_view("\0我", 4uz));
         const auto saved = output;
@@ -91,14 +92,15 @@ const TestSuite suite([] static noexcept {
         expect(expect_termination("writer-size", []() static noexcept {
             auto output = carven::runtime::String::from_str("prefix");
             const auto size = std::numeric_limits<std::size_t>::max();
-            auto writer = carven::runtime::Writer(output, size, size);
+            auto writer = carven::runtime::FormatWriter(output, size, size);
             writer.append("unused");
         }));
     };
 
     "Runtime Writer: an upper bound alone does not require its storage"_test = [] static noexcept {
         auto output = carven::runtime::String::from_str("value=");
-        auto writer = carven::runtime::Writer(output, 0uz, std::numeric_limits<std::size_t>::max());
+        auto writer =
+            carven::runtime::FormatWriter(output, 0uz, std::numeric_limits<std::size_t>::max());
         writer.integer<2, false, false>(7u, 0uz);
         expect_equal(output.as_str(), "value=111");
     };
@@ -108,7 +110,8 @@ const TestSuite suite([] static noexcept {
             const auto input = carven::runtime::String::from_str(std::string(4096uz, 'x') + "我");
             const auto view = std::string_view("a\0b", 3uz);
             auto output = carven::runtime::String::from_str("prefix:");
-            auto writer = carven::runtime::Writer(output, 7uz, 11uz, {input.size(), view.size()});
+            auto writer =
+                carven::runtime::FormatWriter(output, 7uz, 11uz, {input.size(), view.size()});
             const auto* allocation = output.as_str().data();
             writer.append(input);
             writer.append(view);
@@ -129,7 +132,7 @@ const TestSuite suite([] static noexcept {
             expect(expect_termination("writer-text-sizes", []() static noexcept {
                 auto output = carven::runtime::String();
                 const auto maximum = std::string().max_size();
-                auto writer = carven::runtime::Writer(output, 0uz, 0uz, {maximum, 1uz});
+                auto writer = carven::runtime::FormatWriter(output, 0uz, 0uz, {maximum, 1uz});
                 writer.append("unused");
             }));
         };
@@ -138,7 +141,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto output = carven::runtime::String::from_str("prefix:");
             const auto* storage = output.as_str().data();
-            auto writer = carven::runtime::Writer(
+            auto writer = carven::runtime::FormatWriter(
                 output,
                 0uz,
                 std::numeric_limits<std::size_t>::max(),
@@ -153,7 +156,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             const auto check = []<typename Float>(Float value) static noexcept {
                 auto output = carven::runtime::String();
-                auto writer = carven::runtime::Writer(output, 0uz, 2048uz);
+                auto writer = carven::runtime::FormatWriter(output, 0uz, 2048uz);
                 writer.floating(value);
                 writer.append("/");
                 writer.fixed<2>(value);
@@ -204,7 +207,7 @@ const TestSuite suite([] static noexcept {
         const auto check =
             []<typename Value, typename Width>(Value value, Width width) static noexcept {
                 auto output = carven::runtime::String::from_str("prefix:");
-                auto writer = carven::runtime::Writer(output, 0uz, 0uz);
+                auto writer = carven::runtime::FormatWriter(output, 0uz, 0uz);
                 writer.integer_dynamic_width<2, false, false>(value, width);
                 writer.append("/");
                 writer.integer_dynamic_width<2, true, true>(value, width);
@@ -244,7 +247,7 @@ const TestSuite suite([] static noexcept {
     "Runtime Writer: negative dynamic widths terminate"_test = [] static noexcept {
         expect(expect_termination("writer-negative-width", []() static noexcept {
             auto output = carven::runtime::String();
-            auto writer = carven::runtime::Writer(output, 0uz, 0uz);
+            auto writer = carven::runtime::FormatWriter(output, 0uz, 0uz);
             writer.integer_dynamic_width<16, true, true>(-7, -1);
         }));
     };

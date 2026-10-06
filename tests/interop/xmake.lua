@@ -10,6 +10,7 @@ for _, domain in ipairs({
     "pointers",
     "providers",
     "runtime_headers",
+    "number",
     "scalars",
     "text",
 }) do

@@ -7,6 +7,7 @@ import :frontend.literal;
 import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.initialization;
+import :semantic.semir.operation;
 import :semantic.semir.program;
 import :semantic.semir.sequence;
 import :semantic.semir.type;
@@ -186,3 +187,10 @@ auto type_supports_equality(
     const DeclarationStore& declarations,
     TypeID type
 ) noexcept -> bool;
+
+auto decide_float_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<FloatIntrinsic>, OperationDiagnostic>;

@@ -182,7 +182,10 @@ width is fixed by the supported compilation data model and participates in the
 ordinary integer rules above. Analysis uses the host pointer-sized integer
 widths; the target must use the same data model.
 
-`f32` and `f64` use IEEE 754 binary32 and binary64 storage. Runtime floating
+`f32` and `f64` use IEEE 754 binary32 and binary64 storage. Both provide
+`is_finite() -> bool`, which is true for zeros, subnormal values, and normal
+values, and false for infinities and NaNs. The query evaluates its receiver once
+and is available in constant, interpreted, and native execution. Runtime floating
 arithmetic and integer-to-floating conversion use the corresponding native C++
 operations. The language does not supply a rounding-mode control or a separate
 floating exception mechanism. Native floating results depend on the selected

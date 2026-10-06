@@ -540,6 +540,12 @@ auto realize_operation(
             [&](const SemIntrinsic& value) noexcept -> TargetExpr {
                 return value.operation.visit(
                     Overloaded {
+                        [&](const FloatIntrinsic&) noexcept -> TargetExpr {
+                            return call_expression(
+                                intrinsic_expression(TargetSymbol::StdIsFinite),
+                                std::move(operands)
+                            );
+                        },
                         [&](const SequenceIntrinsicOperation& family) noexcept -> TargetExpr {
                             auto receiver = std::move(operands.front());
                             operands.erase(operands.begin());

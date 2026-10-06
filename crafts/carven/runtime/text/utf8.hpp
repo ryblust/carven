@@ -1,7 +1,7 @@
 #pragma once
 
-#include "simd/simd.hpp"
-#include "trap.hpp"
+#include "../simd/simd.hpp"
+#include "../trap.hpp"
 
 #include <array>
 #include <cstddef>
