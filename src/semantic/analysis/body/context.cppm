@@ -273,11 +273,14 @@ public:
 
 private:
     auto draft() const noexcept -> ProgramDraft&;
+    auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
     auto observe_source(
         Span location,
         std::optional<SourceSpan> definition,
         std::optional<ConstructionTypeRef> type
     ) noexcept -> void;
+    auto observe_binding(Span location, LocalBindingID binding, ConstructionTypeRef type) noexcept
+        -> void;
     auto catalog() const noexcept -> AnalysisCatalogView;
     auto import_usage() const noexcept -> ImportUsage&;
     auto origin(Span span) noexcept -> ProgramOriginID;
@@ -378,6 +381,8 @@ private:
     auto runtime_local_outside_block(std::string_view name) const noexcept -> bool;
     auto find_global(std::string_view name, Span span) noexcept
         -> AnalysisTask<const CatalogSymbol*>;
+    auto find_enum_case(EnumID owner, std::string_view name, Span span) noexcept
+        -> std::optional<EnumCaseID>;
     auto consume_value(BuiltExpression& expression, Span span, AccessMode access) noexcept
         -> AnalysisResult<SemanticExpression>;
     auto dereference_expression(const ASTPrefixExpr& source, Span span) noexcept

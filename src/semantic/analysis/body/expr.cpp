@@ -63,6 +63,15 @@ auto source_type_anchor(ASTView syntax, ASTExprID id) noexcept -> std::optional<
 
 } // namespace
 
+auto BodyElaborator::observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept
+    -> void {
+    if (observe_sources) {
+        if (const auto anchor = source_type_anchor(ast, expression)) {
+            observe_source(*anchor, std::nullopt, type);
+        }
+    }
+}
+
 auto BodyElaborator::conditional_expression(
     const ASTIfForm& source,
     Span span,
@@ -415,11 +424,7 @@ auto BodyElaborator::expression(
             : dispatches_before_children ? entry_reachable
                                          : reachable && reference_path_reachable;
         reachable = was_reachable && result->completes;
-        if (observe_sources) {
-            if (const auto anchor = source_type_anchor(ast, id)) {
-                observe_source(*anchor, std::nullopt, result->type());
-            }
-        }
+        observe_expression(id, result->type());
     }
     co_return result;
 }

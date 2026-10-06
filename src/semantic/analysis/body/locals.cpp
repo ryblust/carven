@@ -69,6 +69,16 @@ auto BodyElaborator::visible_locals() const noexcept -> BodyLocalNames {
     return names;
 }
 
+auto BodyElaborator::observe_binding(
+    Span location,
+    LocalBindingID binding,
+    ConstructionTypeRef type
+) noexcept -> void {
+    if (observe_sources && binding.owner() == body_builder.identity()) {
+        observe_source(location, draft().source_span(body_builder.binding_origin(binding)), type);
+    }
+}
+
 auto BodyElaborator::bind_local(
     Span name_span,
     BodyLocalStorage storage,
@@ -85,7 +95,7 @@ auto BodyElaborator::bind_local(
             std::format("local name '{}' is already defined in this scope", name)
         ));
     }
-    observe_source(name_span, locate(ast.source_id(), name_span), storage.type);
+    observe_binding(name_span, storage.storage.binding, storage.type);
     return {};
 }
 
@@ -175,8 +185,27 @@ auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
     if (!completed) {
         co_return std::unexpected(completed.error());
     }
-
+    if (observe_sources) {
+        observe_source(
+            span,
+            catalog().declaration_location(draft(), result->symbol_id),
+            std::nullopt
+        );
+    }
     co_return result;
+}
+
+auto BodyElaborator::find_enum_case(EnumID owner, std::string_view name, Span span) noexcept
+    -> std::optional<EnumCaseID> {
+    const auto selected = catalog().enum_case_named(owner, name);
+    if (selected && observe_sources) {
+        observe_source(
+            span,
+            catalog().declaration_location(draft(), catalog().enum_case_symbol(*selected)),
+            std::nullopt
+        );
+    }
+    return selected;
 }
 
 auto BodyElaborator::add_parameter(

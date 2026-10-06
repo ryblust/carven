@@ -5,7 +5,6 @@ import :semantic.analysis.source.builder;
 import std;
 
 auto SourceAnalysisBuilder::declare(
-    ProgramOriginID origin,
     SourceSpan name,
     std::optional<ConstructionTypeRef> type,
     std::optional<BuiltinType> builtin
@@ -13,14 +12,7 @@ auto SourceAnalysisBuilder::declare(
     if (name.span.empty()) {
         return;
     }
-    declarations.emplace(origin, name);
     add({.location = name, .definition = name, .type = type, .builtin_type = builtin});
-}
-
-auto SourceAnalysisBuilder::definition(ProgramOriginID origin) const noexcept
-    -> std::optional<SourceSpan> {
-    const auto found = declarations.find(origin);
-    return found == declarations.end() ? std::nullopt : std::optional(found->second);
 }
 
 auto SourceAnalysisBuilder::begin_bodies() noexcept -> void {

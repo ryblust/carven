@@ -1,9 +1,11 @@
 module carven:test.workspace.navigation;
 
+import :diagnostics.code;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :source.module_path;
 import :source.text;
+import :test.harness.diagnostics;
 import :test.harness.framework;
 import :workspace.analysis;
 import :workspace.semantic;
@@ -88,6 +90,440 @@ auto expect_references(
 }
 
 const TestSuite tests([] static noexcept {
+    "Workspace analysis: ordinary static expressions retain names fields and type anchors"_test =
+        [] static noexcept {
+            constexpr auto healthy = std::string_view(
+                "struct Options { enabled: bool, value: i32, }\n"
+                "const answer: i32 = 42;\n"
+                "const derived: i32 = answer;\n"
+                "fn healthy() -> i32 {\n"
+                "    const a = answer;\n"
+                "    const b = a + 1;\n"
+                "    const options = Options { enabled: true, value: b };\n"
+                "    const selected = options.value;\n"
+                "    const count = 2usize;\n"
+                "    const values: [i32; count] = [selected, selected];\n"
+                "    const if options.enabled { let checked = b; } else { let checked = b; }\n"
+                "    return values[0];\n"
+                "}\n"
+            );
+            constexpr auto broken = std::string_view(
+                "fn broken() -> i32 { const lost = answer; const bad = missing; return bad; }\n"
+            );
+            each(
+                std::array {false, true},
+                [](bool failed) static noexcept { return failed ? "failed body" : "published"; },
+                [&](bool failed) noexcept {
+                    const auto text = std::string(healthy) + (failed ? std::string(broken) : "");
+                    auto host = WorkspaceAnalysisHost();
+                    update(host, "a.cv", 4, text);
+                    const auto modules = std::array {project_module("a.cv", "main")};
+                    const auto snapshot = host.snapshot();
+                    const auto analysis = snapshot.semantic(modules);
+                    if (failed) {
+                        expect(analysis.result->program() == nullptr);
+                        expect_diagnostic(
+                            analysis.result->diagnostics(),
+                            DiagnosticCode::NameUnresolved
+                        );
+                    } else if (!expect(analysis.result->program() != nullptr)) {
+                        return;
+                    }
+                    struct Target final {
+                        std::string_view name;
+                        BuiltinType type;
+                        std::vector<std::uint32_t> occurrences;
+                    };
+                    const auto targets = std::array {
+                        Target {
+                            .name = "answer",
+                            .type = BuiltinType::I32,
+                            .occurrences =
+                                {
+                                    offset(text, "answer: i32"),
+                                    offset(text, "a = answer") + 4u,
+                                },
+                        },
+                        Target {
+                            .name = "a",
+                            .type = BuiltinType::I32,
+                            .occurrences =
+                                {
+                                    offset(text, "const a =") + 6u,
+                                    offset(text, "b = a") + 4u,
+                                },
+                        },
+                        Target {
+                            .name = "b",
+                            .type = BuiltinType::I32,
+                            .occurrences =
+                                {
+                                    offset(text, "const b") + 6u,
+                                    offset(text, "value: b") + 7u,
+                                    offset(text, "checked = b") + 10u,
+                                    offset(text, "checked = b", true) + 10u,
+                                },
+                        },
+                        Target {
+                            .name = "value",
+                            .type = BuiltinType::I32,
+                            .occurrences =
+                                {
+                                    offset(text, "value: i32"),
+                                    offset(text, "options.value") + 8u,
+                                },
+                        },
+                        Target {
+                            .name = "enabled",
+                            .type = BuiltinType::Bool,
+                            .occurrences =
+                                {
+                                    offset(text, "enabled: bool"),
+                                    offset(text, "options.enabled") + 8u,
+                                },
+                        },
+                        Target {
+                            .name = "count",
+                            .type = BuiltinType::Usize,
+                            .occurrences = {
+                                offset(text, "const count") + 6u,
+                                offset(text, "i32; count") + 5u,
+                            },
+                        },
+                    };
+                    each(targets, &Target::name, [&](const Target& target) noexcept {
+                        for (const auto use : target.occurrences) {
+                            expect_target(
+                                snapshot.definition(modules, "a.cv", use),
+                                "a.cv",
+                                4,
+                                target.occurrences.front(),
+                                target.name
+                            );
+                            expect_references(
+                                snapshot.references(modules, "a.cv", use),
+                                "a.cv",
+                                4,
+                                target.occurrences,
+                                target.name
+                            );
+                        }
+                        // Catalog declaration navigation does not imply a type observation.
+                        const auto use = target.occurrences.back();
+                        const auto hover = snapshot.hover(modules, "a.cv", use);
+                        if (failed) {
+                            if (expect(hover.result.has_value())) {
+                                const auto* builtin = std::get_if<BuiltinType>(&hover.result->type);
+                                expect(builtin != nullptr && *builtin == target.type);
+                            }
+                        } else {
+                            expect_type(hover, target.type);
+                        }
+                    });
+                    if (!failed) {
+                        expect_type(
+                            snapshot.hover(modules, "a.cv", offset(text, "+ 1")),
+                            BuiltinType::I32
+                        );
+                        expect_type(
+                            snapshot.hover(modules, "a.cv", offset(text, "2usize")),
+                            BuiltinType::Usize
+                        );
+                    }
+                    const auto initializer = offset(text, "derived: i32 = answer") + 15u;
+                    expect(!snapshot.definition(modules, "a.cv", initializer).result);
+                    expect(!snapshot.hover(modules, "a.cv", initializer).result);
+                    if (failed) {
+                        const auto discarded = offset(text, "lost = answer") + 7u;
+                        expect(!snapshot.definition(modules, "a.cv", discarded).result);
+                        expect(!snapshot.hover(modules, "a.cv", discarded).result);
+                    }
+                }
+            );
+        };
+
+    "Workspace analysis: or-pattern binding selections share one declaration identity"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "enum Value { First(i32), Second(i32), }\n"
+                "fn choose(input: Value) -> i32 {\n"
+                "    return match input {\n"
+                "        .First(selected) | .Second(selected) => selected,\n"
+                "    };\n"
+                "}\n"
+            );
+            auto host = WorkspaceAnalysisHost();
+            update(host, "a.cv", 1, text);
+            const auto modules = std::array {project_module("a.cv", "main")};
+            const auto snapshot = host.snapshot();
+            if (!expect(snapshot.semantic(modules).result->program() != nullptr)) {
+                return;
+            }
+            const auto first = offset(text, "First(selected)") + 6u;
+            const auto second = offset(text, "Second(selected)") + 7u;
+            const auto use = offset(text, "=> selected") + 3u;
+            for (const auto selected : std::array {first, second, use}) {
+                expect_type(snapshot.hover(modules, "a.cv", selected), BuiltinType::I32);
+                expect_target(
+                    snapshot.definition(modules, "a.cv", selected),
+                    "a.cv",
+                    1,
+                    first,
+                    "selected"
+                );
+                expect_references(
+                    snapshot.references(modules, "a.cv", selected),
+                    "a.cv",
+                    1,
+                    std::array {first, second, use},
+                    "selected"
+                );
+            }
+        };
+
+    "Workspace analysis: catalog declarations and resolved uses share navigation identities"_test =
+        [] static noexcept {
+            constexpr auto library = std::string_view(
+                "export const answer: i32 = 42;\n"
+                "export enum State { Ready, Done, }\n"
+                "export enum Other { Ready, Done, }\n"
+                "export enum Choice { Value(i32), Empty, }\n"
+                "export struct Record { tag: bool, value: i32, }\n"
+                "export class Counter { fn create() -> Counter => {}; fn read(self) -> i32 => 7; }\n"
+                "export fn identity(value: i32) -> i32 => value;\n"
+            );
+            constexpr auto caller = std::string_view(
+                "import lib using { answer, State, Other, Choice, Record, Counter, identity };\n"
+                "fn use(record: Record) -> i32 {\n"
+                "    let state = State::Ready;\n"
+                "    let other = Other::Ready;\n"
+                "    let choice = Choice::Value(answer);\n"
+                "    let empty: Choice = .Empty;\n"
+                "    let picked = match choice {\n"
+                "        Choice::Value(selected) => selected,\n"
+                "        .Empty => 0,\n"
+                "    };\n"
+                "    let counter = Counter::create();\n"
+                "    let current = counter.read();\n"
+                "    let value = identity(record.value);\n"
+                "    return answer + value;\n"
+                "}\n"
+            );
+            auto host = WorkspaceAnalysisHost();
+            update(host, "lib.cv", 3, library);
+            update(host, "app.cv", 7, caller);
+            const auto modules =
+                std::array {project_module("lib.cv", "lib"), project_module("app.cv", "app")};
+            const auto snapshot = host.snapshot();
+            if (!expect(snapshot.semantic(modules).result->program() != nullptr)) {
+                return;
+            }
+            struct Target final {
+                std::string_view name;
+                std::uint32_t declaration;
+                std::vector<std::uint32_t> uses;
+            };
+            const auto targets = std::array {
+                Target {
+                    .name = "answer",
+                    .declaration = offset(library, "answer"),
+                    .uses =
+                        {offset(caller, "Value(answer)") + 6u, offset(caller, "return answer") + 7u}
+                },
+                Target {
+                    .name = "State",
+                    .declaration = offset(library, "State"),
+                    .uses = {offset(caller, "State::Ready")}
+                },
+                Target {
+                    .name = "Ready",
+                    .declaration = offset(library, "Ready"),
+                    .uses = {offset(caller, "State::Ready") + 7u}
+                },
+                Target {
+                    .name = "Ready",
+                    .declaration = offset(library, "Ready", true),
+                    .uses = {offset(caller, "Other::Ready") + 7u}
+                },
+                Target {
+                    .name = "Choice",
+                    .declaration = offset(library, "Choice"),
+                    .uses = {offset(caller, "Choice::Value"), offset(caller, "Choice::Value", true)}
+                },
+                Target {
+                    .name = "Value",
+                    .declaration = offset(library, "Value"),
+                    .uses =
+                        {offset(caller, "Choice::Value") + 8u,
+                         offset(caller, "Choice::Value", true) + 8u}
+                },
+                Target {
+                    .name = "Empty",
+                    .declaration = offset(library, "Empty"),
+                    .uses = {offset(caller, ".Empty") + 1u, offset(caller, ".Empty", true) + 1u}
+                },
+                Target {
+                    .name = "Counter",
+                    .declaration = offset(library, "Counter"),
+                    .uses = {offset(caller, "Counter::create")}
+                },
+                Target {
+                    .name = "create",
+                    .declaration = offset(library, "create"),
+                    .uses = {offset(caller, "Counter::create") + 9u}
+                },
+                Target {
+                    .name = "read",
+                    .declaration = offset(library, "read"),
+                    .uses = {offset(caller, "counter.read") + 8u}
+                },
+                Target {
+                    .name = "identity",
+                    .declaration = offset(library, "identity"),
+                    .uses = {offset(caller, "identity(record")}
+                },
+                Target {
+                    .name = "value",
+                    .declaration = offset(library, "value"),
+                    .uses = {offset(caller, "record.value") + 7u}
+                },
+            };
+            each(targets, &Target::name, [&](const Target& target) noexcept {
+                expect_target(
+                    snapshot.definition(modules, "lib.cv", target.declaration),
+                    "lib.cv",
+                    3,
+                    target.declaration,
+                    target.name
+                );
+                for (const auto use : target.uses) {
+                    expect_target(
+                        snapshot.definition(modules, "app.cv", use),
+                        "lib.cv",
+                        3,
+                        target.declaration,
+                        target.name
+                    );
+                }
+                const auto references = snapshot.references(modules, "lib.cv", target.declaration);
+                if (!expect(references.result.has_value())
+                    || !expect_equal(references.result->size(), target.uses.size() + 1uz)) {
+                    return;
+                }
+                for (auto index = 0uz; index < target.uses.size(); ++index) {
+                    const auto& location = (*references.result)[index];
+                    expect_equal(location.document, "app.cv");
+                    expect_equal(location.version, 7ll);
+                    expect_equal(location.range.start(), target.uses[index]);
+                    expect_equal(slice(caller, location.range), target.name);
+                }
+                const auto& declaration = references.result->back();
+                expect_equal(declaration.document, "lib.cv");
+                expect_equal(declaration.version, 3ll);
+                expect_equal(declaration.range.start(), target.declaration);
+                expect_equal(slice(library, declaration.range), target.name);
+            });
+            expect_target(
+                snapshot.definition(modules, "lib.cv", offset(library, "Record")),
+                "lib.cv",
+                3,
+                offset(library, "Record"),
+                "Record"
+            );
+            expect(!snapshot.definition(modules, "app.cv", offset(caller, "record: Record") + 8u)
+                        .result);
+        };
+
+    "Workspace analysis: declaration navigation survives failed bodies without admitting their uses"_test =
+        [] static noexcept {
+            constexpr auto declarations = std::string_view(
+                "const answer: i32 = 42;\n"
+                "enum State { Ready, Done, }\n"
+                "struct Pair { value: i32, }\n"
+                "fn identity(value: i32) -> i32 => value;\n"
+            );
+            constexpr auto healthy = std::string_view(
+                "fn healthy(pair: Pair) -> i32 {\n"
+                "    let before = answer;\n"
+                "    if true { let answer: i32 = 7; let inner = answer; }\n"
+                "    let state = State::Ready;\n"
+                "    return identity(pair.value) + answer;\n"
+                "}\n"
+            );
+            constexpr auto broken = std::string_view(
+                "fn broken() -> i32 { let discarded = answer; return missing; }\n"
+            );
+            each(
+                std::array {false, true},
+                [](bool first) static noexcept { return first ? "broken first" : "broken last"; },
+                [&](bool broken_first) noexcept {
+                    const auto text = std::string(declarations)
+                        + (broken_first ? std::string(broken) + std::string(healthy)
+                                        : std::string(healthy) + std::string(broken));
+                    auto host = WorkspaceAnalysisHost();
+                    update(host, "a.cv", 2, text);
+                    const auto modules = std::array {project_module("a.cv", "main")};
+                    const auto snapshot = host.snapshot();
+                    const auto analysis = snapshot.semantic(modules);
+                    expect(analysis.result->program() == nullptr);
+                    expect_diagnostic(
+                        analysis.result->diagnostics(),
+                        DiagnosticCode::NameUnresolved
+                    );
+                    const auto declaration = offset(text, "answer");
+                    const auto first_use = offset(text, "before = answer") + 9u;
+                    const auto last_use = offset(text, "+ answer") + 2u;
+                    expect_references(
+                        snapshot.references(modules, "a.cv", declaration),
+                        "a.cv",
+                        2,
+                        std::array {declaration, first_use, last_use},
+                        "answer"
+                    );
+                    const auto local = offset(text, "let answer") + 4u;
+                    const auto local_use = offset(text, "inner = answer") + 8u;
+                    expect_references(
+                        snapshot.references(modules, "a.cv", local),
+                        "a.cv",
+                        2,
+                        std::array {local, local_use},
+                        "answer"
+                    );
+                    expect_target(
+                        snapshot.definition(modules, "a.cv", last_use),
+                        "a.cv",
+                        2,
+                        declaration,
+                        "answer"
+                    );
+                    expect_target(
+                        snapshot.definition(modules, "a.cv", local_use),
+                        "a.cv",
+                        2,
+                        local,
+                        "answer"
+                    );
+                    for (const auto name : std::array {
+                             std::string_view("State"),
+                             std::string_view("Ready"),
+                             std::string_view("identity"),
+                             std::string_view("value")
+                         }) {
+                        expect_target(
+                            snapshot.definition(modules, "a.cv", offset(text, name, true)),
+                            "a.cv",
+                            2,
+                            offset(text, name),
+                            name
+                        );
+                    }
+                    const auto discarded = offset(text, "discarded = answer") + 12u;
+                    expect(!snapshot.definition(modules, "a.cv", discarded).result);
+                    expect(!snapshot.references(modules, "a.cv", discarded).result);
+                }
+            );
+        };
+
     "Workspace analysis: navigation resolves local shadowing by semantic identity"_test =
         [] static noexcept {
             constexpr auto text = std::string_view(

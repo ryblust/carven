@@ -37,6 +37,9 @@ serialized; the library does not synchronize shared caches.
 Hover, definition, and references consume one source occurrence index. Semantic
 construction records source locations and resolved identities; the query layer
 indexes these observations.
+Declaration selections derive from catalog symbols, local binding origins, and
+the selected record field's syntax. The same metadata supplies declaration
+occurrences and resolved uses, including constants, enum cases, and class operations.
 Types are attached to direct source tokens: binding and reference names, literals,
 operators, access markers, and control keywords. Queries match these token ranges.
 Published composite values without their own token anchor expose their types at
@@ -49,7 +52,9 @@ semantic observation. Static-parameter template bodies, specialized instances,
 closure signatures and interiors, and module-level const/test bodies are outside
 the body observer. Type annotation syntax is not indexed. Ordinary functions
 retain observations from constructed source expressions before executable
-residualization, including checked static branches.
+residualization, including local constant initializers, checked static conditions,
+and fields selected within those expressions. Module constant initializer
+expressions are outside the observer.
 
 `SourceOccurrence` carries a location, an optional resolved definition, and an
 optional `SourceType`. Successful publication provides `TypeID` values belonging

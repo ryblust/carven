@@ -77,9 +77,11 @@ a successful result.
 `semantic.analysis.source` defines `SourceOccurrence` and the optional recipient
 `SourceAnalysisOutput`, a `FunctionRef` borrowed for the analysis call. An empty
 recipient skips recording. Analysis records source occurrences at identity
-resolution sites, using direct AST token spans. Declaration and nominal gates
-admit declaration observations; each successfully constructed body contributes its
-own observations. Locations and definitions survive an unrelated body error.
+resolution sites, using direct AST token spans. Declaration selections derive
+from catalog symbols, local binding origins, and selected field metadata.
+Declaration and nominal gates admit declaration observations; each successfully
+constructed body contributes its own observations. Locations and definitions
+survive an unrelated body error.
 Successful publication supplies `TypeID` values owned by the delivered program;
 failed analysis retains only known `BuiltinType` values. Analysis delivers one
 batch before returning. The recipient copies retained records from the borrowed

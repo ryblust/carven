@@ -537,7 +537,7 @@ auto BodyElaborator::class_operation(
         if (observe_sources) {
             observe_source(
                 span,
-                draft().source_analysis()->definition(declaration.origin),
+                catalog().declaration_location(draft(), selected->symbol_id),
                 callee.type()
             );
         }

@@ -96,6 +96,14 @@ const TestSuite tests([] static noexcept {
                 .has_occurrences = true,
             },
             Scenario {
+                .name = "declaration admission after demanded body construction",
+                .source =
+                    "const fn seed() => 1; const answer: i32 = seed(); struct Broken { value: Missing }",
+                .diagnostic = DiagnosticCode::TypeUnresolved,
+                .calls = 1uz,
+                .has_occurrences = false,
+            },
+            Scenario {
                 .name = "semantic publication",
                 .source =
                     "struct Entry { value: i32 } fn bad() -> i32 { var entry = Entry { 1 }; let taken = &&entry; return entry.value; }",

@@ -172,12 +172,16 @@ auto BodyExprSite::finish_index(
 }
 
 auto BodyExprSite::observe_field(
-    ProgramOriginID declaration,
+    FieldProjection field,
     Span name,
     ConstructionTypeRef type
 ) noexcept -> void {
     if (body.observe_sources) {
-        body.observe_source(name, draft().source_analysis()->definition(declaration), type);
+        body.observe_source(
+            name,
+            body.catalog().field_location(draft(), field.owner, field.field_index),
+            type
+        );
     }
 }
 

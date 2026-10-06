@@ -265,6 +265,7 @@ auto BodyElaborator::compute_static_binding(LocalBindingID binding) noexcept
 auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noexcept
     -> AnalysisTask<std::optional<ConstantID>> {
     if (const auto* local = use_local(name)) {
+        observe_binding(span, local->storage.binding, local->type);
         co_return co_await compute_static_binding(local->storage.binding);
     }
     auto selected = (co_await find_global(name, span));
@@ -389,8 +390,9 @@ auto BodyElaborator::resolve_constant_enum_case(
             "scope qualifier does not name an enum or class type"
         ));
     }
-    if (const auto case_id = catalog().enum_case_named(nominal->enumeration, name)) {
+    if (const auto case_id = find_enum_case(nominal->enumeration, name, span)) {
         const auto declaration = draft().construction_enum_case_declaration_copy(*case_id);
+        observe_source(span, std::nullopt, type);
         co_return ResolvedEnumCase {
             .id = *case_id,
             .owner = declaration.owner,

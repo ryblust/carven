@@ -38,6 +38,11 @@ auto BodyExprSite::syntax() const noexcept -> ASTView {
     return body.ast;
 }
 
+auto BodyExprSite::observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept
+    -> void {
+    body.observe_expression(expression, type);
+}
+
 auto BodyExprSite::fail(Span span, DiagnosticCode code, std::string message) noexcept
     -> AnalysisFailure {
     return body.fail(span, code, std::move(message));
@@ -305,6 +310,7 @@ auto BodyExprSite::resolve_static_name(std::string_view name, Span span) noexcep
     if (!*value) {
         co_return std::unexpected(ExpressionNotAdmitted {});
     }
+    body.observe_binding(span, local->storage.binding, local->type);
     co_return std::move(**value);
 }
 
