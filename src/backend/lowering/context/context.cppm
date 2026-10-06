@@ -62,7 +62,7 @@ private:
     std::map<ModuleID, std::unique_ptr<ModuleLowering>> modules;
 
 
-    auto materialize_cpp_environments(
+    auto lower_cpp_environments(
         TargetUnitSections& sections,
         TargetDirectiveInputs& directives
     ) noexcept -> void;

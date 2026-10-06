@@ -1,6 +1,8 @@
 module carven:backend.emission.unit.impl;
 
 import :backend.emission.render;
+import :backend.target.header;
+import :backend.target.unit;
 import :support.visit;
 import std;
 
@@ -107,7 +109,23 @@ auto TargetRenderer::render_unit() && noexcept -> LayoutDocument {
         auto directives = std::vector<LayoutNodeID>();
         directives.reserve(group.directives.size());
         for (const auto& value : group.directives) {
-            directives.push_back(directive(text(value.bytes)));
+            auto bytes = value.value.visit([](const auto& node) static noexcept -> std::string {
+                using Node = std::remove_cvref_t<decltype(node)>;
+                if constexpr (std::same_as<Node, TargetIncludeDirective>) {
+                    switch (node.header.delimiter) {
+                        case TargetHeaderDelimiter::AngleBrackets:
+                            return std::format("#include <{}>", node.header.path);
+                        case TargetHeaderDelimiter::Quotes:
+                            return std::format("#include \"{}\"", node.header.path);
+                    }
+                    std::unreachable();
+                } else if constexpr (std::same_as<Node, TargetPragmaOnceDirective>) {
+                    return "#pragma once";
+                } else {
+                    static_assert(!std::same_as<Node, Node>, "unhandled target directive");
+                }
+            });
+            directives.push_back(directive(text(bytes)));
         }
         auto rendered_group = stack(directives);
         if (group.attribution.has_value()) {

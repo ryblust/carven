@@ -4,6 +4,7 @@ import :backend.target.expr;
 import :backend.target.ids;
 import :backend.target.name;
 import :backend.target.origin;
+import :backend.target.symbol;
 import :support.tree_value;
 import std;
 
@@ -81,6 +82,10 @@ enum class TargetUnreachableReason {
 
 struct TargetUnreachableStmt final {
     TargetUnreachableReason reason;
+
+    static constexpr auto native_symbol() noexcept -> TargetSymbol {
+        return TargetSymbol::RuntimeUnreachable;
+    }
 };
 
 enum class TargetRuntimeTrapReason {
@@ -92,6 +97,10 @@ enum class TargetRuntimeTrapReason {
 
 struct TargetRuntimeTrapStmt final {
     TargetRuntimeTrapReason reason;
+
+    static constexpr auto native_symbol() noexcept -> TargetSymbol {
+        return TargetSymbol::StdAbort;
+    }
 };
 
 enum class TargetJumpRole {

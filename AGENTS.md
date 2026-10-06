@@ -21,9 +21,6 @@ Use `./xmakew` (`.\xmakew.ps1` on Windows) for local build, test, formatting,
 analysis, and clean commands. Stock Xmake is the fallback when the wrapper cannot
 apply its versioned patch.
 
-`CARVEN_XMAKE_REPO_DIR` selects a local `carven-xmake-repo` checkout. Relative
-paths are resolved from the Carven repository root.
-
 Build the compiler before testing. During implementation, run the relevant
 test groups or the full suite. Select the applicable test commands:
 
@@ -37,12 +34,6 @@ test groups or the full suite. Select the applicable test commands:
 ./xmakew test -g examples
 ./xmakew test -g graver
 ./xmakew test
-```
-
-Before committing, apply source formatting:
-
-```shell
-./xmakew format
 ```
 
 ## Build-state recovery

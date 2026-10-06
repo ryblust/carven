@@ -83,9 +83,16 @@ complete header import list into that interface, including imports without
 `using`. Module-scoped lookup additionally brings the complete using environment.
 Each artifact materializes a module environment once, preserving that module's
 import order, delimiter forms, and explicit repetitions. Different environments
-follow stable module order; this does not reproduce arbitrary macro configuration
-orders across modules. Raw source fragments remain implementation-only and follow
-includes at global scope before generated namespaces.
+follow canonical module-path order; this does not reproduce arbitrary macro
+configuration orders across modules. Raw source fragments remain
+implementation-only and follow includes at global scope before generated namespaces.
+
+Generated implementations include their associated interface component first,
+when one exists. Generated test entries include their runner header first. Native
+header environments follow, then runtime headers, other generated interfaces,
+and directly required standard-library headers. Compiler-generated dependencies
+are merged and sorted within their groups; explicit native occurrences remain
+independent and retain their repetitions. Generated headers begin with pragma-once.
 
 Test generation emits the runner header. Default test generation also emits a
 main source; external test generation supplies the runner to a caller-provided

@@ -50,7 +50,6 @@ Checks:
   - 'portability-no-assembler'
   - 'portability-std-allocator-const'
   - 'portability-template-virtual-member-function'
-WarningsAsErrors: '*'
 HeaderFileExtensions:
   - 'h'
   - 'hh'

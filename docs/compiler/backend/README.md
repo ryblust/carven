@@ -42,9 +42,10 @@ order, retain borrowed results, and complete fallible calls. Semantic publicatio
 owns source legality and lifetime contracts; native compilation checks delegated
 C++ operations.
 
-`TargetUnitBuilder::finish` verifies the target tree, derives dependencies, and
-materializes directives. Rendering serializes that finished tree. Filesystem
-output and native compilation are separate consumers.
+`TargetUnitBuilder::finish` verifies the target tree and combines its header
+requirements with artifact references and ordered native imports.
+Rendering serializes that finished tree. Filesystem output and native compilation
+are separate consumers.
 
 ## Realization choices
 

@@ -52,7 +52,7 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                 return qualified_sequence(parts, false);
             },
             [&](const TargetIntrinsicType& intrinsic) noexcept -> SyntaxLayouts {
-                auto result = text(target_symbol_info(intrinsic.symbol).spelling);
+                auto result = text(target_symbol_info(intrinsic.native_symbol()).spelling);
                 if (!intrinsic.type_argument_ids.empty()) {
                     auto argument_layout_ids = std::vector<LayoutNodeID> {};
                     argument_layout_ids.reserve(intrinsic.type_argument_ids.size());
@@ -68,8 +68,10 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                     render_type(array.element_type_id),
                     text(std::to_string(array.extent.magnitude))
                 };
-                const auto result =
-                    concat({text("::std::array"), delimited_list(arguments, "<", ">")});
+                const auto result = concat(
+                    {text(target_symbol_info(array.native_symbol()).spelling),
+                     delimited_list(arguments, "<", ">")}
+                );
                 return {.inline_qualified = result, .wrapping = result};
             },
             [&](const TargetFunctionType& function) noexcept -> SyntaxLayouts {
@@ -82,7 +84,7 @@ auto TargetRenderer::render_type_node(TargetTypeID id, bool constant) noexcept -
                     concat({result, delimited_list(parameters, "(", ")"), text(" noexcept")});
                 const auto arguments = std::array {signature};
                 const auto function_ref = concat(
-                    {text(target_symbol_info(TargetSymbol::RuntimeFunctionRef).spelling),
+                    {text(target_symbol_info(function.native_symbol()).spelling),
                      delimited_list(arguments, "<", ">")}
                 );
                 return {.inline_qualified = function_ref, .wrapping = function_ref};
