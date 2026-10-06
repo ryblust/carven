@@ -9,7 +9,15 @@ import :semantic.semir.type;
 import :support.invariant;
 import std;
 
+auto pointer_narrows(const PointerTypeValue& source, const PointerTypeValue& target) noexcept
+    -> bool {
+    return source.target == target.target
+        && source.access == PointerAccess::Write
+        && target.access == PointerAccess::Read;
+}
+
 namespace {
+
 
 auto require_owner(ProgramIdentity owner, ProgramIdentity expected, std::string_view fact) noexcept
     -> void {

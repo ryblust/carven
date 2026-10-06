@@ -70,7 +70,7 @@ auto construct_array_expression(
             element_type = *inferred;
         } else {
             if ((!expected_element || !site.permits_pointer_narrowing())
-                && pointer_narrows(site.draft(), site.type(*element), *element_type)) {
+                && pointer_narrowing_shape(site.draft(), site.type(*element), *element_type)) {
                 co_return std::unexpected(site.fail(
                     element_span,
                     DiagnosticCode::TypeMismatch,

@@ -12,6 +12,7 @@ import :semantic.semir.decl;
 import :semantic.semir.delegation;
 import :semantic.semir.simd;
 import :semantic.semir.type;
+import :support.function_ref;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -53,6 +54,7 @@ auto canonical_pointer_shape(const CanonicalType& type) noexcept
 auto decide_pointer_cast(
     std::optional<ConstructionPointerTypeValue> from,
     std::optional<ConstructionPointerTypeValue> to,
+    bool narrowing,
     bool cstring,
     std::optional<BuiltinType> pointee
 ) noexcept -> std::optional<CastKind> {
@@ -60,7 +62,7 @@ auto decide_pointer_cast(
         return std::nullopt;
     }
     if (from) {
-        if (pointer_narrows(*from, *to)) {
+        if (narrowing) {
             return CastKind::PointerRead;
         }
         if (pointee
@@ -238,11 +240,15 @@ auto callable_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcep
                              );
 }
 
-auto shapes_compatible(
+enum class TypeRelation { Adaptation, Invariant };
+
+auto check_type_relation(
     const ProgramDraft& draft,
     ConstructionTypeRef left,
     ConstructionTypeRef right,
-    std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>& visited
+    std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>& visited,
+    TypeRelation relation,
+    FunctionRef<void(ConstructionTypeRef, ConstructionTypeRef) noexcept> visit_views
 ) noexcept -> bool {
     if (left == right) {
         return true;
@@ -251,13 +257,16 @@ auto shapes_compatible(
         return true;
     }
 
+    const auto check = [&](ConstructionTypeRef a, ConstructionTypeRef b) noexcept {
+        return check_type_relation(draft, a, b, visited, relation, visit_views);
+    };
     const auto left_pointer = pointer_shape(draft, left);
     const auto right_pointer = pointer_shape(draft, right);
     if (left_pointer || right_pointer) {
         return left_pointer
             && right_pointer
             && left_pointer->access == right_pointer->access
-            && shapes_compatible(draft, left_pointer->target, right_pointer->target, visited);
+            && check(left_pointer->target, right_pointer->target);
     }
 
     const auto left_array = array_shape(draft, left);
@@ -266,15 +275,13 @@ auto shapes_compatible(
         return left_array.has_value()
             && right_array.has_value()
             && left_array->extent == right_array->extent
-            && shapes_compatible(draft, left_array->element, right_array->element, visited);
+            && check(left_array->element, right_array->element);
     }
 
     const auto left_slice = slice_element(draft, left);
     const auto right_slice = slice_element(draft, right);
     if (left_slice || right_slice) {
-        return left_slice
-            && right_slice
-            && shapes_compatible(draft, *left_slice, *right_slice, visited);
+        return left_slice && right_slice && check(*left_slice, *right_slice);
     }
 
     const auto left_callable = callable_shape(draft, left);
@@ -283,22 +290,30 @@ auto shapes_compatible(
         if (!left_callable.has_value() || !right_callable.has_value()) {
             return false;
         }
+        if (relation == TypeRelation::Invariant
+            && left_callable->owning_type.has_value() != right_callable->owning_type.has_value()) {
+            return false;
+        }
         if (left_callable->owning_type.has_value() && right_callable->owning_type.has_value()) {
             return left_callable->owning_type == right_callable->owning_type;
         }
         if (left_callable->parameters.size() != right_callable->parameters.size()
-            || !shapes_compatible(draft, left_callable->result, right_callable->result, visited)) {
+            || !check(left_callable->result, right_callable->result)) {
             return false;
         }
-        return std::ranges::equal(
+        const auto parameters_match = std::ranges::equal(
             left_callable->parameters,
             right_callable->parameters,
             [&](const auto& left_parameter, const auto& right_parameter) noexcept {
                 return left_parameter.stage == right_parameter.stage
                     && left_parameter.access == right_parameter.access
-                    && shapes_compatible(draft, left_parameter.type, right_parameter.type, visited);
+                    && check(left_parameter.type, right_parameter.type);
             }
         );
+        if (parameters_match && visit_views) {
+            visit_views(left, right);
+        }
+        return parameters_match;
     }
 
     const auto* left_concrete = std::get_if<TypeID>(&left);
@@ -473,14 +488,18 @@ auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     return pointer ? std::optional(*pointer) : std::nullopt;
 }
 
-auto pointer_narrows(
+auto pointer_narrowing_shape(
     const ProgramDraft& draft,
     ConstructionTypeRef source,
     ConstructionTypeRef target
 ) noexcept -> bool {
     const auto from = pointer_shape(draft, source);
     const auto to = pointer_shape(draft, target);
-    return from && to && pointer_narrows(*from, *to);
+    return from
+        && to
+        && from->access == PointerAccess::Write
+        && to->access == PointerAccess::Read
+        && type_shapes_compatible(draft, from->target, to->target);
 }
 
 auto construct_callable_view_contract(ProgramDraft& draft, ConstructionTypeRef type) noexcept
@@ -525,7 +544,32 @@ auto type_shapes_compatible(
     ConstructionTypeRef right
 ) noexcept -> bool {
     auto visited = std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>();
-    return shapes_compatible(draft, left, right, visited);
+    return check_type_relation(draft, left, right, visited, TypeRelation::Adaptation, {});
+}
+
+auto constrain_invariant_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef left,
+    ConstructionTypeRef right,
+    ProgramOriginID origin
+) noexcept -> bool {
+    const auto equal_failures = [&](ConstructionTypeRef a, ConstructionTypeRef b) noexcept {
+        const auto from = construct_callable_view_contract(draft, a);
+        const auto to = construct_callable_view_contract(draft, b);
+        if (!from || !to) {
+            invariant_violation("invariant callable views lost their failure contracts");
+        }
+        draft.require_equal_failures(from->failures, to->failures, origin);
+    };
+    auto visited = std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>();
+    return check_type_relation(
+        draft,
+        left,
+        right,
+        visited,
+        TypeRelation::Invariant,
+        equal_failures
+    );
 }
 
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
@@ -841,10 +885,17 @@ auto decide_cast(
 ) noexcept -> CastDecision {
     const auto from = pointer_shape(facts, source);
     const auto to = pointer_shape(facts, target);
+    if (from
+        && to
+        && from->access == to->access
+        && type_shapes_compatible(facts, from->target, to->target)) {
+        return CastKind::Identity;
+    }
     const auto* source_type = std::get_if<TypeID>(&source);
     if (const auto pointer = decide_pointer_cast(
             from,
             to,
+            pointer_narrowing_shape(facts, source, target),
             source_type && known_cstring(facts.type_copy(*source_type).value),
             to ? builtin_type(facts, to->target) : std::nullopt
         )) {
@@ -894,6 +945,12 @@ auto decide_cast(
     if (const auto pointer = decide_pointer_cast(
             from,
             to,
+            from
+                && to
+                && pointer_narrows(
+                    std::get<PointerTypeValue>(facts.type(source).value),
+                    std::get<PointerTypeValue>(facts.type(target).value)
+                ),
             known_cstring(facts.type(source).value),
             to ? builtin_type(facts, std::get<TypeID>(to->target)) : std::nullopt
         )) {

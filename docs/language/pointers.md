@@ -56,8 +56,7 @@ caller's slot and require the complete pointer type to match. Take parameters
 also require an exact type, transfer the address value, and make its source
 owner unavailable. Take does not zero other aliases or release the target.
 
-`nullptr` needs a concrete pointer type context, including in an explicitly
-typed `const`. There is no independent null type. Pointers support `==` and
+`nullptr` needs a pointer type context, including in an explicitly typed `const`. There is no independent null type. Pointers support `==` and
 `!=` with `nullptr` and with pointers to the same target type. They have no
 implicit boolean conversion, ordering, arithmetic, direct indexing, integer
 conversion. `addressof` is the Carven address-of operation for an addressable
@@ -67,9 +66,9 @@ place.
 
 Explicit `as ptr<void>` erases a Read target type. A Write pointer may erase to
 `ptr<&void>` or narrow to `ptr<void>`; Read access cannot become Write access.
-Erasure preserves the address and target lifetime without reading or owning the
-target. Carven callable values are objects, so `ptr<fn() -> i32>` follows the
-same object-pointer erasure rule. Conversion from `ptr<void>` to a typed
+Erasure preserves the address and leaves the target lifetime unchanged. It does
+not read or own the target. Carven callable values are objects, so
+`ptr<fn() -> i32>` follows the same object-pointer erasure rule. Conversion from `ptr<void>` to a typed
 pointer is not supported. The compiler-known external `const char*` type of a C
 string can erase to `ptr<void>`.
 

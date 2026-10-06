@@ -283,8 +283,8 @@ auto interpret_binary(
     }
     const auto pointer_equality =
         (operation == BinaryOperator::Equal || operation == BinaryOperator::NotEqual)
-        && (pointer_narrows(site.draft(), site.type(*left), site.type(*right))
-            || pointer_narrows(site.draft(), site.type(*right), site.type(*left)));
+        && (pointer_narrowing_shape(site.draft(), site.type(*left), site.type(*right))
+            || pointer_narrowing_shape(site.draft(), site.type(*right), site.type(*left)));
     const auto decision = decide_binary_operator(
         site.draft(),
         operation,
@@ -452,6 +452,15 @@ auto interpret_cast(Site& site, const ASTCastExpr& source, Span span) noexcept
                 type_display_name(site.draft(), *target)
             )
         ));
+    }
+    const auto from = pointer_shape(site.draft(), site.type(*operand));
+    const auto to = pointer_shape(site.draft(), *target);
+    if (from && to && (*decision == CastKind::PointerRead || *decision == CastKind::Identity)) {
+        if (auto checked =
+                site.require_invariant_storage(from->target, to->target, source.operator_span);
+            !checked) {
+            co_return std::unexpected(checked.error());
+        }
     }
     if (*decision == CastKind::Identity) {
         const auto known = site.known(*operand);

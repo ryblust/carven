@@ -61,6 +61,28 @@ const fn pending_callable_places() -> bool {
         && (writable as ptr<void>) == readonly;
 }
 
+const fn pending_callable_access(absent: bool) -> i32 {
+    var callable = erased_callable;
+    let writable = addressof(&callable);
+    let read: ptr<fn() -> i32> = writable;
+    let cast = writable as ptr<fn() -> i32>;
+    let identity = addressof(callable) as ptr<fn() -> i32>;
+    let pointers: [ptr<fn() -> i32>; 1] = [writable];
+    var maybe = addressof(callable);
+    maybe = if absent { nullptr } else { addressof(callable) };
+    if nullptr == maybe { return 0; }
+    if read == nullptr || cast == nullptr || identity == nullptr || pointers[0] == nullptr {
+        return -1;
+    }
+    var callables = [erased_callable];
+    let array_write = addressof(&callables);
+    let array_read: ptr<[fn() -> i32; 1]> = array_write;
+    if array_read != addressof(callables) || writable != read { return -2; }
+    let selected = *maybe;
+    if addressof(selected) == nullptr { return -3; }
+    return erased_callable();
+}
+
 const fn same_callable_array_address(values: [fn() -> i32; 1], expected: ptr<void>) -> bool {
     return (addressof(values[0]) as ptr<void>) == expected;
 }
@@ -152,6 +174,8 @@ const test "Pointer erasure: static access and address relations" {
     check(erased_access());
     check(erased_callable_address());
     check(pending_callable_places());
+    check(pending_callable_access(false) == 7);
+    check(pending_callable_access(true) == 0);
     check(callable_array_read_identity());
     check(erased_layout());
     check(erased_cstrings());
@@ -170,6 +194,8 @@ test "Pointer erasure: native access and address relations" {
     check(erased_access());
     check(erased_callable_address());
     check(pending_callable_places());
+    check(pending_callable_access(false) == 7);
+    check(pending_callable_access(true) == 0);
     check(callable_array_read_identity());
     check(erased_layout());
     check(erased_cstrings());

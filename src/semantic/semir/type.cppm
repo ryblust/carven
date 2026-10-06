@@ -162,16 +162,8 @@ struct ConstructionPointerTypeValue final {
     PointerAccess access;
 };
 
-template<typename Source, typename Target>
-    requires (std::same_as<Source, PointerTypeValue>
-              || std::same_as<Source, ConstructionPointerTypeValue>)
-    && (std::same_as<Target, PointerTypeValue>
-        || std::same_as<Target, ConstructionPointerTypeValue>)
-auto pointer_narrows(const Source& source, const Target& target) noexcept -> bool {
-    return ConstructionTypeRef(source.target) == ConstructionTypeRef(target.target)
-        && source.access == PointerAccess::Write
-        && target.access == PointerAccess::Read;
-}
+auto pointer_narrows(const PointerTypeValue& source, const PointerTypeValue& target) noexcept
+    -> bool;
 
 template<typename Source, typename Target>
     requires (std::same_as<Source, PointerTypeValue>

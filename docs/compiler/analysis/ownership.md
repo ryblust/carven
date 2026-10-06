@@ -174,6 +174,9 @@ analysis, including unreachable source.
 ## Pointer nullability
 
 Pointer nullability analyzes structured operations locally and merges slot facts
-across normal and abrupt exits. Indirect places check address availability and target
+across normal and abrupt exits. Comparisons with pure null operands refine stable
+slots on their corresponding edges. Pure null operands are null constants and
+pointer defaults; a computed null result does not establish that its evaluation
+left another slot unchanged. Indirect places check address availability and target
 access without assigning a local owner to the referent. Pointer targets are
 leaves for owned-content, loan-content, and infinite-size containment queries.

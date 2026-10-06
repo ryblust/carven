@@ -91,7 +91,13 @@ auto convert_intrinsic_argument(
             return true;
         }
     }
-    if (pointer_narrows(site.draft(), source, target)) {
+    if (pointer_narrowing_shape(site.draft(), source, target)) {
+        const auto from = pointer_shape(site.draft(), source);
+        const auto to = pointer_shape(site.draft(), target);
+        if (auto checked = site.require_invariant_storage(from->target, to->target, span);
+            !checked) {
+            return std::unexpected(checked.error());
+        }
         auto known = std::optional<ConstantID>();
         if constexpr (Site::mode == ExpressionMode::Body) {
             if (const auto* concrete = std::get_if<TypeID>(&target);

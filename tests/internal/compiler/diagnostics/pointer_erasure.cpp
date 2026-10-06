@@ -31,6 +31,37 @@ const TestSuite suite([] static noexcept {
         check_compiler_errors(cases);
     };
 
+    "Pointer storage identity: permission narrowing preserves callable contracts"_test = [] static noexcept {
+        const auto cases = std::to_array<CompilerErrorExpectation>({
+            {.name = "implicit narrowing cannot widen pointee failures",
+             .source =
+                 "struct Failure {} fn target() -> i32 => 7; fn invalid() { var callable = target; let p = addressof(&callable); let q: ptr<fn() -> i32 throw Failure> = p; }",
+             .code = DiagnosticCode::TypeMismatch,
+             .primary_text = "p"},
+            {.name = "explicit narrowing cannot widen pointee failures",
+             .source =
+                 "struct Failure {} fn target() -> i32 => 7; fn invalid() { var callable = target; let p = addressof(&callable); let q = p as ptr<fn() -> i32 throw Failure>; }",
+             .code = DiagnosticCode::TypeMismatch,
+             .primary_text = "as"},
+            {.name = "identity cast cannot widen pointee failures",
+             .source =
+                 "struct Failure {} fn target() -> i32 => 7; fn invalid() { let callable = target; let p = addressof(callable); let q = p as ptr<fn() -> i32 throw Failure>; }",
+             .code = DiagnosticCode::TypeMismatch,
+             .primary_text = "as"},
+            {.name = "closure storage cannot become view storage",
+             .source =
+                 "fn invalid() { let captured = 7; var closure = [captured]() => captured; let p = addressof(&closure); let q: ptr<fn() -> i32> = p; }",
+             .code = DiagnosticCode::TypeMismatch,
+             .primary_text = "p"},
+            {.name = "effectful null operand cannot refine the other pointer slot",
+             .source =
+                 "fn target() -> i32 => 7; fn clear(&p: ptr<fn() -> i32>) -> ptr<fn() -> i32> { p = nullptr; return nullptr; } fn invalid() -> i32 { var callable = target; var p = addressof(callable); if p != clear(&p) { return (*p)(); } return 0; }",
+             .code = DiagnosticCode::PointerNonNull,
+             .primary_text = "*p"},
+        });
+        check_compiler_errors(cases);
+    };
+
     "Pointer execution: publication and dereference respect storage boundaries"_test = [] static noexcept {
         const auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "local pointer escape",

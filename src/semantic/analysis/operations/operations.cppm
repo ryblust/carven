@@ -90,7 +90,8 @@ auto select_contextual_numeric_type(
 auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool;
 auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionPointerTypeValue>;
-auto pointer_narrows(
+// Selects a narrowing candidate; construction must constrain invariant pointee types.
+auto pointer_narrowing_shape(
     const ProgramDraft& draft,
     ConstructionTypeRef source,
     ConstructionTypeRef target
@@ -104,6 +105,13 @@ auto type_shapes_compatible(
     const ProgramDraft& draft,
     ConstructionTypeRef left,
     ConstructionTypeRef right
+) noexcept -> bool;
+// Checks storage identity and registers equality of pending callable failure sets.
+auto constrain_invariant_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef left,
+    ConstructionTypeRef right,
+    ProgramOriginID origin
 ) noexcept -> bool;
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> bool;

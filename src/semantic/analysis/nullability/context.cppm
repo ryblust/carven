@@ -71,7 +71,7 @@ private:
     auto location(const SemanticExpression& source, bool enclosing = false) const noexcept
         -> std::optional<NullPlace>;
     auto value_at(const NullState& state, const NullPlace& place) const noexcept -> NullValue;
-    auto constant_value(const SemanticExpression& source) const noexcept -> NullValue;
+    auto is_pure_null(const SemanticExpression& source) const noexcept -> bool;
     auto invalidate(NullState& state, const std::optional<NullPlace>& place) const noexcept -> void;
     auto invalidate_exposed(NullState& state) const noexcept -> void;
     auto store(NullState& state, const NullPlace& place, const NullValue& value) const noexcept
