@@ -216,6 +216,7 @@ auto DeclResolver::resolve_constant_enum_case(
         co_return ResolvedEnumCase {
             .id = case_id,
             .owner = declaration->owner,
+            .reference_type = enum_case_reference_type(draft, type, declaration->payload_types),
             .payload_types = declaration->payload_types,
             .constant = declaration->constant,
         };

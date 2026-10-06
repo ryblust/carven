@@ -540,6 +540,9 @@ public:
             program.intern_type({.value = FunctionTypeValue {.callable = declaration.callable}});
         auto selected_callee =
             make(callee_type, SemCallable {.callable = declaration.callable}, span);
+        if constexpr (requires { scope.observe_expression(callee, callee_type); }) {
+            scope.observe_expression(callee, callee_type);
+        }
         pending_failures.push_back(contract.failures);
         co_return make(
             contract.result,

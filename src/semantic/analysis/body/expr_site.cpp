@@ -355,33 +355,10 @@ auto BodyExprSite::convert_argument(Value& value, ConstructionTypeRef type, Span
     return converted;
 }
 
-auto BodyExprSite::enum_constructor(
-    TypeID enumeration_type,
-    const ResolvedEnumCase& selected,
-    Span span
-) noexcept -> Value {
-    auto parameters = std::vector<ConstructionCallableParameter>();
-    parameters.reserve(selected.payload_types.size());
-    for (const auto type : selected.payload_types) {
-        parameters.push_back(
-            ConstructionCallableParameter {
-                .stage = ParameterStage::Runtime,
-                .access = AccessMode::Read,
-                .type = type,
-            }
-        );
-    }
-    const auto type = body.draft().append_construction_type(
-        ConstructionType {
-            .value = ConstructionCallableViewTypeValue {
-                .parameters = std::move(parameters),
-                .result = enumeration_type,
-                .failures = body.draft().add_empty_failure_term(),
-            },
-        }
-    );
+auto BodyExprSite::enum_constructor(TypeID, const ResolvedEnumCase& selected, Span span) noexcept
+    -> Value {
     auto value = body.active_builder().make_expression(
-        type,
+        selected.reference_type,
         body.active_builder().lifetime(),
         body.origin(span),
         SemEnumConstructor {.enum_case = selected.id}

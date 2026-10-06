@@ -392,10 +392,13 @@ auto BodyElaborator::resolve_constant_enum_case(
     }
     if (const auto case_id = find_enum_case(nominal->enumeration, name, span)) {
         const auto declaration = draft().construction_enum_case_declaration_copy(*case_id);
-        observe_source(span, std::nullopt, type);
+        const auto reference_type =
+            enum_case_reference_type(draft(), type, declaration.payload_types);
+        observe_source(span, std::nullopt, reference_type);
         co_return ResolvedEnumCase {
             .id = *case_id,
             .owner = declaration.owner,
+            .reference_type = reference_type,
             .payload_types = declaration.payload_types,
             .constant = declaration.constant,
         };

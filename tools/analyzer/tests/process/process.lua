@@ -232,8 +232,56 @@ local function interactive(program)
     end)
 end
 
+local function callable_navigation(program)
+    with_service(program, "callable navigation", function (service)
+        local source = "const fn seed() -> i32 => 1;\n"
+            .. "enum Choice { Value(i32), Empty }\n"
+            .. "fn probe() -> Choice {\n"
+            .. "const selected = (seed)(); let ordinary = seed();\n"
+            .. "let constructor = Choice::Value; let first = Choice::Value(1);\n"
+            .. "let second: Choice = .Value(2); const third = Choice::Value(seed());\n"
+            .. "let empty = Choice::Empty; return constructor(selected + ordinary); }\n"
+        local function at(needle, shift)
+            return assert(source:find(needle, 1, true)) - 1 + (shift or 0)
+        end
+        assert(service.request(update("calls", 1, source)).tag == 1)
+        assert(service.request(string.char(3) .. integer(1, 4) .. text("calls") .. text("main")).tag == 1)
+        assert(service.request(string.char(4)).published)
+        for _, use in ipairs({at("(seed)", 1), at("ordinary = seed", 11), at("Value(seed", 6)}) do
+            local info = service.request(query(5, "calls", use)).hover
+            assert(info and info.type_text == "fn() -> i32" and info.location.start == use)
+            assert(service.request(query(6, "calls", use)).location.start == at("seed"))
+        end
+        for _, use in ipairs({at("Choice::Value", 8), at("Choice::Value(1)", 8), at(".Value(2)", 1), at("Choice::Value(seed", 8)}) do
+            local info = service.request(query(5, "calls", use)).hover
+            assert(info and info.type_text == "fn(i32) -> Choice" and info.location.start == use)
+            assert(service.request(query(6, "calls", use)).location.start == at("Value(i32)"))
+        end
+        local seed_refs = service.request(query(7, "calls", at("(seed)", 1))).locations
+        local seed_starts = {at("seed"), at("(seed)", 1), at("ordinary = seed", 11), at("Value(seed", 6)}
+        assert(seed_refs and #seed_refs == #seed_starts)
+        for index, start in ipairs(seed_starts) do
+            assert(seed_refs[index].document == "calls" and seed_refs[index].version == 1 and seed_refs[index].start == start)
+        end
+        local case_refs = service.request(query(7, "calls", at(".Value(2)", 1))).locations
+        local case_starts = {at("Value(i32)"), at("Choice::Value", 8), at("Choice::Value(1)", 8), at(".Value(2)", 1), at("Choice::Value(seed", 8)}
+        assert(case_refs and #case_refs == #case_starts)
+        for index, start in ipairs(case_starts) do
+            assert(case_refs[index].document == "calls" and case_refs[index].version == 1 and case_refs[index].start == start)
+        end
+        assert(service.request(query(5, "calls", at("Choice::Empty", 8))).hover.type_text == "Choice")
+        assert(service.request(query(5, "calls", at("first ="))).hover.type_text == "Choice")
+        source = source .. "fn broken() -> Choice { const dropped = seed(); return missing; }"
+        assert(service.request(update("calls", 2, source)).tag == 1)
+        assert(not service.request(string.char(4)).published)
+        assert(service.request(query(5, "calls", at("dropped = seed", 10))).hover == nil)
+        assert(service.request(query(6, "calls", at("dropped = seed", 10))).location == nil)
+    end)
+end
+
 function run(program)
     interactive(program)
+    callable_navigation(program)
     local cases = {
         {name = "frame_boundary_eof", input = frame(update("document", 1, "fn f() {}")),
             code = 0, output = frame(string.char(1) .. integer(0, 4))},

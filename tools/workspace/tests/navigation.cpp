@@ -90,6 +90,123 @@ auto expect_references(
 }
 
 const TestSuite tests([] static noexcept {
+    "Workspace analysis: callable tokens retain checked reference types across call paths"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "const fn seed() -> i32 => 1;\n"
+                "enum Choice { Value(i32), Empty }\n"
+                "fn probe() -> Choice {\n"
+                "    const selected = (seed)();\n"
+                "    let ordinary = seed();\n"
+                "    let constructor = Choice::Value;\n"
+                "    let first = Choice::Value(1);\n"
+                "    let second: Choice = .Value(2);\n"
+                "    const third = Choice::Value(seed());\n"
+                "    let empty = Choice::Empty;\n"
+                "    return constructor(selected + ordinary);\n"
+                "}\n"
+            );
+            auto host = WorkspaceAnalysisHost();
+            update(host, "a.cv", 1, text);
+            const auto modules = std::array {project_module("a.cv", "main")};
+            const auto snapshot = host.snapshot();
+            const auto analysis = snapshot.semantic(modules);
+            const auto* program = analysis.result->program();
+            require(program != nullptr);
+            const auto hover_type = [&](std::uint32_t use) noexcept {
+                const auto query = snapshot.hover(modules, "a.cv", use);
+                require(query.result.has_value());
+                expect_equal(query.result->location.range.start(), use);
+                const auto* type = std::get_if<TypeID>(&query.result->type);
+                require(type != nullptr);
+                return *type;
+            };
+            const auto seed_type = hover_type(offset(text, "ordinary = seed") + 11u);
+            expect(
+                std::holds_alternative<FunctionTypeValue>(program->types().type(seed_type).value)
+            );
+            for (const auto use : std::array {
+                     offset(text, "(seed)") + 1u,
+                     offset(text, "Value(seed") + 6u,
+                 }) {
+                expect(hover_type(use) == seed_type);
+                expect_target(
+                    snapshot.definition(modules, "a.cv", use),
+                    "a.cv",
+                    1,
+                    offset(text, "seed"),
+                    "seed"
+                );
+            }
+            const auto constructor_type = hover_type(offset(text, "Choice::Value") + 8u);
+            expect(
+                std::holds_alternative<CallableViewTypeValue>(
+                    program->types().type(constructor_type).value
+                )
+            );
+            for (const auto use : std::array {
+                     offset(text, "Choice::Value(1)") + 8u,
+                     offset(text, ".Value(2)") + 1u,
+                     offset(text, "Choice::Value(seed") + 8u,
+                 }) {
+                expect(hover_type(use) == constructor_type);
+                expect_target(
+                    snapshot.definition(modules, "a.cv", use),
+                    "a.cv",
+                    1,
+                    offset(text, "Value(i32)"),
+                    "Value"
+                );
+            }
+            expect_references(
+                snapshot.references(modules, "a.cv", offset(text, "(seed)") + 1u),
+                "a.cv",
+                1,
+                std::array {
+                    offset(text, "seed"),
+                    offset(text, "(seed)") + 1u,
+                    offset(text, "ordinary = seed") + 11u,
+                    offset(text, "Value(seed") + 6u
+                },
+                "seed"
+            );
+            expect_references(
+                snapshot.references(modules, "a.cv", offset(text, ".Value(2)") + 1u),
+                "a.cv",
+                1,
+                std::array {
+                    offset(text, "Value(i32)"),
+                    offset(text, "Choice::Value") + 8u,
+                    offset(text, "Choice::Value(1)") + 8u,
+                    offset(text, ".Value(2)") + 1u,
+                    offset(text, "Choice::Value(seed") + 8u
+                },
+                "Value"
+            );
+            const auto empty_type = hover_type(offset(text, "Choice::Empty") + 8u);
+            expect(std::holds_alternative<EnumTypeValue>(program->types().type(empty_type).value));
+            expect(hover_type(offset(text, "first =")) == empty_type);
+            expect_target(
+                snapshot.definition(modules, "a.cv", offset(text, "Choice::Empty") + 8u),
+                "a.cv",
+                1,
+                offset(text, "Empty }"),
+                "Empty"
+            );
+
+            const auto broken = std::string(text)
+                + "fn broken() -> Choice { const dropped = seed(); let discarded = Choice::Value(3); return missing; }";
+            update(host, "a.cv", 2, broken);
+            const auto failed = host.snapshot();
+            expect(failed.semantic(modules).result->program() == nullptr);
+            const auto discarded_seed = offset(broken, "dropped = seed") + 10u;
+            const auto discarded_case = offset(broken, "Choice::Value(3)") + 8u;
+            for (const auto use : std::array {discarded_seed, discarded_case}) {
+                expect(!failed.hover(modules, "a.cv", use).result);
+                expect(!failed.definition(modules, "a.cv", use).result);
+            }
+        };
+
     "Workspace analysis: ordinary static expressions retain names fields and type anchors"_test =
         [] static noexcept {
             constexpr auto healthy = std::string_view(
