@@ -195,6 +195,13 @@ their construction shapes; freezing requires completed canonical types. Non-null
 pointers cannot freeze. Read array arguments preserve source storage where their
 element types establish identity; borrowing an adaptation whose type equivalence
 remains unknown produces an execution diagnostic.
+Every normally completed expression delivers its checked semantic type to the
+execution value. Pointer, slice, callable, and aggregate tags retain that type
+when the value enters storage or publication. Casts and aggregate adoption use
+this common delivery boundary; they do not independently retag their results.
+Detaching a slice delivers copied elements through the slice's element type
+without changing its borrowed backing. Freezing still accepts only canonical
+values and never infers a replacement type from a payload.
 Callable adaptation executes direct function targets and copies whose type identity
 is established. Widening an existing view requires a live backing reference and is
 not represented by execution values; static and interpreted execution diagnose it

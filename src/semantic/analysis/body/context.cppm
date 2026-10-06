@@ -68,6 +68,7 @@ struct BuiltExpression final {
     bool completes;
 
     auto is_function_reference() const noexcept -> bool;
+    auto expression() noexcept -> SemanticExpression&;
     auto expression() const noexcept -> const SemanticExpression&;
     auto type() const noexcept -> const ConstructionTypeRef&;
     auto constant() const noexcept -> std::optional<ConstantID>;
@@ -308,11 +309,6 @@ private:
     auto resolve_constant_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> AnalysisTask<ResolvedEnumCase>;
     auto compatible(ConstructionTypeRef left, ConstructionTypeRef right) const noexcept -> bool;
-    auto require_adaptation(
-        ConstructionTypeRef source,
-        ConstructionTypeRef target,
-        Span span
-    ) noexcept -> AnalysisResult<void>;
     auto require_invariant_type(
         ConstructionTypeRef source,
         ConstructionTypeRef target,

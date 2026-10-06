@@ -1,0 +1,88 @@
+struct DeliveredPointers {
+    pointer: ptr<fn() -> i32>,
+    nested: [[ptr<fn() -> i32>; 2]; 1]
+}
+
+enum DeliveredPointerPayload {
+    Value(DeliveredPointers),
+    Empty,
+}
+
+const fn delivery_target() -> i32 => 7;
+
+const fn inferred_nulls() {
+    let callable = delivery_target;
+    var pointer = addressof(callable);
+    pointer = nullptr;
+    let original = [pointer, pointer];
+    return original;
+}
+
+const fn copied_pointer_aggregate() -> DeliveredPointers {
+    let callable = delivery_target;
+    var pointer = addressof(callable);
+    pointer = nullptr;
+    let original = DeliveredPointers {
+        pointer: pointer,
+        nested: [[pointer, pointer]]
+    };
+    let copied = original;
+    return copied;
+}
+
+const fn delivered_payload(selected: bool) -> DeliveredPointerPayload {
+    return if selected { .Value(copied_pointer_aggregate()) } else { .Empty };
+}
+
+const fn payload_is_null(value: DeliveredPointerPayload) -> bool {
+    return match value {
+        .Value(pointers) => pointers.pointer
+            == nullptr
+            && pointers.nested[0][0] == nullptr
+            && pointers.nested[0][1] == nullptr,
+        .Empty => false,
+    };
+}
+
+const fn copied_nested_nulls() -> [[ptr<fn() -> i32>; 2]; 1] {
+    let callable = delivery_target;
+    var pointer = addressof(callable);
+    pointer = nullptr;
+    var original = [[pointer, pointer]];
+    let copied = original;
+    original = [[nullptr as ptr<fn() -> i32>, nullptr as ptr<fn() -> i32>]];
+    return copied;
+}
+
+const copied_pointers = copied_pointer_aggregate();
+const selected_payload = delivered_payload(true);
+const nested_nulls = copied_nested_nulls();
+const contextual_nulls: [ptr<fn() -> i32>] = inferred_nulls();
+
+const test "Pointer delivery: frozen copies preserve nested destination types" {
+    check(copied_pointers.pointer == nullptr);
+    check(copied_pointers.nested[0][0] == nullptr);
+    check(copied_pointers.nested[0][1] == nullptr);
+    check(payload_is_null(selected_payload));
+    check(nested_nulls[0][0] == nullptr);
+    check(nested_nulls[0][1] == nullptr);
+    check(contextual_nulls.len() == 2usize);
+    check(contextual_nulls[0] == nullptr);
+    check(contextual_nulls[1] == nullptr);
+}
+
+test "Pointer delivery: execution preserves aggregate copies and selected payloads" {
+    let pointers = copied_pointer_aggregate();
+    let nested = copied_nested_nulls();
+    let backing = inferred_nulls();
+    let nulls: [ptr<fn() -> i32>] = backing;
+    check(pointers.pointer == nullptr);
+    check(pointers.nested[0][0] == nullptr);
+    check(pointers.nested[0][1] == nullptr);
+    check(payload_is_null(delivered_payload(true)));
+    check(!payload_is_null(delivered_payload(false)));
+    check(nested[0][0] == nullptr);
+    check(nested[0][1] == nullptr);
+    check(nulls[0] == nullptr);
+    check(nulls[1] == nullptr);
+}

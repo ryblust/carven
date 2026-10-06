@@ -387,11 +387,14 @@ public:
             return {};
         }
         const auto source = type(value);
-        if (!type_shapes_compatible(program, source, expected)) {
+        const auto origin =
+            program.append_source_origin(program.module_source(source_module_id), span);
+        if (!constrain_type_adaptation(program, source, expected, origin)) {
             return std::unexpected(
                 fail(span, DiagnosticCode::TypeMismatch, "expression has an incompatible type")
             );
         }
+        value.type = BodyType(expected);
         return {};
     }
 

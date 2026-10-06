@@ -572,6 +572,74 @@ auto constrain_invariant_type(
     );
 }
 
+auto constrain_type_adaptation(
+    ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target,
+    ProgramOriginID origin
+) noexcept -> bool {
+    if (!type_shapes_compatible(draft, source, target)) {
+        return false;
+    }
+    const auto constrain = [&](this auto&& self,
+                               ConstructionTypeRef source,
+                               ConstructionTypeRef target) noexcept -> bool {
+        if (source == target) {
+            return true;
+        }
+        if (pointer_shape(draft, target) || slice_element(draft, target)) {
+            return constrain_invariant_type(draft, source, target, origin);
+        }
+        if (const auto element = array_element(draft, target)) {
+            const auto input = array_element(draft, source);
+            if (!input) {
+                invariant_violation("compatible array adoption lost its source shape");
+            }
+            return self(*input, *element);
+        }
+        const auto view = construct_callable_view_contract(draft, target);
+        if (!view) {
+            return true;
+        }
+        auto contract = construct_callable_view_contract(draft, source);
+        if (!contract) {
+            if (const auto* concrete = std::get_if<TypeID>(&source)) {
+                const auto type = draft.type_copy(*concrete);
+                if (const auto* function = std::get_if<FunctionTypeValue>(&type.value)) {
+                    contract = draft.construction_callable_contract_copy(function->callable);
+                } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type.value)) {
+                    contract = draft.construction_callable_contract_copy(closure->callable);
+                }
+            }
+        }
+        if (!contract
+            || contract->parameters.size() != view->parameters.size()
+            || !constrain_invariant_type(draft, contract->result, view->result, origin)) {
+            return false;
+        }
+        for (auto index = 0uz; index < view->parameters.size(); ++index) {
+            if (contract->parameters[index].stage != view->parameters[index].stage
+                || contract->parameters[index].access != view->parameters[index].access
+                || !constrain_invariant_type(
+                    draft,
+                    contract->parameters[index].type,
+                    view->parameters[index].type,
+                    origin
+                )) {
+                return false;
+            }
+        }
+        draft.require_failure_subset(
+            contract->failures,
+            view->failures,
+            draft.append_expansion_origin(origin, ProgramExpansionReason::CallableAdoption),
+            FailureSubsetRequirementKind::CallableAdoption
+        );
+        return true;
+    };
+    return constrain(source, target);
+}
+
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> bool {
     if (const auto element = slice_element(draft, type)) {

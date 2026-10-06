@@ -265,30 +265,12 @@ template<typename Site>
 auto construct_slice_value(
     Site& site,
     SliceIntrinsic intrinsic,
-    ConstructionTypeRef receiver_type,
+    ConstructionTypeRef result_type,
     std::optional<std::uint64_t> extent,
     std::vector<SemCallArgument> operands,
     typename Site::OperandState state,
     Span span
 ) noexcept -> ExpressionResult<typename Site::Value> {
-    const auto contract = slice_intrinsic_contract(intrinsic);
-    const auto shape = sequence_shape(site.draft(), receiver_type);
-    if (!shape || shape->extent.has_value() != (contract.receiver == SliceIntrinsicShape::Array)) {
-        invariant_violation("slice construction receiver mismatch");
-    }
-    auto result_type = receiver_type;
-    if (const auto* builtin = std::get_if<BuiltinType>(&contract.result)) {
-        result_type = site.draft().builtin_type(*builtin);
-    } else if (contract.receiver == SliceIntrinsicShape::Array) {
-        if (const auto* concrete = std::get_if<TypeID>(&shape->element)) {
-            result_type =
-                site.draft().intern_type({.value = SliceTypeValue {.element = *concrete}});
-        } else {
-            result_type = site.draft().append_construction_type(
-                {.value = ConstructionSliceTypeValue {.element = shape->element}}
-            );
-        }
-    }
     auto result_extent = std::optional<std::uint64_t>();
     auto known = std::optional<ConstantID>();
     if (intrinsic == SliceIntrinsic::FromArray) {
@@ -352,6 +334,23 @@ auto construct_slice_call(
     const auto receiver_type = site.type(receiver);
     const auto extent = site.known_sequence_extent(receiver);
     const auto contract = slice_intrinsic_contract(intrinsic);
+    const auto shape = sequence_shape(site.draft(), receiver_type);
+    if (!shape || shape->extent.has_value() != (contract.receiver == SliceIntrinsicShape::Array)) {
+        invariant_violation("slice construction receiver mismatch");
+    }
+    auto result_type = receiver_type;
+    if (const auto* builtin = std::get_if<BuiltinType>(&contract.result)) {
+        result_type = site.draft().builtin_type(*builtin);
+    } else if (contract.receiver == SliceIntrinsicShape::Array) {
+        if (const auto* concrete = std::get_if<TypeID>(&shape->element)) {
+            result_type =
+                site.draft().intern_type({.value = SliceTypeValue {.element = *concrete}});
+        } else {
+            result_type = site.draft().append_construction_type(
+                {.value = ConstructionSliceTypeValue {.element = shape->element}}
+            );
+        }
+    }
     if (arguments.size() != contract.arguments.size()) {
         invariant_violation("slice construction argument count mismatch");
     }
@@ -385,7 +384,7 @@ auto construct_slice_call(
     co_return construct_slice_value(
         site,
         intrinsic,
-        receiver_type,
+        result_type,
         extent,
         std::move(operands),
         std::move(state),

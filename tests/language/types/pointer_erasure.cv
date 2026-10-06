@@ -93,6 +93,58 @@ const fn callable_array_read_identity() -> bool {
     return same_callable_array_address(values, expected);
 }
 
+const fn pending_null_pointer(explicit: bool) -> ptr<fn() -> i32> {
+    let callable = erased_callable;
+    var pointer = addressof(callable);
+    pointer = nullptr;
+    if explicit { return pointer as ptr<fn() -> i32>; }
+    return pointer;
+}
+
+const fn pending_null_array() -> [ptr<fn() -> i32>; 1] {
+    let callable = erased_callable;
+    var pointer = addressof(callable);
+    pointer = nullptr;
+    let pointers = [pointer];
+    return pointers;
+}
+
+const fn inferred_null_array() {
+    let callable = erased_callable;
+    var pointer = addressof(callable);
+    pointer = nullptr;
+    return [pointer];
+}
+
+const fn canonical_null_roundtrip() -> [ptr<fn() -> i32>; 1] {
+    let callable = erased_callable;
+    var pointers = [addressof(callable)];
+    pointers = [nullptr as ptr<fn() -> i32>];
+    return pointers;
+}
+
+const delivered_null = pending_null_pointer(false);
+const delivered_cast_null = pending_null_pointer(true);
+const delivered_null_array = pending_null_array();
+const delivered_null_slice: [ptr<fn() -> i32>] = inferred_null_array();
+const delivered_roundtrip = canonical_null_roundtrip();
+
+const test "Pointer publication: checked delivery retains canonical destination types" {
+    check(delivered_null == nullptr);
+    check(delivered_cast_null == nullptr);
+    check(delivered_null_array[0] == nullptr);
+    check(delivered_null_slice[0] == nullptr);
+    check(delivered_roundtrip[0] == nullptr);
+}
+
+test "Pointer delivery: inferred nulls preserve values through casts and aggregates" {
+    check(pending_null_pointer(false) == nullptr);
+    check(pending_null_pointer(true) == nullptr);
+    check(pending_null_array()[0] == nullptr);
+    check(canonical_null_roundtrip()[0] == nullptr);
+    check(delivered_null_slice[0] == nullptr);
+}
+
 const fn erased_access() -> bool {
     var value = 3;
     let pointer = addressof(&value);

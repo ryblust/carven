@@ -8,6 +8,29 @@ import std;
 
 namespace {
 
+auto sequence_element(const ExecutionValueAccess& values, ConstructionTypeRef reference) noexcept
+    -> std::optional<ConstructionTypeRef> {
+    const auto element =
+        [](const auto& type) static noexcept -> std::optional<ConstructionTypeRef> {
+        return type.value.visit(
+            [](const auto& shape) static noexcept -> std::optional<ConstructionTypeRef> {
+                using Shape = std::remove_cvref_t<decltype(shape)>;
+                if constexpr (std::same_as<Shape, ArrayTypeValue>
+                              || std::same_as<Shape, SliceTypeValue>
+                              || std::same_as<Shape, ConstructionArrayTypeValue>
+                              || std::same_as<Shape, ConstructionSliceTypeValue>) {
+                    return shape.element;
+                }
+                return std::nullopt;
+            }
+        );
+    };
+    if (const auto* concrete = std::get_if<TypeID>(&reference)) {
+        return element(values.type_copy(*concrete));
+    }
+    return element(values.construction_type_copy(std::get<TypeTermID>(reference)));
+}
+
 // Used only by validated callable and array adoption: parameter and result types
 // are invariant, while source failures are a subset of target failures.
 auto adaptation_preserves_type(
@@ -408,6 +431,57 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
     return copy(source, 0);
 }
 
+auto SemanticExecutor::deliver_value(
+    ExecutionValue& value,
+    ConstructionTypeRef target,
+    ProgramOriginID origin,
+    std::size_t depth
+) noexcept -> ExecutionResult<void> {
+    if (execution_value_type(values, value) == target) {
+        return {};
+    }
+    if (depth > maximum_constant_aggregate_depth) {
+        return std::unexpected(
+            fail(origin, ExecutionReason::Limit, "aggregate exceeds its nesting limit")
+        );
+    }
+    if (const auto atom = execution_atom(values, value);
+        atom && std::holds_alternative<NullPointerConstant>(atom->value)) {
+        value = ExecutionPointer {.type = target, .target = std::nullopt};
+        return {};
+    }
+    if (std::holds_alternative<ConstantID>(value)) {
+        auto copied = copy_value(value, origin);
+        if (!copied) {
+            return std::unexpected(std::move(copied.error()));
+        }
+        value = std::move(*copied);
+    }
+    return value.visit([&](auto& delivered) noexcept -> ExecutionResult<void> {
+        using Value = std::remove_cvref_t<decltype(delivered)>;
+        if constexpr (std::same_as<Value, ExecutionPointer>
+                      || std::same_as<Value, ExecutionSlice>
+                      || std::same_as<Value, ExecutionFunction>) {
+            delivered.type = target;
+            return {};
+        } else if constexpr (std::same_as<Value, ExecutionAggregateValue>) {
+            const auto element = sequence_element(values, target);
+            if (!element) {
+                invariant_violation("aggregate delivery lost its checked sequence type");
+            }
+            for (auto& child : delivered.elements) {
+                if (auto typed = deliver_value(child, *element, origin, depth + 1uz); !typed) {
+                    return typed;
+                }
+            }
+            delivered.type = target;
+            return {};
+        } else {
+            invariant_violation("execution value differs from its checked delivery type");
+        }
+    });
+}
+
 auto SemanticExecutor::type(ConstructionTypeRef source, ProgramOriginID origin) noexcept
     -> ExecutionResult<TypeID> {
     if (const auto* concrete = std::get_if<TypeID>(&source)) {
@@ -727,6 +801,10 @@ auto SemanticExecutor::detach_views(
         }
         auto elements = std::vector<ExecutionValue>();
         elements.reserve(slice->extent);
+        const auto element_type = sequence_element(values, slice->type);
+        if (!element_type) {
+            invariant_violation("slice delivery lost its checked element type");
+        }
         for (auto index = 0uz; index < slice->extent; ++index) {
             auto selected = slice_element(*slice, index, origin);
             if (!selected) {
@@ -741,6 +819,9 @@ auto SemanticExecutor::detach_views(
             auto copied = copy_value(*target, origin);
             if (!copied) {
                 return std::unexpected(std::move(copied.error()));
+            }
+            if (auto typed = deliver_value(*copied, *element_type, origin, depth + 1uz); !typed) {
+                return std::unexpected(std::move(typed.error()));
             }
             auto detached = detach_views(std::move(*copied), origin, depth + 1uz);
             if (!detached) {

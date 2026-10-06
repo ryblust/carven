@@ -43,6 +43,11 @@ references. Invariant storage requires identical nominal types, pointer access,
 array extents, and callable parameter/result types. Callable views register failure-set
 equality constraints until solving completes. Permission narrowing changes only the
 outer pointer access and checks pointee storage through this same query.
+Body and static-root conversions share the complete adaptation constraint entry.
+Successful conversion records the destination type on its expression, including
+invariant conversions that need no runtime operation. Contextual array-to-slice
+construction uses the checked destination slice type; a method call infers its
+result from the receiver.
 
 ### Default initialization
 

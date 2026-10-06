@@ -48,6 +48,21 @@ const TestSuite suite([] static noexcept {
                  "struct Failure {} fn target() -> i32 => 7; fn invalid() { let callable = target; let p = addressof(callable); let q = p as ptr<fn() -> i32 throw Failure>; }",
              .code = DiagnosticCode::TypeMismatch,
              .primary_text = "as"},
+            {.name = "constant pointer context preserves pointee failures",
+             .source =
+                 "struct Failure {} const pointer: ptr<fn() -> i32 throw Failure> = nullptr as ptr<fn() -> i32>;",
+             .code = DiagnosticCode::TypeMismatch,
+             .primary_text = "nullptr as ptr<fn() -> i32>"},
+            {.name = "constant array elements preserve pointee failures",
+             .source =
+                 "struct Failure {} const pointers: [ptr<fn() -> i32 throw Failure>; 1] = [nullptr as ptr<fn() -> i32>];",
+             .code = DiagnosticCode::TypeMismatch,
+             .primary_text = "nullptr as ptr<fn() -> i32>"},
+            {.name = "constant slice elements preserve pointee failures",
+             .source =
+                 "struct Failure {} const pointers: [ptr<fn() -> i32 throw Failure>] = [nullptr as ptr<fn() -> i32>];",
+             .code = DiagnosticCode::TypeMismatch,
+             .primary_text = "nullptr as ptr<fn() -> i32>"},
             {.name = "closure storage cannot become view storage",
              .source =
                  "fn invalid() { let captured = 7; var closure = [captured]() => captured; let p = addressof(&closure); let q: ptr<fn() -> i32> = p; }",
@@ -69,6 +84,11 @@ const TestSuite suite([] static noexcept {
                  "const fn address() -> ptr<void> { let value = 1; return addressof(value) as ptr<void>; } const p = address();",
              .code = DiagnosticCode::ConstInitializer,
              .primary_text = "address()"},
+            {.name = "canonical array delivery does not freeze a non-null local pointer",
+             .source =
+                 "const fn target() -> i32 => 7; const fn addresses() -> [ptr<fn() -> i32>; 1] { let callable = target; return [addressof(callable)]; } const pointers = addresses();",
+             .code = DiagnosticCode::ConstInitializer,
+             .primary_text = "addresses()"},
             {.name = "erased static backing is not a frozen pointer value",
              .source = R"(const p = c"123" as ptr<void>;)",
              .code = DiagnosticCode::ConstInitializer,

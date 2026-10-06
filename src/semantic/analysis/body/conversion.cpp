@@ -131,61 +131,6 @@ auto BodyElaborator::type_mismatch(
     );
 }
 
-auto BodyElaborator::require_adaptation(
-    ConstructionTypeRef source,
-    ConstructionTypeRef target,
-    Span span
-) noexcept -> AnalysisResult<void> {
-    if (source == target) {
-        return {};
-    }
-    if (pointer_shape(draft(), target) || slice_element(draft(), target)) {
-        return require_invariant_type(source, target, span);
-    }
-    if (const auto element = array_element(draft(), target)) {
-        const auto source_element = array_element(draft(), source);
-        if (!source_element) {
-            invariant_violation("compatible array adoption lost its source shape");
-        }
-        return require_adaptation(*source_element, *element, span);
-    }
-    const auto view = construct_callable_view_contract(draft(), target);
-    if (!view) {
-        return {};
-    }
-    const auto contract = callable_contract(source, span);
-    if (!contract) {
-        return std::unexpected(contract.error());
-    }
-    if (contract->parameters.size() != view->parameters.size()) {
-        return std::unexpected(type_mismatch(source, target, span));
-    }
-    if (auto checked = require_invariant_type(contract->result, view->result, span); !checked) {
-        return checked;
-    }
-    for (auto index = 0uz; index < view->parameters.size(); ++index) {
-        if (contract->parameters[index].stage != view->parameters[index].stage
-            || contract->parameters[index].access != view->parameters[index].access) {
-            return std::unexpected(type_mismatch(source, target, span));
-        }
-        if (auto checked = require_invariant_type(
-                contract->parameters[index].type,
-                view->parameters[index].type,
-                span
-            );
-            !checked) {
-            return checked;
-        }
-    }
-    draft().require_failure_subset(
-        contract->failures,
-        view->failures,
-        expansion(span, ProgramExpansionReason::CallableAdoption),
-        FailureSubsetRequirementKind::CallableAdoption
-    );
-    return {};
-}
-
 auto BodyElaborator::coerce_to(
     BuiltExpression& expression,
     ConstructionTypeRef target,
@@ -238,12 +183,8 @@ auto BodyElaborator::coerce_to(
         built = std::move(*converted);
         return {};
     }
-    if (!compatible(built.type(), target)) {
+    if (!constrain_type_adaptation(draft(), built.type(), target, origin(span))) {
         return std::unexpected(type_mismatch(built.type(), target, span));
-    }
-
-    if (auto checked = require_adaptation(built.type(), target, span); !checked) {
-        return checked;
     }
     const auto source_array = sequence_shape(draft(), built.type());
     const auto target_array = sequence_shape(draft(), target);
@@ -273,6 +214,7 @@ auto BodyElaborator::coerce_to(
         }
     });
     if (!target_is_view) {
+        built.expression().type = BodyType(target);
         return {};
     }
     const auto adoption_origin = expansion(span, ProgramExpansionReason::CallableAdoption);

@@ -78,7 +78,7 @@ auto convert_intrinsic_argument(
             auto converted = construct_slice_value(
                 site,
                 SliceIntrinsic::FromArray,
-                source,
+                target,
                 extent,
                 std::move(operands),
                 std::move(state),

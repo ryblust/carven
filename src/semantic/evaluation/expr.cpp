@@ -31,8 +31,7 @@ auto SemanticExecutor::finish_cast_value(
     }
     if (kind == CastKind::PointerRead || kind == CastKind::PointerErase) {
         const auto target = source.type.construction();
-        if (auto* pointer = std::get_if<ExecutionPointer>(&operand)) {
-            pointer->type = target;
+        if (std::holds_alternative<ExecutionPointer>(operand)) {
             return std::move(operand);
         }
         const auto atom = execution_atom(values, operand);
@@ -411,8 +410,7 @@ auto SemanticExecutor::expression_value(
         if (!function) {
             co_return std::unexpected(std::move(function.error()));
         }
-        if (auto* target = std::get_if<ExecutionFunction>(&*function)) {
-            target->type = source.type.construction();
+        if (std::holds_alternative<ExecutionFunction>(*function)) {
             co_return std::move(*function);
         }
         co_return std::unexpected(fail(
@@ -429,53 +427,7 @@ auto SemanticExecutor::expression_value(
             !supported) {
             co_return std::unexpected(std::move(supported.error()));
         }
-        auto input = (co_await this->value(frame, *operation.source));
-        if (!input) {
-            co_return std::unexpected(std::move(input.error()));
-        }
-        const auto adapt = [&](this auto&& self,
-                               ExecutionValue& value,
-                               ConstructionTypeRef target,
-                               std::size_t depth) noexcept -> ExecutionResult<void> {
-            if (depth > maximum_constant_aggregate_depth) {
-                return std::unexpected(fail(
-                    source.origin,
-                    ExecutionReason::Limit,
-                    "aggregate exceeds its nesting limit"
-                ));
-            }
-            if (auto* function = std::get_if<ExecutionFunction>(&value)) {
-                function->type = target;
-            } else if (auto* aggregate = std::get_if<ExecutionAggregateValue>(&value)) {
-                const auto element =
-                    target.visit([&](const auto id) noexcept -> std::optional<ConstructionTypeRef> {
-                        if constexpr (std::same_as<std::remove_cvref_t<decltype(id)>, TypeID>) {
-                            const auto type = values.type_copy(id);
-                            const auto* array = std::get_if<ArrayTypeValue>(&type.value);
-                            return array ? std::optional<ConstructionTypeRef>(array->element)
-                                         : std::nullopt;
-                        } else {
-                            const auto type = values.construction_type_copy(id);
-                            const auto* array =
-                                std::get_if<ConstructionArrayTypeValue>(&type.value);
-                            return array ? std::optional(array->element) : std::nullopt;
-                        }
-                    });
-                if (element) {
-                    aggregate->type = target;
-                    for (auto& child : aggregate->elements) {
-                        if (auto result = self(child, *element, depth + 1uz); !result) {
-                            return result;
-                        }
-                    }
-                }
-            }
-            return {};
-        };
-        if (auto adapted = adapt(*input, source.type.construction(), 0uz); !adapted) {
-            co_return std::unexpected(std::move(adapted.error()));
-        }
-        co_return std::move(*input);
+        co_return (co_await this->value(frame, *operation.source));
     } else if constexpr (std::same_as<Operation, SemAddressOf>) {
         auto selected = (co_await place(frame, *operation.source));
         if (!selected) {
@@ -879,11 +831,20 @@ auto SemanticExecutor::expression_value(
 }
 
 template<typename Result>
-auto SemanticExecutor::normal_result(ExecutionResult<ExecutionValue>&& result) noexcept
+auto SemanticExecutor::normal_result(
+    ExecutionResult<ExecutionValue>&& result,
+    const SemanticExpression& source
+) noexcept
     -> std::conditional_t<
         std::same_as<Result, ExecutionValue>,
         ExecutionResult<ExecutionValue>&&,
         ExecutionResult<Result>> {
+    if (result) {
+        if (auto typed = deliver_value(*result, source.type.construction(), source.origin);
+            !typed) {
+            result = std::unexpected(std::move(typed.error()));
+        }
+    }
     if constexpr (std::same_as<Result, ExecutionValue>) {
         return std::move(result);
     } else {
@@ -898,12 +859,18 @@ auto SemanticExecutor::normal_result(ExecutionResult<ExecutionValue>&& result) n
 template<typename Result>
 auto SemanticExecutor::control_result(
     ExecutionResult<ExecutionCompletion>&& result,
-    ProgramOriginID origin
+    const SemanticExpression& source
 ) noexcept
     -> std::conditional_t<
         std::same_as<Result, ExecutionCompletion>,
         ExecutionResult<ExecutionCompletion>&&,
         ExecutionResult<Result>> {
+    if (result && result->flow == ExecutionFlow::Normal) {
+        if (auto typed = deliver_value(result->value, source.type.construction(), source.origin);
+            !typed) {
+            result = std::unexpected(std::move(typed.error()));
+        }
+    }
     if constexpr (std::same_as<Result, ExecutionCompletion>) {
         return std::move(result);
     } else {
@@ -912,9 +879,11 @@ auto SemanticExecutor::control_result(
             return std::unexpected(std::move(result.error()));
         }
         if (result->flow != ExecutionFlow::Normal) {
-            return std::unexpected(
-                fail(origin, ExecutionReason::Evaluation, "control transfer escaped an operand")
-            );
+            return std::unexpected(fail(
+                source.origin,
+                ExecutionReason::Evaluation,
+                "control transfer escaped an operand"
+            ));
         }
         return std::move(result->value);
     }
@@ -935,17 +904,17 @@ auto SemanticExecutor::expression_operation(
         if (const auto reason = unsupported_execution_operation(operation)) {
             co_return control_result<Result>(
                 (co_await unsupported_expression(frame, source, *reason)),
-                source.origin
+                source
             );
         }
         if constexpr (std::same_as<Operation, SemConstant>) {
-            co_return normal_result<Result>(ExecutionValue(operation.constant));
+            co_return normal_result<Result>(ExecutionValue(operation.constant), source);
         } else if constexpr (std::same_as<Operation, SemBinding>) {
             auto local = slot_value(frame, operation.binding.index(), source.origin);
             if (!local) {
                 co_return std::unexpected(std::move(local.error()));
             }
-            co_return normal_result<Result>(copy_value(**local, source.origin));
+            co_return normal_result<Result>(copy_value(**local, source.origin), source);
         } else if constexpr (std::same_as<Operation, SemUnary>
                              || std::same_as<Operation, SemCast>) {
             auto operand = (co_await value(frame, *operation.operand));
@@ -959,7 +928,7 @@ auto SemanticExecutor::expression_operation(
                     return finish_cast_value(source, operation.kind, std::move(*operand));
                 }
             }();
-            co_return normal_result<Result>(std::move(result));
+            co_return normal_result<Result>(std::move(result), source);
         } else if constexpr (std::same_as<Operation, SemBinary>) {
             auto left = (co_await value(frame, *operation.left));
             if (!left) {
@@ -969,29 +938,26 @@ auto SemanticExecutor::expression_operation(
             if (!right) {
                 co_return std::unexpected(std::move(right.error()));
             }
-            co_return normal_result<Result>(finish_binary_value(source, operation, *left, *right));
+            co_return normal_result<Result>(
+                finish_binary_value(source, operation, *left, *right),
+                source
+            );
         } else if constexpr (std::same_as<Operation, SemPropagate>) {
             co_return control_result<Result>(
                 (co_await expression(frame, *operation.operand)),
-                source.origin
+                source
             );
         } else if constexpr (std::same_as<Operation, SemTry>) {
-            co_return control_result<Result>(
-                (co_await try_expression(frame, operation)),
-                source.origin
-            );
+            co_return control_result<Result>((co_await try_expression(frame, operation)), source);
         } else if constexpr (std::same_as<Operation, SemIf>) {
-            co_return control_result<Result>(
-                (co_await if_expression(frame, operation)),
-                source.origin
-            );
+            co_return control_result<Result>((co_await if_expression(frame, operation)), source);
         } else if constexpr (std::same_as<Operation, SemMatch>) {
-            co_return control_result<Result>(
-                (co_await match_expression(frame, operation)),
-                source.origin
-            );
+            co_return control_result<Result>((co_await match_expression(frame, operation)), source);
         } else {
-            co_return normal_result<Result>((co_await expression_value(frame, source, operation)));
+            co_return normal_result<Result>(
+                (co_await expression_value(frame, source, operation)),
+                source
+            );
         }
     }
 }

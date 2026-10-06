@@ -448,6 +448,10 @@ auto BuiltExpression::expression() const noexcept -> const SemanticExpression& {
     return std::get<PlaceExpression>(*storage).expression;
 }
 
+auto BuiltExpression::expression() noexcept -> SemanticExpression& {
+    return const_cast<SemanticExpression&>(std::as_const(*this).expression());
+}
+
 auto BuiltExpression::type() const noexcept -> const ConstructionTypeRef& {
     return expression().type.construction();
 }

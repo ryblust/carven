@@ -388,6 +388,7 @@ case_specs["commands/interpretation"] = {
     fixtures = {
         ["../../../language/functions/interpreted_runtime.cv"] = "shared.cv",
         ["../../../language/types/pointer_graph.cv"] = "local_graph.cv",
+        ["../../../language/types/pointer_delivery.cv"] = "pointer_delivery.cv",
         ["../../../language/text/backing_identity.cv"] = "text_backing.cv",
     },
     inputs = {
@@ -399,6 +400,8 @@ case_specs["commands/interpretation"] = {
         {args = {"interpret", "--tests", "shared.cv"}, stdout_contains = {"shared runtime test\n"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
         {args = {"interpret", "--tests", "local_graph.cv"},
+            stderr_contains = {"tests: 1 passed; 0 failed"}},
+        {args = {"interpret", "--tests", "pointer_delivery.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
         {args = {"interpret", "--tests", "text_backing.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},

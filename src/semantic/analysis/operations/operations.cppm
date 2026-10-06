@@ -113,6 +113,14 @@ auto constrain_invariant_type(
     ConstructionTypeRef right,
     ProgramOriginID origin
 ) noexcept -> bool;
+// Checks value conversion and constrains callable failures at the owning
+// boundary: storage and nested contracts are invariant; adopted views may widen.
+auto constrain_type_adaptation(
+    ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target,
+    ProgramOriginID origin
+) noexcept -> bool;
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> bool;
 auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool;

@@ -105,6 +105,14 @@ private:
         -> ExecutionResult<ExecutionValue>;
     auto copy_value(const ExecutionValue& value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
+    // A checked expression owns the delivered type. Runtime payload tags retain
+    // that type after the value leaves its expression or borrowed storage.
+    auto deliver_value(
+        ExecutionValue& value,
+        ConstructionTypeRef target,
+        ProgramOriginID origin,
+        std::size_t depth = 0uz
+    ) noexcept -> ExecutionResult<void>;
     auto retained_slice(ConstantID id, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionSlice>;
     auto sequence_view(
@@ -166,7 +174,10 @@ private:
         const ExecutionValue& right
     ) noexcept -> ExecutionResult<ExecutionValue>;
     template<typename Result>
-    static auto normal_result(ExecutionResult<ExecutionValue>&& result) noexcept
+    auto normal_result(
+        ExecutionResult<ExecutionValue>&& result,
+        const SemanticExpression& source
+    ) noexcept
         -> std::conditional_t<
             std::same_as<Result, ExecutionValue>,
             ExecutionResult<ExecutionValue>&&,
@@ -174,7 +185,7 @@ private:
     template<typename Result>
     auto control_result(
         ExecutionResult<ExecutionCompletion>&& result,
-        ProgramOriginID origin
+        const SemanticExpression& source
     ) noexcept
         -> std::conditional_t<
             std::same_as<Result, ExecutionCompletion>,
