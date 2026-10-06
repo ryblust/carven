@@ -4,6 +4,7 @@ import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
 import :semantic.semir.decl;
 import :semantic.semir.type;
+import :support.invariant;
 import :support.visit;
 import std;
 
@@ -20,6 +21,65 @@ auto DeclResolver::ensure_available(
         co_return completed;
     }
     const auto& symbol = require_catalog_symbol(catalog, id);
+    if (const auto* generic = std::get_if<CatalogGenericForm>(&symbol.form)) {
+        auto definitions = std::vector<GenericDeclarationID> {generic->definition};
+        auto visited = std::flat_set<GenericDeclarationID>();
+        auto completed_sources = std::vector<CatalogSymbolID>();
+        auto visited_types = std::flat_set<GenericTypeID>();
+        const auto collect_dependencies = [&](auto&& self, GenericTypeID type) noexcept -> void {
+            if (!visited_types.insert(type).second) {
+                return;
+            }
+            draft.generic_type_copy(type).visit(
+                Overloaded {
+                    [](TypeID) static noexcept {},
+                    [](const GenericTypeParameter&) static noexcept {},
+                    [&](const GenericArrayType& array) noexcept { self(self, array.element); },
+                    [&](const GenericSliceType& slice) noexcept { self(self, slice.element); },
+                    [&](const GenericPointerType& pointer) noexcept { self(self, pointer.target); },
+                    [&](const GenericNominalApplication& application) noexcept {
+                        definitions.push_back(application.definition);
+                        for (const auto argument : application.arguments) {
+                            self(self, argument);
+                        }
+                    },
+                }
+            );
+        };
+        for (auto index = 0uz; index < definitions.size(); ++index) {
+            const auto definition_id = definitions[index];
+            if (!visited.insert(definition_id).second) {
+                continue;
+            }
+            const auto source = catalog.generic_symbol(definition_id);
+            completed = (co_await resolve(source, requester, origin));
+            if (!completed) {
+                co_return completed;
+            }
+            completed_sources.push_back(source);
+            draft.generic_declaration_copy(definition_id)
+                .visit(
+                    Overloaded {
+                        [&](const GenericRecordDefinition& record) noexcept {
+                            for (const auto& field : record.fields) {
+                                collect_dependencies(collect_dependencies, field.type);
+                            }
+                        },
+                        [&](const GenericEnumDefinition& enumeration) noexcept {
+                            for (const auto& source_case : enumeration.cases) {
+                                for (const auto type : source_case.payload_types) {
+                                    collect_dependencies(collect_dependencies, type);
+                                }
+                            }
+                        },
+                    }
+                );
+        }
+        for (const auto source : completed_sources) {
+            published[source.index()] = true;
+        }
+        co_return {};
+    }
     if (const auto* structure = std::get_if<CatalogStructForm>(&symbol.form)) {
         co_return (co_await prepare_type(
             draft.intern_type({.value = StructTypeValue {.structure = structure->structure}}),
@@ -80,7 +140,7 @@ auto DeclResolver::prepare_type(
     if (heads_finished) {
         co_return {};
     }
-    auto visiting = std::flat_set<TypeID>();
+    auto visiting = std::flat_set<ConstructionTypeRef>();
     auto prepared = std::vector<CatalogSymbolID>();
     auto result = (co_await prepare_type_dependencies(type, requester, span, visiting, prepared));
     if (!result) {
@@ -94,6 +154,19 @@ auto DeclResolver::prepare_type(
             co_return result;
         }
     }
+    auto roots = std::vector<TypeID>();
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        roots.push_back(*concrete);
+    }
+    for (const auto id : prepared) {
+        const auto& symbol = require_catalog_symbol(catalog, id);
+        if (const auto* enumeration = std::get_if<CatalogEnumForm>(&symbol.form)) {
+            roots.push_back(draft.intern_type(
+                {.value = EnumTypeValue {.enumeration = enumeration->enumeration}}
+            ));
+        }
+    }
+    draft.resolve_enum_equality(roots);
     co_return {};
 }
 
@@ -101,35 +174,67 @@ auto DeclResolver::prepare_type_dependencies(
     ConstructionTypeRef type,
     ProgramModuleID requester,
     Span span,
-    std::flat_set<TypeID>& visiting,
+    std::flat_set<ConstructionTypeRef>& visiting,
     std::vector<CatalogSymbolID>& prepared
 ) noexcept -> AnalysisTask<void> {
+    if (!visiting.insert(type).second) {
+        co_return {};
+    }
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto canonical = draft.type_copy(*concrete);
+        if (std::holds_alternative<FunctionTypeValue>(canonical.value)
+            || std::holds_alternative<ClosureTypeValue>(canonical.value)) {
+            co_return {};
+        }
+    }
+    const auto callable = draft.callable_shape(type);
+    if (callable && !callable->owning_type) {
+        for (const auto& parameter : callable->parameters) {
+            auto completed = (co_await prepare_type_dependencies(
+                parameter.type,
+                requester,
+                span,
+                visiting,
+                prepared
+            ));
+            if (!completed) {
+                co_return completed;
+            }
+        }
+        auto completed = (co_await prepare_type_dependencies(
+            callable->result,
+            requester,
+            span,
+            visiting,
+            prepared
+        ));
+        if (!completed) {
+            co_return completed;
+        }
+        const auto failures = callable->failures.visit(
+            Overloaded {
+                [&](FailureTermID term) noexcept {
+                    return draft.construction_failure_term_copy(term).direct_members;
+                },
+                [&](FailureSetID set) noexcept { return draft.failure_set_copy(set).members; },
+            }
+        );
+        for (const auto failure : failures) {
+            completed =
+                (co_await prepare_type_dependencies(failure, requester, span, visiting, prepared));
+            if (!completed) {
+                co_return completed;
+            }
+        }
+        co_return {};
+    }
     if (const auto* term = std::get_if<TypeTermID>(&type)) {
         const auto construction = draft.construction_type_copy(*term);
         co_return (co_await construction.value.visit(
             [&](const auto& value) noexcept -> AnalysisTask<void> {
                 using Value = std::remove_cvref_t<decltype(value)>;
-                if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
-                    for (const auto& parameter : value.parameters) {
-                        auto result = (co_await prepare_type_dependencies(
-                            parameter.type,
-                            requester,
-                            span,
-                            visiting,
-                            prepared
-                        ));
-                        if (!result) {
-                            co_return result;
-                        }
-                    }
-                    co_return (co_await prepare_type_dependencies(
-                        value.result,
-                        requester,
-                        span,
-                        visiting,
-                        prepared
-                    ));
-                } else {
+                if constexpr (std::same_as<Value, ConstructionArrayTypeValue>
+                              || std::same_as<Value, ConstructionSliceTypeValue>) {
                     co_return (co_await prepare_type_dependencies(
                         value.element,
                         requester,
@@ -137,18 +242,35 @@ auto DeclResolver::prepare_type_dependencies(
                         visiting,
                         prepared
                     ));
+                } else {
+                    static_assert(std::same_as<Value, ConstructionCallableViewTypeValue>);
+                    invariant_violation("callable view lost its construction shape");
                 }
             }
         ));
     }
     const auto concrete = std::get<TypeID>(type);
-    if (!visiting.insert(concrete).second) {
-        co_return {};
-    }
     const auto canonical = draft.type_copy(concrete);
     co_return (co_await canonical.value.visit(
         Overloaded {
             [&](const StructTypeValue& value) noexcept -> AnalysisTask<void> {
+                if (value.structure.index() >= catalog.struct_count()) {
+                    const auto instance =
+                        draft.construction_struct_declaration_copy(value.structure);
+                    for (const auto& field : instance.fields) {
+                        auto completed = (co_await prepare_type_dependencies(
+                            field.type,
+                            requester,
+                            span,
+                            visiting,
+                            prepared
+                        ));
+                        if (!completed) {
+                            co_return completed;
+                        }
+                    }
+                    co_return {};
+                }
                 const auto id = catalog.struct_symbol(value.structure);
                 auto completed = (co_await resolve(id, requester, span));
                 if (!completed || published[id.index()]) {
@@ -170,6 +292,26 @@ auto DeclResolver::prepare_type_dependencies(
                 co_return {};
             },
             [&](const EnumTypeValue& value) noexcept -> AnalysisTask<void> {
+                if (value.enumeration.index() >= catalog.enum_count()) {
+                    const auto instance = draft.enum_declaration_copy(value.enumeration);
+                    for (const auto case_id : instance.cases) {
+                        const auto declaration =
+                            draft.construction_enum_case_declaration_copy(case_id);
+                        for (const auto payload : declaration.payload_types) {
+                            auto completed = (co_await prepare_type_dependencies(
+                                payload,
+                                requester,
+                                span,
+                                visiting,
+                                prepared
+                            ));
+                            if (!completed) {
+                                co_return completed;
+                            }
+                        }
+                    }
+                    co_return {};
+                }
                 const auto id = catalog.enum_symbol(value.enumeration);
                 auto completed = (co_await resolve(id, requester, span));
                 if (!completed || published[id.index()]) {
@@ -231,6 +373,7 @@ auto DeclResolver::publish_declaration(const CatalogSymbol& symbol) noexcept
     }
     symbol.form.visit(
         Overloaded {
+            [](const CatalogGenericForm&) static noexcept {},
             [&](const CatalogFunctionForm& form) noexcept {
                 if (cpp_import_origins[form.callable.index()]) {
                     draft.complete_callable(
@@ -245,11 +388,7 @@ auto DeclResolver::publish_declaration(const CatalogSymbol& symbol) noexcept
                 draft.define_declaration(form.structure, *structures[form.structure.index()]);
             },
             [&](const CatalogEnumForm& form) noexcept {
-                const auto type =
-                    draft.intern_type({.value = EnumTypeValue {.enumeration = form.enumeration}});
-                auto& declaration = *enumerations[form.enumeration.index()];
-                declaration.supports_equality = supports_equality(type);
-                draft.define_declaration(form.enumeration, declaration);
+                draft.define_declaration(form.enumeration, *enumerations[form.enumeration.index()]);
             },
             [&](const CatalogEnumCaseForm& form) noexcept {
                 draft.define_declaration(form.enum_case, *enum_cases[form.enum_case.index()]);

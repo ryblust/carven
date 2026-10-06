@@ -5,6 +5,7 @@ import :backend.generation.plan;
 import :backend.generation.plan.references;
 import :backend.generation.request;
 import :backend.target.header;
+import :semantic.semir.generic;
 import :semantic.visibility;
 import :support.graph;
 import :support.invariant;
@@ -108,9 +109,10 @@ auto target_nominal_order(const SemIRProgram& semantic) noexcept
     return result;
 }
 
-auto published_nominal(const SemIRProgram& semantic, NominalDeclarationRef nominal) noexcept
+auto interface_nominal(const SemIRProgram& semantic, NominalDeclarationRef nominal) noexcept
     -> bool {
-    return target_visibility(semantic, target_declaration_ref(nominal))
+    return semantic.generic_nominal_instance(nominal) != nullptr
+        || target_visibility(semantic, target_declaration_ref(nominal))
         != DeclarationVisibility::Module;
 }
 
@@ -160,7 +162,7 @@ auto plan_artifacts(
         module_by_index[module_record.id.index()] = module_record.id;
         schedules[module_record.id.index()] = TargetModuleSchedule {
             .module_id = module_record.id,
-            .private_nominal_order = {},
+            .source_nominal_order = {},
             .closure_definitions = {},
             .interface_callables = {},
             .emitted_tests = {},
@@ -188,14 +190,12 @@ auto plan_artifacts(
                         }
                     },
                     [&](StructID id) noexcept {
-                        if (declarations.structure(id).visibility
-                            != DeclarationVisibility::Module) {
+                        if (interface_nominal(semantic, id)) {
                             surface_declarations[module_record.id.index()].push_back(id);
                         }
                     },
                     [&](EnumID id) noexcept {
-                        if (declarations.enumeration(id).visibility
-                            != DeclarationVisibility::Module) {
+                        if (interface_nominal(semantic, id)) {
                             surface_declarations[module_record.id.index()].push_back(id);
                         }
                     },
@@ -216,7 +216,7 @@ auto plan_artifacts(
 
     auto interface_nominals = std::flat_set<NominalDeclarationRef>();
     for (const auto nominal : ordered_nominals) {
-        if (published_nominal(semantic, nominal)) {
+        if (interface_nominal(semantic, nominal)) {
             interface_nominals.insert(nominal);
         }
     }
@@ -267,7 +267,7 @@ auto plan_artifacts(
             continue;
         }
         const auto owner = target_owner_module(semantic, target_declaration_ref(nominal));
-        schedules[owner.index()]->private_nominal_order.push_back(nominal);
+        schedules[owner.index()]->source_nominal_order.push_back(nominal);
     }
     auto exposed_closures = std::flat_set<CallableID>();
     for (const auto callable : interface_callables) {

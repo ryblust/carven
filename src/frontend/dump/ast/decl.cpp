@@ -201,6 +201,21 @@ auto ASTDumper::render_top_level_item(
             }
         );
     };
+    const auto render_type_parameters = [&](const std::optional<ASTTypeParameterClause>& parameters,
+                                            std::string_view prefix) noexcept {
+        if (!parameters) {
+            return;
+        }
+        render_list(
+            prefix,
+            false,
+            "type_parameters",
+            parameters->names,
+            [&](Span name, std::string_view item_prefix, bool item_last) noexcept {
+                render_span_field(item_prefix, item_last, "name", name);
+            }
+        );
+    };
     item.value.visit(
         Overloaded {
             [&](const ASTEnumDecl& declaration) noexcept {
@@ -212,6 +227,7 @@ auto ASTDumper::render_top_level_item(
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_visibility(declaration.visibility, nested_prefix);
                 render_span_field(nested_prefix, false, "name", declaration.name_span);
+                render_type_parameters(declaration.type_parameters, nested_prefix);
                 if (!declaration.underlying_type.has_value()) {
                     append_line(nested_prefix, false, "underlying_type <absent>");
                 } else {
@@ -272,6 +288,7 @@ auto ASTDumper::render_top_level_item(
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_visibility(declaration.visibility, nested_prefix);
                 render_span_field(nested_prefix, false, "name", declaration.name_span);
+                render_type_parameters(declaration.type_parameters, nested_prefix);
                 render_list(
                     nested_prefix,
                     true,
@@ -329,6 +346,7 @@ auto ASTDumper::render_top_level_item(
                 }
                 if (!definition.is_implicit_entry) {
                     render_span_field(nested_prefix, false, "name", definition.name_span);
+                    render_type_parameters(definition.type_parameters, nested_prefix);
                 }
                 render_list(
                     nested_prefix,

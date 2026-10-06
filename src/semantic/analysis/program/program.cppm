@@ -7,6 +7,7 @@ import :semantic.analysis.diagnostics;
 import :semantic.analysis.failure;
 import :semantic.evaluation.output;
 import :semantic.semir.constant_access;
+import :semantic.semir.generic;
 import :semantic.semir.program;
 import :semantic.semir.stage;
 import :semantic.semir.structured;
@@ -37,6 +38,14 @@ private:
 struct PendingFunctionContract final {
     std::vector<ConstructionCallableParameter> parameters;
     FailureTermID failures;
+    FailureContractPolicy policy;
+};
+
+struct ConstructionCallableShape final {
+    std::optional<TypeID> owning_type;
+    std::vector<ConstructionCallableParameter> parameters;
+    ConstructionTypeRef result;
+    std::variant<FailureTermID, FailureSetID> failures;
     FailureContractPolicy policy;
 };
 
@@ -81,6 +90,7 @@ public:
         -> ProgramOriginID;
     auto intern_type(const CanonicalType& type) noexcept -> TypeID;
     auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
+    auto try_canonicalize_declared_type(ConstructionTypeRef type) noexcept -> std::optional<TypeID>;
     auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
     auto type_copy(TypeID type) const noexcept -> CanonicalType override;
     auto read_borrows_storage(TypeID type) const noexcept -> bool override;
@@ -91,10 +101,32 @@ public:
     auto enum_case_types(EnumID enumeration) const noexcept
         -> std::optional<std::vector<EnumCaseTypes>> override;
     auto constant(ConstantID constant) const noexcept -> const ConstantFact& override;
+    auto failure_set_copy(FailureSetID failures) const noexcept -> FailureSet;
     auto intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID;
     auto empty_failure_set() noexcept -> FailureSetID;
     auto append_construction_type(ConstructionType type) noexcept -> TypeTermID;
     auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType;
+    auto reserve_generic_declaration() noexcept -> GenericDeclarationID;
+    auto define_generic_declaration(
+        GenericDeclarationID id,
+        GenericNominalDefinition definition
+    ) noexcept -> void;
+    auto generic_declaration_copy(GenericDeclarationID id) const noexcept
+        -> GenericNominalDefinition;
+    auto intern_generic_type(GenericTypeExpression expression) noexcept -> GenericTypeID;
+    auto generic_type_copy(GenericTypeID id) const noexcept -> GenericTypeExpression;
+    auto validate_generic_definitions(
+        std::optional<GenericDeclarationID> root = std::nullopt
+    ) noexcept -> AnalysisResult<void>;
+    auto generic_nominal_instance_copy(NominalDeclarationRef declaration) const noexcept
+        -> std::optional<GenericNominalInstance>;
+    auto generic_declaration_contract_copy(GenericDeclarationID definition) const noexcept
+        -> GenericDeclarationContract;
+    auto instantiate_generic_nominal(
+        GenericDeclarationID definition,
+        std::span<const TypeID> arguments,
+        ProgramOriginID origin
+    ) noexcept -> AnalysisResult<TypeID>;
     auto reserve_module_declaration() noexcept -> ModuleID;
     auto reserve_function_declaration() noexcept -> FunctionID;
     auto reserve_struct_declaration() noexcept -> StructID;
@@ -127,6 +159,12 @@ public:
     auto construction_struct_declaration_copy(StructID id) const noexcept
         -> ConstructionStructDeclaration;
     auto enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration;
+    auto equality_support(std::span<const ConstructionTypeRef> roots) const noexcept
+        -> std::vector<bool>;
+    auto resolve_enum_equality(std::span<const TypeID> roots) noexcept -> void;
+    auto enum_case_named(EnumID enumeration, std::string_view name) const noexcept
+        -> std::optional<EnumCaseID>;
+    auto enum_case_names(EnumID enumeration) const noexcept -> std::vector<std::string>;
     auto enum_cases(EnumID id) const noexcept -> std::span<const EnumCaseID>;
     auto construction_enum_case_declaration_copy(EnumCaseID id) const noexcept
         -> ConstructionEnumCaseDeclaration;
@@ -135,6 +173,11 @@ public:
     auto construction_callable_contract_copy(CallableID id) const noexcept
         -> ConstructionCallableContract;
     auto callable_signature_copy(CallableSignatureID id) const noexcept -> CallableSignature;
+    auto callable_shape(ConstructionTypeRef type) const noexcept
+        -> std::optional<ConstructionCallableShape>;
+    auto callable_contract(ConstructionTypeRef type) noexcept
+        -> std::optional<ConstructionCallableContract>;
+
     auto construction_failure_term_copy(FailureTermID failures) const noexcept -> FailureTerm;
     auto module_declaration_count() const noexcept -> std::size_t;
     auto function_declaration_count() const noexcept -> std::size_t;
@@ -152,6 +195,7 @@ public:
     auto callable_declaration_ids() const noexcept -> std::vector<CallableID>;
     auto add_empty_failure_term() noexcept -> FailureTermID;
     auto add_concrete_failure_term(std::vector<TypeID> members) noexcept -> FailureTermID;
+    auto add_known_failure_term(std::vector<TypeID> members) noexcept -> FailureTermID;
     auto add_union_failure_term(std::vector<FailureTermID> inputs) noexcept -> FailureTermID;
     auto add_residual_failure_term(
         FailureTermID input,
@@ -245,6 +289,13 @@ private:
         -> void;
     auto require_state(State expected, std::string_view operation) const noexcept -> void;
 
+    auto substitute_generic_type(
+        GenericTypeID type,
+        GenericDeclarationID definition,
+        std::span<const GenericTypeID> arguments
+    ) noexcept -> GenericTypeID;
+    auto resolve_generic_type(GenericTypeID type, ProgramOriginID origin) noexcept
+        -> AnalysisResult<TypeID>;
     ProgramIdentity program_identity;
     std::uint32_t next_evaluation_root = 0;
     CompilationProvenanceAppender provenance_appender;
@@ -269,6 +320,7 @@ private:
         ConstructionTypeStore construction_types;
         DeclarationBuilder declarations;
         FailureConstraintStore failure_constraints;
+        std::map<FailureSetID, FailureTermID> known_failure_terms;
         std::map<CallableID, PendingFunctionContract> pending_function_contracts;
         std::map<CallableID, FunctionID> functions_by_callable;
 
@@ -285,6 +337,21 @@ private:
             std::variant<Progress, AnalysisFailure> state;
         };
 
+        struct GenericInstanceSlot final {
+            GenericNominalInstance instance;
+            enum class Progress { Instantiating, Complete };
+            std::variant<Progress, AnalysisFailure> state;
+        };
+
+        std::vector<std::optional<GenericNominalDefinition>> generic_definitions;
+        std::vector<GenericTypeExpression> generic_types;
+        std::map<GenericTypeExpression, GenericTypeID> generic_type_index;
+        std::vector<GenericInstanceSlot> generic_instances;
+        std::map<std::pair<GenericDeclarationID, std::vector<TypeID>>, std::size_t>
+            generic_instance_index;
+        std::map<NominalDeclarationRef, std::size_t> generic_instance_nominals;
+        std::set<GenericDeclarationID> checked_generic_definitions;
+        std::size_t generic_instance_depth = 0;
         std::vector<BodySlot> bodies;
         std::vector<StaticInstanceSlot> static_instances;
         std::map<std::pair<FunctionID, std::vector<ConstantID>>, CallableID> static_instance_index;

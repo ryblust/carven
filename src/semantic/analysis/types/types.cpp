@@ -124,9 +124,27 @@ auto resolve_named(
     const ASTNamedType& named,
     ASTView syntax,
     ArrayExtentResolver resolve_extent,
-    Span origin
+    Span origin,
+    ConstructionRequests* requests,
+    const GenericTypeContext* generic_context
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
+    if (generic_context
+        && !named.global_root
+        && std::ranges::any_of(
+            generic_context->parameters,
+            [&](ProgramSpellingID parameter) noexcept {
+                return draft.spelling_copy(parameter) == root;
+            }
+        )) {
+        co_return std::unexpected(fail(
+            draft,
+            module_id,
+            origin,
+            DiagnosticCode::TypeGenericDefinition,
+            "this type position requires a concrete type rather than a type parameter"
+        ));
+    }
     if (!named.global_root && named.components.size() == 1uz && root == "range") {
         if (named.arguments.size() != 1uz) {
             co_return std::unexpected(fail(
@@ -144,7 +162,9 @@ auto resolve_named(
             module_id,
             syntax,
             named.arguments.front(),
-            resolve_extent
+            resolve_extent,
+            requests,
+            generic_context
         ));
         if (!element) {
             co_return std::unexpected(element.error());
@@ -194,7 +214,9 @@ auto resolve_named(
                     module_id,
                     syntax,
                     argument,
-                    resolve_extent
+                    resolve_extent,
+                    requests,
+                    generic_context
                 ));
                 if (!resolved.has_value()) {
                     co_return std::unexpected(resolved.error());
@@ -220,15 +242,6 @@ auto resolve_named(
         }
     }
 
-    if (!named.arguments.empty()) {
-        co_return std::unexpected(fail(
-            draft,
-            module_id,
-            origin,
-            DiagnosticCode::TypeUnresolved,
-            "type arguments require an external C++ name"
-        ));
-    }
     if (named.components.size() != 1uz) {
         co_return std::unexpected(fail(
             draft,
@@ -241,12 +254,66 @@ auto resolve_named(
     const auto component = named.components.front().name_span;
     const auto name = draft.source_slice_copy(module_id, component);
     if (const auto builtin = source_builtin_type(name)) {
+        if (!named.arguments.empty()) {
+            co_return std::unexpected(fail(
+                draft,
+                module_id,
+                origin,
+                DiagnosticCode::TypeGenericArguments,
+                "builtin type does not accept type arguments"
+            ));
+        }
         co_return ConstructionTypeRef {draft.builtin_type(*builtin)};
     }
     const auto selected =
         select_global_symbol(draft, catalog, import_usage, module_id, name, component);
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
+    }
+    if (const auto* generic = std::get_if<CatalogGenericForm>(&(*selected)->form)) {
+        if (requests) {
+            auto ready =
+                (co_await requests->ensure_declaration((*selected)->symbol_id, module_id, origin));
+            if (!ready) {
+                co_return std::unexpected(ready.error());
+            }
+        }
+        auto arguments = std::vector<TypeID>();
+        for (const auto argument : named.arguments) {
+            auto resolved = (co_await resolve_source_type(
+                draft,
+                catalog,
+                import_usage,
+                module_id,
+                syntax,
+                argument,
+                resolve_extent,
+                requests,
+                generic_context
+            ));
+            if (!resolved) {
+                co_return std::unexpected(resolved.error());
+            }
+            arguments.push_back(draft.canonicalize_declared_type(*resolved));
+        }
+        auto instance = draft.instantiate_generic_nominal(
+            generic->definition,
+            arguments,
+            draft.append_source_origin(draft.module_source(module_id), origin)
+        );
+        if (!instance) {
+            co_return std::unexpected(instance.error());
+        }
+        co_return ConstructionTypeRef {*instance};
+    }
+    if (!named.arguments.empty()) {
+        co_return std::unexpected(fail(
+            draft,
+            module_id,
+            origin,
+            DiagnosticCode::TypeGenericArguments,
+            "type arguments require a type-parameterized declaration"
+        ));
     }
     if (const auto* structure = std::get_if<CatalogStructForm>(&(*selected)->form)) {
         co_return ConstructionTypeRef {draft.intern_type(
@@ -278,7 +345,9 @@ auto resolve_function_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTFunctionType& function,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests,
+    const GenericTypeContext* generic_context
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     auto parameters = std::vector<ConstructionCallableParameter>();
     parameters.reserve(function.parameters.size());
@@ -290,7 +359,9 @@ auto resolve_function_type(
             module_id,
             syntax,
             parameter.type,
-            resolve_extent
+            resolve_extent,
+            requests,
+            generic_context
         ));
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
@@ -318,7 +389,9 @@ auto resolve_function_type(
         module_id,
         syntax,
         function.result_type,
-        resolve_extent
+        resolve_extent,
+        requests,
+        generic_context
     ));
     if (!result.has_value()) {
         co_return std::unexpected(result.error());
@@ -332,15 +405,17 @@ auto resolve_function_type(
             module_id,
             syntax,
             *function.throw_clause,
-            resolve_extent
+            resolve_extent,
+            requests,
+            generic_context
         ));
         if (!resolved.has_value()) {
             co_return std::unexpected(resolved.error());
         }
         failures = std::move(*resolved);
     }
-    const auto failure_term = draft.add_concrete_failure_term(std::move(failures));
-    co_return ConstructionTypeRef {draft.append_construction_type(
+    const auto failure_term = draft.add_known_failure_term(std::move(failures));
+    const auto bound = draft.append_construction_type(
         ConstructionType {
             .value = ConstructionCallableViewTypeValue {
                 .parameters = std::move(parameters),
@@ -348,7 +423,8 @@ auto resolve_function_type(
                 .failures = failure_term,
             },
         }
-    )};
+    );
+    co_return ConstructionTypeRef {draft.canonicalize_declared_type(bound)};
 }
 
 auto resolve_type_value(
@@ -358,7 +434,9 @@ auto resolve_type_value(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTType& source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests,
+    const GenericTypeContext* generic_context
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -371,7 +449,9 @@ auto resolve_type_value(
                     named,
                     syntax,
                     resolve_extent,
-                    source_type.span
+                    source_type.span,
+                    requests,
+                    generic_context
                 ));
             },
             [&](const ASTPointerType& pointer) noexcept -> AnalysisTask<ConstructionTypeRef> {
@@ -382,7 +462,9 @@ auto resolve_type_value(
                     module_id,
                     syntax,
                     pointer.target,
-                    resolve_extent
+                    resolve_extent,
+                    requests,
+                    generic_context
                 ));
                 if (!target) {
                     co_return std::unexpected(target.error());
@@ -414,7 +496,9 @@ auto resolve_type_value(
                     module_id,
                     syntax,
                     view.element_type,
-                    resolve_extent
+                    resolve_extent,
+                    requests,
+                    generic_context
                 ));
                 if (!element) {
                     co_return std::unexpected(element.error());
@@ -446,7 +530,9 @@ auto resolve_type_value(
                     module_id,
                     syntax,
                     array.element_type,
-                    resolve_extent
+                    resolve_extent,
+                    requests,
+                    generic_context
                 ));
                 if (!element.has_value()) {
                     co_return std::unexpected(element.error());
@@ -489,7 +575,9 @@ auto resolve_type_value(
                     module_id,
                     syntax,
                     function,
-                    resolve_extent
+                    resolve_extent,
+                    requests,
+                    generic_context
                 ));
             },
         }
@@ -507,6 +595,207 @@ auto semantic_access_mode(ASTAccessSyntax access) noexcept -> AccessMode {
     std::unreachable();
 }
 
+auto resolve_generic_source_type(
+    ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ImportUsage& import_usage,
+    ProgramModuleID module_id,
+    ASTView syntax,
+    ASTTypeID source_type,
+    GenericTypeContext context,
+    ArrayExtentResolver resolve_extent,
+    bool value_required,
+    ConstructionRequests* requests
+) noexcept -> AnalysisTask<GenericTypeID> {
+    const auto& source = syntax.type(source_type);
+    const auto parameter_index =
+        [&](std::string_view name) noexcept -> std::optional<std::uint32_t> {
+        for (auto index = 0uz; index < context.parameters.size(); ++index) {
+            if (draft.spelling(context.parameters[index]) == name) {
+                return static_cast<std::uint32_t>(index);
+            }
+        }
+        return std::nullopt;
+    };
+    co_return (co_await source.value.visit(
+        Overloaded {
+            [&](const ASTNamedType& named) noexcept -> AnalysisTask<GenericTypeID> {
+                if (!named.global_root && named.components.size() == 1uz) {
+                    const auto component = named.components.front().name_span;
+                    const auto name = draft.source_slice_copy(module_id, component);
+                    if (const auto index = parameter_index(name)) {
+                        if (!named.arguments.empty()) {
+                            co_return std::unexpected(fail(
+                                draft,
+                                module_id,
+                                source.span,
+                                DiagnosticCode::TypeGenericDefinition,
+                                "a type parameter cannot be applied to type arguments"
+                            ));
+                        }
+                        co_return draft.intern_generic_type(
+                            GenericTypeParameter {.definition = context.definition, .index = *index}
+                        );
+                    }
+                    if (!catalog.lookup(module_id, name).empty()) {
+                        const auto selected = select_global_symbol(
+                            draft,
+                            catalog,
+                            import_usage,
+                            module_id,
+                            name,
+                            component
+                        );
+                        if (!selected) {
+                            co_return std::unexpected(selected.error());
+                        }
+                        if (const auto* generic =
+                                std::get_if<CatalogGenericForm>(&(*selected)->form)) {
+                            auto arguments = std::vector<GenericTypeID>();
+                            for (const auto argument : named.arguments) {
+                                auto resolved = (co_await resolve_generic_source_type(
+                                    draft,
+                                    catalog,
+                                    import_usage,
+                                    module_id,
+                                    syntax,
+                                    argument,
+                                    context,
+                                    resolve_extent,
+                                    true,
+                                    requests
+                                ));
+                                if (!resolved) {
+                                    co_return std::unexpected(resolved.error());
+                                }
+                                arguments.push_back(*resolved);
+                            }
+                            co_return draft.intern_generic_type(
+                                GenericNominalApplication {
+                                    .definition = generic->definition,
+                                    .arguments = std::move(arguments)
+                                }
+                            );
+                        }
+                    }
+                }
+                // Native type arguments remain concrete; a symbolic native provider
+                // requires a separately checked boundary contract.
+                auto concrete = (co_await resolve_source_type(
+                    draft,
+                    catalog,
+                    import_usage,
+                    module_id,
+                    syntax,
+                    source_type,
+                    resolve_extent,
+                    requests,
+                    &context
+                ));
+                if (!concrete) {
+                    co_return std::unexpected(concrete.error());
+                }
+                if (value_required) {
+                    auto checked = require_source_value_type(
+                        draft,
+                        *concrete,
+                        module_id,
+                        source.span,
+                        "generic stored value"
+                    );
+                    if (!checked) {
+                        co_return std::unexpected(checked.error());
+                    }
+                }
+                co_return draft.intern_generic_type(draft.canonicalize_declared_type(*concrete));
+            },
+            [&](const ASTArrayType& array) noexcept -> AnalysisTask<GenericTypeID> {
+                auto element = (co_await resolve_generic_source_type(
+                    draft,
+                    catalog,
+                    import_usage,
+                    module_id,
+                    syntax,
+                    array.element_type,
+                    context,
+                    resolve_extent,
+                    true,
+                    requests
+                ));
+                if (!element) {
+                    co_return std::unexpected(element.error());
+                }
+                auto extent = (co_await resolve_extent(array.extent));
+                if (!extent) {
+                    co_return std::unexpected(extent.error());
+                }
+                co_return draft.intern_generic_type(
+                    GenericArrayType {.element = *element, .extent = *extent}
+                );
+            },
+            [&](const ASTSliceType& slice) noexcept -> AnalysisTask<GenericTypeID> {
+                auto element = (co_await resolve_generic_source_type(
+                    draft,
+                    catalog,
+                    import_usage,
+                    module_id,
+                    syntax,
+                    slice.element_type,
+                    context,
+                    resolve_extent,
+                    true,
+                    requests
+                ));
+                if (!element) {
+                    co_return std::unexpected(element.error());
+                }
+                co_return draft.intern_generic_type(GenericSliceType {.element = *element});
+            },
+            [&](const ASTPointerType& pointer) noexcept -> AnalysisTask<GenericTypeID> {
+                auto target = (co_await resolve_generic_source_type(
+                    draft,
+                    catalog,
+                    import_usage,
+                    module_id,
+                    syntax,
+                    pointer.target,
+                    context,
+                    resolve_extent,
+                    false,
+                    requests
+                ));
+                if (!target) {
+                    co_return std::unexpected(target.error());
+                }
+                co_return draft.intern_generic_type(
+                    GenericPointerType {
+                        .target = *target,
+                        .access = pointer.access.mode == ASTAccessMode::Write ? PointerAccess::Write
+                                                                              : PointerAccess::Read,
+                    }
+                );
+            },
+            [&](const ASTFunctionType&) noexcept -> AnalysisTask<GenericTypeID> {
+                auto concrete = (co_await resolve_source_type(
+                    draft,
+                    catalog,
+                    import_usage,
+                    module_id,
+                    syntax,
+                    source_type,
+                    resolve_extent,
+                    requests,
+                    &context
+                ));
+                if (!concrete) {
+                    co_return std::unexpected(concrete.error());
+                }
+                co_return draft.intern_generic_type(draft.canonicalize_declared_type(*concrete));
+            },
+        }
+    ));
+}
+
 auto resolve_source_type(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
@@ -514,7 +803,9 @@ auto resolve_source_type(
     ProgramModuleID module_id,
     ASTView syntax,
     ASTTypeID source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests,
+    const GenericTypeContext* generic_context
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await resolve_type_value(
         draft,
@@ -523,7 +814,73 @@ auto resolve_source_type(
         module_id,
         syntax,
         syntax.type(source_type),
-        resolve_extent
+        resolve_extent,
+        requests,
+        generic_context
+    ));
+}
+
+auto resolve_source_type_application(
+    ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ImportUsage& import_usage,
+    ProgramModuleID module_id,
+    ASTView syntax,
+    const ASTTypeApplicationExpr& application,
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests,
+    const GenericTypeContext* generic_context
+) noexcept -> AnalysisTask<ConstructionTypeRef> {
+    auto operand = application.operand_id;
+    auto components = std::vector<ASTTypeNameComponent>();
+    auto global_root = std::optional<Span>();
+    while (true) {
+        const auto& expression = syntax.expression(operand);
+        if (const auto* group = std::get_if<ASTGroupExpr>(&expression.value)) {
+            operand = group->expression;
+        } else if (const auto* member = std::get_if<ASTMemberExpr>(&expression.value);
+                   member && member->op == ASTMemberOperator::Scope) {
+            components.push_back({.name_span = member->name_span});
+            operand = member->operand_id;
+        } else if (const auto* name = std::get_if<ASTNameExpr>(&expression.value)) {
+            components.push_back({.name_span = name->name_span});
+            break;
+        } else if (const auto* native = std::get_if<ASTCppNameExpr>(&expression.value)) {
+            global_root = native->global_root;
+            for (const auto component : std::views::reverse(native->components)) {
+                components.push_back({.name_span = component});
+            }
+            break;
+        } else {
+            co_return std::unexpected(fail(
+                draft,
+                module_id,
+                application.arguments_span,
+                DiagnosticCode::TypeGenericArguments,
+                "type application requires a declared type name"
+            ));
+        }
+    }
+    std::ranges::reverse(components);
+    const auto named = ASTNamedType {
+        .global_root = global_root,
+        .components = std::move(components),
+        .arguments = application.arguments,
+    };
+    co_return (co_await resolve_named(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        named,
+        syntax,
+        resolve_extent,
+        Span::from_bounds(
+            syntax.expression(operand).span.start(),
+            application.arguments_span.end()
+        ),
+        requests,
+        generic_context
     ));
 }
 
@@ -534,7 +891,9 @@ auto resolve_source_construction_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstructionType& source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests,
+    const GenericTypeContext* generic_context
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -547,7 +906,9 @@ auto resolve_source_construction_type(
                     named,
                     syntax,
                     resolve_extent,
-                    source_type.span
+                    source_type.span,
+                    requests,
+                    generic_context
                 ));
             },
             [&](const ASTFunctionType& function) noexcept -> AnalysisTask<ConstructionTypeRef> {
@@ -558,7 +919,9 @@ auto resolve_source_construction_type(
                     module_id,
                     syntax,
                     function,
-                    resolve_extent
+                    resolve_extent,
+                    requests,
+                    generic_context
                 ));
             },
         }
@@ -572,7 +935,9 @@ auto resolve_source_constraint_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstraintOperand& source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests,
+    const GenericTypeContext* generic_context
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -594,7 +959,9 @@ auto resolve_source_constraint_type(
                     },
                     syntax,
                     resolve_extent,
-                    source_type.span
+                    source_type.span,
+                    requests,
+                    generic_context
                 ));
             },
             [&](const ASTArrayType& array) noexcept -> AnalysisTask<ConstructionTypeRef> {
@@ -608,7 +975,9 @@ auto resolve_source_constraint_type(
                         .span = source_type.span,
                         .value = array,
                     },
-                    resolve_extent
+                    resolve_extent,
+                    requests,
+                    generic_context
                 ));
             },
         }
@@ -648,7 +1017,9 @@ auto resolve_failure_types(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTThrowClause& clause,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests,
+    const GenericTypeContext* generic_context
 ) noexcept -> AnalysisTask<std::vector<TypeID>> {
     auto failures = std::vector<TypeID>();
     auto first_seen = std::flat_map<TypeID, Span>();
@@ -661,7 +1032,9 @@ auto resolve_failure_types(
             module_id,
             syntax,
             source_failure,
-            resolve_extent
+            resolve_extent,
+            requests,
+            generic_context
         ));
         if (!built.has_value()) {
             co_return std::unexpected(built.error());

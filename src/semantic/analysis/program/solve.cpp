@@ -136,6 +136,30 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
         || !input.test_slots.all_defined()) {
         invariant_violation("construction solving began with incomplete reservations");
     }
+    const auto valid_generics = validate_generic_definitions();
+    if (!valid_generics) {
+        return std::unexpected(valid_generics.error());
+    }
+    for (const auto& slot : input.generic_instances) {
+        const auto* progress =
+            std::get_if<ConstructionStorage::GenericInstanceSlot::Progress>(&slot.state);
+        if (!progress
+            || *progress != ConstructionStorage::GenericInstanceSlot::Progress::Complete) {
+            invariant_violation("generic instance closure contains an incomplete reservation");
+        }
+        const auto definition = generic_declaration_copy(slot.instance.definition);
+        definition.visit([&](const auto& source) noexcept {
+            input.declarations.append_nominal_item(
+                source.contract.module_id,
+                slot.instance.declaration
+            );
+        });
+    }
+    auto enum_roots = std::vector<TypeID>();
+    for (const auto enumeration : enum_declaration_ids()) {
+        enum_roots.push_back(intern_type({.value = EnumTypeValue {enumeration}}));
+    }
+    resolve_enum_equality(enum_roots);
     auto failures = solve_failure_constraints(
         std::move(input.failure_constraints).finish(),
         input.failure_sets,
@@ -188,6 +212,16 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
         }
         static_instances.push_back(std::move(slot.instance));
     }
+    auto generic_declarations = std::vector<GenericDeclarationContract>();
+    for (auto& definition : input.generic_definitions) {
+        definition->visit([&](auto& source) noexcept {
+            generic_declarations.push_back(std::move(source.contract));
+        });
+    }
+    auto generic_instances = std::vector<GenericNominalInstance>();
+    for (auto& slot : input.generic_instances) {
+        generic_instances.push_back(std::move(slot.instance));
+    }
     auto final_bodies = BodyStore(std::move(bodies).seal());
     auto final_tests = TestStore(std::move(input.test_slots).seal());
     return SemIRProgram(
@@ -201,6 +235,8 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
         std::move(final_bodies),
         std::move(final_tests),
         std::move(static_instances),
+        std::move(generic_declarations),
+        std::move(generic_instances),
         std::move(test_stops)
     );
 }

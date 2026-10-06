@@ -203,6 +203,27 @@ const TestSuite suite([] static noexcept {
 )DUMP")
         );
     };
+
+    "Syntax dump: generic parameters and applications retain structural identity"_test =
+        [] static noexcept {
+            const auto owned = dump_source(
+                "main.cv",
+                "struct Box<T> { value: T } fn use() { Box<i32>::create(1); }"
+            );
+            const auto lexical = lex(owned.sources.view(owned.source_id));
+            if (!expect(lexical.diagnostics.empty())) {
+                return;
+            }
+            const auto parsed = parse(owned.sources, lexical.value);
+            if (!expect(parsed.has_value())) {
+                return;
+            }
+            const auto output = render_ast_dump(owned.sources, *parsed);
+            expect(output.contains("type_parameters (1)"));
+            expect(output.contains("TypeApplicationExpression"));
+            expect(output.contains("type_arguments (1)"));
+            expect(output.contains("MemberExpression"));
+        };
 });
 
 } // namespace

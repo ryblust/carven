@@ -154,7 +154,9 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             },
             [&]<typename Form>(const Form&) noexcept -> AnalysisTask<BuiltExpression> {
                 static_assert(
-                    std::same_as<Form, CatalogStructForm> || std::same_as<Form, CatalogEnumForm>,
+                    std::same_as<Form, CatalogStructForm>
+                        || std::same_as<Form, CatalogEnumForm>
+                        || std::same_as<Form, CatalogGenericForm>,
                     "unhandled non-value catalog symbol"
                 );
                 co_return std::unexpected(fail(

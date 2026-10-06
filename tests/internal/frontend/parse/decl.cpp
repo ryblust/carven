@@ -804,6 +804,59 @@ const TestSuite suite([] static noexcept {
                 "const parameter cannot have an access marker"
             );
         };
+
+    "Parser declaration: nominal and callable type parameters share a nonempty clause"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "struct Pair<T, U,> { first: T, second: U } "
+                "enum Maybe<T,> { None, Some(T) } "
+                "class Owner<T> { value: T, fn read(self) -> T => self.value; } "
+                "fn relay<T>(&&value: T) -> T => &&value;"
+            );
+            const auto tree = parse_valid(text);
+            const auto& pair = get<ASTRecordDecl>(item(tree, 0));
+            const auto& maybe = get<ASTEnumDecl>(item(tree, 1));
+            const auto& owner = get<ASTRecordDecl>(item(tree, 2));
+            const auto& relay = function(tree, 3);
+            if (!expect(pair.type_parameters.has_value())
+                || !expect(maybe.type_parameters.has_value())
+                || !expect(owner.type_parameters.has_value())
+                || !expect(relay.type_parameters.has_value())) {
+                return;
+            }
+            if (!expect_equal(pair.type_parameters->names.size(), 2uz)
+                || !expect_equal(maybe.type_parameters->names.size(), 1uz)
+                || !expect_equal(owner.type_parameters->names.size(), 1uz)
+                || !expect_equal(relay.type_parameters->names.size(), 1uz)
+                || !expect_equal(owner.operations.size(), 1uz)) {
+                return;
+            }
+            expect_equal(slice(text, pair.type_parameters->span), std::string_view("<T, U,>"));
+            expect_equal(slice(text, pair.type_parameters->names[0]), std::string_view("T"));
+            expect_equal(slice(text, pair.type_parameters->names[1]), std::string_view("U"));
+            const auto& read = get<ASTFunctionDecl>(tree.view().item(owner.operations[0]));
+            expect(!read.type_parameters.has_value());
+            const auto repeated = parse_valid("struct Pair<T, T> { value: T }");
+            const auto& repeated_pair = get<ASTRecordDecl>(item(repeated, 0));
+            if (expect(repeated_pair.type_parameters.has_value())) {
+                expect_equal(repeated_pair.type_parameters->names.size(), 2uz);
+            }
+        };
+
+    "Parser declaration: type parameter clauses reject missing names and value arguments"_test =
+        [] static noexcept {
+            constexpr auto inputs = std::array {
+                "struct Box<> { value: i32 }",
+                "class Box<,T> { value: T }",
+                "enum Maybe<T,,U> { None }",
+                "fn relay<4>(value: i32) {}",
+                "fn relay<T(value: T) {}",
+                "struct Box<T: Copy> { value: T }",
+            };
+            for (const auto input : inputs) {
+                check_invalid(input);
+            }
+        };
 });
 
 } // namespace

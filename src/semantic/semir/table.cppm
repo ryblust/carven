@@ -266,6 +266,11 @@ public:
         return *storage[id.index()];
     }
 
+    auto mutate_defined(ID id) noexcept -> Value& {
+        require_defined(id);
+        return *storage[id.index()];
+    }
+
     // Valid until the next reservation.
     auto get_defined(ID id) const noexcept -> const Value& {
         require_defined(id);

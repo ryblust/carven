@@ -76,6 +76,24 @@ const TestSuite suite([] static noexcept {
             const auto& builtin = get<ASTNamedType>(ast.type(inner.arguments[0]));
             expect(!builtin.global_root.has_value());
         };
+
+    "Parser type: nested type argument clauses accept trailing commas"_test = [] static noexcept {
+        const auto tree = parse_valid("fn use(value: Pair<Box<i32,>, [u8],>) {}");
+        const auto ast = tree.view();
+        const auto& declaration = function(tree);
+        if (!expect_equal(declaration.parameters.size(), 1uz)
+            || !expect(declaration.parameters[0].type.has_value())) {
+            return;
+        }
+        const auto& pair = get<ASTNamedType>(ast.type(*declaration.parameters[0].type));
+        if (!expect_equal(pair.arguments.size(), 2uz)) {
+            return;
+        }
+        expect(is<ASTNamedType>(ast.type(pair.arguments[0])));
+        expect(is<ASTSliceType>(ast.type(pair.arguments[1])));
+        check_invalid("fn use(value: Pair<>) {}");
+        check_invalid("fn use(value: Pair<i32,,u8>) {}");
+    };
 });
 
 } // namespace

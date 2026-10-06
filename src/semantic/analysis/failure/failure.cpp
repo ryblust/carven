@@ -52,6 +52,21 @@ auto FailureConstraintStore::add_concrete_term(std::vector<TypeID> members) noex
             .excluded_members = {},
             .retained_members = std::nullopt,
             .throw_sites = {},
+            .is_known = false,
+        }
+    );
+}
+
+auto FailureConstraintStore::add_known_term(std::vector<TypeID> members) noexcept -> FailureTermID {
+    return term_table.add(
+        FailureTerm {
+            .direct_members = normalize_members(std::move(members)),
+            .inputs = {},
+            .guarded_inputs = {},
+            .excluded_members = {},
+            .retained_members = std::nullopt,
+            .throw_sites = {},
+            .is_known = true,
         }
     );
 }
@@ -69,6 +84,7 @@ auto FailureConstraintStore::add_union_term(std::vector<FailureTermID> inputs) n
             .excluded_members = {},
             .retained_members = std::nullopt,
             .throw_sites = {},
+            .is_known = false,
         }
     );
 }
@@ -86,6 +102,7 @@ auto FailureConstraintStore::add_residual_term(
             .excluded_members = normalize_members(std::move(handled_members)),
             .retained_members = std::nullopt,
             .throw_sites = {},
+            .is_known = false,
         }
     );
 }
@@ -103,6 +120,7 @@ auto FailureConstraintStore::add_intersection_term(
             .excluded_members = {},
             .retained_members = normalize_members(std::move(retained_members)),
             .throw_sites = {},
+            .is_known = false,
         }
     );
 }
@@ -113,7 +131,7 @@ auto FailureConstraintStore::copy(FailureTermID term) const noexcept -> FailureT
 }
 
 auto FailureConstraintStore::add_member(FailureTermID destination, TypeID member) noexcept -> void {
-    require_term(destination);
+    require_expandable(destination);
     if (member.owner() != program_identity) {
         invariant_violation("failure term member belongs to another semantic program");
     }
@@ -138,7 +156,7 @@ auto FailureConstraintStore::add_contribution(
     FailureTermID destination,
     FailureTermID source
 ) noexcept -> void {
-    require_term(destination);
+    require_expandable(destination);
     require_term(source);
     // Inputs are an unordered set; finish() normalizes each term once.
     term_table.mutate(destination).inputs.push_back(source);
@@ -149,7 +167,7 @@ auto FailureConstraintStore::add_guarded_contribution(
     FailureTermID gate,
     FailureTermID source
 ) noexcept -> void {
-    require_term(destination);
+    require_expandable(destination);
     require_term(gate);
     require_term(source);
     term_table.mutate(destination)
@@ -167,6 +185,8 @@ auto FailureConstraintStore::equate(FailureTermID left, FailureTermID right) noe
     if (left == right) {
         return;
     }
+    require_expandable(left);
+    require_expandable(right);
     const auto left_term = term_table.copy(left);
     const auto right_term = term_table.copy(right);
     if (!left_term.excluded_members.empty()
@@ -278,6 +298,13 @@ auto FailureConstraintStore::finish() && noexcept -> FrozenFailureConstraints {
 auto FailureConstraintStore::require_term(FailureTermID term) const noexcept -> void {
     if (!term_table.contains(term)) {
         invariant_violation("failure constraint used a foreign or invalid term identity");
+    }
+}
+
+auto FailureConstraintStore::require_expandable(FailureTermID term) noexcept -> void {
+    require_term(term);
+    if (term_table.mutate(term).is_known) {
+        invariant_violation("known failure terms cannot receive contributions");
     }
 }
 

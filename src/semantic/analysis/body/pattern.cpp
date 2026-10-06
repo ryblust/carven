@@ -360,7 +360,7 @@ auto BodyElaborator::build_pattern(
                     }
                 }
                 const auto case_name = spelling(case_pattern.name_span);
-                const auto selected_id = catalog().enum_case_named(owner, case_name);
+                const auto selected_id = draft().enum_case_named(owner, case_name);
                 auto selected = std::optional<ConstructionEnumCaseDeclaration>();
                 if (selected_id.has_value()) {
                     selected = draft().construction_enum_case_declaration_copy(*selected_id);
@@ -373,7 +373,7 @@ auto BodyElaborator::build_pattern(
                             "enum '{}' has no case named '{}'{}",
                             draft().spelling(draft().enum_declaration_copy(owner).name),
                             case_name,
-                            spelling_suggestion(case_name, catalog().enum_case_names(owner))
+                            spelling_suggestion(case_name, draft().enum_case_names(owner))
                         )
                     ));
                 }

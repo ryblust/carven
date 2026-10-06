@@ -146,6 +146,7 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
                     .cpp_export = std::nullopt,
                     .const_span = std::nullopt,
                     .name_span = Span::at(span.start()),
+                    .type_parameters = std::nullopt,
                     .parameters = {},
                     .result_type = std::nullopt,
                     .throw_clause = std::nullopt,

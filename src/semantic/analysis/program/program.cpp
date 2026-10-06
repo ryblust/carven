@@ -74,26 +74,32 @@ auto ProgramDraft::builtin_type(BuiltinType type) const noexcept -> TypeID {
     return storage.types.builtin_type(type);
 }
 
-auto ProgramDraft::canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID {
+auto ProgramDraft::try_canonicalize_declared_type(ConstructionTypeRef type) noexcept
+    -> std::optional<TypeID> {
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         return *concrete;
     }
-    return ConstructionTypeStore::canonicalize_type(
+    return ConstructionTypeStore::try_canonicalize_type(
         construction_type_copy(std::get<TypeTermID>(type)),
         storage.types,
         storage.callable_signatures,
-        [&](ConstructionTypeRef child) noexcept { return canonicalize_declared_type(child); },
-        [&](FailureTermID term) noexcept {
+        [&](ConstructionTypeRef child) noexcept { return try_canonicalize_declared_type(child); },
+        [&](FailureTermID term) noexcept -> std::optional<FailureSetID> {
             const auto failures = construction_failure_term_copy(term);
-            if (!failures.inputs.empty()
-                || !failures.guarded_inputs.empty()
-                || !failures.excluded_members.empty()
-                || failures.retained_members) {
-                invariant_violation("declared type contains an inferred callable contract");
+            if (!failures.is_known) {
+                return std::nullopt;
             }
             return intern_failure_set(failures.direct_members);
         }
     );
+}
+
+auto ProgramDraft::canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID {
+    const auto concrete = try_canonicalize_declared_type(type);
+    if (!concrete) {
+        invariant_violation("declared type contains an inferred callable contract");
+    }
+    return *concrete;
 }
 
 auto ProgramDraft::type_copy(TypeID type) const noexcept -> CanonicalType {
@@ -111,6 +117,10 @@ auto ProgramDraft::intern_constant(ConstantFact fact) noexcept -> ConstantID {
 
 auto ProgramDraft::constant(ConstantID constant) const noexcept -> const ConstantFact& {
     return storage.constants.constant(constant);
+}
+
+auto ProgramDraft::failure_set_copy(FailureSetID failures) const noexcept -> FailureSet {
+    return storage.failure_sets.copy(failures);
 }
 
 auto ProgramDraft::intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID {
@@ -320,6 +330,24 @@ auto ProgramDraft::enum_cases(EnumID id) const noexcept -> std::span<const EnumC
     return storage.declarations.construction_view().enum_cases(id);
 }
 
+auto ProgramDraft::enum_case_named(EnumID enumeration, std::string_view name) const noexcept
+    -> std::optional<EnumCaseID> {
+    for (const auto id : enum_declaration_copy(enumeration).cases) {
+        if (spelling(construction_enum_case_declaration_copy(id).name) == name) {
+            return id;
+        }
+    }
+    return std::nullopt;
+}
+
+auto ProgramDraft::enum_case_names(EnumID enumeration) const noexcept -> std::vector<std::string> {
+    auto names = std::vector<std::string>();
+    for (const auto id : enum_declaration_copy(enumeration).cases) {
+        names.push_back(spelling_copy(construction_enum_case_declaration_copy(id).name));
+    }
+    return names;
+}
+
 auto ProgramDraft::enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration {
     return storage.declarations.construction_view().enumeration(id);
 }
@@ -413,6 +441,10 @@ auto ProgramDraft::add_empty_failure_term() noexcept -> FailureTermID {
 auto ProgramDraft::add_concrete_failure_term(std::vector<TypeID> members) noexcept
     -> FailureTermID {
     return storage.failure_constraints.add_concrete_term(std::move(members));
+}
+
+auto ProgramDraft::add_known_failure_term(std::vector<TypeID> members) noexcept -> FailureTermID {
+    return storage.failure_constraints.add_known_term(std::move(members));
 }
 
 auto ProgramDraft::add_union_failure_term(std::vector<FailureTermID> inputs) noexcept

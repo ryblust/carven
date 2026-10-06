@@ -16,6 +16,7 @@ import :source.provenance;
 import :source.provenance.ids;
 import :source.text;
 import :support.invariant;
+import :support.visit;
 import std;
 
 SemIRProgram::SemIRProgram(
@@ -29,6 +30,8 @@ SemIRProgram::SemIRProgram(
     BodyStore bodies,
     TestStore tests,
     std::vector<StaticInstance> static_instances,
+    std::vector<GenericDeclarationContract> generic_declarations,
+    std::vector<GenericNominalInstance> generic_instances,
     std::vector<bool> test_stops
 ) noexcept
     : program_identity(identity),
@@ -41,7 +44,49 @@ SemIRProgram::SemIRProgram(
       body_store(std::move(bodies)),
       test_store(std::move(tests)),
       static_instance_store(std::move(static_instances)),
+      generic_declaration_store(std::move(generic_declarations)),
+      generic_instance_store(std::move(generic_instances)),
       test_stops(std::move(test_stops)) {
+    for (const auto& contract : generic_declaration_store) {
+        static_cast<void>(declaration_store.module_decl(contract.module_id));
+        if (!compilation_provenance.view().contains(contract.name)
+            || !compilation_provenance.view().contains(contract.origin)) {
+            invariant_violation("generic declaration contract has foreign provenance");
+        }
+        for (const auto& dependency : contract.audience_dependencies) {
+            if (!compilation_provenance.view().contains(dependency.origin)) {
+                invariant_violation("generic audience dependency has foreign provenance");
+            }
+            dependency.reference.visit(
+                Overloaded {
+                    [&](TypeID id) noexcept { static_cast<void>(type_store.type(id)); },
+                    [&](GenericDeclarationID id) noexcept {
+                        static_cast<void>(generic_declaration_contract(id));
+                    },
+                }
+            );
+        }
+    }
+    auto generic_keys = std::set<std::pair<GenericDeclarationID, std::vector<TypeID>>>();
+
+    for (auto generic_index = 0uz; generic_index < generic_instance_store.size(); ++generic_index) {
+        const auto& instance = generic_instance_store[generic_index];
+        const auto& definition = generic_declaration_contract(instance.definition);
+        if (instance.arguments.size() != definition.parameters.size()
+            || !generic_keys.emplace(instance.definition, instance.arguments).second
+            || !generic_instance_nominals.emplace(instance.declaration, generic_index).second) {
+            invariant_violation("published generic instances have noncanonical identities");
+        }
+        for (const auto argument : instance.arguments) {
+            static_cast<void>(type_store.type(argument));
+        }
+        instance.declaration.visit(
+            Overloaded {
+                [&](StructID id) noexcept { static_cast<void>(declaration_store.structure(id)); },
+                [&](EnumID id) noexcept { static_cast<void>(declaration_store.enumeration(id)); },
+            }
+        );
+    }
     for (auto index = 0uz; index < static_instance_store.size(); ++index) {
         const auto& instance = static_instance_store[index];
         const auto& function = declaration_store.function(instance.function);
@@ -240,6 +285,31 @@ auto SemIRProgram::bodies() const noexcept -> const BodyStore& {
 
 auto SemIRProgram::tests() const noexcept -> const TestStore& {
     return test_store;
+}
+
+auto SemIRProgram::generic_declaration_contracts() const noexcept
+    -> std::span<const GenericDeclarationContract> {
+    return generic_declaration_store;
+}
+
+auto SemIRProgram::generic_declaration_contract(GenericDeclarationID id) const noexcept
+    -> const GenericDeclarationContract& {
+    if (id.owner() != program_identity || id.index() >= generic_declaration_store.size()) {
+        invariant_violation("published generic definition belongs to another program");
+    }
+    return generic_declaration_store[id.index()];
+}
+
+auto SemIRProgram::generic_nominal_instances() const noexcept
+    -> std::span<const GenericNominalInstance> {
+    return generic_instance_store;
+}
+
+auto SemIRProgram::generic_nominal_instance(NominalDeclarationRef declaration) const noexcept
+    -> const GenericNominalInstance* {
+    const auto found = generic_instance_nominals.find(declaration);
+    return found == generic_instance_nominals.end() ? nullptr
+                                                    : &generic_instance_store[found->second];
 }
 
 auto SemIRProgram::static_instances() const noexcept -> std::span<const StaticInstance> {

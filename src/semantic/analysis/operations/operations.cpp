@@ -88,6 +88,7 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
             } else if constexpr (std::same_as<Form, ASTInterpolationExpr>
                                  || std::same_as<Form, ASTCppNameExpr>
                                  || std::same_as<Form, ASTNameExpr>
+                                 || std::same_as<Form, ASTTypeApplicationExpr>
                                  || std::same_as<Form, ASTArrayExpr>
                                  || std::same_as<Form, ASTArrayRepeatExpr>
                                  || std::same_as<Form, ASTConstructionExpr>
@@ -119,12 +120,6 @@ struct ArrayShape final {
     std::uint64_t extent;
 };
 
-struct CallableShape final {
-    std::optional<TypeID> owning_type;
-    std::vector<ConstructionCallableParameter> parameters;
-    ConstructionTypeRef result;
-};
-
 auto array_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ArrayShape> {
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
@@ -147,39 +142,6 @@ auto array_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
                                       .extent = array->extent,
                                   }
                               );
-}
-
-auto callable_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::optional<CallableShape> {
-    if (const auto* concrete = std::get_if<TypeID>(&type)) {
-        const auto canonical = draft.type_copy(*concrete);
-        auto callable = std::optional<CallableID>();
-        if (const auto* function = std::get_if<FunctionTypeValue>(&canonical.value)) {
-            callable = function->callable;
-        } else if (const auto* closure = std::get_if<ClosureTypeValue>(&canonical.value)) {
-            callable = closure->callable;
-        }
-        if (callable.has_value()) {
-            const auto contract = draft.construction_callable_contract_copy(*callable);
-            return CallableShape {
-                .owning_type = *concrete,
-                .parameters = contract.parameters,
-                .result = contract.result,
-            };
-        }
-        return std::nullopt;
-    }
-
-    const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
-    const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
-    return view == nullptr ? std::nullopt
-                           : std::optional(
-                                 CallableShape {
-                                     .owning_type = std::nullopt,
-                                     .parameters = view->parameters,
-                                     .result = view->result,
-                                 }
-                             );
 }
 
 auto shapes_compatible(
@@ -212,8 +174,8 @@ auto shapes_compatible(
             && shapes_compatible(draft, *left_slice, *right_slice, visited);
     }
 
-    const auto left_callable = callable_shape(draft, left);
-    const auto right_callable = callable_shape(draft, right);
+    const auto left_callable = draft.callable_shape(left);
+    const auto right_callable = draft.callable_shape(right);
     if (left_callable.has_value() || right_callable.has_value()) {
         if (!left_callable.has_value() || !right_callable.has_value()) {
             return false;
@@ -444,6 +406,13 @@ auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef 
     if (const auto* array = std::get_if<ArrayTypeValue>(&concrete.value)) {
         return type_contains_callable_view(draft, ConstructionTypeRef {array->element});
     }
+    if (const auto* native = std::get_if<CppTypeValue>(&concrete.value)) {
+        if (const auto* named = std::get_if<CppNamedType>(&native->form)) {
+            return std::ranges::any_of(named->arguments, [&](TypeID argument) noexcept {
+                return type_contains_callable_view(draft, ConstructionTypeRef {argument});
+            });
+        }
+    }
     return std::holds_alternative<CallableViewTypeValue>(concrete.value);
 }
 
@@ -473,19 +442,7 @@ auto supports_equality(
 }
 
 auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
-    const auto* concrete = std::get_if<TypeID>(&type);
-    if (concrete == nullptr) {
-        const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
-        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
-            return type_supports_equality(draft, array->element);
-        }
-        return false;
-    }
-    return supports_equality(
-        draft.type_copy(*concrete),
-        [&](EnumID id) noexcept { return draft.enum_declaration_copy(id).supports_equality; },
-        [&](TypeID id) noexcept { return type_supports_equality(draft, ConstructionTypeRef {id}); }
-    );
+    return draft.equality_support(std::array {type}).front();
 }
 
 auto type_supports_equality(

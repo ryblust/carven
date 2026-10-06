@@ -290,6 +290,54 @@ const TestSuite suite([] static noexcept {
             expect(std::holds_alternative<std::monostate>(empty.initializer.value));
             check_invalid("fn f() { let value: Pair = { 1, 2 }; }");
         };
+
+    "Parser expression: type applications preserve callee and associated type arguments"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "fn use() { "
+                "relay<Box<i32,>,>(value); "
+                "Owner<Box<i32>>::create(value); "
+                "let box = Box<i32,> { value: 1 }; }"
+            );
+            const auto tree = parse_valid(text);
+            const auto ast = tree.view();
+            const auto& direct = get<ASTCallExpr>(expression_statement(tree, 0));
+            const auto& application = get<ASTTypeApplicationExpr>(ast.expression(direct.callee));
+            if (!expect_equal(application.arguments.size(), 1uz)) {
+                return;
+            }
+            expect(is<ASTNameExpr>(ast.expression(application.operand_id)));
+            expect_equal(slice(text, application.arguments_span), std::string_view("<Box<i32,>,>"));
+            const auto& nested = get<ASTNamedType>(ast.type(application.arguments[0]));
+            expect_equal(nested.arguments.size(), 1uz);
+            const auto& associated = get<ASTCallExpr>(expression_statement(tree, 1));
+            const auto& member = get<ASTMemberExpr>(ast.expression(associated.callee));
+            expect_equal(member.op, ASTMemberOperator::Scope);
+            expect(is<ASTTypeApplicationExpr>(ast.expression(member.operand_id)));
+            const auto& construction = get<ASTConstructionExpr>(initializer(tree, 2));
+            if (!expect(construction.type.has_value())) {
+                return;
+            }
+            const auto& constructed_type = get<ASTNamedType>(*construction.type);
+            expect_equal(constructed_type.arguments.size(), 1uz);
+        };
+
+    "Parser expression: complete type application selects syntax without name lookup"_test =
+        [] static noexcept {
+            const auto tree =
+                parse_valid("fn use() { a < b > (c); (a < b) > c; a < b; value >> amount; }");
+            const auto& call = get<ASTCallExpr>(expression_statement(tree, 0));
+            expect(is<ASTTypeApplicationExpr>(tree.view().expression(call.callee)));
+            const auto& comparison = get<ASTBinaryExpr>(expression_statement(tree, 1));
+            expect_equal(comparison.op, ASTBinaryOperator::Greater);
+            const auto& less = get<ASTBinaryExpr>(expression_statement(tree, 2));
+            expect_equal(less.op, ASTBinaryOperator::Less);
+            const auto& shift = get<ASTBinaryExpr>(expression_statement(tree, 3));
+            expect_equal(shift.op, ASTBinaryOperator::RightShift);
+            check_invalid("fn use() { relay<>(value); }");
+            check_invalid("fn use() { relay<i32,,u8>(value); }");
+            check_invalid("fn use() { relay<4>(value); }");
+        };
 });
 
 } // namespace

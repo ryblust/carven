@@ -1,7 +1,7 @@
 # Generics and static capabilities
 
 - **Status:** Draft
-- **Implementation:** Not started
+- **Implementation:** In progress for the parametric core; capability dispatch is not started
 - **Scope:** Generic instances, static capabilities, coherence, and target-realization freedom
 - **Depends on:** None for the accepted source semantics; generic
   `import(cpp)`/`export(cpp)` participation depends on the implemented concrete
@@ -11,23 +11,25 @@
 
 This proposal defines type parameters, definition-site checking, local inference,
 static capabilities, associated types, coherence, and generic instance identity.
-These semantics are accepted and unimplemented.
+The source semantics below are accepted. The selected implementation slice
+defines the boundaries of the parametric core separately from capability dispatch.
 
-Open decisions block implementation: generic C++ boundary participation (OPEN-01),
-finite instance expansion (OPEN-02), and universal operations and copy admission
-(OPEN-03). Lowering may use concrete C++ declarations, templates, erasure, or
+The first implementation slice covers nominal type parameters and finite instance
+formation. Parameterized bodies, their universal operations, and generic C++
+boundary participation remain subsequent work under OPEN-01 through OPEN-03.
+Lowering may use concrete C++ declarations, templates, erasure, or
 a combination after semantic analysis.
 Advanced facilities remain under DEFER-01 through DEFER-11.
 
 ## Context
 
-Carven currently compiles a closed batch of modules with concrete declarations,
-canonical module paths, module-domain visibility, and direct lookup. It has no
-user-defined generic declarations, concept requirements, impl evidence, or
-generic instance graph. `concept`, `impl`, `Self`, and `where` are ordinary
-identifiers today.
+Carven compiles a closed batch of modules with canonical module paths,
+module-domain visibility, and direct lookup. Nominal type parameters produce
+concrete declarations before publication. Parameterized function bodies,
+concept requirements, and impl evidence are not implemented. `concept`, `impl`,
+`Self`, and `where` are ordinary identifiers today.
 
-Named type arguments, builtin `ptr<T>`, and nested `>>` parsing already exist.
+Named type arguments, builtin `ptr<T>`, and nested `>>` parsing exist.
 Target lowering also uses C++ templates for arrays, failures, and runtime helpers.
 Source generics require additional syntax and semantic facts.
 
@@ -45,8 +47,9 @@ core can support storage, forwarding, and return of `T` independently.
 
 ## Goals and non-goals
 
-The initial scope covers type-parameterized functions, transparent structs, and
-enums; checked generic bodies; bounded local inference; canonical static
+The parametric core covers type-parameterized functions, transparent structs,
+enums, and ordinary value classes. The broader design includes checked generic
+bodies, bounded local inference, canonical static
 evidence; and a finite instance graph.
 
 Value parameters, generic lambdas, type-level execution, dynamic interfaces,
@@ -74,7 +77,8 @@ substitution does not determine its validity.
 
 **Maturity:** Accepted semantics.
 
-The first phase supports generic functions, transparent structs, and enums:
+The parametric core supports generic functions, transparent structs, enums,
+and ordinary value classes:
 
 ```carven
 fn identity<T>(value: T) -> T {
@@ -101,10 +105,76 @@ If equality is not universal, this body requires an explicit capability.
 `concept` and `impl` provide that additional layer; simple parametric declarations
 such as `Box<T>` do not require capability dispatch.
 
-The accepted Read `identity` example requires copying. OPEN-03 must reconcile
-that requirement with the candidate that unconstrained `T` guarantees transfer
-but not copying. A copyable application alone cannot establish a universal
-operation.
+The Read `identity` example requires copying. Its definition needs a universal
+copy contract for the admitted argument domain. A copyable application alone
+cannot establish that contract; OPEN-03 governs this part of body checking.
+
+### Selected implementation slice
+
+**Design:** Nominal type parameters first, then checked parametric bodies.
+
+**Implementation:** Nominal type parameters are implemented. Parameterized bodies
+are not implemented; a parsed declaration does not establish semantic support.
+
+The nominal milestone supports structs, payload enums, and the field-type model
+of classes without operations. Parameters are identified by their definition
+and ordinal. Definitions bind field and payload type expressions once; instance
+formation substitutes normalized arguments into ordinary concrete declarations.
+Their actual types obey existing value-position, storage, ownership, and native
+interop rules. This milestone does not require a universal copy operation on an
+unknown parameter. SIMD and mask values follow their existing concrete rules.
+
+Source visibility belongs to the generic definition and its actual arguments.
+Generated instances are implementation declarations. C++ interface planning
+places their concrete definitions and dependencies independently of source
+audience; it does not introduce source-public instance names.
+
+Parameterized functions, class operations, and numeric enums have explicit
+unsupported-form diagnostics in this milestone. It does not complete the
+parametric core or provide a growable owning container.
+
+The parameter-flow rule described below applies to the slice's finite first-order
+constructors. A cycle containing a construction edge is invalid; forwarding and
+permutation cycles are finite. By-value storage cycles are checked separately.
+Implementation budgets report resource exhaustion without changing source
+legality.
+
+Source-head completion and concrete-instance closure are separate construction
+boundaries. Publication requires complete concrete declarations. C++ lowering
+consumes the ordinary concrete representation.
+
+#### Subsequent parameterized bodies
+
+The next stage reuses checked structured operations with rigid parameter types.
+Class operations inherit their owner's parameters and retain ordinary lexical
+representation access. Independently generic operations and combined static
+value/type specialization remain outside the initial body slice.
+
+Holding, copying, complete Take, forwarding, and same-type assignment require
+their shared operation contracts. Default construction, comparison, arithmetic,
+formatting, and member lookup on an unknown parameter are not universal.
+Copying String copies its content; copying a slice preserves its backing.
+
+Generic bodies preserve selected storage separately from contained loans.
+Unknown contents carry an opaque loan bundle identified by the input value and
+its projection path. Copy preserves that bundle in a new owner, Take transfers
+it, and known aggregate construction and projection preserve field paths.
+Definition checking establishes availability and escape restrictions; concrete
+instances validate actual backing through ordinary ownership rules.
+
+Generic C++ import/export declarations and native operations whose legality
+depends on a type parameter are rejected. Concrete boundary wrappers may call
+recorded instances. Concepts, evidence, associated projections, value parameters,
+generic lambdas, and combined static-value/type-generic specialization are outside
+this slice. Array extents and failure types remain independent of type parameters.
+
+Checked bodies reuse structured semantic operations and explicit substitution;
+applications do not replay source AST. Executable publication requires concrete
+types and resolved operation identities.
+
+Container storage, view invalidation, and constant-result retention belong to
+[constant storage](constant-storage.md), independently of generic declaration
+support. This slice does not establish a growable owning container.
 
 ### Type-generic syntax
 
@@ -408,6 +478,7 @@ decide whether a Carven call exists or which implementation it selects.
 | GEN-13 | Declaration identity and normalized semantic arguments identify an instance independently of target form. |
 | GEN-14 | Cross-module use retains resolved facts needed for checking and instance formation. |
 | GEN-15 | Concrete declarations, templates, erasure, and mixed forms remain equivalent lowering choices. |
+| GEN-16 | Ordinary value classes share the parametric nominal model; operations inherit their owner's parameters and lexical access authority. |
 
 ## Open decisions
 
@@ -685,9 +756,12 @@ value-dependent types remain deferred here.
 
 ## Implementation
 
-Implementation is blocked by OPEN-01 through OPEN-03. A selected slice needs
-source syntax, definition-site checking, local inference, normalized identity, and
-finite graph production together. Capability consumers additionally need their
+Implementation of the selected parametric slice proceeds through checked nominal heads,
+parameterized bodies, and concrete instance closure. Each delivered declaration
+form needs source syntax, definition-site checking, normalized identity, and
+finite graph production together; generic calls additionally need local inference.
+Broader domains remain subject to OPEN-01 through OPEN-03.
+Capability consumers additionally need their
 concept and impl contracts, coherent evidence, and associated normalization.
 TargetUnit lowering consumes published semantic facts. Each slice includes its
 diagnostics, generated C++ checks, tests, and permanent documentation.

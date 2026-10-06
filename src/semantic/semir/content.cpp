@@ -2,6 +2,7 @@ module carven:semantic.semir.content.impl;
 
 import :semantic.semir.constant;
 import :semantic.semir.content;
+import :semantic.semir.generic;
 import :semantic.semir.program;
 import :semantic.semir.stage;
 import :support.invariant;
@@ -26,6 +27,7 @@ private:
     auto integer(IntegerConstant value) noexcept -> void;
     auto module_path(ModuleID id) noexcept -> void;
     auto callable(CallableID id) noexcept -> ContentTask;
+    auto nominal(NominalDeclarationRef declaration) noexcept -> ContentTask;
     auto signature(CallableSignatureID id) noexcept -> ContentTask;
     auto name(const CppNameReference& value) noexcept -> void;
     auto operand(const CppTypeOperand& value) noexcept -> ContentTask;
@@ -76,6 +78,32 @@ auto ContentWriter::integer(IntegerConstant value) noexcept -> void {
 auto ContentWriter::module_path(ModuleID id) noexcept -> void {
     token(provenance.module_record(program.declarations().module_decl(id).provenance_module)
               .path.value());
+}
+
+auto ContentWriter::nominal(NominalDeclarationRef reference) noexcept -> ContentTask {
+    if (const auto* instance = program.generic_nominal_instance(reference)) {
+        const auto& definition = program.generic_declaration_contract(instance->definition);
+        token("generic");
+        module_path(definition.module_id);
+        token(provenance.spelling(definition.name));
+        number(instance->arguments.size());
+        for (const auto argument : instance->arguments) {
+            co_await type(argument);
+        }
+    } else {
+        reference.visit([&](auto id) noexcept {
+            const auto& declaration = [&]() noexcept -> const auto& {
+                if constexpr (std::same_as<decltype(id), StructID>) {
+                    return program.declarations().structure(id);
+                } else {
+                    return program.declarations().enumeration(id);
+                }
+            }();
+            module_path(declaration.module_id);
+            token(provenance.spelling(declaration.name));
+        });
+    }
+    co_return {};
 }
 
 auto ContentWriter::callable(CallableID id) noexcept -> ContentTask {
@@ -220,13 +248,9 @@ auto ContentWriter::type(TypeID id) noexcept -> ContentTask {
             if constexpr (std::same_as<Value, BuiltinTypeValue>) {
                 number(static_cast<std::uint64_t>(value.kind));
             } else if constexpr (std::same_as<Value, StructTypeValue>) {
-                const auto& declaration = program.declarations().structure(value.structure);
-                module_path(declaration.module_id);
-                token(provenance.spelling(declaration.name));
+                co_await nominal(value.structure);
             } else if constexpr (std::same_as<Value, EnumTypeValue>) {
-                const auto& declaration = program.declarations().enumeration(value.enumeration);
-                module_path(declaration.module_id);
-                token(provenance.spelling(declaration.name));
+                co_await nominal(value.enumeration);
             } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
                 co_await type(value.element);
                 number(value.extent);

@@ -6,6 +6,7 @@ This page defines type compatibility, inference, numeric operations, and borrowe
 slices.
 
 - [Types and compatibility](#types-and-compatibility)
+- [Nominal type parameters](#nominal-type-parameters)
 - [Type context and inference](#type-context-and-inference)
 - [Numeric types and conversions](#numeric-types-and-conversions)
 - [Read-only slices](#read-only-slices)
@@ -48,6 +49,41 @@ binding its nonexistent result is not.
 
 Operations involving external C++ types have delegated construction and
 conversion rules, specified under [C++ interoperation](interop.md#external-operations-and-conversions).
+
+## Nominal type parameters
+
+Structs and payload enums can declare type parameters:
+
+```carven
+struct Box<T> { value: T }
+enum Maybe<T> { None, Some(T) }
+
+let boxed = Box<i32> { value: 7 };
+let present = Maybe<i32>::Some(7);
+let absent: Maybe<String> = .None;
+```
+
+A type parameter is scoped to its declaration. Field and payload types can
+use parameters, nested nominal applications, arrays, slices, and pointers.
+Array extents must be independent of type parameters. Callable signatures and
+native template arguments that depend on a parameter are not supported.
+Applications supply every argument explicitly. The declaration and its ordered
+canonical arguments determine nominal identity; repeated applications share
+that identity.
+
+Definitions are checked even when unused. Recursive applications may forward
+or permute parameters; a recursive cycle that constructs larger arguments is
+rejected. By-value layout cycles are rejected independently of argument growth.
+Pointers and slices break by-value storage cycles.
+
+Concrete instances use the existing construction, copying, Take, borrowing,
+matching, default-initialization, and equality rules for their actual types.
+An enum still has no implicit default case. Visibility checks consider both the
+generic declaration and every type argument.
+
+Parameterized functions, class operations, and numeric enums are not supported.
+A parameterized class without operations uses the same field-type model and
+keeps its representation private.
 
 ## Type context and inference
 

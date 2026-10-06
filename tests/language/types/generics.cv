@@ -1,0 +1,142 @@
+private struct Box<T> {
+    value: T,
+}
+
+private struct Pair<T, U> {
+    first: T,
+    second: U,
+}
+
+private struct ArrayBox<T> {
+    values: [T; 3],
+}
+
+private struct ViewBox<T> {
+    values: [T],
+}
+
+private struct PointerBox<T> {
+    value: ptr<T>,
+}
+
+private struct WritePointerBox<T> {
+    value: ptr<&T>,
+}
+
+private enum Maybe<T> {
+    None,
+    Some(T),
+}
+
+private const fn maybe_number(value: Maybe<i32>) -> i32 => match value {
+    .None => 0,
+    .Some(number) => number,
+};
+
+private fn increment(value: i32) -> i32 => value + 1;
+
+const test "Generics: concrete construction and payload matching share static semantics" {
+    let box = Box<i32> { value: 42 };
+    let pair = Pair<Box<i32>, bool> {
+        first: box,
+        second: true
+    };
+    let array = ArrayBox<i32> { values: [1, 2, 3] };
+    check(pair.first.value == 42);
+    check(pair.second);
+    check(array.values[2] == 3);
+    check(maybe_number(Maybe<i32>::Some(box.value)) == 42);
+    check(maybe_number(Maybe<i32>::None) == 0);
+    check(Maybe<i32>::Some(42) == Maybe<i32>::Some(42));
+}
+
+test "Generics: owned concrete fields copy and transfer using ordinary value semantics" {
+    var original = Box<String> { value: "first" as String };
+    let copied = original;
+    original.value.append(" second");
+    check(copied.value.as_str() == "first");
+    let moved = &&original;
+    check(moved.value.as_str() == "first second");
+    original = Box<String> { value: "restored" as String };
+    check(original.value.as_str() == "restored");
+}
+
+test "Generics: concrete fields and pointer targets retain their ordinary contracts" {
+    let vector = Box<u8x16> { value: u8x16::splat(7) };
+    check((vector.value == u8x16::splat(7)).bits() == 0xffff);
+    let callback: fn(i32) -> i32 = increment;
+    let callback_pointer = PointerBox<fn(i32) -> i32> { value: addressof(callback) };
+    check(callback_pointer.value != nullptr);
+    check(callback(41) == 42);
+    let data = [10, 20, 30];
+    let view = ViewBox<i32> { values: data.as_slice() };
+    check(view.values[1] == 20);
+    let number = 42;
+    let pointer = PointerBox<i32> { value: addressof(number) };
+    check(pointer.value != nullptr);
+    if pointer.value != nullptr { check(*pointer.value == 42); }
+}
+
+private struct CallableFailure {
+    value: i32,
+}
+
+private struct OtherCallableFailure {}
+
+private fn checked_increment(value: i32) -> i32 throw CallableFailure {
+    if value < 0 { throw CallableFailure { value: value }; }
+    return value + 1;
+}
+
+private fn replace_callback(&callback: fn(i32) -> i32) {
+    callback = increment;
+}
+
+test "Callable views: explicit signatures share adaptation and calls" {
+    var callback: fn(i32) -> i32 = increment;
+    let inferred = WritePointerBox<fn(i32) -> i32> { value: addressof(&callback) };
+    let ordinary: fn(i32) -> i32 = increment;
+    check(inferred.value != nullptr);
+    if inferred.value != nullptr {
+        callback = [](value) => value + 2;
+        check(callback(40) == 42);
+        replace_callback(&callback);
+        check(callback(41) == 42);
+        callback = ordinary;
+        let returned: fn(i32) -> i32 = callback;
+        check(returned(41) == 42);
+        callback = increment;
+        check(callback(41) == 42);
+    }
+    var assertion: fn(bool) -> void = check;
+    let assertion_pointer = WritePointerBox<fn(bool) -> void> { value: addressof(&assertion) };
+    check(assertion_pointer.value != nullptr);
+    if assertion_pointer.value != nullptr {
+        assertion = check;
+        assertion(true);
+    }
+
+    let narrow: fn(i32) -> i32 throw CallableFailure = checked_increment;
+    var wide: fn(i32) -> i32 throw CallableFailure + OtherCallableFailure = checked_increment;
+    let widened = WritePointerBox<fn(i32) -> i32 throw CallableFailure + OtherCallableFailure> {
+        value: addressof(&wide),
+    };
+    check(widened.value != nullptr);
+    if widened.value != nullptr {
+        wide = narrow;
+        let first = try {
+            wide(20)?
+        } catch {
+            CallableFailure(_) => -1,
+            OtherCallableFailure(_) => -2,
+        };
+        wide = [](value) => checked_increment(value)?;
+        let second = try {
+            wide(20)?
+        } catch {
+            CallableFailure(_) => -1,
+            OtherCallableFailure(_) => -2,
+        };
+        check(first + second == 42);
+    }
+}

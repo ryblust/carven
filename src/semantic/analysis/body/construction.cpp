@@ -271,7 +271,9 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
             },
             [&]<typename Form>(const Form&) noexcept -> AnalysisTask<std::optional<ConstantID>> {
                 static_assert(
-                    std::same_as<Form, CatalogStructForm> || std::same_as<Form, CatalogEnumForm>,
+                    std::same_as<Form, CatalogStructForm>
+                        || std::same_as<Form, CatalogEnumForm>
+                        || std::same_as<Form, CatalogGenericForm>,
                     "unhandled non-constant catalog symbol"
                 );
                 co_return std::unexpected(fail(
@@ -315,6 +317,31 @@ auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
     auto current_id = expression;
     while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(current_id).value)) {
         current_id = group->expression;
+    }
+    if (const auto* application =
+            std::get_if<ASTTypeApplicationExpr>(&ast.expression(current_id).value)) {
+        if (const auto* name =
+                std::get_if<ASTNameExpr>(&ast.expression(application->operand_id).value);
+            name && find_local(spelling(name->name_span)) != nullptr) {
+            co_return std::optional<TypeID>();
+        }
+        const auto extent = [&](ASTExprID expression) noexcept {
+            return resolve_array_extent(expression);
+        };
+        auto type = (co_await resolve_source_type_application(
+            draft(),
+            catalog(),
+            import_usage(),
+            source_module_id,
+            ast,
+            *application,
+            extent,
+            &batch->requests
+        ));
+        if (!type) {
+            co_return std::unexpected(type.error());
+        }
+        co_return std::optional(draft().canonicalize_declared_type(*type));
     }
     const auto* name = std::get_if<ASTNameExpr>(&ast.expression(current_id).value);
     if (name == nullptr) {
@@ -363,7 +390,7 @@ auto BodyElaborator::resolve_constant_enum_case(
             "scope qualifier does not name an enum or class type"
         ));
     }
-    if (const auto case_id = catalog().enum_case_named(nominal->enumeration, name)) {
+    if (const auto case_id = draft().enum_case_named(nominal->enumeration, name)) {
         const auto declaration = draft().construction_enum_case_declaration_copy(*case_id);
         co_return ResolvedEnumCase {
             .id = *case_id,
@@ -379,7 +406,7 @@ auto BodyElaborator::resolve_constant_enum_case(
             "enum '{}' has no case named '{}'{}",
             type_display_name(draft(), type),
             name,
-            spelling_suggestion(name, catalog().enum_case_names(nominal->enumeration))
+            spelling_suggestion(name, draft().enum_case_names(nominal->enumeration))
         )
     ));
 }
@@ -395,7 +422,8 @@ auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisTask<Const
         source_module_id,
         ast,
         type,
-        resolve_extent
+        resolve_extent,
+        &batch->requests
     ));
     if (result) {
         auto prepared =
@@ -419,7 +447,8 @@ auto BodyElaborator::resolve_construction_type(const ASTConstructionType& type) 
         source_module_id,
         ast,
         type,
-        resolve_extent
+        resolve_extent,
+        &batch->requests
     ));
     if (result) {
         auto prepared =

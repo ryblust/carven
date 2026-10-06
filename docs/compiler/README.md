@@ -161,8 +161,10 @@ Construction completes declarations and bodies before publication. The gates
 establish the resolved facts and query contracts consumed by later stages.
 
 `ProgramDraft` owns pending function heads. A complete callable contract includes
-its result. Declaration-head completion closes the nominal tables; solving requires
-complete callable contracts and bodies. The catalog and import-use state end before
+its result. Declaration-head completion closes ordinary source reservations.
+Concrete nominal instances can still be formed during body construction; solving
+requires their completed closure, complete callable contracts, and bodies.
+The catalog and import-use state end before
 solving. Final semantic validation checks declaration surfaces, including closure
 captures and solved failure sets.
 

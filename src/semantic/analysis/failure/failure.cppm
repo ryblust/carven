@@ -43,6 +43,8 @@ struct FailureTerm final {
     };
 
     std::vector<ThrowSite> throw_sites;
+    // A canonical failure set projection cannot acquire new members or inputs.
+    bool is_known;
 };
 
 struct RequiresEmptyFailure final {
@@ -117,6 +119,7 @@ public:
     ~FailureConstraintStore() = default;
     auto add_empty_term() noexcept -> FailureTermID;
     auto add_concrete_term(std::vector<TypeID> members) noexcept -> FailureTermID;
+    auto add_known_term(std::vector<TypeID> members) noexcept -> FailureTermID;
     auto add_union_term(std::vector<FailureTermID> inputs) noexcept -> FailureTermID;
     auto add_residual_term(FailureTermID input, std::vector<TypeID> handled_members) noexcept
         -> FailureTermID;
@@ -155,6 +158,7 @@ public:
 
 private:
     auto require_term(FailureTermID term) const noexcept -> void;
+    auto require_expandable(FailureTermID term) noexcept -> void;
     auto require_origin(ProgramOriginID origin) const noexcept -> void;
     auto normalize_members(std::vector<TypeID> members) const noexcept -> std::vector<TypeID>;
     auto normalize_inputs(std::vector<FailureTermID> inputs) const noexcept

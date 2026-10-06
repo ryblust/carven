@@ -206,6 +206,13 @@ private:
         std::string_view field
     ) noexcept -> void;
     auto render_expression(
+        const ASTTypeApplicationExpr& value,
+        ASTExprID expression,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
+    ) noexcept -> void;
+    auto render_expression(
         const ASTCallExpr& value,
         ASTExprID expression,
         std::string_view prefix,

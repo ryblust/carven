@@ -32,6 +32,15 @@ auto DeclResolver::resolve_function(
     const ASTFunctionDecl& function,
     Span item_span
 ) noexcept -> AnalysisTask<void> {
+    if (function.type_parameters) {
+        co_return std::unexpected(declaration_failure(
+            draft,
+            symbol.module_id,
+            function.type_parameters->span,
+            DiagnosticCode::TypeGenericDefinition,
+            "type-parameterized function operations are not supported"
+        ));
+    }
     const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
     const auto entry = !symbol.class_operation && symbol.name == "main" && !cpp_import;
     if (function.const_span && (cpp_import || entry)) {

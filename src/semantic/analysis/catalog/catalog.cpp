@@ -247,6 +247,19 @@ auto AnalysisCatalogView::function_symbol(FunctionID id) const noexcept -> Catal
     return symbol;
 }
 
+auto AnalysisCatalogView::generic_symbol(GenericDeclarationID id) const noexcept
+    -> CatalogSymbolID {
+    if (id.index() >= catalog->generic_symbols.size()) {
+        invariant_violation("catalog generic lookup used an invalid identity");
+    }
+    const auto symbol = catalog->generic_symbols[id.index()];
+    const auto* form = std::get_if<CatalogGenericForm>(&catalog->symbols[symbol.index()].form);
+    if (form == nullptr || form->definition != id) {
+        invariant_violation("catalog generic lookup crossed semantic program owners");
+    }
+    return symbol;
+}
+
 auto AnalysisCatalogView::struct_symbol(StructID id) const noexcept -> CatalogSymbolID {
     if (id.index() >= catalog->struct_symbols.size()) {
         invariant_violation("catalog struct lookup used an invalid identity");
@@ -523,7 +536,15 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                             .callable = draft.reserve_callable_declaration(),
                         };
                     },
-                    [&](const ASTRecordDecl&) noexcept -> CatalogSymbolForm {
+                    [&](const ASTRecordDecl& record) noexcept -> CatalogSymbolForm {
+                        if (record.type_parameters) {
+                            const auto definition = draft.reserve_generic_declaration();
+                            if (definition.index() != result.generic_symbols.size()) {
+                                invariant_violation("semantic generic reservation is not aligned");
+                            }
+                            result.generic_symbols.push_back(symbol_id);
+                            return CatalogGenericForm {.definition = definition};
+                        }
                         const auto structure = draft.reserve_struct_declaration();
                         if (structure.index() != result.struct_symbols.size()) {
                             invariant_violation("semantic struct reservation is not aligned");
@@ -534,7 +555,15 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                             .operations = {},
                         };
                     },
-                    [&](const ASTEnumDecl&) noexcept -> CatalogSymbolForm {
+                    [&](const ASTEnumDecl& source_enum) noexcept -> CatalogSymbolForm {
+                        if (source_enum.type_parameters) {
+                            const auto definition = draft.reserve_generic_declaration();
+                            if (definition.index() != result.generic_symbols.size()) {
+                                invariant_violation("semantic generic reservation is not aligned");
+                            }
+                            result.generic_symbols.push_back(symbol_id);
+                            return CatalogGenericForm {.definition = definition};
+                        }
                         const auto enumeration = draft.reserve_enum_declaration();
                         if (enumeration.index() != result.enum_symbols.size()) {
                             invariant_violation("semantic enum reservation is not aligned");
@@ -609,12 +638,18 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                             .form = value.constant,
                         });
                     },
+                    [](const CatalogGenericForm&) static noexcept {},
                     [](const CatalogEnumCaseForm&) static noexcept {
                         invariant_violation("enum case cannot be a module declaration item");
                     },
                 }
             );
 
+            if (std::holds_alternative<CatalogGenericForm>(
+                    result.symbols[symbol_id.index()].form
+                )) {
+                continue;
+            }
             if (const auto* record = std::get_if<ASTRecordDecl>(&item.value)) {
                 auto member_names = std::flat_set<std::string>();
                 for (const auto& field : record->fields) {

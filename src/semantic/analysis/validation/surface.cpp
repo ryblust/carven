@@ -24,10 +24,12 @@ public:
         std::string_view description
     ) noexcept;
     auto check(TypeID type) noexcept -> AnalysisResult<void>;
+    auto check_generic(GenericDeclarationID definition) noexcept -> AnalysisResult<void>;
 
 private:
     auto validate(TypeID type) noexcept -> void;
     auto validate_signature(CallableSignatureID id) noexcept -> void;
+    auto validate_generic_application(const GenericNominalInstance& instance) noexcept -> void;
 
     auto validate_nominal(const auto& nominal) noexcept -> void {
         const auto allowed = nominal.visibility == DeclarationVisibility::Compilation
@@ -93,6 +95,14 @@ auto DeclarationSurfaceValidator::check(TypeID type) noexcept -> AnalysisResult<
                                : AnalysisResult<void>();
 }
 
+auto DeclarationSurfaceValidator::check_generic(GenericDeclarationID definition) noexcept
+    -> AnalysisResult<void> {
+    if (surface_visibility != DeclarationVisibility::Module) {
+        validate_nominal(program.generic_declaration_contract(definition));
+    }
+    return failure ? AnalysisResult<void>(std::unexpected(*failure)) : AnalysisResult<void>();
+}
+
 auto DeclarationSurfaceValidator::validate(TypeID type) noexcept -> void {
     if (surface_visibility == DeclarationVisibility::Module || !visited_types.insert(type).second) {
         return;
@@ -101,10 +111,18 @@ auto DeclarationSurfaceValidator::validate(TypeID type) noexcept -> void {
         Overloaded {
             [](const BuiltinTypeValue&) static noexcept {},
             [&](const StructTypeValue& value) noexcept {
-                validate_nominal(program.declarations().structure(value.structure));
+                if (const auto* instance = program.generic_nominal_instance(value.structure)) {
+                    validate_generic_application(*instance);
+                } else {
+                    validate_nominal(program.declarations().structure(value.structure));
+                }
             },
             [&](const EnumTypeValue& value) noexcept {
-                validate_nominal(program.declarations().enumeration(value.enumeration));
+                if (const auto* instance = program.generic_nominal_instance(value.enumeration)) {
+                    validate_generic_application(*instance);
+                } else {
+                    validate_nominal(program.declarations().enumeration(value.enumeration));
+                }
             },
             [&](const RangeTypeValue& value) noexcept { validate(value.element); },
             [&](const SliceTypeValue& value) noexcept { validate(value.element); },
@@ -134,6 +152,15 @@ auto DeclarationSurfaceValidator::validate(TypeID type) noexcept -> void {
     );
 }
 
+auto DeclarationSurfaceValidator::validate_generic_application(
+    const GenericNominalInstance& instance
+) noexcept -> void {
+    validate_nominal(program.generic_declaration_contract(instance.definition));
+    for (const auto argument : instance.arguments) {
+        validate(argument);
+    }
+}
+
 auto DeclarationSurfaceValidator::validate_signature(CallableSignatureID id) noexcept -> void {
     if (!visited_signatures.insert(id).second) {
         return;
@@ -160,6 +187,26 @@ auto validate_declaration_surfaces(
             failure = checked.error();
         }
     };
+    for (const auto& contract : program.generic_declaration_contracts()) {
+        for (const auto& dependency : contract.audience_dependencies) {
+            auto validator = DeclarationSurfaceValidator(
+                program,
+                diagnostics,
+                contract.visibility,
+                contract.module_id,
+                dependency.origin,
+                "generic declaration"
+            );
+            dependency.reference.visit(
+                Overloaded {
+                    [&](TypeID type) noexcept { retain_failure(validator.check(type)); },
+                    [&](GenericDeclarationID definition) noexcept {
+                        retain_failure(validator.check_generic(definition));
+                    },
+                }
+            );
+        }
+    }
     for (const auto& function : program.declarations().functions()) {
         const auto& signature = program.callable_signatures().signature(
             program.declarations().callable(function.value.callable).signature
@@ -204,7 +251,8 @@ auto validate_declaration_surfaces(
         }
     }
     for (const auto& structure : program.declarations().structures()) {
-        if (structure.value.kind == RecordKind::Class) {
+        if (program.generic_nominal_instance(structure.id)
+            || structure.value.kind == RecordKind::Class) {
             continue;
         }
         for (const auto& field : structure.value.fields) {
@@ -220,6 +268,9 @@ auto validate_declaration_surfaces(
         }
     }
     for (const auto& enumeration : program.declarations().enumerations()) {
+        if (program.generic_nominal_instance(enumeration.id)) {
+            continue;
+        }
         auto validator = DeclarationSurfaceValidator(
             program,
             diagnostics,

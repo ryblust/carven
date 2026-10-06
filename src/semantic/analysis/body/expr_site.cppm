@@ -127,6 +127,11 @@ public:
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected
     ) noexcept -> ExpressionTask<Selection>;
     auto extension(
+        const ASTTypeApplicationExpr& value,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<Selection>;
+    auto extension(
         const ASTArrayExpr& value,
         Span span,
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected

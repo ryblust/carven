@@ -129,6 +129,12 @@ struct ASTCallArgument final {
     ASTExprID expression;
 };
 
+struct ASTTypeApplicationExpr final {
+    ASTExprID operand_id;
+    Span arguments_span;
+    std::vector<ASTTypeID> arguments;
+};
+
 struct ASTCallExpr final {
     ASTExprID callee;
     std::vector<ASTCallArgument> arguments;
@@ -203,6 +209,7 @@ struct ASTExpr final {
         ASTBinaryExpr,
         ASTRangeExpr,
         ASTCastExpr,
+        ASTTypeApplicationExpr,
         ASTCallExpr,
         ASTIndexExpr,
         ASTMemberExpr,

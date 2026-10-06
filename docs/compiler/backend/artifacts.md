@@ -27,9 +27,15 @@ require only declarations of their component types. Object storage and Read
 traits require complete definitions. Body-only calls do not merge interfaces.
 Private nominals needed by an interface layout receive definitions in their
 owner's interface; declaration-only references receive forward declarations.
-This placement does not change Carven source visibility.
+Nominal declarations and definitions use the same module namespace, including
+source-only definitions. Completeness determines the artifact that owns a
+definition; it does not change the type's C++ identity or Carven source visibility.
 
-Schedules own interface definitions, C++ façades, private nominal and closure
+Concrete generic nominal instances seed the internal interface schedule. Their
+private layout dependencies use the same completeness closure and module ordering.
+Source audience remains a semantic check on the definition and its type arguments.
+
+Schedules own interface definitions, C++ façades, source nominal and closure
 ordering, and selected tests. Module lowering starts with externally visible
 functions, process and C++ export entries, interface closures, and enabled runtime
 tests. Realizing native function references and closure types requests their local

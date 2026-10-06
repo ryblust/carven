@@ -127,6 +127,7 @@ private:
     auto parse_cpp_header_import() noexcept -> ASTCppHeaderImport;
     auto parse_module_import() noexcept -> ASTModuleImportID;
     auto parse_top_level_item() noexcept -> std::optional<ASTItemID>;
+    auto parse_type_parameters() noexcept -> std::optional<ASTTypeParameterClause>;
     auto parse_enum(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTEnumDecl>>;
     auto parse_record(ASTDeclarationVisibility visibility) noexcept
@@ -144,6 +145,7 @@ private:
     auto parse_block_label() noexcept -> std::optional<ASTBlockLabel>;
     auto parse_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_named_type() noexcept -> std::optional<ASTTypeID>;
+    auto parse_type_arguments() noexcept -> ParsedTypeForm<std::vector<ASTTypeID>>;
     auto parse_sequence_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_function_type() noexcept -> std::optional<ASTTypeID>;
     auto parse_named_type_form() noexcept -> ParsedTypeForm<ASTNamedType>;

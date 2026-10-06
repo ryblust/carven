@@ -216,6 +216,13 @@ namespace {
       "CV-TYPE-EQUALITY-UNSUPPORTED",                                                              \
       Error,                                                                                       \
       "Type does not support equality.")                                                           \
+    X(TypeGenericArguments, "CV-TYPE-GENERIC-ARGUMENTS", Error, "Invalid generic type arguments.") \
+    X(TypeGenericDefinition, "CV-TYPE-GENERIC-DEFINITION", Error, "Invalid generic definition.")   \
+    X(TypeGenericExpansion, "CV-TYPE-GENERIC-EXPANSION", Error, "Unbounded generic expansion.")    \
+    X(TypeGenericLimits,                                                                           \
+      "CV-TYPE-GENERIC-LIMITS",                                                                    \
+      Error,                                                                                       \
+      "Generic construction resource limit exceeded.")                                             \
     X(TypeRecursiveStorage,                                                                        \
       "CV-TYPE-RECURSIVE-STORAGE",                                                                 \
       Error,                                                                                       \

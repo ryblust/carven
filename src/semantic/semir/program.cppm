@@ -4,6 +4,7 @@ import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.contents;
 import :semantic.semir.decl;
+import :semantic.semir.generic;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
 import :semantic.semir.stage;
@@ -108,6 +109,13 @@ public:
     auto tests() const noexcept -> const TestStore&;
     // A staged function has static parameters and executes only through instances.
     auto is_staged(FunctionID function) const noexcept -> bool;
+    auto generic_declaration_contracts() const noexcept
+        -> std::span<const GenericDeclarationContract>;
+    auto generic_declaration_contract(GenericDeclarationID id) const noexcept
+        -> const GenericDeclarationContract&;
+    auto generic_nominal_instances() const noexcept -> std::span<const GenericNominalInstance>;
+    auto generic_nominal_instance(NominalDeclarationRef declaration) const noexcept
+        -> const GenericNominalInstance*;
     auto static_instances() const noexcept -> std::span<const StaticInstance>;
     // The function a callable implements: its declaration, or the function
     // an instance was produced from.
@@ -144,6 +152,8 @@ private:
         BodyStore bodies,
         TestStore tests,
         std::vector<StaticInstance> static_instances,
+        std::vector<GenericDeclarationContract> generic_declarations,
+        std::vector<GenericNominalInstance> generic_instances,
         std::vector<bool> test_stops
     ) noexcept;
 
@@ -157,6 +167,9 @@ private:
     BodyStore body_store;
     TestStore test_store;
     std::vector<StaticInstance> static_instance_store;
+    std::vector<GenericDeclarationContract> generic_declaration_store;
+    std::vector<GenericNominalInstance> generic_instance_store;
+    std::map<NominalDeclarationRef, std::size_t> generic_instance_nominals;
     std::map<std::pair<FunctionID, std::vector<ConstantID>>, CallableID> static_instance_index;
     std::map<CallableID, std::size_t> instance_callables;
     std::vector<bool> executed_bodies;

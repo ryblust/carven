@@ -157,7 +157,7 @@ struct TargetInterfaceDeclaration final {
 
 struct TargetModuleSchedule final {
     ModuleID module_id;
-    std::vector<NominalDeclarationRef> private_nominal_order;
+    std::vector<NominalDeclarationRef> source_nominal_order;
     std::vector<CallableID> closure_definitions;
     // Complete set of named and closure callables with interface linkage.
     std::vector<CallableID> interface_callables;

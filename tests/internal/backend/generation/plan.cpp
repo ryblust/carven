@@ -220,6 +220,119 @@ const TestSuite suite([] static noexcept {
             }
         };
 
+    "Target artifacts: opaque declarations and source definitions retain one nominal identity"_test =
+        [] static noexcept {
+            auto sources = SourceManager();
+            const auto source = sources.append_virtual("opaque.cv", R"(
+                private struct Inner { value: i32 }
+                private struct Hidden { inner: Inner }
+                class Handle { value: ptr<Hidden> }
+            )");
+            const auto path = CanonicalModulePath::from_value("opaque");
+            require(source.has_value());
+            require(path.has_value());
+            const auto input = SourceModuleInput {.source_id = *source, .module_path = *path};
+            auto syntax = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
+            require(syntax.has_value());
+            auto analyzed = analyze(std::move(*syntax));
+            require(analyzed.has_value());
+            const auto compilation = PlannedCompilation::build(
+                std::move(analyzed->value),
+                request(TestGenerationMode::None, "opaque-identity")
+            );
+            auto structures = std::map<std::string_view, StructID>();
+            for (const auto entry : compilation.semantic().declarations().structures()) {
+                structures.emplace(
+                    compilation.semantic().provenance().spelling(entry.value.name),
+                    entry.id
+                );
+            }
+            require(structures.contains("Hidden") && structures.contains("Inner"));
+            const auto hidden = structures.at("Hidden");
+            const auto inner = structures.at("Inner");
+            const auto module = compilation.semantic().declarations().structure(hidden).module_id;
+            const auto& source_order =
+                compilation.target().module_schedule(module).source_nominal_order;
+            if (!expect_equal(source_order.size(), 2uz)) {
+                return;
+            }
+            expect(source_order[0] == NominalDeclarationRef {inner});
+            expect(source_order[1] == NominalDeclarationRef {hidden});
+            const auto hidden_name =
+                compilation.target().names().structure_identifier(hidden).spelling();
+            const auto inner_name =
+                compilation.target().names().structure_identifier(inner).spelling();
+            auto hidden_forward_paths = std::vector<std::vector<std::string>>();
+            auto hidden_definition_paths = std::vector<std::vector<std::string>>();
+            auto inner_definition_paths = std::vector<std::vector<std::string>>();
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto namespace_path = std::vector<std::string>();
+                const auto inspect = [&](auto&& self,
+                                         std::span<const TargetItem> items,
+                                         bool anonymous) noexcept -> void {
+                    for (const auto& item : items) {
+                        if (const auto* space = std::get_if<TargetNamespace>(&item.value)) {
+                            const auto path_size = namespace_path.size();
+                            if (space->name) {
+                                for (const auto& component : space->name->components()) {
+                                    namespace_path.emplace_back(component.spelling());
+                                }
+                            }
+                            self(self, space->items, anonymous || !space->name);
+                            namespace_path.resize(path_size);
+                            continue;
+                        }
+                        const auto* declaration = std::get_if<TargetDecl>(&item.value);
+                        if (declaration == nullptr) {
+                            continue;
+                        }
+                        if (const auto* forward = std::get_if<TargetStructForwardDecl>(declaration);
+                            forward && forward->name.spelling() == hidden_name) {
+                            expect(!anonymous);
+                            expect(
+                                artifact_role(artifact.value) == GeneratedArtifactRole::Interface
+                            );
+                            hidden_forward_paths.push_back(namespace_path);
+                        }
+                        if (const auto* definition = std::get_if<TargetStructDecl>(declaration)) {
+                            if (definition->name.spelling() == hidden_name) {
+                                expect(!anonymous);
+                                expect(
+                                    artifact_role(artifact.value)
+                                    == GeneratedArtifactRole::ModuleImplementation
+                                );
+                                hidden_definition_paths.push_back(namespace_path);
+                            } else if (definition->name.spelling() == inner_name) {
+                                expect(!anonymous);
+                                expect(
+                                    artifact_role(artifact.value)
+                                    == GeneratedArtifactRole::ModuleImplementation
+                                );
+                                inner_definition_paths.push_back(namespace_path);
+                            }
+                        }
+                    }
+                };
+                inspect(inspect, unit.sections().body, false);
+            }
+            if (!expect_equal(hidden_forward_paths.size(), 1uz)
+                || !expect_equal(hidden_definition_paths.size(), 1uz)
+                || !expect_equal(inner_definition_paths.size(), 1uz)) {
+                return;
+            }
+            expect(hidden_forward_paths.front() == hidden_definition_paths.front());
+            expect(inner_definition_paths.front() == hidden_definition_paths.front());
+            auto owner_namespace = std::vector<std::string>();
+            for (const auto& component : compilation.target()
+                                             .names()
+                                             .module_names(module)
+                                             .qualified_namespace_name.components()) {
+                owner_namespace.emplace_back(component.spelling());
+            }
+            expect(hidden_definition_paths.front() == owner_namespace);
+        };
+
     "Target plan: failure ABI has one deterministic nominal order"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_failure_profiles(),

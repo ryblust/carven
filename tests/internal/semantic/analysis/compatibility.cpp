@@ -49,6 +49,82 @@ auto callable_contract(TypeID result, FailureTermID failures) noexcept
 }
 
 const TestSuite suite([] static noexcept {
+    "Construction type normalization: only closed failure contracts become canonical"_test =
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto compilation = begin_compilation(sources, diagnostics);
+            const auto integer = compilation.builtin_type(BuiltinType::I32);
+            const auto known_empty = compilation.add_known_failure_term({});
+            const auto inference = compilation.add_empty_failure_term();
+            const auto inferred_view = compilation.append_construction_type(
+                {.value = ConstructionCallableViewTypeValue {
+                     .parameters = {},
+                     .result = integer,
+                     .failures = inference,
+                 }}
+            );
+            const auto declared_view = compilation.append_construction_type(
+                {.value = ConstructionCallableViewTypeValue {
+                     .parameters =
+                         {{.stage = ParameterStage::Runtime,
+                           .access = AccessMode::Read,
+                           .type = integer}},
+                     .result = integer,
+                     .failures = known_empty,
+                 }}
+            );
+            const auto slice = compilation.append_construction_type(
+                {.value = ConstructionSliceTypeValue {.element = declared_view}}
+            );
+            const auto array = compilation.append_construction_type(
+                {.value = ConstructionArrayTypeValue {.element = slice, .extent = 2u}}
+            );
+            const auto concrete = compilation.try_canonicalize_declared_type(array);
+            if (!expect(concrete.has_value())) {
+                return;
+            }
+            expect(compilation.canonicalize_declared_type(array) == *concrete);
+            expect(compilation.try_canonicalize_declared_type(*concrete) == concrete);
+            expect(compilation.try_canonicalize_declared_type(integer) == std::optional(integer));
+
+            // The current empty set does not prove an inference term is closed.
+            expect(!compilation.try_canonicalize_declared_type(inferred_view).has_value());
+            const auto inferred_array = compilation.append_construction_type(
+                {.value = ConstructionArrayTypeValue {.element = inferred_view, .extent = 2u}}
+            );
+            const auto inferred_slice = compilation.append_construction_type(
+                {.value = ConstructionSliceTypeValue {.element = inferred_array}}
+            );
+            const auto inferred_parameter = compilation.append_construction_type(
+                {.value = ConstructionCallableViewTypeValue {
+                     .parameters =
+                         {{.stage = ParameterStage::Runtime,
+                           .access = AccessMode::Read,
+                           .type = inferred_slice}},
+                     .result = integer,
+                     .failures = known_empty,
+                 }}
+            );
+            const auto inferred_result = compilation.append_construction_type(
+                {.value = ConstructionCallableViewTypeValue {
+                     .parameters = {},
+                     .result = inferred_view,
+                     .failures = known_empty,
+                 }}
+            );
+            expect(!compilation.try_canonicalize_declared_type(inferred_slice).has_value());
+            expect(!compilation.try_canonicalize_declared_type(inferred_parameter).has_value());
+            expect(!compilation.try_canonicalize_declared_type(inferred_result).has_value());
+            const auto contribution = compilation.add_known_failure_term({integer});
+            compilation.add_failure_contribution(inference, contribution);
+            expect(!compilation.try_canonicalize_declared_type(inferred_view).has_value());
+            const auto inferred_failures = compilation.construction_failure_term_copy(inference);
+            expect(!inferred_failures.is_known);
+            expect(inferred_failures.inputs == std::vector {contribution});
+            expect(diagnostics.empty());
+        };
+
     "Semantic type compatibility: owning callables differ from structural views"_test =
         [] static noexcept {
             auto sources = SourceManager();
@@ -61,6 +137,7 @@ const TestSuite suite([] static noexcept {
             const auto boolean = compilation.builtin_type(BuiltinType::Bool);
             const auto integer = compilation.builtin_type(BuiltinType::I32);
             const auto empty_failures = compilation.add_empty_failure_term();
+            const auto declared_empty_failures = compilation.add_known_failure_term({});
             const auto provenance_module = compilation.provenance_module_at(0uz);
             const auto origin = compilation.append_source_origin(
                 compilation.module_source(provenance_module),
@@ -73,13 +150,13 @@ const TestSuite suite([] static noexcept {
                     .value = StructTypeValue {.structure = failure_structure},
                 }
             );
-            const auto widened_failures = compilation.add_concrete_failure_term({failure_type});
+            const auto widened_failures = compilation.add_known_failure_term({failure_type});
             const auto view = compilation.append_construction_type(
                 ConstructionType {
                     .value = ConstructionCallableViewTypeValue {
                         .parameters = {},
                         .result = integer,
-                        .failures = empty_failures,
+                        .failures = declared_empty_failures,
                     },
                 }
             );
@@ -161,7 +238,7 @@ const TestSuite suite([] static noexcept {
                               .access = AccessMode::Read,
                               .type = integer}},
                         .result = integer,
-                        .failures = empty_failures,
+                        .failures = declared_empty_failures,
                     },
                 }
             );
@@ -215,6 +292,74 @@ const TestSuite suite([] static noexcept {
                     },
                 }
             );
+
+            const auto canonical_view = compilation.canonicalize_declared_type(view);
+            const auto canonical_widened_view =
+                compilation.canonicalize_declared_type(widened_view);
+            expect(type_shapes_compatible(compilation, canonical_view, view));
+            expect(type_shapes_compatible(compilation, canonical_view, function));
+            expect(type_shapes_compatible(compilation, canonical_widened_view, first_closure));
+            expect(!type_shapes_compatible(compilation, canonical_view, ordinary_parameter_view));
+            const auto canonical_parameter_view =
+                compilation.canonicalize_declared_type(ordinary_parameter_view);
+            const auto parameter_shape = compilation.callable_shape(canonical_parameter_view);
+            if (!expect(parameter_shape.has_value() && parameter_shape->parameters.size() == 1uz)) {
+                return;
+            }
+            expect(parameter_shape->parameters.front().stage == ParameterStage::Runtime);
+            expect(parameter_shape->parameters.front().access == AccessMode::Read);
+            expect(parameter_shape->parameters.front().type == ConstructionTypeRef(integer));
+
+            const auto canonical_nested_view = compilation.canonicalize_declared_type(nested_view);
+            expect(type_shapes_compatible(compilation, canonical_nested_view, nested_widened_view));
+
+            const auto canonical_shape = std::as_const(compilation).callable_shape(canonical_view);
+            const auto construction_shape = std::as_const(compilation).callable_shape(view);
+            if (!expect(canonical_shape.has_value() && construction_shape.has_value())) {
+                return;
+            }
+            expect(!canonical_shape->owning_type.has_value());
+            expect(canonical_shape->parameters.empty());
+            expect(canonical_shape->result == ConstructionTypeRef(integer));
+            expect(canonical_shape->policy == FailureContractPolicy::Declared);
+            expect(std::holds_alternative<FailureSetID>(canonical_shape->failures));
+            expect(std::holds_alternative<FailureTermID>(construction_shape->failures));
+            expect(construction_shape->result == canonical_shape->result);
+            expect(!compilation.callable_shape(integer).has_value());
+            expect(!compilation.callable_contract(integer).has_value());
+
+            const auto canonical_contract = compilation.callable_contract(canonical_widened_view);
+            const auto repeated_contract = compilation.callable_contract(canonical_widened_view);
+            const auto construction_contract = compilation.callable_contract(widened_view);
+            if (!expect(
+                    canonical_contract.has_value()
+                    && repeated_contract.has_value()
+                    && construction_contract.has_value()
+                )) {
+                return;
+            }
+            expect(canonical_contract->failures == repeated_contract->failures);
+            expect(construction_contract->failures == widened_failures);
+            expect(canonical_contract->policy == FailureContractPolicy::Declared);
+            const auto known_failures =
+                compilation.construction_failure_term_copy(canonical_contract->failures);
+            expect(known_failures.is_known);
+            expect(known_failures.direct_members == std::vector {failure_type});
+            compilation.add_failure_member(empty_failures, integer);
+            expect(
+                compilation.construction_failure_term_copy(canonical_contract->failures)
+                    .direct_members
+                == std::vector {failure_type}
+            );
+            const auto widened_shape = compilation.callable_shape(canonical_widened_view);
+            if (!expect(widened_shape.has_value())) {
+                return;
+            }
+            const auto* known_set = std::get_if<FailureSetID>(&widened_shape->failures);
+            if (!expect(known_set != nullptr)) {
+                return;
+            }
+            expect(compilation.failure_set_copy(*known_set).members == std::vector {failure_type});
 
             expect(!(type_shapes_compatible(compilation, boolean, integer)));
             expect(type_shapes_compatible(compilation, view, widened_view));

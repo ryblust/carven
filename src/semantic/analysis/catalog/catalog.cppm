@@ -30,6 +30,10 @@ struct CatalogStructForm final {
     std::vector<FunctionID> operations;
 };
 
+struct CatalogGenericForm final {
+    GenericDeclarationID definition;
+};
+
 struct CatalogEnumForm final {
     EnumID enumeration;
     std::vector<EnumCaseID> cases;
@@ -59,6 +63,7 @@ using CatalogSymbolForm = std::variant<
     CatalogFunctionForm,
     CatalogStructForm,
     CatalogEnumForm,
+    CatalogGenericForm,
     CatalogEnumCaseForm,
     CatalogConstantForm>;
 
@@ -147,6 +152,7 @@ private:
     std::vector<CatalogSymbol> symbols;
     std::vector<CatalogSymbolID> function_symbols;
     std::vector<CatalogSymbolID> struct_symbols;
+    std::vector<CatalogSymbolID> generic_symbols;
     std::vector<CatalogSymbolID> enum_symbols;
     std::vector<CatalogSymbolID> enum_case_symbols;
     std::vector<CatalogSymbolID> module_constant_symbols;
@@ -170,6 +176,7 @@ public:
     auto symbol(CatalogSymbolID id) const noexcept -> const CatalogSymbol*;
     auto function_symbol(FunctionID id) const noexcept -> CatalogSymbolID;
     auto struct_symbol(StructID id) const noexcept -> CatalogSymbolID;
+    auto generic_symbol(GenericDeclarationID id) const noexcept -> CatalogSymbolID;
     auto enum_symbol(EnumID id) const noexcept -> CatalogSymbolID;
     auto enum_case_symbol(EnumCaseID id) const noexcept -> CatalogSymbolID;
     auto enum_case_named(EnumID enumeration, std::string_view name) const noexcept

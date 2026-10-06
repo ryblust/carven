@@ -142,17 +142,59 @@ auto DeclResolver::resolve_constant_name(
 auto DeclResolver::resolve_type_qualifier(
     ProgramModuleID module_id,
     ASTView syntax,
-    ASTExprID expression
+    ASTExprID expression,
+    const GenericTypeContext* generic_context
 ) noexcept -> AnalysisTask<std::optional<TypeID>> {
     auto current = expression;
     while (const auto* group = std::get_if<ASTGroupExpr>(&syntax.expression(current).value)) {
         current = group->expression;
+    }
+    if (const auto* application =
+            std::get_if<ASTTypeApplicationExpr>(&syntax.expression(current).value)) {
+        auto scope = ConstantScope {*this, module_id, syntax, generic_context};
+        const auto extent = [&](ASTExprID expression) noexcept {
+            return evaluate_array_extent(draft, module_id, syntax, scope, expression);
+        };
+        auto type = (co_await resolve_source_type_application(
+            draft,
+            catalog,
+            import_usage,
+            module_id,
+            syntax,
+            *application,
+            extent,
+            &requests,
+            generic_context
+        ));
+        if (!type) {
+            co_return std::unexpected(type.error());
+        }
+        auto ready = (co_await prepare_type(*type, module_id, application->arguments_span));
+        if (!ready) {
+            co_return std::unexpected(ready.error());
+        }
+        co_return std::optional(draft.canonicalize_declared_type(*type));
     }
     const auto* name = std::get_if<ASTNameExpr>(&syntax.expression(current).value);
     if (name == nullptr) {
         co_return std::optional<TypeID>();
     }
     const auto spelling = draft.source_slice_copy(module_id, name->name_span);
+    if (generic_context
+        && std::ranges::any_of(
+            generic_context->parameters,
+            [&](ProgramSpellingID parameter) noexcept {
+                return draft.spelling_copy(parameter) == spelling;
+            }
+        )) {
+        co_return std::unexpected(declaration_failure(
+            draft,
+            module_id,
+            name->name_span,
+            DiagnosticCode::TypeGenericDefinition,
+            "static type qualifier requires a concrete type"
+        ));
+    }
     if (const auto builtin = source_builtin_type(spelling)) {
         co_return std::optional(draft.builtin_type(*builtin));
     }
@@ -191,6 +233,33 @@ auto DeclResolver::resolve_constant_enum_case(
             origin,
             DiagnosticCode::TypeEnumContext,
             "scope qualifier does not name an enum or class type"
+        ));
+    }
+    if (nominal->enumeration.index() >= catalog.enum_count()) {
+        auto ready = (co_await prepare_type(type, module_id, origin));
+        if (!ready) {
+            co_return std::unexpected(ready.error());
+        }
+        if (const auto case_id = draft.enum_case_named(nominal->enumeration, name)) {
+            const auto declaration = draft.construction_enum_case_declaration_copy(*case_id);
+            co_return ResolvedEnumCase {
+                .id = *case_id,
+                .owner = declaration.owner,
+                .payload_types = declaration.payload_types,
+                .constant = declaration.constant
+            };
+        }
+        co_return std::unexpected(declaration_failure(
+            draft,
+            module_id,
+            origin,
+            DiagnosticCode::TypeMemberUnresolved,
+            std::format(
+                "enum '{}' has no case named '{}'{}",
+                draft.spelling(draft.enum_declaration_copy(nominal->enumeration).name),
+                name,
+                spelling_suggestion(name, draft.enum_case_names(nominal->enumeration))
+            )
         ));
     }
     const auto owner_symbol_id = catalog.enum_symbol(nominal->enumeration);

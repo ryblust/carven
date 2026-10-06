@@ -313,6 +313,18 @@ public:
         );
     }
 
+    auto extension(
+        const ASTTypeApplicationExpr&,
+        Span span,
+        std::optional<ConstructionTypeRef>
+    ) noexcept -> ExpressionTask<Value> {
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::TypeGenericArguments,
+            "type arguments require a generic function or a nominal type qualifier"
+        ));
+    }
+
     template<typename Form>
     auto extension(const Form&, Span, std::optional<ConstructionTypeRef>) const noexcept
         -> ExpressionTask<Value> {
@@ -579,6 +591,7 @@ public:
             if constexpr (std::same_as<Form, ASTLiteral>
                           || std::same_as<Form, ASTGroupExpr>
                           || std::same_as<Form, ASTNameExpr>
+                          || std::same_as<Form, ASTTypeApplicationExpr>
                           || std::same_as<Form, ASTContextualCaseExpr>
                           || std::same_as<Form, ASTPrefixExpr>
                           || std::same_as<Form, ASTRangeExpr>

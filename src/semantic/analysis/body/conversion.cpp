@@ -114,12 +114,6 @@ auto BodyElaborator::require_invariant_type(
         std::uint64_t extent;
     };
 
-    struct CallableViewShape final {
-        std::vector<ConstructionCallableParameter> parameters;
-        ConstructionTypeRef result;
-        FailureTermID failures;
-    };
-
     const auto array_shape = [&](ConstructionTypeRef type) noexcept -> std::optional<ArrayShape> {
         if (const auto* concrete = std::get_if<TypeID>(&type)) {
             const auto canonical = draft().type_copy(*concrete);
@@ -142,21 +136,10 @@ auto BodyElaborator::require_invariant_type(
                                       }
                                   );
     };
-    const auto callable_view_shape =
-        [&](ConstructionTypeRef type) noexcept -> std::optional<CallableViewShape> {
-        if (std::holds_alternative<TypeID>(type)) {
-            return std::nullopt;
-        }
-        const auto construction = draft().construction_type_copy(std::get<TypeTermID>(type));
-        const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
-        return view == nullptr ? std::nullopt
-                               : std::optional(
-                                     CallableViewShape {
-                                         .parameters = view->parameters,
-                                         .result = view->result,
-                                         .failures = view->failures,
-                                     }
-                                 );
+    const auto callable_view_contract =
+        [&](ConstructionTypeRef type) noexcept -> std::optional<ConstructionCallableContract> {
+        const auto shape = draft().callable_shape(type);
+        return shape && !shape->owning_type ? draft().callable_contract(type) : std::nullopt;
     };
     const auto invariant = [&](this auto&& self,
                                ConstructionTypeRef left,
@@ -177,8 +160,8 @@ auto BodyElaborator::require_invariant_type(
                 && left_array->extent == right_array->extent
                 && self(left_array->element, right_array->element);
         }
-        const auto left_view = callable_view_shape(left);
-        const auto right_view = callable_view_shape(right);
+        const auto left_view = callable_view_contract(left);
+        const auto right_view = callable_view_contract(right);
         if (left_view.has_value() || right_view.has_value()) {
             if (!left_view.has_value()
                 || !right_view.has_value()
@@ -245,14 +228,13 @@ auto BodyElaborator::require_adaptation(
         }
         return require_adaptation(*source_element, *element, span);
     }
-    const auto* term = std::get_if<TypeTermID>(&target);
-    if (term == nullptr) {
+    const auto shape = draft().callable_shape(target);
+    if (!shape || shape->owning_type) {
         return {};
     }
-    const auto construction = draft().construction_type_copy(*term);
-    const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
-    if (view == nullptr) {
-        return {};
+    const auto view = draft().callable_contract(target);
+    if (!view) {
+        invariant_violation("callable view shape lost its checked contract");
     }
     const auto contract = callable_contract(source, span);
     if (!contract) {
@@ -364,13 +346,8 @@ auto BodyElaborator::coerce_to(
         *built.storage = std::move(value);
         return {};
     }
-    const auto* target_term = std::get_if<TypeTermID>(&target);
-    if (target_term == nullptr) {
-        return {};
-    }
-    const auto construction = draft().construction_type_copy(*target_term);
-    const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
-    if (view == nullptr) {
+    const auto view = draft().callable_shape(target);
+    if (!view || view->owning_type) {
         return {};
     }
     const auto adoption_origin = expansion(span, ProgramExpansionReason::CallableAdoption);

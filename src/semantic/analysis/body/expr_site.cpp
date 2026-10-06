@@ -206,6 +206,18 @@ auto BodyExprSite::extension(
 }
 
 auto BodyExprSite::extension(
+    const ASTTypeApplicationExpr&,
+    Span span,
+    std::optional<ConstructionTypeRef>
+) noexcept -> ExpressionTask<Selection> {
+    co_return std::unexpected(fail(
+        span,
+        DiagnosticCode::TypeGenericArguments,
+        "type arguments require a generic function or a nominal type qualifier"
+    ));
+}
+
+auto BodyExprSite::extension(
     const ASTArrayExpr& value,
     Span span,
     [[maybe_unused]] std::optional<ConstructionTypeRef> expected

@@ -12,6 +12,7 @@ import :semantic.analysis.program;
 import :semantic.semir.content;
 import :semantic.semir.decl;
 import :semantic.semir.delegation;
+import :semantic.semir.generic;
 import :semantic.semir.operation;
 import :semantic.semir.program;
 import :semantic.semir.type;
@@ -24,6 +25,51 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Generic content: normalized arguments determine distinct stable target names"_test =
+        [] static noexcept {
+            const auto build = [](bool reverse) noexcept {
+                const auto parameters =
+                    reverse ? "a: Box<u32>, b: Box<i32>" : "a: Box<i32>, b: Box<u32>";
+                return PlannedCompilation::build(
+                    analyze_test_program(
+                        std::format("struct Box<T> {{ value: T }}\nfn hold({}) {{}}\n", parameters)
+                    ),
+                    {.test_mode = TestGenerationMode::None,
+                     .linkage_domain = *LinkageDomain::explicit_value("generic_content")}
+                );
+            };
+            const auto first = build(false);
+            const auto second = build(true);
+            const auto names = [](const PlannedCompilation& compilation) noexcept {
+                auto result = std::map<std::string, std::string>();
+                const auto& semantic = compilation.semantic();
+                for (const auto& instance : semantic.generic_nominal_instances()) {
+                    const auto argument = instance.arguments.front();
+                    result.emplace(
+                        type_content_key(semantic, argument),
+                        std::string(
+                            compilation.target()
+                                .names()
+                                .structure_identifier(std::get<StructID>(instance.declaration))
+                                .spelling()
+                        )
+                    );
+                }
+                return result;
+            };
+            const auto first_names = names(first);
+            expect_equal(first_names.size(), 2uz);
+            expect(first_names == names(second));
+            expect(
+                std::ranges::none_of(first.target().artifacts(), [](const auto artifact) noexcept {
+                    return std::holds_alternative<TargetCppAPIHeaderArtifact>(artifact.value);
+                })
+            );
+            if (first_names.size() == 2uz) {
+                expect(first_names.begin()->second != std::next(first_names.begin())->second);
+            }
+        };
+
     "Content identity: deep canonical queries have bounded traversal and encoding"_test =
         [] static noexcept {
             constexpr auto depth = 20'000uz;

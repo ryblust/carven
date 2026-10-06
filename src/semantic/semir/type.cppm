@@ -362,45 +362,57 @@ public:
     auto size() const noexcept -> std::size_t;
 
     template<typename TypeResolver, typename FailureResolver>
-    static auto canonicalize_type(
+    static auto try_canonicalize_type(
         const ConstructionType& type,
         CanonicalTypeStoreBuilder& types,
         CallableSignatureStoreBuilder& signatures,
         TypeResolver resolve_ref,
         FailureResolver resolve_failure
-    ) noexcept -> TypeID {
-        return type.value.visit([&](const auto& value) noexcept -> TypeID {
+    ) noexcept -> std::optional<TypeID> {
+        return type.value.visit([&](const auto& value) noexcept -> std::optional<TypeID> {
             using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
-                return types.intern(
-                    CanonicalType {
-                        .value = ArrayTypeValue {
-                            .element = resolve_ref(value.element),
-                            .extent = value.extent,
-                        },
-                    }
-                );
-            } else if constexpr (std::same_as<Value, ConstructionSliceTypeValue>) {
-                return types.intern(
-                    {.value = SliceTypeValue {.element = resolve_ref(value.element)}}
-                );
+            if constexpr (std::same_as<Value, ConstructionArrayTypeValue>
+                          || std::same_as<Value, ConstructionSliceTypeValue>) {
+                const auto element = resolve_ref(value.element);
+                if (!element) {
+                    return std::nullopt;
+                }
+                if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
+                    return types.intern(
+                        {.value = ArrayTypeValue {.element = *element, .extent = value.extent}}
+                    );
+                } else {
+                    return types.intern({.value = SliceTypeValue {.element = *element}});
+                }
             } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
                 auto parameters = std::vector<CallableParameter>();
                 parameters.reserve(value.parameters.size());
                 for (const auto& parameter : value.parameters) {
+                    const auto parameter_type = resolve_ref(parameter.type);
+                    if (!parameter_type) {
+                        return std::nullopt;
+                    }
                     parameters.push_back(
                         CallableParameter {
                             .stage = parameter.stage,
                             .access = parameter.access,
-                            .type = resolve_ref(parameter.type),
+                            .type = *parameter_type,
                         }
                     );
+                }
+                const auto result = resolve_ref(value.result);
+                if (!result) {
+                    return std::nullopt;
+                }
+                const auto failures = resolve_failure(value.failures);
+                if (!failures) {
+                    return std::nullopt;
                 }
                 const auto signature = signatures.intern(
                     CallableSignature {
                         .parameters = std::move(parameters),
-                        .result = resolve_ref(value.result),
-                        .failures = resolve_failure(value.failures),
+                        .result = *result,
+                        .failures = *failures,
                     }
                 );
                 return types.intern_resolved_callable_view(signature, signatures);
@@ -408,6 +420,31 @@ public:
                 static_assert(std::same_as<Value, void>, "unhandled construction type shape");
             }
         });
+    }
+
+    template<typename TypeResolver, typename FailureResolver>
+    static auto canonicalize_type(
+        const ConstructionType& type,
+        CanonicalTypeStoreBuilder& types,
+        CallableSignatureStoreBuilder& signatures,
+        TypeResolver resolve_ref,
+        FailureResolver resolve_failure
+    ) noexcept -> TypeID {
+        const auto result = try_canonicalize_type(
+            type,
+            types,
+            signatures,
+            [&](ConstructionTypeRef child) noexcept -> std::optional<TypeID> {
+                return resolve_ref(child);
+            },
+            [&](FailureTermID failure) noexcept -> std::optional<FailureSetID> {
+                return resolve_failure(failure);
+            }
+        );
+        if (!result) {
+            invariant_violation("completed construction type failed canonicalization");
+        }
+        return *result;
     }
 
     template<FailureResolutionReader FailureReader>

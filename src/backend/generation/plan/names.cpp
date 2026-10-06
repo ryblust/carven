@@ -4,6 +4,7 @@ import :backend.generation.names;
 import :backend.generation.plan;
 import :semantic.semir.constant;
 import :semantic.semir.content;
+import :semantic.semir.generic;
 import :semantic.semir.stage;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
@@ -358,6 +359,7 @@ auto plan_names(
                 [&](StructID id) noexcept {
                     const auto& value = declarations.structure(id);
                     if ((value.visibility != DeclarationVisibility::Module) == published
+                        && semantic.generic_nominal_instance(id) == nullptr
                         && !structure_names[id.index()].has_value()) {
                         claim_entity(module_id, value.name, id, structure_names);
                     }
@@ -365,6 +367,7 @@ auto plan_names(
                 [&](EnumID id) noexcept {
                     const auto& value = declarations.enumeration(id);
                     if ((value.visibility != DeclarationVisibility::Module) == published
+                        && semantic.generic_nominal_instance(id) == nullptr
                         && !enumeration_names[id.index()].has_value()) {
                         claim_entity(module_id, value.name, id, enumeration_names);
                     }
@@ -391,7 +394,8 @@ auto plan_names(
         }
     }
     for (const auto structure : declarations.structures()) {
-        if (!structure_names[structure.id.index()].has_value()) {
+        if (!structure_names[structure.id.index()].has_value()
+            && semantic.generic_nominal_instance(structure.id) == nullptr) {
             claim_entity(
                 structure.value.module_id,
                 structure.value.name,
@@ -401,7 +405,8 @@ auto plan_names(
         }
     }
     for (const auto enumeration : declarations.enumerations()) {
-        if (!enumeration_names[enumeration.id.index()].has_value()) {
+        if (!enumeration_names[enumeration.id.index()].has_value()
+            && semantic.generic_nominal_instance(enumeration.id) == nullptr) {
             claim_entity(
                 enumeration.value.module_id,
                 enumeration.value.name,
@@ -409,6 +414,53 @@ auto plan_names(
                 enumeration_names
             );
         }
+    }
+
+    auto generic_types = std::map<NominalDeclarationRef, TypeID>();
+    for (const auto type : semantic.types().entries()) {
+        if (const auto* record = std::get_if<StructTypeValue>(&type.value.value)) {
+            if (semantic.generic_nominal_instance(record->structure)) {
+                generic_types.emplace(record->structure, type.id);
+            }
+        } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&type.value.value)) {
+            if (semantic.generic_nominal_instance(enumeration->enumeration)) {
+                generic_types.emplace(enumeration->enumeration, type.id);
+            }
+        }
+    }
+    for (const auto module : declarations.modules()) {
+        auto instances = std::vector<const GenericNominalInstance*>();
+        auto requests = std::vector<TargetContentName>();
+        for (const auto& instance : semantic.generic_nominal_instances()) {
+            const auto& definition = semantic.generic_declaration_contract(instance.definition);
+            if (definition.module_id != module.id) {
+                continue;
+            }
+            auto content = type_content_key(semantic, generic_types.at(instance.declaration));
+            const auto source_name = source_target_identifier(provenance.spelling(definition.name));
+            requests.push_back({
+                .preferred =
+                    std::format("{}_{}", source_name.spelling(), content_name_digest(content)),
+                .content = std::move(content),
+            });
+            instances.push_back(std::addressof(instance));
+        }
+        const auto names = claim_content_identifiers(requests, module_occupied[module.id.index()]);
+        for (const auto [instance, name] : std::views::zip(instances, names)) {
+            instance->declaration.visit([&](auto id) noexcept {
+                const auto entity = TargetEntityName {
+                    .owner_module = module.id,
+                    .relative_name = TargetName {name},
+                };
+                if constexpr (std::same_as<decltype(id), StructID>) {
+                    structure_names[id.index()] = entity;
+                } else {
+                    enumeration_names[id.index()] = entity;
+                }
+            });
+        }
+    }
+    for (const auto enumeration : declarations.enumerations()) {
         auto occupied = std::flat_set<std::string>();
         const auto enclosing =
             enumeration_names[enumeration.id.index()]->relative_name.components().back().spelling();

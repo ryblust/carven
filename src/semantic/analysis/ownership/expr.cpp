@@ -15,14 +15,6 @@ auto OwnershipBodyAnalyzer::complete_place(
     }
     if (normal.storage.empty()) {
         normal.value = {};
-        if (source.category == SemanticValueCategory::Value
-            && analysis.contents(source.type.resolved()).contains_callable_view) {
-            diagnose(
-                DiagnosticCode::TypeCallableViewEscape,
-                "an indirect target cannot establish a Carven callable borrow",
-                source.origin
-            );
-        }
         return;
     }
     normal.value = {};
@@ -143,6 +135,16 @@ auto OwnershipBodyAnalyzer::finish_expression(
     OwnershipNormal& normal,
     bool direct
 ) noexcept -> void {
+    if (source.category == SemanticValueCategory::Value
+        && source.selects_storage()
+        && normal.storage.empty()
+        && analysis.contents(source.type.resolved()).contains_callable_view) {
+        diagnose(
+            DiagnosticCode::TypeCallableViewEscape,
+            "an indirect target cannot establish a Carven callable borrow",
+            source.origin
+        );
+    }
     if (!source.selects_storage() && source.category != SemanticValueCategory::Place) {
         normal.storage.clear();
         if (const auto found = facts.temporaries.find(std::addressof(source));

@@ -62,6 +62,7 @@ private:
         DeclResolver& resolver;
         ProgramModuleID module_id;
         ASTView syntax;
+        const GenericTypeContext* generic_context = nullptr;
 
         auto resolve_name(std::string_view name, Span span) noexcept
             -> AnalysisTask<std::optional<ConstantID>>;
@@ -99,6 +100,10 @@ private:
         const ASTFunctionDecl& function,
         Span item_span
     ) noexcept -> AnalysisTask<void>;
+    auto resolve_generic_nominal(
+        const CatalogSymbol& symbol,
+        const CatalogGenericForm& form
+    ) noexcept -> AnalysisTask<void>;
     auto resolve_struct(
         const CatalogSymbol& symbol,
         const CatalogStructForm& form,
@@ -130,7 +135,8 @@ private:
     auto resolve_type_qualifier(
         ProgramModuleID module_id,
         ASTView syntax,
-        ASTExprID expression
+        ASTExprID expression,
+        const GenericTypeContext* generic_context = nullptr
     ) noexcept -> AnalysisTask<std::optional<TypeID>>;
     auto resolve_constant_enum_case(
         ProgramModuleID module_id,
@@ -138,11 +144,8 @@ private:
         std::string_view name,
         Span origin
     ) noexcept -> AnalysisTask<ResolvedEnumCase>;
-    auto resolve_equality_support(std::span<const ConstructionTypeRef> roots) noexcept
-        -> std::vector<bool>;
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
     auto validate_enum_codes(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
-    auto finish_enum_equality() noexcept -> void;
     auto publish_modules() noexcept -> void;
     auto finish_declarations() noexcept -> void;
     auto publish_declaration(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
@@ -150,7 +153,7 @@ private:
         ConstructionTypeRef type,
         ProgramModuleID requester,
         Span span,
-        std::flat_set<TypeID>& visiting,
+        std::flat_set<ConstructionTypeRef>& visiting,
         std::vector<CatalogSymbolID>& prepared
     ) noexcept -> AnalysisTask<void>;
 

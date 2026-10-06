@@ -100,6 +100,7 @@ auto type_shapes_compatible(
     ConstructionTypeRef left,
     ConstructionTypeRef right
 ) noexcept -> bool;
+// Inspects construction shapes; nominal members are checked at their storage boundary.
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> bool;
 auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool;
