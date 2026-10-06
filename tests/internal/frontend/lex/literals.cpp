@@ -175,6 +175,8 @@ auto raw = R"tag({ // not Carven })tag";
         check_lexical_error("import \"\";");
         check_lexical_error("import <unterminated;");
         check_lexical_error("import \"unterminated;");
+        check_lexical_error(std::string_view("import \"a\0b\";", 13));
+        check_lexical_error(std::string_view("import <a\0b>;", 13));
     };
 
     "Lexer: numeric scanner exposes typed values and error facts"_test = [] static noexcept {

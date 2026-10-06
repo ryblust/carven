@@ -39,7 +39,9 @@ no native declarations or definitions. Static execution retains its SemIR bodies
 independently of this native selection.
 
 Lowering also records providers of emitted names and types. These transient
-provider sets are consumed into include directives.
+provider sets become header requirements and ordered native imports.
+Implementation artifacts retain their associated interface identity; test entries
+retain their runner header. These relationships identify associated headers.
 
 ### Staged bodies
 
@@ -145,7 +147,16 @@ stack to clear descendants, including partially moved trees, statement bodies,
 and namespace items. Child cleanup also bounds the stack depth of variant
 replacement. Traversal preserves scope order through enter/leave events.
 Dependency collection visits the finished tree and referenced types to derive
-the required standard and runtime headers.
+standard and runtime header requirements. Target nodes identify their native
+facilities; shared symbol metadata supplies their C++ spelling and header provider
+to rendering and dependency collection. Unused interned types contribute no
+requirements.
+
+`TargetUnitBuilder::finish` combines these requirements with planned artifact
+references and ordered native imports. Header references retain their delimiter
+and path. Automatic requirements merge by reference; source imports retain their
+order, repetitions, and attribution. The completed unit owns structured include
+and pragma-once directives; emission serializes them.
 
 The renderer builds completed layout tables in postorder for expressions,
 statements, items and the type dependency DAG, including decltype expressions.

@@ -117,17 +117,11 @@ auto literal_spelling(const TargetLiteralValue& literal) noexcept -> std::string
             },
             [](const TargetStringLiteral& value) static noexcept {
                 auto result = cpp_string_token(value.bytes);
-                switch (value.kind) {
-                    case TargetStringLiteralKind::String: break;
-                    case TargetStringLiteralKind::StringView:
-                        result = value.bytes.empty()
-                            ? std::format("::std::string_view{{{}}}", result)
-                            : std::format(
-                                  "::std::string_view{{{}, {}}}",
-                                  result,
-                                  value.bytes.size()
-                              );
-                        break;
+                if (const auto symbol = value.native_symbol()) {
+                    const auto spelling = target_symbol_info(*symbol).spelling;
+                    result = value.bytes.empty()
+                        ? std::format("{}{{{}}}", spelling, result)
+                        : std::format("{}{{{}, {}}}", spelling, result, value.bytes.size());
                 }
                 return result;
             },
@@ -175,7 +169,7 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
             [&](const TargetNameExpr& name) noexcept { return this->render_name(name.name); },
             [&](const TargetLocalExpr& local) noexcept { return render_identifier(local.local); },
             [&](const TargetIntrinsicNameExpr& intrinsic) noexcept {
-                return text(target_symbol_info(intrinsic.symbol).spelling);
+                return text(target_symbol_info(intrinsic.native_symbol()).spelling);
             },
             [&](const TargetLiteralExpr& literal) noexcept {
                 return text(literal_spelling(literal.value));
@@ -269,7 +263,7 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
                     values.push_back(render_expression(element));
                 }
                 return concat(
-                    {text("::std::array"),
+                    {text(target_symbol_info(array.native_symbol()).spelling),
                      delimited_list(template_values, "<", ">"),
                      delimited_list(values, "{", "}")}
                 );
