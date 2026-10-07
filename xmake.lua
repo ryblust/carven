@@ -87,7 +87,8 @@ includes("tests/cli")
 includes("tests/interop")
 includes("tests/internal")
 includes("tests/language")
-includes("tools/graver")
+includes("tools/formatter")
+includes("tools/workspace")
 
 task("bench")
     set_menu({

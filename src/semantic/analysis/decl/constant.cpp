@@ -106,6 +106,10 @@ auto DeclResolver::resolve_module_constant(
     if (form.constant.index() >= module_constants.size()) {
         invariant_violation("module constant identity is outside its reserved table");
     }
+    if (auto* observations = draft.source_analysis()) {
+        const auto name = locate(syntax.source_id(), declaration.name_span);
+        observations->declarations().record(draft, name, name, fact.type);
+    }
     module_constants[form.constant.index()] = ModuleConstantDeclaration {
         .module_id = module_declaration(symbol.module_id),
         .name = draft.intern_spelling(symbol.name),
@@ -213,9 +217,18 @@ auto DeclResolver::resolve_constant_enum_case(
         if (!declaration.has_value()) {
             invariant_violation("resolved enum case has no declaration fact");
         }
+        if (auto* observations = draft.source_analysis()) {
+            observations->declarations().record(
+                draft,
+                locate(declaration_source_id(draft, module_id), origin),
+                catalog.declaration_location(draft, candidate.symbol_id),
+                std::nullopt
+            );
+        }
         co_return ResolvedEnumCase {
             .id = case_id,
             .owner = declaration->owner,
+            .reference_type = enum_case_reference_type(draft, type, declaration->payload_types),
             .payload_types = declaration->payload_types,
             .constant = declaration->constant,
         };

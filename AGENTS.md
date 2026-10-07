@@ -32,7 +32,7 @@ test groups or the full suite. Select the applicable test commands:
 ./xmakew test -g interop
 ./xmakew test -g cli
 ./xmakew test -g examples
-./xmakew test -g graver
+./xmakew test -g formatter
 ./xmakew test
 ```
 

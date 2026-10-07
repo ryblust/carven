@@ -7,6 +7,7 @@ import :frontend.ast.type;
 import :semantic.analysis.catalog;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
 import :semantic.semir.program;
 import :support.function_ref;
 import std;
@@ -25,7 +26,8 @@ auto resolve_source_type(
     ProgramModuleID module_id,
     ASTView syntax,
     ASTTypeID source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_construction_type(
@@ -35,7 +37,8 @@ auto resolve_source_construction_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstructionType& source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_constraint_type(
@@ -45,7 +48,8 @@ auto resolve_source_constraint_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstraintOperand& source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto require_source_value_type(
@@ -63,5 +67,6 @@ auto resolve_failure_types(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTThrowClause& clause,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<std::vector<TypeID>>;

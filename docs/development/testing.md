@@ -15,7 +15,8 @@ infrastructure contracts that product suites do not establish.
 | `interop` | C++ providers, consumers, and support headers | Boundary signatures, native calls, source fragments, and header self-containment |
 | `examples` | User-facing programs | Documented output from actual example executables |
 | `cli` | Compiler processes, interpreted execution, and build integration | Arguments, reports, exit status, files, scheduling, and generation policy |
-| `graver` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
+| `formatter` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
+| `workspace` | Document snapshots and cached source queries | Source observations, result ownership, versions, and invalidation |
 
 Place each case in the group that owns the tested boundary. Reuse fixtures and
 assertions across applicable configurations. Merge cases that repeat the same
@@ -151,15 +152,15 @@ Commands run from the repository root through `./xmakew`; Windows uses
 | --- | --- |
 | `./xmakew build` | Build or update the local compiler |
 | `./xmakew test -g <group>` | Build and run one group from the responsibility table |
-| `./xmakew test` | Build and run all registered tests, including examples and Graver |
-| `./xmakew build graver` | Build the formatter used by formatting tasks |
+| `./xmakew test` | Build and run all registered tests, including examples and `carven-format` |
+| `./xmakew build carven-format` | Build the formatter used by formatting tasks |
 | `./xmakew format-check` | Check C++ and Carven formatting without changing sources |
 | `./xmakew format` | Apply C++ and Carven formatting |
 | `./xmakew clean` | Clear build outputs |
 
 Generated-test preparation invokes the local compiler before target dependencies
 are built. `./xmakew build` supplies an up-to-date compiler before testing.
-Formatting tasks require a built Graver. Applying formatting changes sources;
+Formatting tasks require a built `carven-format`. Applying formatting changes sources;
 subsequent builds and tests use those changes. A clean followed by a build recreates
 module build state.
 

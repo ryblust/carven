@@ -80,6 +80,7 @@ public:
     explicit BodyExprSite(BodyElaborator& body, bool allow_pointer_narrowing = true) noexcept;
     auto draft() noexcept -> ProgramDraft&;
     auto syntax() const noexcept -> ASTView;
+    auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
     auto fail(Span span, DiagnosticCode code, std::string message) noexcept -> AnalysisFailure;
     auto read(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
         -> ExpressionTask<Value>;
@@ -212,6 +213,7 @@ public:
         Value index,
         Span span
     ) noexcept -> ExpressionResult<Value>;
+    auto observe_field(FieldProjection field, Span name, ConstructionTypeRef type) noexcept -> void;
     auto finish_field(
         ConstructionTypeRef type,
         FieldProjection field,

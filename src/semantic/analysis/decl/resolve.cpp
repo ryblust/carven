@@ -16,6 +16,7 @@ import :semantic.analysis.interop;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
 import :semantic.analysis.types;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -489,6 +490,14 @@ auto DeclResolver::select_symbol(
     if (selected.import_binding.has_value()) {
         import_usage.record(*selected.import_binding);
     }
+    if (auto* observations = draft.source_analysis()) {
+        observations->declarations().record(
+            draft,
+            locate(declaration_source_id(draft, module_id), origin),
+            catalog.declaration_location(draft, selected.symbol_id),
+            std::nullopt
+        );
+    }
     return std::addressof(require_catalog_symbol(catalog, selected.symbol_id));
 }
 
@@ -554,7 +563,9 @@ auto DeclResolver::ConstantScope::resolve_construction_type(
         module_id,
         syntax,
         type,
-        extent
+        extent,
+        resolver.draft.source_analysis() ? &resolver.draft.source_analysis()->declarations()
+                                         : nullptr
     ));
     if (result) {
         auto prepared = (co_await resolver.requests.ensure_type(*result, module_id, type.span));
@@ -591,9 +602,16 @@ auto DeclResolver::resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTy
     const auto extent = [&](ASTExprID expression) noexcept {
         return evaluate_array_extent(draft, module_id, syntax, scope, expression);
     };
-    co_return (
-        co_await resolve_source_type(draft, catalog, import_usage, module_id, syntax, type, extent)
-    );
+    co_return (co_await resolve_source_type(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        syntax,
+        type,
+        extent,
+        draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
+    ));
 }
 
 auto DeclResolver::resolve_value_type(
@@ -625,6 +643,31 @@ auto DeclResolver::resolve_failures(
         module_id,
         syntax,
         clause,
-        extent
+        extent,
+        draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
     ));
+}
+
+auto DeclResolver::ConstantScope::observe_expression(
+    ASTExprID expression,
+    ConstructionTypeRef type
+) noexcept -> void {
+    if (auto* observations = resolver.draft.source_analysis()) {
+        observations->declarations().expression(resolver.draft, syntax, expression, type);
+    }
+}
+
+auto DeclResolver::ConstantScope::observe_field(
+    FieldProjection field,
+    Span name,
+    ConstructionTypeRef type
+) noexcept -> void {
+    if (auto* observations = resolver.draft.source_analysis()) {
+        observations->declarations().record(
+            resolver.draft,
+            locate(syntax.source_id(), name),
+            resolver.catalog.field_location(resolver.draft, field.owner, field.field_index),
+            type
+        );
+    }
 }

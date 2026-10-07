@@ -25,14 +25,15 @@ configuration.
 `format.lua` implements `format-check` to report formatting violations and
 `format` to apply formatting.
 Both use clang-format for `.cpp`, `.cppm`, `.h`, and `.hpp` files under `src/`,
-`tests/`, `crafts/`, `examples/`, and Graver's source and test directories.
+`tests/`, `crafts/`, `examples/`, and `tools/`.
 On macOS, the script queries Homebrew's local installation prefix and looks in
 `opt/llvm/bin`, then falls back to PATH. Other platforms use PATH.
 
-Both formatting commands require a built Graver and use it for `.cv` files
-under `crafts/`, `examples/`, and `tests/`, plus Graver's expected-output fixtures.
-Deliberately unformatted Graver inputs and the three lexical/syntax rejection fixtures listed in
-`format.lua` are excluded. Other formatting or parse failures fail the command.
+Both formatting commands require a built `carven-format` and use it for `.cv` files
+under `crafts/`, `examples/`, and `tests/`, plus the formatter's expected-output
+fixtures. Deliberately unformatted formatter inputs and the three lexical/syntax
+rejection fixtures listed in `format.lua` are excluded. Other formatting or parse
+failures fail the command.
 
 ## Generated-code analysis profile
 

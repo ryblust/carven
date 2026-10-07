@@ -161,7 +161,11 @@ public:
         }
         aggregate_depth += aggregate;
         const auto depth = AggregateDepth {.depth = aggregate_depth, .entered = aggregate};
-        co_return (co_await interpret_expression(*this, id, expected));
+        auto result = co_await interpret_expression(*this, id, expected);
+        if (result) {
+            scope.observe_expression(id, type(*result));
+        }
+        co_return result;
     }
 
     auto read_array_element(
@@ -332,6 +336,11 @@ public:
         std::optional<ConstructionTypeRef>
     ) noexcept -> ExpressionTask<Value> {
         co_return (co_await construct_interpolation(*this, source, span));
+    }
+
+    auto observe_field(FieldProjection field, Span name, ConstructionTypeRef type) noexcept
+        -> void {
+        scope.observe_field(field, name, type);
     }
 
     auto spelling(Span span) const noexcept -> std::string {
@@ -527,6 +536,7 @@ public:
             program.intern_type({.value = FunctionTypeValue {.callable = declaration.callable}});
         auto selected_callee =
             make(callee_type, SemCallable {.callable = declaration.callable}, span);
+        scope.observe_expression(callee, callee_type);
         pending_failures.push_back(contract.failures);
         co_return make(
             contract.result,

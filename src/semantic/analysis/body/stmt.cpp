@@ -151,6 +151,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
                 .static_source = true,
                 .role = BodyLocalRole::Local,
                 .unused_candidate = std::nullopt,
+                .definition = std::nullopt,
             },
             DiagnosticCode::NameDuplicateLocal
         );
@@ -189,6 +190,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             .static_source = false,
             .role = BodyLocalRole::Local,
             .unused_candidate = std::nullopt,
+            .definition = std::nullopt,
         },
         DiagnosticCode::NameDuplicateLocal
     );

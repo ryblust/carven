@@ -39,6 +39,7 @@ auto default_initialization(const ProgramDraft& draft, ConstructionTypeRef type)
 struct StructureInitializer final {
     std::uint32_t declaration_index;
     ASTExprID expression;
+    std::optional<Span> name;
 };
 
 auto select_structure_initializers(

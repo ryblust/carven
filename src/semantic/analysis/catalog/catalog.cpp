@@ -235,6 +235,34 @@ auto AnalysisCatalogView::symbol(CatalogSymbolID id) const noexcept -> const Cat
                                                  : std::addressof(catalog->symbols[id.index()]);
 }
 
+auto AnalysisCatalogView::declaration_location(
+    const ProgramDraft& draft,
+    CatalogSymbolID id
+) const noexcept -> SourceSpan {
+    const auto* declaration = symbol(id);
+    if (declaration == nullptr) {
+        invariant_violation("catalog declaration location used an invalid symbol");
+    }
+    return locate(
+        draft.syntax_tree(declaration->module_id).view().source_id(),
+        declaration->declaration_span
+    );
+}
+
+auto AnalysisCatalogView::field_location(
+    const ProgramDraft& draft,
+    StructID owner,
+    std::size_t index
+) const noexcept -> SourceSpan {
+    const auto* declaration = symbol(struct_symbol(owner));
+    const auto syntax = draft.syntax_tree(declaration->module_id).view();
+    const auto* record = std::get_if<ASTRecordDecl>(&syntax.item(declaration->item_id).value);
+    if (record == nullptr || index >= record->fields.size()) {
+        invariant_violation("catalog field location used an invalid field");
+    }
+    return locate(syntax.source_id(), record->fields[index].name_span);
+}
+
 auto AnalysisCatalogView::function_symbol(FunctionID id) const noexcept -> CatalogSymbolID {
     if (id.index() >= catalog->function_symbols.size()) {
         invariant_violation("catalog function lookup used an invalid identity");

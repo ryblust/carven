@@ -171,6 +171,20 @@ auto BodyExprSite::finish_index(
     );
 }
 
+auto BodyExprSite::observe_field(
+    FieldProjection field,
+    Span name,
+    ConstructionTypeRef type
+) noexcept -> void {
+    if (body.observe_sources) {
+        body.observe_source(
+            name,
+            body.catalog().field_location(draft(), field.owner, field.field_index),
+            type
+        );
+    }
+}
+
 auto BodyExprSite::finish_field(
     ConstructionTypeRef type,
     FieldProjection field,
