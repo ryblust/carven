@@ -147,15 +147,18 @@ auto NullabilityBodyAnalyzer::value_at(
     return result;
 }
 
-auto NullabilityBodyAnalyzer::constant_value(const SemanticExpression& source) const noexcept
-    -> NullValue {
-    if (source.constant
-        && std::holds_alternative<NullPointerConstant>(
-            program.constants().constant(*source.constant).value
-        )) {
-        return {{{}, NullFact::Null}};
+auto NullabilityBodyAnalyzer::is_pure_null(const SemanticExpression& source) const noexcept
+    -> bool {
+    if (std::holds_alternative<SemDefault>(source.value)) {
+        return std::holds_alternative<PointerTypeValue>(
+            program.types().type(source.type.resolved()).value
+        );
     }
-    return {};
+    const auto* constant = std::get_if<SemConstant>(&source.value);
+    return constant
+        && std::holds_alternative<NullPointerConstant>(
+               program.constants().constant(constant->constant).value
+        );
 }
 
 auto NullabilityBodyAnalyzer::invalidate_exposed(NullState& state) const noexcept -> void {

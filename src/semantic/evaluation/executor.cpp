@@ -6,6 +6,119 @@ import :semantic.evaluation.limits;
 import :support.invariant;
 import std;
 
+namespace {
+
+auto sequence_element(const ExecutionValueAccess& values, ConstructionTypeRef reference) noexcept
+    -> std::optional<ConstructionTypeRef> {
+    const auto element =
+        [](const auto& type) static noexcept -> std::optional<ConstructionTypeRef> {
+        return type.value.visit(
+            [](const auto& shape) static noexcept -> std::optional<ConstructionTypeRef> {
+                using Shape = std::remove_cvref_t<decltype(shape)>;
+                if constexpr (std::same_as<Shape, ArrayTypeValue>
+                              || std::same_as<Shape, SliceTypeValue>
+                              || std::same_as<Shape, ConstructionArrayTypeValue>
+                              || std::same_as<Shape, ConstructionSliceTypeValue>) {
+                    return shape.element;
+                }
+                return std::nullopt;
+            }
+        );
+    };
+    if (const auto* concrete = std::get_if<TypeID>(&reference)) {
+        return element(values.type_copy(*concrete));
+    }
+    return element(values.construction_type_copy(std::get<TypeTermID>(reference)));
+}
+
+// Used only by validated callable and array adoption: parameter and result types
+// are invariant, while source failures are a subset of target failures.
+auto adaptation_preserves_type(
+    const ExecutionValueAccess& values,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target,
+    std::size_t depth = 0uz
+) noexcept -> std::optional<bool> {
+    if (source == target) {
+        return true;
+    }
+    if (std::holds_alternative<TypeID>(source) && std::holds_alternative<TypeID>(target)) {
+        return false;
+    }
+    if (depth > maximum_constant_aggregate_depth) {
+        return std::nullopt;
+    }
+    const auto shape =
+        [&](ConstructionTypeRef type) noexcept -> std::optional<ConstructionTypeValue> {
+        if (const auto* term = std::get_if<TypeTermID>(&type)) {
+            return values.construction_type_copy(*term).value;
+        }
+        return values.type_copy(std::get<TypeID>(type))
+            .value.visit([](const auto& value) noexcept -> std::optional<ConstructionTypeValue> {
+                using Value = std::remove_cvref_t<decltype(value)>;
+                if constexpr (std::same_as<Value, ArrayTypeValue>) {
+                    return ConstructionArrayTypeValue {
+                        .element = value.element,
+                        .extent = value.extent
+                    };
+                } else if constexpr (std::same_as<Value, PointerTypeValue>) {
+                    return ConstructionPointerTypeValue {
+                        .target = value.target,
+                        .access = value.access
+                    };
+                } else if constexpr (std::same_as<Value, SliceTypeValue>) {
+                    return ConstructionSliceTypeValue {.element = value.element};
+                } else {
+                    return std::nullopt;
+                }
+            });
+    };
+    const auto lhs = shape(source);
+    const auto rhs = shape(target);
+    if (!lhs || !rhs) {
+        const auto absent = !lhs ? source : target;
+        const auto& present = !lhs ? rhs : lhs;
+        const auto type = values.type_copy(std::get<TypeID>(absent));
+        const auto* view = std::get_if<CallableViewTypeValue>(&type.value);
+        if (view
+            && present
+            && std::holds_alternative<ConstructionCallableViewTypeValue>(*present)) {
+            if (absent == target
+                && values.failure_set_copy(values.callable_signature_copy(view->signature).failures)
+                       .members.empty()) {
+                // A subset of an empty target set cannot widen the source view.
+                return true;
+            }
+            return std::nullopt;
+        }
+        return false;
+    }
+    return lhs->visit([&](const auto& from) noexcept -> std::optional<bool> {
+        using Shape = std::remove_cvref_t<decltype(from)>;
+        const auto* to = std::get_if<Shape>(&*rhs);
+        if (!to) {
+            return false;
+        }
+        const auto compare = [&](ConstructionTypeRef a, ConstructionTypeRef b) noexcept {
+            return adaptation_preserves_type(values, a, b, depth + 1uz);
+        };
+        if constexpr (std::same_as<Shape, ConstructionArrayTypeValue>) {
+            return from.extent == to->extent ? compare(from.element, to->element)
+                                             : std::optional(false);
+        } else if constexpr (std::same_as<Shape, ConstructionPointerTypeValue>) {
+            // Pointer and slice adoption requires the entire type to be invariant.
+            return from.access == to->access;
+        } else if constexpr (std::same_as<Shape, ConstructionSliceTypeValue>) {
+            return true;
+        } else {
+            // The checked operation already constrains parameters and result equally.
+            return from.failures == to->failures ? std::optional(true) : std::nullopt;
+        }
+    });
+}
+
+} // namespace
+
 SemanticExecutor::SemanticExecutor(
     const ExecutionValueAccess& values,
     SemanticExecutionContext& context,
@@ -112,7 +225,7 @@ auto SemanticExecutor::equal(
     const ExecutionValue& right,
     ProgramOriginID origin
 ) noexcept -> ExecutionResult<bool> {
-    const auto result = execution_equal(values, left, right, steps, limits.steps);
+    const auto result = execution_equal(values, left, right, steps, limits.steps, &memory);
     if (!result) {
         switch (result.error()) {
             case ExecutionComparisonFailure::StepLimit:
@@ -125,6 +238,12 @@ auto SemanticExecutor::equal(
                 return std::unexpected(
                     fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
                 );
+            case ExecutionComparisonFailure::UnknownAddress:
+                return std::unexpected(fail(
+                    origin,
+                    ExecutionReason::Evaluation,
+                    "pointer address relation is not known during execution"
+                ));
             case ExecutionComparisonFailure::Unsupported:
                 return std::unexpected(fail(
                     origin,
@@ -164,8 +283,10 @@ auto SemanticExecutor::account_aggregate(std::size_t elements, ProgramOriginID o
     return {};
 }
 
-auto SemanticExecutor::check_aggregate_size(TypeID type, ProgramOriginID origin) noexcept
-    -> ExecutionResult<void> {
+auto SemanticExecutor::check_aggregate_size(
+    ConstructionTypeRef type,
+    ProgramOriginID origin
+) noexcept -> ExecutionResult<void> {
     const auto result = shapes.get(type);
     if (!result || result->elements > maximum_constant_aggregate_elements) {
         return std::unexpected(
@@ -277,7 +398,7 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
             }
             if (compound->enum_case) {
                 return ExecutionEnumValue {
-                    .type = compound->type,
+                    .type = std::get<TypeID>(compound->type),
                     .enum_case = *compound->enum_case,
                     .payload = std::move(*copied)
                 };
@@ -308,6 +429,57 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
         });
     };
     return copy(source, 0);
+}
+
+auto SemanticExecutor::deliver_value(
+    ExecutionValue& value,
+    ConstructionTypeRef target,
+    ProgramOriginID origin,
+    std::size_t depth
+) noexcept -> ExecutionResult<void> {
+    if (execution_value_type(values, value) == target) {
+        return {};
+    }
+    if (depth > maximum_constant_aggregate_depth) {
+        return std::unexpected(
+            fail(origin, ExecutionReason::Limit, "aggregate exceeds its nesting limit")
+        );
+    }
+    if (const auto atom = execution_atom(values, value);
+        atom && std::holds_alternative<NullPointerConstant>(atom->value)) {
+        value = ExecutionPointer {.type = target, .target = std::nullopt};
+        return {};
+    }
+    if (std::holds_alternative<ConstantID>(value)) {
+        auto copied = copy_value(value, origin);
+        if (!copied) {
+            return std::unexpected(std::move(copied.error()));
+        }
+        value = std::move(*copied);
+    }
+    return value.visit([&](auto& delivered) noexcept -> ExecutionResult<void> {
+        using Value = std::remove_cvref_t<decltype(delivered)>;
+        if constexpr (std::same_as<Value, ExecutionPointer>
+                      || std::same_as<Value, ExecutionSlice>
+                      || std::same_as<Value, ExecutionFunction>) {
+            delivered.type = target;
+            return {};
+        } else if constexpr (std::same_as<Value, ExecutionAggregateValue>) {
+            const auto element = sequence_element(values, target);
+            if (!element) {
+                invariant_violation("aggregate delivery lost its checked sequence type");
+            }
+            for (auto& child : delivered.elements) {
+                if (auto typed = deliver_value(child, *element, origin, depth + 1uz); !typed) {
+                    return typed;
+                }
+            }
+            delivered.type = target;
+            return {};
+        } else {
+            invariant_violation("execution value differs from its checked delivery type");
+        }
+    });
 }
 
 auto SemanticExecutor::type(ConstructionTypeRef source, ProgramOriginID origin) noexcept
@@ -523,35 +695,16 @@ auto SemanticExecutor::sequence_view(
     if (std::holds_alternative<SemUnreachable>(expression.value)) {
         invariant_violation("execution reached a semantic edge without an entry");
     }
-    auto source_type = type(expression.type.construction(), origin);
-    if (!source_type) {
-        co_return std::unexpected(std::move(source_type.error()));
+    auto borrowed = (co_await operand(frame, expression, OperandUse::Borrow, origin));
+    if (!borrowed) {
+        co_return std::unexpected(std::move(borrowed.error()));
     }
-    auto selected = std::optional<ExecutionPlace>();
-    auto result = std::optional<ExecutionValue>();
-    if (expression.selects_storage()) {
-        auto source = (co_await place(frame, expression));
-        if (!source) {
-            co_return std::unexpected(std::move(source.error()));
-        }
-        selected = std::move(*source);
-    } else {
-        auto evaluated = (co_await this->value(frame, expression));
-        if (!evaluated) {
-            co_return std::unexpected(std::move(evaluated.error()));
-        }
-        result = std::move(*evaluated);
+    const auto selected = std::get<ExecutionPlace>(*borrowed);
+    auto selected_value = located(selected, origin);
+    if (!selected_value) {
+        co_return std::unexpected(std::move(selected_value.error()));
     }
-    auto* storage = static_cast<ExecutionValue*>(nullptr);
-    if (selected) {
-        auto located_value = located(*selected, origin);
-        if (!located_value) {
-            co_return std::unexpected(std::move(located_value.error()));
-        }
-        storage = *located_value;
-    } else {
-        storage = &*result;
-    }
+    const auto* storage = *selected_value;
     if (const auto* slice = std::get_if<ExecutionSlice>(storage)) {
         if (!memory.view(*slice)) {
             co_return std::unexpected(
@@ -571,17 +724,9 @@ auto SemanticExecutor::sequence_view(
         );
     }
     const auto extent = compound->size();
-    if (!selected) {
-        auto owned = own_storage(std::move(*result), origin);
-        if (!owned) {
-            co_return std::unexpected(std::move(owned.error()));
-        }
-        selected = memory.create(std::move(*owned));
-        frame.temporaries.push_back(*selected);
-    }
     co_return ExecutionSlice {
-        .type = *source_type,
-        .backing = std::move(*selected),
+        .type = expression.type.construction(),
+        .backing = selected,
         .offset = 0uz,
         .extent = extent
     };
@@ -656,6 +801,10 @@ auto SemanticExecutor::detach_views(
         }
         auto elements = std::vector<ExecutionValue>();
         elements.reserve(slice->extent);
+        const auto element_type = sequence_element(values, slice->type);
+        if (!element_type) {
+            invariant_violation("slice delivery lost its checked element type");
+        }
         for (auto index = 0uz; index < slice->extent; ++index) {
             auto selected = slice_element(*slice, index, origin);
             if (!selected) {
@@ -670,6 +819,9 @@ auto SemanticExecutor::detach_views(
             auto copied = copy_value(*target, origin);
             if (!copied) {
                 return std::unexpected(std::move(copied.error()));
+            }
+            if (auto typed = deliver_value(*copied, *element_type, origin, depth + 1uz); !typed) {
+                return std::unexpected(std::move(typed.error()));
             }
             auto detached = detach_views(std::move(*copied), origin, depth + 1uz);
             if (!detached) {
@@ -733,8 +885,7 @@ auto SemanticExecutor::read_operand(
 ) noexcept -> ExecutionTask<ExecutionOperand> {
     // The admitted non-owning types are scalar or trivially copied records.
     // Storage-bearing values use the same Read rule as ordinary lowering.
-    const auto* concrete = std::get_if<TypeID>(&expression.type.construction());
-    if (concrete != nullptr && read_borrows_storage(*concrete) && expression.selects_storage()) {
+    if (read_borrows_storage(expression.type.construction()) && expression.selects_storage()) {
         auto selected = (co_await place(frame, expression));
         if (!selected) {
             co_return std::unexpected(std::move(selected.error()));
@@ -757,12 +908,91 @@ auto SemanticExecutor::argument_use(AccessMode access) noexcept -> OperandUse {
     std::unreachable();
 }
 
+auto SemanticExecutor::check_callable_adaptation(
+    ConstructionTypeRef source,
+    ConstructionTypeRef target,
+    ProgramOriginID origin,
+    std::size_t depth
+) noexcept -> ExecutionResult<void> {
+    const auto identity = adaptation_preserves_type(values, source, target);
+    if (identity == true) {
+        return {};
+    }
+    if (depth > maximum_constant_aggregate_depth) {
+        return std::unexpected(
+            fail(origin, ExecutionReason::Limit, "aggregate exceeds its nesting limit")
+        );
+    }
+    const auto array_shape =
+        [&](ConstructionTypeRef type) noexcept -> std::optional<ConstructionArrayTypeValue> {
+        if (const auto* concrete = std::get_if<TypeID>(&type)) {
+            const auto value = values.type_copy(*concrete);
+            const auto* array = std::get_if<ArrayTypeValue>(&value.value);
+            return array ? std::optional(
+                               ConstructionArrayTypeValue {
+                                   .element = array->element,
+                                   .extent = array->extent
+                               }
+                           )
+                         : std::nullopt;
+        }
+        const auto value = values.construction_type_copy(std::get<TypeTermID>(type));
+        const auto* array = std::get_if<ConstructionArrayTypeValue>(&value.value);
+        return array ? std::optional(*array) : std::nullopt;
+    };
+    if (const auto array = array_shape(target)) {
+        const auto input = array_shape(source);
+        if (!input) {
+            return std::unexpected(fail(
+                origin,
+                ExecutionReason::Evaluation,
+                "callable array adaptation requires an array source"
+            ));
+        }
+        if (array->extent == 0uz) {
+            return {};
+        }
+        return check_callable_adaptation(input->element, array->element, origin, depth + 1uz);
+    }
+    if (const auto* concrete = std::get_if<TypeID>(&source)) {
+        if (std::holds_alternative<FunctionTypeValue>(values.type_copy(*concrete).value)) {
+            return {};
+        }
+    }
+    return std::unexpected(fail(
+        origin,
+        ExecutionReason::Evaluation,
+        identity ? "borrowing a callable object is not supported in execution"
+                 : "callable adaptation target identity is not known during execution"
+    ));
+}
+
 auto SemanticExecutor::operand(
     ExecutionFrame& frame,
     const SemanticExpression& expression,
     OperandUse use,
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionOperand> {
+    if (use == OperandUse::Borrow
+        || (use == OperandUse::Read && read_borrows_storage(expression.type.construction()))) {
+        if (const auto* adoption = std::get_if<SemArrayAdopt>(&expression.value)) {
+            const auto identity = adaptation_preserves_type(
+                values,
+                adoption->source->type.construction(),
+                expression.type.construction()
+            );
+            if (!identity) {
+                co_return std::unexpected(fail(
+                    origin,
+                    ExecutionReason::Evaluation,
+                    "array adaptation storage identity is not known during execution"
+                ));
+            }
+            if (*identity) {
+                co_return (co_await operand(frame, *adoption->source, use, origin));
+            }
+        }
+    }
     if (use == OperandUse::Write || (use == OperandUse::Borrow && expression.selects_storage())) {
         auto selected = (co_await place(frame, expression));
         if (!selected) {
@@ -985,7 +1215,9 @@ auto SemanticExecutor::detach_result(ExecutionValue value, ProgramOriginID origi
 auto SemanticExecutor::read_borrows_storage(ConstructionTypeRef reference) noexcept -> bool {
     const auto* concrete = std::get_if<TypeID>(&reference);
     if (!concrete) {
-        return false;
+        return std::holds_alternative<ConstructionArrayTypeValue>(
+            values.construction_type_copy(std::get<TypeTermID>(reference)).value
+        );
     }
     const auto type = *concrete;
     if (const auto found = storage_reads.find(type); found != storage_reads.end()) {

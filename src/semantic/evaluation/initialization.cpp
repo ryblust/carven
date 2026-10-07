@@ -7,11 +7,42 @@ import :semantic.semir.simd;
 import :semantic.semir.type;
 import std;
 
-auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noexcept
+auto SemanticExecutor::default_value(ConstructionTypeRef reference, ProgramOriginID origin) noexcept
     -> ExecutionTask<ExecutionValue> {
     if (auto checked = step(origin); !checked) {
         co_return std::unexpected(std::move(checked.error()));
     }
+    if (const auto* term = std::get_if<TypeTermID>(&reference)) {
+        const auto construction = values.construction_type_copy(*term);
+        if (std::holds_alternative<ConstructionPointerTypeValue>(construction.value)) {
+            co_return ExecutionPointer {.type = reference, .target = std::nullopt};
+        }
+        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
+            if (auto checked = check_aggregate_size(reference, origin); !checked) {
+                co_return std::unexpected(std::move(checked.error()));
+            }
+            const auto count = static_cast<std::size_t>(array->extent);
+            if (auto checked = account_aggregate(count, origin); !checked) {
+                co_return std::unexpected(std::move(checked.error()));
+            }
+            auto elements = std::vector<ExecutionValue>();
+            elements.reserve(count);
+            for (auto index = 0uz; index < count; ++index) {
+                auto element = (co_await default_value(array->element, origin));
+                if (!element) {
+                    co_return std::unexpected(std::move(element.error()));
+                }
+                elements.push_back(std::move(*element));
+            }
+            co_return ExecutionAggregateValue {.type = reference, .elements = std::move(elements)};
+        }
+        co_return std::unexpected(fail(
+            origin,
+            ExecutionReason::Evaluation,
+            "type does not support default initialization during execution"
+        ));
+    }
+    const auto target = std::get<TypeID>(reference);
     const auto canonical = values.type_copy(target);
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
         if (builtin_is_integer(builtin->kind)) {

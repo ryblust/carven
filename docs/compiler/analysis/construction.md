@@ -38,6 +38,17 @@ numeric operand context selection. It may require constructing the right operand
 first when the left is a direct unsuffixed literal. Typed operations retain
 source operand order for execution.
 
+Storage type checks share a structural relation query for construction and canonical
+references. Invariant storage requires identical nominal types, pointer access,
+array extents, and callable parameter/result types. Callable views register failure-set
+equality constraints until solving completes. Permission narrowing changes only the
+outer pointer access and checks pointee storage through this same query.
+Body and static-root conversions share the complete adaptation constraint entry.
+Successful conversion records the destination type on its expression, including
+invariant conversions that need no runtime operation. Contextual array-to-slice
+construction uses the checked destination slice type; a method call infers its
+result from the receiver.
+
 ### Default initialization
 
 `semir.initialization` defines default availability and native-construction

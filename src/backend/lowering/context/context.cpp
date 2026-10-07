@@ -8,12 +8,25 @@ import :support.invariant;
 import :support.visit;
 import std;
 
+namespace {
+
+auto domain_scope(const TargetNamePlan& names) noexcept -> TargetName {
+    auto scope = names.generated_namespace();
+    for (const auto& component : names.domain_namespace().components()) {
+        scope.append(component);
+    }
+    return scope;
+}
+
+} // namespace
+
 ArtifactLowering::ArtifactLowering(
     const PlannedCompilation& compilation,
     TargetArtifactID artifact
 ) noexcept
     : planned_compilation(compilation),
-      artifact_id(artifact) {}
+      artifact_id(artifact),
+      cstrings(compilation.target().names(), domain_scope(compilation.target().names())) {}
 
 auto ArtifactLowering::semantic() const noexcept -> const SemIRProgram& {
     return planned_compilation.semantic();
@@ -52,8 +65,8 @@ auto ArtifactLowering::require_interface(ModuleID provider) noexcept -> void {
     lowering_dependencies.insert(*interface);
 }
 
-auto ArtifactLowering::take_module_support() noexcept -> std::vector<TargetItem> {
-    auto result = std::vector<TargetItem>();
+auto ArtifactLowering::take_support() noexcept -> std::vector<TargetItem> {
+    auto result = cstrings.take();
     auto owners = std::vector<ModuleID>();
     for (const auto& [owner, context] : modules) {
         static_cast<void>(context);
@@ -88,6 +101,9 @@ auto ArtifactLowering::take_module_support() noexcept -> std::vector<TargetItem>
 }
 
 auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> TargetUnit {
+    if (!cstrings.empty()) {
+        invariant_violation("artifact lowering did not place its C string storage");
+    }
     for (const auto& [module_id, context] : modules) {
         static_cast<void>(module_id);
         if (!context->constant_storage().empty()) {
@@ -104,7 +120,10 @@ auto ArtifactLowering::finish(TargetUnitSections sections) && noexcept -> Target
 ModuleLowering::ModuleLowering(ArtifactLowering& artifact, ModuleID owner_module_id) noexcept
     : artifact_lowering(artifact),
       module_id(owner_module_id),
-      constants(artifact.plan().names(), owner_module_id) {
+      constants(
+          artifact.plan().names(),
+          artifact.plan().names().module_names(owner_module_id).qualified_namespace_name
+      ) {
     if (owner_module_id.owner() != semantic().identity()) {
         invariant_violation("module lowering received a foreign semantic module ID");
     }
@@ -125,6 +144,10 @@ auto ModuleLowering::target() noexcept -> TargetUnitBuilder& {
 
 auto ModuleLowering::constant_storage() noexcept -> ConstantStorage& {
     return constants;
+}
+
+auto ModuleLowering::cstring_storage() noexcept -> ConstantStorage& {
+    return artifact_lowering.cstrings;
 }
 
 auto ModuleLowering::active_module() const noexcept -> ModuleID {

@@ -115,14 +115,14 @@ private:
 };
 
 struct ExecutionPointer final {
-    TypeID type;
+    ConstructionTypeRef type;
     std::optional<ExecutionPlace> target;
 };
 
 // A slice borrows elements of one live array or text backing. Copying it copies the coordinate,
 // not its backing storage. A sub-slice advances offset within the same owner.
 struct ExecutionSlice final {
-    TypeID type;
+    ConstructionTypeRef type;
     ExecutionPlace backing;
     std::size_t offset;
     std::size_t extent;
@@ -136,7 +136,7 @@ struct ExecutionFunction final {
 struct ExecutionValue;
 
 struct ExecutionAggregateValue final {
-    TypeID type;
+    ConstructionTypeRef type;
     std::vector<ExecutionValue> elements;
 };
 
@@ -173,14 +173,16 @@ auto execution_atom(const ConstantValueReader& values, const ExecutionValue& val
 auto execution_text(const ConstantValueReader& values, const ExecutionValue& value) noexcept
     -> std::optional<std::string_view>;
 
-enum class ExecutionComparisonFailure { StepLimit, ExpiredText, Unsupported };
+enum class ExecutionComparisonFailure { StepLimit, ExpiredText, UnknownAddress, Unsupported };
 
+// Memory supplies address relations for pointer values; fact-only equality needs no storage.
 auto execution_equal(
-    const ConstantValueReader& values,
+    const ExecutionValueAccess& values,
     const ExecutionValue& left,
     const ExecutionValue& right,
     std::size_t& steps,
-    std::size_t maximum_steps
+    std::size_t maximum_steps,
+    const ExecutionMemory* memory = nullptr
 ) noexcept -> std::expected<bool, ExecutionComparisonFailure>;
 
 auto execution_value_type(const ConstantValueReader& values, const ExecutionValue& value) noexcept
@@ -201,7 +203,7 @@ auto transfer_owned_text(ExecutionValue& value) noexcept -> void;
 // A stable read view over either retained children or execution-owned slots.
 struct ExecutionCompoundView final {
     auto size() const noexcept -> std::size_t;
-    TypeID type;
+    ConstructionTypeRef type;
     std::optional<EnumCaseID> enum_case;
     std::variant<std::span<const ConstantID>, std::span<const ExecutionValue>, ExecutionByteView>
         elements;

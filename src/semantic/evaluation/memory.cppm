@@ -23,9 +23,29 @@ public:
     auto view(const ExecutionSlice& slice) const noexcept -> std::optional<ExecutionSequenceView>;
     auto project(ExecutionPlace place, std::size_t index) noexcept -> std::optional<ExecutionPlace>;
     auto assign(const ExecutionPlace& place, ExecutionValue value) noexcept -> bool;
+    // Derives canonical coordinates from established native layout relations.
+    // Missing storage or type facts leave the address relation unknown.
+    auto address_key(const ExecutionValueAccess& values, const ExecutionPlace& place) const noexcept
+        -> std::optional<ExecutionPlace>;
+    auto same_address(
+        const ExecutionValueAccess& values,
+        const ExecutionPlace& first,
+        const ExecutionPlace& second
+    ) const noexcept -> std::optional<bool>;
 
 private:
+    auto address_key_from(
+        const ExecutionValueAccess& values,
+        const ExecutionPlace& place,
+        std::size_t root_depth
+    ) const noexcept -> std::optional<ExecutionPlace>;
+    auto proves_standard_layout(
+        const ExecutionValueAccess& values,
+        TypeID type,
+        std::size_t depth
+    ) const noexcept -> bool;
     ExecutionIdentity identity;
+    mutable std::set<TypeID> standard_layout_types;
 
     struct TextBytes final {
         std::weak_ptr<const ExecutionTextStorage> storage;

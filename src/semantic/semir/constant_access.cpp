@@ -2,10 +2,25 @@ module carven:semantic.semir.constant_access.impl;
 
 import :semantic.semir.constant_access;
 import :semantic.semir.program;
+import :support.invariant;
 import std;
 
 PublishedConstantValues::PublishedConstantValues(const SemIRProgram& program) noexcept
     : program(program) {}
+
+auto PublishedConstantValues::construction_type_copy(TypeTermID) const noexcept
+    -> ConstructionType {
+    invariant_violation("published execution cannot read a construction type");
+}
+
+auto PublishedConstantValues::callable_signature_copy(CallableSignatureID signature) const noexcept
+    -> CallableSignature {
+    return program.callable_signatures().signature(signature);
+}
+
+auto PublishedConstantValues::failure_set_copy(FailureSetID failures) const noexcept -> FailureSet {
+    return program.failure_sets().failure_set(failures);
+}
 
 auto PublishedConstantValues::type_copy(TypeID type) const noexcept -> CanonicalType {
     return program.types().type(type);

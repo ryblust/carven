@@ -99,7 +99,7 @@ auto BodyElaborator::build_branch(
                 merged_type = *inferred;
             }
             if (!allow_pointer_narrowing
-                && pointer_narrows(draft(), (value).type(), *merged_type)) {
+                && pointer_narrowing_shape(draft(), (value).type(), *merged_type)) {
                 co_return std::unexpected(fail(
                     span,
                     DiagnosticCode::TypeMismatch,
@@ -177,7 +177,8 @@ auto BodyElaborator::build_arm(
                 }
                 type = *inferred;
             }
-            if (!allow_pointer_narrowing && pointer_narrows(draft(), (*built).type(), *type)) {
+            if (!allow_pointer_narrowing
+                && pointer_narrowing_shape(draft(), (*built).type(), *type)) {
                 co_return std::unexpected(fail(
                     source.span,
                     DiagnosticCode::TypeMismatch,

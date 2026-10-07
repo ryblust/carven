@@ -70,7 +70,7 @@ private:
         const SemIntrinsic& operation,
         const SemanticExpression& source
     ) noexcept -> ExecutionTask<ExecutionValue>;
-    auto default_value(TypeID type, ProgramOriginID origin) noexcept
+    auto default_value(ConstructionTypeRef type, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
     auto fail(
         ProgramOriginID origin,
@@ -95,10 +95,24 @@ private:
     auto account_aggregate(std::size_t elements, ProgramOriginID origin) noexcept
         -> ExecutionResult<void>;
     auto read_borrows_storage(ConstructionTypeRef type) noexcept -> bool;
+    auto check_callable_adaptation(
+        ConstructionTypeRef source,
+        ConstructionTypeRef target,
+        ProgramOriginID origin,
+        std::size_t depth = 0uz
+    ) noexcept -> ExecutionResult<void>;
     auto own_storage(ExecutionValue value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
     auto copy_value(const ExecutionValue& value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
+    // A checked expression owns the delivered type. Runtime payload tags retain
+    // that type after the value leaves its expression or borrowed storage.
+    auto deliver_value(
+        ExecutionValue& value,
+        ConstructionTypeRef target,
+        ProgramOriginID origin,
+        std::size_t depth = 0uz
+    ) noexcept -> ExecutionResult<void>;
     auto retained_slice(ConstantID id, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionSlice>;
     auto sequence_view(
@@ -116,7 +130,7 @@ private:
         ProgramOriginID origin,
         std::size_t depth = 0uz
     ) noexcept -> ExecutionResult<ExecutionValue>;
-    auto check_aggregate_size(TypeID type, ProgramOriginID origin) noexcept
+    auto check_aggregate_size(ConstructionTypeRef type, ProgramOriginID origin) noexcept
         -> ExecutionResult<void>;
     auto type(ConstructionTypeRef type, ProgramOriginID origin) noexcept -> ExecutionResult<TypeID>;
     auto read_fact(const ExecutionValue& value, ProgramOriginID origin) noexcept
@@ -160,7 +174,10 @@ private:
         const ExecutionValue& right
     ) noexcept -> ExecutionResult<ExecutionValue>;
     template<typename Result>
-    static auto normal_result(ExecutionResult<ExecutionValue>&& result) noexcept
+    auto normal_result(
+        ExecutionResult<ExecutionValue>&& result,
+        const SemanticExpression& source
+    ) noexcept
         -> std::conditional_t<
             std::same_as<Result, ExecutionValue>,
             ExecutionResult<ExecutionValue>&&,
@@ -168,7 +185,7 @@ private:
     template<typename Result>
     auto control_result(
         ExecutionResult<ExecutionCompletion>&& result,
-        ProgramOriginID origin
+        const SemanticExpression& source
     ) noexcept
         -> std::conditional_t<
             std::same_as<Result, ExecutionCompletion>,
@@ -237,6 +254,8 @@ private:
         const ExecutionValue& value,
         std::span<const SemPatternBounds> pattern_bounds
     ) noexcept -> ExecutionTask<bool>;
+    auto pointer_display(const ExecutionValue& value, ProgramOriginID origin) noexcept
+        -> ExecutionResult<std::optional<std::string>>;
     auto format(ExecutionFrame& frame, const SemFormat& format, ProgramOriginID origin) noexcept
         -> ExecutionTask<ExecutionValue>;
     auto print(ExecutionFrame& frame, const SemPrint& operation, ProgramOriginID origin) noexcept
@@ -278,6 +297,7 @@ private:
     ExecutionTypeShapes shapes;
     ExecutionMemory memory;
     std::map<ConstantID, ExecutionPlace> retained_slice_backings;
+    std::map<ProgramSpellingID, ExecutionPlace> retained_cstring_backings;
     std::map<TypeID, bool> storage_reads;
     std::map<ProgramSpellingID, ExecutionText> retained_text;
     std::vector<ProgramOriginID> calls;

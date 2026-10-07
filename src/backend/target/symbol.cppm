@@ -86,6 +86,7 @@ enum class TargetSymbol {
     StdTypeIdentity,
     StdReferenceWrapper,
     StdAddressof,
+    StdToArray,
     StdBitCast,
     StdGetIf,
     StdDeclval,

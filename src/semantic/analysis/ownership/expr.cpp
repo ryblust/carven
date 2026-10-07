@@ -5,6 +5,30 @@ import :semantic.semir.callable;
 import :support.invariant;
 import std;
 
+auto OwnershipBodyAnalyzer::opaque_callable_targets(
+    TypeID type,
+    ProgramOriginID origin
+) const noexcept -> OwnershipRelationships {
+    auto result = OwnershipRelationships {};
+    auto path = OwnershipProjectionPath {};
+    for (;;) {
+        const auto& value = program.types().type(type).value;
+        if (const auto* array = std::get_if<ArrayTypeValue>(&value)) {
+            path.push_back(std::nullopt);
+            type = array->element;
+        } else {
+            if (std::holds_alternative<CallableViewTypeValue>(value)
+                || std::holds_alternative<ClosureTypeValue>(value)) {
+                result.edit().callable_loans.push_back(
+                    {std::move(path), std::nullopt, std::nullopt, origin, false}
+                );
+            }
+            break;
+        }
+    }
+    return result;
+}
+
 auto OwnershipBodyAnalyzer::complete_place(
     const SemanticExpression& source,
     OwnershipNormal& normal,
@@ -14,15 +38,9 @@ auto OwnershipBodyAnalyzer::complete_place(
         normal.storage = binding_places(binding->binding, normal.state);
     }
     if (normal.storage.empty()) {
-        normal.value = {};
-        if (source.category == SemanticValueCategory::Value
-            && analysis.contents(source.type.resolved()).contains_callable_view) {
-            diagnose(
-                DiagnosticCode::TypeCallableViewEscape,
-                "an indirect target cannot establish a Carven callable borrow",
-                source.origin
-            );
-        }
+        // Reading a typed callable retains an opaque target, without claiming
+        // ownership or lifetime knowledge of the indirect storage.
+        normal.value = opaque_callable_targets(source.type.resolved(), source.origin);
         return;
     }
     normal.value = {};
@@ -431,6 +449,12 @@ auto OwnershipBodyAnalyzer::expression(
                             );
                         }
                         flow.normal->storage = std::move(storage);
+                        if (flow.normal->storage.empty()
+                            && std::holds_alternative<SliceTypeValue>(
+                                program.types().type(value.source->type.resolved()).value
+                            )) {
+                            complete_place(source, *flow.normal, true);
+                        }
                     }
                     co_return {};
                 },
@@ -654,6 +678,14 @@ auto OwnershipBodyAnalyzer::expression(
                             );
                             return;
                         }
+                        if (storage.empty()) {
+                            diagnose(
+                                DiagnosticCode::TypeCallableViewEscape,
+                                "an indirect target cannot establish a Carven callable borrow",
+                                source.origin
+                            );
+                            return;
+                        }
                         for (auto element : storage) {
                             element.path.insert(element.path.end(), path.begin(), path.end());
                             flow.normal->value.edit().callable_loans.push_back(
@@ -697,6 +729,14 @@ auto OwnershipBodyAnalyzer::expression(
                     // Equal view types copy the target description. They do not
                     // borrow the intermediate view's storage.
                     if (adaptation.kind == CallableAdaptationKind::CopyTarget) {
+                        co_return {};
+                    }
+                    if (adaptation.borrows_storage() && backing.empty()) {
+                        diagnose(
+                            DiagnosticCode::TypeCallableViewEscape,
+                            "an indirect target cannot establish a Carven callable borrow",
+                            source.origin
+                        );
                         co_return {};
                     }
                     auto storage = std::vector<OwnershipStorageLoan>();
@@ -901,10 +941,29 @@ auto OwnershipBodyAnalyzer::expression(
                                                 std::optional<OwnershipPlace> capture_owner
                                             ) noexcept -> ContinuationTask<std::monostate> {
                             use(target, flow.normal->state, source.origin, true);
-                            if (function.has_value()) {
+                            const auto opaque_target =
+                                [](const OwnershipCallableLoan& loan) static noexcept {
+                                    return loan.holder.empty() && !loan.backing && !loan.callable;
+                                };
+                            const auto opaque =
+                                std::ranges::any_of(target.view().callable_loans, opaque_target);
+                            auto known = std::optional<OwnershipRelationships>();
+                            if (opaque && function) {
+                                known = target;
+                                std::erase_if(known->edit().callable_loans, opaque_target);
+                            }
+                            const auto known_captures = known
+                                && (!known->view().captures.empty()
+                                    || std::ranges::any_of(
+                                        known->view().callable_loans,
+                                        [](const OwnershipCallableLoan& loan) static noexcept {
+                                            return !loan.holder.empty();
+                                        }
+                                    ));
+                            if (function.has_value() && (!opaque || known_captures)) {
                                 auto next = call(
                                     *function,
-                                    target,
+                                    known ? *known : target,
                                     std::move(capture_owner),
                                     parameters,
                                     flow.normal->state,
@@ -913,9 +972,14 @@ auto OwnershipBodyAnalyzer::expression(
                                 join_normal_ownership(invoked.normal, next.normal);
 
                                 append_ownership_exits(invoked, next);
-                                co_return {};
+                                if (!opaque) {
+                                    co_return {};
+                                }
                             }
                             for (const auto& loan : target.view().callable_loans) {
+                                if (!loan.holder.empty() || (function && !opaque_target(loan))) {
+                                    continue;
+                                }
                                 if (loan.backing.has_value()) {
                                     if (!flow.normal->state.objects[loan.backing->object]
                                              .available) {
@@ -942,7 +1006,16 @@ auto OwnershipBodyAnalyzer::expression(
                                 } else if (loan.callable.has_value()) {
                                     (co_await self({}, loan.callable, std::nullopt));
                                 } else {
-                                    join_normal_ownership(invoked.normal, flow.normal);
+                                    auto returned = *flow.normal;
+                                    returned.value = opaque_callable_targets(
+                                        source.type.resolved(),
+                                        source.origin
+                                    );
+                                    returned.storage.clear();
+                                    join_normal_ownership(
+                                        invoked.normal,
+                                        std::optional(std::move(returned))
+                                    );
                                     for (const auto type :
                                          program.failure_sets()
                                              .failure_set(value.callee_failures.resolved())

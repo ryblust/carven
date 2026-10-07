@@ -152,7 +152,7 @@ auto ModuleLowering::lower_parameter(AccessMode access, TypeID type, TypeNameSco
     std::unreachable();
 }
 
-auto ModuleLowering::function_type(
+auto ModuleLowering::function_ref_type(
     CallableSignatureID id,
     bool stops_test,
     TypeNameScope scope
@@ -165,7 +165,7 @@ auto ModuleLowering::function_type(
     }
     return {
         .value =
-            TargetFunctionType {
+            TargetFunctionRefType {
                 .parameters = std::move(parameters),
                 .result = lower_signature_result(id, stops_test, scope),
             },
@@ -372,7 +372,7 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
             },
             [&](const FunctionTypeValue& value) noexcept -> TargetType {
                 const auto& callable = semantic().declarations().callable(value.callable);
-                return function_type(
+                return function_ref_type(
                     callable.signature,
                     semantic().may_stop_test(value.callable),
                     scope
@@ -390,7 +390,7 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                 };
             },
             [&](const CallableViewTypeValue& value) noexcept -> TargetType {
-                return function_type(value.signature, true, scope);
+                return function_ref_type(value.signature, true, scope);
             },
         }
     );

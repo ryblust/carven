@@ -48,16 +48,8 @@ auto BodyElaborator::lambda_expression(
     Span span,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisTask<BuiltExpression> {
-    auto expected_view = std::optional<ConstructionCallableViewTypeValue>();
-    if (expected.has_value()) {
-        if (const auto* term = std::get_if<TypeTermID>(&*expected)) {
-            const auto construction = draft().construction_type_copy(*term);
-            if (const auto* view =
-                    std::get_if<ConstructionCallableViewTypeValue>(&construction.value)) {
-                expected_view = *view;
-            }
-        }
-    }
+    const auto expected_view =
+        expected ? construct_callable_view_contract(draft(), *expected) : std::nullopt;
     if (expected_view.has_value() && expected_view->parameters.size() != source.parameters.size()) {
         co_return std::unexpected(fail(
             span,

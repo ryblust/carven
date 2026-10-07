@@ -1,0 +1,288 @@
+struct ErasedPair {
+    first: i32,
+    second: i32
+}
+
+struct ErasedNested {
+    first: ErasedPair,
+    second: i32
+}
+
+const erased_null = (nullptr as ptr<i32>) as ptr<void>;
+const erased_callable_null = (nullptr as ptr<fn() -> i32>) as ptr<void>;
+
+const fn erased_callable() -> i32 => 7;
+
+struct CallablePointerHolder {
+    callback: ptr<fn() -> i32>
+}
+
+fn callable_holder_copy() -> i32 {
+    let callable: fn() -> i32 = erased_callable;
+    let holder = CallablePointerHolder { callback: addressof(callable) };
+    let address = addressof(holder);
+    if address == nullptr { return -1; }
+    let copy = *address;
+    let callback = copy.callback;
+    if callback == nullptr { return -2; }
+    let selected = *callback;
+    return selected();
+}
+
+const fn erased_callable_address() -> bool {
+    let callable = erased_callable;
+    let pointer = addressof(callable) as ptr<void>;
+    return pointer != nullptr && callable() == 7;
+}
+
+const fn pending_callable_places() -> bool {
+    let inferred = erased_callable;
+    var pointer = addressof(inferred);
+    let present = pointer != nullptr;
+    pointer = nullptr;
+    let inferred_values = [inferred];
+    let element = addressof(inferred_values[0]) as ptr<void>;
+    let inferred_view = inferred_values.as_slice();
+    let through_view = addressof(inferred_view[0]) as ptr<void>;
+    let typed: fn() -> i32 = erased_callable;
+    let typed_address = addressof(typed) as ptr<void>;
+    let typed_values: [fn() -> i32; 1] = [erased_callable];
+    let typed_element = addressof(typed_values[0]) as ptr<void>;
+    let typed_view = typed_values.as_slice();
+    let typed_alias = addressof(typed_view[0]) as ptr<void>;
+    var writable_callable = erased_callable;
+    let writable = addressof(&writable_callable) as ptr<&void>;
+    let readonly = addressof(writable_callable) as ptr<void>;
+    return present
+        && pointer == nullptr
+        && element == through_view
+        && typed_address != nullptr
+        && typed_element == typed_alias
+        && (writable as ptr<void>) == readonly;
+}
+
+const fn pending_callable_access(absent: bool) -> i32 {
+    var callable = erased_callable;
+    let writable = addressof(&callable);
+    let read: ptr<fn() -> i32> = writable;
+    let cast = writable as ptr<fn() -> i32>;
+    let identity = addressof(callable) as ptr<fn() -> i32>;
+    let pointers: [ptr<fn() -> i32>; 1] = [writable];
+    var maybe = addressof(callable);
+    maybe = if absent { nullptr } else { addressof(callable) };
+    if nullptr == maybe { return 0; }
+    if read == nullptr || cast == nullptr || identity == nullptr || pointers[0] == nullptr {
+        return -1;
+    }
+    var callables = [erased_callable];
+    let array_write = addressof(&callables);
+    let array_read: ptr<[fn() -> i32; 1]> = array_write;
+    if array_read != addressof(callables) || writable != read { return -2; }
+    let selected = *maybe;
+    if addressof(selected) == nullptr { return -3; }
+    return erased_callable();
+}
+
+const fn same_callable_array_address(values: [fn() -> i32; 1], expected: ptr<void>) -> bool {
+    return (addressof(values[0]) as ptr<void>) == expected;
+}
+
+const fn callable_array_read_identity() -> bool {
+    let values = [erased_callable];
+    let expected = addressof(values[0]) as ptr<void>;
+    return same_callable_array_address(values, expected);
+}
+
+const fn pending_null_pointer(explicit: bool) -> ptr<fn() -> i32> {
+    let callable = erased_callable;
+    var pointer = addressof(callable);
+    pointer = nullptr;
+    if explicit { return pointer as ptr<fn() -> i32>; }
+    return pointer;
+}
+
+const fn pending_null_array() -> [ptr<fn() -> i32>; 1] {
+    let callable = erased_callable;
+    var pointer = addressof(callable);
+    pointer = nullptr;
+    let pointers = [pointer];
+    return pointers;
+}
+
+const fn inferred_null_array() {
+    let callable = erased_callable;
+    var pointer = addressof(callable);
+    pointer = nullptr;
+    return [pointer];
+}
+
+const fn canonical_null_roundtrip() -> [ptr<fn() -> i32>; 1] {
+    let callable = erased_callable;
+    var pointers = [addressof(callable)];
+    pointers = [nullptr as ptr<fn() -> i32>];
+    return pointers;
+}
+
+const delivered_null = pending_null_pointer(false);
+const delivered_cast_null = pending_null_pointer(true);
+const delivered_null_array = pending_null_array();
+const delivered_null_slice: [ptr<fn() -> i32>] = inferred_null_array();
+const delivered_roundtrip = canonical_null_roundtrip();
+
+const test "Pointer publication: checked delivery retains canonical destination types" {
+    check(delivered_null == nullptr);
+    check(delivered_cast_null == nullptr);
+    check(delivered_null_array[0] == nullptr);
+    check(delivered_null_slice[0] == nullptr);
+    check(delivered_roundtrip[0] == nullptr);
+}
+
+test "Pointer delivery: inferred nulls preserve values through casts and aggregates" {
+    check(pending_null_pointer(false) == nullptr);
+    check(pending_null_pointer(true) == nullptr);
+    check(pending_null_array()[0] == nullptr);
+    check(canonical_null_roundtrip()[0] == nullptr);
+    check(delivered_null_slice[0] == nullptr);
+}
+
+const fn erased_access() -> bool {
+    var value = 3;
+    let pointer = addressof(&value);
+    let alias = pointer;
+    let read = pointer as ptr<void>;
+    let write = pointer as ptr<&void>;
+    if alias != nullptr { *alias = 9; }
+    let other = 9;
+    return value
+        == 9
+        && read == (write as ptr<void>)
+        && read != (addressof(other) as ptr<void>)
+        && read != erased_null;
+}
+
+const fn erased_layout() -> bool {
+    let nested = ErasedNested {
+        first: ErasedPair {
+            first: 1,
+            second: 2
+        },
+        second: 3
+    };
+    let whole = addressof(nested) as ptr<void>;
+    let first = addressof(nested.first) as ptr<void>;
+    let leaf = addressof(nested.first.first) as ptr<void>;
+    let second = addressof(nested.first.second) as ptr<void>;
+    let values = [1, 2];
+    let element = addressof(values[0]) as ptr<void>;
+    let copied = element;
+    let next = addressof(values[1]) as ptr<void>;
+    let pairs = [
+        ErasedPair {
+            first: 1,
+            second: 2
+        },
+        ErasedPair {
+            first: 3,
+            second: 4
+        }
+    ];
+    let pair_element = addressof(pairs[0]) as ptr<void>;
+    let pair_first = addressof(pairs[0].first) as ptr<void>;
+    return whole
+        == first
+        && first == leaf
+        && whole != second
+        && element == copied
+        && element != next
+        && pair_element == pair_first;
+}
+
+const fn erased_cstrings() -> bool {
+    let source = c"123";
+    let copy = source;
+    let first = source as ptr<void>;
+    return first
+        == (copy as ptr<void>)
+        && first == (c"123" as ptr<void>)
+        && first != (c"124" as ptr<void>);
+}
+
+const fn static_pointer_text() -> String {
+    let value = 1;
+    let pointer = addressof(value) as ptr<void>;
+    return f"{pointer:p}";
+}
+
+const pointer_text = static_pointer_text();
+const null_text = f"{erased_null:p}";
+
+const fn display_extent() -> bool {
+    const text = static_pointer_text();
+    let values: [i32; text.len()] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    return values.as_slice().len() == text.len() && text == "const@nonnull";
+}
+
+const test "Pointer erasure: static access and address relations" {
+    check(erased_access());
+    check(erased_callable_address());
+    check(pending_callable_places());
+    check(pending_callable_access(false) == 7);
+    check(pending_callable_access(true) == 0);
+    check(callable_array_read_identity());
+    check(erased_layout());
+    check(erased_cstrings());
+    check(erased_null == nullptr);
+    check(erased_callable_null == nullptr);
+}
+
+const test "Pointer formatting: static text is independent of execution storage" {
+    check(pointer_text == "const@nonnull");
+    check(null_text == "const@null");
+    check(static_pointer_text() == static_pointer_text());
+    check(display_extent());
+}
+
+test "Pointer erasure: native access and address relations" {
+    check(erased_access());
+    check(erased_callable_address());
+    check(pending_callable_places());
+    check(pending_callable_access(false) == 7);
+    check(pending_callable_access(true) == 0);
+    check(callable_array_read_identity());
+    check(erased_layout());
+    check(erased_cstrings());
+    check(erased_null == nullptr);
+    check(erased_callable_null == nullptr);
+    check(display_extent());
+}
+
+test "Pointers: a callable view object can be invoked through its address" {
+    let callable: fn() -> i32 = erased_callable;
+    let pointer = addressof(callable);
+    if pointer == nullptr { fail("missing callable address"); }
+    check((*pointer)() == 7);
+    check(callable_holder_copy() == 7);
+}
+
+fn pointer_closure_factory(value: i32) => [value]() => value;
+
+test "Pointers: indirect closure calls preserve captured runtime effects" {
+    var target = 0;
+    let closure = [&target]() {
+        target += 1;
+    };
+    let pointer = addressof(closure);
+    if pointer == nullptr { fail("missing closure address"); }
+    (*pointer)();
+    let copied = *pointer;
+    copied();
+    check(target == 2);
+}
+
+test "Pointers: an indirect call can return a callable closure object" {
+    let factory = pointer_closure_factory;
+    let pointer = addressof(factory);
+    if pointer == nullptr { fail("missing factory address"); }
+    let closure = (*pointer)(7);
+    check(closure() == 7);
+}

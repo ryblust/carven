@@ -383,6 +383,8 @@ private:
         const OwnershipRelationships& relationships,
         const OwnershipState& state
     ) const noexcept -> std::vector<OwnershipCapture>;
+    auto opaque_callable_targets(TypeID type, ProgramOriginID origin) const noexcept
+        -> OwnershipRelationships;
     auto binding_places(LocalBindingID binding, const OwnershipState& state) const noexcept
         -> std::vector<OwnershipPlace>;
     auto binding_place(LocalBindingID binding) const noexcept -> OwnershipPlace;

@@ -803,6 +803,17 @@ auto evaluate_cast_constant_value(
         }
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
+    if (kind == CastKind::PointerErase
+        && std::holds_alternative<NullPointerConstant>(operand.value)) {
+        const auto from_type = values.type_copy(operand.type);
+        const auto to_type = values.type_copy(result);
+        const auto* from = std::get_if<PointerTypeValue>(&from_type.value);
+        const auto* to = std::get_if<PointerTypeValue>(&to_type.value);
+        if (from && to && pointer_erases(*from, *to, values.type_copy(to->target).value)) {
+            return ConstantFact {.type = result, .value = NullPointerConstant {}};
+        }
+        return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+    }
     if (kind == CastKind::Identity) {
         if (operand.type != result) {
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);

@@ -7,11 +7,12 @@ import std;
 ExecutionTypeShapes::ExecutionTypeShapes(const ExecutionValueAccess& values) noexcept
     : values(values) {}
 
-auto ExecutionTypeShapes::get(TypeID type) const noexcept -> std::optional<ExecutionTypeShape> {
+auto ExecutionTypeShapes::get(ConstructionTypeRef type) const noexcept
+    -> std::optional<ExecutionTypeShape> {
     return compute(type, 0uz);
 }
 
-auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
+auto ExecutionTypeShapes::compute(ConstructionTypeRef type, std::size_t depth) const noexcept
     -> std::optional<ExecutionTypeShape> {
     if (const auto found = completed.find(type); found != completed.end()) {
         return depth <= maximum_constant_aggregate_depth
@@ -23,20 +24,36 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
         return std::nullopt;
     }
     const auto calculate = [&]() noexcept -> std::optional<ExecutionTypeShape> {
-        const auto canonical = values.type_copy(type);
         auto result = ExecutionTypeShape {.supported = false, .depth = 0uz, .elements = 0uz};
         constexpr auto saturated = maximum_constant_aggregate_elements + 1uz;
-        if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
-            const auto child = compute(array->element, depth + 1uz);
+        const auto calculate_array =
+            [&](const auto& array) noexcept -> std::optional<ExecutionTypeShape> {
+            const auto child = compute(array.element, depth + 1uz);
             if (!child) {
                 return std::nullopt;
             }
             result.depth = child->depth + 1uz;
             result.supported = child->supported;
             const auto count = 1uz + child->elements;
-            result.elements = array->extent > maximum_constant_aggregate_elements / count
+            result.elements = array.extent > maximum_constant_aggregate_elements / count
                 ? saturated
-                : static_cast<std::size_t>(array->extent) * count;
+                : static_cast<std::size_t>(array.extent) * count;
+            return result;
+        };
+        if (const auto* term = std::get_if<TypeTermID>(&type)) {
+            const auto construction = values.construction_type_copy(*term);
+            if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
+                return calculate_array(*array);
+            }
+            result.supported =
+                std::holds_alternative<ConstructionPointerTypeValue>(construction.value)
+                || std::holds_alternative<ConstructionSliceTypeValue>(construction.value)
+                || std::holds_alternative<ConstructionCallableViewTypeValue>(construction.value);
+            return result;
+        }
+        const auto canonical = values.type_copy(std::get<TypeID>(type));
+        if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
+            return calculate_array(*array);
         } else if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
             const auto fields = values.struct_field_types(structure->structure);
             if (!fields) {
@@ -75,7 +92,9 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
         } else if (std::holds_alternative<RangeTypeValue>(canonical.value)) {
             result.supported = true;
         } else if (std::holds_alternative<PointerTypeValue>(canonical.value)
-                   || std::holds_alternative<SliceTypeValue>(canonical.value)) {
+                   || std::holds_alternative<SliceTypeValue>(canonical.value)
+                   || std::holds_alternative<FunctionTypeValue>(canonical.value)
+                   || std::holds_alternative<CallableViewTypeValue>(canonical.value)) {
             // Pointers and slices are views. Their backing storage is not contained
             // in the value's aggregate shape.
             result.supported = true;

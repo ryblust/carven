@@ -32,6 +32,10 @@ struct ExecutionDisplayNames final {
 
 class ExecutionValueAccess : public ConstantValueReader {
 public:
+    virtual auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType = 0;
+    virtual auto callable_signature_copy(CallableSignatureID signature) const noexcept
+        -> CallableSignature = 0;
+    virtual auto failure_set_copy(FailureSetID failures) const noexcept -> FailureSet = 0;
     virtual auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames = 0;
     virtual auto read_borrows_storage(TypeID type) const noexcept -> bool = 0;
     virtual auto struct_field_types(StructID structure) const noexcept
@@ -46,6 +50,10 @@ class SemIRProgram;
 class PublishedConstantValues final : public ExecutionValueAccess {
 public:
     explicit PublishedConstantValues(const SemIRProgram& program) noexcept;
+    auto construction_type_copy(TypeTermID type) const noexcept -> ConstructionType override;
+    auto callable_signature_copy(CallableSignatureID signature) const noexcept
+        -> CallableSignature override;
+    auto failure_set_copy(FailureSetID failures) const noexcept -> FailureSet override;
     auto display_names(TypeID type) const noexcept -> ExecutionDisplayNames override;
     auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
     auto read_borrows_storage(TypeID type) const noexcept -> bool override;

@@ -38,20 +38,20 @@ including internal NUL. Fixed arrays and structs become typed initializers of
 their completed children. These value initializers establish no source address
 identity and do not extend temporary backing lifetimes.
 
-`SliceConstant` instead requests persistent backing for its completed elements.
-`backend.lowering.constant` reconstructs completed values. Each `ModuleLowering`
-owns one `ConstantStorage` within its artifact. Storage records which canonical
-constant identities have been materialized; declarations and references use
-names from `TargetNamePlan`. It emits an `inline constexpr` declaration initialized
-by a typed `std::array` and realizes the slice as `runtime::as_slice` of that array.
-Generated names distinguish linkage domains and source modules; artifacts can
-materialize the same planned backing independently. Storage remains in its source
+`backend.lowering.constant` reconstructs completed values. `ConstantStorage`
+records materialized canonical constants in a selected target namespace;
+declarations and references use names from `TargetNamePlan`. Each
+`ModuleLowering` owns module-scoped slice backing, while `ArtifactLowering` owns
+linkage-domain C string backing. Artifacts can materialize the same planned
+`inline constexpr` objects independently.
+
+`SliceConstant` requests a typed `std::array` of its completed elements and
+realizes the slice as `runtime::as_slice` of that array. Backing stays in the source
 module's C++ namespace so user types resolve in the same scope. Empty values use
-the same representation. Elements are reconstructed from their canonical constants,
-preserving the slice's element type. Private type definitions precede slice backing,
-followed by function bodies; dependencies request complete element definitions for
-that storage. Target variable declarations participate in ordinary traversal,
-verification, dependency collection, and emission. The runtime slice supplies the
+the same representation. Private type definitions precede slice backing, followed
+by function bodies; dependencies request complete element definitions for that
+storage. Target variable declarations participate in ordinary traversal,
+verification, dependency collection, and emission. The runtime slice supplies
 read-only access and bounds operations.
 
 `const` blocks have already executed during semantic analysis. A module-scope
@@ -209,10 +209,13 @@ representation selection. Restricted query shapes have structural equality for
 type interning; general target expressions remain move-only and have no equality
 protocol.
 
-C string constants have an intrinsic external `const char*` type. Lowering emits
-their decoded bytes as a narrow C++ string literal converted to a pointer, so
-calls and deduction receive the declared pointer type with program-lifetime storage.
-Ordinary string literals retain `std::string_view` realization.
+C string constants have an intrinsic external `const char*` type. Their complete
+contents select linkage-domain backing: a content-named `inline constexpr` array
+constructed by `std::to_array` from a narrow C++ literal, including its trailing
+NUL. Lowering refers to its `.data()`, preserving pointer type in calls and
+deduction. The same domain and contents select one address across generated
+modules and artifacts. Ordinary string literals retain `std::string_view`
+realization.
 
 Artifact-local query aliases name shared queries without changing their type or
 value category.

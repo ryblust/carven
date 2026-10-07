@@ -16,6 +16,9 @@ binding selection creates a new occurrence; projections own their receiver and i
 Function names construct callable occurrences directly. Construction results read
 types and constants from their owned expressions. `BodyType` and `BodyFailures` store
 construction or resolved facts; their accessors explicitly select the required stage.
+Closed declared callable shapes become canonical types during source type resolution.
+Construction pointers retain a pending pointee type and its access until publication
+resolves the wrapper after ordinary type and failure completion.
 Published bodies expose only const access to the completed tree.
 
 Provenance resolves an origin directly to `ProgramSourceID` and `Span`.

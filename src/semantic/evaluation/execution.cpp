@@ -48,6 +48,10 @@ auto ExecutionEvent::termination() const noexcept -> ExecutionTermination {
     std::unreachable();
 }
 
+auto SemanticExecutionContext::stage() const noexcept -> ExecutionStage {
+    return ExecutionStage::Static;
+}
+
 auto SemanticExecutionContext::trace(const ExecutionTraceEvent&) noexcept -> void {}
 
 auto SemanticExecutionContext::enter_block(BlockSource) noexcept -> void {}

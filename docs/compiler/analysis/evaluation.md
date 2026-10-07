@@ -16,13 +16,40 @@ remain subject to the caller's nesting depth. `operation` supplies
 checked scalar operations and retained-input queries. `freeze` interns completed
 results. `semantic.format.builtin` supplies the bounded builtin formatter to both
 execution and backend preparation. It accepts numeric values, bools, chars, borrowed
-text, and an unavailable-input alternative. Callers adapt their input storage and
-supply a byte budget. Execution translates failures into diagnostics and accounts
-for work; optional preparation uses runtime formatting on failure.
+text, borrowed pointer-display text, and an unavailable-input alternative. Callers
+adapt their input storage and supply a byte budget. Execution translates failures
+into diagnostics and accounts for work; optional preparation uses runtime
+formatting on failure.
 `execution` defines execution entries and their call context; `executor` owns
 execution state, with `expr`, `control`, and `text` implementation slices.
 `memory` owns addressable objects and resolves their projections. `limits`
 names resource bounds.
+
+Explicit object-pointer erasure uses `SemCast` with `CastKind::PointerErase`.
+Construction and publication validate the same type and access rule. Native
+realization emits an ordinary `static_cast`. Execution retains the selected
+storage and projection, changing only the pointer type. Known C strings refer
+to backing selected by their canonical contents, matching the native
+linkage-domain storage contract.
+
+`ExecutionMemory::address_key` derives address coordinates from the selected
+storage's actual type; `same_address` checks established address relations.
+Access paths remain available for dereference. First-field address sharing uses
+the subset of Carven types for which `proves_standard_layout` establishes the
+property, including a struct within an array whose own first field is selected.
+Text backing markers establish byte access without establishing their address
+relationship to a String owner. An unavailable address relation produces an
+execution failure. Equality and interpreted pointer display consume those memory
+queries.
+
+`SemanticExecutionContext::stage` selects pointer display. Static execution
+uses fixed null/non-null text, so formatting remains ordinary computed text
+without introducing execution identity into normalized values. Interpreted
+runtime uses execution-local address labels where the memory query establishes
+an address key. Execution supplies borrowed `BuiltinPointerDisplay` inputs to
+bounded formatting; the frozen-value adapter does not manufacture those labels
+during optional native preparation. Non-null execution pointers remain outside
+constant freezing.
 
 Value and structured control contexts share operation execution, step accounting,
 and capability checks. Value contexts receive normal-completion values; structured
@@ -162,7 +189,27 @@ values remain execution-local and cannot carry compound storage; they hold scala
 data or a retained text identity. `ExecutionValue` is move-only: host movement
 transports execution results, while `copy_value` performs language copying and
 accounts for aggregate and text work. Atoms, coordinates and immutable text handles
-remain copyable.
+remain copyable. Computed pointers, arrays, slices, and callable values may retain
+`ConstructionTypeRef` while their types are being inferred. Draft execution queries
+their construction shapes; freezing requires completed canonical types. Non-null
+pointers cannot freeze. Read array arguments preserve source storage where their
+element types establish identity; borrowing an adaptation whose type equivalence
+remains unknown produces an execution diagnostic.
+Every normally completed expression delivers its checked semantic type to the
+execution value. Pointer, slice, callable, and aggregate tags retain that type
+when the value enters storage or publication. Casts and aggregate adoption use
+this common delivery boundary; they do not independently retag their results.
+Detaching a slice delivers copied elements through the slice's element type
+without changing its borrowed backing. Freezing still accepts only canonical
+values and never infers a replacement type from a payload.
+Callable adaptation executes direct function targets and copies whose type identity
+is established. Widening an existing view requires a live backing reference and is
+not represented by execution values; static and interpreted execution diagnose it
+for live callable targets, including array elements. Empty arrays require no target
+borrow. Validated adaptation to a view with an empty failure set establishes copy
+identity even while source failure inference is unfinished: its required subset
+cannot widen an empty set. Other pending callable types whose copy identity cannot
+be established produce a diagnostic.
 `ExecutionTextStorage` privately holds owned bytes or a borrowed retained spelling.
 The move-only `ExecutionOwnedText` encapsulates String ownership;
 `ExecutionText` either shares immutable content or weakly borrows String storage.

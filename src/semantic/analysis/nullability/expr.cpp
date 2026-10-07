@@ -39,16 +39,12 @@ auto NullabilityBodyAnalyzer::condition(const SemanticExpression& source, NullSt
     if (const auto* comparison = std::get_if<SemBinary>(&source.value); comparison != nullptr
         && (comparison->operation == BinaryOperator::Equal
             || comparison->operation == BinaryOperator::NotEqual)) {
-        // Only a literal/folded constant operation is side-effect free. A known
-        // null result of an arbitrary operation may have changed the other slot.
-        const auto is_null = [&](const SemanticExpression& value) noexcept {
-            return std::holds_alternative<SemConstant>(value.value)
-                && !constant_value(value).empty();
-        };
+        // Refinement requires a pure null operand. A computed null result may
+        // have changed the other slot during evaluation.
         auto place = std::optional<NullPlace>();
-        if (is_null(*comparison->right)) {
+        if (is_pure_null(*comparison->right)) {
             place = location(*comparison->left);
-        } else if (is_null(*comparison->left)) {
+        } else if (is_pure_null(*comparison->left)) {
             place = location(*comparison->right);
         }
         if (place) {
@@ -124,15 +120,13 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                     == DefaultInitialization::Native) {
                     invalidate_exposed(flow.normal->state);
                 }
-                if (std::holds_alternative<PointerTypeValue>(
-                        program.types().type(source.type.resolved()).value
-                    )) {
+                if (is_pure_null(source)) {
                     set_value({{{}, NullFact::Null}});
                 }
                 co_return {};
             },
             [&](const SemConstant&) noexcept -> ContinuationTask<std::monostate> {
-                set_value(constant_value(source));
+                set_value(is_pure_null(source) ? NullValue {{{}, NullFact::Null}} : NullValue {});
                 co_return {};
             },
             [&](const SemUnreachable&) noexcept -> ContinuationTask<std::monostate> {

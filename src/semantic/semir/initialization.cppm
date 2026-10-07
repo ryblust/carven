@@ -62,6 +62,7 @@ auto query_default_initialization(
                     return true;
                 } else {
                     return std::same_as<Value, PointerTypeValue>
+                        || std::same_as<Value, ConstructionPointerTypeValue>
                         || std::same_as<Value, SliceTypeValue>
                         || std::same_as<Value, ConstructionSliceTypeValue>
                         || std::same_as<Value, RangeTypeValue>;

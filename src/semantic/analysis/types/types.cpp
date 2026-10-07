@@ -340,7 +340,7 @@ auto resolve_function_type(
         failures = std::move(*resolved);
     }
     const auto failure_term = draft.add_concrete_failure_term(std::move(failures));
-    co_return ConstructionTypeRef {draft.append_construction_type(
+    co_return ConstructionTypeRef {draft.canonicalize_declared_type(
         ConstructionType {
             .value = ConstructionCallableViewTypeValue {
                 .parameters = std::move(parameters),

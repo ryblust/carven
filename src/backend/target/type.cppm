@@ -46,7 +46,7 @@ struct TargetArrayType final {
     auto operator==(const TargetArrayType&) const noexcept -> bool = default;
 };
 
-struct TargetFunctionType final {
+struct TargetFunctionRefType final {
     std::vector<TargetTypeID> parameters;
     TargetTypeID result;
 
@@ -54,7 +54,7 @@ struct TargetFunctionType final {
         return TargetSymbol::RuntimeFunctionRef;
     }
 
-    auto operator==(const TargetFunctionType&) const noexcept -> bool = default;
+    auto operator==(const TargetFunctionRefType&) const noexcept -> bool = default;
 };
 
 struct TargetPointerType final {
@@ -83,7 +83,7 @@ using TargetTypeValue = std::variant<
     TargetNamedType,
     TargetIntrinsicType,
     TargetArrayType,
-    TargetFunctionType,
+    TargetFunctionRefType,
     TargetPointerType,
     TargetReferenceType,
     TargetDecltypeType>;

@@ -77,9 +77,6 @@ struct PointerTypeValue final {
     constexpr auto operator==(const PointerTypeValue&) const noexcept -> bool = default;
 };
 
-auto pointer_narrows(const PointerTypeValue& source, const PointerTypeValue& target) noexcept
-    -> bool;
-
 struct ArrayTypeValue final {
     TypeID element;
     std::uint64_t extent;
@@ -160,6 +157,32 @@ struct ConstructionCallableParameter final {
     ConstructionTypeRef type;
 };
 
+struct ConstructionPointerTypeValue final {
+    ConstructionTypeRef target;
+    PointerAccess access;
+};
+
+auto pointer_narrows(const PointerTypeValue& source, const PointerTypeValue& target) noexcept
+    -> bool;
+
+template<typename Source, typename Target>
+    requires (std::same_as<Source, PointerTypeValue>
+              || std::same_as<Source, ConstructionPointerTypeValue>)
+    && (std::same_as<Target, PointerTypeValue>
+        || std::same_as<Target, ConstructionPointerTypeValue>)
+auto pointer_erases(
+    const Source& source,
+    const Target& target,
+    const CanonicalTypeValue& target_target
+) noexcept -> bool {
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&target_target);
+    return (ConstructionTypeRef(source.target) != ConstructionTypeRef(target.target)
+            || source.access != target.access)
+        && builtin
+        && builtin->kind == BuiltinType::Void
+        && (target.access == PointerAccess::Read || source.access == PointerAccess::Write);
+}
+
 struct ConstructionArrayTypeValue final {
     ConstructionTypeRef element;
     std::uint64_t extent;
@@ -176,6 +199,7 @@ struct ConstructionCallableViewTypeValue final {
 };
 
 using ConstructionTypeValue = std::variant<
+    ConstructionPointerTypeValue,
     ConstructionArrayTypeValue,
     ConstructionSliceTypeValue,
     ConstructionCallableViewTypeValue>;
@@ -371,7 +395,14 @@ public:
     ) noexcept -> TypeID {
         return type.value.visit([&](const auto& value) noexcept -> TypeID {
             using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
+            if constexpr (std::same_as<Value, ConstructionPointerTypeValue>) {
+                return types.intern(
+                    {.value = PointerTypeValue {
+                         .target = resolve_ref(value.target),
+                         .access = value.access
+                     }}
+                );
+            } else if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
                 return types.intern(
                     CanonicalType {
                         .value = ArrayTypeValue {

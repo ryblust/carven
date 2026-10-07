@@ -78,7 +78,7 @@ auto convert_intrinsic_argument(
             auto converted = construct_slice_value(
                 site,
                 SliceIntrinsic::FromArray,
-                source,
+                target,
                 extent,
                 std::move(operands),
                 std::move(state),
@@ -91,12 +91,19 @@ auto convert_intrinsic_argument(
             return true;
         }
     }
-    if (pointer_narrows(site.draft(), source, target)) {
+    if (pointer_narrowing_shape(site.draft(), source, target)) {
+        const auto from = pointer_shape(site.draft(), source);
+        const auto to = pointer_shape(site.draft(), target);
+        if (auto checked = site.require_invariant_storage(from->target, to->target, span);
+            !checked) {
+            return std::unexpected(checked.error());
+        }
         auto known = std::optional<ConstantID>();
         if constexpr (Site::mode == ExpressionMode::Body) {
-            if (site.known(value)) {
+            if (const auto* concrete = std::get_if<TypeID>(&target);
+                concrete && site.known(value)) {
                 known = site.draft().intern_constant(
-                    {.type = std::get<TypeID>(target), .value = NullPointerConstant {}}
+                    {.type = *concrete, .value = NullPointerConstant {}}
                 );
             }
         }

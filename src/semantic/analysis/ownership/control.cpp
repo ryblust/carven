@@ -392,13 +392,20 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     auto header = entry;
     auto initial_elements = OwnershipRelationships {};
     if (slice_value) {
-        for (const auto& selected : select_element_storage(
-                 program.types(),
-                 iterable.type.resolved(),
-                 result.normal->storage,
-                 result.normal->value,
-                 std::nullopt
-             )) {
+        const auto storage = select_element_storage(
+            program.types(),
+            iterable.type.resolved(),
+            result.normal->storage,
+            result.normal->value,
+            std::nullopt
+        );
+        if (storage.empty()) {
+            const auto element =
+                std::get<SliceTypeValue>(program.types().type(iterable.type.resolved()).value)
+                    .element;
+            initial_elements = opaque_callable_targets(element, iterable.origin);
+        }
+        for (const auto& selected : storage) {
             merge_relationships(
                 initial_elements,
                 project_relationships(entry.objects[selected.object].relationships, selected.path)

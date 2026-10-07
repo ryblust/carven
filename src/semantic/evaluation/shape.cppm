@@ -15,12 +15,12 @@ struct ExecutionTypeShape final {
 class ExecutionTypeShapes final {
 public:
     explicit ExecutionTypeShapes(const ExecutionValueAccess& values) noexcept;
-    auto get(TypeID type) const noexcept -> std::optional<ExecutionTypeShape>;
+    auto get(ConstructionTypeRef type) const noexcept -> std::optional<ExecutionTypeShape>;
 
 private:
-    auto compute(TypeID type, std::size_t depth) const noexcept
+    auto compute(ConstructionTypeRef type, std::size_t depth) const noexcept
         -> std::optional<ExecutionTypeShape>;
 
     const ExecutionValueAccess& values;
-    mutable std::map<TypeID, ExecutionTypeShape> completed;
+    mutable std::map<ConstructionTypeRef, ExecutionTypeShape> completed;
 };

@@ -34,7 +34,11 @@ pointer type, independently of the slot's binding access. `let value = *p`
 performs ordinary value initialization; C++ checks native copyability. `&*p`
 passes a writable target to an ordinary Write parameter. `&&*p` is rejected:
 the target is not an owned Carven binding. Existing callable-borrow boundaries
-remain in force; an indirect address does not establish a tracked borrow.
+remain in force; an indirect address does not establish a tracked borrow. Reading
+an existing callable view copies its target description. Adapting an indirectly
+read capturing closure into a new view still requires tracked backing storage.
+An indirect call does not reconstruct capture relationships or establish the
+lifetimes of objects reached through those captures.
 
 For the same target type, `ptr<&T>` can become `ptr<T>` in a value context:
 initialization, assignment, field or element construction, Read arguments,
@@ -52,12 +56,43 @@ caller's slot and require the complete pointer type to match. Take parameters
 also require an exact type, transfer the address value, and make its source
 owner unavailable. Take does not zero other aliases or release the target.
 
-`nullptr` needs a concrete pointer type context, including in an explicitly
-typed `const`. There is no independent null type. Pointers support `==` and
+`nullptr` needs a pointer type context, including in an explicitly typed `const`. There is no independent null type. Pointers support `==` and
 `!=` with `nullptr` and with pointers to the same target type. They have no
 implicit boolean conversion, ordering, arithmetic, direct indexing, integer
 conversion. `addressof` is the Carven address-of operation for an addressable
 place.
+
+## Erasure, comparison, and display
+
+Explicit `as ptr<void>` erases a Read target type. A Write pointer may erase to
+`ptr<&void>` or narrow to `ptr<void>`; Read access cannot become Write access.
+Erasure preserves the address and leaves the target lifetime unchanged. It does
+not read or own the target. Carven callable values are objects, so
+`ptr<fn() -> i32>` follows the same object-pointer erasure rule. Conversion from `ptr<void>` to a typed
+pointer is not supported. The compiler-known external `const char*` type of a C
+string can erase to `ptr<void>`.
+
+Pointer equality compares addresses. An address retains its storage origin and
+selected subobject during semantic execution; those access coordinates alone do
+not determine address equality. A standard-layout struct and its first field
+have the same address, including nested first fields. Static execution
+establishes that layout for Carven structs whose fields recursively consist of
+numeric, bool, char, and pointer types or such structs. A comparison requiring
+address information unavailable during execution produces a diagnostic.
+Array-element access alone does not establish whether the native array wrapper
+shares its first element's address. A text byte view likewise retains access to
+its backing without establishing its address relationship to the owning String
+object.
+
+Erased pointers accept an empty format specification or `p`. Static execution
+formats non-null pointers as `const@nonnull` and null pointers as `const@null`.
+These fixed strings carry no object identity and can participate in ordinary
+text computation and constant publication. Interpreted runtime uses
+execution-local address labels such as `interp@object#N`; equal addresses have
+the same label. Interpreted address display requires an established address
+key; an unavailable key produces an execution diagnostic. Native runtime uses
+the C++ pointer formatter. Formatting neither extends storage lifetime nor
+establishes that a target can be dereferenced.
 
 ## Local non-null checks
 

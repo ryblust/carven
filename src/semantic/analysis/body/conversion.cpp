@@ -109,103 +109,7 @@ auto BodyElaborator::require_invariant_type(
         return {};
     }
 
-    struct ArrayShape final {
-        ConstructionTypeRef element;
-        std::uint64_t extent;
-    };
-
-    struct CallableViewShape final {
-        std::vector<ConstructionCallableParameter> parameters;
-        ConstructionTypeRef result;
-        FailureTermID failures;
-    };
-
-    const auto array_shape = [&](ConstructionTypeRef type) noexcept -> std::optional<ArrayShape> {
-        if (const auto* concrete = std::get_if<TypeID>(&type)) {
-            const auto canonical = draft().type_copy(*concrete);
-            const auto* array = std::get_if<ArrayTypeValue>(&canonical.value);
-            return array == nullptr ? std::nullopt
-                                    : std::optional(
-                                          ArrayShape {
-                                              .element = array->element,
-                                              .extent = array->extent,
-                                          }
-                                      );
-        }
-        const auto construction = draft().construction_type_copy(std::get<TypeTermID>(type));
-        const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value);
-        return array == nullptr ? std::nullopt
-                                : std::optional(
-                                      ArrayShape {
-                                          .element = array->element,
-                                          .extent = array->extent,
-                                      }
-                                  );
-    };
-    const auto callable_view_shape =
-        [&](ConstructionTypeRef type) noexcept -> std::optional<CallableViewShape> {
-        if (std::holds_alternative<TypeID>(type)) {
-            return std::nullopt;
-        }
-        const auto construction = draft().construction_type_copy(std::get<TypeTermID>(type));
-        const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
-        return view == nullptr ? std::nullopt
-                               : std::optional(
-                                     CallableViewShape {
-                                         .parameters = view->parameters,
-                                         .result = view->result,
-                                         .failures = view->failures,
-                                     }
-                                 );
-    };
-    const auto invariant = [&](this auto&& self,
-                               ConstructionTypeRef left,
-                               ConstructionTypeRef right) noexcept -> bool {
-        if (left == right) {
-            return true;
-        }
-        const auto left_slice = slice_element(draft(), left);
-        const auto right_slice = slice_element(draft(), right);
-        if (left_slice || right_slice) {
-            return left_slice && right_slice && self(*left_slice, *right_slice);
-        }
-        const auto left_array = array_shape(left);
-        const auto right_array = array_shape(right);
-        if (left_array.has_value() || right_array.has_value()) {
-            return left_array.has_value()
-                && right_array.has_value()
-                && left_array->extent == right_array->extent
-                && self(left_array->element, right_array->element);
-        }
-        const auto left_view = callable_view_shape(left);
-        const auto right_view = callable_view_shape(right);
-        if (left_view.has_value() || right_view.has_value()) {
-            if (!left_view.has_value()
-                || !right_view.has_value()
-                || left_view->parameters.size() != right_view->parameters.size()
-                || !self(left_view->result, right_view->result)) {
-                return false;
-            }
-            for (auto index = 0uz; index < left_view->parameters.size(); ++index) {
-                if (left_view->parameters[index].stage != right_view->parameters[index].stage
-                    || left_view->parameters[index].access != right_view->parameters[index].access
-                    || !self(
-                        left_view->parameters[index].type,
-                        right_view->parameters[index].type
-                    )) {
-                    return false;
-                }
-            }
-            draft().require_equal_failures(left_view->failures, right_view->failures, origin(span));
-            return true;
-        }
-        const auto* left_type = std::get_if<TypeID>(&left);
-        const auto* right_type = std::get_if<TypeID>(&right);
-        return left_type != nullptr
-            && right_type != nullptr
-            && draft().type_copy(*left_type) == draft().type_copy(*right_type);
-    };
-    if (!invariant(source, target)) {
+    if (!constrain_invariant_type(draft(), source, target, origin(span))) {
         return std::unexpected(type_mismatch(source, target, span));
     }
     return {};
@@ -225,66 +129,6 @@ auto BodyElaborator::type_mismatch(
             type_display_name(draft(), actual)
         )
     );
-}
-
-auto BodyElaborator::require_adaptation(
-    ConstructionTypeRef source,
-    ConstructionTypeRef target,
-    Span span
-) noexcept -> AnalysisResult<void> {
-    if (source == target) {
-        return {};
-    }
-    if (slice_element(draft(), target)) {
-        return require_invariant_type(source, target, span);
-    }
-    if (const auto element = array_element(draft(), target)) {
-        const auto source_element = array_element(draft(), source);
-        if (!source_element) {
-            invariant_violation("compatible array adoption lost its source shape");
-        }
-        return require_adaptation(*source_element, *element, span);
-    }
-    const auto* term = std::get_if<TypeTermID>(&target);
-    if (term == nullptr) {
-        return {};
-    }
-    const auto construction = draft().construction_type_copy(*term);
-    const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
-    if (view == nullptr) {
-        return {};
-    }
-    const auto contract = callable_contract(source, span);
-    if (!contract) {
-        return std::unexpected(contract.error());
-    }
-    if (contract->parameters.size() != view->parameters.size()) {
-        return std::unexpected(type_mismatch(source, target, span));
-    }
-    if (auto checked = require_invariant_type(contract->result, view->result, span); !checked) {
-        return checked;
-    }
-    for (auto index = 0uz; index < view->parameters.size(); ++index) {
-        if (contract->parameters[index].stage != view->parameters[index].stage
-            || contract->parameters[index].access != view->parameters[index].access) {
-            return std::unexpected(type_mismatch(source, target, span));
-        }
-        if (auto checked = require_invariant_type(
-                contract->parameters[index].type,
-                view->parameters[index].type,
-                span
-            );
-            !checked) {
-            return checked;
-        }
-    }
-    draft().require_failure_subset(
-        contract->failures,
-        view->failures,
-        expansion(span, ProgramExpansionReason::CallableAdoption),
-        FailureSubsetRequirementKind::CallableAdoption
-    );
-    return {};
 }
 
 auto BodyElaborator::coerce_to(
@@ -339,12 +183,8 @@ auto BodyElaborator::coerce_to(
         built = std::move(*converted);
         return {};
     }
-    if (!compatible(built.type(), target)) {
+    if (!constrain_type_adaptation(draft(), built.type(), target, origin(span))) {
         return std::unexpected(type_mismatch(built.type(), target, span));
-    }
-
-    if (auto checked = require_adaptation(built.type(), target, span); !checked) {
-        return checked;
     }
     const auto source_array = sequence_shape(draft(), built.type());
     const auto target_array = sequence_shape(draft(), target);
@@ -364,13 +204,17 @@ auto BodyElaborator::coerce_to(
         *built.storage = std::move(value);
         return {};
     }
-    const auto* target_term = std::get_if<TypeTermID>(&target);
-    if (target_term == nullptr) {
-        return {};
-    }
-    const auto construction = draft().construction_type_copy(*target_term);
-    const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
-    if (view == nullptr) {
+    const auto target_is_view = target.visit([&](const auto id) noexcept {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(id)>, TypeID>) {
+            return std::holds_alternative<CallableViewTypeValue>(draft().type_copy(id).value);
+        } else {
+            return std::holds_alternative<ConstructionCallableViewTypeValue>(
+                draft().construction_type_copy(id).value
+            );
+        }
+    });
+    if (!target_is_view) {
+        built.expression().type = BodyType(target);
         return {};
     }
     const auto adoption_origin = expansion(span, ProgramExpansionReason::CallableAdoption);

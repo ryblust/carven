@@ -9,19 +9,28 @@ auto supported_execution_type(
     ConstructionTypeRef type,
     bool allow_void
 ) noexcept -> bool {
-    const auto* id = std::get_if<TypeID>(&type);
-    if (!id) {
-        return false;
-    }
-    auto pending = std::vector<TypeID> {*id};
-    auto visited = std::set<TypeID>();
+    auto pending = std::vector<ConstructionTypeRef> {type};
+    auto visited = std::set<ConstructionTypeRef>();
     while (!pending.empty()) {
         const auto current = pending.back();
         pending.pop_back();
         if (!visited.insert(current).second) {
             continue;
         }
-        const auto canonical = values.type_copy(current);
+        if (const auto* term = std::get_if<TypeTermID>(&current)) {
+            const auto construction = values.construction_type_copy(*term);
+            if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
+                pending.push_back(array->element);
+            } else if (!std::holds_alternative<ConstructionPointerTypeValue>(construction.value)
+                       && !std::holds_alternative<ConstructionSliceTypeValue>(construction.value)
+                       && !std::holds_alternative<ConstructionCallableViewTypeValue>(
+                           construction.value
+                       )) {
+                return false;
+            }
+            continue;
+        }
+        const auto canonical = values.type_copy(std::get<TypeID>(current));
         if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
             pending.push_back(array->element);
         } else if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
@@ -55,7 +64,7 @@ auto supported_execution_type(
                 && builtin->kind != BuiltinType::Char
                 && builtin->kind != BuiltinType::Str
                 && builtin->kind != BuiltinType::String
-                && !(allow_void && current == *id && builtin->kind == BuiltinType::Void)) {
+                && !(allow_void && current == type && builtin->kind == BuiltinType::Void)) {
                 return false;
             }
         } else {

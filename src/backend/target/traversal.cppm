@@ -198,9 +198,9 @@ auto visit_target_type_children(const TargetTypeValue& value, Visitor& visitor) 
             [&](const TargetArrayType& array) noexcept {
                 return visit_target_type(visitor, array.element_type_id);
             },
-            [&](const TargetFunctionType& function) noexcept {
-                return visit_types(function.parameters)
-                    && visit_target_type(visitor, function.result);
+            [&](const TargetFunctionRefType& function_ref) noexcept {
+                return visit_types(function_ref.parameters)
+                    && visit_target_type(visitor, function_ref.result);
             },
             [&](const TargetPointerType& pointer) noexcept {
                 return visit_target_type(visitor, pointer.pointee);

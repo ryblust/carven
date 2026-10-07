@@ -26,10 +26,21 @@ auto freeze_value(
             .value = StringConstant {.value = draft.intern_spelling(*text)},
         });
     }
+    if (std::holds_alternative<ExecutionPointer>(value)) {
+        if (const auto atom = execution_atom(draft, value)) {
+            return draft.intern_constant(constant_fact(*atom));
+        }
+        return std::nullopt;
+    }
     const auto* aggregate = std::get_if<ExecutionAggregateValue>(&value);
     const auto* enumeration = std::get_if<ExecutionEnumValue>(&value);
     if (aggregate || enumeration) {
-        const auto type = aggregate ? aggregate->type : enumeration->type;
+        const auto reference = aggregate ? aggregate->type : ConstructionTypeRef(enumeration->type);
+        const auto* concrete = std::get_if<TypeID>(&reference);
+        if (!concrete) {
+            return std::nullopt;
+        }
+        const auto type = *concrete;
         const auto enum_case = enumeration ? std::optional(enumeration->enum_case) : std::nullopt;
         const auto children = execution_elements(value);
         if (depth >= maximum_constant_aggregate_depth

@@ -9,8 +9,10 @@ import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.decl;
+import :semantic.semir.delegation;
 import :semantic.semir.simd;
 import :semantic.semir.type;
+import :support.function_ref;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -32,6 +34,49 @@ auto builtin_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     const auto value = draft.type_copy(*concrete);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&value.value);
     return builtin == nullptr ? std::nullopt : std::optional(builtin->kind);
+}
+
+auto known_cstring(const CanonicalTypeValue& source) noexcept -> bool {
+    const auto* native = std::get_if<CppTypeValue>(&source);
+    return native && std::holds_alternative<CppConstCharPointerType>(native->form);
+}
+
+auto canonical_pointer_shape(const CanonicalType& type) noexcept
+    -> std::optional<ConstructionPointerTypeValue> {
+    const auto* pointer = std::get_if<PointerTypeValue>(&type.value);
+    return pointer
+        ? std::optional(
+              ConstructionPointerTypeValue {.target = pointer->target, .access = pointer->access}
+          )
+        : std::nullopt;
+}
+
+auto decide_pointer_cast(
+    std::optional<ConstructionPointerTypeValue> from,
+    std::optional<ConstructionPointerTypeValue> to,
+    bool narrowing,
+    bool cstring,
+    std::optional<BuiltinType> pointee
+) noexcept -> std::optional<CastKind> {
+    if (!to) {
+        return std::nullopt;
+    }
+    if (from) {
+        if (narrowing) {
+            return CastKind::PointerRead;
+        }
+        if (pointee
+            && pointer_erases(
+                *from,
+                *to,
+                CanonicalTypeValue {BuiltinTypeValue {.kind = *pointee}}
+            )) {
+            return CastKind::PointerErase;
+        }
+    } else if (cstring && to->access == PointerAccess::Read && pointee == BuiltinType::Void) {
+        return CastKind::PointerErase;
+    }
+    return std::nullopt;
 }
 
 auto operation_error(std::string_view message, DiagnosticCode code) noexcept
@@ -158,6 +203,20 @@ auto callable_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcep
         } else if (const auto* closure = std::get_if<ClosureTypeValue>(&canonical.value)) {
             callable = closure->callable;
         }
+        if (const auto* view = std::get_if<CallableViewTypeValue>(&canonical.value)) {
+            const auto signature = draft.callable_signature_copy(view->signature);
+            auto parameters = std::vector<ConstructionCallableParameter>();
+            for (const auto& parameter : signature.parameters) {
+                parameters.push_back(
+                    {.stage = parameter.stage, .access = parameter.access, .type = parameter.type}
+                );
+            }
+            return CallableShape {
+                .owning_type = std::nullopt,
+                .parameters = std::move(parameters),
+                .result = signature.result
+            };
+        }
         if (callable.has_value()) {
             const auto contract = draft.construction_callable_contract_copy(*callable);
             return CallableShape {
@@ -181,11 +240,15 @@ auto callable_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcep
                              );
 }
 
-auto shapes_compatible(
+enum class TypeRelation { Adaptation, Invariant };
+
+auto check_type_relation(
     const ProgramDraft& draft,
     ConstructionTypeRef left,
     ConstructionTypeRef right,
-    std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>& visited
+    std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>& visited,
+    TypeRelation relation,
+    FunctionRef<void(ConstructionTypeRef, ConstructionTypeRef) noexcept> visit_views
 ) noexcept -> bool {
     if (left == right) {
         return true;
@@ -194,21 +257,31 @@ auto shapes_compatible(
         return true;
     }
 
+    const auto check = [&](ConstructionTypeRef a, ConstructionTypeRef b) noexcept {
+        return check_type_relation(draft, a, b, visited, relation, visit_views);
+    };
+    const auto left_pointer = pointer_shape(draft, left);
+    const auto right_pointer = pointer_shape(draft, right);
+    if (left_pointer || right_pointer) {
+        return left_pointer
+            && right_pointer
+            && left_pointer->access == right_pointer->access
+            && check(left_pointer->target, right_pointer->target);
+    }
+
     const auto left_array = array_shape(draft, left);
     const auto right_array = array_shape(draft, right);
     if (left_array.has_value() || right_array.has_value()) {
         return left_array.has_value()
             && right_array.has_value()
             && left_array->extent == right_array->extent
-            && shapes_compatible(draft, left_array->element, right_array->element, visited);
+            && check(left_array->element, right_array->element);
     }
 
     const auto left_slice = slice_element(draft, left);
     const auto right_slice = slice_element(draft, right);
     if (left_slice || right_slice) {
-        return left_slice
-            && right_slice
-            && shapes_compatible(draft, *left_slice, *right_slice, visited);
+        return left_slice && right_slice && check(*left_slice, *right_slice);
     }
 
     const auto left_callable = callable_shape(draft, left);
@@ -217,22 +290,30 @@ auto shapes_compatible(
         if (!left_callable.has_value() || !right_callable.has_value()) {
             return false;
         }
+        if (relation == TypeRelation::Invariant
+            && left_callable->owning_type.has_value() != right_callable->owning_type.has_value()) {
+            return false;
+        }
         if (left_callable->owning_type.has_value() && right_callable->owning_type.has_value()) {
             return left_callable->owning_type == right_callable->owning_type;
         }
         if (left_callable->parameters.size() != right_callable->parameters.size()
-            || !shapes_compatible(draft, left_callable->result, right_callable->result, visited)) {
+            || !check(left_callable->result, right_callable->result)) {
             return false;
         }
-        return std::ranges::equal(
+        const auto parameters_match = std::ranges::equal(
             left_callable->parameters,
             right_callable->parameters,
             [&](const auto& left_parameter, const auto& right_parameter) noexcept {
                 return left_parameter.stage == right_parameter.stage
                     && left_parameter.access == right_parameter.access
-                    && shapes_compatible(draft, left_parameter.type, right_parameter.type, visited);
+                    && check(left_parameter.type, right_parameter.type);
             }
         );
+        if (parameters_match && visit_views) {
+            visit_views(left, right);
+        }
+        return parameters_match;
     }
 
     const auto* left_concrete = std::get_if<TypeID>(&left);
@@ -398,24 +479,63 @@ auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool {
 }
 
 auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::optional<PointerTypeValue> {
+    -> std::optional<ConstructionPointerTypeValue> {
     if (const auto* id = std::get_if<TypeID>(&type)) {
-        const auto canonical = draft.type_copy(*id);
-        if (const auto* pointer = std::get_if<PointerTypeValue>(&canonical.value)) {
-            return *pointer;
-        }
+        return canonical_pointer_shape(draft.type_copy(*id));
     }
-    return std::nullopt;
+    const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
+    const auto* pointer = std::get_if<ConstructionPointerTypeValue>(&construction.value);
+    return pointer ? std::optional(*pointer) : std::nullopt;
 }
 
-auto pointer_narrows(
+auto pointer_narrowing_shape(
     const ProgramDraft& draft,
     ConstructionTypeRef source,
     ConstructionTypeRef target
 ) noexcept -> bool {
     const auto from = pointer_shape(draft, source);
     const auto to = pointer_shape(draft, target);
-    return from && to && pointer_narrows(*from, *to);
+    return from
+        && to
+        && from->access == PointerAccess::Write
+        && to->access == PointerAccess::Read
+        && type_shapes_compatible(draft, from->target, to->target);
+}
+
+auto construct_callable_view_contract(ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<ConstructionCallableContract> {
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto canonical = draft.type_copy(*concrete);
+        const auto* view = std::get_if<CallableViewTypeValue>(&canonical.value);
+        if (!view) {
+            return std::nullopt;
+        }
+        const auto signature = draft.callable_signature_copy(view->signature);
+        auto parameters = std::vector<ConstructionCallableParameter>();
+        for (const auto& parameter : signature.parameters) {
+            parameters.push_back(
+                {.stage = parameter.stage, .access = parameter.access, .type = parameter.type}
+            );
+        }
+        return ConstructionCallableContract {
+            .parameters = std::move(parameters),
+            .result = signature.result,
+            .failures =
+                draft.add_concrete_failure_term(draft.failure_set_copy(signature.failures).members),
+            .policy = FailureContractPolicy::Declared,
+        };
+    }
+    const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
+    const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
+    return view ? std::optional(
+                      ConstructionCallableContract {
+                          .parameters = view->parameters,
+                          .result = view->result,
+                          .failures = view->failures,
+                          .policy = FailureContractPolicy::Declared
+                      }
+                  )
+                : std::nullopt;
 }
 
 auto type_shapes_compatible(
@@ -424,7 +544,100 @@ auto type_shapes_compatible(
     ConstructionTypeRef right
 ) noexcept -> bool {
     auto visited = std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>();
-    return shapes_compatible(draft, left, right, visited);
+    return check_type_relation(draft, left, right, visited, TypeRelation::Adaptation, {});
+}
+
+auto constrain_invariant_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef left,
+    ConstructionTypeRef right,
+    ProgramOriginID origin
+) noexcept -> bool {
+    const auto equal_failures = [&](ConstructionTypeRef a, ConstructionTypeRef b) noexcept {
+        const auto from = construct_callable_view_contract(draft, a);
+        const auto to = construct_callable_view_contract(draft, b);
+        if (!from || !to) {
+            invariant_violation("invariant callable views lost their failure contracts");
+        }
+        draft.require_equal_failures(from->failures, to->failures, origin);
+    };
+    auto visited = std::flat_set<std::pair<ConstructionTypeRef, ConstructionTypeRef>>();
+    return check_type_relation(
+        draft,
+        left,
+        right,
+        visited,
+        TypeRelation::Invariant,
+        equal_failures
+    );
+}
+
+auto constrain_type_adaptation(
+    ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target,
+    ProgramOriginID origin
+) noexcept -> bool {
+    if (!type_shapes_compatible(draft, source, target)) {
+        return false;
+    }
+    const auto constrain = [&](this auto&& self,
+                               ConstructionTypeRef source,
+                               ConstructionTypeRef target) noexcept -> bool {
+        if (source == target) {
+            return true;
+        }
+        if (pointer_shape(draft, target) || slice_element(draft, target)) {
+            return constrain_invariant_type(draft, source, target, origin);
+        }
+        if (const auto element = array_element(draft, target)) {
+            const auto input = array_element(draft, source);
+            if (!input) {
+                invariant_violation("compatible array adoption lost its source shape");
+            }
+            return self(*input, *element);
+        }
+        const auto view = construct_callable_view_contract(draft, target);
+        if (!view) {
+            return true;
+        }
+        auto contract = construct_callable_view_contract(draft, source);
+        if (!contract) {
+            if (const auto* concrete = std::get_if<TypeID>(&source)) {
+                const auto type = draft.type_copy(*concrete);
+                if (const auto* function = std::get_if<FunctionTypeValue>(&type.value)) {
+                    contract = draft.construction_callable_contract_copy(function->callable);
+                } else if (const auto* closure = std::get_if<ClosureTypeValue>(&type.value)) {
+                    contract = draft.construction_callable_contract_copy(closure->callable);
+                }
+            }
+        }
+        if (!contract
+            || contract->parameters.size() != view->parameters.size()
+            || !constrain_invariant_type(draft, contract->result, view->result, origin)) {
+            return false;
+        }
+        for (auto index = 0uz; index < view->parameters.size(); ++index) {
+            if (contract->parameters[index].stage != view->parameters[index].stage
+                || contract->parameters[index].access != view->parameters[index].access
+                || !constrain_invariant_type(
+                    draft,
+                    contract->parameters[index].type,
+                    view->parameters[index].type,
+                    origin
+                )) {
+                return false;
+            }
+        }
+        draft.require_failure_subset(
+            contract->failures,
+            view->failures,
+            draft.append_expansion_origin(origin, ProgramExpansionReason::CallableAdoption),
+            FailureSubsetRequirementKind::CallableAdoption
+        );
+        return true;
+    };
+    return constrain(source, target);
 }
 
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
@@ -478,7 +691,7 @@ auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type)
         if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
             return type_supports_equality(draft, array->element);
         }
-        return false;
+        return std::holds_alternative<ConstructionPointerTypeValue>(construction.value);
     }
     return supports_equality(
         draft.type_copy(*concrete),
@@ -712,14 +925,49 @@ auto decide_binary_operator(
     );
 }
 
+auto cast_uses_cpp(
+    const ProgramDraft& draft,
+    ConstructionTypeRef source,
+    ConstructionTypeRef target
+) noexcept -> bool {
+    const auto* from = std::get_if<TypeID>(&source);
+    const auto* to = std::get_if<TypeID>(&target);
+    const auto source_type = from ? std::optional(draft.type_copy(*from)) : std::nullopt;
+    const auto target_type = to ? std::optional(draft.type_copy(*to)) : std::nullopt;
+    const auto pointer = pointer_shape(draft, target);
+    if (source_type
+        && known_cstring(source_type->value)
+        && pointer
+        && builtin_type(draft, pointer->target) == BuiltinType::Void) {
+        return false;
+    }
+    return (source_type && std::holds_alternative<CppTypeValue>(source_type->value))
+        || (target_type && std::holds_alternative<CppTypeValue>(target_type->value));
+}
+
 auto decide_cast(
     const ProgramDraft& facts,
     ConstructionTypeRef source,
     ConstructionTypeRef target,
     bool numeric_enum
 ) noexcept -> CastDecision {
-    if (pointer_narrows(facts, source, target)) {
-        return CastKind::PointerRead;
+    const auto from = pointer_shape(facts, source);
+    const auto to = pointer_shape(facts, target);
+    if (from
+        && to
+        && from->access == to->access
+        && type_shapes_compatible(facts, from->target, to->target)) {
+        return CastKind::Identity;
+    }
+    const auto* source_type = std::get_if<TypeID>(&source);
+    if (const auto pointer = decide_pointer_cast(
+            from,
+            to,
+            pointer_narrowing_shape(facts, source, target),
+            source_type && known_cstring(facts.type_copy(*source_type).value),
+            to ? builtin_type(facts, to->target) : std::nullopt
+        )) {
+        return *pointer;
     }
     return decide_builtin_cast(
         source == target,
@@ -760,14 +1008,21 @@ auto decide_cast(
     TypeID target,
     bool numeric_enum
 ) noexcept -> CastDecision {
-    const auto* from = std::get_if<PointerTypeValue>(&facts.type(source).value);
-    const auto* to = std::get_if<PointerTypeValue>(&facts.type(target).value);
-    if (from
-        && to
-        && from->target == to->target
-        && from->access == PointerAccess::Write
-        && to->access == PointerAccess::Read) {
-        return CastKind::PointerRead;
+    const auto from = canonical_pointer_shape(facts.type(source));
+    const auto to = canonical_pointer_shape(facts.type(target));
+    if (const auto pointer = decide_pointer_cast(
+            from,
+            to,
+            from
+                && to
+                && pointer_narrows(
+                    std::get<PointerTypeValue>(facts.type(source).value),
+                    std::get<PointerTypeValue>(facts.type(target).value)
+                ),
+            known_cstring(facts.type(source).value),
+            to ? builtin_type(facts, std::get<TypeID>(to->target)) : std::nullopt
+        )) {
+        return *pointer;
     }
     return decide_builtin_cast(
         source == target,

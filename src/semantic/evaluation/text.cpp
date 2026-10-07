@@ -4,8 +4,53 @@ import :semantic.evaluation.display;
 import :semantic.evaluation.executor;
 import :semantic.evaluation.limits;
 import :semantic.format.builtin;
+import :semantic.semir.type;
 import :support.utf8;
 import std;
+
+auto SemanticExecutor::pointer_display(const ExecutionValue& value, ProgramOriginID origin) noexcept
+    -> ExecutionResult<std::optional<std::string>> {
+    const auto* pointer = std::get_if<ExecutionPointer>(&value);
+    const auto atom = execution_atom(values, value);
+    if (!pointer && !(atom && std::holds_alternative<NullPointerConstant>(atom->value))) {
+        return std::nullopt;
+    }
+    const auto reference = pointer ? pointer->type : ConstructionTypeRef(atom->type);
+    const auto* concrete = std::get_if<TypeID>(&reference);
+    if (!concrete) {
+        return std::nullopt;
+    }
+    const auto type = values.type_copy(*concrete);
+    const auto* shape = std::get_if<PointerTypeValue>(&type.value);
+    if (!shape) {
+        return std::nullopt;
+    }
+    const auto target = values.type_copy(shape->target);
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&target.value);
+    if (!builtin || builtin->kind != BuiltinType::Void) {
+        return std::nullopt;
+    }
+    const auto present = pointer && pointer->target;
+    if (context.stage() == ExecutionStage::Static) {
+        return std::string(present ? "const@nonnull" : "const@null");
+    }
+    if (!present) {
+        return std::string("interp@null");
+    }
+    const auto address = memory.address_key(values, *pointer->target);
+    if (!address) {
+        return std::unexpected(fail(
+            origin,
+            ExecutionReason::Evaluation,
+            "pointer address representation is not known during execution"
+        ));
+    }
+    auto result = std::format("interp@object#{}", address->object + 1uz);
+    for (const auto index : address->path) {
+        result += std::format(".{}", index);
+    }
+    return result;
+}
 
 auto SemanticExecutor::text_handle(const ExecutionValue& value, ProgramOriginID origin) noexcept
     -> ExecutionResult<ExecutionText> {
@@ -272,8 +317,17 @@ auto SemanticExecutor::format(
     }
     auto observed = std::vector<BuiltinFormatValue>();
     observed.reserve(arguments.size());
+    auto pointer_text = std::vector<std::string>();
+    pointer_text.reserve(arguments.size());
     for (const auto& argument : arguments) {
-        if (const auto text = execution_text(values, argument)) {
+        auto representation = pointer_display(argument, origin);
+        if (!representation) {
+            co_return std::unexpected(std::move(representation.error()));
+        }
+        if (*representation) {
+            pointer_text.push_back(std::move(**representation));
+            observed.emplace_back(BuiltinPointerDisplay {.representation = pointer_text.back()});
+        } else if (const auto text = execution_text(values, argument)) {
             observed.emplace_back(*text);
         } else if (const auto atom = execution_atom(values, argument)) {
             observed.push_back(builtin_format_value(values, constant_fact(*atom)));
