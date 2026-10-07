@@ -52,29 +52,14 @@ auto FailureConstraintStore::add_concrete_term(std::vector<TypeID> members) noex
             .excluded_members = {},
             .retained_members = std::nullopt,
             .throw_sites = {},
-            .is_known = false,
         }
     );
 }
 
-auto FailureConstraintStore::add_known_term(std::vector<TypeID> members) noexcept -> FailureTermID {
-    return term_table.add(
-        FailureTerm {
-            .direct_members = normalize_members(std::move(members)),
-            .inputs = {},
-            .guarded_inputs = {},
-            .excluded_members = {},
-            .retained_members = std::nullopt,
-            .throw_sites = {},
-            .is_known = true,
-        }
-    );
-}
-
-auto FailureConstraintStore::add_union_term(std::vector<FailureTermID> inputs) noexcept
+auto FailureConstraintStore::add_union_term(std::vector<ConstructionFailureRef> inputs) noexcept
     -> FailureTermID {
     for (const auto input : inputs) {
-        require_term(input);
+        require_source(input);
     }
     return term_table.add(
         FailureTerm {
@@ -84,16 +69,15 @@ auto FailureConstraintStore::add_union_term(std::vector<FailureTermID> inputs) n
             .excluded_members = {},
             .retained_members = std::nullopt,
             .throw_sites = {},
-            .is_known = false,
         }
     );
 }
 
 auto FailureConstraintStore::add_residual_term(
-    FailureTermID input,
+    ConstructionFailureRef input,
     std::vector<TypeID> handled_members
 ) noexcept -> FailureTermID {
-    require_term(input);
+    require_source(input);
     return term_table.add(
         FailureTerm {
             .direct_members = {},
@@ -102,16 +86,15 @@ auto FailureConstraintStore::add_residual_term(
             .excluded_members = normalize_members(std::move(handled_members)),
             .retained_members = std::nullopt,
             .throw_sites = {},
-            .is_known = false,
         }
     );
 }
 
 auto FailureConstraintStore::add_intersection_term(
-    FailureTermID input,
+    ConstructionFailureRef input,
     std::vector<TypeID> retained_members
 ) noexcept -> FailureTermID {
-    require_term(input);
+    require_source(input);
     return term_table.add(
         FailureTerm {
             .direct_members = {},
@@ -120,7 +103,6 @@ auto FailureConstraintStore::add_intersection_term(
             .excluded_members = {},
             .retained_members = normalize_members(std::move(retained_members)),
             .throw_sites = {},
-            .is_known = false,
         }
     );
 }
@@ -131,7 +113,7 @@ auto FailureConstraintStore::copy(FailureTermID term) const noexcept -> FailureT
 }
 
 auto FailureConstraintStore::add_member(FailureTermID destination, TypeID member) noexcept -> void {
-    require_expandable(destination);
+    require_term(destination);
     if (member.owner() != program_identity) {
         invariant_violation("failure term member belongs to another semantic program");
     }
@@ -154,22 +136,22 @@ auto FailureConstraintStore::add_thrown_member(
 
 auto FailureConstraintStore::add_contribution(
     FailureTermID destination,
-    FailureTermID source
+    ConstructionFailureRef source
 ) noexcept -> void {
-    require_expandable(destination);
-    require_term(source);
+    require_term(destination);
+    require_source(source);
     // Inputs are an unordered set; finish() normalizes each term once.
     term_table.mutate(destination).inputs.push_back(source);
 }
 
 auto FailureConstraintStore::add_guarded_contribution(
     FailureTermID destination,
-    FailureTermID gate,
-    FailureTermID source
+    ConstructionFailureRef gate,
+    ConstructionFailureRef source
 ) noexcept -> void {
-    require_expandable(destination);
-    require_term(gate);
-    require_term(source);
+    require_term(destination);
+    require_source(gate);
+    require_source(source);
     term_table.mutate(destination)
         .guarded_inputs.push_back(
             FailureTerm::GuardedContribution {
@@ -185,8 +167,6 @@ auto FailureConstraintStore::equate(FailureTermID left, FailureTermID right) noe
     if (left == right) {
         return;
     }
-    require_expandable(left);
-    require_expandable(right);
     const auto left_term = term_table.copy(left);
     const auto right_term = term_table.copy(right);
     if (!left_term.excluded_members.empty()
@@ -200,41 +180,43 @@ auto FailureConstraintStore::equate(FailureTermID left, FailureTermID right) noe
 }
 
 auto FailureConstraintStore::require_empty(
-    FailureTermID term,
+    ConstructionFailureRef source,
     ProgramOriginID origin,
     EmptyFailureRequirementKind kind
 ) noexcept -> void {
-    require_term(term);
+    require_source(source);
     require_origin(origin);
     requirements.push_back(
         RequiresEmptyFailure {
-            .term = term,
+            .source = source,
             .origin = origin,
             .kind = kind,
         }
     );
 }
 
-auto FailureConstraintStore::require_non_empty(FailureTermID term, ProgramOriginID origin) noexcept
-    -> void {
-    require_term(term);
+auto FailureConstraintStore::require_non_empty(
+    ConstructionFailureRef source,
+    ProgramOriginID origin
+) noexcept -> void {
+    require_source(source);
     require_origin(origin);
     requirements.push_back(
         RequiresNonEmptyFailure {
-            .term = term,
+            .source = source,
             .origin = origin,
         }
     );
 }
 
 auto FailureConstraintStore::require_subset(
-    FailureTermID actual,
-    FailureTermID allowed,
+    ConstructionFailureRef actual,
+    ConstructionFailureRef allowed,
     ProgramOriginID origin,
     FailureSubsetRequirementKind kind
 ) noexcept -> void {
-    require_term(actual);
-    require_term(allowed);
+    require_source(actual);
+    require_source(allowed);
     require_origin(origin);
     requirements.push_back(
         RequiresFailureSubset {
@@ -247,12 +229,12 @@ auto FailureConstraintStore::require_subset(
 }
 
 auto FailureConstraintStore::require_equal(
-    FailureTermID left,
-    FailureTermID right,
+    ConstructionFailureRef left,
+    ConstructionFailureRef right,
     ProgramOriginID origin
 ) noexcept -> void {
-    require_term(left);
-    require_term(right);
+    require_source(left);
+    require_source(right);
     require_origin(origin);
     requirements.push_back(
         RequiresEqualFailures {
@@ -264,10 +246,10 @@ auto FailureConstraintStore::require_equal(
 }
 
 auto FailureConstraintStore::require_declared_contract(
-    FailureTermID actual,
+    ConstructionFailureRef actual,
     ProgramOriginID origin
 ) noexcept -> void {
-    require_term(actual);
+    require_source(actual);
     require_origin(origin);
     requirements.push_back(
         RequiresDeclaredFailureContract {
@@ -281,7 +263,7 @@ auto FailureConstraintStore::finish() && noexcept -> FrozenFailureConstraints {
     for (auto& term : term_table.mutable_values()) {
         term.inputs = normalize_inputs(std::move(term.inputs));
         std::ranges::sort(term.guarded_inputs, {}, [](const auto& input) static noexcept {
-            return std::pair(input.gate.index(), input.source.index());
+            return std::pair(input.gate, input.source);
         });
         term.guarded_inputs.erase(
             std::ranges::unique(term.guarded_inputs).begin(),
@@ -301,10 +283,11 @@ auto FailureConstraintStore::require_term(FailureTermID term) const noexcept -> 
     }
 }
 
-auto FailureConstraintStore::require_expandable(FailureTermID term) noexcept -> void {
-    require_term(term);
-    if (term_table.mutate(term).is_known) {
-        invariant_violation("known failure terms cannot receive contributions");
+auto FailureConstraintStore::require_source(ConstructionFailureRef source) const noexcept -> void {
+    if (const auto* term = std::get_if<FailureTermID>(&source)) {
+        require_term(*term);
+    } else if (std::get<FailureSetID>(source).owner() != program_identity) {
+        invariant_violation("failure source belongs to another semantic program");
     }
 }
 
@@ -326,12 +309,13 @@ auto FailureConstraintStore::normalize_members(std::vector<TypeID> members) cons
     return members;
 }
 
-auto FailureConstraintStore::normalize_inputs(std::vector<FailureTermID> inputs) const noexcept
-    -> std::vector<FailureTermID> {
+auto FailureConstraintStore::normalize_inputs(
+    std::vector<ConstructionFailureRef> inputs
+) const noexcept -> std::vector<ConstructionFailureRef> {
     for (const auto input : inputs) {
-        require_term(input);
+        require_source(input);
     }
-    std::ranges::sort(inputs, {}, &FailureTermID::index);
+    std::ranges::sort(inputs);
     inputs.erase(std::ranges::unique(inputs).begin(), inputs.end());
     return inputs;
 }

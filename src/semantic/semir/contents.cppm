@@ -12,6 +12,8 @@ struct TypeContents final {
     bool contains_callable_view;
     // Owned Array, Sequence or String storage.
     bool contains_storage_owner;
+    // Borrowed Str, StrCharsView, or Slice held by value; empty arrays contain none.
+    bool contains_storage_view;
     // Native C++ values held by value, including inside Carven aggregates.
     bool contains_native_value;
     // Possible String storage held by value; zero-length arrays stop propagation.

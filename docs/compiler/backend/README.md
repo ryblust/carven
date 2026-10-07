@@ -85,8 +85,8 @@ module-owned support names. Provider artifacts are independent of the instances
 selected by their callers.
 
 Source-template bodies have been discarded before planning. Published closure
-references supply dependency discovery. Closure names derive from lexical source
-order within their owning module, using retained provenance.
+references supply dependency discovery. Closure names follow source-location order within their owning module, with
+semantic callable identity ordering closures that share a source location.
 
 Semantic specialization gives each expanded iteration distinct local bindings,
 patterns, and lifetimes. The backend uses these identities through its ordinary

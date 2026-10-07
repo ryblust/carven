@@ -264,7 +264,7 @@ auto BodyElaborator::call_expression(
         auto argument_spans = std::vector<Span>();
         auto arguments = std::vector<SemCallArgument>();
         auto parameters = std::vector<ConstructionCallableParameter>();
-        auto pending = BodyPendingFailureTerms();
+        auto pending = BodyPendingFailures();
         auto completes = true;
         auto report_condition_completes = true;
         const auto conditional_report = builtin->function == BuiltinFunction::Assert
@@ -437,7 +437,7 @@ auto BodyElaborator::call_expression(
     }
     const auto failures =
         target ? draft().construction_callable_contract_copy(*target).failures : contract->failures;
-    append_pending_failures(pending_failures, BodyPendingFailureTerms {failures});
+    append_pending_failures(pending_failures, BodyPendingFailures {failures});
     auto result = active_builder().make_expression(
         contract->result,
         active_builder().lifetime(),

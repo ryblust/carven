@@ -119,12 +119,10 @@ auto display_statements(
                 }
             } else {
                 const auto projection = [&]() noexcept {
-                    return call_member(
-                        name_expression(value),
-                        context.payload_enum(enumeration->enumeration)
-                            .cases[index]
-                            .projection_function.spelling(),
-                        {}
+                    return context.enum_payload_projection(
+                        enumeration->enumeration,
+                        index,
+                        name_expression(value)
                     );
                 };
                 if (needs_selection) {

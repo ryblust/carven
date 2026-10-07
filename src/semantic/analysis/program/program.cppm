@@ -37,7 +37,7 @@ private:
 
 struct PendingFunctionContract final {
     std::vector<ConstructionCallableParameter> parameters;
-    FailureTermID failures;
+    ConstructionFailureRef failures;
     FailureContractPolicy policy;
 };
 
@@ -45,7 +45,7 @@ struct ConstructionCallableShape final {
     std::optional<TypeID> owning_type;
     std::vector<ConstructionCallableParameter> parameters;
     ConstructionTypeRef result;
-    std::variant<FailureTermID, FailureSetID> failures;
+    ConstructionFailureRef failures;
     FailureContractPolicy policy;
 };
 
@@ -119,7 +119,7 @@ public:
     auto validate_generic_definitions(
         std::optional<GenericDeclarationID> root = std::nullopt
     ) noexcept -> AnalysisResult<void>;
-    auto validate_generic_sequence_elements() noexcept -> AnalysisResult<void>;
+    auto validate_sequence_elements() noexcept -> AnalysisResult<void>;
     auto generic_nominal_instance_copy(NominalDeclarationRef declaration) const noexcept
         -> std::optional<GenericNominalInstance>;
     auto generic_declaration_contract_copy(GenericDeclarationID definition) const noexcept
@@ -177,7 +177,7 @@ public:
     auto callable_signature_copy(CallableSignatureID id) const noexcept -> CallableSignature;
     auto callable_shape(ConstructionTypeRef type) const noexcept
         -> std::optional<ConstructionCallableShape>;
-    auto callable_contract(ConstructionTypeRef type) noexcept
+    auto callable_contract(ConstructionTypeRef type) const noexcept
         -> std::optional<ConstructionCallableContract>;
 
     auto construction_failure_term_copy(FailureTermID failures) const noexcept -> FailureTerm;
@@ -196,15 +196,14 @@ public:
     auto module_constant_declaration_ids() const noexcept -> std::vector<ModuleConstantID>;
     auto callable_declaration_ids() const noexcept -> std::vector<CallableID>;
     auto add_empty_failure_term() noexcept -> FailureTermID;
-    auto add_concrete_failure_term(std::vector<TypeID> members) noexcept -> FailureTermID;
-    auto add_known_failure_term(std::vector<TypeID> members) noexcept -> FailureTermID;
-    auto add_union_failure_term(std::vector<FailureTermID> inputs) noexcept -> FailureTermID;
+    auto add_union_failure_term(std::vector<ConstructionFailureRef> inputs) noexcept
+        -> FailureTermID;
     auto add_residual_failure_term(
-        FailureTermID input,
+        ConstructionFailureRef input,
         std::vector<TypeID> handled_members
     ) noexcept -> FailureTermID;
     auto add_intersection_failure_term(
-        FailureTermID input,
+        ConstructionFailureRef input,
         std::vector<TypeID> retained_members
     ) noexcept -> FailureTermID;
     auto add_failure_member(FailureTermID destination, TypeID member) noexcept -> void;
@@ -213,32 +212,36 @@ public:
         TypeID member,
         ProgramOriginID origin
     ) noexcept -> void;
-    auto add_failure_contribution(FailureTermID destination, FailureTermID source) noexcept -> void;
+    auto add_failure_contribution(FailureTermID destination, ConstructionFailureRef source) noexcept
+        -> void;
     auto add_guarded_failure_contribution(
         FailureTermID destination,
-        FailureTermID gate,
-        FailureTermID source
+        ConstructionFailureRef gate,
+        ConstructionFailureRef source
     ) noexcept -> void;
     auto equate_failures(FailureTermID left, FailureTermID right) noexcept -> void;
     auto require_empty_failures(
-        FailureTermID term,
+        ConstructionFailureRef source,
         ProgramOriginID origin,
         EmptyFailureRequirementKind kind
     ) noexcept -> void;
-    auto require_non_empty_failures(FailureTermID term, ProgramOriginID origin) noexcept -> void;
+    auto require_non_empty_failures(ConstructionFailureRef source, ProgramOriginID origin) noexcept
+        -> void;
     auto require_failure_subset(
-        FailureTermID actual,
-        FailureTermID allowed,
+        ConstructionFailureRef actual,
+        ConstructionFailureRef allowed,
         ProgramOriginID origin,
         FailureSubsetRequirementKind kind
     ) noexcept -> void;
     auto require_equal_failures(
-        FailureTermID left,
-        FailureTermID right,
+        ConstructionFailureRef left,
+        ConstructionFailureRef right,
         ProgramOriginID origin
     ) noexcept -> void;
-    auto require_declared_failure_contract(FailureTermID actual, ProgramOriginID origin) noexcept
-        -> void;
+    auto require_declared_failure_contract(
+        ConstructionFailureRef actual,
+        ProgramOriginID origin
+    ) noexcept -> void;
     auto finish_declaration_heads() noexcept -> void;
     auto create_evaluation_root_identity() noexcept -> BodyIdentity;
     auto reserve_body(BodyKind kind) noexcept -> BodyReservation;
@@ -326,7 +329,6 @@ private:
         ConstructionTypeStore construction_types;
         DeclarationBuilder declarations;
         FailureConstraintStore failure_constraints;
-        std::map<FailureSetID, FailureTermID> known_failure_terms;
         std::map<CallableID, PendingFunctionContract> pending_function_contracts;
         std::map<CallableID, FunctionID> functions_by_callable;
 

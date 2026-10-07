@@ -5,7 +5,6 @@ import :semantic.analysis.construction.limits;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.generic;
-import :semantic.semir.sequence;
 import :support.graph;
 import :support.invariant;
 import :support.visit;

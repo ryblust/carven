@@ -26,13 +26,12 @@ private:
 
 class BodyFailures final {
 public:
-    explicit BodyFailures(FailureTermID value) noexcept;
-    explicit BodyFailures(FailureSetID value) noexcept;
-    auto term() const noexcept -> FailureTermID;
+    explicit BodyFailures(ConstructionFailureRef value) noexcept;
+    auto reference() const noexcept -> const ConstructionFailureRef&;
     auto resolved() const noexcept -> FailureSetID;
 
 private:
-    std::variant<FailureTermID, FailureSetID> value;
+    ConstructionFailureRef value;
 };
 
 // A single operation tree completes its type and failure facts in place.

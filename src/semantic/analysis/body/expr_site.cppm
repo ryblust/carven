@@ -34,7 +34,7 @@ public:
     static constexpr auto mode = ExpressionMode::Body;
 
     struct OperandState final {
-        BodyPendingFailureTerms pending;
+        BodyPendingFailures pending;
         bool completes;
     };
 
@@ -248,7 +248,7 @@ private:
         SemanticExpressionValue&& value,
         std::optional<ConstantID> known,
         Span span,
-        BodyPendingFailureTerms pending,
+        BodyPendingFailures pending,
         bool completes
     ) noexcept -> ExpressionResult<Value>;
     auto external_operation(

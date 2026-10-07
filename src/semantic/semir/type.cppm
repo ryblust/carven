@@ -159,6 +159,7 @@ struct CallableSignature final {
 };
 
 using ConstructionTypeRef = std::variant<TypeID, TypeTermID>;
+using ConstructionFailureRef = std::variant<FailureTermID, FailureSetID>;
 
 struct ConstructionCallableParameter final {
     ParameterStage stage;
@@ -178,7 +179,7 @@ struct ConstructionSliceTypeValue final {
 struct ConstructionCallableViewTypeValue final {
     std::vector<ConstructionCallableParameter> parameters;
     ConstructionTypeRef result;
-    FailureTermID failures;
+    ConstructionFailureRef failures;
 };
 
 using ConstructionTypeValue = std::variant<
@@ -443,8 +444,11 @@ public:
             [&](ConstructionTypeRef child) noexcept -> std::optional<TypeID> {
                 return resolve_ref(child);
             },
-            [&](FailureTermID failure) noexcept -> std::optional<FailureSetID> {
-                return resolve_failure(failure);
+            [&](ConstructionFailureRef failure) noexcept -> std::optional<FailureSetID> {
+                if (const auto* known = std::get_if<FailureSetID>(&failure)) {
+                    return *known;
+                }
+                return resolve_failure(std::get<FailureTermID>(failure));
             }
         );
         if (!result) {

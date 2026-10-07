@@ -184,8 +184,10 @@ public:
                 fail(span, DiagnosticCode::TypeValueRequired, "expression does not produce a value")
             );
         }
-        auto pending =
-            std::vector<FailureTermID>(pending_failures.begin() + first, pending_failures.end());
+        auto pending = std::vector<ConstructionFailureRef>(
+            pending_failures.begin() + first,
+            pending_failures.end()
+        );
         pending_failures.erase(pending_failures.begin() + first, pending_failures.end());
         if (!pending.empty()) {
             program.require_empty_failures(
@@ -297,11 +299,13 @@ public:
         if (!operand) {
             co_return std::unexpected(operand.error());
         }
-        auto terms =
-            std::vector<FailureTermID>(pending_failures.begin() + first, pending_failures.end());
+        auto pending = std::vector<ConstructionFailureRef>(
+            pending_failures.begin() + first,
+            pending_failures.end()
+        );
         pending_failures.erase(pending_failures.begin() + first, pending_failures.end());
         program.require_non_empty_failures(
-            program.add_union_failure_term(std::move(terms)),
+            program.add_union_failure_term(std::move(pending)),
             program
                 .append_source_origin(program.module_source(source_module_id), source.operator_span)
         );
@@ -700,7 +704,7 @@ private:
     Scope& scope;
     LifetimeRegionID lifetime;
     BodyFailures empty_failures;
-    std::vector<FailureTermID> pending_failures;
+    std::vector<ConstructionFailureRef> pending_failures;
     std::size_t aggregate_work = 0uz;
 
     struct AggregateDepth final {

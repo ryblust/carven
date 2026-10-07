@@ -18,7 +18,6 @@ import :source.module_path;
 import :source.provenance;
 import :test.harness.diagnostics;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
@@ -139,33 +138,21 @@ const TestSuite suite([] static noexcept {
             const auto first = types.builtin_type(BuiltinType::I32);
             const auto second = types.builtin_type(BuiltinType::Bool);
             auto terms = FailureConstraintStore(program.identity(), provenance.identity());
-            const auto known = terms.add_known_term({first, first});
-            const auto empty_known = terms.add_known_term({});
+            auto sets = FailureSetStoreBuilder(program.identity());
+            const auto known = sets.intern({first, first});
+            const auto empty_known = sets.empty_set();
             const auto inferred = terms.add_union_term({known, empty_known});
             terms.add_member(inferred, second);
-            expect(terms.copy(known).direct_members == std::vector {first});
-            expect(terms.copy(empty_known).direct_members.empty());
+            const auto enabled = terms.add_empty_term();
+            const auto disabled = terms.add_empty_term();
+            terms.add_guarded_contribution(enabled, known, known);
+            terms.add_guarded_contribution(disabled, empty_known, known);
+            const auto complete = sets.intern({first, second});
+            const auto residual = terms.add_residual_term(complete, {first});
+            const auto intersection = terms.add_intersection_term(complete, {first});
+            expect(sets.copy(known).members == std::vector {first});
+            expect(sets.copy(empty_known).members.empty());
 
-            expect(expect_termination("known-failure-member", [&] noexcept {
-                terms.add_member(known, second);
-            }));
-            expect(expect_termination("known-empty-failure-member", [&] noexcept {
-                terms.add_member(empty_known, first);
-            }));
-            expect(expect_termination("known-failure-contribution", [&] noexcept {
-                terms.add_contribution(known, inferred);
-            }));
-            expect(expect_termination("known-failure-guarded-contribution", [&] noexcept {
-                terms.add_guarded_contribution(known, inferred, inferred);
-            }));
-            expect(expect_termination("known-failure-equate-left", [&] noexcept {
-                terms.equate(known, inferred);
-            }));
-            expect(expect_termination("known-failure-equate-right", [&] noexcept {
-                terms.equate(inferred, known);
-            }));
-
-            auto sets = FailureSetStoreBuilder(program.identity());
             auto diagnostics = DiagnosticSink();
             const auto solved = solve_failure_constraints(
                 std::move(terms).finish(),
@@ -187,6 +174,10 @@ const TestSuite suite([] static noexcept {
             expect_equal(inferred_members.size(), 2uz);
             expect(std::ranges::find(inferred_members, first) != inferred_members.end());
             expect(std::ranges::find(inferred_members, second) != inferred_members.end());
+            expect(sets.copy(solved->failure_set(enabled)).members == std::vector {first});
+            expect(sets.copy(solved->failure_set(disabled)).members.empty());
+            expect(sets.copy(solved->failure_set(residual)).members == std::vector {second});
+            expect(sets.copy(solved->failure_set(intersection)).members == std::vector {first});
             expect(diagnostics.empty());
         };
 

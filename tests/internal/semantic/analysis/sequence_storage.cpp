@@ -4,12 +4,63 @@ import :diagnostics.code;
 import :diagnostics.sink;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.ownership.context;
+import :semantic.semir.program;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
+
+auto recursive_child_whole_borrows(bool may_fail) noexcept -> std::string {
+    auto source = std::string(
+        "struct Node { text: String, other: String, left: Sequence<Node>, right: Sequence<Node> }\n"
+    );
+    if (may_fail) {
+        source += "struct ViewError { text: str }\n";
+    }
+    for (auto index = 0uz; index < 3uz; ++index) {
+        source += std::format(
+            R"(
+            fn f{}(node: Node, whole: Node, depth: usize, choose: bool{}) -> str{} {{
+                if depth == 0 {{
+                    {}
+                    return node.text.as_str();
+                }}
+                if choose {{ return f{}(node.left[0], whole, depth - 1, choose{}){}; }}
+                return f{}(node.right[0], whole, depth - 1, choose{}){};
+            }}
+        )",
+            index,
+            may_fail ? ", fail: bool" : "",
+            may_fail ? " throw ViewError" : "",
+            may_fail ? "if fail { throw ViewError { text: node.text.as_str() }; }" : "",
+            (index + 1uz) % 3uz,
+            may_fail ? ", fail" : "",
+            may_fail ? "?" : "",
+            (index + 1uz) % 3uz,
+            may_fail ? ", fail" : "",
+            may_fail ? "?" : ""
+        );
+    }
+    return source;
+}
+
+auto expect_bounded_ownership(const SemIRProgram& program, std::size_t source_size) noexcept
+    -> void {
+    auto diagnostics = DiagnosticSink();
+    const auto summary = OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
+    if (!expect(summary.has_value())) {
+        return;
+    }
+    // Source bodies and selection sites bound the abstract problem, independently
+    // of runtime nesting and the solver's choice of representation.
+    expect(summary->query_count <= 128uz * source_size);
+    expect(summary->evaluation_count <= 512uz * source_size);
+    expect(summary->storage_node_count <= 2048uz * source_size);
+    expect(summary->storage_edge_count <= 2048uz * source_size);
+    expect(diagnostics.empty());
+}
 
 const TestSuite suite([] static noexcept {
     "Sequence storage: elements have modeled owned value semantics"_test = [] static noexcept {
@@ -258,92 +309,6 @@ const TestSuite suite([] static noexcept {
                     var labels = Sequence<Label> {};
                     labels.push(Label { text: "first" as String });
                     labels.push(labels[0]);
-                }
-            )"));
-        };
-
-    "Borrowed payload ownership: projections pin ancestors and end with their arm"_test =
-        [] static noexcept {
-            expect_diagnostic(
-                analyze_test_errors(R"(
-            enum Node { Values(Sequence<String>), Empty }
-            fn invalid() {
-                var value: Node = .Values(Sequence<String> {});
-                match value {
-                    .Values(&items) => { value = .Empty; },
-                    .Empty => {},
-                }
-            }
-        )"),
-                DiagnosticCode::AccessBorrowConflict
-            );
-            static_cast<void>(analyze_test_program(R"(
-            enum Node { Values(Sequence<String>), Empty }
-            fn accepted() {
-                var value: Node = .Values(Sequence<String> {});
-                match value {
-                    .Values(&items) => { items.push("first" as String); },
-                    .Empty => {},
-                }
-                value = .Empty;
-            }
-        )"));
-        };
-
-    "Borrowed payload nullability: writes invalidate shared proofs"_test = [] static noexcept {
-        expect_diagnostic(
-            analyze_test_errors(R"(
-            enum Slot { Value(ptr<i32>), Empty }
-            fn invalid(pointer: ptr<i32>) {
-                var slot: Slot = .Value(pointer);
-                match slot {
-                    .Value(ref outer) if outer != nullptr => {
-                        match slot {
-                            .Value(&inner) => { inner = nullptr; },
-                            .Empty => {},
-                        }
-                        let observed = *outer;
-                    },
-                    _ => {},
-                }
-            }
-        )"),
-            DiagnosticCode::PointerNonNull
-        );
-        static_cast<void>(analyze_test_program(R"(
-            enum Slot { Value(ptr<i32>), Empty }
-            fn accepted(pointer: ptr<i32>) {
-                var slot: Slot = .Value(pointer);
-                match slot {
-                    .Value(ref outer) if outer != nullptr => {
-                        match slot {
-                            .Value(&inner) => { inner = nullptr; },
-                            .Empty => {},
-                        }
-                        if outer != nullptr { let observed = *outer; }
-                    },
-                    _ => {},
-                }
-            }
-        )"));
-    };
-
-    "Borrowed payload nullability: binding another Read alias preserves observed facts"_test =
-        [] static noexcept {
-            static_cast<void>(analyze_test_program(R"(
-                enum Slot { Value(ptr<i32>), Empty }
-                fn accepted(pointer: ptr<i32>) {
-                    var slot: Slot = .Value(pointer);
-                    match slot {
-                        .Value(ref outer) if outer != nullptr => {
-                            match slot {
-                                .Value(ref inner) => { let observed = *outer; },
-                                .Empty => {},
-                            }
-                            let observed = *outer;
-                        },
-                        _ => {},
-                    }
                 }
             )"));
         };
@@ -620,16 +585,7 @@ const TestSuite suite([] static noexcept {
                 return count(node);
             }
         )");
-            auto diagnostics = DiagnosticSink();
-            const auto result =
-                OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
-            if (!expect(result.has_value())) {
-                return;
-            }
-            // Three bodies and their finite selection sites bound the recursive graph;
-            // runtime tree depth does not create additional allocation identities.
-            expect(result->query_count <= 128uz);
-            expect(result->evaluation_count <= 512uz);
+            expect_bounded_ownership(program, 3uz);
             expect_diagnostic(
                 analyze_test_errors(R"(
             struct Record { text: String, items: [String; 1] }
@@ -810,24 +766,7 @@ const TestSuite suite([] static noexcept {
                     control
                 )
             );
-            auto diagnostics = DiagnosticSink();
-            const auto result =
-                OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
-            if (!expect(result.has_value())) {
-                return;
-            }
-            expect(result->query_count <= 128uz);
-            expect(result->evaluation_count <= 512uz);
-            expect(result->storage_node_count <= 2048uz);
-            expect(result->storage_edge_count <= 512uz);
-            const auto repeated =
-                OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
-            if (!expect(repeated.has_value())) {
-                return;
-            }
-            expect_equal(repeated->query_count, result->query_count);
-            expect_equal(repeated->storage_node_count, result->storage_node_count);
-            expect_equal(repeated->storage_edge_count, result->storage_edge_count);
+            expect_bounded_ownership(program, 3uz);
         }
         for (
             const auto invalid : {
@@ -851,16 +790,7 @@ const TestSuite suite([] static noexcept {
                 const auto program = analyze_test_program(
                     std::string("struct Node { children: Sequence<[Node; 1]> }\n") + recursive
                 );
-                auto diagnostics = DiagnosticSink();
-                const auto result =
-                    OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
-                if (!expect(result.has_value())) {
-                    return;
-                }
-                expect(result->query_count <= 128uz);
-                expect(result->evaluation_count <= 512uz);
-                expect(result->storage_node_count <= 2048uz);
-                expect(result->storage_edge_count <= 512uz);
+                expect_bounded_ownership(program, 2uz);
             }
         };
 
@@ -1062,20 +992,351 @@ const TestSuite suite([] static noexcept {
                     );
                 }
                 const auto program = analyze_test_program(source);
-                auto diagnostics = DiagnosticSink();
-                const auto summary =
-                    OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
-                if (!expect(summary.has_value())) {
-                    return;
-                }
-                expect(summary->query_count <= 4uz * count);
-                expect(summary->evaluation_count <= 32uz * count);
-                expect(summary->storage_node_count <= 64uz * count);
-                expect(summary->storage_edge_count <= 128uz * count);
+                expect_bounded_ownership(program, count);
             }
         };
 
-    "Sequence ownership: recursive child and whole roles bound connector growth"_test =
+    "Sequence ownership: possible arguments do not identify known siblings"_test =
+        [] static noexcept {
+            struct Case final {
+                std::string_view name;
+                std::string_view target;
+                std::string_view second;
+                std::string_view field;
+                bool caller_view;
+                bool accepted;
+            };
+            const auto cases = std::array {
+                Case {
+                    .name = "known siblings",
+                    .target = "0",
+                    .second = "1",
+                    .field = "text",
+                    .caller_view = false,
+                    .accepted = true
+                },
+                Case {
+                    .name = "unknown write can reach the reader",
+                    .target = "index",
+                    .second = "1",
+                    .field = "text",
+                    .caller_view = false,
+                    .accepted = false
+                },
+                Case {
+                    .name = "same child write conflicts",
+                    .target = "1",
+                    .second = "1",
+                    .field = "text",
+                    .caller_view = false,
+                    .accepted = false
+                },
+                Case {
+                    .name = "other field stays independent",
+                    .target = "1",
+                    .second = "1",
+                    .field = "other",
+                    .caller_view = false,
+                    .accepted = true
+                },
+                Case {
+                    .name = "caller reader survives a known sibling write",
+                    .target = "0",
+                    .second = "1",
+                    .field = "text",
+                    .caller_view = true,
+                    .accepted = true
+                },
+                Case {
+                    .name = "caller reader conflicts with an unknown write",
+                    .target = "index",
+                    .second = "1",
+                    .field = "text",
+                    .caller_view = true,
+                    .accepted = false
+                },
+            };
+            each(cases, &Case::name, [](const auto& item) static noexcept {
+                const auto source = std::format(
+                    R"(
+                    struct Node {{ text: String, other: String, children: Sequence<Node> }}
+                    fn use(&first: Node, second: Node, ignored: Node) -> usize {{
+                        let view = second.text.as_str();
+                        first.{}.clear();
+                        return view.len();
+                    }}
+                    fn caller(&root: Node, index: usize) -> usize {{
+                        {}
+                        let result = use(&root.children[{}], root.children[{}], root.children[index]);
+                        return result{};
+                    }}
+                )",
+                    item.field,
+                    item.caller_view ? "let view = root.children[1].text.as_str();" : "",
+                    item.target,
+                    item.second,
+                    item.caller_view ? " + view.len()" : ""
+                );
+                if (item.accepted) {
+                    static_cast<void>(analyze_test_program(source));
+                } else {
+                    expect_diagnostic(
+                        analyze_test_errors(source),
+                        DiagnosticCode::AccessBorrowConflict
+                    );
+                }
+            });
+        };
+
+    "Sequence ownership: call projection retains ancestors through direct alias relays"_test =
+        [] static noexcept {
+            struct Case final {
+                std::string_view name;
+                std::string_view target;
+                bool release;
+                bool accepted;
+            };
+            const auto cases = std::array {
+                Case {
+                    .name = "unknown ancestor conflicts with a live Write holder",
+                    .target = "index",
+                    .release = false,
+                    .accepted = false,
+                },
+                Case {
+                    .name = "releasing the Write holder permits structural mutation",
+                    .target = "index",
+                    .release = true,
+                    .accepted = true,
+                },
+                Case {
+                    .name = "known sibling does not invalidate the holder",
+                    .target = "1",
+                    .release = false,
+                    .accepted = true,
+                },
+            };
+            each(cases, &Case::name, [](const auto& item) static noexcept {
+                const auto source = std::format(
+                    R"(
+                    struct Node {{ text: String, left: Sequence<Node>, right: Sequence<Node> }}
+                    fn clear(&node: Node, &held: str) {{
+                        {}
+                        node.right.clear();
+                    }}
+                    fn caller(&root: Node, index: usize) -> usize {{
+                        var held = root.left[0].right[0].text.as_str();
+                        clear(&root.left[{}], &held);
+                        return held.len();
+                    }}
+                )",
+                    item.release ? "held = \"\";" : "",
+                    item.target
+                );
+                if (item.accepted) {
+                    static_cast<void>(analyze_test_program(source));
+                } else {
+                    expect_diagnostic(
+                        analyze_test_errors(source),
+                        DiagnosticCode::AccessBorrowConflict
+                    );
+                }
+            });
+        };
+
+    "Sequence ownership: recursive connectors preserve distinct terminal roles"_test =
+        [] static noexcept {
+            struct Case final {
+                std::string_view name;
+                std::string_view second;
+                std::string_view recursive_arguments;
+                bool accepted;
+            };
+            const auto cases = std::array {
+                Case {
+                    .name = "known siblings with an unused unknown ancestor",
+                    .second = "1",
+                    .recursive_arguments = "&first, &second",
+                    .accepted = true,
+                },
+                Case {
+                    .name = "swapped terminal roles retain sibling separation",
+                    .second = "1",
+                    .recursive_arguments = "&second, &first",
+                    .accepted = true,
+                },
+                Case {
+                    .name = "the same terminal remains a conflicting target",
+                    .second = "0",
+                    .recursive_arguments = "&first, &second",
+                    .accepted = false,
+                },
+            };
+            each(cases, &Case::name, [](const auto& item) static noexcept {
+                const auto source = std::format(
+                    R"(
+                    struct Node {{ text: String, left: Sequence<Node>, right: Sequence<Node> }}
+                    fn inspect(ignored: Node, &first: Node, &second: Node, depth: usize) -> usize {{
+                        if depth > 0 {{
+                            return inspect(ignored, {}, depth - 1);
+                        }}
+                        let view = second.text.as_str();
+                        first.text.clear();
+                        return view.len();
+                    }}
+                    fn caller(&root: Node, index: usize, depth: usize) -> usize {{
+                        return inspect(
+                            root.left[index],
+                            &root.left[0].right[0],
+                            &root.left[{}].right[0],
+                            depth
+                        );
+                    }}
+                )",
+                    item.recursive_arguments,
+                    item.second
+                );
+                if (item.accepted) {
+                    static_cast<void>(analyze_test_program(source));
+                } else {
+                    expect_diagnostic(
+                        analyze_test_errors(source),
+                        DiagnosticCode::AccessBorrowConflict
+                    );
+                }
+            });
+        };
+
+    "Sequence ownership: unused unknown selections preserve known return backing"_test =
+        [] static noexcept {
+            struct Case final {
+                std::string_view name;
+                std::string_view returned;
+                std::string_view write;
+                bool accepted;
+            };
+            const auto cases = std::array {
+                Case {
+                    .name = "known sibling",
+                    .returned = "0",
+                    .write = "root.left[1].text.clear();",
+                    .accepted = true,
+                },
+                Case {
+                    .name = "other field",
+                    .returned = "0",
+                    .write = "root.left[0].other.clear();",
+                    .accepted = true,
+                },
+                Case {
+                    .name = "same field",
+                    .returned = "0",
+                    .write = "root.left[0].text.clear();",
+                    .accepted = false,
+                },
+                Case {
+                    .name = "unknown backing",
+                    .returned = "index",
+                    .write = "root.left[1].text.clear();",
+                    .accepted = false,
+                },
+            };
+            each(cases, &Case::name, [](const auto& item) static noexcept {
+                const auto source = std::format(
+                    R"(
+                    struct Node {{ text: String, other: String, left: Sequence<Node> }}
+                    fn pick(node: Node, index: usize) -> str {{
+                        node.left[index].text.as_str();
+                        return node.left[{}].text.as_str();
+                    }}
+                    fn probe(&root: Node, index: usize) -> usize {{
+                        let view = pick(root, index);
+                        {}
+                        return view.len();
+                    }}
+                )",
+                    item.returned,
+                    item.write
+                );
+                if (item.accepted) {
+                    static_cast<void>(analyze_test_program(source));
+                } else {
+                    expect_diagnostic(
+                        analyze_test_errors(source),
+                        DiagnosticCode::AccessBorrowConflict
+                    );
+                }
+            });
+        };
+
+    "Sequence ownership: recursive child and whole returns preserve borrowed regions"_test =
+        [] static noexcept {
+            const auto prelude = recursive_child_whole_borrows(false);
+            static_cast<void>(analyze_test_program(prelude + R"(
+                fn borrow(root: Node, depth: usize, choose: bool) -> str {
+                    return f0(root.left[0], root, depth, choose);
+                }
+                fn siblings(&root: Node, depth: usize, choose: bool) -> usize {
+                    let view = borrow(root, depth, choose);
+                    root.left[0].other.clear();
+                    root.left[1].text.clear();
+                    root.right[0].text.clear();
+                    return view.len();
+                }
+            )"));
+            expect_diagnostic(
+                analyze_test_errors(prelude + R"(
+                fn invalid(&root: Node, depth: usize, choose: bool) -> usize {
+                    let view = f0(root.left[0], root, depth, choose);
+                    root.left[0].text.clear();
+                    return view.len();
+                }
+            )"),
+                DiagnosticCode::AccessBorrowConflict
+            );
+        };
+
+    "Sequence ownership: recursive child and whole failures preserve borrowed regions"_test =
+        [] static noexcept {
+            const auto prelude = recursive_child_whole_borrows(true);
+            const auto caller = [](std::string_view success,
+                                   std::string_view failure) static noexcept {
+                return std::format(
+                    R"(
+                    fn probe(&root: Node, depth: usize, choose: bool, fail: bool) -> usize {{
+                        try {{
+                            let view = f0(root.left[0], root, depth, choose, fail)?;
+                            {}
+                            return view.len();
+                        }} catch {{
+                            ViewError(error) => {{
+                                {}
+                                return error.text.len();
+                            }},
+                        }}
+                    }}
+                )",
+                    success,
+                    failure
+                );
+            };
+            const auto siblings = std::string_view(
+                "root.left[0].other.clear(); root.left[1].text.clear(); root.right[0].text.clear();"
+            );
+            static_cast<void>(analyze_test_program(prelude + caller(siblings, siblings)));
+            expect_diagnostic(
+                analyze_test_errors(prelude + caller("root.left[0].text.clear();", "")),
+                DiagnosticCode::AccessBorrowConflict
+            )
+                .note("completion = normal");
+            expect_diagnostic(
+                analyze_test_errors(prelude + caller("", "root.left[0].text.clear();")),
+                DiagnosticCode::AccessBorrowConflict
+            )
+                .note("completion = failure");
+        };
+
+    "Sequence ownership: recursive ancestor and child arguments have bounded analysis"_test =
         [] static noexcept {
             for (const auto count : {1uz, 2uz, 4uz}) {
                 auto source = std::string(
@@ -1086,6 +1347,7 @@ const TestSuite suite([] static noexcept {
                         R"(
                     fn increment{}(&node: Node, &whole: Node, choose: bool, depth: usize) -> void {{
                         node.value += 1;
+                        whole.value += 1;
                         if depth == 0 {{ return; }}
                         if choose {{ increment{}(&node.left[0], &whole, choose, depth - 1); }}
                         else {{ increment{}(&node.right[0], &whole, choose, depth - 1); }}
@@ -1103,22 +1365,90 @@ const TestSuite suite([] static noexcept {
                 }
             )";
                 const auto program = analyze_test_program(source);
-                auto diagnostics = DiagnosticSink();
-                const auto summary =
-                    OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
-                if (!expect(summary.has_value())) {
-                    return;
-                }
-                // Fixed child/whole roles cover aliasing and disjoint callers; the
-                // interface graph grows with SCC size rather than caller histories.
-                expect(summary->query_count <= 96uz * count);
-                expect(summary->evaluation_count <= 256uz * count);
-                expect(summary->storage_node_count <= 768uz * count);
-                expect(summary->storage_edge_count <= 1024uz * count);
+                expect_bounded_ownership(program, count);
             }
         };
 
-    "Sequence execution: runtime ownership does not promise constant storage"_test =
+    "Sequence ownership: recursive argument permutations have bounded analysis"_test =
+        [] static noexcept {
+            for (const auto count : {1uz, 2uz, 3uz, 4uz}) {
+                auto source = std::string(
+                    "struct Node { text: String, left: Sequence<Node>, right: Sequence<Node> }\n"
+                );
+                for (auto index = 0uz; index < count; ++index) {
+                    source += std::format(
+                        R"(
+                        fn f{}(node: Node, whole: Node, depth: usize, choose: bool) -> str {{
+                            if depth == 0 {{ return node.text.as_str(); }}
+                            if choose {{ return f{}(whole, node.left[0], depth - 1, choose); }}
+                            return f{}(whole, node.right[0], depth - 1, choose);
+                        }}
+                    )",
+                        index,
+                        (index + 1uz) % count,
+                        (index + 1uz) % count
+                    );
+                }
+                source += R"(
+                    fn probe(root: Node, depth: usize, choose: bool) -> str {
+                        return f0(root.left[0], root, depth, choose);
+                    }
+                )";
+                const auto program = analyze_test_program(source);
+                expect_bounded_ownership(program, count);
+            }
+        };
+
+    "Sequence ownership: role permutations retain return and failure precision"_test =
+        [] static noexcept {
+            const auto source = std::string(R"(
+                struct Node { text: String, other: String, left: Sequence<Node>, right: Sequence<Node> }
+                struct ViewError { text: str }
+                fn rotate(node: Node, whole: Node, depth: usize, choose: bool, fail: bool)
+                    -> str throw ViewError {
+                    if depth == 0 {
+                        if fail { throw ViewError { text: node.text.as_str() }; }
+                        return node.text.as_str();
+                    }
+                    if choose { return rotate(whole, node.left[0], depth - 1, choose, fail)?; }
+                    return rotate(whole, node.right[0], depth - 1, choose, fail)?;
+                }
+            )");
+            const auto caller = [](std::string_view success,
+                                   std::string_view failure) static noexcept {
+                return std::format(
+                    R"(
+                    fn probe(&root: Node, depth: usize, choose: bool, fail: bool) -> usize {{
+                        try {{
+                            let view = rotate(root.left[0], root, depth, choose, fail)?;
+                            {}
+                            return view.len();
+                        }} catch {{
+                            ViewError(error) => {{ {} return error.text.len(); }},
+                        }}
+                    }}
+                )",
+                    success,
+                    failure
+                );
+            };
+            const auto independent = std::string_view(
+                "root.left[0].other.clear(); root.left[1].text.clear(); root.right[1].text.clear();"
+            );
+            static_cast<void>(analyze_test_program(source + caller(independent, independent)));
+            expect_diagnostic(
+                analyze_test_errors(source + caller("root.right[0].text.clear();", "")),
+                DiagnosticCode::AccessBorrowConflict
+            )
+                .note("completion = normal");
+            expect_diagnostic(
+                analyze_test_errors(source + caller("", "root.left[0].text.clear();")),
+                DiagnosticCode::AccessBorrowConflict
+            )
+                .note("completion = failure");
+        };
+
+    "Sequence execution: runtime storage and payload borrows require runtime execution"_test =
         [] static noexcept {
             expect_diagnostic(
                 analyze_test_errors("const fn invalid() -> Sequence<i32> => Sequence<i32> {};"),

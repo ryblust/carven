@@ -1,14 +1,83 @@
-module carven:semantic.analysis.generics.sequence.impl;
+module carven:semantic.analysis.types.sequence.impl;
 
 import :diagnostics.builder;
 import :semantic.analysis.construction.limits;
 import :semantic.analysis.program;
-import :semantic.semir.sequence;
+import :semantic.semir.generic;
+import :semantic.semir.type;
 import std;
+
+namespace {
+
+template<typename Shape>
+auto unsupported_sequence_element_shape(const Shape& value) noexcept
+    -> std::optional<std::string_view> {
+    if constexpr (std::same_as<Shape, BuiltinTypeValue>) {
+        if (value.kind == BuiltinType::Str || value.kind == BuiltinType::StrCharsView) {
+            return "Sequence elements cannot contain borrowed text";
+        }
+        if (value.kind == BuiltinType::Void || value.kind == BuiltinType::EntryArgs) {
+            return "Sequence element is not an owning value type";
+        }
+    } else if constexpr (std::same_as<Shape, SliceTypeValue>
+                         || std::same_as<Shape, GenericSliceType>) {
+        return "Sequence elements cannot contain borrowed slices";
+    } else if constexpr (std::same_as<Shape, CppTypeValue>) {
+        return "Sequence elements require Carven-defined value semantics";
+    } else if constexpr (std::same_as<Shape, ClosureTypeValue>
+                         || std::same_as<Shape, FunctionTypeValue>
+                         || std::same_as<Shape, CallableViewTypeValue>) {
+        return "Sequence elements cannot contain callable values";
+    }
+    return std::nullopt;
+}
+
+auto unsupported_sequence_element(const ProgramDraft& values, TypeID element) noexcept
+    -> std::optional<std::string_view> {
+    auto pending = std::vector<TypeID> {element};
+    auto visited = std::set<TypeID>();
+    while (!pending.empty()) {
+        const auto current = pending.back();
+        pending.pop_back();
+        if (!visited.insert(current).second) {
+            continue;
+        }
+        const auto type = values.type_copy(current);
+        const auto unsupported = type.value.visit([](const auto& shape) static noexcept {
+            return unsupported_sequence_element_shape(shape);
+        });
+        if (unsupported) {
+            return unsupported;
+        }
+        if (const auto* array = std::get_if<ArrayTypeValue>(&type.value)) {
+            pending.push_back(array->element);
+        } else if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&type.value)) {
+            pending.push_back(sequence->element);
+        } else if (const auto* structure = std::get_if<StructTypeValue>(&type.value)) {
+            const auto fields = values.struct_field_types(structure->structure);
+            if (!fields) {
+                return "Sequence element requires completed declaration fields";
+            }
+            pending.append_range(*fields);
+        } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&type.value)) {
+            const auto cases = values.enum_case_types(enumeration->enumeration);
+            if (!cases) {
+                return "Sequence element requires completed enum payloads";
+            }
+            for (const auto& member : *cases) {
+                pending.append_range(member.payload_types);
+            }
+        }
+        // Raw pointers are values; their targets are not contained storage.
+    }
+    return std::nullopt;
+}
+
+} // namespace
 
 // This check runs after source heads and the concrete instance closure are
 // complete. It also checks fixed sequence elements in unused symbolic heads.
-auto ProgramDraft::validate_generic_sequence_elements() noexcept -> AnalysisResult<void> {
+auto ProgramDraft::validate_sequence_elements() noexcept -> AnalysisResult<void> {
     using Application = std::tuple<GenericDeclarationID, std::vector<GenericTypeID>, bool>;
     auto visited = std::set<Application>();
     auto failure = std::optional<AnalysisFailure>();

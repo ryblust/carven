@@ -385,7 +385,7 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
     const auto pending = draft->pending_function_contract_copy(declaration.callable);
     auto parameters = std::vector<ConstructionCallableParameter>();
     auto result_type = std::optional<ConstructionTypeRef>();
-    auto failures = std::optional<FailureTermID>();
+    auto failures = std::optional<ConstructionFailureRef>();
     auto policy = FailureContractPolicy::Declared;
     if (pending.has_value()) {
         parameters = pending->parameters;

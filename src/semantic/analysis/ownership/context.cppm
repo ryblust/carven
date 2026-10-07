@@ -159,24 +159,52 @@ struct OwnershipCallArgument final {
     auto operator==(const OwnershipCallArgument&) const noexcept -> bool = default;
 };
 
+enum class OwnershipStorageSiteKind { Allocation, Input, Region };
+
 struct OwnershipStorageSite final {
     BodyID body;
     std::size_t slot;
-    bool input;
+    OwnershipStorageSiteKind kind;
     std::optional<ProgramOriginID> element_selection {};
     auto operator<=>(const OwnershipStorageSite&) const noexcept = default;
 };
 
-struct OwnershipExternalObject final {
+enum class OwnershipInterfaceUse { Storage, CaptureHolder, StorageLoan, CallableLoan, Capture };
+
+// Roles describe the current formal/capture interface, never individual candidates.
+struct OwnershipInterfaceRole final {
+    std::size_t binding;
+    OwnershipInterfaceUse use;
+    OwnershipProjectionPath holder;
+    OwnershipProjectionPath path;
+    auto operator<=>(const OwnershipInterfaceRole&) const noexcept = default;
+};
+
+enum class OwnershipBoundaryDirection { Forward, Reverse };
+
+struct OwnershipBoundaryFamily final {
+    OwnershipBoundaryDirection direction;
+    OwnershipInterfaceRole role;
+    // No selection is a zero-step relay, distinct from an unknown element index.
+    std::optional<std::pair<OwnershipProjectionPath, std::optional<std::uint64_t>>> selection;
+    auto operator<=>(const OwnershipBoundaryFamily&) const noexcept = default;
+};
+
+struct OwnershipRegionDescriptor final {
+    std::vector<OwnershipInterfaceRole> memberships;
+    std::vector<OwnershipBoundaryFamily> boundaries;
+    auto operator<=>(const OwnershipRegionDescriptor&) const noexcept = default;
+};
+
+struct OwnershipStorageObject final {
     TypeID type;
     ProgramOriginID origin;
-    OwnershipObjectState state;
     OwnershipStorageSite site;
     bool many;
     // Cardinality never authorizes folding. Only real control/call feedback does.
     bool feedback = false;
 
-    auto operator==(const OwnershipExternalObject& other) const noexcept -> bool;
+    auto operator==(const OwnershipStorageObject& other) const noexcept -> bool;
 };
 
 // Carrier ownership is storage topology, not a relationship copied with a value.
@@ -200,18 +228,60 @@ struct OwnershipStorageFeedbackKey final {
     auto operator<=>(const OwnershipStorageFeedbackKey&) const noexcept = default;
 };
 
+// Region languages retain full inline suffixes and unknown-index compatibility.
+enum class OwnershipRegionRelation { Alias, Overlap, Ancestor, StrictAncestor };
+
+class OwnershipRegionIndex final {
+public:
+    OwnershipRegionIndex(
+        std::span<const OwnershipStorageEdge> edges,
+        std::size_t objects,
+        std::span<const std::pair<std::size_t, std::size_t>> possible_aliases = {}
+    ) noexcept;
+    auto matches(
+        const OwnershipPlace& left,
+        const OwnershipPlace& right,
+        OwnershipRegionRelation relation
+    ) const noexcept -> bool;
+
+private:
+    struct Transition final {
+        std::optional<std::uint64_t> label;
+        std::size_t target;
+    };
+
+    auto equal_paths(std::size_t left, std::size_t right) const noexcept -> bool;
+    auto reaches(std::size_t object) const noexcept -> const std::vector<bool>&;
+    auto query(
+        const OwnershipPlace& left,
+        const OwnershipPlace& right,
+        OwnershipRegionRelation relation
+    ) const noexcept -> bool;
+
+    std::vector<std::vector<Transition>> transitions;
+    std::vector<std::flat_map<std::size_t, std::uint64_t>> product;
+    std::vector<std::vector<std::size_t>> incoming;
+    mutable std::map<std::size_t, std::vector<bool>> reach_cache;
+    mutable std::map<std::tuple<OwnershipPlace, OwnershipPlace, OwnershipRegionRelation>, bool>
+        results;
+};
+
 // One query retains its referent domain across dependency reevaluations. Node IDs
 // never change within that domain; call inputs receive a normalized projection.
 struct OwnershipStorageTopology final {
     std::size_t revision = 0uz;
     std::optional<std::size_t> propagated_revision;
-    // Object state stays in OwnershipState; these descriptors have empty state.
-    std::vector<OwnershipExternalObject> objects;
+    std::vector<OwnershipStorageObject> objects;
     std::vector<OwnershipStorageEdge> owns;
+    // Possible equal regions at the call boundary; this relation is not transitive.
+    std::vector<std::pair<std::size_t, std::size_t>> possible_aliases;
     // Only fixed input/local owning roles occur here, even across graph cycles.
     std::vector<std::vector<std::size_t>> roots;
     std::vector<OwnershipPlace> anchors;
     std::map<OwnershipStorageFeedbackKey, std::size_t> feedback;
+    // Relation indexes are pure topology facts shared across body evaluations.
+    mutable std::optional<std::size_t> region_revision;
+    mutable std::unique_ptr<OwnershipRegionIndex> regions;
 };
 
 // Call inputs normalize reachable objects and clear modification history.
@@ -220,11 +290,13 @@ struct OwnershipCallInput final {
     BodyID body_id;
     std::vector<OwnershipCallArgument> parameters;
     std::vector<OwnershipCallArgument> captures;
-    std::vector<OwnershipExternalObject> objects;
+    std::vector<OwnershipStorageObject> objects;
+    OwnershipState state;
     std::vector<std::vector<bool>> outlives;
     std::vector<OwnershipAccess> accesses;
     std::vector<OwnershipStorageLoan> storage_readers;
     std::vector<OwnershipStorageEdge> owns {};
+    std::vector<std::pair<std::size_t, std::size_t>> possible_aliases;
     auto operator==(const OwnershipCallInput&) const noexcept -> bool = default;
 };
 
@@ -249,7 +321,8 @@ struct OwnershipCallCompletion final {
 // function completes. In particular divergence does not erase an executed write.
 struct OwnershipCallSummary final {
     std::vector<OwnershipCallCompletion> completions;
-    std::vector<OwnershipExternalObject> referents;
+    std::vector<OwnershipStorageObject> referents;
+    // Published edges involve at least one new referent; input topology stays private.
     std::vector<OwnershipStorageEdge> owns;
     std::vector<OwnershipWriteEffect> effects;
     auto operator==(const OwnershipCallSummary&) const noexcept -> bool = default;
@@ -273,11 +346,15 @@ struct OwnershipDiagnosisRecord final {
 
 struct OwnershipCallQuery final {
     OwnershipCallInput input;
+    bool recursive;
+    // Input references held by the active body stay immutable until its next pass.
+    std::optional<OwnershipCallInput> pending_input;
+    std::size_t input_revision;
     OwnershipCallSummary answer;
     std::flat_set<std::size_t> consumers;
     bool queued;
-    // The last evaluation's transfer agrees with the accumulated answer.
-    bool evaluation_matches_answer;
+    // Reevaluation did not enlarge the candidate answer or its retained topology.
+    bool evaluation_is_closed;
     std::unique_ptr<OwnershipDiagnosisRecord> diagnosis;
     OwnershipStorageTopology topology {};
 };
@@ -293,7 +370,18 @@ struct OwnershipCatchAcceptance final {
     bool exhaustive;
 };
 
+struct OwnershipRelationDemand final {
+    bool observes_relations = false;
+    bool produces_relationships = false;
+    bool writes_storage = false;
+
+    auto requires_context() const noexcept -> bool {
+        return observes_relations || (produces_relationships && writes_storage);
+    }
+};
+
 struct OwnershipBodyFacts final {
+    OwnershipRelationDemand relation_demand;
     std::vector<OwnershipLocalObject> locals;
     std::flat_map<const SemanticExpression*, std::size_t> temporaries;
     std::flat_map<LifetimeRegionID, std::vector<std::size_t>> lifetime_objects;
@@ -314,7 +402,8 @@ public:
     // Starts one body before its expressions are observed in preorder.
     auto begin_body(BodyID body) noexcept -> void;
     auto observe(const SemanticExpression& expression) noexcept -> void;
-    auto finish() && noexcept -> std::flat_map<BodyID, std::uint32_t>;
+    auto finish(std::flat_map<BodyID, OwnershipBodyFacts>& facts) && noexcept
+        -> std::flat_map<BodyID, std::uint32_t>;
 
 private:
     auto body_ordinal(CallableID callable) const noexcept -> std::optional<std::uint32_t>;
@@ -331,43 +420,6 @@ auto overlaps(
 ) noexcept -> bool;
 auto overlaps(const OwnershipPlace& left, const OwnershipPlace& right) noexcept -> bool;
 
-// A finite NFA denotes every graph path to a place, including its terminal
-// inline suffix. A product query compares languages without dropping suffixes
-// at cycles. Missing labels match any index.
-struct OwnershipRegionTransition final {
-    std::optional<std::uint64_t> label;
-    std::size_t target;
-};
-
-struct OwnershipRegionAutomaton final {
-    std::size_t objects;
-    std::size_t accept;
-    std::vector<std::vector<OwnershipRegionTransition>> transitions;
-    std::vector<bool> reaches_accept;
-};
-
-auto storage_region_automaton(
-    std::span<const OwnershipStorageEdge> edges,
-    const OwnershipPlace& source
-) noexcept -> OwnershipRegionAutomaton;
-auto storage_region_matches(
-    const OwnershipRegionAutomaton& left,
-    const OwnershipRegionAutomaton& right,
-    bool ancestor,
-    bool strict,
-    bool equal = false
-) noexcept -> bool;
-auto storage_region_ancestor(
-    std::span<const OwnershipStorageEdge> edges,
-    const OwnershipPlace& owner,
-    const OwnershipPlace& referent,
-    bool strict
-) noexcept -> bool;
-auto storage_regions_overlap(
-    std::span<const OwnershipStorageEdge> edges,
-    const OwnershipPlace& left,
-    const OwnershipPlace& right
-) noexcept -> bool;
 auto normalize_storage_loans(std::vector<OwnershipStorageLoan>& loans) noexcept -> void;
 auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> void;
 auto merge_relationships(
@@ -416,8 +468,7 @@ public:
     auto check_contracts() noexcept -> std::unique_ptr<OwnershipDiagnosisRecord>;
 
 private:
-    auto storage_regions(const OwnershipPlace& place) const noexcept
-        -> const OwnershipRegionAutomaton&;
+    auto storage_relations() const noexcept -> const OwnershipRegionIndex&;
     auto propagate_storage_facts() noexcept -> void;
     auto storage_available(const OwnershipState& state, std::size_t object) const noexcept -> bool;
     auto synchronize_storage(OwnershipState& state) const noexcept -> void;
@@ -471,7 +522,6 @@ private:
     ) noexcept -> void;
     auto storage_alias_alternatives(const OwnershipPlace& target) const noexcept
         -> std::vector<OwnershipPlace>;
-    auto merge_storage_aliases(OwnershipState& state) const noexcept -> void;
     auto store(
         OwnershipState& state,
         const OwnershipPlace& target,
@@ -604,10 +654,7 @@ private:
     OwnershipStorageTopology local_topology;
     OwnershipStorageTopology& topology;
     std::optional<ProgramOriginID> feedback_origin;
-    mutable std::optional<std::size_t> cached_region_revision;
-    // map preserves the first operand's result when a second key is inserted.
-    mutable std::map<OwnershipPlace, OwnershipRegionAutomaton> region_cache;
-    mutable std::map<std::tuple<OwnershipPlace, OwnershipPlace, bool, bool>, bool> relation_cache;
+    mutable std::optional<std::size_t> cached_alias_revision;
     mutable std::map<OwnershipPlace, std::vector<OwnershipPlace>> alias_cache;
     std::vector<OwnershipWriteEffect> effects;
     bool diagnosing = true;
@@ -637,15 +684,30 @@ public:
     auto body(BodyID id) const noexcept -> const SemIRBody&;
     auto facts_for_body(BodyID id) const noexcept -> const OwnershipBodyFacts&;
     auto contents(TypeID type) const noexcept -> TypeContents;
+    auto symbolic_input(const SemIRBody& body) const noexcept -> OwnershipCallInput;
     // Answers are borrowed during body evaluation, before the solver updates them.
-    auto query(OwnershipCallInput input) noexcept -> const OwnershipCallSummary&;
+    auto query(OwnershipCallInput input, bool recursive = false) noexcept
+        -> const OwnershipCallSummary&;
 
-    auto recursive_storage_site(const OwnershipStorageSite& site, BodyID target) const noexcept
-        -> bool;
+    auto region_site(BodyID body, TypeID type, OwnershipRegionDescriptor descriptor) noexcept
+        -> OwnershipStorageSite;
+    auto same_recursion_component(BodyID source, BodyID target) const noexcept -> bool;
     const SemIRProgram& program;
 
 private:
-    auto root_input(const SemIRBody& body) const noexcept -> OwnershipCallInput;
+    static auto same_input_partition(
+        const OwnershipCallInput& left,
+        const OwnershipCallInput& right
+    ) noexcept -> bool;
+    static auto includes_input_topology(
+        const OwnershipCallInput& destination,
+        const OwnershipCallInput& source
+    ) noexcept -> bool;
+    static auto join_summary(
+        OwnershipCallSummary& destination,
+        const OwnershipCallSummary& source,
+        std::size_t input_objects
+    ) noexcept -> void;
     auto enqueue(std::size_t query) noexcept -> void;
     auto commit_diagnosis(
         std::unique_ptr<OwnershipDiagnosisRecord> diagnosis,
@@ -665,6 +727,8 @@ private:
     const BodyStore& bodies;
     std::flat_map<BodyID, OwnershipBodyFacts> body_facts;
     std::flat_map<BodyID, std::uint32_t> recursion_components;
+    // Complete finite interface descriptors are the authority for Region slots.
+    std::map<std::tuple<BodyID, TypeID, OwnershipRegionDescriptor>, std::size_t> region_sites;
     std::vector<std::unique_ptr<OwnershipCallQuery>> queries;
     std::flat_map<BodyID, std::vector<std::size_t>> body_queries;
     std::deque<std::size_t> pending_queries;

@@ -68,17 +68,11 @@ auto BodyType::resolved() const noexcept -> TypeID {
     invariant_violation("body type has not been resolved");
 }
 
-BodyFailures::BodyFailures(FailureTermID value) noexcept
+BodyFailures::BodyFailures(ConstructionFailureRef value) noexcept
     : value(value) {}
 
-BodyFailures::BodyFailures(FailureSetID value) noexcept
-    : value(value) {}
-
-auto BodyFailures::term() const noexcept -> FailureTermID {
-    if (const auto* term = std::get_if<FailureTermID>(&value)) {
-        return *term;
-    }
-    invariant_violation("resolved body failures have no construction term");
+auto BodyFailures::reference() const noexcept -> const ConstructionFailureRef& {
+    return value;
 }
 
 auto BodyFailures::resolved() const noexcept -> FailureSetID {

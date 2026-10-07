@@ -250,7 +250,7 @@ auto BodyElaborator::lambda_expression(
     }
 
     const auto actual_failures = draft().add_empty_failure_term();
-    auto signature_failures = actual_failures;
+    auto signature_failures = ConstructionFailureRef(actual_failures);
     auto failure_policy = FailureContractPolicy::Inferred;
     if (source.throw_clause.has_value()) {
         const auto resolve_extent = [&](ASTExprID extent) noexcept {
@@ -268,7 +268,7 @@ auto BodyElaborator::lambda_expression(
         if (!members.has_value()) {
             co_return std::unexpected(members.error());
         }
-        const auto allowed = draft().add_concrete_failure_term(std::move(*members));
+        const auto allowed = draft().intern_failure_set(std::move(*members));
         draft().require_failure_subset(
             actual_failures,
             allowed,

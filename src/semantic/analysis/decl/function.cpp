@@ -204,7 +204,7 @@ auto DeclResolver::resolve_function(
         result = *resolved;
     }
 
-    auto failures = std::optional<FailureTermID>();
+    auto failures = std::optional<ConstructionFailureRef>();
     auto policy = FailureContractPolicy::Declared;
     if (function.throw_clause.has_value()) {
         auto resolved =
@@ -212,9 +212,9 @@ auto DeclResolver::resolve_function(
         if (!resolved.has_value()) {
             co_return std::unexpected(resolved.error());
         }
-        failures = draft.add_concrete_failure_term(std::move(*resolved));
+        failures = draft.intern_failure_set(std::move(*resolved));
     } else if (cpp_import) {
-        failures = draft.add_empty_failure_term();
+        failures = draft.empty_failure_set();
     } else {
         failures = draft.add_empty_failure_term();
         policy = (function.is_implicit_entry

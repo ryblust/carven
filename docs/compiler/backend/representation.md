@@ -23,8 +23,8 @@ use the same name representation.
 These describe native C++ syntax, with type dependencies visited normally.
 
 Structure declarations lower to C++ aggregates containing their declared fields.
-Payload enum factories and projections are ordinary C++
-functions. Carven evaluates source constants during semantic analysis; their
+Payload enum factories are ordinary C++ functions. Payload access uses
+standard variant selection on the checked case record. Carven evaluates source constants during semantic analysis; their
 uses reconstruct the normalized values through the same target operations.
 
 ## Constants and default values

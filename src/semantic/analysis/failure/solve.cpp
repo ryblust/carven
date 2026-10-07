@@ -270,7 +270,14 @@ auto FailureSolution::contains(FailureTermID term) const noexcept -> bool {
         && static_cast<std::size_t>(term.index()) < failure_sets_by_term.size();
 }
 
-auto FailureSolution::failure_set(FailureTermID term) const noexcept -> FailureSetID {
+auto FailureSolution::failure_set(ConstructionFailureRef source) const noexcept -> FailureSetID {
+    if (const auto* known = std::get_if<FailureSetID>(&source)) {
+        if (known->owner() != program_identity) {
+            invariant_violation("failure solution used a foreign known set");
+        }
+        return *known;
+    }
+    const auto term = std::get<FailureTermID>(source);
     if (!contains(term)) {
         invariant_violation("failure solution lookup used a foreign or invalid term identity");
     }
@@ -296,25 +303,39 @@ auto solve_failure_constraints(
     auto dependents = std::vector<std::vector<std::uint32_t>>(terms.size());
     auto term_ids = std::vector<FailureTermID>();
     term_ids.reserve(terms.size());
+    const auto members = [&](ConstructionFailureRef source) noexcept -> std::vector<TypeID> {
+        if (const auto* known = std::get_if<FailureSetID>(&source)) {
+            return failure_sets.copy(*known).members;
+        }
+        const auto term = std::get<FailureTermID>(source);
+        if (!terms.contains(term)) {
+            invariant_violation("failure source refers to a foreign or invalid term");
+        }
+        return values[term.index()];
+    };
     for (const auto [term_id, term] : terms.entries()) {
         term_ids.push_back(term_id);
         values[term_id.index()] = term.direct_members;
+        const auto depend = [&](ConstructionFailureRef source) noexcept {
+            if (const auto* input = std::get_if<FailureTermID>(&source)) {
+                if (!terms.contains(*input)) {
+                    invariant_violation("failure term depends on a foreign or invalid term");
+                }
+                dependents[input->index()].push_back(term_id.index());
+            } else {
+                static_cast<void>(failure_sets.copy(std::get<FailureSetID>(source)));
+            }
+        };
+        for (const auto input : term.inputs) {
+            depend(input);
+        }
+        for (const auto& guarded : term.guarded_inputs) {
+            depend(guarded.gate);
+            depend(guarded.source);
+        }
         remove_members(values[term_id.index()], term.excluded_members);
         if (term.retained_members.has_value()) {
             retain_members(values[term_id.index()], *term.retained_members);
-        }
-        for (const auto input : term.inputs) {
-            if (!terms.contains(input)) {
-                invariant_violation("failure term depends on a foreign or invalid term");
-            }
-            dependents[input.index()].push_back(term_id.index());
-        }
-        for (const auto& guarded : term.guarded_inputs) {
-            if (!terms.contains(guarded.gate) || !terms.contains(guarded.source)) {
-                invariant_violation("guarded failure contribution depends on an invalid term");
-            }
-            dependents[guarded.gate.index()].push_back(term_id.index());
-            dependents[guarded.source.index()].push_back(term_id.index());
         }
     }
     for (auto& targets : dependents) {
@@ -324,16 +345,11 @@ auto solve_failure_constraints(
 
     auto worklist = std::deque<std::uint32_t>();
     auto queued = std::vector<std::uint8_t>(terms.size(), 0u);
+    // Known set inputs also contribute without a mutable predecessor. Enter
+    // every transfer once, then revisit only consumers of growing terms.
     for (auto index = 0uz; index < terms.size(); ++index) {
-        if (values[index].empty()) {
-            continue;
-        }
-        for (const auto dependent : dependents[index]) {
-            if (queued[dependent] == 0u) {
-                queued[dependent] = 1u;
-                worklist.push_back(dependent);
-            }
-        }
+        queued[index] = 1u;
+        worklist.push_back(static_cast<std::uint32_t>(index));
     }
     while (!worklist.empty()) {
         const auto index = worklist.front();
@@ -344,11 +360,11 @@ auto solve_failure_constraints(
         const auto& term = terms.get(term_id);
         auto next = term.direct_members;
         for (const auto input : term.inputs) {
-            static_cast<void>(merge_members(next, values[input.index()]));
+            static_cast<void>(merge_members(next, members(input)));
         }
         for (const auto& guarded : term.guarded_inputs) {
-            if (!values[guarded.gate.index()].empty()) {
-                static_cast<void>(merge_members(next, values[guarded.source.index()]));
+            if (!members(guarded.gate).empty()) {
+                static_cast<void>(merge_members(next, members(guarded.source)));
             }
         }
         remove_members(next, term.excluded_members);
@@ -377,50 +393,46 @@ auto solve_failure_constraints(
     }
 
     auto failure = std::optional<AnalysisFailure>();
-    const auto members = [&](FailureTermID term) noexcept -> std::span<const TypeID> {
-        if (!terms.contains(term)) {
-            invariant_violation("failure constraint refers to a foreign or invalid term");
-        }
-        return values[term.index()];
-    };
-    // Walks contributions back from a rejecting term to the throw statements and
+    // Walks contributions back from a rejecting source to the throw statements and
     // nearest '?' operands that deliver one of the rejected members; deeper
     // operands belong to callees.
-    auto propagation_origins = std::map<std::uint32_t, ProgramOriginID>();
+    auto propagation_origins = std::map<ConstructionFailureRef, ProgramOriginID>();
     for (const auto& constraint : constraints.constraints()) {
         if (const auto* propagation = std::get_if<RequiresNonEmptyFailure>(&constraint)) {
-            propagation_origins.try_emplace(propagation->term.index(), propagation->origin);
+            propagation_origins.try_emplace(propagation->source, propagation->origin);
         }
     }
-    const auto evidence_for = [&](FailureTermID rejecting,
+    const auto evidence_for = [&](ConstructionFailureRef rejecting,
                                   std::vector<TypeID> rejected) noexcept -> FailureEvidence {
         auto sites = std::vector<ProgramOriginID>();
-        auto visited = std::vector<std::uint8_t>(terms.size(), 0u);
-        auto pending = std::vector<FailureTermID> {rejecting};
-        visited[rejecting.index()] = 1u;
+        auto visited = std::set<ConstructionFailureRef> {rejecting};
+        auto pending = std::vector<ConstructionFailureRef> {rejecting};
         while (!pending.empty()) {
-            const auto term_id = pending.back();
+            const auto source = pending.back();
             pending.pop_back();
-            auto delivered = values[term_id.index()];
+            auto delivered = members(source);
             retain_members(delivered, rejected);
             if (delivered.empty()) {
                 continue;
             }
-            if (const auto origin = propagation_origins.find(term_id.index());
+            if (const auto origin = propagation_origins.find(source);
                 origin != propagation_origins.end()) {
                 sites.push_back(origin->second);
                 continue;
             }
-            const auto& term = terms.get(term_id);
+            const auto* term_id = std::get_if<FailureTermID>(&source);
+            if (!term_id) {
+                continue;
+            }
+            const auto& term = terms.get(*term_id);
             for (const auto& thrown : term.throw_sites) {
                 if (std::ranges::contains(rejected, thrown.member)
                     && !std::ranges::contains(sites, thrown.origin)) {
                     sites.push_back(thrown.origin);
                 }
             }
-            const auto visit = [&](FailureTermID input) noexcept {
-                if (visited[input.index()] == 0u) {
-                    visited[input.index()] = 1u;
+            const auto visit = [&](ConstructionFailureRef input) noexcept {
+                if (visited.insert(input).second) {
                     pending.push_back(input);
                 }
             };
@@ -442,17 +454,17 @@ auto solve_failure_constraints(
         constraint.visit(
             Overloaded {
                 [&](const RequiresEmptyFailure& requirement) noexcept {
-                    if (!members(requirement.term).empty()) {
+                    if (!members(requirement.source).empty()) {
                         failure = diagnostics.error(empty_requirement_diagnostic(
                             requirement,
                             provenance,
-                            evidence_for(requirement.term, copy(members(requirement.term))),
+                            evidence_for(requirement.source, copy(members(requirement.source))),
                             type_names
                         ));
                     }
                 },
                 [&](const RequiresNonEmptyFailure& requirement) noexcept {
-                    if (members(requirement.term).empty()) {
+                    if (members(requirement.source).empty()) {
                         failure = diagnostics.error(
                             DiagnosticBuilder(
                                 DiagnosticCode::EffectPropagateRedundant,

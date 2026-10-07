@@ -16,8 +16,8 @@ nominal member names from their semantic identity and planned enclosing name.
 Source encoding is injective: reserved C++ names and source spellings in its escape
 domain are encoded. The plan also owns encoded public namespace and function names
 shared by API headers and export façades. Artifact paths retain canonical source names.
-Closure types are numbered by their discovery order within the owner module, so other
-modules cannot renumber them.
+Closure names use source-location order within their owning module. Closures
+sharing a source location are ordered by their semantic callable identity.
 
 Semantic visibility and C++ definition requirements determine interface
 artifacts. Declaration-only dependencies use forward declarations. Complete

@@ -241,10 +241,11 @@ declaration resolution; structure fields and enum payload types require
 construction-type resolution.
 
 Callable construction queries read owning callables, unresolved views, and
-canonical views through one shape. Constraint construction projects a canonical
-failure set into an immutable known term; it does not change the signature or
-the expression's type. Adoption checks failure subsets, while Write access
-requires equal contracts.
+canonical views through one shape. Construction failure references name either a
+mutable inference term or an immutable canonical failure set. Declared signatures
+retain their failure set directly; reading a callable contract does not create a
+constraint term. Adoption checks failure subsets, while Write access requires
+equal contracts.
 
 `analysis.expr` interprets each expression once, with concrete constant and body
 sites. The interpreter owns contextual typing, operation selection, enum and
@@ -255,8 +256,9 @@ value; declarations retain lazy completion and cycle diagnostics.
 Structural type terms reference only previously appended terms. Canonicalization
 consumes them in storage order into one final type mapping after failure solving.
 Closed declared subtypes can be interned earlier through the same construction
-operation. Source function-view signatures carry immutable known failure terms;
-early normalization accepts those terms and leaves inferred contracts unresolved.
+operation. Source function-view signatures carry canonical failure sets. Early
+normalization accepts those sets and leaves inference terms unresolved until
+failure solving.
 Callable recursion and recursive failure constraints retain their own identities
 and solving rules.
 

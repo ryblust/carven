@@ -111,7 +111,7 @@ cannot establish that contract; OPEN-03 governs this part of body checking.
 
 ### Selected implementation slice
 
-**Design:** Nominal type parameters first, then checked parametric bodies.
+**Implemented scope:** Nominal type parameters.
 
 **Implementation:** Nominal type parameters are implemented. Parameterized bodies
 are not implemented; a parsed declaration does not establish semantic support.
@@ -142,39 +142,6 @@ legality.
 Source-head completion and concrete-instance closure are separate construction
 boundaries. Publication requires complete concrete declarations. C++ lowering
 consumes the ordinary concrete representation.
-
-#### Subsequent parameterized bodies
-
-The next stage reuses checked structured operations with rigid parameter types.
-Class operations inherit their owner's parameters and retain ordinary lexical
-representation access. Independently generic operations and combined static
-value/type specialization remain outside the initial body slice.
-
-Holding, copying, complete Take, forwarding, and same-type assignment require
-their shared operation contracts. Default construction, comparison, arithmetic,
-formatting, and member lookup on an unknown parameter are not universal.
-Copying String copies its content; copying a slice preserves its backing.
-
-Generic bodies preserve selected storage separately from contained loans.
-Unknown contents carry an opaque loan bundle identified by the input value and
-its projection path. Copy preserves that bundle in a new owner, Take transfers
-it, and known aggregate construction and projection preserve field paths.
-Definition checking establishes availability and escape restrictions; concrete
-instances validate actual backing through ordinary ownership rules.
-
-Generic C++ import/export declarations and native operations whose legality
-depends on a type parameter are rejected. Concrete boundary wrappers may call
-recorded instances. Concepts, evidence, associated projections, value parameters,
-generic lambdas, and combined static-value/type-generic specialization are outside
-this slice. Array extents and failure types remain independent of type parameters.
-
-Checked bodies reuse structured semantic operations and explicit substitution;
-applications do not replay source AST. Executable publication requires concrete
-types and resolved operation identities.
-
-Container storage, view invalidation, and constant-result retention belong to
-[constant storage](constant-storage.md), independently of generic declaration
-support. This slice does not establish a growable owning container.
 
 ### Type-generic syntax
 

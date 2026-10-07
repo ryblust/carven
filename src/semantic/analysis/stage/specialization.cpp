@@ -531,7 +531,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
                 }
             }
             attempt->residual_failures = BodyFailures(draft.add_intersection_failure_term(
-                attempt->residual_failures.term(),
+                attempt->residual_failures.reference(),
                 std::move(types)
             ));
             rewritten = true;

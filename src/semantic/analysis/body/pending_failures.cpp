@@ -11,11 +11,11 @@ auto BodyElaborator::failure_context_for_current_path() const noexcept
 }
 
 auto BodyElaborator::route_pending(
-    BodyPendingFailureTerms terms,
+    BodyPendingFailures failures,
     const BodyFailureContext& target,
     std::optional<Span> propagation_span
 ) noexcept -> void {
-    const auto combined = draft().add_union_failure_term(std::move(terms));
+    const auto combined = draft().add_union_failure_term(std::move(failures));
     if (propagation_span.has_value()) {
         draft().require_non_empty_failures(combined, origin(*propagation_span));
     }
@@ -27,7 +27,7 @@ auto BodyElaborator::discard_pending(BuiltExpression& expression) noexcept -> vo
 }
 
 auto BodyElaborator::collect_pending(
-    BodyPendingFailureTerms& destination,
+    BodyPendingFailures& destination,
     BuiltExpression& expression
 ) noexcept -> void {
     append_pending_failures(destination, take_pending_failures(expression));

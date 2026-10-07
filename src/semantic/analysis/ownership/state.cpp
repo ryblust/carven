@@ -19,16 +19,13 @@ OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
       storage_readers(input.storage_readers) {
     if (topology.objects.empty()) {
         topology.objects = input.objects;
-        for (auto& object : topology.objects) {
-            object.state = {};
-        }
         topology.owns = input.owns;
+        topology.possible_aliases = input.possible_aliases;
         for (const auto [index, local] : std::views::enumerate(facts.locals)) {
             topology.objects.push_back(
                 {local.type,
                  local.origin,
-                 {},
-                 {body.id(), static_cast<std::size_t>(index), false},
+                 {body.id(), static_cast<std::size_t>(index), OwnershipStorageSiteKind::Allocation},
                  false,
                  false}
             );
@@ -38,6 +35,36 @@ OwnershipBodyAnalyzer::OwnershipBodyAnalyzer(
             topology.anchors.push_back({index, {}});
         }
     }
+    // Recursive input growth preserves slot identity and local indices. Only
+    // graph facts change, so previously retained output nodes remain in place.
+    auto changed = false;
+    for (auto index = 0uz; index < input.objects.size(); ++index) {
+        auto& retained = topology.objects[index];
+        const auto& incoming = input.objects[index];
+        if ((incoming.many && !retained.many) || (incoming.feedback && !retained.feedback)) {
+            retained.many |= incoming.many;
+            retained.feedback |= incoming.feedback;
+            changed = true;
+        }
+    }
+    for (const auto& edge : input.owns) {
+        if (!std::ranges::contains(topology.owns, edge)) {
+            topology.owns.push_back(edge);
+            changed = true;
+        }
+    }
+    for (const auto pair : input.possible_aliases) {
+        if (!std::ranges::contains(topology.possible_aliases, pair)) {
+            topology.possible_aliases.push_back(pair);
+            changed = true;
+        }
+    }
+    if (changed) {
+        std::ranges::sort(topology.possible_aliases);
+        std::ranges::sort(topology.owns);
+        ++topology.revision;
+    }
+    propagate_storage_facts();
     const auto bind = [&](std::span<const LocalBindingID> bindings,
                           std::span<const OwnershipCallArgument> values) noexcept {
         for (const auto& [id, value] : std::views::zip(bindings, values)) {
@@ -315,69 +342,26 @@ auto OwnershipBodyAnalyzer::use(
 
 auto OwnershipBodyAnalyzer::storage_alias_alternatives(const OwnershipPlace& target) const noexcept
     -> std::vector<OwnershipPlace> {
-    if (cached_region_revision != topology.revision) {
-        region_cache.clear();
-        relation_cache.clear();
+    if (cached_alias_revision != topology.revision) {
         alias_cache.clear();
-        cached_region_revision = topology.revision;
+        cached_alias_revision = topology.revision;
     }
     if (const auto found = alias_cache.find(target); found != alias_cache.end()) {
         return found->second;
     }
     auto result = std::vector<OwnershipPlace> {target};
-    // Edge words are nonempty. With the same terminal suffix, a root without
-    // incoming owns edges cannot equal a different node's region language.
-    if (std::ranges::none_of(topology.owns, [&](const auto& edge) noexcept {
-            return edge.element == target.object;
-        })) {
-        alias_cache.emplace(target, result);
-        return result;
-    }
-    for (auto cursor = 0uz; cursor < result.size(); ++cursor) {
-        const auto source = result[cursor];
-        for (auto object = 0uz; object < topology.objects.size(); ++object) {
-            auto alternative = target;
-            alternative.object = object;
-            if (object_type(object) == object_type(target.object)
-                && std::ranges::any_of(
-                    topology.owns,
-                    [&](const auto& edge) noexcept { return edge.element == object; }
-                )
-                && !std::ranges::contains(result, alternative)
-                && storage_aliases(source, alternative)) {
-                result.push_back(std::move(alternative));
-            }
+    for (auto object = 0uz; object < topology.objects.size(); ++object) {
+        auto alternative = target;
+        alternative.object = object;
+        if (object != target.object
+            && object_type(object) == object_type(target.object)
+            && storage_aliases(target, alternative)) {
+            result.push_back(std::move(alternative));
         }
     }
     std::ranges::sort(result);
-    for (const auto& member : result) {
-        alias_cache.emplace(member, result);
-    }
+    alias_cache.emplace(target, result);
     return result;
-}
-
-auto OwnershipBodyAnalyzer::merge_storage_aliases(OwnershipState& state) const noexcept -> void {
-    synchronize_storage(state);
-    auto visited = std::vector<bool>(state.objects.size(), false);
-    for (auto object = 0uz; object < state.objects.size(); ++object) {
-        if (visited[object] || !state.objects[object].modified) {
-            continue;
-        }
-        const auto alternatives = storage_alias_alternatives({object, {}});
-        auto joined = state.objects[object];
-        for (const auto& place : alternatives) {
-            const auto& incoming = state.objects[place.object];
-            joined.available &= incoming.available;
-            if (incoming.taken && (!joined.taken || *incoming.taken < *joined.taken)) {
-                joined.taken = incoming.taken;
-            }
-            merge_relationships(joined.relationships, incoming.relationships);
-        }
-        for (const auto& place : alternatives) {
-            state.objects[place.object] = joined;
-            visited[place.object] = true;
-        }
-    }
 }
 
 auto OwnershipBodyAnalyzer::store(
@@ -426,7 +410,7 @@ auto OwnershipBodyAnalyzer::store(
     const auto alternatives = storage_alias_alternatives(target);
     for (const auto& place : alternatives) {
         auto& destination = state.objects[place.object];
-        destination.modified = true;
+        const auto previous = destination;
         const auto singleton =
             definite && alternatives.size() == 1uz && !topology.objects[place.object].many;
         if (singleton && place.path.empty()) {
@@ -434,7 +418,9 @@ auto OwnershipBodyAnalyzer::store(
                 .available = true,
                 .taken = std::nullopt,
                 .relationships = relationships,
-                .modified = true
+                .modified = previous.modified
+                    || !previous.available
+                    || previous.relationships != relationships
             };
             continue;
         }
@@ -455,6 +441,7 @@ auto OwnershipBodyAnalyzer::store(
             destination.relationships,
             nest_relationships(relationships, place.path)
         );
+        destination.modified |= destination.relationships != previous.relationships;
     }
 }
 
@@ -510,55 +497,25 @@ auto OwnershipBodyAnalyzer::storage_ancestor(
     const OwnershipPlace& referent,
     bool strict
 ) const noexcept -> bool {
-    const auto& owners = storage_regions(owner);
-    const auto& referents = storage_regions(referent);
-    const auto key = std::tuple(owner, referent, true, strict);
-    const auto [found, inserted] = relation_cache.try_emplace(key);
-    if (inserted) {
-        found->second = storage_region_matches(owners, referents, true, strict);
-    }
-    return found->second;
+    return storage_relations().matches(
+        owner,
+        referent,
+        strict ? OwnershipRegionRelation::StrictAncestor : OwnershipRegionRelation::Ancestor
+    );
 }
 
 auto OwnershipBodyAnalyzer::storage_aliases(
     const OwnershipPlace& left,
     const OwnershipPlace& right
 ) const noexcept -> bool {
-    // Every owns word consumes at least one symbol. Equal-length terminal
-    // suffixes cannot meet different roots when one has no incoming edge.
-    if (left.object != right.object
-        && left.path.size() == right.path.size()
-        && (std::ranges::none_of(
-                topology.owns,
-                [&](const auto& edge) noexcept { return edge.element == left.object; }
-            )
-            || std::ranges::none_of(topology.owns, [&](const auto& edge) noexcept {
-                   return edge.element == right.object;
-               }))) {
-        return false;
-    }
-    const auto& a = storage_regions(left);
-    const auto& b = storage_regions(right);
-    const auto key = std::tuple(left, right, false, true);
-    const auto [found, inserted] = relation_cache.try_emplace(key);
-    if (inserted) {
-        found->second = storage_region_matches(a, b, false, false, true);
-    }
-    return found->second;
+    return storage_relations().matches(left, right, OwnershipRegionRelation::Alias);
 }
 
 auto OwnershipBodyAnalyzer::storage_overlaps(
     const OwnershipPlace& left,
     const OwnershipPlace& right
 ) const noexcept -> bool {
-    const auto& a = storage_regions(left);
-    const auto& b = storage_regions(right);
-    const auto key = std::tuple(left, right, false, false);
-    const auto [found, inserted] = relation_cache.try_emplace(key);
-    if (inserted) {
-        found->second = storage_region_matches(a, b, false, false);
-    }
-    return found->second;
+    return storage_relations().matches(left, right, OwnershipRegionRelation::Overlap);
 }
 
 auto OwnershipBodyAnalyzer::write_access(

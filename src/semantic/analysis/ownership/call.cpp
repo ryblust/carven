@@ -17,7 +17,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
         )
     };
     for (auto index = 0uz; index < input.objects.size(); ++index) {
-        state.objects[index] = input.objects[index].state;
+        state.objects[index] = input.state.objects[index];
     }
     const auto initialize = [&](std::span<const LocalBindingID> bindings,
                                 std::span<const OwnershipCallArgument> values) noexcept {
@@ -94,7 +94,6 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                 }
             }
         };
-        merge_storage_aliases(state);
         check(value);
         for (auto index = 0uz; index < input.objects.size(); ++index) {
             check(state.objects[index].relationships);
@@ -159,6 +158,10 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
     };
     auto published_edges = std::vector<OwnershipStorageEdge>();
     for (const auto& edge : topology.owns) {
+        // Input topology is proof context, not a change to caller ownership.
+        if (edge.carrier.object < input.objects.size() && edge.element < input.objects.size()) {
+            continue;
+        }
         if (std::ranges::all_of(
                 topology.roots[edge.element],
                 [&](const auto root) noexcept { return root >= input.objects.size(); }
@@ -176,32 +179,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
     }
     std::ranges::sort(published_edges);
     published_edges.erase(std::ranges::unique(published_edges).begin(), published_edges.end());
-    // Summary nodes represent possible aliases, not exact identities. Keep
-    // every effect alternative in that finite alias class. This only widens:
-    // terminal suffix, checked object type, and access obligation stay intact.
-    for (auto cursor = 0uz; cursor < effects.size(); ++cursor) {
-        const auto effect = effects[cursor];
-        if (std::ranges::all_of(topology.roots[effect.place.object], [&](const auto root) noexcept {
-                return root >= input.objects.size();
-            })) {
-            continue;
-        }
-        for (const auto& place : storage_alias_alternatives(effect.place)) {
-            if (std::ranges::all_of(topology.roots[place.object], [&](const auto root) noexcept {
-                    return root >= input.objects.size();
-                })) {
-                continue;
-            }
-            auto alternative = effect;
-            alternative.place = place;
-            if (!std::ranges::contains(effects, alternative)) {
-                effects.push_back(std::move(alternative));
-            }
-        }
-    }
-
     for (auto& completion : result) {
-        merge_storage_aliases(completion.state);
         completion.state.objects.erase(
             completion.state.objects.begin() + static_cast<std::ptrdiff_t>(input.objects.size()),
             completion.state.objects.begin() + static_cast<std::ptrdiff_t>(base)
@@ -222,9 +200,7 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
     // nodes. Their owns edges are unpublished and restoration leaves their
     // source lists empty, so they cannot enter caller contexts.
     for (auto index = base; index < topology.objects.size(); ++index) {
-        auto node = topology.objects[index];
-        node.state = {};
-        summary.referents.push_back(std::move(node));
+        summary.referents.push_back(topology.objects[index]);
     }
     summary.owns = std::move(published_edges);
     for (auto effect : effects) {
@@ -316,433 +292,509 @@ auto OwnershipBodyAnalyzer::call(
     }
 
     synchronize_storage(state);
-    // Input projection is read-only until query returns. Keep shape and current
-    // flow state separate instead of deep-copying the complete retained domain.
-    const auto& graph_objects = topology.objects;
-    const auto& edges = topology.owns;
-    const auto site_for = [&](std::size_t object) noexcept {
-        return graph_objects[object].site;
-    };
-    const auto many_for = [&](std::size_t object) noexcept {
-        return graph_objects[object].many;
-    };
-    auto reachable = std::vector<std::size_t>();
-    auto seen = std::flat_set<std::size_t>();
-    auto distinguished = std::flat_set<std::size_t>();
-    auto direct_formal = std::flat_set<std::size_t>();
-    const auto discover = [&](std::size_t object) noexcept {
-        if (seen.insert(object).second) {
-            reachable.push_back(object);
-        }
-    };
-    const auto distinguish = [&](std::size_t object) noexcept {
-        discover(object);
-        // Current interface roles resist site-only merging. Actual possible
-        // aliases still share the conservative state partition.
-        // The many bit still forbids strong updates.
-        distinguished.insert(object);
-        direct_formal.insert(object);
-    };
-    const auto visit_facts = [&](const OwnershipRelationships& value) noexcept {
-        for (const auto& row : value.view().captures) {
-            discover(row.target.object);
-        }
-        for (const auto& row : value.view().storage_loans) {
-            discover(row.backing.object);
-        }
-        for (const auto& row : value.view().callable_loans) {
-            if (row.backing) {
-                discover(row.backing->object);
-            }
-        }
-    };
-    const auto visit_input = [&](const OwnershipCallArgument& argument) noexcept {
-        if (argument.alias) {
-            distinguish(argument.alias->object);
-        }
-        if (argument.capture_holder) {
-            distinguish(argument.capture_holder->object);
-        }
-        for (const auto& place : argument.storage) {
-            discover(place.object);
-            direct_formal.insert(place.object);
-        }
-        if (argument.storage.size() == 1uz) {
-            distinguish(argument.storage.front().object);
-        }
-        visit_facts(argument.value);
-        // A direct interface referent earns a finite root role. This does not
-        // turn a many referent into a singleton.
-        if (argument.value.view().storage_loans.size() == 1uz
-            && argument.value.view().storage_loans.front().holder.empty()) {
-            distinguish(argument.value.view().storage_loans.front().backing.object);
-        }
-        if (argument.value.view().callable_loans.size() == 1uz
-            && argument.value.view().callable_loans.front().backing) {
-            distinguish(argument.value.view().callable_loans.front().backing->object);
-        }
-    };
-    for (const auto& argument : parameters) {
-        visit_input(argument);
-    }
-    for (const auto& argument : raw_captures) {
-        visit_input(argument);
-    }
-    // Inline fields and callable capture storage have a finite structural shape.
-    // Preserve their exact roots. Sequence selections were split above;
-    // indirect slice backing is deliberately not followed here.
-    auto inline_roots = std::vector<std::size_t>(distinguished.begin(), distinguished.end());
-    const auto inline_target = [&](std::size_t object) noexcept {
-        discover(object);
-        if (!many_for(object) && distinguished.insert(object).second) {
-            inline_roots.push_back(object);
-        }
-    };
-    const auto inline_facts = [&](const OwnershipRelationships& value) noexcept {
-        auto slots = std::flat_map<OwnershipProjectionPath, std::optional<std::size_t>>();
-        const auto add = [&](const OwnershipProjectionPath& holder,
-                             std::optional<std::size_t> object) noexcept {
-            if (!std::ranges::all_of(holder, [](const auto& part) static noexcept {
-                    return part.has_value();
-                })) {
-                return;
-            }
-            const auto [found, inserted] = slots.emplace(holder, object);
-            if (!inserted) {
-                found->second.reset();
-            }
-        };
-        for (const auto& row : value.view().captures) {
-            add(row.holder, row.target.object);
-        }
-        for (const auto& row : value.view().callable_loans) {
-            add(row.holder, row.backing ? std::optional(row.backing->object) : std::nullopt);
-        }
-        for (const auto& [holder, object] : slots) {
-            if (object) {
-                inline_target(*object);
-            }
-        }
-    };
-    for (const auto& argument : parameters) {
-        inline_facts(argument.value);
-    }
-    for (const auto& argument : raw_captures) {
-        inline_facts(argument.value);
-    }
-    for (auto cursor = 0uz; cursor < inline_roots.size(); ++cursor) {
-        inline_facts(state.objects[inline_roots[cursor]].relationships);
-    }
-    for (auto cursor = 0uz; cursor < reachable.size(); ++cursor) {
-        visit_facts(state.objects[reachable[cursor]].relationships);
-    }
-    // The interface consists of referenced parameter/capture roles and value
-    // relationships, plus paths connecting distinct roles. Caller ancestry
-    // outside that interface cannot change the function's transfer. Its active
-    // loans and selections are checked against instantiated write effects below.
-    const auto interface = reachable;
-    const auto graph_reachable = [&](std::size_t seed, bool reverse) noexcept {
-        auto visited = std::flat_set<std::size_t> {seed};
-        auto pending = std::vector<std::size_t> {seed};
-        for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {
-            for (const auto& edge : edges) {
-                const auto from = reverse ? edge.element : edge.carrier.object;
-                const auto to = reverse ? edge.carrier.object : edge.element;
-                if (from == pending[cursor] && visited.insert(to).second) {
-                    pending.push_back(to);
-                }
-            }
-        }
-        return visited;
-    };
-    for (const auto from : interface) {
-        const auto forward = graph_reachable(from, false);
-        for (const auto to : interface) {
-            if (from == to || !forward.contains(to)) {
-                continue;
-            }
-            const auto reverse = graph_reachable(to, true);
-            for (const auto object : forward) {
-                if (reverse.contains(object)) {
-                    discover(object);
-                }
-            }
-        }
-    }
-    using ConnectorFamily =
-        std::tuple<std::size_t, OwnershipProjectionPath, std::optional<std::uint64_t>>;
-    using ConnectorFamilies = std::vector<ConnectorFamily>;
-    auto connector_families = std::flat_map<std::size_t, ConnectorFamilies>();
-    const auto recursive_call = analysis.recursive_storage_site({body.id(), 0, false}, target.id());
-    // One shared alias partition governs anchor families and normalized state.
-    // Definite formal/inline roles have a stable semantic discovery prefix;
-    // transitive backing histories remain facts and traversal boundaries.
-    auto alias_roles = std::flat_map<std::size_t, std::size_t>();
-    auto alias_parent = std::vector<std::size_t>();
-    for (const auto source : reachable) {
-        alias_roles.emplace(source, alias_parent.size());
-        alias_parent.push_back(alias_parent.size());
-    }
-    const auto representative = [&](std::size_t index) noexcept {
-        while (alias_parent[index] != index) {
-            index = alias_parent[index];
-        }
-        return index;
-    };
-    for (const auto [index, source] : std::views::enumerate(reachable)) {
-        for (auto previous = 0uz; previous < static_cast<std::size_t>(index); ++previous) {
-            if (graph_objects[reachable[previous]].type == graph_objects[source].type
-                && storage_aliases({reachable[previous], {}}, {source, {}})) {
-                auto a = representative(previous);
-                auto b = representative(static_cast<std::size_t>(index));
-                if (a > b) {
-                    std::swap(a, b);
-                }
-                alias_parent[b] = a;
-            }
-        }
-    }
-    auto owning_roles = std::vector<std::size_t>();
-    for (const auto source : interface) {
-        if (distinguished.contains(source)
-            && analysis.contents(graph_objects[source].type).contains_storage_owner) {
-            owning_roles.push_back(source);
-        }
-    }
-    if (recursive_call) {
-        for (const auto [ordinal, anchor] : std::views::enumerate(owning_roles)) {
-            auto role = static_cast<std::size_t>(ordinal);
-            for (auto previous = 0uz; previous < role; ++previous) {
-                if (representative(alias_roles.at(owning_roles[previous]))
-                    == representative(alias_roles.at(anchor))) {
-                    role = previous;
-                    break;
-                }
-            }
-            for (const auto& first : edges) {
-                if (first.carrier.object != anchor) {
+    const auto recursive_call = analysis.same_recursion_component(body.id(), target.id());
+    auto call_input = OwnershipCallInput {target.id(), {}, {}, {}, {}, {}, {}, {}, {}, {}};
+    auto restored_sources = std::vector<std::vector<OwnershipPlace>>();
+    auto normalized = std::flat_map<std::size_t, std::size_t>();
+    auto external_readers = storage_readers;
+    if (!analysis.facts_for_body(target.id()).relation_demand.requires_context()) {
+        // This transfer cannot observe relations between formal regions. Its
+        // symbolic input is fixed; actual places belong only to substitution.
+        call_input = analysis.symbolic_input(target);
+        restored_sources.resize(call_input.objects.size());
+        const auto substitute = [&](const auto& actual, const auto& symbolic) noexcept {
+            for (const auto& [argument, parameter] : std::views::zip(actual, symbolic)) {
+                if (!parameter.alias) {
                     continue;
                 }
-                auto visited = std::flat_set<std::size_t> {first.element};
-                auto pending = std::vector<std::size_t> {first.element};
-                for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {
-                    const auto source = pending[cursor];
-                    if (std::ranges::contains(interface, source)) {
-                        continue;
+                auto& sources = restored_sources[parameter.alias->object];
+                sources = argument.storage;
+                if (sources.empty() && argument.alias) {
+                    sources.push_back(*argument.alias);
+                }
+            }
+        };
+        substitute(parameters, call_input.parameters);
+        substitute(raw_captures, call_input.captures);
+        for (const auto& object : state.objects) {
+            external_readers.append_range(object.relationships.view().storage_loans);
+        }
+    } else {
+        // Input projection is read-only until query returns. Keep shape and current
+        // flow state separate instead of deep-copying the complete retained domain.
+        const auto& graph_objects = topology.objects;
+        const auto& edges = topology.owns;
+        const auto site_for = [&](std::size_t object) noexcept {
+            return graph_objects[object].site;
+        };
+        const auto many_for = [&](std::size_t object) noexcept {
+            return graph_objects[object].many;
+        };
+        auto reachable = std::vector<std::size_t>();
+        auto seen = std::flat_set<std::size_t>();
+        auto distinguished = std::flat_set<std::size_t>();
+        auto role_sources = std::map<OwnershipInterfaceRole, std::flat_set<std::size_t>>();
+        auto memberships = std::flat_map<std::size_t, std::vector<OwnershipInterfaceRole>>();
+        const auto add_role = [&](std::size_t binding,
+                                  OwnershipInterfaceUse use,
+                                  OwnershipProjectionPath holder,
+                                  const OwnershipPlace& place) noexcept {
+            const auto role = OwnershipInterfaceRole {binding, use, std::move(holder), place.path};
+            role_sources[role].insert(place.object);
+            if (state.objects[place.object].relationships.empty()) {
+                memberships[place.object].push_back(role);
+            }
+        };
+        const auto discover = [&](std::size_t object) noexcept {
+            if (seen.insert(object).second) {
+                reachable.push_back(object);
+            }
+        };
+        const auto distinguish = [&](std::size_t object) noexcept {
+            discover(object);
+            // Current interface roles resist site-only merging. Possible aliases
+            // remain direct region relations; the many bit forbids strong updates.
+            distinguished.insert(object);
+        };
+        const auto visit_facts = [&](const OwnershipRelationships& value) noexcept {
+            for (const auto& row : value.view().captures) {
+                discover(row.target.object);
+            }
+            for (const auto& row : value.view().storage_loans) {
+                discover(row.backing.object);
+            }
+            for (const auto& row : value.view().callable_loans) {
+                if (row.backing) {
+                    discover(row.backing->object);
+                }
+            }
+        };
+        const auto visit_input = [&](std::size_t binding,
+                                     const OwnershipCallArgument& argument) noexcept {
+            if (argument.alias) {
+                distinguish(argument.alias->object);
+                add_role(binding, OwnershipInterfaceUse::Storage, {}, *argument.alias);
+            }
+            if (argument.capture_holder) {
+                distinguish(argument.capture_holder->object);
+                add_role(
+                    binding,
+                    OwnershipInterfaceUse::CaptureHolder,
+                    {},
+                    *argument.capture_holder
+                );
+            }
+            for (const auto& place : argument.storage) {
+                discover(place.object);
+                add_role(binding, OwnershipInterfaceUse::Storage, {}, place);
+            }
+            if (argument.storage.size() == 1uz) {
+                distinguish(argument.storage.front().object);
+            }
+            visit_facts(argument.value);
+            for (const auto& loan : argument.value.view().storage_loans) {
+                add_role(binding, OwnershipInterfaceUse::StorageLoan, loan.holder, loan.backing);
+            }
+            for (const auto& loan : argument.value.view().callable_loans) {
+                if (loan.backing) {
+                    add_role(
+                        binding,
+                        OwnershipInterfaceUse::CallableLoan,
+                        loan.holder,
+                        *loan.backing
+                    );
+                }
+            }
+            for (const auto& capture : argument.value.view().captures) {
+                add_role(binding, OwnershipInterfaceUse::Capture, capture.holder, capture.target);
+            }
+            // A single interface referent is a traversal boundary. This does not
+            // turn a many referent into a singleton.
+            if (argument.value.view().storage_loans.size() == 1uz
+                && argument.value.view().storage_loans.front().holder.empty()) {
+                const auto& loan = argument.value.view().storage_loans.front();
+                distinguish(loan.backing.object);
+            }
+            if (argument.value.view().callable_loans.size() == 1uz
+                && argument.value.view().callable_loans.front().backing) {
+                const auto& loan = argument.value.view().callable_loans.front();
+                distinguish(loan.backing->object);
+            }
+        };
+        for (const auto [index, argument] : std::views::enumerate(parameters)) {
+            visit_input(static_cast<std::size_t>(index), argument);
+        }
+        for (const auto [index, argument] : std::views::enumerate(raw_captures)) {
+            visit_input(parameters.size() + static_cast<std::size_t>(index), argument);
+        }
+        // Inline fields and callable capture storage have a finite structural shape.
+        // Preserve their exact roots. Sequence selections were split above;
+        // indirect slice backing is deliberately not followed here.
+        auto inline_roots = std::vector<std::size_t>(distinguished.begin(), distinguished.end());
+        const auto inline_target = [&](std::size_t object) noexcept {
+            discover(object);
+            if (!many_for(object) && distinguished.insert(object).second) {
+                inline_roots.push_back(object);
+            }
+        };
+        const auto inline_facts = [&](const OwnershipRelationships& value) noexcept {
+            auto slots = std::flat_map<OwnershipProjectionPath, std::optional<OwnershipPlace>>();
+            const auto add = [&](const OwnershipProjectionPath& holder,
+                                 std::optional<OwnershipPlace> place) noexcept {
+                if (!std::ranges::all_of(holder, [](const auto& part) static noexcept {
+                        return part.has_value();
+                    })) {
+                    return;
+                }
+                const auto [found, inserted] = slots.emplace(holder, std::move(place));
+                if (!inserted) {
+                    found->second.reset();
+                }
+            };
+            for (const auto& row : value.view().captures) {
+                add(row.holder, row.target);
+            }
+            for (const auto& row : value.view().callable_loans) {
+                add(row.holder, row.backing);
+            }
+            for (const auto& [holder, place] : slots) {
+                if (place) {
+                    inline_target(place->object);
+                }
+            }
+        };
+        for (const auto& argument : parameters) {
+            inline_facts(argument.value);
+        }
+        for (const auto& argument : raw_captures) {
+            inline_facts(argument.value);
+        }
+        for (auto cursor = 0uz; cursor < inline_roots.size(); ++cursor) {
+            inline_facts(state.objects[inline_roots[cursor]].relationships);
+        }
+        for (auto cursor = 0uz; cursor < reachable.size(); ++cursor) {
+            visit_facts(state.objects[reachable[cursor]].relationships);
+        }
+        // Keep owns paths between interface roles, including one possible-alias
+        // relay at either endpoint. Alias possibilities never become traversal edges.
+        // Added connectors are selected owning values; Sequence element admission
+        // excludes contained loan and callable relationships.
+        // Other caller readers and selections use the instantiated effects below.
+        const auto interface = reachable;
+        auto alias_seeds = std::flat_map<std::size_t, std::vector<std::size_t>>();
+        for (const auto role : interface) {
+            auto roots = std::vector<std::size_t> {role};
+            for (auto object = 0uz; object < graph_objects.size(); ++object) {
+                if (object != role && storage_aliases({role, {}}, {object, {}})) {
+                    roots.push_back(object);
+                }
+            }
+            alias_seeds.emplace(role, std::move(roots));
+        }
+        // These indices borrow the caller's immutable owns graph for this projection.
+        auto outgoing = std::vector<std::vector<const OwnershipStorageEdge*>>(graph_objects.size());
+        auto incoming = std::vector<std::vector<const OwnershipStorageEdge*>>(graph_objects.size());
+        for (const auto& edge : edges) {
+            outgoing[edge.carrier.object].push_back(&edge);
+            incoming[edge.element].push_back(&edge);
+        }
+        const auto graph_reachable = [&](const auto& roots, bool reverse) noexcept {
+            const auto& adjacency = reverse ? incoming : outgoing;
+            auto visited = std::flat_set<std::size_t>(roots.begin(), roots.end());
+            auto pending = roots;
+            for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {
+                for (const auto* edge : adjacency[pending[cursor]]) {
+                    const auto to = reverse ? edge->carrier.object : edge->element;
+                    if (visited.insert(to).second) {
+                        pending.push_back(to);
                     }
-                    if (seen.contains(source)) {
-                        connector_families[source].push_back(
-                            {role, first.carrier.path, first.index}
+                }
+            }
+            return visited;
+        };
+        auto reverse_reach = std::flat_map<std::size_t, std::flat_set<std::size_t>>();
+        for (const auto role : interface) {
+            reverse_reach.emplace(role, graph_reachable(alias_seeds.at(role), true));
+        }
+        for (const auto from : interface) {
+            const auto forward = graph_reachable(alias_seeds.at(from), false);
+            for (const auto to : interface) {
+                if (from == to) {
+                    continue;
+                }
+                const auto& reverse = reverse_reach.at(to);
+                for (const auto object : forward) {
+                    if (reverse.contains(object)) {
+                        discover(object);
+                    }
+                }
+            }
+        }
+        // Role source sets are fixed by the current formal/capture interface.
+        // Candidate count and caller allocation histories do not name regions.
+        using BoundarySelection = decltype(OwnershipBoundaryFamily::selection);
+        auto descriptors = std::flat_map<std::size_t, OwnershipRegionDescriptor>();
+        if (recursive_call) {
+            for (auto&& [source, roles] : memberships) {
+                std::ranges::sort(roles);
+                roles.erase(std::ranges::unique(roles).begin(), roles.end());
+                descriptors[source].memberships = std::move(roles);
+            }
+            const auto collect_families = [&](OwnershipBoundaryDirection direction,
+                                              const OwnershipInterfaceRole& role,
+                                              const auto& roots) noexcept {
+                const auto forward = direction == OwnershipBoundaryDirection::Forward;
+                const auto& adjacency = forward ? outgoing : incoming;
+                const auto add_family = [&](std::size_t source,
+                                            BoundarySelection selection) noexcept {
+                    if (seen.contains(source) && state.objects[source].relationships.empty()) {
+                        descriptors[source].boundaries.push_back(
+                            {direction, role, std::move(selection)}
                         );
                     }
-                    for (const auto& next : edges) {
-                        if (next.carrier.object == source && visited.insert(next.element).second) {
-                            pending.push_back(next.element);
+                };
+                const auto next_object = [&](const OwnershipStorageEdge& edge) noexcept {
+                    return forward ? edge.element : edge.carrier.object;
+                };
+                auto seeds = std::flat_map<BoundarySelection, std::flat_set<std::size_t>>();
+                for (const auto root : roots) {
+                    add_family(root, std::nullopt);
+                    for (const auto* boundary : adjacency[root]) {
+                        const auto selection =
+                            BoundarySelection(std::pair(boundary->carrier.path, boundary->index));
+                        seeds[selection].insert(next_object(*boundary));
+                    }
+                }
+                // Each role/selector fact enters an object once, regardless of
+                // how many source candidates supply that same boundary fact.
+                for (const auto& [selection, origins] : seeds) {
+                    auto visited = origins;
+                    auto pending = std::vector<std::size_t>(origins.begin(), origins.end());
+                    for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {
+                        const auto source = pending[cursor];
+                        add_family(source, selection);
+                        if (distinguished.contains(source)) {
+                            continue;
+                        }
+                        for (const auto* edge : adjacency[source]) {
+                            const auto next = next_object(*edge);
+                            if (visited.insert(next).second) {
+                                pending.push_back(next);
+                            }
                         }
                     }
                 }
+            };
+            for (const auto& [role, candidates] : role_sources) {
+                auto roots = std::flat_set<std::size_t>();
+                for (const auto source : candidates) {
+                    roots.insert_range(alias_seeds.at(source));
+                }
+                collect_families(OwnershipBoundaryDirection::Forward, role, roots);
+                collect_families(OwnershipBoundaryDirection::Reverse, role, roots);
+            }
+            for (auto&& [source, descriptor] : descriptors) {
+                static_cast<void>(source);
+                std::ranges::sort(descriptor.boundaries);
             }
         }
-        for (auto&& [source, families] : connector_families) {
-            static_cast<void>(source);
-            std::ranges::sort(families);
-            families.erase(std::ranges::unique(families).begin(), families.end());
-        }
-        // Canonical connector order is derived from semantic families and type;
-        // transient caller object numbers cannot become summary identity.
+        // Normalize all labeled regions by their complete semantic descriptor.
+        // Allocation histories remain a separate identity for unlabeled objects.
         std::ranges::stable_sort(reachable, [&](const auto left, const auto right) noexcept {
-            const auto a = connector_families.find(left);
-            const auto b = connector_families.find(right);
-            if ((a == connector_families.end()) != (b == connector_families.end())) {
-                return a == connector_families.end();
+            const auto a = descriptors.find(left);
+            const auto b = descriptors.find(right);
+            if ((a == descriptors.end()) != (b == descriptors.end())) {
+                return a != descriptors.end();
             }
-            if (a == connector_families.end()) {
+            if (a == descriptors.end()) {
                 return false;
             }
             return std::pair(a->second, graph_objects[left].type)
                 < std::pair(b->second, graph_objects[right].type);
         });
-    }
-    auto sources = std::vector<std::vector<std::size_t>>();
-    auto source_sites = std::vector<OwnershipStorageSite>();
-    auto normalized = std::flat_map<std::size_t, std::size_t>();
-    auto summaries = std::flat_map<std::pair<OwnershipStorageSite, TypeID>, std::size_t>();
-    auto owned_summaries = std::flat_map<std::pair<ConnectorFamilies, TypeID>, std::size_t>();
-    auto alias_groups = std::flat_map<std::size_t, std::size_t>();
-    for (const auto source : reachable) {
-        auto index = sources.size();
-        const auto alias = representative(alias_roles.at(source));
-        if (const auto found = alias_groups.find(alias); found != alias_groups.end()) {
-            index = found->second;
-        }
-        auto site = site_for(source);
-        const auto families = connector_families.find(source);
-        if (index == sources.size()
-            && families != connector_families.end()
-            && !distinguished.contains(source)) {
-            const auto [found, inserted] = owned_summaries.emplace(
-                std::pair(families->second, graph_objects[source].type),
-                index
-            );
-            index = found->second;
-            site = {target.id(), index, true};
-        } else {
-            // Non-owning contained backing/capture histories still retain
-            // allocation sites in the SCC instead of acquiring new formal roles.
-            auto connector_site = site;
-            connector_site.input = false;
-            if (index == sources.size()
-                && !distinguished.contains(source)
-                && recursive_call
-                && analysis.recursive_storage_site(connector_site, target.id())) {
-                const auto [found, inserted] =
-                    summaries.emplace(std::pair(site, graph_objects[source].type), index);
+        auto sources = std::vector<std::vector<std::size_t>>();
+        auto source_sites = std::vector<OwnershipStorageSite>();
+        auto summaries = std::flat_map<std::pair<OwnershipStorageSite, TypeID>, std::size_t>();
+        auto regions = std::flat_map<std::pair<OwnershipRegionDescriptor, TypeID>, std::size_t>();
+        for (const auto source : reachable) {
+            auto index = sources.size();
+            auto site = site_for(source);
+            const auto descriptor = descriptors.find(source);
+            if (descriptor != descriptors.end()) {
+                const auto [found, inserted] = regions.emplace(
+                    std::pair(descriptor->second, graph_objects[source].type),
+                    index
+                );
                 index = found->second;
+                site = analysis.region_site(
+                    target.id(),
+                    graph_objects[source].type,
+                    descriptor->second
+                );
+            } else {
+                if (!recursive_call && memberships.contains(source)) {
+                    site = {target.id(), index, OwnershipStorageSiteKind::Input};
+                }
+                // Non-owning contained backing/capture histories still retain
+                // allocation sites in the SCC instead of acquiring new formal roles.
+                if (!distinguished.contains(source)
+                    && recursive_call
+                    && analysis.same_recursion_component(site.body, target.id())) {
+                    const auto [found, inserted] =
+                        summaries.emplace(std::pair(site, graph_objects[source].type), index);
+                    index = found->second;
+                }
             }
+            if (index == sources.size()) {
+                sources.emplace_back();
+                source_sites.push_back(site);
+            }
+            sources[index].push_back(source);
+            normalized.emplace(source, index);
         }
-        if (index == sources.size()) {
-            sources.emplace_back();
-            source_sites.push_back(site);
+        const auto map_place = [&](OwnershipPlace place) noexcept {
+            place.object = normalized.at(place.object);
+            return place;
+        };
+        const auto map_facts = [&](OwnershipRelationships value) noexcept {
+            if (auto* rows = value.edit_existing()) {
+                for (auto& row : rows->captures) {
+                    row.target = map_place(std::move(row.target));
+                }
+                for (auto& row : rows->storage_loans) {
+                    row.backing = map_place(std::move(row.backing));
+                }
+                for (auto& row : rows->callable_loans) {
+                    row.direct_only = false;
+                    if (row.backing) {
+                        row.backing = map_place(std::move(*row.backing));
+                    }
+                }
+            }
+            return value;
+        };
+        const auto map_argument = [&](OwnershipCallArgument& argument) noexcept -> void {
+            if (argument.alias) {
+                argument.alias = map_place(std::move(*argument.alias));
+            }
+            if (argument.capture_holder) {
+                argument.capture_holder = map_place(std::move(*argument.capture_holder));
+            }
+            for (auto& place : argument.storage) {
+                place = map_place(std::move(place));
+            }
+            argument.value = map_facts(std::move(argument.value));
+        };
+        call_input = OwnershipCallInput {
+            .body_id = target.id(),
+            .parameters = std::move(parameters),
+            .captures = std::move(raw_captures),
+            .objects = {},
+            .state = {},
+            .outlives = {},
+            .accesses = {},
+            .storage_readers = {},
+            .owns = {},
+            .possible_aliases = {}
+        };
+        for (auto& argument : call_input.parameters) {
+            map_argument(argument);
         }
-        sources[index].push_back(source);
-        alias_groups.emplace(alias, index);
-        normalized.emplace(source, index);
-    }
-    const auto map_place = [&](OwnershipPlace place) noexcept {
-        place.object = normalized.at(place.object);
-        return place;
-    };
-    const auto map_facts = [&](OwnershipRelationships value) noexcept {
-        if (auto* rows = value.edit_existing()) {
-            for (auto& row : rows->captures) {
-                row.target = map_place(std::move(row.target));
+        for (auto& argument : call_input.captures) {
+            map_argument(argument);
+        }
+        // Region sites retain the complete interned interface descriptor. Caller
+        // identity stays in restoration; contained histories keep their own sites.
+        for (const auto [index, group] : std::views::enumerate(sources)) {
+            const auto first = group.front();
+            auto object = OwnershipStorageObject {
+                graph_objects[first].type,
+                graph_objects[first].origin,
+                source_sites[static_cast<std::size_t>(index)],
+                group.size() > 1uz,
+                false
+            };
+            auto incoming_state = OwnershipObjectState {true, std::nullopt, {}, false};
+            for (const auto source : group) {
+                object.many |= many_for(source);
+                incoming_state.available &= state.objects[source].available;
+                if (state.objects[source].taken) {
+                    incoming_state.taken = state.objects[source].taken;
+                }
+                merge_relationships(
+                    incoming_state.relationships,
+                    map_facts(state.objects[source].relationships)
+                );
             }
-            for (auto& row : rows->storage_loans) {
-                row.backing = map_place(std::move(row.backing));
-            }
-            for (auto& row : rows->callable_loans) {
-                row.direct_only = false;
-                if (row.backing) {
-                    row.backing = map_place(std::move(*row.backing));
+            call_input.objects.push_back(std::move(object));
+            call_input.state.objects.push_back(std::move(incoming_state));
+        }
+        for (auto left = 0uz; left < sources.size(); ++left) {
+            for (auto right = left + 1uz; right < sources.size(); ++right) {
+                if (std::ranges::any_of(sources[left], [&](const auto a) noexcept {
+                        return std::ranges::any_of(sources[right], [&](const auto b) noexcept {
+                            return storage_aliases({a, {}}, {b, {}});
+                        });
+                    })) {
+                    call_input.possible_aliases.emplace_back(left, right);
                 }
             }
         }
-        return value;
-    };
-    const auto map_argument = [&](OwnershipCallArgument& argument) noexcept -> void {
-        if (argument.alias) {
-            argument.alias = map_place(std::move(*argument.alias));
-        }
-        if (argument.capture_holder) {
-            argument.capture_holder = map_place(std::move(*argument.capture_holder));
-        }
-        for (auto& place : argument.storage) {
-            place = map_place(std::move(place));
-        }
-        argument.value = map_facts(std::move(argument.value));
-    };
-    auto call_input = OwnershipCallInput {
-        .body_id = target.id(),
-        .parameters = std::move(parameters),
-        .captures = std::move(raw_captures),
-        .objects = {},
-        .outlives = {},
-        .accesses = {},
-        .storage_readers = {}
-    };
-    for (auto& argument : call_input.parameters) {
-        map_argument(argument);
-    }
-    for (auto& argument : call_input.captures) {
-        map_argument(argument);
-    }
-    // A direct owned selection with no contained relationships needs only its
-    // formal role. Local allocation families remain observable through retained
-    // slice/closure histories, even when a captured scalar itself has no rows.
-    for (const auto [index, group] : std::views::enumerate(sources)) {
-        const auto first = group.front();
-        auto object = OwnershipExternalObject {
-            graph_objects[first].type,
-            graph_objects[first].origin,
-            {.available = true, .taken = std::nullopt, .relationships = {}, .modified = false},
-            std::ranges::any_of(
-                group,
-                [&](const auto source) noexcept { return direct_formal.contains(source); }
-            )
-                    && std::ranges::all_of(
-                        group,
-                        [&](const auto source) noexcept {
-                            return state.objects[source].relationships.empty()
-                                && (!analysis.recursive_storage_site(site_for(source), target.id())
-                                    || site_for(source).element_selection.has_value());
-                        }
-                    )
-                ? OwnershipStorageSite {target.id(), static_cast<std::size_t>(index), true}
-                : source_sites[static_cast<std::size_t>(index)],
-            group.size() > 1uz,
-            false
-        };
-        for (const auto source : group) {
-            object.many |= many_for(source);
-            object.state.available &= state.objects[source].available;
-            if (state.objects[source].taken) {
-                object.state.taken = state.objects[source].taken;
+        // These loans belong to caller holders that the callee cannot overwrite.
+        // Keep their concrete graph identities for effect checks; projecting them to
+        // a widened ancestor would erase the terminal field distinction.
+        for (const auto& [holder, object] : std::views::enumerate(state.objects)) {
+            if (!normalized.contains(static_cast<std::size_t>(holder))) {
+                external_readers.append_range(object.relationships.view().storage_loans);
             }
-            merge_relationships(
-                object.state.relationships,
-                map_facts(state.objects[source].relationships)
-            );
         }
-        call_input.objects.push_back(std::move(object));
-    }
-    // These loans belong to caller holders that the callee cannot overwrite.
-    // Keep their concrete graph identities for effect checks; projecting them to
-    // a widened ancestor would erase the terminal field distinction.
-    auto external_readers = storage_readers;
-    for (const auto& [holder, object] : std::views::enumerate(state.objects)) {
-        if (!normalized.contains(static_cast<std::size_t>(holder))) {
-            external_readers.append_range(object.relationships.view().storage_loans);
+        for (const auto& from : sources) {
+            auto row = std::vector<bool>();
+            for (const auto& to : sources) {
+                auto valid = true;
+                for (const auto source : from) {
+                    for (const auto destination : to) {
+                        valid &= outlives(source, destination);
+                    }
+                }
+                row.push_back(valid);
+            }
+            call_input.outlives.push_back(std::move(row));
+        }
+        for (const auto& edge : edges) {
+            if (normalized.contains(edge.element) && normalized.contains(edge.carrier.object)) {
+                call_input.owns.push_back(
+                    {map_place(edge.carrier), normalized.at(edge.element), edge.index}
+                );
+            }
+        }
+        std::ranges::sort(call_input.owns);
+        call_input.owns.erase(std::ranges::unique(call_input.owns).begin(), call_input.owns.end());
+        for (const auto& group : sources) {
+            auto places = std::vector<OwnershipPlace>();
+            for (const auto object : group) {
+                places.push_back({object, {}});
+            }
+            restored_sources.push_back(std::move(places));
         }
     }
     normalize_storage_loans(external_readers);
-    for (const auto& from : sources) {
-        auto row = std::vector<bool>();
-        for (const auto& to : sources) {
-            auto valid = true;
-            for (const auto source : from) {
-                for (const auto destination : to) {
-                    valid &= outlives(source, destination);
-                }
-            }
-            row.push_back(valid);
-        }
-        call_input.outlives.push_back(std::move(row));
-    }
-    for (const auto& edge : edges) {
-        if (normalized.contains(edge.element) && normalized.contains(edge.carrier.object)) {
-            call_input.owns.push_back(
-                {map_place(edge.carrier), normalized.at(edge.element), edge.index}
-            );
-        }
-    }
-    std::ranges::sort(call_input.owns);
-    call_input.owns.erase(std::ranges::unique(call_input.owns).begin(), call_input.owns.end());
-    auto restored_sources = sources;
-    const auto restore_place = [&](OwnershipPlace place, std::size_t source) noexcept {
-        place.object = source;
-        return place;
+    const auto input_objects = restored_sources.size();
+    const auto restore_place = [](OwnershipPlace place, OwnershipPlace source) noexcept {
+        source.path.append_range(place.path);
+        return source;
     };
     const auto restore_facts = [&](const OwnershipRelationships& value) noexcept {
         auto restored = OwnershipRelationships {};
         for (const auto& row : value.view().captures) {
-            for (const auto source : restored_sources[row.target.object]) {
+            for (const auto& source : restored_sources[row.target.object]) {
                 auto copy = row;
                 copy.target = restore_place(copy.target, source);
                 restored.edit().captures.push_back(std::move(copy));
             }
         }
         for (const auto& row : value.view().storage_loans) {
-            for (const auto source : restored_sources[row.backing.object]) {
+            for (const auto& source : restored_sources[row.backing.object]) {
                 auto copy = row;
                 copy.backing = restore_place(copy.backing, source);
                 restored.edit().storage_loans.push_back(std::move(copy));
@@ -752,7 +804,7 @@ auto OwnershipBodyAnalyzer::call(
             if (!row.backing) {
                 restored.edit().callable_loans.push_back(row);
             } else {
-                for (const auto source : restored_sources[row.backing->object]) {
+                for (const auto& source : restored_sources[row.backing->object]) {
                     auto copy = row;
                     *copy.backing = restore_place(*copy.backing, source);
                     restored.edit().callable_loans.push_back(std::move(copy));
@@ -766,20 +818,12 @@ auto OwnershipBodyAnalyzer::call(
         | std::views::transform([](const auto& object) static noexcept { return object.many; })
         | std::ranges::to<std::vector>();
     auto result = OwnershipFlow {};
-    const auto input_edges = call_input.owns;
-    const auto& answers = analysis.query(std::move(call_input));
-    restored_sources = sources;
-    restored_sources.resize(sources.size() + answers.referents.size());
+    const auto& answers = analysis.query(std::move(call_input), recursive_call);
+    restored_sources.resize(input_objects + answers.referents.size());
     // New callee descendants retain their referent identity. Restore the
     // reachable graph once; never flatten owns edges back into a long path.
     const auto previous_edges = topology.owns.size();
     auto remaining = answers.owns;
-    // Existing input edges already have concrete caller associations. A
-    // grouped input describes alternatives; rebuilding its edges as a
-    // cross product would invent aliases between independent owners.
-    std::erase_if(remaining, [&](const auto& edge) noexcept {
-        return std::ranges::binary_search(input_edges, edge);
-    });
     for (;;) {
         auto progress = false;
         for (auto edge = remaining.begin(); edge != remaining.end();) {
@@ -790,10 +834,9 @@ auto OwnershipBodyAnalyzer::call(
             }
             auto& destinations = restored_sources[edge->element];
             if (destinations.empty()) {
-                const auto& node = answers.referents[edge->element - sources.size()];
-                for (const auto parent : parents) {
-                    auto carrier = edge->carrier;
-                    carrier.object = parent;
+                const auto& node = answers.referents[edge->element - input_objects];
+                for (const auto& parent : parents) {
+                    const auto carrier = restore_place(edge->carrier, parent);
                     const auto selected = select_owned_storage(
                         carrier,
                         node.type,
@@ -801,19 +844,21 @@ auto OwnershipBodyAnalyzer::call(
                         node.origin,
                         state,
                         node.many,
-                        node.feedback
-                            || analysis.recursive_storage_site({body.id(), 0uz, false}, target.id())
+                        node.feedback || analysis.same_recursion_component(body.id(), target.id())
                     );
                     for (const auto& place : selected) {
-                        destinations.push_back(place.object);
+                        destinations.push_back(place);
                     }
                 }
+                // Restoration maps possible referents, not paths to them.
+                // Shared feedback can select the same node from many parents.
+                std::ranges::sort(destinations);
+                destinations.erase(std::ranges::unique(destinations).begin(), destinations.end());
             } else {
-                for (const auto parent : parents) {
-                    auto carrier = edge->carrier;
-                    carrier.object = parent;
-                    for (const auto destination : destinations) {
-                        topology.owns.push_back({carrier, destination, edge->index});
+                for (const auto& parent : parents) {
+                    const auto carrier = restore_place(edge->carrier, parent);
+                    for (const auto& destination : destinations) {
+                        topology.owns.push_back({carrier, destination.object, edge->index});
                     }
                 }
             }
@@ -835,7 +880,7 @@ auto OwnershipBodyAnalyzer::call(
     // holders remain part of the callee's stateful proof; only independent
     // caller readers and active selections are checked here.
     for (const auto& effect : answers.effects) {
-        for (const auto source : restored_sources[effect.place.object]) {
+        for (const auto& source : restored_sources[effect.place.object]) {
             const auto place = restore_place(effect.place, source);
             if (effect.take) {
                 const auto mapped = OwnershipWriteEffect {place, true, true, effect.origin, true};
@@ -891,17 +936,11 @@ auto OwnershipBodyAnalyzer::call(
             }
             auto restored = object;
             restored.relationships = restore_facts(object.relationships);
-            auto destinations = std::vector<OwnershipPlace>();
-            for (const auto source : restored_sources[index]) {
-                destinations.append_range(storage_alias_alternatives({source, {}}));
-            }
-            std::ranges::sort(destinations);
-            destinations.erase(std::ranges::unique(destinations).begin(), destinations.end());
-            for (const auto& place : destinations) {
-                const auto source = place.object;
-                auto& destination = returned.objects[source];
+            const auto& destinations = restored_sources[index];
+            for (const auto& source : destinations) {
+                auto& destination = returned.objects[source.object];
                 if (destinations.size() > 1uz
-                    || topology.objects[source].many
+                    || topology.objects[source.object].many
                     || (index < many.size() && many[index])) {
                     destination.available &= restored.available;
                     destination.modified = true;
@@ -914,7 +953,6 @@ auto OwnershipBodyAnalyzer::call(
                 }
             }
         }
-        merge_storage_aliases(returned);
         const auto value = restore_facts(answer.value);
         if (answer.test_stopped) {
             result.exits.push_back({OwnershipTestStopped {}, std::move(returned)});

@@ -126,7 +126,13 @@ auto ConstFunctionValidator::check_function(FunctionID function) noexcept -> voi
             [&](const auto& parameter) noexcept { return !supported_type(parameter.type); }
         )
         || std::ranges::any_of(
-            draft.construction_failure_term_copy(contract.failures).direct_members,
+            contract.failures.visit([&](auto source) noexcept {
+                if constexpr (std::same_as<decltype(source), FailureTermID>) {
+                    return draft.construction_failure_term_copy(source).direct_members;
+                } else {
+                    return draft.failure_set_copy(source).members;
+                }
+            }),
             [&](const auto type) noexcept { return !supported_type(type); }
         )) {
         reject(

@@ -105,7 +105,15 @@ auto DeclResolver::ensure_available(
         const auto failures = pending
             ? pending->failures
             : draft.construction_callable_contract_copy(function->callable).failures;
-        for (const auto type : draft.construction_failure_term_copy(failures).direct_members) {
+        const auto members = failures.visit(
+            Overloaded {
+                [&](FailureTermID term) noexcept {
+                    return draft.construction_failure_term_copy(term).direct_members;
+                },
+                [&](FailureSetID known) noexcept { return draft.failure_set_copy(known).members; },
+            }
+        );
+        for (const auto type : members) {
             completed = (co_await prepare_type(type, requester, origin));
             if (!completed) {
                 co_return completed;

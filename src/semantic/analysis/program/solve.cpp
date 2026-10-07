@@ -155,7 +155,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<SemIRProgram> {
             );
         });
     }
-    const auto valid_sequence_elements = validate_generic_sequence_elements();
+    const auto valid_sequence_elements = validate_sequence_elements();
     if (!valid_sequence_elements) {
         return std::unexpected(valid_sequence_elements.error());
     }

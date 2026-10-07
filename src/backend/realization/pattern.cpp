@@ -478,12 +478,10 @@ auto PatternRealizer::match(
                         .maybe_unused = false,
                         .local = projection,
                         .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto)),
-                        .initializer = call_member(
-                            subject_expression(subject),
-                            context.payload_enum(declaration.owner)
-                                .cases[ordinal]
-                                .projection_function.spelling(),
-                            {}
+                        .initializer = context.enum_payload_projection(
+                            declaration.owner,
+                            ordinal,
+                            subject_expression(subject)
                         )
                     }
                 ));

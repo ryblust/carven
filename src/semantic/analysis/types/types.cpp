@@ -456,13 +456,13 @@ auto resolve_function_type(
         }
         failures = std::move(*resolved);
     }
-    const auto failure_term = draft.add_known_failure_term(std::move(failures));
+    const auto failure_set = draft.intern_failure_set(std::move(failures));
     const auto bound = draft.append_construction_type(
         ConstructionType {
             .value = ConstructionCallableViewTypeValue {
                 .parameters = std::move(parameters),
                 .result = *result,
-                .failures = failure_term,
+                .failures = failure_set,
             },
         }
     );

@@ -461,7 +461,7 @@ auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID
             }
             validate_ref(value.result);
             require_owner(
-                value.failures.owner(),
+                value.failures.visit([](auto source) static noexcept { return source.owner(); }),
                 rows.owner(),
                 "construction callable type used a foreign failure term"
             );

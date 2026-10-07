@@ -57,13 +57,13 @@ struct BodyLocalFrame final {
 };
 
 using BodyExpressionStorage = std::variant<SemanticExpression, PlaceExpression>;
-using BodyPendingFailureTerms = std::vector<FailureTermID>;
+using BodyPendingFailures = std::vector<ConstructionFailureRef>;
 
 struct BuiltExpression final {
     // Moving this construction owner ends its borrows. Consuming the inner
     // expression leaves its storage and BuiltExpression metadata alive.
     UniqueIndirect<BodyExpressionStorage> storage;
-    BodyPendingFailureTerms pending_failures;
+    BodyPendingFailures pending_failures;
     bool takeable;
     bool completes;
 
@@ -106,7 +106,7 @@ using SelectedExpression = std::variant<BuiltExpression, CppSelection, BuiltinSe
 
 struct BuiltCallArgument final {
     SemCallArgument argument;
-    BodyPendingFailureTerms pending_failures;
+    BodyPendingFailures pending_failures;
     bool completes;
 };
 
@@ -114,19 +114,19 @@ auto does_not_complete(const BuiltExpression& expression) noexcept -> bool {
     return !expression.completes;
 }
 
-auto take_pending_failures(BuiltExpression& expression) noexcept -> BodyPendingFailureTerms {
+auto take_pending_failures(BuiltExpression& expression) noexcept -> BodyPendingFailures {
     return std::exchange(expression.pending_failures, {});
 }
 
 auto append_pending_failures(
-    BodyPendingFailureTerms& destination,
-    const BodyPendingFailureTerms& source
+    BodyPendingFailures& destination,
+    const BodyPendingFailures& source
 ) noexcept -> void {
-    for (const auto failure_term_id : source) {
-        if (std::ranges::contains(destination, failure_term_id)) {
+    for (const auto failure : source) {
+        if (std::ranges::contains(destination, failure)) {
             continue;
         }
-        destination.push_back(failure_term_id);
+        destination.push_back(failure);
     }
 }
 
@@ -200,7 +200,7 @@ auto is_failure_payload_type(const ProgramDraft& draft, TypeID type) noexcept ->
 
 auto create_body_failure_term(
     ProgramDraft& draft,
-    FailureTermID failures,
+    ConstructionFailureRef failures,
     FailureContractPolicy policy,
     ProgramOriginID origin
 ) noexcept -> FailureTermID {
@@ -217,7 +217,11 @@ auto create_body_failure_term(
         }
         case FailureContractPolicy::Inferred:
         case FailureContractPolicy::UndeclaredExplicit: {
-            draft.equate_failures(actual, failures);
+            const auto* inferred = std::get_if<FailureTermID>(&failures);
+            if (!inferred) {
+                invariant_violation("inferred callable contract has no inference variable");
+            }
+            draft.equate_failures(actual, *inferred);
             if (policy == FailureContractPolicy::UndeclaredExplicit) {
                 draft.require_declared_failure_contract(actual, origin);
             }
@@ -330,7 +334,7 @@ private:
         ConstructionTypeRef type,
         SemanticExpressionValue&& value,
         Span span,
-        BodyPendingFailureTerms pending = {},
+        BodyPendingFailures pending = {},
         std::optional<ConstantID> constant = std::nullopt
     ) noexcept -> BuiltExpression;
     auto mark_noncompleting(BuiltExpression value) noexcept -> BuiltExpression;
@@ -343,14 +347,14 @@ private:
         ASTBranchBlockID id,
         bool value_form,
         std::optional<ConstructionTypeRef>& result_type,
-        BodyPendingFailureTerms& pending,
+        BodyPendingFailures& pending,
         bool allow_pointer_narrowing
     ) noexcept -> AnalysisTask<SemanticRegion>;
     auto build_arm(
         const ASTMatchArmBody& source,
         bool value_form,
         std::optional<ConstructionTypeRef>& type,
-        BodyPendingFailureTerms& pending,
+        BodyPendingFailures& pending,
         bool allow_pointer_narrowing
     ) noexcept -> AnalysisTask<SemanticRegion>;
     auto build_if(
@@ -385,11 +389,11 @@ private:
         -> AnalysisResult<ConstructionTypeRef>;
     auto consume_pending(BuiltExpression& expression, Span span) noexcept -> AnalysisResult<void>;
     auto propagate_pending(BuiltExpression& expression, Span span) noexcept -> AnalysisResult<void>;
-    auto collect_pending(BodyPendingFailureTerms& destination, BuiltExpression& expression) noexcept
+    auto collect_pending(BodyPendingFailures& destination, BuiltExpression& expression) noexcept
         -> void;
     auto discard_pending(BuiltExpression& expression) noexcept -> void;
     auto route_pending(
-        BodyPendingFailureTerms failure_term_ids,
+        BodyPendingFailures failures,
         const BodyFailureContext& target,
         std::optional<Span> propagation_span
     ) noexcept -> void;

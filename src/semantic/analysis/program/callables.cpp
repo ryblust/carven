@@ -62,29 +62,16 @@ auto ProgramDraft::callable_shape(ConstructionTypeRef type) const noexcept
     };
 }
 
-auto ProgramDraft::callable_contract(ConstructionTypeRef type) noexcept
+auto ProgramDraft::callable_contract(ConstructionTypeRef type) const noexcept
     -> std::optional<ConstructionCallableContract> {
     auto shape = callable_shape(type);
     if (!shape.has_value()) {
         return std::nullopt;
     }
-    const auto failures = [&]() noexcept -> FailureTermID {
-        if (const auto* term = std::get_if<FailureTermID>(&shape->failures)) {
-            return *term;
-        }
-        const auto set = std::get<FailureSetID>(shape->failures);
-        const auto found = storage.known_failure_terms.find(set);
-        if (found != storage.known_failure_terms.end()) {
-            return found->second;
-        }
-        const auto term = storage.failure_constraints.add_known_term(failure_set_copy(set).members);
-        storage.known_failure_terms.emplace(set, term);
-        return term;
-    }();
     return ConstructionCallableContract {
         .parameters = std::move(shape->parameters),
         .result = shape->result,
-        .failures = failures,
+        .failures = shape->failures,
         .policy = shape->policy,
     };
 }

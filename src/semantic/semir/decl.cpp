@@ -61,7 +61,7 @@ auto validate_callable_contract(
     }
     validate_construction_type(contract.result, owner);
     require_owner(
-        contract.failures.owner(),
+        contract.failures.visit([](auto source) static noexcept { return source.owner(); }),
         owner,
         "callable failure contract used a foreign program"
     );

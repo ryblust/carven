@@ -455,7 +455,7 @@ auto BodyExprSite::finish(
     SemanticExpressionValue&& value,
     std::optional<ConstantID> known,
     Span span,
-    BodyPendingFailureTerms pending,
+    BodyPendingFailures pending,
     bool completes
 ) noexcept -> ExpressionResult<Value> {
     auto result = body.make_built(type, std::move(value), span, std::move(pending), known);

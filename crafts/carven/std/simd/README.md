@@ -20,34 +20,21 @@ algorithms and block traversal belong to this craft.
 | `f32x4` | `f32` | 4 | `mask4` | `u8` (low four bits) |
 | `f32x8` | `f32` | 8 | `mask8` | `u8` |
 
-The runtime has a C++20 portable backend that requires no SIMD instruction-set
-options. On Clang and GCC, its arithmetic and comparisons use internal 16-byte
-compiler vector expressions; other compilers evaluate the same operations per
-lane. Its stored values remain byte arrays, and ordinary C++ optimization may
-use machine vector instructions.
-Each translation unit selects one backend at compile time: AArch64 NEON when
+The C++20 runtime selects one backend per translation unit: AArch64 NEON when
 available, x86 AVX2 when the consumer enables it, and otherwise the portable
-backend. All backends share the same lane contracts. There is no runtime
-dispatch. On x86 with AVX2, wide values use native 256-bit
-registers; narrow operations may use 128-bit registers. On NEON, wide values use
-two 128-bit registers. Logical widths are independent of register width.
-Static execution uses owned lanes and is independent of the compiler host's
-instruction set.
+backend. All backends implement the same logical lane contracts; logical widths
+are independent of register width. Static execution uses owned lanes and does
+not depend on the compiler host's instruction set.
 
-The C++ runtime uses compiler-specific forced inlining for intrinsic wrappers
-and MSVC/Clang `vectorcall` on Windows x86. Native vector and mask carriers are
-transparent, zero-initialized aggregates so MSVC and clang-cl can pass and return
-vectors in SIMD registers. These support-level choices do not expose native register storage
-or calling-convention attributes to Carven source.
+Consumers select their target's instruction flags. An x86 consumer enables AVX2
+with `-mavx2`, `/arch:AVX2`, or Xmake's `add_vectorexts("avx2")`.
+`CARVEN_SIMD_FORCE_PORTABLE` selects the portable backend. Translation units
+using SIMD or runtime text support must select the same backend.
 
-Consumers select their target's instruction flags. The compiler and consumer
-build rule never enable AVX2; an x86 consumer opts in with `-mavx2`, `/arch:AVX2`,
-or Xmake's `add_vectorexts("avx2")` for its target. Translation units that use
-SIMD or runtime text support must select the same backend. Public runtime types live in backend-specific
-inline namespaces within `carven::runtime::simd`. These namespaces give the types
-distinct identities, so symbols that encode them can detect some backend
-mismatches at link time. Return types alone and enclosing structs may not expose
-the mismatch in their symbols.
+Runtime vector and mask types live in backend-specific inline namespaces within
+`carven::runtime::simd`. Their distinct type identities can expose backend
+mismatches in symbols that encode those types. Return types alone and enclosing
+structs may not expose a mismatch at link time.
 
 ## Operators and masks
 

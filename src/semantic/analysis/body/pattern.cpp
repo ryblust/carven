@@ -554,7 +554,7 @@ auto BodyElaborator::build_match(
     if (!subject.has_value()) {
         co_return std::unexpected(subject.error());
     }
-    auto pending = BodyPendingFailureTerms();
+    auto pending = BodyPendingFailures();
     auto result_type = expected;
     if (value_form) {
         collect_pending(pending, *subject);

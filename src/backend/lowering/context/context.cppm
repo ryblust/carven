@@ -97,6 +97,8 @@ public:
         -> TargetName;
     auto require_callable(CallableID id) noexcept -> void;
     auto payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames&;
+    auto enum_payload_projection(EnumID id, std::size_t case_index, TargetExpr subject) noexcept
+        -> TargetExpr;
     auto constant_storage() noexcept -> ConstantStorage&;
     auto make_callable_name_allocator() const noexcept -> TargetNameAllocator;
     auto intrinsic_type(TargetSymbol symbol, bool constant = false) noexcept -> TargetTypeID;

@@ -182,7 +182,7 @@ enum class FailureContractPolicy {
 struct ConstructionCallableContract final {
     std::vector<ConstructionCallableParameter> parameters;
     ConstructionTypeRef result;
-    FailureTermID failures;
+    ConstructionFailureRef failures;
     FailureContractPolicy policy;
 };
 

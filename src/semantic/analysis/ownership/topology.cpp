@@ -3,19 +3,16 @@ module carven:semantic.analysis.ownership.topology.impl;
 import :semantic.analysis.ownership.context;
 import std;
 
-auto OwnershipBodyAnalyzer::storage_regions(const OwnershipPlace& place) const noexcept
-    -> const OwnershipRegionAutomaton& {
-    if (cached_region_revision != topology.revision) {
-        region_cache.clear();
-        relation_cache.clear();
-        alias_cache.clear();
-        cached_region_revision = topology.revision;
+auto OwnershipBodyAnalyzer::storage_relations() const noexcept -> const OwnershipRegionIndex& {
+    if (topology.region_revision != topology.revision) {
+        topology.regions = std::make_unique<OwnershipRegionIndex>(
+            topology.owns,
+            topology.objects.size(),
+            topology.possible_aliases
+        );
+        topology.region_revision = topology.revision;
     }
-    const auto [found, inserted] = region_cache.try_emplace(place);
-    if (inserted) {
-        found->second = storage_region_automaton(topology.owns, place);
-    }
-    return found->second;
+    return *topology.regions;
 }
 
 auto OwnershipBodyAnalyzer::propagate_storage_facts() noexcept -> void {
@@ -175,8 +172,7 @@ auto OwnershipBodyAnalyzer::select_owned_storage(
         topology.objects.push_back(
             {element,
              selection,
-             {},
-             {body.id(), selection.index(), false, selection},
+             {body.id(), selection.index(), OwnershipStorageSiteKind::Allocation, selection},
              many || uncertain || topology.objects[carrier.object].many,
              feedback}
         );

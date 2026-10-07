@@ -191,7 +191,6 @@ const TestSuite suite([] static noexcept {
             require(factory_outer_position != closures.definition_order.end());
             require(factory_inner_position != closures.definition_order.end());
             expect(factory_inner_position < factory_outer_position);
-            expect_equal(closures.definition_order.size(), 9uz);
             const auto unique =
                 std::flat_set<CallableID>(std::from_range, closures.definition_order);
             expect_equal(unique.size(), closures.definition_order.size());

@@ -14,8 +14,9 @@ constexpr auto callable_content = 2u;
 constexpr auto storage_content = 4u;
 constexpr auto native_content = 8u;
 constexpr auto string_storage_content = 16u;
-constexpr auto all_contents =
-    closure_content | callable_content | storage_content | native_content | string_storage_content;
+constexpr auto storage_view_content = 32u;
+constexpr auto all_contents = closure_content | callable_content | storage_content | native_content
+    | string_storage_content | storage_view_content;
 
 struct ContentDependent final {
     std::size_t index;
@@ -76,7 +77,9 @@ auto solve_type_contents(
                     contents[index] = storage_content;
                     depend(
                         value.element,
-                        value.extent == 0u ? all_contents & ~string_storage_content : all_contents
+                        value.extent == 0u
+                            ? all_contents & ~(string_storage_content | storage_view_content)
+                            : all_contents
                     );
                 },
                 [&](const StructTypeValue& value) noexcept {
@@ -95,11 +98,15 @@ auto solve_type_contents(
                     }
                 },
                 [&](const SliceTypeValue& value) noexcept {
+                    contents[index] = storage_view_content;
                     depend(value.element, callable_content);
                 },
                 [&](const BuiltinTypeValue& value) noexcept {
                     if (value.kind == BuiltinType::String) {
                         contents[index] = storage_content | string_storage_content;
+                    } else if (value.kind == BuiltinType::Str
+                               || value.kind == BuiltinType::StrCharsView) {
+                        contents[index] = storage_view_content;
                     }
                 },
                 [&](const CppTypeValue& value) noexcept {
@@ -150,6 +157,7 @@ auto solve_type_contents(
             .contains_closure_owner = (contents[index] & closure_content) != 0u,
             .contains_callable_view = (contents[index] & callable_content) != 0u,
             .contains_storage_owner = (contents[index] & storage_content) != 0u,
+            .contains_storage_view = (contents[index] & storage_view_content) != 0u,
             .contains_native_value = (contents[index] & native_content) != 0u,
             .contains_string_storage = (contents[index] & string_storage_content) != 0u,
         });

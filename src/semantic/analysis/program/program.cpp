@@ -89,12 +89,9 @@ auto ProgramDraft::try_canonicalize_declared_type(ConstructionTypeRef type) noex
         storage.types,
         storage.callable_signatures,
         [&](ConstructionTypeRef child) noexcept { return try_canonicalize_declared_type(child); },
-        [&](FailureTermID term) noexcept -> std::optional<FailureSetID> {
-            const auto failures = construction_failure_term_copy(term);
-            if (!failures.is_known) {
-                return std::nullopt;
-            }
-            return intern_failure_set(failures.direct_members);
+        [](ConstructionFailureRef failures) static noexcept -> std::optional<FailureSetID> {
+            const auto* known = std::get_if<FailureSetID>(&failures);
+            return known ? std::optional(*known) : std::nullopt;
         }
     );
 }
@@ -443,29 +440,20 @@ auto ProgramDraft::add_empty_failure_term() noexcept -> FailureTermID {
     return storage.failure_constraints.add_empty_term();
 }
 
-auto ProgramDraft::add_concrete_failure_term(std::vector<TypeID> members) noexcept
-    -> FailureTermID {
-    return storage.failure_constraints.add_concrete_term(std::move(members));
-}
-
-auto ProgramDraft::add_known_failure_term(std::vector<TypeID> members) noexcept -> FailureTermID {
-    return storage.failure_constraints.add_known_term(std::move(members));
-}
-
-auto ProgramDraft::add_union_failure_term(std::vector<FailureTermID> inputs) noexcept
+auto ProgramDraft::add_union_failure_term(std::vector<ConstructionFailureRef> inputs) noexcept
     -> FailureTermID {
     return storage.failure_constraints.add_union_term(std::move(inputs));
 }
 
 auto ProgramDraft::add_residual_failure_term(
-    FailureTermID input,
+    ConstructionFailureRef input,
     std::vector<TypeID> handled_members
 ) noexcept -> FailureTermID {
     return storage.failure_constraints.add_residual_term(input, std::move(handled_members));
 }
 
 auto ProgramDraft::add_intersection_failure_term(
-    FailureTermID input,
+    ConstructionFailureRef input,
     std::vector<TypeID> retained_members
 ) noexcept -> FailureTermID {
     return storage.failure_constraints.add_intersection_term(input, std::move(retained_members));
@@ -485,15 +473,15 @@ auto ProgramDraft::add_thrown_failure_member(
 
 auto ProgramDraft::add_failure_contribution(
     FailureTermID destination,
-    FailureTermID source
+    ConstructionFailureRef source
 ) noexcept -> void {
     storage.failure_constraints.add_contribution(destination, source);
 }
 
 auto ProgramDraft::add_guarded_failure_contribution(
     FailureTermID destination,
-    FailureTermID gate,
-    FailureTermID source
+    ConstructionFailureRef gate,
+    ConstructionFailureRef source
 ) noexcept -> void {
     storage.failure_constraints.add_guarded_contribution(destination, gate, source);
 }
@@ -503,21 +491,23 @@ auto ProgramDraft::equate_failures(FailureTermID left, FailureTermID right) noex
 }
 
 auto ProgramDraft::require_empty_failures(
-    FailureTermID term,
+    ConstructionFailureRef source,
     ProgramOriginID origin,
     EmptyFailureRequirementKind kind
 ) noexcept -> void {
-    storage.failure_constraints.require_empty(term, origin, kind);
+    storage.failure_constraints.require_empty(source, origin, kind);
 }
 
-auto ProgramDraft::require_non_empty_failures(FailureTermID term, ProgramOriginID origin) noexcept
-    -> void {
-    storage.failure_constraints.require_non_empty(term, origin);
+auto ProgramDraft::require_non_empty_failures(
+    ConstructionFailureRef source,
+    ProgramOriginID origin
+) noexcept -> void {
+    storage.failure_constraints.require_non_empty(source, origin);
 }
 
 auto ProgramDraft::require_failure_subset(
-    FailureTermID actual,
-    FailureTermID allowed,
+    ConstructionFailureRef actual,
+    ConstructionFailureRef allowed,
     ProgramOriginID origin,
     FailureSubsetRequirementKind kind
 ) noexcept -> void {
@@ -525,15 +515,15 @@ auto ProgramDraft::require_failure_subset(
 }
 
 auto ProgramDraft::require_equal_failures(
-    FailureTermID left,
-    FailureTermID right,
+    ConstructionFailureRef left,
+    ConstructionFailureRef right,
     ProgramOriginID origin
 ) noexcept -> void {
     storage.failure_constraints.require_equal(left, right, origin);
 }
 
 auto ProgramDraft::require_declared_failure_contract(
-    FailureTermID actual,
+    ConstructionFailureRef actual,
     ProgramOriginID origin
 ) noexcept -> void {
     storage.failure_constraints.require_declared_contract(actual, origin);
