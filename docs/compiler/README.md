@@ -161,8 +161,10 @@ Construction completes declarations and bodies before publication. The gates
 establish the resolved facts and query contracts consumed by later stages.
 
 `ProgramDraft` owns pending function heads. A complete callable contract includes
-its result. Declaration-head completion closes the nominal tables; solving requires
-complete callable contracts and bodies. The catalog and import-use state end before
+its result. Declaration-head completion closes ordinary source reservations.
+Concrete nominal instances can still be formed during body construction; solving
+requires their completed closure, complete callable contracts, and bodies.
+The catalog and import-use state end before
 solving. Final semantic validation checks declaration surfaces, including closure
 captures and solved failure sets.
 
@@ -183,7 +185,7 @@ contracts, global semantic contracts, ownership, and local pointer nullability,
 in that order. All checks read `const SemIRProgram&`.
 
 Before returning the program, publication records callable/type surfaces and
-closure construction order, then releases checked source regions and static-only
+closure reference order, then releases checked source regions and static-only
 bodies. Surviving bodies keep their IDs and contain one executable region.
 Source-template callables and completed static tests retain declarations and
 provenance without a body reference. No source tree is available to downstream

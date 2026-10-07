@@ -10,6 +10,18 @@ import :semantic.semir.simd;
 import :semantic.semir.type;
 import std;
 
+// Advances a checked integer range without stepping beyond an inclusive end.
+class IntegerRangeCursor final {
+public:
+    explicit IntegerRangeCursor(RangeConstant range) noexcept;
+    auto next() noexcept -> std::optional<IntegerConstant>;
+
+private:
+    std::optional<IntegerConstant> current;
+    IntegerConstant end;
+    bool inclusive;
+};
+
 enum class IntegerArithmetic { Checked, Wrapping };
 
 enum class ConstantEvaluationFailure {
@@ -188,5 +200,12 @@ auto fold_simd_constant(
     SIMDIntrinsic intrinsic,
     BuiltinType owner,
     std::span<const std::optional<ConstantID>> operands,
+    TypeID result
+) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+
+auto evaluate_float_intrinsic_constant_value(
+    const ExecutionValueAccess& values,
+    FloatIntrinsic intrinsic,
+    const ConstantFact& operand,
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;

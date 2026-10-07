@@ -182,48 +182,6 @@ auto TargetRenderer::render_class_member(const TargetClassMember& value) noexcep
                      text(";")}
                 );
             },
-            [&](const TargetConstructorDecl& constructor) noexcept {
-                auto parameters = std::vector<LayoutNodeID> {};
-                for (const auto& parameter : constructor.parameters) {
-                    parameters.push_back(render_parameter(parameter));
-                }
-                auto rendered = concat(
-                    {text(constructor.constexpr_specifier ? "constexpr " : ""),
-                     text(constructor.explicit_specifier ? "explicit " : ""),
-                     render_identifier(constructor.name),
-                     delimited_list(parameters, "(", ")"),
-                     text(" noexcept")}
-                );
-                auto initializer_layout_ids = std::vector<LayoutNodeID> {};
-                for (const auto& initializer : constructor.initializers) {
-                    initializer_layout_ids.push_back(concat(
-                        {render_identifier(initializer.name),
-                         delimited_list(
-                             std::array {render_expression(initializer.value)},
-                             "(",
-                             ")"
-                         )}
-                    ));
-                }
-                if (!initializer_layout_ids.empty()) {
-                    const auto flat =
-                        builder.flatten(builder.join(initializer_layout_ids, text(", ")));
-                    const auto broken =
-                        builder.join(initializer_layout_ids, concat({text(","), builder.line()}));
-                    rendered = choice(
-                        {concat({rendered, text(" : "), flat}),
-                         concat(
-                             {rendered,
-                              builder.indent(
-                                  indent_width,
-                                  concat({builder.line(), text(": "), broken})
-                              )}
-                         )}
-                    );
-                }
-                rendered = concat({rendered, text(" "), braced_block({})});
-                return rendered;
-            },
             [&](const TargetMemberFunctionDecl& function) noexcept {
                 return render_member_function(function);
             },

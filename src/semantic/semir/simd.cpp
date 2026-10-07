@@ -251,6 +251,16 @@ inline constexpr auto contracts = std::array {
         .arity = 3uz,
         .result = SIMDSlot::Vector,
         .static_input = std::nullopt
+    },
+    IntrinsicContract {
+        .intrinsic = SIMDIntrinsic::Sum,
+        .name = "sum",
+        .factory = false,
+        .bytes_only = true,
+        .inputs = {SIMDSlot::Vector},
+        .arity = 1uz,
+        .result = SIMDSlot::Index,
+        .static_input = std::nullopt
     }
 };
 

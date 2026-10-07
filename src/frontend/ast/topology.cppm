@@ -203,7 +203,10 @@ private:
         visit_fields(value.minus_span, value.number_span);
     }
 
-    auto visit(const ASTBindingPattern& value) noexcept -> void { visit(value.name_span); }
+    auto visit(const ASTBindingPattern& value) noexcept -> void {
+        visit(value.marker_span);
+        visit(value.name_span);
+    }
 
     auto visit(const ASTQualifiedName& value) noexcept -> void {
         visit_fields(value.span, value.components);
@@ -291,8 +294,18 @@ private:
         visit_fields(value.span, value.name_span, value.payload_types, value.initializer);
     }
 
+    auto visit(const ASTTypeParameterClause& value) noexcept -> void {
+        visit_fields(value.span, value.names);
+    }
+
     auto visit(const ASTEnumDecl& value) noexcept -> void {
-        visit_fields(value.visibility, value.name_span, value.underlying_type, value.cases);
+        visit_fields(
+            value.visibility,
+            value.name_span,
+            value.type_parameters,
+            value.underlying_type,
+            value.cases
+        );
     }
 
     auto visit(const ASTRecordField& value) noexcept -> void {
@@ -300,7 +313,13 @@ private:
     }
 
     auto visit(const ASTRecordDecl& value) noexcept -> void {
-        visit_fields(value.visibility, value.name_span, value.fields, value.operations);
+        visit_fields(
+            value.visibility,
+            value.name_span,
+            value.type_parameters,
+            value.fields,
+            value.operations
+        );
     }
 
     auto visit(const ASTFunctionParameter& value) noexcept -> void {
@@ -319,6 +338,7 @@ private:
             value.cpp_export,
             value.const_span,
             value.name_span,
+            value.type_parameters,
             value.parameters,
             value.result_type,
             value.throw_clause,
@@ -359,6 +379,10 @@ private:
 
     auto visit(const ASTArrayExpr& value) noexcept -> void { visit(value.element_ids); }
 
+    auto visit(const ASTArrayRepeatExpr& value) noexcept -> void {
+        visit_fields(value.element, value.extent);
+    }
+
     auto visit(const ASTPositionalInitializerList& value) noexcept -> void {
         visit_fields(value.span, value.values);
     }
@@ -398,6 +422,10 @@ private:
     }
 
     auto visit(const ASTCallArgument& value) noexcept -> void { visit(value.expression); }
+
+    auto visit(const ASTTypeApplicationExpr& value) noexcept -> void {
+        visit_fields(value.operand_id, value.arguments_span, value.arguments);
+    }
 
     auto visit(const ASTCallExpr& value) noexcept -> void {
         visit_fields(value.callee, value.arguments);

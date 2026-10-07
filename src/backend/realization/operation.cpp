@@ -20,6 +20,7 @@ import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
 import :semantic.semir.slice;
+import :semantic.semir.sequence;
 import :semantic.semir.structured;
 import :semantic.semir.text;
 import :semantic.semir.type;
@@ -462,10 +463,14 @@ auto realize_operation(
                     const auto is_slice = std::holds_alternative<SliceTypeValue>(
                         context.semantic().types().type(value.source->type.resolved()).value
                     );
+                    const auto is_sequence = std::holds_alternative<OwnedSequenceTypeValue>(
+                        context.semantic().types().type(value.source->type.resolved()).value
+                    );
                     return call_expression(
                         intrinsic_expression(
-                            is_slice ? TargetSymbol::RuntimeCheckedSliceIndex
-                                     : TargetSymbol::RuntimeCheckedArrayIndex
+                            is_sequence    ? TargetSymbol::RuntimeCheckedSequenceIndex
+                                : is_slice ? TargetSymbol::RuntimeCheckedSliceIndex
+                                           : TargetSymbol::RuntimeCheckedArrayIndex
                         ),
                         target_expressions(
                             std::move(operands[0]),
@@ -535,6 +540,30 @@ auto realize_operation(
             [&](const SemIntrinsic& value) noexcept -> TargetExpr {
                 return value.operation.visit(
                     Overloaded {
+                        [&](const FloatIntrinsic&) noexcept -> TargetExpr {
+                            return call_expression(
+                                intrinsic_expression(TargetSymbol::StdIsFinite),
+                                std::move(operands)
+                            );
+                        },
+                        [&](const SequenceIntrinsicOperation& family) noexcept -> TargetExpr {
+                            auto receiver = std::move(operands.front());
+                            operands.erase(operands.begin());
+                            const auto name = [&]() noexcept {
+                                switch (family.intrinsic) {
+                                    case SequenceIntrinsic::Len:     return "size";
+                                    case SequenceIntrinsic::IsEmpty: return "empty";
+                                    case SequenceIntrinsic::Push:    return "push";
+                                    case SequenceIntrinsic::Remove:  return "remove";
+                                    case SequenceIntrinsic::Clear:   return "clear";
+                                }
+                                std::unreachable();
+                            }();
+                            if (family.intrinsic == SequenceIntrinsic::Remove) {
+                                operands.push_back(source_site_expression(context, source.origin));
+                            }
+                            return call_member(std::move(receiver), name, std::move(operands));
+                        },
                         [&](const SliceIntrinsicOperation& family) noexcept -> TargetExpr {
                             const auto method = [&](const char* name) noexcept -> TargetExpr {
                                 auto receiver = std::move(operands.front());

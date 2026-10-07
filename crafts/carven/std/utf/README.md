@@ -23,6 +23,7 @@ the official package sources.
 | `to_string(bytes: [u8]) -> String throw UTF8Error` | Validate and copy into independent storage |
 | `decode_utf8_prefix(bytes: [u8]) -> UTF8DecodeResult throw UTF8Error` | `.End` for empty input; otherwise `.Scalar(char, usize)` for the first scalar and its width |
 | `encode_utf8(character: char) -> UTF8Encoded` | Four-byte array `bytes` and valid `width` |
+| `encoded_bytes(encoded: UTF8Encoded) -> [u8]` | Borrow exactly the valid encoding prefix |
 | `char_from_u32(value: u32) -> char throw UnicodeScalarError` | Reject surrogates and values above U+10FFFF |
 | `character as u32` | Unicode scalar number |
 | `UTF8Validator::create() -> UTF8Validator` | Start an incremental validation attempt |
@@ -51,29 +52,33 @@ fn example() -> String throw UTF8Error {
 
 ## Compile-time use
 
-`char_from_u32`, `encode_utf8`, `decode_utf8_prefix`, and `validate_utf8` are
+`char_from_u32`, `encode_utf8`, `encoded_bytes`, `decode_utf8_prefix`, and `validate_utf8` are
 `const fn`: the same implementation runs in static roots and
 ordinary runtime calls.
 Encoded arrays can also become frozen constant slices:
 
 ```carven
-import std::utf.codec using encode_utf8;
+import std::utf.codec using { encode_utf8, encoded_bytes };
 import std::utf.validation using validate_utf8;
 
 const encoded = encode_utf8('😀');
-const bytes: [u8] = encoded.bytes;
-const { validate_utf8(bytes.slice(0, encoded.width))?; }
+const bytes = encoded_bytes(encoded);
+const { validate_utf8(bytes)?; }
 ```
 
 `UTF8Encoded.bytes` always contains four bytes; only the first `width` bytes
-belong to the encoding, and the remaining bytes are zero. Keep that width when
-constructing a byte view, since zero padding would otherwise encode extra NULs.
+belong to the encoding, and the remaining bytes are zero.
+`encoded_bytes(encoded)` borrows that valid prefix. Bind the encoding before
+retaining its view; Carven tracks the backing storage's lifetime and mutation.
+
+`UTF8Validator` operations are also `const fn`. Incremental state can be
+created and updated inside `const fn` bodies, `const` blocks, and static tests.
+See the [class execution rules](../../../../docs/language/aggregates.md#ordinary-value-classes)
+for constant-expression entry boundaries.
+Static execution is subject to the language's ordinary resource budgets.
 
 `from_utf8` and `to_string` currently require runtime execution: the executor
-does not admit unchecked borrowed text construction. `UTF8Validator` also requires
-runtime execution because class values are outside the static-execution subset.
-Whole-buffer validation uses internal struct state. Static execution
-is subject to the language's ordinary resource budgets.
+does not admit unchecked borrowed text construction.
 
 ## Error and streaming contract
 
@@ -102,55 +107,28 @@ and `check_complete()` use Read access; checking completeness does not consume
 or close the validator. Call it at logical EOF to detect truncation; subsequent
 input is still permitted.
 
-## Implementation and tests
+## Implementation boundary
 
-The modules in this directory own the public types and UTF algorithms.
-`error` owns shared failure types without depending on any algorithm.
-The C++ runtime separately checks UTF-8 at native ingress and traps on invalid
-text. That check returns no streaming state or library error and does not depend
-on the Craft. Both layers use the runtime's selected SIMD backend for native
-block operations.
-`scan` owns craft-internal state and constant-capable byte transitions: its bare
-declarations are available within `carven`, not exported to consumers. The
-`validation` and `codec` modules share `scan`; `text` composes the public
-validation API.
+The craft owns scalar conversion, encoding, decoding, validation, and their
+typed errors. Its internal `scan` module supplies constant-capable byte
+transitions shared by `codec` and `validation`; `text` composes validation
+with text construction.
 
-`UTF8Validator` encapsulates the internal state in a class. Copies are independent
-validation attempts, including any pending sequence. The shared transition checks
-a candidate state before committing it, preserving every field on a rejected byte.
-Only the first continuation byte needs lead-specific range checks; subsequent
-continuations use the ordinary 80..BF range. Prefix decoding accumulates the scalar
-separately, so validation stores no decoded value or input bytes.
+The C++ runtime checks UTF-8 at native text ingress and traps on invalid text.
+That check has no streaming state or craft error and does not depend on the
+craft. Both layers use the selected runtime SIMD backend for native block
+operations.
 
-Builtin unchecked constructors establish characters and borrowed text under the
-validated preconditions. Native construction adds no content checks; constant
-and interpreted character construction check the scalar precondition. The
-compiler tracks borrowed text backing.
+`UTF8Validator` stores positions and pending sequence state, without retaining
+input. Copies are independent validation attempts. Byte transitions commit only
+after validation; block errors retain progress up to the rejected byte. Pending
+state from an earlier feed is resolved without rereading that feed's input.
 
-`tests/crafts/carven/std/utf/` uses static tests for exact encodings, scalar
-boundaries, invalid byte classes, error positions, and constant publication.
-Runtime tests cover the full Unicode scalar domain, incremental class state,
-and borrowed and owning text storage. Run it with
-`./xmakew test -g crafts`; native and portable SIMD binaries use the generated default test entry.
-Compiler diagnostic tests check returned text borrows at the public API.
+Unchecked character and borrowed-text constructors require validated input.
+Constant and interpreted character construction check the scalar precondition;
+native unchecked construction relies on it. Borrowed text retains its ordinary
+backing lifetime checks.
 
-Validation scans full 32-byte UTF-8 blocks through the SIMD craft, including
-mixed ASCII and multibyte text. Ordinary `const fn` constructs the nibble
-classification tables; cross-block byte alignment and table lookup check adjacent
-bytes and continuation lengths. A block skips classification when it and the
-previous block are ASCII. The scalar fallback uses `ascii_prefix`, which checks
-64-byte ASCII groups, then a 32-byte block and a scalar tail. Pending state from
-an earlier feed is resolved before block scanning, without retaining or rereading
-that feed's input.
-
-Only validated blocks advance the state. A failed block returns to bytewise
-transitions from the last validated position to preserve exact diagnostics and
-recovery behavior. A validated unfinished suffix reconstructs the pending state;
-short tails use the same byte transition, and only `check_complete` treats the end
-as EOF. Forbidden lead bytes are rejected immediately, including the last byte of
-a feed. No load crosses the supplied slice.
-
-Static execution and native calls use the same Carven algorithm.
-Native validation uses the selected SIMD backend: NEON, AVX2 when enabled, or the
-portable fallback. Performance depends on that backend, input size, distribution,
-and native optimization across generated modules.
+The contracts in `tests/crafts/carven/std/utf/` cover scalar boundaries, invalid
+byte classes, error positions, streaming transitions, and text storage. Static
+and native execution, including portable SIMD, exercise the applicable APIs.

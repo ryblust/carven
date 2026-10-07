@@ -376,10 +376,27 @@ auto Parser::parse_block_label() noexcept -> std::optional<ASTBlockLabel> {
     return ASTBlockLabel {.span = literal->span, .text = std::move(literal->value.bytes)};
 }
 
+auto Parser::parse_type_parameters() noexcept -> std::optional<ASTTypeParameterClause> {
+    const auto left = match(TokenKind::Less);
+    if (!left) {
+        return std::nullopt;
+    }
+    auto names = std::vector<Span>();
+    while (!failed) {
+        names.push_back(expect(TokenKind::Identifier, "expected type parameter name").span);
+        if (!match(TokenKind::Comma) || check(TokenKind::Greater)) {
+            break;
+        }
+    }
+    const auto right = expect(TokenKind::Greater, "expected '>' after type parameters");
+    return ASTTypeParameterClause {.span = join(left->span, right.span), .names = std::move(names)};
+}
+
 auto Parser::parse_enum(ASTDeclarationVisibility visibility) noexcept
     -> std::optional<std::pair<Span, ASTEnumDecl>> {
     expect(TokenKind::Enum, "expected 'enum'");
     const auto name = expect(TokenKind::Identifier, "expected enum name");
+    auto type_parameters = parse_type_parameters();
     auto underlying = std::optional<ASTTypeID> {};
     if (match(TokenKind::Colon)) {
         underlying = parse_type();
@@ -444,6 +461,7 @@ auto Parser::parse_enum(ASTDeclarationVisibility visibility) noexcept
             ASTEnumDecl {
                 .visibility = visibility,
                 .name_span = name.span,
+                .type_parameters = std::move(type_parameters),
                 .underlying_type = underlying,
                 .cases = std::move(cases),
             },
@@ -456,18 +474,24 @@ auto Parser::parse_record(ASTDeclarationVisibility visibility) noexcept
     const auto kind =
         consume().kind == TokenKind::Class ? ASTRecordKind::Class : ASTRecordKind::Struct;
     const auto name = expect(TokenKind::Identifier, "expected record name");
+    auto type_parameters = parse_type_parameters();
     expect(TokenKind::LeftBrace, "expected '{' after record name");
 
     auto fields = std::vector<ASTRecordField> {};
     auto operations = std::vector<ASTItemID>();
     while (!failed && !check(TokenKind::RightBrace)) {
-        if (kind == ASTRecordKind::Class && (check(TokenKind::Fn) || check(TokenKind::Private))) {
+        if (kind == ASTRecordKind::Class
+            && (check(TokenKind::Fn) || check(TokenKind::Private) || check(TokenKind::Const))) {
             const auto start = current().span;
             auto access = ASTDeclarationVisibility(ASTBareDeclarationVisibility {});
             if (const auto keyword = match(TokenKind::Private)) {
                 access = ASTPrivateDeclarationVisibility {.keyword_span = keyword->span};
             }
-            auto operation = parse_function(access, std::nullopt, std::nullopt, std::nullopt);
+            const auto const_span =
+                match(TokenKind::Const).transform([](const Token& token) static {
+                    return token.span;
+                });
+            auto operation = parse_function(access, std::nullopt, std::nullopt, const_span);
             if (!operation) {
                 return std::nullopt;
             }
@@ -505,6 +529,7 @@ auto Parser::parse_record(ASTDeclarationVisibility visibility) noexcept
                 .kind = kind,
                 .visibility = visibility,
                 .name_span = name.span,
+                .type_parameters = std::move(type_parameters),
                 .fields = std::move(fields),
                 .operations = std::move(operations),
             },
@@ -520,6 +545,7 @@ auto Parser::parse_function(
 ) noexcept -> std::optional<std::pair<Span, ASTFunctionDecl>> {
     expect(TokenKind::Fn, "expected 'fn'");
     const auto name = expect(TokenKind::Identifier, "expected function name");
+    auto type_parameters = parse_type_parameters();
     expect(TokenKind::LeftParen, "expected '(' after function name");
 
     auto parameters = std::vector<ASTFunctionParameter> {};
@@ -601,6 +627,7 @@ auto Parser::parse_function(
                 .cpp_export = cpp_export,
                 .const_span = const_span,
                 .name_span = name.span,
+                .type_parameters = std::move(type_parameters),
                 .parameters = std::move(parameters),
                 .result_type = result_type,
                 .throw_clause = std::move(throw_clause),

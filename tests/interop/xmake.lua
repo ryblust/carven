@@ -10,6 +10,7 @@ for _, domain in ipairs({
     "pointers",
     "providers",
     "runtime_headers",
+    "number",
     "scalars",
     "text",
 }) do
@@ -86,15 +87,15 @@ target_end()
 
 for _, variant in ipairs({
     {name = "carven-test-interop-simd"},
-    {name = "carven-test-interop-simd-scalar", scalar = true},
+    {name = "carven-test-interop-simd-portable", portable = true},
 }) do
     target(variant.name)
         set_default(false)
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         add_includedirs(interop_dir)
-        if variant.scalar then
-            add_defines("CARVEN_SIMD_FORCE_SCALAR")
+        if variant.portable then
+            add_defines("CARVEN_SIMD_FORCE_PORTABLE")
         else
             add_vectorexts("avx2")
         end

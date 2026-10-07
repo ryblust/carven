@@ -16,12 +16,14 @@ import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
+import :semantic.semir.sequence;
 import :semantic.semir.type;
 import :semantic.visibility;
 import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.frontend.parse.fixture;
 import :test.internal.semantic.analysis.fixture;
@@ -110,6 +112,46 @@ auto add_numeric_enum(ProgramDraft& compilation, TypeID underlying) noexcept -> 
 }
 
 const TestSuite suite([] static noexcept {
+    "Semantic sequences: shape kind is independent of a static extent"_test = [] static noexcept {
+        auto fixture = OperationFixture();
+        auto& draft = fixture.compilation;
+        const auto element = draft.builtin_type(BuiltinType::I32);
+        const auto array = draft.intern_type({.value = ArrayTypeValue {element, 0u}});
+        const auto slice = draft.intern_type({.value = SliceTypeValue {element}});
+        const auto owner = draft.intern_type({.value = OwnedSequenceTypeValue {element}});
+        const auto array_shape = sequence_shape(draft, array);
+        const auto slice_shape = sequence_shape(draft, slice);
+        const auto owner_shape = sequence_shape(draft, owner);
+        require(array_shape.has_value());
+        require(slice_shape.has_value());
+        require(owner_shape.has_value());
+        expect_equal(array_shape->kind, SequenceShapeKind::Array);
+        require(array_shape->extent.has_value());
+        expect_equal(*array_shape->extent, 0u);
+        expect_equal(slice_shape->kind, SequenceShapeKind::Slice);
+        expect(!slice_shape->extent.has_value());
+        expect_equal(owner_shape->kind, SequenceShapeKind::OwnedSequence);
+        expect(!owner_shape->extent.has_value());
+        expect(owner_shape->element == ConstructionTypeRef(element));
+        const auto push = decide_sequence_method(draft, owner, "push", 1uz);
+        require(push.has_value());
+        require(push->has_value());
+        expect_equal(**push, SequenceIntrinsic::Push);
+        expect(!decide_sequence_method(draft, owner, "push", 0uz).has_value());
+        expect(!decide_sequence_method(draft, owner, "as_slice", 0uz).has_value());
+        const auto on_slice = decide_sequence_method(draft, slice, "push", 1uz);
+        require(on_slice.has_value());
+        expect(!on_slice->has_value());
+        expect_equal(
+            sequence_intrinsic_contract(SequenceIntrinsic::Push).receiver_access,
+            AccessMode::Write
+        );
+        expect_equal(
+            sequence_intrinsic_contract(SequenceIntrinsic::Len).receiver_access,
+            AccessMode::Read
+        );
+    };
+
     "Semantic operations: AST operators have one exact SemIR mapping"_test = [] static noexcept {
         const auto prefix_mappings = std::array {
             std::pair {ASTPrefixOperator::LogicalNot, UnaryOperator::LogicalNot},
@@ -496,6 +538,29 @@ const TestSuite suite([] static noexcept {
             expect(!(constant_evaluation_diagnostic(ConstantEvaluationFailure::OperandNotConstant)
                          .has_value()));
         };
+
+    "Floating queries: receiver domains and arity are checked"_test = [] static noexcept {
+        auto fixture = OperationFixture();
+        auto& draft = fixture.compilation;
+        for (const auto kind : {BuiltinType::F32, BuiltinType::F64}) {
+            const auto selected =
+                decide_float_method(draft, draft.builtin_type(kind), "is_finite", 0);
+            require(selected.has_value() && selected->has_value());
+            expect(**selected == FloatIntrinsic::IsFinite);
+            const auto invalid =
+                decide_float_method(draft, draft.builtin_type(kind), "is_finite", 1);
+            require(!invalid.has_value());
+            expect_equal(invalid.error().code, DiagnosticCode::TypeMethodCallArity);
+        }
+        const auto invalid =
+            decide_float_method(draft, draft.builtin_type(BuiltinType::I32), "is_finite", 0);
+        require(invalid.has_value());
+        expect(!invalid->has_value());
+        expect_diagnostic(
+            analyze_test_errors("fn invalid(value: f64) { value.is_finite(1); }"),
+            DiagnosticCode::TypeMethodCallArity
+        );
+    };
 
     "Semantic equality: shared enum payload dependencies propagate unsupported leaves"_test =
         [] static noexcept {

@@ -27,33 +27,6 @@ auto merge_rows(std::vector<T>& destination, const std::vector<T>& source) noexc
 
 } // namespace
 
-auto select_element_storage(
-    const CanonicalTypeStore& types,
-    TypeID sequence,
-    std::span<const OwnershipPlace> storage,
-    const OwnershipRelationships& relationships,
-    std::optional<std::uint64_t> index
-) noexcept -> std::vector<OwnershipPlace> {
-    auto result = std::vector<OwnershipPlace>();
-    if (std::holds_alternative<SliceTypeValue>(types.type(sequence).value)) {
-        for (const auto& loan : relationships.view().storage_loans) {
-            if (loan.holder.empty()) {
-                result.push_back(loan.backing);
-            }
-        }
-        // A slice can rebase indices; its backing is protected as a whole.
-        index = std::nullopt;
-    } else {
-        result.assign(storage.begin(), storage.end());
-    }
-    for (auto& selected : result) {
-        selected.path.push_back(index);
-    }
-    std::ranges::sort(result);
-    result.erase(std::ranges::unique(result).begin(), result.end());
-    return result;
-}
-
 auto overlaps(
     std::span<const std::optional<std::uint64_t>> left,
     std::span<const std::optional<std::uint64_t>> right
@@ -141,8 +114,13 @@ auto nest_relationships(OwnershipRelationships source, const OwnershipProjection
 
 auto join_ownership_state(OwnershipState& destination, const OwnershipState& source) noexcept
     -> void {
-    if (destination.objects.size() != source.objects.size()) {
-        invariant_violation("ownership join has different storage domains");
+    // Query-local referents append to a stable domain. A branch that did not
+    // select a referent has no relationships for it, rather than unavailable storage.
+    if (destination.objects.size() < source.objects.size()) {
+        destination.objects.resize(
+            source.objects.size(),
+            {.available = true, .taken = std::nullopt, .relationships = {}, .modified = false}
+        );
     }
     for (auto&& [target, incoming] : std::views::zip(destination.objects, source.objects)) {
         target.available &= incoming.available;

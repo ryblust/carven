@@ -2,6 +2,46 @@ import std::utf.codec using decode_utf8_prefix;
 import std::utf.error using { UTF8Error, UTF8ErrorKind };
 import std::utf.validation using { validate_utf8, UTF8Validator };
 
+private const fn incremental_static_state() -> bool {
+    var state = UTF8Validator::create();
+    if state.is_complete() == false || state.processed_bytes() != 0 { return false; }
+    try {
+        state.push(0xe2)?;
+        state.feed([0x82])?;
+    } catch {
+        UTF8Error(_) => return false,
+    }
+    var copy = state;
+    var truncated = false;
+    try {
+        state.check_complete()?;
+    } catch {
+        UTF8Error(error) => {
+            truncated = error.kind == .Truncated && error.offset == 2 && error.sequence_start == 0;
+        },
+    }
+    if truncated == false || state.is_complete() || state.processed_bytes() != 2 { return false; }
+    try {
+        state.push(0xac)?;
+        state.check_complete()?;
+    } catch {
+        UTF8Error(_) => return false,
+    }
+    if state.is_complete() == false || state.processed_bytes() != 3 { return false; }
+    if copy.is_complete() || copy.processed_bytes() != 2 { return false; }
+    try {
+        copy.feed([0xad])?;
+        copy.check_complete()?;
+    } catch {
+        UTF8Error(_) => return false,
+    }
+    return copy.is_complete() && copy.processed_bytes() == 3;
+}
+
+const test "UTF8: incremental class state executes statically with independent copies" {
+    check(incremental_static_state());
+}
+
 test "UTF8: chunk boundaries preserve state and errors identify the sequence" {
     let bytes: [u8; 5] = [0x61, 0xf0, 0x9f, 0x98, 0x80];
     let view = bytes.as_slice();

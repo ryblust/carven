@@ -83,6 +83,7 @@ private:
     auto token_covering(std::uint32_t offset) const noexcept -> std::size_t;
     auto mark_block(Span span) noexcept -> void;
     auto mark_access(const ASTAccessSyntax& access) noexcept -> void;
+    auto mark_angles(Span span) noexcept -> void;
     auto mark_named(const ASTNamedType& named, Span span) noexcept -> void;
     auto mark_function_type(const ASTFunctionType& function) noexcept -> void;
 
@@ -458,21 +459,27 @@ auto SyntaxFormatter::mark_access(const ASTAccessSyntax& access) noexcept -> voi
     }
 }
 
-auto SyntaxFormatter::mark_named(const ASTNamedType& named, Span span) noexcept -> void {
-    if (named.arguments.empty()) {
-        return;
-    }
-    const auto open = token_at(named.components.back().name_span.start()) + 1uz;
+auto SyntaxFormatter::mark_angles(Span span) noexcept -> void {
+    const auto open = token_at(span.start());
     const auto close = token_covering(span.end() - 1u);
     separation_before[open] = Separation::None;
     separation_before[open + 1uz] = Separation::None;
     separation_before[close] = Separation::None;
-    // Do not break inside angle lists yet: a single lexer token may close
-    // several nested types. Other containers still wrap around the type.
+    // A lexer token may close several nested types; angle lists remain inline.
     for (auto i = open + 1uz; i < close; ++i) {
         if (tokens[i].kind == TokenKind::Comma) {
-            separation_before[i + 1uz] = Separation::Space;
+            const auto next = tokens[i + 1uz].kind;
+            separation_before[i + 1uz] = next == TokenKind::Greater || next == TokenKind::RightShift
+                ? Separation::None
+                : Separation::Space;
         }
+    }
+}
+
+auto SyntaxFormatter::mark_named(const ASTNamedType& named, Span span) noexcept -> void {
+    if (!named.arguments.empty()) {
+        const auto open = token_at(named.components.back().name_span.start()) + 1uz;
+        mark_angles(Span::from_bounds(tokens[open].span.start(), span.end()));
     }
 }
 
@@ -495,7 +502,8 @@ auto SyntaxFormatter::annotate() noexcept -> void {
             element = &syntax.expression(group->expression);
         }
         return std::holds_alternative<ASTConstructionExpr>(element->value)
-            || std::holds_alternative<ASTArrayExpr>(element->value);
+            || std::holds_alternative<ASTArrayExpr>(element->value)
+            || std::holds_alternative<ASTArrayRepeatExpr>(element->value);
     };
     for (const auto& fragment : syntax.ast_module().cpp_source_fragments) {
         separation_before[token_at(fragment.form_span.start())] = Separation::Hard;
@@ -530,6 +538,18 @@ auto SyntaxFormatter::annotate() noexcept -> void {
         continuation_groups[token_at(item.span.start())] = false;
         item.value.visit([&](const auto& value) noexcept {
             using T = std::decay_t<decltype(value)>;
+            if constexpr (std::same_as<T, ASTRecordDecl>
+                          || std::same_as<T, ASTEnumDecl>
+                          || std::same_as<T, ASTFunctionDecl>) {
+                if (value.type_parameters) {
+                    mark_angles(value.type_parameters->span);
+                    if constexpr (std::same_as<T, ASTFunctionDecl>) {
+                        separation_before
+                            [token_covering(value.type_parameters->span.end() - 1u) + 1uz] =
+                                Separation::None;
+                    }
+                }
+            }
             if constexpr (std::same_as<T, ASTRecordDecl> || std::same_as<T, ASTEnumDecl>) {
                 mark_block(item.span);
                 const auto mark_members = [&](const auto& members) noexcept {
@@ -614,6 +634,10 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                         prefix_operators[token_at(capture.write_marker->start())] = true;
                     }
                 }
+            } else if constexpr (std::same_as<T, ASTTypeApplicationExpr>) {
+                mark_angles(value.arguments_span);
+                separation_before[token_covering(value.arguments_span.end() - 1u) + 1uz] =
+                    Separation::None;
             } else if constexpr (std::same_as<T, ASTArrayExpr>) {
                 if (value.element_ids.size() > 1uz
                     && std::ranges::any_of(value.element_ids, structured)) {
@@ -623,6 +647,10 @@ auto SyntaxFormatter::annotate() noexcept -> void {
                             Separation::Hard;
                     }
                 }
+            } else if constexpr (std::same_as<T, ASTArrayRepeatExpr>) {
+                mark_group(expression.span);
+                separation_before[token_at(syntax.expression(value.extent).span.start())] =
+                    Separation::Space;
             } else if constexpr (std::same_as<T, ASTConstructionExpr>) {
                 value.initializer.value.visit([&](const auto& initializer) noexcept {
                     using U = std::decay_t<decltype(initializer)>;
@@ -680,7 +708,10 @@ auto SyntaxFormatter::annotate() noexcept -> void {
         });
     }
     for (const auto& pattern : syntax.patterns()) {
-        if (const auto* negative = std::get_if<ASTNegativeNumberPattern>(&pattern.value)) {
+        if (const auto* binding = std::get_if<ASTBindingPattern>(&pattern.value);
+            binding && binding->mode == ASTPatternBindingMode::Write) {
+            prefix_operators[token_at(binding->marker_span->start())] = true;
+        } else if (const auto* negative = std::get_if<ASTNegativeNumberPattern>(&pattern.value)) {
             prefix_operators[token_at(negative->minus_span.start())] = true;
         } else if (const auto* alternatives = std::get_if<ASTOrPattern>(&pattern.value)) {
             for (const auto pipe : alternatives->pipe_spans) {

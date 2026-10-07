@@ -64,6 +64,14 @@ fn check_bound_evaluation() {
     check(trace == 12);
     check(sum_size_interval(ordered) == 6usize);
     check(trace == 12);
+
+    trace = 0;
+    var sum = 0usize;
+    for value in range_endpoint(&trace, 1, 1usize)..range_endpoint(&trace, 2, 4usize) {
+        sum += value;
+        continue;
+    }
+    check(sum == 6usize && trace == 12);
 }
 
 const test "Range values: literal bounds adopt endpoint and destination types" {
@@ -109,4 +117,25 @@ test "Range values: construction and iteration retain independent snapshots" {
         continue;
     }
     check(count == 2);
+}
+
+const fn count_signed_interval(values: range<i64>) -> usize {
+    var count = 0usize;
+    for value in values {
+        count += 1usize;
+        continue;
+    }
+    return count;
+}
+
+test "Range values: inclusive snapshots reach signed maxima through continue" {
+    var interval = 9223372036854775806i64..=9223372036854775807i64;
+    check(count_signed_interval(interval) == 2usize);
+    var count = 0usize;
+    for value in interval {
+        interval = 10i64..20i64;
+        count += 1usize;
+        continue;
+    }
+    check(count == 2usize);
 }

@@ -1,0 +1,240 @@
+// Bit n denotes byte n; matching plans are derived from this set at compilation.
+export struct ByteSet {
+    words: [u64; 4],
+}
+
+export enum ByteSearch {
+    Missing,
+    Found(usize),
+}
+
+export const fn one_of(values: [u8]) -> ByteSet {
+    var set = ByteSet {};
+    for byte in values {
+        set.words[(byte >> 6) as usize] |= 1u64 << ((byte & 63) as u64);
+    }
+    return set;
+}
+
+export const fn byte_range(lower: u8, upper: u8) -> ByteSet {
+    assert(lower <= upper);
+    var set = ByteSet {};
+    for value in (lower as u16)..=(upper as u16) {
+        let byte = value as u8;
+        set.words[(byte >> 6) as usize] |= 1u64 << ((byte & 63) as u64);
+    }
+    return set;
+}
+
+export const fn set_union(left: ByteSet, right: ByteSet) -> ByteSet {
+    var result = ByteSet {};
+    for index in 0usize..4 {
+        result.words[index] = left.words[index] | right.words[index];
+    }
+    return result;
+}
+
+private const fn contains(set: ByteSet, byte: u8) -> bool {
+    return (set.words[(byte >> 6) as usize] & (1u64 << ((byte & 63) as u64))) != 0;
+}
+
+private struct ByteRun {
+    lower: u8,
+    upper: u8,
+}
+
+private const fn run_count(set: ByteSet) -> usize {
+    var count: usize = 0;
+    var inside = false;
+    for value in 0u16..256 {
+        if contains(set, value as u8) {
+            if inside == false { count += 1; }
+            inside = true;
+        } else {
+            inside = false;
+        }
+    }
+    return count;
+}
+
+private const fn plan_runs(set: ByteSet) -> [ByteRun; 4] {
+    var runs: [ByteRun; 4] = {};
+    var index: usize = 0;
+    var inside = false;
+    for value in 0u16..256 {
+        let byte = value as u8;
+        if contains(set, byte) {
+            if inside == false { runs[index].lower = byte; }
+            runs[index].upper = byte;
+            inside = true;
+        } else if inside {
+            index += 1;
+            inside = false;
+        }
+    }
+    return runs;
+}
+
+private const fn is_complete(set: ByteSet) -> bool {
+    return set.words
+        == [0xffffffffffffffffu64, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff];
+}
+
+private const fn nibble_table(set: ByteSet, high: bool) -> u8x32 {
+    var table: [u8; 32] = {};
+    for value in 0u16..256 {
+        let byte = value as u8;
+        if (byte >= 128) == high && contains(set, byte) {
+            table[(byte & 15) as usize] |= 1u8 << ((byte >> 4) & 7);
+        }
+    }
+    return u8x32::from_array(table);
+}
+
+private const fn bit_table() -> u8x32 {
+    var bytes: [u8; 32] = {};
+    for index in 0usize..16 {
+        bytes[index] = 1u8 << ((index as u8) & 7);
+    }
+    return u8x32::from_array(bytes);
+}
+
+private const powers = bit_table();
+
+export const fn match_set(value: u8x32, const set: ByteSet) -> mask32 {
+    const count = run_count(set);
+    const if count == 0 {
+        return mask32::prefix(0);
+    } else if is_complete(set) {
+        return mask32::prefix(32);
+    } else if count <= 4 {
+        const runs = plan_runs(set);
+        var matched = mask32::prefix(0);
+        const for index in 0..count {
+            const lower = runs[index].lower;
+            const upper = runs[index].upper;
+            const if lower == upper {
+                matched |= value == lower;
+            } else {
+                // Wrapping subtraction maps this inclusive run to 0..(upper - lower).
+                matched |= (value - lower) <= (upper - lower);
+            }
+        }
+        return matched;
+    } else {
+        const low = nibble_table(set, false);
+        const high = nibble_table(set, true);
+        let high_nibbles = value.shift_right(4);
+        let low_nibbles = value & 15;
+        let flags = (high_nibbles < 8).select(low.lookup(low_nibbles), high.lookup(low_nibbles));
+        return (flags & powers.lookup(high_nibbles)) != 0;
+    }
+}
+
+private const fn contains_byte(byte: u8, const set: ByteSet) -> bool {
+    const count = run_count(set);
+    const if count == 0 {
+        return false;
+    } else if is_complete(set) {
+        return true;
+    } else if count <= 4 {
+        const runs = plan_runs(set);
+        const for index in 0..count {
+            const lower = runs[index].lower;
+            const upper = runs[index].upper;
+            const if lower == upper {
+                if byte == lower { return true; }
+            } else {
+                if (byte - lower) <= (upper - lower) { return true; }
+            }
+        }
+        return false;
+    } else {
+        return (set.words[(byte >> 6) as usize] & (1u64 << ((byte & 63) as u64))) != 0;
+    }
+}
+
+export const fn count_where(bytes: [u8], const set: ByteSet) -> usize {
+    const if run_count(set) == 0 { return 0; }
+    const if is_complete(set) { return bytes.len(); }
+    const chains = 2usize;
+    const group_bytes = chains * 32;
+    var offset: usize = 0;
+    var count: usize = 0;
+    let ones = u8x32::splat(1);
+    let zero = u8x32::splat(0);
+    while bytes.len() - offset >= group_bytes * 4 {
+        var groups = (bytes.len() - offset) / group_bytes;
+        // Each lane receives at most 255 increments before widening the sum.
+        if groups > 255 { groups = 255; }
+        let batch_end = offset + groups * group_bytes;
+        let batch = bytes.slice(offset, batch_end);
+        var accumulators = [u8x32::splat(0); chains];
+        for group in 0usize..groups {
+            const for chain in 0usize..chains {
+                let value = u8x32::load(batch, group * group_bytes + chain * 32);
+                accumulators[chain] += match_set(value, set).select(ones, zero);
+            }
+        }
+        offset = batch_end;
+        const for chain in 0usize..chains {
+            count += accumulators[chain].sum();
+        }
+    }
+    while bytes.len() - offset >= 32 {
+        count += match_set(u8x32::load(bytes, offset), set).count();
+        offset += 32;
+    }
+    while offset < bytes.len() {
+        if contains_byte(bytes[offset], set) { count += 1; }
+        offset += 1;
+    }
+    return count;
+}
+
+export const fn find_where(bytes: [u8], const set: ByteSet) -> ByteSearch {
+    return find_from(bytes, 0, set);
+}
+
+// Found positions refer to the supplied input, including a skipped prefix.
+export const fn find_from(bytes: [u8], start: usize, const set: ByteSet) -> ByteSearch {
+    assert(start <= bytes.len());
+    const if run_count(set) == 0 { return .Missing; }
+    const if is_complete(set) {
+        if start == bytes.len() { return .Missing; }
+        return .Found(start);
+    }
+    var offset = start;
+    while bytes.len() - offset >= 32 {
+        let matched = match_set(u8x32::load(bytes, offset), set);
+        if matched.any() { return .Found(offset + matched.first_or(0)); }
+        offset += 32;
+    }
+    while offset < bytes.len() {
+        if contains_byte(bytes[offset], set) { return .Found(offset); }
+        offset += 1;
+    }
+    return .Missing;
+}
+
+export const fn prefix_where(bytes: [u8], const set: ByteSet) -> usize {
+    return prefix_end(bytes, 0, set);
+}
+
+export const fn prefix_end(bytes: [u8], start: usize, const set: ByteSet) -> usize {
+    assert(start <= bytes.len());
+    const if run_count(set) == 0 { return start; }
+    const if is_complete(set) { return bytes.len(); }
+    if start == bytes.len() || contains_byte(bytes[start], set) == false { return start; }
+    var offset = start;
+    while bytes.len() - offset >= 32 {
+        let rejected = ~match_set(u8x32::load(bytes, offset), set);
+        if rejected.any() { return offset + rejected.first_or(0); }
+        offset += 32;
+    }
+    while offset < bytes.len() {
+        if contains_byte(bytes[offset], set) == false { return offset; }
+        offset += 1;
+    }
+    return offset;
+}

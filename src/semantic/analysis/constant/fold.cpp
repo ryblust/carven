@@ -188,7 +188,11 @@ auto fold_constant_expression(ProgramDraft& draft, SemanticExpression& source) n
             const auto receiver = draft.constant(*operation.operands.front().expression.constant);
             operation.operation.visit([&](auto& intrinsic) noexcept {
                 using Intrinsic = std::remove_cvref_t<decltype(intrinsic)>;
-                if constexpr (std::same_as<Intrinsic, TextIntrinsic>) {
+                if constexpr (std::same_as<Intrinsic, FloatIntrinsic>) {
+                    retain(
+                        evaluate_float_intrinsic_constant_value(draft, intrinsic, receiver, *type)
+                    );
+                } else if constexpr (std::same_as<Intrinsic, TextIntrinsic>) {
                     retain(
                         evaluate_text_intrinsic_constant_value(draft, intrinsic, receiver, *type)
                     );

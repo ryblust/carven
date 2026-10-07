@@ -43,6 +43,37 @@ const TestSuite suite([] static noexcept {
             expect(!(function(result, 4).const_span.has_value()));
         };
 
+    "Parser declaration: class operations retain const qualifiers and private visibility"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "class Counter { value: i32, "
+                "const fn create() -> Counter => { value: 0 }; "
+                "private const fn read(self) -> i32 => self.value; "
+                "fn reset(&self) { self.value = 0; } }"
+            );
+            const auto result = parse_valid(text);
+            const auto ast = result.view();
+            const auto& record = get<ASTRecordDecl>(ast.item(root(result).items[0]));
+            if (!expect_equal(record.operations.size(), 3uz)) {
+                return;
+            }
+            for (const auto index : {0uz, 1uz}) {
+                const auto& operation = get<ASTFunctionDecl>(ast.item(record.operations[index]));
+                if (!expect(operation.const_span.has_value())) {
+                    return;
+                }
+                expect_equal(slice(text, *operation.const_span), std::string_view("const"));
+            }
+            expect(
+                is<ASTPrivateDeclarationVisibility>(
+                    get<ASTFunctionDecl>(ast.item(record.operations[1])).visibility
+                )
+            );
+            expect(!get<ASTFunctionDecl>(ast.item(record.operations[2])).const_span.has_value());
+            check_invalid("class Counter { const private fn read(self) -> i32 => 0; }");
+            check_invalid("class Counter { const value = 0; }");
+        };
+
     "Parser declaration: module root separates imports from ordered top-level items"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view(
@@ -701,6 +732,33 @@ const TestSuite suite([] static noexcept {
                 std::string_view("println(value);")
             );
         };
+    "Parser declaration: top-level static controls belong to the implicit entry"_test =
+        [] static noexcept {
+            static constexpr auto text = std::string_view(
+                "const answer = 2;\n"
+                "const fn twice(value: i32) -> i32 => value * 2;\n"
+                "const test { check(answer == 2); }\n"
+                "const { assert(answer == 2); }\n"
+                "const for value in [answer] { println(value); }\n"
+                "const if true { println(answer); }\n"
+            );
+            const auto result = parse_valid(text);
+            const auto ast = result.view();
+            if (!expect_equal(root(result).items.size(), 5uz)) {
+                return;
+            }
+            expect(is<ASTConstantDecl>(ast.item(root(result).items[0])));
+            expect(function(result, 1).const_span.has_value());
+            expect(is<ASTTestDecl>(ast.item(root(result).items[2])));
+            expect(is<ASTConstBlock>(ast.item(root(result).items[3])));
+            const auto& entry = function(result, 4);
+            require(entry.is_implicit_entry);
+            const auto& implementation = std::get<ASTFunctionBody>(entry.implementation);
+            const auto& body = ast.block(std::get<ASTBlockID>(implementation.body));
+            require(body.statements.size() == 2uz);
+            expect(is<ASTForStmt>(ast.statement(body.statements[0])));
+            expect(is<ASTIfForm>(ast.statement(body.statements[1])));
+        };
     "Parser: named function parameters retain const qualifiers and spans"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view(
@@ -745,6 +803,59 @@ const TestSuite suite([] static noexcept {
                 "fn take(const &&index: i32) {}",
                 "const parameter cannot have an access marker"
             );
+        };
+
+    "Parser declaration: nominal and callable type parameters share a nonempty clause"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "struct Pair<T, U,> { first: T, second: U } "
+                "enum Maybe<T,> { None, Some(T) } "
+                "class Owner<T> { value: T, fn read(self) -> T => self.value; } "
+                "fn relay<T>(&&value: T) -> T => &&value;"
+            );
+            const auto tree = parse_valid(text);
+            const auto& pair = get<ASTRecordDecl>(item(tree, 0));
+            const auto& maybe = get<ASTEnumDecl>(item(tree, 1));
+            const auto& owner = get<ASTRecordDecl>(item(tree, 2));
+            const auto& relay = function(tree, 3);
+            if (!expect(pair.type_parameters.has_value())
+                || !expect(maybe.type_parameters.has_value())
+                || !expect(owner.type_parameters.has_value())
+                || !expect(relay.type_parameters.has_value())) {
+                return;
+            }
+            if (!expect_equal(pair.type_parameters->names.size(), 2uz)
+                || !expect_equal(maybe.type_parameters->names.size(), 1uz)
+                || !expect_equal(owner.type_parameters->names.size(), 1uz)
+                || !expect_equal(relay.type_parameters->names.size(), 1uz)
+                || !expect_equal(owner.operations.size(), 1uz)) {
+                return;
+            }
+            expect_equal(slice(text, pair.type_parameters->span), std::string_view("<T, U,>"));
+            expect_equal(slice(text, pair.type_parameters->names[0]), std::string_view("T"));
+            expect_equal(slice(text, pair.type_parameters->names[1]), std::string_view("U"));
+            const auto& read = get<ASTFunctionDecl>(tree.view().item(owner.operations[0]));
+            expect(!read.type_parameters.has_value());
+            const auto repeated = parse_valid("struct Pair<T, T> { value: T }");
+            const auto& repeated_pair = get<ASTRecordDecl>(item(repeated, 0));
+            if (expect(repeated_pair.type_parameters.has_value())) {
+                expect_equal(repeated_pair.type_parameters->names.size(), 2uz);
+            }
+        };
+
+    "Parser declaration: type parameter clauses reject missing names and value arguments"_test =
+        [] static noexcept {
+            constexpr auto inputs = std::array {
+                "struct Box<> { value: i32 }",
+                "class Box<,T> { value: T }",
+                "enum Maybe<T,,U> { None }",
+                "fn relay<4>(value: i32) {}",
+                "fn relay<T(value: T) {}",
+                "struct Box<T: Copy> { value: T }",
+            };
+            for (const auto input : inputs) {
+                check_invalid(input);
+            }
         };
 });
 

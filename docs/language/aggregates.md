@@ -2,12 +2,13 @@
 
 [Language](README.md)
 
-This page defines classes, structures, arrays, enums, and their construction.
+This page defines classes, structures, arrays, owning sequences, enums, and their construction.
 
 - [Ordinary value classes](#ordinary-value-classes)
 - [Contextual construction](#contextual-construction)
 - [Structures and arrays](#structures-and-arrays)
 - [Enums](#enums)
+- [Owning sequences](#owning-sequences)
 
 ## Ordinary value classes
 
@@ -61,9 +62,12 @@ Structural display prints the class name without expanding its fields. Generated
 C++ represents checked operations as ordinary functions. External C++
 implementations follow their explicit interoperation contracts.
 
-Static execution rejects class values and operations. Class
-representation patterns, nested class declarations, and C++ import/export
-methods are invalid.
+A class operation may be `const fn` under ordinary execution capability rules.
+It can construct and use class values inside `const fn` bodies, `const` blocks,
+and static tests, with the same representation access rules. Direct class-operation
+calls in module constant initializers, local `const` initializers outside a static block or test, and type-forming constant expressions
+require a `const fn` wrapper. Class representation patterns, nested class
+declarations, and C++ import/export methods are invalid.
 
 ## Contextual construction
 
@@ -118,6 +122,7 @@ Default initialization is a type operation with these values:
 | `str` or `String` | Empty text; String owns its independent storage |
 | `ptr<T>` or `ptr<&T>` | Null pointer, subject to ordinary non-null checks |
 | `[T]` | Empty read-only slice |
+| `Sequence<T>` | Empty owning sequence; no element default is required |
 | `range<T>` | Empty exclusive range from zero to zero |
 | `[T; N]` | N independently default-initialized elements |
 | Structure | All fields recursively default-initialized |
@@ -147,13 +152,27 @@ an owning value during execution. Native defaults remain delegated to C++ and
 are outside Carven's interpreter and constant executor.
 
 An array type has one element type and a constant nonnegative extent. A
-zero-length array type is valid and still carries its element type. Without an
-expected array or slice type, an array literal must be nonempty; its element
-type is inferred from an unambiguous element, its extent is the element count,
-and every element must be compatible. An expected `[T; N]` supplies the element
-type and requires exactly N elements. An expected `[T]` supplies the element
-type and borrows the resulting array under ordinary lifetime rules. Empty `[]`
-is valid with either an expected `[T; 0]` or `[T]`.
+zero-length array type is valid and still carries its element type. A
+comma-separated literal has an extent equal to its element count. Without an
+expected array or slice type, it must be nonempty; its element type is inferred
+from an unambiguous element, and every element must be compatible. An expected
+`[T; N]` supplies the element type and requires exactly N elements. An expected
+`[T]` supplies the element type and borrows the resulting array under ordinary
+lifetime rules. Empty `[]` is valid with either an expected `[T; 0]` or `[T]`.
+
+Arrays provide `len() -> usize` and `is_empty() -> bool` directly. These queries
+use the fixed extent while evaluating the receiver once, including its effects
+and failures; no slice conversion is required.
+
+`[expression; N]` constructs an array with N elements. N follows the same
+constant nonnegative extent rules as `[T; N]`. An expected array or slice supplies
+the element type; otherwise it is inferred from the expression. An expected
+array extent must equal N. Each element evaluates the expression afresh in
+index order, with ordinary access and lifetime rules. For N = 0, the expression
+is checked and determines the element type but is not executed. No element
+default is required. If an element fails, construction stops and already
+constructed elements follow ordinary cleanup rules. Literal expansion is bounded
+by the compiler's construction budgets.
 
 Array indexing accepts an integer index. A constant negative index or one
 greater than or equal to the extent is diagnosed before lowering. A dynamic
@@ -167,6 +186,36 @@ enum payloads, or arrays; a zero-length array still contributes its element
 edge. Function parameter and result types do not contribute storage edges.
 Declaration-surface visibility recursively follows the
 [audience rules](modules.md#declarations-and-names).
+
+## Owning sequences
+
+`Sequence<T>` owns an ordered collection of initialized values. It supports
+deep copying, whole-owner transfer, checked Read and Write indexing, and
+iteration. Taking an indexed element is invalid; the collection keeps every
+element initialized. Recursive products and enums can contain sequences of
+their own values.
+
+```carven
+var names = Sequence<String> {};
+names.push("first" as String);
+names[0] = "updated" as String;
+for name in names { check(name.as_str() == "updated"); }
+```
+
+`len()` and `is_empty()` read the sequence. `push(value)` copies an element;
+`push(&&value)` transfers it. `remove(index)` removes one checked position and
+`clear()` removes all elements. Structural mutation requires Write access and
+cannot run while element storage is borrowed, including through nested fields.
+Write iteration updates elements while retaining the sequence owner.
+
+Elements must have Carven-defined owning value semantics. Borrowed text, slices,
+callable values and views, external C++ values, and products containing them are
+invalid elements. Raw pointers keep their ordinary pointer contracts. The
+sequence exposes neither contiguous slices nor uninitialized storage.
+
+Sequences and payload borrowing are admitted in runtime code. They are not
+admitted in constant or interpreted execution. Sequence storage is a runtime
+facility; it does not extend the rules for operations on generic type parameters.
 
 ## Enums
 

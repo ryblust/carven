@@ -10,15 +10,17 @@ struct TypeContents final {
     bool contains_closure_owner;
     // Also propagates through slice element types and native C++ template arguments.
     bool contains_callable_view;
-    // Owned Array or String storage.
+    // Owned Array, Sequence or String storage.
     bool contains_storage_owner;
+    // Borrowed Str, StrCharsView, or Slice held by value; empty arrays contain none.
+    bool contains_storage_view;
     // Native C++ values held by value, including inside Carven aggregates.
     bool contains_native_value;
     // Possible String storage held by value; zero-length arrays stop propagation.
     // Implies contains_storage_owner.
     bool contains_string_storage;
 
-    // Read preserves the identity of owned Array, String, or closure storage.
+    // Read preserves the identity of owned Array, Sequence, String, or closure storage.
     auto read_borrows_storage() const noexcept -> bool;
     // Read is a value snapshot with no owned Carven storage or native value.
     auto read_is_value_snapshot() const noexcept -> bool;

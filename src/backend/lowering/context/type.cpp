@@ -350,6 +350,16 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                     .const_qualified = false
                 };
             },
+            [&](const OwnedSequenceTypeValue& value) noexcept -> TargetType {
+                return {
+                    .value =
+                        TargetIntrinsicType {
+                            .symbol = TargetSymbol::RuntimeSequence,
+                            .type_argument_ids = {lower_type(value.element, scope)},
+                        },
+                    .const_qualified = false
+                };
+            },
             [&](const RangeTypeValue& value) noexcept -> TargetType {
                 return {
                     .value =

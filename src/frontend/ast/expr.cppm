@@ -63,6 +63,11 @@ struct ASTArrayExpr final {
     std::vector<ASTExprID> element_ids;
 };
 
+struct ASTArrayRepeatExpr final {
+    ASTExprID element;
+    ASTExprID extent;
+};
+
 struct ASTPositionalInitializerList final {
     Span span;
     std::vector<ASTExprID> values;
@@ -122,6 +127,12 @@ struct ASTCastExpr final {
 
 struct ASTCallArgument final {
     ASTExprID expression;
+};
+
+struct ASTTypeApplicationExpr final {
+    ASTExprID operand_id;
+    Span arguments_span;
+    std::vector<ASTTypeID> arguments;
 };
 
 struct ASTCallExpr final {
@@ -191,12 +202,14 @@ struct ASTExpr final {
         ASTContextualCaseExpr,
         ASTGroupExpr,
         ASTArrayExpr,
+        ASTArrayRepeatExpr,
         ASTConstructionExpr,
         ASTPrefixExpr,
         ASTAccessExpr,
         ASTBinaryExpr,
         ASTRangeExpr,
         ASTCastExpr,
+        ASTTypeApplicationExpr,
         ASTCallExpr,
         ASTIndexExpr,
         ASTMemberExpr,

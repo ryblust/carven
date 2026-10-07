@@ -1,0 +1,65 @@
+import std::json.value using Value;
+import std::json.error using { JSONError, ValueError };
+import std::json.validation using validate;
+
+// Every escaped ASCII byte must recover its scalar, including embedded NUL.
+test "JSON: serialization preserves scalars and escapes controls" {
+    try {
+        var text = String {};
+        for scalar in 0u32..32u32 {
+            text.push(char::from_u32_unchecked(scalar));
+        }
+        text.append("\"\\/é你好😀");
+        let value = Value::string(text);
+        let encoded = value.to_json()?;
+        validate(encoded)?;
+        check(Value::parse(encoded)?.as_string()? == text);
+        check(Value::string("").to_json()? == "\"\"");
+        check(Value::null().to_json()? == "null");
+        check(Value::boolean(true).to_json()? == "true");
+        check(Value::boolean(false).to_json()? == "false");
+    } catch {
+        JSONError(_) => check(false),
+        ValueError(_) => check(false),
+    }
+}
+
+test "JSON: serialization preserves member order, duplicates and number spelling" {
+    try {
+        let input = r#"{"x":1E400,"x":-0,"items":[[],{},1.2300e+04]}"#;
+        let value = Value::parse(input)?;
+        let encoded = value.to_json()?;
+        check(encoded.as_str() == input);
+        check(Value::parse(encoded)?.to_json()?.as_str() == input);
+    } catch {
+        JSONError(_) => check(false),
+        ValueError(_) => check(false),
+    }
+}
+
+test "JSON: writing checks the container depth of constructed values" {
+    try {
+        var nested = Value::null();
+        for _ in 0..64 {
+            var parent = Value::array();
+            parent.push(&&nested)?;
+            nested = &&parent;
+        }
+        validate(nested.to_json()?)?;
+        var parent = Value::array();
+        parent.push(&&nested)?;
+        var rejected = false;
+        try {
+            let _ = parent.to_json()?;
+        } catch {
+            ValueError(error) => {
+                check(error == .DepthLimit);
+                rejected = true;
+            },
+        }
+        check(rejected);
+    } catch {
+        JSONError(_) => check(false),
+        ValueError(_) => check(false),
+    }
+}

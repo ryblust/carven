@@ -1,0 +1,13 @@
+enum Node {
+    Null,
+    Boolean(bool),
+    Number(String),
+    Text(String),
+    Array(Sequence<Node>),
+    Object(Sequence<Member>),
+}
+
+struct Member {
+    key: String,
+    value: Node,
+}

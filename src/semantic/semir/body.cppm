@@ -66,8 +66,15 @@ struct CaptureBindingStorage final {
     CaptureMode mode;
 };
 
-using BindingStorage =
-    std::variant<OwnerBindingStorage, ParameterBindingStorage, CaptureBindingStorage>;
+struct AliasBindingStorage final {
+    AccessMode access;
+};
+
+using BindingStorage = std::variant<
+    OwnerBindingStorage,
+    ParameterBindingStorage,
+    CaptureBindingStorage,
+    AliasBindingStorage>;
 
 struct LocalBinding final {
     ProgramSpellingID name;

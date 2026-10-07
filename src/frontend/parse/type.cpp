@@ -71,6 +71,29 @@ auto Parser::parse_named_type() noexcept -> std::optional<ASTTypeID> {
     );
 }
 
+auto Parser::parse_type_arguments() noexcept -> ParsedTypeForm<std::vector<ASTTypeID>> {
+    const auto left = expect(TokenKind::Less, "expected '<' before type arguments");
+    auto arguments = std::vector<ASTTypeID>();
+    while (!failed) {
+        const auto argument = parse_type();
+        if (!argument) {
+            break;
+        }
+        arguments.push_back(*argument);
+        if (!match(TokenKind::Comma) || check(TokenKind::Greater) || check(TokenKind::RightShift)) {
+            break;
+        }
+    }
+    auto end = current().span;
+    if (check(TokenKind::RightShift)) {
+        end = Span::from_bounds(end.start(), end.start() + 1);
+        split_right_shift = true;
+    } else {
+        end = expect(TokenKind::Greater, "expected '>' after type arguments").span;
+    }
+    return {.span = join(left.span, end), .value = std::move(arguments)};
+}
+
 auto Parser::parse_named_type_form() noexcept -> ParsedTypeForm<ASTNamedType> {
     const auto global_root = match(TokenKind::ColonColon);
     const auto start = expect(TokenKind::Identifier, "expected type name");
@@ -85,20 +108,10 @@ auto Parser::parse_named_type_form() noexcept -> ParsedTypeForm<ASTNamedType> {
     }
 
     auto arguments = std::vector<ASTTypeID>();
-    if (match(TokenKind::Less)) {
-        do {
-            auto argument = parse_type();
-            if (!argument.has_value()) {
-                break;
-            }
-            arguments.push_back(*argument);
-        } while (match(TokenKind::Comma));
-        if (check(TokenKind::RightShift)) {
-            end = Span::from_bounds(current().span.start(), current().span.start() + 1);
-            split_right_shift = true;
-        } else {
-            end = expect(TokenKind::Greater, "expected '>' after type arguments").span;
-        }
+    if (check(TokenKind::Less)) {
+        auto parsed = parse_type_arguments();
+        arguments = std::move(parsed.value);
+        end = parsed.span;
     }
     return ParsedTypeForm<ASTNamedType> {
         .span = join(global_root.has_value() ? global_root->span : start.span, end),

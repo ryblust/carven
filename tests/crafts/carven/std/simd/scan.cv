@@ -1,0 +1,220 @@
+
+import std::simd.scan using {
+    one_of,
+    byte_range,
+    set_union,
+    match_set,
+    count_where,
+    find_where,
+    find_from,
+    prefix_where,
+    prefix_end,
+};
+
+private const chosen = one_of([0u8, 0x0f, 0x10, 0x70, 0x80, 0x8f, 0xf0, 0xff, 0xff]);
+private const digits = byte_range(0x30, 0x39);
+private const crossing = byte_range(0x70, 0x90);
+private const stops = set_union(byte_range(0, 31), one_of([0x22, 0x5c]));
+private const whitespace = one_of(" \t\r\n".bytes);
+private const every_byte = byte_range(0, 255);
+private const no_bytes = one_of([]);
+
+const fn verify_general_sets() -> bool {
+    var data: [u8; 256] = {};
+    for block in 0usize..8 {
+        var values: [u8; 32] = {};
+        var expected_bits: u32 = 0;
+        var expected_count: usize = 0;
+        var first: usize = 32;
+        var prefix: usize = 0;
+        for lane in 0usize..32 {
+            // Odd multiplication visits every byte while mixing nibble banks within a block.
+            let byte = ((block * 32 + lane) * 17) as u8;
+            values[lane] = byte;
+            data[block * 32 + lane] = byte;
+            let expected = byte
+                == 0
+                || byte == 0x0f
+                || byte == 0x10
+                || byte == 0x70
+                || byte == 0x80
+                || byte == 0x8f
+                || byte == 0xf0
+                || byte == 0xff;
+            if expected {
+                expected_bits |= 1u32 << (lane as u32);
+                expected_count += 1;
+                if first == 32 { first = lane; }
+                if prefix == lane { prefix += 1; }
+            }
+        }
+        let vector = u8x32::from_array(values);
+        assert(match_set(vector, chosen).bits() == expected_bits);
+        assert(match_set(vector, set_union(chosen, chosen)).bits() == expected_bits);
+        assert(count_where(values, chosen) == expected_count);
+        assert(prefix_where(values, chosen) == prefix);
+        if first == 32 {
+            assert(find_where(values, chosen) == .Missing);
+        } else {
+            assert(find_where(values, chosen) == .Found(first));
+        }
+    }
+    assert(count_where(data, chosen) == 8);
+    assert(find_where(data, chosen) == .Found(0));
+    assert(prefix_where(data, chosen) == 1);
+    return true;
+}
+
+const fn verify_run_sets() -> bool {
+    for value in 0u16..256 {
+        let byte = value as u8;
+        let vector = u8x32::splat(byte);
+        let stops_bits: u32 = if byte < 32 || byte == 0x22 || byte == 0x5c {
+            0xffffffff
+        } else {
+            0
+        };
+        let digit_bits: u32 = if byte >= 0x30 && byte <= 0x39 { 0xffffffff } else { 0 };
+        let crossing_bits: u32 = if byte >= 0x70 && byte <= 0x90 { 0xffffffff } else { 0 };
+        let whitespace_bits: u32 = if byte == 0x20 || byte == 9 || byte == 10 || byte == 13 {
+            0xffffffff
+        } else {
+            0
+        };
+        assert(match_set(vector, stops).bits() == stops_bits);
+        assert(match_set(vector, digits).bits() == digit_bits);
+        assert(match_set(vector, crossing).bits() == crossing_bits);
+        assert(match_set(vector, whitespace).bits() == whitespace_bits);
+    }
+    return true;
+}
+
+const fn verify_extreme_sets() -> bool {
+    for value in 0u16..256 {
+        let byte = value as u8;
+        let vector = u8x32::splat(byte);
+        let singleton_bits: u32 = if byte == 0x80 { 0xffffffff } else { 0 };
+        assert(match_set(vector, one_of([0x80])).bits() == singleton_bits);
+        assert(match_set(vector, every_byte).bits() == 0xffffffff);
+        assert(match_set(vector, no_bytes).bits() == 0);
+    }
+    return true;
+}
+
+const fn verify_queries() -> bool {
+    var data: [u8; 97] = {};
+    for index in [0usize, 15, 16, 31, 32, 63, 64, 96] {
+        data[index] = 0xff;
+    }
+    for length in [0usize, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 96, 97] {
+        let bytes = data.as_slice().slice(0, length);
+        var expected: usize = 0;
+        for byte in bytes {
+            if byte == 0xff { expected += 1; }
+        }
+        assert(count_where(bytes, one_of([0xff])) == expected);
+        assert(count_where(bytes, one_of([0])) == length - expected);
+        assert(count_where(bytes, every_byte) == length);
+        assert(prefix_where(bytes, every_byte) == length);
+        assert(prefix_where(bytes, no_bytes) == 0);
+        assert(find_where(bytes, no_bytes) == .Missing);
+        if length == 0 {
+            assert(find_where(bytes, every_byte) == .Missing);
+        } else {
+            assert(find_where(bytes, every_byte) == .Found(0));
+        }
+        if length != 0 { assert(find_where(bytes, one_of([0xff])) == .Found(0)); }
+    }
+    var single: [u8; 97] = {};
+    for position in [0usize, 15, 16, 31, 32, 63, 64, 96] {
+        single[position] = 0xff;
+        assert(find_where(single, one_of([0xff])) == .Found(position));
+        single[position] = 0;
+    }
+    let leading: [u8; 5] = [0x30, 0x31, 0x39, 0, 0x35];
+    assert(prefix_where(leading, digits) == 3);
+    assert(prefix_end(leading, 1, digits) == 3);
+    assert(prefix_end(leading, 3, digits) == 3);
+    assert(prefix_end(leading, 4, digits) == 5);
+    assert(prefix_end(leading, 5, digits) == 5);
+    for start in [0usize, 1, 15, 16, 31, 32, 63, 64, 65, 96, 97] {
+        var first = data.as_slice().len();
+        for index in start..data.as_slice().len() {
+            if data[index] == 0xff {
+                first = index;
+                break;
+            }
+        }
+        if first == data.as_slice().len() {
+            assert(find_from(data, start, one_of([0xff])) == .Missing);
+        } else {
+            assert(find_from(data, start, one_of([0xff])) == .Found(first));
+        }
+        assert(find_from(data, start, no_bytes) == .Missing);
+        assert(prefix_end(data, start, no_bytes) == start);
+        assert(prefix_end(data, start, every_byte) == data.as_slice().len());
+    }
+    let general: [u8; 5] = [0x0f, 0x80, 0xff, 0x81, 0x70];
+    assert(count_where(general, chosen) == 4);
+    assert(prefix_where(general, chosen) == 3);
+    assert(find_where(general, chosen) == .Found(0));
+    let absent: [u8; 33] = {};
+    assert(find_where(absent, one_of([0xff])) == .Missing);
+    return true;
+}
+
+const test "SIMD scan: general sets preserve membership and union" {
+    check(verify_general_sets());
+}
+
+const test "SIMD scan: ranges and their unions preserve membership" {
+    check(verify_run_sets());
+}
+
+const test "SIMD scan: singleton, empty and complete sets preserve membership" {
+    check(verify_extreme_sets());
+}
+
+test "SIMD scan: native sets express byte membership" {
+    check(verify_general_sets());
+    check(verify_run_sets());
+    check(verify_extreme_sets());
+}
+
+const test "SIMD scan: queries preserve slice bounds and first positions" {
+    check(verify_queries());
+}
+
+test "SIMD scan: native queries preserve slice bounds and first positions" {
+    check(verify_queries());
+}
+
+test "SIMD scan: dense counts preserve long slices and tails" {
+    var data: [u8; 65537] = {};
+    for length in [
+            16256usize,
+            16257,
+            16287,
+            16320,
+            16321,
+            16351,
+            16384,
+            16385,
+            16415,
+            32640,
+            32641,
+            32671,
+            65536,
+            65537,
+        ] {
+        let bytes = data.as_slice().slice(0, length);
+        check(count_where(bytes, one_of([0])) == length);
+        check(count_where(bytes, one_of([1])) == 0);
+    }
+    for index in 0usize..65537 {
+        data[index] = (index % 2) as u8;
+    }
+    check(count_where(data, one_of([0])) == 32769);
+    check(count_where(data, one_of([1])) == 32768);
+    check(count_where(data, chosen) == 32769);
+}

@@ -54,12 +54,104 @@ private const fn verify_wide_bits_and_lookup() -> bool {
     return true;
 }
 
+private const fn verify_mask_counts() -> bool {
+    assert((u8x16::splat(0) == 0).count() == 16);
+    assert((u8x16::splat(0) != 0).count() == 0);
+    assert((u8x32::splat(0) == 0).count() == 32);
+    assert((u8x32::splat(0) != 0).count() == 0);
+    assert((f32x4::splat(0.0) == 0.0).count() == 4);
+    assert((f32x4::splat(0.0) != 0.0).count() == 0);
+    assert((f32x8::splat(0.0) == 0.0).count() == 8);
+    assert((f32x8::splat(0.0) != 0.0).count() == 0);
+    let endpoint_16 = u8x16::splat(0).with_lane(15, 1) == 1;
+    for lane in 0usize..16 {
+        var values: [u8; 16] = {};
+        values[lane] = 1;
+        let selected = u8x16::from_array(values) == 1;
+        let rest = ~selected;
+        assert(selected.count() == 1 && rest.count() == 15);
+        let overlap = (lane == 15) as usize;
+        assert((selected | endpoint_16).count() == 2 - overlap);
+        assert((selected & endpoint_16).count() == overlap);
+        assert((selected ^ endpoint_16).count() == 2 - 2 * overlap);
+    }
+    let endpoint_32 = u8x32::splat(0).with_lane(31, 1) == 1;
+    for lane in 0usize..32 {
+        var values: [u8; 32] = {};
+        values[lane] = 1;
+        let selected = u8x32::from_array(values) == 1;
+        let rest = ~selected;
+        assert(selected.count() == 1 && rest.count() == 31);
+        let overlap = (lane == 31) as usize;
+        assert((selected | endpoint_32).count() == 2 - overlap);
+        assert((selected & endpoint_32).count() == overlap);
+        assert((selected ^ endpoint_32).count() == 2 - 2 * overlap);
+        if lane < 16 {
+            values[lane + 16] = 1;
+            assert((u8x32::from_array(values) == 1).count() == 2);
+        }
+    }
+    let endpoint_4 = f32x4::splat(0.0).with_lane(3, 1.0) == 1.0;
+    for lane in 0usize..4 {
+        var values: [f32; 4] = {};
+        values[lane] = 1.0;
+        let selected = f32x4::from_array(values) == 1.0;
+        let rest = ~selected;
+        assert(selected.count() == 1 && rest.count() == 3);
+        let overlap = (lane == 3) as usize;
+        assert((selected | endpoint_4).count() == 2 - overlap);
+        assert((selected & endpoint_4).count() == overlap);
+        assert((selected ^ endpoint_4).count() == 2 - 2 * overlap);
+    }
+    let endpoint_8 = f32x8::splat(0.0).with_lane(7, 1.0) == 1.0;
+    for lane in 0usize..8 {
+        var values: [f32; 8] = {};
+        values[lane] = 1.0;
+        let selected = f32x8::from_array(values) == 1.0;
+        let rest = ~selected;
+        assert(selected.count() == 1 && rest.count() == 7);
+        let overlap = (lane == 7) as usize;
+        assert((selected | endpoint_8).count() == 2 - overlap);
+        assert((selected & endpoint_8).count() == overlap);
+        assert((selected ^ endpoint_8).count() == 2 - 2 * overlap);
+        if lane < 4 {
+            values[lane + 4] = 1.0;
+            assert((f32x8::from_array(values) == 1.0).count() == 2);
+        }
+    }
+    return true;
+}
+
+private const fn verify_byte_sums() -> bool {
+    assert(u8x16::splat(0).sum() == 0);
+    assert(u8x16::splat(255).sum() == 4080);
+    assert(u8x32::splat(0).sum() == 0);
+    assert(u8x32::splat(255).sum() == 8160);
+    let endpoints = u8x32::splat(0).with_lane(0, 255).with_lane(15, 128).with_lane(
+        16,
+        254
+    ).with_lane(31, 129);
+    let exact: usize = endpoints.sum();
+    assert(exact == 766);
+    var bytes: [u8; 32] = {};
+    for index in 0usize..32 {
+        bytes[index] = (index * 17 + 3) as u8;
+    }
+    assert(u8x16::load(bytes.as_slice(), 0).sum() == 1832);
+    assert(u8x32::from_array(bytes).sum() == 3664);
+    return true;
+}
+
 const test "SIMD: narrow shapes and wide mask bits preserve logical contracts" {
     check(verify_narrow_primitives());
     check(verify_wide_bits_and_lookup());
+    check(verify_mask_counts());
+    check(verify_byte_sums());
 }
 
 test "SIMD: native narrow shapes and cross-register byte lookup agree" {
     check(verify_narrow_primitives());
     check(verify_wide_bits_and_lookup());
+    check(verify_mask_counts());
+    check(verify_byte_sums());
 }

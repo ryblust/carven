@@ -3,6 +3,7 @@ module carven:semantic.analysis.body.expr_site.impl;
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.expr_site;
 import :semantic.analysis.constant.fold;
+import :semantic.analysis.construction.limits;
 import :semantic.analysis.construction.requests;
 import :semantic.analysis.expr.aggregate;
 import :semantic.analysis.expr.interpolation;
@@ -205,9 +206,29 @@ auto BodyExprSite::extension(
 }
 
 auto BodyExprSite::extension(
+    const ASTTypeApplicationExpr&,
+    Span span,
+    std::optional<ConstructionTypeRef>
+) noexcept -> ExpressionTask<Selection> {
+    co_return std::unexpected(fail(
+        span,
+        DiagnosticCode::TypeGenericArguments,
+        "type arguments require a generic function or a nominal type qualifier"
+    ));
+}
+
+auto BodyExprSite::extension(
     const ASTArrayExpr& value,
     Span span,
     [[maybe_unused]] std::optional<ConstructionTypeRef> expected
+) noexcept -> ExpressionTask<Selection> {
+    co_return (co_await construct_array_expression(*this, value, span, expected));
+}
+
+auto BodyExprSite::extension(
+    const ASTArrayRepeatExpr& value,
+    Span span,
+    std::optional<ConstructionTypeRef> expected
 ) noexcept -> ExpressionTask<Selection> {
     co_return (co_await construct_array_expression(*this, value, span, expected));
 }
@@ -434,7 +455,7 @@ auto BodyExprSite::finish(
     SemanticExpressionValue&& value,
     std::optional<ConstantID> known,
     Span span,
-    BodyPendingFailureTerms pending,
+    BodyPendingFailures pending,
     bool completes
 ) noexcept -> ExpressionResult<Value> {
     auto result = body.make_built(type, std::move(value), span, std::move(pending), known);
@@ -486,8 +507,28 @@ auto BodyExprSite::infer_type(Value& value, Span span) noexcept
     return body.infer_value_type(value, span);
 }
 
-auto BodyExprSite::aggregate_cost(std::size_t, Span) const noexcept -> ExpressionResult<void> {
+auto BodyExprSite::aggregate_cost(std::size_t count, Span span) noexcept -> ExpressionResult<void> {
+    if (count > maximum_construction_work - body.aggregate_construction_work) {
+        return std::unexpected(
+            fail(span, DiagnosticCode::ConstLimit, "aggregate construction exceeds its work budget")
+        );
+    }
+    body.aggregate_construction_work += count;
     return {};
+}
+
+auto BodyExprSite::resolve_array_extent(ASTExprID expression) noexcept
+    -> AnalysisTask<std::uint64_t> {
+    co_return (co_await body.resolve_array_extent(expression));
+}
+
+auto BodyExprSite::pending_checkpoint() const noexcept -> std::monostate {
+    return {};
+}
+
+auto BodyExprSite::consume_unexecuted_read(Value value, std::monostate, Span span) noexcept
+    -> ExpressionResult<SemanticExpression> {
+    return body.consume_value(value, span, AccessMode::Read);
 }
 
 auto BodyExprSite::aggregate_admitted(ConstructionTypeRef, Span) const noexcept
@@ -533,6 +574,13 @@ auto BodyExprSite::consume_read(OperandState& state, Value value, Span span) noe
     append_pending_failures(state.pending, take_pending_failures(value));
     auto result = body.consume_value(value, span, AccessMode::Read);
     return result;
+}
+
+auto BodyExprSite::consume_take(OperandState& state, Value value, Span span) noexcept
+    -> ExpressionResult<SemanticExpression> {
+    state.completes &= value.completes;
+    append_pending_failures(state.pending, take_pending_failures(value));
+    return body.consume_value(value, span, AccessMode::Take);
 }
 
 auto BodyExprSite::finish_constructed(

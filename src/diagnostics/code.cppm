@@ -128,6 +128,10 @@ enum class DiagnosticCode {
     TypeEnumCaseArity,
     TypeEnumContext,
     TypeEqualityUnsupported,
+    TypeGenericArguments,
+    TypeGenericDefinition,
+    TypeGenericExpansion,
+    TypeGenericLimits,
     TypeRecursiveStorage,
     TypeVisibilityLeak,
     TypeIfBranch,
@@ -158,6 +162,7 @@ enum class DiagnosticCode {
     TypeTextProperty,
     TypeUnresolved,
     TypeUpdateInteger,
+    TypeSequenceElement,
     TypeValueRequired,
 };
 

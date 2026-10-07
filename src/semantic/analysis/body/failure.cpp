@@ -44,7 +44,7 @@ auto BodyElaborator::build_try(
     const auto try_reachable = reachable;
     const auto outer_failure = failure_context_for_current_path();
     const auto protected_failures = draft().add_empty_failure_term();
-    auto pending = BodyPendingFailureTerms();
+    auto pending = BodyPendingFailures();
     auto result_type = expected;
     push_frame(((ast.branch_block(source.body))).span);
     reachable = true;
@@ -88,7 +88,7 @@ auto BodyElaborator::build_try(
         failure_contexts.push_back({range_failures, outer_failure.accepts_catch_residual});
         auto alternatives = std::vector<SemCatchAlternative>();
         auto coverage_alternatives = std::vector<CatchCoverageAlternative>();
-        auto accepted_pieces = std::vector<FailureTermID>();
+        auto accepted_pieces = std::vector<ConstructionFailureRef>();
         auto catches_all = false;
         for (const auto& alternative : arm.pattern.alternatives) {
             auto alternative_names = std::flat_set<std::string, std::less<>>();
@@ -301,7 +301,7 @@ auto BodyElaborator::build_try(
             std::ranges::unique(exhaustive_types).begin(),
             exhaustive_types.end()
         );
-        auto useful_pieces = std::vector<FailureTermID>();
+        auto useful_pieces = std::vector<ConstructionFailureRef>();
         useful_pieces.reserve(accepted_pieces.size());
         for (auto index = 0uz; index < accepted_pieces.size(); ++index) {
             if (alternatives[index].reachable) {
@@ -342,7 +342,7 @@ auto BodyElaborator::build_try(
             BodyFailureContext {local_failures, outer_failure.accepts_catch_residual};
         failure_contexts.push_back(local_failure);
         catches.push_back({accepted, local_failure});
-        auto arm_pending = BodyPendingFailureTerms();
+        auto arm_pending = BodyPendingFailures();
         auto guard_tree = std::optional<SemanticExpression>();
         auto body_reachable = pattern_accepted;
         auto guard_may_reject = false;

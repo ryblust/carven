@@ -1,7 +1,7 @@
 module;
-#include <carven/runtime/utf.hpp>
+#include <carven/runtime/text/text.hpp>
 
-module carven:test.internal.runtime.utf;
+module carven:test.internal.runtime.utf8;
 
 import :test.harness.framework;
 import std;

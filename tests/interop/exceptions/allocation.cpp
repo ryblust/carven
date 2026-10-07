@@ -6,7 +6,7 @@
 #include <carven/api/tests/interop/exceptions/precomputed.hpp>
 
 #include <carven/runtime/format.hpp>
-#include <carven/runtime/string.hpp>
+#include <carven/runtime/text/text.hpp>
 
 #include <csignal>
 #include <cstdio>

@@ -1,0 +1,64 @@
+import "lifetimes/owning_fields.hpp" using owning_field_probe::{ Resource, count };
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{ CopyOwner, reset, matches };
+import .construction using fixed_plain;
+
+private struct InitializationFailure {}
+
+private fn create(&attempts: i32) -> Resource {
+    attempts += 1;
+    return Resource { 1 };
+}
+
+private fn checked_create(&attempts: i32) -> Resource throw InitializationFailure {
+    attempts += 1;
+    if attempts == 2 { throw InitializationFailure {}; }
+    return Resource { 1 };
+}
+
+test "Array initialization: repeated factories directly construct native owners" {
+    var attempts = 0;
+    if true {
+        let values = [create(&attempts); 3];
+        check(attempts == 3);
+        check(count(1) == 3);
+        check(values[0].id() == 1);
+        check(values[2].id() == 1);
+    }
+    check(count(1) == 0);
+    let empty: [Resource; 0] = [create(&attempts); 0];
+    check(empty.as_slice().is_empty());
+    check(attempts == 3);
+    check(count(1) == 0);
+}
+
+test "Array initialization: a failing factory cleans prior owners and stops construction" {
+    var attempts = 0;
+    try {
+        let values = [checked_create(&attempts)?; 4];
+        fail("expected initialization failure");
+    } catch {
+        InitializationFailure(_) => {},
+    }
+    check(attempts == 2);
+    check(count(1) == 0);
+}
+
+test "Array initialization: repeated results directly initialize immovable elements" {
+    reset();
+    if true {
+        let values = [fixed_plain(); 2];
+        check(values[1].probe(0, 0));
+    }
+    check(matches("42 42 9 -42 -42 "));
+}
+
+test "Array initialization: zero lambda occurrences do not copy native captures" {
+    reset();
+    if true {
+        let owner = CopyOwner { 1 };
+        let empty = [[owner]() -> i32 => owner.id; 0];
+        check(empty.as_slice().is_empty());
+        check(matches("1 "));
+    }
+    check(matches("1 -1 "));
+}

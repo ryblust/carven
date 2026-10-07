@@ -271,10 +271,23 @@ auto BodyRealizer::lower_match(
         && !delayed_bindings.contains(named->binding);
     const auto subject =
         direct ? binding_locals.at(named->binding) : fresh_local(TargetTemporaryNameKind::Owner);
+    const auto writable = std::ranges::any_of(value.arms, [&](const auto& arm) noexcept {
+        return std::ranges::any_of(arm.bindings, [&](LocalBindingID id) noexcept {
+            const auto* alias = std::get_if<AliasBindingStorage>(&metadata.binding(id).storage);
+            return alias != nullptr && alias->access == AccessMode::Write;
+        });
+    });
+    if (direct
+        && writable
+        && std::holds_alternative<OwnerBindingStorage>(metadata.binding(named->binding).storage)) {
+        mutable_owners.emplace(subject);
+    }
     if (!direct) {
         auto subject_value = scope.accept((co_await operand({
             .expression = std::addressof(*value.subject),
-            .use = value.subject_is_place ? PreparedUse::ConstPlace : PreparedUse::Consume,
+            .use = !value.subject_is_place ? PreparedUse::Consume
+                : writable                 ? PreparedUse::WritePlace
+                                           : PreparedUse::ConstPlace,
             .demand = PreparedDemand::Value,
         })));
         if (!scope.continues()) {

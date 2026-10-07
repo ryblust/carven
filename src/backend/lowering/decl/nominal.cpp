@@ -145,7 +145,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         );
     }
 
-    auto private_members = std::vector<TargetClassMember>();
+    auto storage_members = std::vector<TargetClassMember>();
     auto alternatives = std::vector<TargetTypeID>();
     for (auto case_index = 0uz; case_index < cases.size(); ++case_index) {
         auto record_members = std::vector<TargetRecordMember>();
@@ -158,7 +158,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 }
             );
         }
-        const auto record = representation.cases[case_index].record_type;
+        const auto record = representation.case_records[case_index];
         const auto record_type = context.named_type(TargetName {record});
         if (declaration.supports_equality) {
             record_members.push_back(
@@ -183,7 +183,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 }
             );
         }
-        private_members.push_back(
+        storage_members.push_back(
             TargetNestedRecord {
                 .name = record,
                 .members = std::move(record_members),
@@ -199,14 +199,14 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             },
         .const_qualified = false,
     });
-    private_members.push_back(
+    storage_members.push_back(
         TargetTypeAlias {
             .name = representation.storage_type,
             .type = variant,
         }
     );
     const auto storage_type = context.named_type(TargetName {representation.storage_type});
-    private_members.push_back(
+    storage_members.push_back(
         TargetMemberVariable {
             .type = storage_type,
             .name = representation.storage_member,
@@ -214,70 +214,10 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
             .const_specifier = false,
         }
     );
-    const auto input_storage = context.target().add_local(representation.storage_member);
-    auto initializers = std::vector<TargetMemberInitializer>();
-    initializers.push_back({
-        .name = representation.storage_member,
-        .value = transfer_expression(name_expression(input_storage)),
-    });
-    private_members.push_back(
-        TargetConstructorDecl {
-            .name = enum_name,
-            .parameters = target_parameters(
-                {.local = input_storage,
-                 .type = context.reference_type(storage_type, false, true),
-                 .default_value = std::nullopt}
-            ),
-            .initializers = std::move(initializers),
-            .constexpr_specifier = false,
-            .explicit_specifier = true,
-        }
-    );
-
-    auto projection_members = std::vector<TargetClassMember>();
-    for (auto case_index = 0uz; case_index < cases.size(); ++case_index) {
-        const auto record = representation.cases[case_index].record_type;
-        auto arguments =
-            target_expressions(address_expression(name_expression(representation.storage_member)));
-        auto body = std::vector<TargetStmt>();
-        body.push_back(generated_statement(
-            TargetReturnStmt {
-                .expression = template_call_expression(
-                    intrinsic_expression(TargetSymbol::StdGetIf),
-                    {context.named_type(TargetName {record})},
-                    std::move(arguments)
-                ),
-            }
-        ));
-        projection_members.push_back(
-            TargetMemberFunctionDecl {
-                .name = representation.cases[case_index].projection_function,
-                .parameters = {},
-                .result = context.pointer_type(context.named_type(TargetName {record}, true)),
-                .form = TargetMemberFunctionDefinition {.body = std::move(body)},
-                .maybe_unused = false,
-                .static_specifier = false,
-                .constexpr_specifier = false,
-                .friend_specifier = false,
-                .result_reference = false,
-                .const_qualified = true,
-            }
-        );
-    }
 
     auto sections = std::vector<TargetClassSection>();
-    sections.push_back({
-        .access = TargetClassAccess::Public,
-        .members = std::move(public_members),
-    });
-    sections.push_back({
-        .access = TargetClassAccess::Private,
-        .members = std::move(private_members),
-    });
-    sections.push_back({
-        .access = TargetClassAccess::Public,
-        .members = std::move(projection_members),
-    });
+    public_members.append_range(storage_members | std::views::as_rvalue);
+    sections.push_back({.access = TargetClassAccess::Public, .members = std::move(public_members)});
     auto result = std::vector<TargetItem>();
     result.push_back(source_item(
         context.semantic(),
@@ -293,7 +233,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
         const auto& sum_case = cases[case_index];
         const auto record_name = TargetName::from_components({
             enum_name,
-            representation.cases[case_index].record_type,
+            representation.case_records[case_index],
         });
         const auto record_type = context.named_type(record_name);
         const auto member_name = TargetName::from_components({enum_name, sum_case.name});
@@ -330,7 +270,7 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 },
             }
         ));
-        result.push_back(expansion_item(
+        context.defer_enum_factory(expansion_item(
             context.semantic(),
             source.origin,
             TargetDecl {TargetFunctionDecl {

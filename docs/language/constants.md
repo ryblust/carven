@@ -5,9 +5,10 @@
 This page defines constant values, static execution, and result
 freezing. A program has two stages. The static stage executes during
 compilation; the runtime stage is the generated program. `const fn` states that
-a function can execute in the static stage. A `const` declaration, `const if`,
-`const for`, `const { ... }`, and `const test` state that execution happens
-there. A constant is the completed, frozen value such execution produces.
+a function can execute in the static stage. A `const` declaration, `const { ... }`,
+and `const test` execute there. `const if` selects an arm and `const for` expands
+iterations during compilation; their remaining statements execute in the body's
+stage. A constant is a completed, frozen value produced by static execution.
 
 - [Module constants](#module-constants)
 - [Constant expressions](#constant-expressions)
@@ -56,7 +57,7 @@ initializer freezes its result to `str`. Fixed-array literals, struct
 construction, indexing, and field access also produce constants for the
 aggregate types admitted during static execution. Arrays support equality
 when their element type supports it. Arrays retain `[T; N]`; structs retain their
-nominal type.
+nominal type. Array `len()` and `is_empty()` queries also produce constants.
 An explicit `[T]` constant annotation or `as_slice()` in a constant initializer
 retains a completed array as a frozen slice. Its `len`, `is_empty`, indexing,
 and `slice` queries can also produce constants. Calls to ordinary `fn` and direct

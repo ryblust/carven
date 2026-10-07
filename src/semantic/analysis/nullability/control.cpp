@@ -180,7 +180,16 @@ auto NullabilityBodyAnalyzer::bind_pattern(
     body.pattern(id).value.visit(
         Overloaded {
             [&](const BindingPattern& pattern) noexcept {
-                store(state, {.root = pattern.binding, .path = {}}, value);
+                // Establishing a binding does not mutate its observed storage.
+                std::erase_if(state.facts, [&](const auto& entry) noexcept {
+                    return entry.first.root == pattern.binding;
+                });
+                for (const auto& [path, fact] : value) {
+                    state.facts.insert_or_assign(
+                        NullPlace {.root = pattern.binding, .path = path},
+                        fact
+                    );
+                }
             },
             [&](const EnumCasePattern& pattern) noexcept {
                 for (const auto [index, child] : std::views::enumerate(pattern.payload)) {
@@ -188,9 +197,14 @@ auto NullabilityBodyAnalyzer::bind_pattern(
                 }
             },
             [&](const OrPattern& pattern) noexcept {
-                // Alternative layouts can differ; every bound ptr starts unknown.
+                auto joined = std::optional<NullNormal>();
                 for (const auto child : pattern.alternatives) {
-                    bind_pattern(state, child, {});
+                    auto candidate = state;
+                    bind_pattern(candidate, child, value);
+                    join_null_normal(joined, std::optional(NullNormal {std::move(candidate), {}}));
+                }
+                if (joined) {
+                    state = std::move(joined->state);
                 }
             },
             [](const auto&) static noexcept {},
@@ -237,7 +251,15 @@ auto NullabilityBodyAnalyzer::match(const SemMatch& source, NullState state) noe
         }
         auto selected = *remaining;
         const auto place = source.subject_is_place ? location(*source.subject) : std::nullopt;
+        if (place && std::ranges::any_of(arm.bindings, [&](LocalBindingID binding) noexcept {
+                return std::holds_alternative<AliasBindingStorage>(body.binding(binding).storage);
+            })) {
+            // Pattern aliases share this owner. Existing exposed-storage
+            // invalidation discards proofs when either name may be written.
+            selected.state.exposed.insert(place->root);
+        }
         bind_pattern(selected.state, arm.pattern, place ? value_at(selected.state, *place) : saved);
+
         auto checked_pattern = (co_await pattern_condition(
             arm.pattern,
             arm.pattern_bounds,

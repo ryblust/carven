@@ -270,6 +270,27 @@ const TestSuite suite([] static noexcept {
                 "fn f() {\n    let s = f\"\"\"\n  {f\"\"\"\n    {value + 1}\n\"\"\"}\n  tail\n\"\"\";\n}\n"
             );
         };
+
+    "Graver format: generic clauses preserve application and comparison syntax"_test =
+        [] static noexcept {
+            check_format(
+                "struct Box < T , U , >{first:T,second:U}"
+                "fn relay < T > (&&value:T)->T=>&&value;"
+                "relay < Box < i32 , u8 > , > (value);"
+                "Owner < i32 > :: create(value);"
+                "a < b > (c);(a < b)>c;value>>amount;",
+                "struct Box<T, U,> {\n"
+                "    first: T,\n"
+                "    second: U\n"
+                "}\n\n"
+                "fn relay<T>(&&value: T) -> T => &&value;\n\n"
+                "relay<Box<i32, u8>,>(value);\n"
+                "Owner<i32>::create(value);\n"
+                "a<b>(c);\n"
+                "(a < b) > c;\n"
+                "value >> amount;\n"
+            );
+        };
 });
 
 } // namespace

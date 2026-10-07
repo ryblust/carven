@@ -285,7 +285,10 @@ auto lower_module_schedule(
             },
         });
     }
-    for (const auto nominal : schedule.private_nominal_order) {
+    for (const auto nominal : schedule.source_nominal_order) {
+        result.nominal_declarations.push_back(lower_forward_declaration(context, nominal));
+    }
+    for (const auto nominal : schedule.source_nominal_order) {
         auto lowered = lower_declaration(
             context,
             nominal.visit([]<typename ID>(ID id) static noexcept -> DeclarationRef {
@@ -295,8 +298,9 @@ auto lower_module_schedule(
             false
         );
         append_items(result.nominal_declarations, context.take_query_aliases());
-        result.nominal_declarations.push_back(namespace_item(std::nullopt, std::move(lowered)));
+        append_items(result.nominal_declarations, std::move(lowered));
     }
+    append_items(result.nominal_declarations, context.take_enum_factories());
     auto functions = std::flat_map<CallableID, FunctionID>();
     for (const auto item : module_decl.items) {
         const auto* function = std::get_if<FunctionID>(&item);

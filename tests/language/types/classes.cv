@@ -27,16 +27,16 @@ private fn argument(&trace: i32) -> i32 {
     return 5;
 }
 
-private class Sequence {
+private class Receiver {
     value: i32,
 
-    fn create(value: i32) -> Sequence => { value: value };
+    fn create(value: i32) -> Receiver => { value: value };
     fn sum(self, value: i32) -> i32 => self.value + value;
 }
 
-private fn sequence(&trace: i32) -> Sequence {
+private fn receiver(&trace: i32) -> Receiver {
     trace = trace * 10 + 1;
-    return Sequence::create(7);
+    return Receiver::create(7);
 }
 
 test "Classes: factories, receivers and lexical access compose ordinary value rules" {
@@ -51,7 +51,7 @@ test "Classes: factories, receivers and lexical access compose ordinary value ru
     let _ = Empty::create();
     check(counter.read() == 8);
     var trace = 0;
-    check(sequence(&trace).sum(argument(&trace)) == 12);
+    check(receiver(&trace).sum(argument(&trace)) == 12);
     check(trace == 12);
     let array = [Counter::create(1), Counter::create(2)];
     check(array[1].read() == 2);
@@ -95,4 +95,30 @@ test "Classes: Take builder delivers its owning string" {
     let result = builder.build();
     check(result.as_str() == "Carven");
     check(TextBuilder::create().build().as_str() == "");
+}
+
+private class StaticCounter {
+    value: i32,
+
+    private const fn initial(value: i32) -> i32 => if value < 0 { 0 } else { value };
+
+    const fn create(value: i32) -> StaticCounter => { value: StaticCounter::initial(value) };
+
+    const fn increment(&self) {
+        self.value += 1;
+    }
+
+    const fn read(self) -> i32 => self.value;
+}
+
+private const fn static_counter_value() -> i32 {
+    var counter = StaticCounter::create(-1);
+    counter.increment();
+    var copy = counter;
+    copy.increment();
+    return counter.read() * 10 + copy.read();
+}
+
+const test "Classes: const operations preserve private construction, mutation and independent copies" {
+    check(static_counter_value() == 12);
 }

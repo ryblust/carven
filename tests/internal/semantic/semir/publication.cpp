@@ -536,6 +536,45 @@ const TestSuite suite([] static noexcept {
             check_residual_static_statement(ResidualStaticStatement::Loop, false);
             check_residual_static_statement(ResidualStaticStatement::Loop, true);
         };
+    "SemIR publication: closure declarations are shared by zero or multiple occurrences"_test =
+        [] static noexcept {
+            for (const auto count : {0uz, 2uz}) {
+                const auto program = analyze_test_program(
+                    std::format("fn make() {{ let values = [[]() -> i32 => 7; {}]; }}", count)
+                );
+                auto closure_count = 0uz;
+                auto closure = std::optional<CallableID>();
+                for (const auto [callable, declaration] : program.declarations().callables()) {
+                    if (const auto* implementation =
+                            std::get_if<ClosureBodyImplementation>(&declaration.implementation)) {
+                        ++closure_count;
+                        closure = callable;
+                        expect(
+                            program.declarations().callable_for_body(implementation->body)
+                            == callable
+                        );
+                    }
+                }
+                if (!expect_equal(closure_count, 1uz) || !expect(closure.has_value())) {
+                    return;
+                }
+                auto occurrences = 0uz;
+                for (const auto [body_id, body] : program.bodies().entries()) {
+                    static_cast<void>(body_id);
+                    visit_semantic_nodes(
+                        body.region(),
+                        [&](const SemanticExpression& value) noexcept {
+                            if (const auto* construction = std::get_if<SemClosure>(&value.value)) {
+                                expect(construction->callable == *closure);
+                                ++occurrences;
+                            }
+                        }
+                    );
+                }
+                expect_equal(occurrences, count);
+            }
+        };
+
     "SemIR publication: declarations retain body identities when static bodies are removed"_test =
         [] static noexcept {
             auto sources = SourceManager();

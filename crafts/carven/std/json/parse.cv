@@ -1,0 +1,95 @@
+import .node using { Node, Member };
+import .error using JSONError;
+import .syntax using { SyntaxState, SyntaxEvent, syntax_state, next_event, validate_number };
+import std::utf.validation using validate_utf8;
+import std::utf.error using UTF8Error;
+
+private fn read_string(bytes: [u8], &state: SyntaxState) -> String throw JSONError {
+    var result = String {};
+    while {
+        match next_event(bytes, &state)? {
+            .StringEscape(start, end, character) => {
+                result.append(str::from_utf8_unchecked(bytes.slice(start, end)));
+                result.push(character);
+            },
+            .StringEnd(start, end) => {
+                result.append(str::from_utf8_unchecked(bytes.slice(start, end)));
+                return &&result;
+            },
+            _ => assert(false),
+        }
+    }
+}
+
+// Recursion builds the tree from checked events; syntax alone limits depth.
+private fn read_value(
+    bytes: [u8],
+    &state: SyntaxState,
+    event: SyntaxEvent
+) -> Node throw JSONError {
+    match event {
+        .Null => return .Null,
+        .Boolean(value) => return .Boolean(value),
+        .Number(start, end) => {
+            return .Number(str::from_utf8_unchecked(bytes.slice(start, end)) as String);
+        },
+        .StringBegin(is_key) => {
+            assert(is_key == false);
+            let text = read_string(bytes, &state)?;
+            return .Text(&&text);
+        },
+        .ArrayBegin => {
+            var result: Sequence<Node> = {};
+            while {
+                let element = next_event(bytes, &state)?;
+                match element {
+                    .ArrayEnd => return .Array(&&result),
+                    _ => {
+                        let child = read_value(bytes, &state, element)?;
+                        result.push(&&child);
+                    },
+                }
+            }
+        },
+        .ObjectBegin => {
+            var result: Sequence<Member> = {};
+            while {
+                match next_event(bytes, &state)? {
+                    .ObjectEnd => return .Object(&&result),
+                    .StringBegin(is_key) => {
+                        assert(is_key);
+                        let key = read_string(bytes, &state)?;
+                        let element = next_event(bytes, &state)?;
+                        let child = read_value(bytes, &state, element)?;
+                        let member = Member {
+                            key: (&&key),
+                            value: (&&child)
+                        };
+                        result.push(&&member);
+                    },
+                    _ => assert(false),
+                }
+            }
+        },
+        _ => assert(false),
+    }
+    return .Null;
+}
+
+fn parse_node(text: str) -> Node throw JSONError {
+    var state = syntax_state();
+    let event = next_event(text.bytes, &state)?;
+    let result = read_value(text.bytes, &state, event)?;
+    assert(next_event(text.bytes, &state)? == .Complete);
+    return &&result;
+}
+
+fn parse_node_bytes(bytes: [u8]) -> Node throw JSONError + UTF8Error {
+    validate_utf8(bytes)?;
+    return parse_node(str::from_utf8_unchecked(bytes))?;
+}
+
+fn parse_number_node(text: str) -> Node throw JSONError {
+    validate_number(text.bytes)?;
+    return .Number(text as String);
+}

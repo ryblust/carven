@@ -23,8 +23,8 @@ use the same name representation.
 These describe native C++ syntax, with type dependencies visited normally.
 
 Structure declarations lower to C++ aggregates containing their declared fields.
-Payload enum factories, storage constructors, and projections are ordinary C++
-functions. Carven evaluates source constants during semantic analysis; their
+Payload enum factories are ordinary C++ functions. Payload access uses
+standard variant selection on the checked case record. Carven evaluates source constants during semantic analysis; their
 uses reconstruct the normalized values through the same target operations.
 
 ## Constants and default values
@@ -77,7 +77,7 @@ The qualifier alone supplies no call-result fact or permission to discard a call
 ## Parameters and access
 
 Read parameters, Read argument temporaries, and Read range bindings preserve
-Carven array, String, and closure storage, including storage in Carven aggregate
+Carven array, Sequence, String, and closure storage, including storage in Carven aggregate
 fields, through const references. Lowering uses the resolved type-contents query
 shared with ownership analysis. Other pure Carven Read parameters use const
 values. Types containing native C++ values by value use
@@ -184,10 +184,11 @@ by their interoperation contracts.
 
 ## Failure and test-stop ABI
 
-`FailureABI` gives each failure set a deterministic member order. Failing
-results use `Outcome`; other results are direct. Widening accepts identity or a
-strict failure-set superset. Calls, propagation, handlers, and callable
-adaptation use this one contract.
+`FailureABI` orders failure members by the shared canonical type content identity,
+including the source declaration and normalized generic arguments. Generic
+nominal target naming uses the same identity. Failing results use `Outcome`;
+other results are direct. Widening accepts identity or a strict failure-set superset.
+Calls, propagation, handlers, and callable adaptation use this one contract.
 
 A concrete callable whose published effect admits
 test stop returns `Outcome<Result, TestStopped, Failures...>`. Callable views

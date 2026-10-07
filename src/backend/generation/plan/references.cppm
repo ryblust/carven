@@ -8,6 +8,8 @@ import std;
 
 enum class TargetTypeCompleteness {
     Declaration,
+    // The carrier layout can precede the element; its operations cannot.
+    DeferredCompleteDefinition,
     CompleteDefinition,
 };
 

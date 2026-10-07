@@ -178,6 +178,27 @@ auto ASTDumper::render_expression(
 }
 
 auto ASTDumper::render_expression(
+    const ASTArrayRepeatExpr& array,
+    ASTExprID expression,
+    std::string_view prefix,
+    bool is_last,
+    std::string_view field
+) noexcept -> void {
+    append_line(
+        prefix,
+        is_last,
+        std::format(
+            "{}ArrayRepeatExpression {}",
+            field,
+            format_dump_span(ast.expression(expression).span)
+        )
+    );
+    const auto nested = child_prefix(prefix, is_last);
+    render_expression(array.element, nested, false, "element ");
+    render_expression(array.extent, nested, true, "extent ");
+}
+
+auto ASTDumper::render_expression(
     const ASTConstructionExpr& construction,
     ASTExprID expression,
     std::string_view prefix,
@@ -320,6 +341,35 @@ auto ASTDumper::render_expression(
     render_expression(cast.operand_id, nested_prefix, false, "operand ");
     render_span_field(nested_prefix, false, "operator", cast.operator_span);
     render_type(cast.target_type, nested_prefix, true, "target ");
+}
+
+auto ASTDumper::render_expression(
+    const ASTTypeApplicationExpr& application,
+    ASTExprID expression,
+    std::string_view prefix,
+    bool is_last,
+    std::string_view field
+) noexcept -> void {
+    append_line(
+        prefix,
+        is_last,
+        std::format(
+            "{}TypeApplicationExpression {}",
+            field,
+            format_dump_span(ast.expression(expression).span)
+        )
+    );
+    const auto nested = child_prefix(prefix, is_last);
+    render_expression(application.operand_id, nested, false, "operand ");
+    render_list(
+        nested,
+        true,
+        "type_arguments",
+        application.arguments,
+        [&](ASTTypeID type, std::string_view item_prefix, bool item_last) noexcept {
+            render_type(type, item_prefix, item_last);
+        }
+    );
 }
 
 auto ASTDumper::render_expression(

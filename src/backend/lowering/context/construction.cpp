@@ -72,6 +72,23 @@ auto static_member_expression(TargetTypeID owner, TargetIdentifier member) noexc
     };
 }
 
+auto ModuleLowering::enum_payload_projection(
+    EnumID id,
+    std::size_t case_index,
+    TargetExpr subject
+) noexcept -> TargetExpr {
+    const auto& representation = payload_enum(id);
+    auto record_name = enumeration_name(id);
+    record_name.append(representation.case_records[case_index]);
+    return template_call_expression(
+        intrinsic_expression(TargetSymbol::StdGetIf),
+        {named_type(std::move(record_name))},
+        target_expressions(
+            address_expression(member_expression(std::move(subject), representation.storage_member))
+        )
+    );
+}
+
 auto address_expression(TargetExpr operand) noexcept -> TargetExpr {
     return {
         .value = TargetPrefixExpr {

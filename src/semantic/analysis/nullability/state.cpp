@@ -74,6 +74,7 @@ NullabilityBodyAnalyzer::NullabilityBodyAnalyzer(
                     return storage.mode == CaptureMode::Write;
                 },
                 [](const OwnerBindingStorage&) static noexcept { return false; },
+                [](const AliasBindingStorage&) static noexcept { return true; },
             }
         );
         if (aliases) {
@@ -280,6 +281,11 @@ auto NullabilityBodyAnalyzer::scan_write(
             [&](const SemCpp& value) noexcept {
                 visit_cpp_operands(value, argument);
                 invalidate_exposed(state);
+            },
+            [&](const SemIntrinsic& value) noexcept {
+                for (const auto& operand : value.operands) {
+                    argument(operand.access, operand.expression);
+                }
             },
             [&](const SemClosure& value) noexcept {
                 for (const auto& capture : value.captures) {

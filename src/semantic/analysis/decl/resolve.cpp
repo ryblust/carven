@@ -29,122 +29,8 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-auto DeclResolver::resolve_equality_support(std::span<const ConstructionTypeRef> roots) noexcept
-    -> std::vector<bool> {
-    auto indices = std::map<ConstructionTypeRef, std::size_t>();
-    auto types = std::vector<ConstructionTypeRef>();
-    auto dependents = std::vector<std::vector<std::size_t>>();
-    auto supported = std::vector<bool>();
-    const auto intern = [&](ConstructionTypeRef type) noexcept {
-        const auto [entry, inserted] = indices.try_emplace(type, types.size());
-        if (inserted) {
-            types.push_back(type);
-            dependents.emplace_back();
-            supported.push_back(true);
-        }
-        return entry->second;
-    };
-    auto root_indices = std::vector<std::size_t>();
-    for (const auto type : roots) {
-        root_indices.push_back(intern(type));
-    }
-    for (auto index = 0uz; index < types.size(); ++index) {
-        const auto type = types[index];
-        const auto depend = [&](ConstructionTypeRef dependency) noexcept {
-            const auto child = intern(dependency);
-            dependents[child].push_back(index);
-        };
-        if (const auto* term = std::get_if<TypeTermID>(&type)) {
-            const auto construction = draft.construction_type_copy(*term);
-            if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
-                depend(array->element);
-            } else {
-                supported[index] = false;
-            }
-            continue;
-        }
-        draft.type_copy(std::get<TypeID>(type))
-            .value.visit(
-                Overloaded {
-                    [&](const BuiltinTypeValue& value) noexcept {
-                        supported[index] = builtin_type_supports_equality(value.kind);
-                    },
-                    [&](const StructTypeValue&) noexcept { supported[index] = false; },
-                    [&](const EnumTypeValue& value) noexcept {
-                        if (value.enumeration.index() >= enumerations.size()
-                            || !enumerations[value.enumeration.index()].has_value()) {
-                            supported[index] = false;
-                            return;
-                        }
-                        const auto& declaration = *enumerations[value.enumeration.index()];
-                        if (std::holds_alternative<NumericEnumRepresentation>(
-                                declaration.representation
-                            )) {
-                            return;
-                        }
-                        for (const auto case_id : declaration.cases) {
-                            for (const auto payload : enum_cases[case_id.index()]->payload_types) {
-                                depend(payload);
-                            }
-                        }
-                    },
-                    [&](const ArrayTypeValue& value) noexcept { depend(value.element); },
-                    [](const PointerTypeValue&) static noexcept {},
-                    [&]<typename Value>(const Value&) noexcept {
-                        static_assert(
-                            std::same_as<Value, FunctionTypeValue>
-                            || std::same_as<Value, ClosureTypeValue>
-                            || std::same_as<Value, CallableViewTypeValue>
-                            || std::same_as<Value, CppTypeValue>
-                            || std::same_as<Value, RangeTypeValue>
-                            || std::same_as<Value, SliceTypeValue>
-                        );
-                        supported[index] = false;
-                    },
-                }
-            );
-    }
-    auto pending = std::vector<std::size_t>();
-    for (auto index = 0uz; index < supported.size(); ++index) {
-        if (!supported[index]) {
-            pending.push_back(index);
-        }
-    }
-    for (auto cursor = 0uz; cursor < pending.size(); ++cursor) {
-        for (const auto dependent : dependents[pending[cursor]]) {
-            if (supported[dependent]) {
-                supported[dependent] = false;
-                pending.push_back(dependent);
-            }
-        }
-    }
-    auto result = std::vector<bool>();
-    result.reserve(roots.size());
-    for (const auto index : root_indices) {
-        result.push_back(supported[index]);
-    }
-    return result;
-}
-
 auto DeclResolver::supports_equality(ConstructionTypeRef type) noexcept -> bool {
-    return resolve_equality_support(std::array {type}).front();
-}
-
-auto DeclResolver::finish_enum_equality() noexcept -> void {
-    auto types = std::vector<ConstructionTypeRef>();
-    auto declarations = std::vector<EnumDeclaration*>();
-    for (const auto& symbol : catalog.symbols()) {
-        if (const auto* form = std::get_if<CatalogEnumForm>(&symbol.form)) {
-            types.push_back(
-                draft.intern_type({.value = EnumTypeValue {.enumeration = form->enumeration}})
-            );
-            declarations.push_back(&*enumerations[form->enumeration.index()]);
-        }
-    }
-    const auto supported = resolve_equality_support(types);
-    for (auto index = 0uz; index < supported.size(); ++index) {
-        declarations[index]->supports_equality = supported[index];
-    }
+    return draft.equality_support(std::array {type}).front();
 }
 
 auto DeclResolver::publish_modules() noexcept -> void {
@@ -228,6 +114,7 @@ auto DeclResolver::finish_declarations() noexcept -> void {
         symbol.form.visit(
             Overloaded {
                 [](const CatalogFunctionForm&) static noexcept {},
+                [](const CatalogGenericForm&) static noexcept {},
                 [&](const CatalogStructForm& form) noexcept {
                     if (!structures[form.structure.index()].has_value()) {
                         invariant_violation("resolved struct has no declaration fact");
@@ -268,6 +155,11 @@ auto DeclResolver::finish_declarations() noexcept -> void {
         );
     }
     draft.finish_declaration_heads();
+    auto enum_roots = std::vector<TypeID>();
+    for (const auto id : draft.enum_declaration_ids()) {
+        enum_roots.push_back(draft.intern_type({.value = EnumTypeValue {.enumeration = id}}));
+    }
+    draft.resolve_enum_equality(enum_roots);
     heads_finished = true;
     for (const auto& symbol : catalog.symbols()) {
         const auto* form = std::get_if<CatalogFunctionForm>(&symbol.form);
@@ -308,6 +200,20 @@ DeclResolver::DeclResolver(
 
 auto DeclResolver::run() noexcept -> AnalysisTask<void> {
     for (const auto& symbol : catalog.symbols()) {
+        if (std::holds_alternative<CatalogGenericForm>(symbol.form)) {
+            static_cast<void>(
+                (co_await resolve(symbol.symbol_id, symbol.module_id, symbol.declaration_span))
+            );
+        }
+    }
+    if (const auto failure = draft.diagnostics().failure()) {
+        co_return std::unexpected(*failure);
+    }
+    auto checked_generics = draft.validate_generic_definitions();
+    if (!checked_generics) {
+        co_return checked_generics;
+    }
+    for (const auto& symbol : catalog.symbols()) {
         static_cast<void>(
             (co_await resolve(symbol.symbol_id, symbol.module_id, symbol.declaration_span))
         );
@@ -327,8 +233,10 @@ auto DeclResolver::run() noexcept -> AnalysisTask<void> {
     if (const auto failure = draft.diagnostics().failure()) {
         co_return std::unexpected(*failure);
     }
-    finish_enum_equality();
     finish_declarations();
+    if (const auto failure = draft.diagnostics().failure()) {
+        co_return std::unexpected(*failure);
+    }
     co_return {};
 }
 
@@ -428,6 +336,9 @@ auto DeclResolver::resolve_fresh(const CatalogSymbol& symbol) noexcept -> Analys
                     invariant_violation("enum catalog row does not match source syntax");
                 }
                 co_return (co_await resolve_enum(symbol, form, syntax, *source, item.span));
+            },
+            [&](const CatalogGenericForm& form) noexcept -> AnalysisTask<void> {
+                co_return (co_await resolve_generic_nominal(symbol, form));
             },
             [&](const CatalogConstantForm& form) noexcept -> AnalysisTask<void> {
                 const auto* source = std::get_if<ASTConstantDecl>(&item.value);
@@ -530,7 +441,9 @@ auto DeclResolver::ConstantScope::construction_requests() noexcept -> Constructi
 
 auto DeclResolver::ConstantScope::resolve_type_qualifier(ASTExprID expression) noexcept
     -> AnalysisTask<std::optional<TypeID>> {
-    co_return (co_await resolver.resolve_type_qualifier(module_id, syntax, expression));
+    co_return (
+        co_await resolver.resolve_type_qualifier(module_id, syntax, expression, generic_context)
+    );
 }
 
 auto DeclResolver::ConstantScope::resolve_enum_case(
@@ -554,7 +467,9 @@ auto DeclResolver::ConstantScope::resolve_construction_type(
         module_id,
         syntax,
         type,
-        extent
+        extent,
+        &resolver.requests,
+        generic_context
     ));
     if (result) {
         auto prepared = (co_await resolver.requests.ensure_type(*result, module_id, type.span));
@@ -567,7 +482,20 @@ auto DeclResolver::ConstantScope::resolve_construction_type(
 
 auto DeclResolver::ConstantScope::resolve_type(ASTTypeID type) noexcept
     -> AnalysisTask<ConstructionTypeRef> {
-    co_return (co_await resolver.resolve_type(module_id, syntax, type));
+    const auto extent = [&](ASTExprID expression) noexcept {
+        return evaluate_array_extent(resolver.draft, module_id, syntax, *this, expression);
+    };
+    co_return (co_await resolve_source_type(
+        resolver.draft,
+        resolver.catalog,
+        resolver.import_usage,
+        module_id,
+        syntax,
+        type,
+        extent,
+        &resolver.requests,
+        generic_context
+    ));
 }
 
 auto DeclResolver::ConstantScope::supports_equality(ConstructionTypeRef type) noexcept -> bool {
@@ -591,9 +519,16 @@ auto DeclResolver::resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTy
     const auto extent = [&](ASTExprID expression) noexcept {
         return evaluate_array_extent(draft, module_id, syntax, scope, expression);
     };
-    co_return (
-        co_await resolve_source_type(draft, catalog, import_usage, module_id, syntax, type, extent)
-    );
+    co_return (co_await resolve_source_type(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        syntax,
+        type,
+        extent,
+        &requests
+    ));
 }
 
 auto DeclResolver::resolve_value_type(
@@ -625,6 +560,7 @@ auto DeclResolver::resolve_failures(
         module_id,
         syntax,
         clause,
-        extent
+        extent,
+        &requests
     ));
 }

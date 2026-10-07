@@ -1,0 +1,211 @@
+import std::json.value using { Value, ValueKind };
+import std::json.error using ValueError;
+import std::json.error using JSONError;
+
+// Owning values and mutation are runtime contracts.
+test "JSON values: numeric construction and conversion preserve their one spelling" {
+    try {
+        let signed = Value::integer(-9223372036854775807i64 - 1);
+        let unsigned = Value::unsigned_integer(18446744073709551615u64);
+        check(signed.kind() == .Number);
+        check(signed.number_text()? == "-9223372036854775808");
+        check(signed.as_i64()? == -9223372036854775807i64 - 1);
+        check(unsigned.number_text()? == "18446744073709551615");
+        check(unsigned.as_u64()? == 18446744073709551615u64);
+        let real = Value::real(1.25)?;
+        check(real.number_text()? == "1.25");
+        check(real.as_f64()? == 1.25);
+        let exact = Value::number("1E400")?;
+        check(exact.number_text()? == "1E400");
+        check(exact.to_json()? == "1E400");
+        let negative_zero = Value::number("-0")?;
+        check(negative_zero.number_text()? == "-0");
+        check(negative_zero.as_i64()? == 0);
+        let decimal = Value::number("1.00e+02")?;
+        check(decimal.number_text()? == "1.00e+02");
+        check(decimal.as_f64()? == 100.0);
+        check(decimal.number_text()? == "1.00e+02");
+    } catch {
+        JSONError(_) => fail("valid numeric spelling must construct"),
+        ValueError(_) => fail("representable conversions must succeed"),
+    }
+}
+
+test "JSON values: unrepresentable numeric conversions and nonfinite construction fail" {
+    try {
+        let inputs = ["1E400", "9223372036854775808", "1.5", "1e2"];
+        for input in inputs {
+            let value = Value::number(input)?;
+            var rejected = false;
+            try {
+                let _ = value.as_i64()?;
+            } catch {
+                ValueError(error) => { rejected = error == .NumberConversion; },
+            }
+            check(rejected);
+            check(value.number_text()?.as_str() == input);
+        }
+        let negative = Value::number("-1")?;
+        var rejected = false;
+        try {
+            let _ = negative.as_u64()?;
+        } catch {
+            ValueError(error) => { rejected = error == .NumberConversion; },
+        }
+        check(rejected);
+        let huge = Value::number("1E400")?;
+        rejected = false;
+        try {
+            let _ = huge.as_f64()?;
+        } catch {
+            ValueError(error) => { rejected = error == .NumberConversion; },
+        }
+        check(rejected);
+        for value in [1.0f64 / 0.0, -1.0f64 / 0.0, 0.0f64 / 0.0] {
+            rejected = false;
+            try {
+                let _ = Value::real(value)?;
+            } catch {
+                ValueError(error) => { rejected = error == .NumberConversion; },
+            }
+            check(rejected);
+        }
+    } catch {
+        JSONError(_) => fail("number grammar must accept conversion failures"),
+        ValueError(_) => fail("reading valid numeric spelling must succeed"),
+    }
+}
+
+test "JSON values: array edits change their selected elements and preserve owned reads" {
+    try {
+        var array = Value::array();
+        array.push(&&Value::integer(1))?;
+        array.push(&&Value::string("你好"))?;
+        check(array.kind() == .Array && array.len()? == 2);
+        let snapshot = array.at(1)?;
+        array.set_at(1, &&Value::boolean(true))?;
+        check(snapshot.as_string()? == "你好");
+        check(array.at(1)?.as_bool()?);
+        array.remove_at(0)?;
+        check(array.len()? == 1 && array.at(0)?.as_bool()?);
+        let copied = array;
+        array.set_at(0, &&Value::null())?;
+        check(copied.at(0)?.as_bool()?);
+        check(array.at(0)?.kind() == .Null);
+    } catch {
+        ValueError(_) => fail("array edits within bounds must succeed"),
+    }
+}
+
+test "JSON values: ordered duplicate members use last lookup and complete erase" {
+    try {
+        var object = Value::object();
+        object.append_member("x", &&Value::integer(1))?;
+        object.append_member("y", &&Value::integer(2))?;
+        object.append_member("x", &&Value::integer(3))?;
+        check(object.len()? == 3);
+        check(object.key_at(0)? == "x" && object.key_at(1)? == "y");
+        check(object.member_at(0)?.as_i64()? == 1);
+        let snapshot = object.get("x")?;
+        object.set("x", &&Value::integer(4))?;
+        check(snapshot.as_i64()? == 3);
+        check(object.get("x")?.as_i64()? == 4);
+        check(object.member_at(0)?.as_i64()? == 1);
+        check(object.len()? == 3 && object.key_at(2)? == "x");
+        object.set("z", &&Value::boolean(false))?;
+        check(object.len()? == 4 && object.key_at(3)? == "z");
+        check(object.has("x")? && object.has("missing")? == false);
+        check(object.erase("x")? == 2);
+        check(object.erase("x")? == 0);
+        check(object.len()? == 2);
+        check(object.key_at(0)? == "y" && object.key_at(1)? == "z");
+    } catch {
+        ValueError(_) => fail("object lookup and mutation must preserve the member contract"),
+    }
+}
+
+test "JSON values: wrong kinds absent keys and invalid indices are typed failures" {
+    let scalar = Value::null();
+    var rejected = false;
+    try {
+        let _ = scalar.as_bool()?;
+    } catch {
+        ValueError(error) => { rejected = error == .WrongKind; },
+    }
+    check(rejected);
+    var array = Value::array();
+    rejected = false;
+    try {
+        let _ = array.at(0)?;
+    } catch {
+        ValueError(error) => { rejected = error == .IndexOutOfBounds; },
+    }
+    check(rejected);
+    rejected = false;
+    try {
+        array.set_at(0, &&Value::null())?;
+    } catch {
+        ValueError(error) => { rejected = error == .IndexOutOfBounds; },
+    }
+    check(rejected);
+    let object = Value::object();
+    rejected = false;
+    try {
+        let _ = object.get("missing")?;
+    } catch {
+        ValueError(error) => { rejected = error == .MissingKey; },
+    }
+    check(rejected);
+    rejected = false;
+    try {
+        let _ = object.key_at(0)?;
+    } catch {
+        ValueError(error) => { rejected = error == .IndexOutOfBounds; },
+    }
+    check(rejected);
+}
+
+test "JSON values: string construction and reads retain independent storage" {
+    try {
+        var input: String = "你好😀";
+        let value = Value::string(input);
+        input.clear();
+        check(value.as_string()? == "你好😀");
+        var decoded = value.as_string()?;
+        decoded.clear();
+        check(value.as_string()? == "你好😀");
+    } catch {
+        ValueError(_) => fail("owned values must remain available after input mutation"),
+    }
+}
+
+test "JSON values: number spelling construction accepts exactly one number" {
+    for input in ["", "null", "\"3\"", "1 ", "+1", "1,2"] {
+        var rejected = false;
+        try {
+            let _ = Value::number(input)?;
+        } catch {
+            JSONError(_) => { rejected = true; },
+        }
+        check(rejected, f"number input: {input}");
+    }
+}
+
+test "JSON values: nested edits use an owned child and replace the selected member" {
+    try {
+        var array = Value::array();
+        array.push(&&Value::integer(1))?;
+        var parent = Value::object();
+        parent.set("items", &&array)?;
+        parent.set("untouched", &&Value::string("stay"))?;
+        var child = parent.get("items")?;
+        child.push(&&Value::integer(2))?;
+        check(parent.get("items")?.len()? == 1);
+        parent.set("items", &&child)?;
+        check(parent.get("items")?.len()? == 2);
+        check(parent.get("items")?.at(1)?.as_i64()? == 2);
+        check(parent.get("untouched")?.as_string()? == "stay");
+    } catch {
+        ValueError(_) => fail("nested owned edits must update only their selected member"),
+    }
+}

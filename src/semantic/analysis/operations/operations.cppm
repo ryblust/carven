@@ -7,7 +7,9 @@ import :frontend.literal;
 import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.initialization;
+import :semantic.semir.operation;
 import :semantic.semir.program;
+import :semantic.semir.sequence;
 import :semantic.semir.type;
 import std;
 
@@ -48,7 +50,10 @@ auto select_structure_initializers(
     std::span<const ConstructionStructField> fields
 ) noexcept -> AnalysisResult<std::vector<StructureInitializer>>;
 
+enum class SequenceShapeKind { Array, Slice, OwnedSequence };
+
 struct SequenceShape final {
+    SequenceShapeKind kind;
     ConstructionTypeRef element;
     std::optional<std::uint64_t> extent;
 };
@@ -100,6 +105,7 @@ auto type_shapes_compatible(
     ConstructionTypeRef left,
     ConstructionTypeRef right
 ) noexcept -> bool;
+// Inspects construction shapes; nominal members are checked at their storage boundary.
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> bool;
 auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool;
@@ -142,6 +148,13 @@ auto decide_slice_method(
     std::size_t arguments
 ) noexcept -> std::expected<std::optional<SliceIntrinsic>, OperationDiagnostic>;
 
+auto decide_sequence_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<SequenceIntrinsic>, OperationDiagnostic>;
+
 auto decide_text_method(
     const ProgramDraft& draft,
     ConstructionTypeRef operand,
@@ -174,3 +187,10 @@ auto type_supports_equality(
     const DeclarationStore& declarations,
     TypeID type
 ) noexcept -> bool;
+
+auto decide_float_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<FloatIntrinsic>, OperationDiagnostic>;

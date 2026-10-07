@@ -1,0 +1,258 @@
+import std::number.parse using { ParseError, parse_i64, parse_u64, parse_f64 };
+import .error using { JSONError, ValueError };
+import .node using { Node, Member };
+import .parse using { parse_node, parse_node_bytes, parse_number_node };
+import .serialize using serialize_node;
+import std::utf.error using UTF8Error;
+
+export enum ValueKind: u8 {
+    Null,
+    Boolean,
+    Number,
+    String,
+    Array,
+    Object,
+}
+
+private fn find_member(members: Sequence<Member>, key: str) -> usize {
+    var index = members.len();
+    while index != 0 {
+        index -= 1;
+        if members[index].key.as_str() == key { return index; }
+    }
+    return members.len();
+}
+
+// Child and text access returns independent values.
+export class Value {
+    node: Node,
+
+    fn null() -> Value => { node:.Null };
+    fn boolean(value: bool) -> Value => { node:.Boolean(value) };
+    fn number(text: str) -> Value throw JSONError => { node: parse_number_node(text)? };
+    fn integer(value: i64) -> Value => { node:.Number(f"{value}") };
+    fn unsigned_integer(value: u64) -> Value => { node:.Number(f"{value}") };
+
+    fn real(value: f64) -> Value throw ValueError {
+        if value.is_finite() == false { throw ValueError::NumberConversion; }
+        return { node:.Number(f"{value}") };
+    }
+
+    fn string(text: str) -> Value => { node:.Text(text as String) };
+    fn array() -> Value => { node:.Array(Sequence<Node> {}) };
+    fn object() -> Value => { node:.Object(Sequence<Member> {}) };
+    fn parse(text: str) -> Value throw JSONError => { node: parse_node(text)? };
+
+    fn parse_bytes(bytes: [u8]) -> Value throw JSONError + UTF8Error => {
+        node: parse_node_bytes(bytes)?,
+    };
+
+    fn to_json(self) -> String throw ValueError => serialize_node(self.node)?;
+
+    fn kind(self) -> ValueKind {
+        return match self.node {
+            .Null => .Null,
+            .Boolean(_) => .Boolean,
+            .Number(_) => .Number,
+            .Text(_) => .String,
+            .Array(_) => .Array,
+            .Object(_) => .Object,
+        };
+    }
+
+    fn as_bool(self) -> bool throw ValueError {
+        match self.node {
+            .Boolean(value) => return value,
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn as_string(self) -> String throw ValueError {
+        match self.node {
+            .Text(ref text) => return text,
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn number_text(self) -> String throw ValueError {
+        match self.node {
+            .Number(ref text) => return text,
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn as_i64(self) -> i64 throw ValueError {
+        match self.node {
+            .Number(ref text) => {
+                return try {
+                    parse_i64(text.as_str())?
+                } catch {
+                    ParseError(_) => throw ValueError::NumberConversion,
+                };
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn as_u64(self) -> u64 throw ValueError {
+        match self.node {
+            .Number(ref text) => {
+                return try {
+                    parse_u64(text.as_str())?
+                } catch {
+                    ParseError(_) => throw ValueError::NumberConversion,
+                };
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn as_f64(self) -> f64 throw ValueError {
+        match self.node {
+            .Number(ref text) => {
+                return try {
+                    parse_f64(text.as_str())?
+                } catch {
+                    ParseError(_) => throw ValueError::NumberConversion,
+                };
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn len(self) -> usize throw ValueError {
+        return match self.node {
+            .Array(ref items) => items.len(),
+            .Object(ref members) => members.len(),
+            _ => throw ValueError::WrongKind,
+        };
+    }
+
+    fn at(self, index: usize) -> Value throw ValueError {
+        match self.node {
+            .Array(ref items) => {
+                if index >= items.len() { throw ValueError::IndexOutOfBounds; }
+                return { node: items[index] };
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn push(&self, &&value: Value) throw ValueError {
+        match self.node {
+            .Array(&items) => {
+                let child = (&&value).node;
+                items.push(&&child);
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn set_at(&self, index: usize, &&value: Value) throw ValueError {
+        match self.node {
+            .Array(&items) => {
+                if index >= items.len() { throw ValueError::IndexOutOfBounds; }
+                items[index] = (&&value).node;
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn remove_at(&self, index: usize) throw ValueError {
+        match self.node {
+            .Array(&items) => {
+                if index >= items.len() { throw ValueError::IndexOutOfBounds; }
+                items.remove(index);
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn key_at(self, index: usize) -> String throw ValueError {
+        match self.node {
+            .Object(ref members) => {
+                if index >= members.len() { throw ValueError::IndexOutOfBounds; }
+                return members[index].key;
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn member_at(self, index: usize) -> Value throw ValueError {
+        match self.node {
+            .Object(ref members) => {
+                if index >= members.len() { throw ValueError::IndexOutOfBounds; }
+                return { node: members[index].value };
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn has(self, key: str) -> bool throw ValueError {
+        return match self.node {
+            .Object(ref members) => find_member(members, key) != members.len(),
+            _ => throw ValueError::WrongKind,
+        };
+    }
+
+    fn get(self, key: str) -> Value throw ValueError {
+        match self.node {
+            .Object(ref members) => {
+                let index = find_member(members, key);
+                if index == members.len() { throw ValueError::MissingKey; }
+                return { node: members[index].value };
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn append_member(&self, key: str, &&value: Value) throw ValueError {
+        match self.node {
+            .Object(&members) => {
+                let member = Member {
+                    key: key as String,
+                    value: (&&value).node
+                };
+                members.push(&&member);
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn set(&self, key: str, &&value: Value) throw ValueError {
+        match self.node {
+            .Object(&members) => {
+                let index = find_member(members, key);
+                if index == members.len() {
+                    let member = Member {
+                        key: key as String,
+                        value: (&&value).node
+                    };
+                    members.push(&&member);
+                } else {
+                    members[index].value = (&&value).node;
+                }
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+
+    fn erase(&self, key: str) -> usize throw ValueError {
+        match self.node {
+            .Object(&members) => {
+                var removed: usize = 0;
+                var index: usize = 0;
+                while index < members.len() {
+                    if members[index].key.as_str() == key {
+                        members.remove(index);
+                        removed += 1;
+                    } else {
+                        index += 1;
+                    }
+                }
+                return removed;
+            },
+            _ => throw ValueError::WrongKind,
+        }
+    }
+}

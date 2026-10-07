@@ -84,7 +84,9 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
             || kind == TokenKind::Struct
             || kind == TokenKind::Class
             || kind == TokenKind::Fn
-            || kind == TokenKind::Const
+            || (kind == TokenKind::Const
+                && !check_next(TokenKind::If)
+                && !check_next(TokenKind::For))
             || kind == TokenKind::Test;
         auto item = std::optional<ASTItemID>();
         if (is_declaration) {
@@ -144,6 +146,7 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
                     .cpp_export = std::nullopt,
                     .const_span = std::nullopt,
                     .name_span = Span::at(span.start()),
+                    .type_parameters = std::nullopt,
                     .parameters = {},
                     .result_type = std::nullopt,
                     .throw_clause = std::nullopt,

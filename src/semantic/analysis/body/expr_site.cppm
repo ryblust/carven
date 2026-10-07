@@ -34,7 +34,7 @@ public:
     static constexpr auto mode = ExpressionMode::Body;
 
     struct OperandState final {
-        BodyPendingFailureTerms pending;
+        BodyPendingFailures pending;
         bool completes;
     };
 
@@ -43,7 +43,11 @@ public:
     auto module_id() const noexcept -> ProgramModuleID;
     auto permits_pointer_narrowing() const noexcept -> bool;
     auto infer_type(Value& value, Span span) noexcept -> ExpressionResult<ConstructionTypeRef>;
-    auto aggregate_cost(std::size_t count, Span span) const noexcept -> ExpressionResult<void>;
+    auto aggregate_cost(std::size_t count, Span span) noexcept -> ExpressionResult<void>;
+    auto resolve_array_extent(ASTExprID expression) noexcept -> AnalysisTask<std::uint64_t>;
+    auto pending_checkpoint() const noexcept -> std::monostate;
+    auto consume_unexecuted_read(Value value, std::monostate, Span span) noexcept
+        -> ExpressionResult<SemanticExpression>;
     auto representation_access(StructID owner, Span span) noexcept -> AnalysisResult<void>;
     auto associated_reference(StructID owner, Span name_span) noexcept -> ExpressionTask<Value>;
     auto associated_call(
@@ -61,6 +65,8 @@ public:
         std::optional<ConstructionTypeRef> expected
     ) noexcept -> ExpressionTask<Value>;
     auto consume_write(OperandState& state, Value value, Span span) noexcept
+        -> ExpressionResult<SemanticExpression>;
+    auto consume_take(OperandState& state, Value value, Span span) noexcept
         -> ExpressionResult<SemanticExpression>;
     auto consume_read(OperandState& state, Value value, Span span) noexcept
         -> ExpressionResult<SemanticExpression>;
@@ -123,7 +129,17 @@ public:
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected
     ) noexcept -> ExpressionTask<Selection>;
     auto extension(
+        const ASTTypeApplicationExpr& value,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<Selection>;
+    auto extension(
         const ASTArrayExpr& value,
+        Span span,
+        [[maybe_unused]] std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<Selection>;
+    auto extension(
+        const ASTArrayRepeatExpr& value,
         Span span,
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected
     ) noexcept -> ExpressionTask<Selection>;
@@ -232,7 +248,7 @@ private:
         SemanticExpressionValue&& value,
         std::optional<ConstantID> known,
         Span span,
-        BodyPendingFailureTerms pending,
+        BodyPendingFailures pending,
         bool completes
     ) noexcept -> ExpressionResult<Value>;
     auto external_operation(

@@ -1,0 +1,22 @@
+import .error using JSONError;
+import .syntax using { syntax_state, next_event };
+import std::utf.validation using validate_utf8;
+import std::utf.error using UTF8Error;
+
+private const fn validate_input(bytes: [u8]) throw JSONError {
+    var state = syntax_state();
+    while {
+        match next_event(bytes, &state)? {
+            .Complete => return,
+            _ => {},
+        }
+    }
+}
+
+// str already establishes UTF-8 validity. All JSON syntax is still checked.
+export const fn validate(text: str) throw JSONError => validate_input(text.bytes)?;
+
+export const fn validate_bytes(bytes: [u8]) throw JSONError + UTF8Error {
+    validate_utf8(bytes)?;
+    validate_input(bytes)?;
+}

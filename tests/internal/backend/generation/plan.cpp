@@ -10,6 +10,7 @@ import :backend.lower;
 import :backend.target;
 import :frontend.program.parse;
 import :semantic.analyze;
+import :semantic.semir.content;
 import :semantic.semir.decl;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
@@ -57,6 +58,30 @@ auto analyze_failure_profiles() noexcept -> SemIRProgram {
     return std::move(semantic->value);
 }
 
+auto analyze_closure_references() noexcept -> SemIRProgram {
+    auto sources = SourceManager();
+    const auto source = sources.append_virtual(
+        "closures.cv",
+        "fn repeated() => [[]() => 7; 2];\n"
+        "fn empty() => [[]() => 7; 0];\n"
+        "fn nested() => []() { let inner = [[]() => 7; 0]; return 0; };\n"
+        "fn hidden_result() { const if false { return []() => 7; } while {} }\n"
+        "fn hidden_iteration_result() { const for _ in 0..0 { return []() => 7; } while {} }\n"
+        "fn hidden_factory() => []() { const if false { return []() => 7; } while {} };\n"
+        "fn selected() { const if true { let chosen = [[]() => 7; 0]; } "
+        "else { let removed = [[]() => 9; 0]; } }\n"
+    );
+    require(source.has_value());
+    const auto path = CanonicalModulePath::from_value("closures");
+    require(path.has_value());
+    const auto input = SourceModuleInput {.source_id = *source, .module_path = *path};
+    auto syntax = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
+    require(syntax.has_value());
+    auto semantic = analyze(std::move(*syntax));
+    require(semantic.has_value());
+    return std::move(semantic->value);
+}
+
 auto request(TestGenerationMode test_mode, std::string_view linkage) noexcept
     -> TargetPlanningRequest {
     return {
@@ -76,27 +101,6 @@ auto function_named(const SemIRProgram& semantic, std::string_view name) noexcep
         return function.id;
     }
     std::unreachable();
-}
-
-auto failure_name(const SemIRProgram& semantic, TypeID type) noexcept -> std::string_view {
-    return semantic.types().type(type).value.visit(
-        Overloaded {
-            [&](const StructTypeValue& value) noexcept {
-                return semantic.provenance().spelling(
-                    semantic.declarations().structure(value.structure).name
-                );
-            },
-            [&](const EnumTypeValue& value) noexcept {
-                return semantic.provenance().spelling(
-                    semantic.declarations().enumeration(value.enumeration).name
-                );
-            },
-            [](const auto&) static noexcept -> std::string_view {
-                expect(false).note("failure ABI member is not nominal");
-                return {};
-            },
-        }
-    );
 }
 
 auto public_names(std::string source_text) noexcept -> std::array<std::string, 2> {
@@ -140,6 +144,176 @@ static_assert(!std::is_move_assignable_v<TargetPlan>);
 
 
 const TestSuite suite([] static noexcept {
+    "Target plan: closure references retain type-only declarations and discard inactive source"_test =
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_closure_references(),
+                request(TestGenerationMode::None, "closure_references")
+            );
+            const auto& semantic = compilation.semantic();
+            const auto closures = plan_closures(semantic);
+            for (const auto name : std::array {
+                     "repeated",
+                     "empty",
+                     "nested",
+                     "selected",
+                     "hidden_result",
+                     "hidden_iteration_result"
+                 }) {
+                const auto function = function_named(semantic, name);
+                const auto callable = semantic.declarations().function(function).callable;
+                expect_equal(semantic.callable_surface(callable).closures.size(), 1uz);
+            }
+            const auto nested =
+                semantic.declarations().function(function_named(semantic, "nested")).callable;
+            const auto& outer_references = semantic.callable_surface(nested).closures;
+            require(outer_references.size() == 1uz);
+            const auto outer = outer_references.front();
+            const auto& inner_references = semantic.callable_surface(outer).closures;
+            require(inner_references.size() == 1uz);
+            const auto inner = inner_references.front();
+            const auto outer_position = std::ranges::find(closures.definition_order, outer);
+            const auto inner_position = std::ranges::find(closures.definition_order, inner);
+            require(outer_position != closures.definition_order.end());
+            require(inner_position != closures.definition_order.end());
+            expect(inner_position < outer_position);
+            const auto factory = semantic.declarations()
+                                     .function(function_named(semantic, "hidden_factory"))
+                                     .callable;
+            const auto& factory_references = semantic.callable_surface(factory).closures;
+            require(factory_references.size() == 2uz);
+            const auto factory_outer = factory_references.front();
+            const auto factory_inner = factory_references.back();
+            const auto factory_outer_position =
+                std::ranges::find(closures.definition_order, factory_outer);
+            const auto factory_inner_position =
+                std::ranges::find(closures.definition_order, factory_inner);
+            require(factory_outer_position != closures.definition_order.end());
+            require(factory_inner_position != closures.definition_order.end());
+            expect(factory_inner_position < factory_outer_position);
+            const auto unique =
+                std::flat_set<CallableID>(std::from_range, closures.definition_order);
+            expect_equal(unique.size(), closures.definition_order.size());
+            for (const auto artifact : compilation.target().artifacts()) {
+                static_cast<void>(lower_artifact(compilation, artifact.id));
+            }
+        };
+
+    "Target artifacts: opaque declarations and source definitions retain one nominal identity"_test =
+        [] static noexcept {
+            auto sources = SourceManager();
+            const auto source = sources.append_virtual("opaque.cv", R"(
+                private struct Inner { value: i32 }
+                private struct Hidden { inner: Inner }
+                class Handle { value: ptr<Hidden> }
+            )");
+            const auto path = CanonicalModulePath::from_value("opaque");
+            require(source.has_value());
+            require(path.has_value());
+            const auto input = SourceModuleInput {.source_id = *source, .module_path = *path};
+            auto syntax = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
+            require(syntax.has_value());
+            auto analyzed = analyze(std::move(*syntax));
+            require(analyzed.has_value());
+            const auto compilation = PlannedCompilation::build(
+                std::move(analyzed->value),
+                request(TestGenerationMode::None, "opaque-identity")
+            );
+            auto structures = std::map<std::string_view, StructID>();
+            for (const auto entry : compilation.semantic().declarations().structures()) {
+                structures.emplace(
+                    compilation.semantic().provenance().spelling(entry.value.name),
+                    entry.id
+                );
+            }
+            require(structures.contains("Hidden") && structures.contains("Inner"));
+            const auto hidden = structures.at("Hidden");
+            const auto inner = structures.at("Inner");
+            const auto module = compilation.semantic().declarations().structure(hidden).module_id;
+            const auto& source_order =
+                compilation.target().module_schedule(module).source_nominal_order;
+            if (!expect_equal(source_order.size(), 2uz)) {
+                return;
+            }
+            expect(source_order[0] == NominalDeclarationRef {inner});
+            expect(source_order[1] == NominalDeclarationRef {hidden});
+            const auto hidden_name =
+                compilation.target().names().structure_identifier(hidden).spelling();
+            const auto inner_name =
+                compilation.target().names().structure_identifier(inner).spelling();
+            auto hidden_forward_paths = std::vector<std::vector<std::string>>();
+            auto interface_has_hidden_forward = false;
+            auto hidden_definition_paths = std::vector<std::vector<std::string>>();
+            auto inner_definition_paths = std::vector<std::vector<std::string>>();
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                auto namespace_path = std::vector<std::string>();
+                const auto inspect = [&](auto&& self,
+                                         std::span<const TargetItem> items,
+                                         bool anonymous) noexcept -> void {
+                    for (const auto& item : items) {
+                        if (const auto* space = std::get_if<TargetNamespace>(&item.value)) {
+                            const auto path_size = namespace_path.size();
+                            if (space->name) {
+                                for (const auto& component : space->name->components()) {
+                                    namespace_path.emplace_back(component.spelling());
+                                }
+                            }
+                            self(self, space->items, anonymous || !space->name);
+                            namespace_path.resize(path_size);
+                            continue;
+                        }
+                        const auto* declaration = std::get_if<TargetDecl>(&item.value);
+                        if (declaration == nullptr) {
+                            continue;
+                        }
+                        if (const auto* forward = std::get_if<TargetStructForwardDecl>(declaration);
+                            forward && forward->name.spelling() == hidden_name) {
+                            expect(!anonymous);
+                            interface_has_hidden_forward |=
+                                artifact_role(artifact.value) == GeneratedArtifactRole::Interface;
+                            hidden_forward_paths.push_back(namespace_path);
+                        }
+                        if (const auto* definition = std::get_if<TargetStructDecl>(declaration)) {
+                            if (definition->name.spelling() == hidden_name) {
+                                expect(!anonymous);
+                                expect(
+                                    artifact_role(artifact.value)
+                                    == GeneratedArtifactRole::ModuleImplementation
+                                );
+                                hidden_definition_paths.push_back(namespace_path);
+                            } else if (definition->name.spelling() == inner_name) {
+                                expect(!anonymous);
+                                expect(
+                                    artifact_role(artifact.value)
+                                    == GeneratedArtifactRole::ModuleImplementation
+                                );
+                                inner_definition_paths.push_back(namespace_path);
+                            }
+                        }
+                    }
+                };
+                inspect(inspect, unit.sections().body, false);
+            }
+            if (!expect(interface_has_hidden_forward && !hidden_forward_paths.empty())
+                || !expect_equal(hidden_definition_paths.size(), 1uz)
+                || !expect_equal(inner_definition_paths.size(), 1uz)) {
+                return;
+            }
+            for (const auto& path : hidden_forward_paths) {
+                expect(path == hidden_definition_paths.front());
+            }
+            expect(inner_definition_paths.front() == hidden_definition_paths.front());
+            auto owner_namespace = std::vector<std::string>();
+            for (const auto& component : compilation.target()
+                                             .names()
+                                             .module_names(module)
+                                             .qualified_namespace_name.components()) {
+                owner_namespace.emplace_back(component.spelling());
+            }
+            expect(hidden_definition_paths.front() == owner_namespace);
+        };
+
     "Target plan: failure ABI has one deterministic nominal order"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_failure_profiles(),
@@ -150,14 +324,13 @@ const TestSuite suite([] static noexcept {
         const auto signature = compilation.semantic().declarations().callable(callable).signature;
         const auto failures =
             compilation.semantic().callable_signatures().signature(signature).failures;
-        auto names = std::vector<std::string_view>();
+        auto identities = std::vector<std::string>();
         for (const auto type : compilation.target().failure_abi().members(failures)) {
-            names.push_back(failure_name(compilation.semantic(), type));
+            identities.push_back(type_content_key(compilation.semantic(), type));
         }
-
-        expect((
-            names == std::vector<std::string_view> {"ZFailure", "BFailure", "YFailure", "AFailure"}
-        ));
+        expect_equal(identities.size(), 4uz);
+        expect(std::ranges::is_sorted(identities));
+        expect(std::ranges::adjacent_find(identities) == identities.end());
         expect((compilation.target().semantic_identity() == compilation.semantic().identity()));
     };
 

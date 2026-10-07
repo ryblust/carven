@@ -17,7 +17,11 @@ struct ASTNegativeNumberPattern final {
     NumericLiteralValue value;
 };
 
+enum class ASTPatternBindingMode { Value, Read, Write };
+
 struct ASTBindingPattern final {
+    ASTPatternBindingMode mode;
+    std::optional<Span> marker_span;
     Span name_span;
 };
 

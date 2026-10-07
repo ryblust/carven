@@ -272,6 +272,26 @@ auto Parser::parse_postfix_expression() noexcept -> std::optional<ASTExprID> {
         return std::nullopt;
     }
     while (!failed) {
+        if (check(TokenKind::Less)) {
+            const auto checkpoint = begin_speculation();
+            auto parsed = parse_type_arguments();
+            const auto application =
+                !failed && (check(TokenKind::LeftParen) || check(TokenKind::ColonColon));
+            finish_speculation(checkpoint, application, false);
+            if (application) {
+                operand = builder.append_expression(
+                    ASTExpr {
+                        .span = join(builder.expression(*operand).span, parsed.span),
+                        .value = ASTTypeApplicationExpr {
+                            .operand_id = *operand,
+                            .arguments_span = parsed.span,
+                            .arguments = std::move(parsed.value),
+                        },
+                    }
+                );
+                continue;
+            }
+        }
         if (check(TokenKind::LeftParen)) {
             operand = parse_call(*operand);
             if (!operand) {
@@ -558,6 +578,20 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
                     break;
                 }
                 elements.push_back(*element);
+                if (elements.size() == 1uz && match(TokenKind::Semicolon)) {
+                    auto extent = parse_expression();
+                    const auto right =
+                        expect(TokenKind::RightBracket, "expected ']' after array extent");
+                    if (!extent || failed) {
+                        return std::nullopt;
+                    }
+                    return builder.append_expression(
+                        ASTExpr {
+                            .span = join(left->span, right.span),
+                            .value = ASTArrayRepeatExpr {.element = *element, .extent = *extent},
+                        }
+                    );
+                }
                 if (!match(TokenKind::Comma)) {
                     break;
                 }

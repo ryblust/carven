@@ -23,6 +23,7 @@ enum class SIMDIntrinsic {
     Count,
     FirstOr,
     Select,
+    Sum,
 };
 
 struct SIMDShape final {

@@ -223,7 +223,17 @@ auto ASTDumper::render_pattern_node(ASTPatternID id, std::string_view prefix, bo
                     is_last,
                     std::format("BindingPattern {}", format_dump_span(pattern.span))
                 );
-                render_span_field(child_prefix(prefix, is_last), true, "name", binding.name_span);
+                const auto nested = child_prefix(prefix, is_last);
+                if (binding.marker_span) {
+                    render_span_field(
+                        nested,
+                        false,
+                        binding.mode == ASTPatternBindingMode::Read ? "Read marker"
+                                                                    : "Write marker",
+                        *binding.marker_span
+                    );
+                }
+                render_span_field(nested, true, "name", binding.name_span);
             },
             [&](const ASTConstraintPattern& constraint) noexcept {
                 append_line(

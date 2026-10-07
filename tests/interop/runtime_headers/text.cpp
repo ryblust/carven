@@ -1,4 +1,4 @@
-#include <carven/runtime/text.hpp>
+#include <carven/runtime/text/text.hpp>
 
 #include <string_view>
 

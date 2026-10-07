@@ -5,18 +5,39 @@ import :frontend.ast.pattern;
 import :frontend.ast.storage;
 import :frontend.ast.type;
 import :semantic.analysis.catalog;
+import :semantic.analysis.construction.requests;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
+import :semantic.semir.generic;
 import :semantic.semir.program;
 import :support.function_ref;
 import std;
 
 auto source_builtin_type(std::string_view name) noexcept -> std::optional<BuiltinType>;
+auto source_type_name_is_reserved(std::string_view name) noexcept -> bool;
 
 // The callable outlives each returned task, including nested type resolution.
 using ArrayExtentResolver = FunctionRef<AnalysisTask<std::uint64_t>(ASTExprID) noexcept>;
 
 auto semantic_access_mode(ASTAccessSyntax access) noexcept -> AccessMode;
+
+struct GenericTypeContext final {
+    GenericDeclarationID definition;
+    std::span<const ProgramSpellingID> parameters;
+};
+
+auto resolve_generic_source_type(
+    ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ImportUsage& import_usage,
+    ProgramModuleID module_id,
+    ASTView syntax,
+    ASTTypeID source_type,
+    GenericTypeContext context,
+    ArrayExtentResolver resolve_extent,
+    bool value_required = true,
+    ConstructionRequests* requests = nullptr
+) noexcept -> AnalysisTask<GenericTypeID>;
 
 auto resolve_source_type(
     ProgramDraft& draft,
@@ -25,7 +46,21 @@ auto resolve_source_type(
     ProgramModuleID module_id,
     ASTView syntax,
     ASTTypeID source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests = nullptr,
+    const GenericTypeContext* generic_context = nullptr
+) noexcept -> AnalysisTask<ConstructionTypeRef>;
+
+auto resolve_source_type_application(
+    ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ImportUsage& import_usage,
+    ProgramModuleID module_id,
+    ASTView syntax,
+    const ASTTypeApplicationExpr& application,
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests = nullptr,
+    const GenericTypeContext* generic_context = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_construction_type(
@@ -35,7 +70,9 @@ auto resolve_source_construction_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstructionType& source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests = nullptr,
+    const GenericTypeContext* generic_context = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_constraint_type(
@@ -45,7 +82,9 @@ auto resolve_source_constraint_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstraintOperand& source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests = nullptr,
+    const GenericTypeContext* generic_context = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto require_source_value_type(
@@ -63,5 +102,7 @@ auto resolve_failure_types(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTThrowClause& clause,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    ConstructionRequests* requests = nullptr,
+    const GenericTypeContext* generic_context = nullptr
 ) noexcept -> AnalysisTask<std::vector<TypeID>>;

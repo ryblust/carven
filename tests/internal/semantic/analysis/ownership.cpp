@@ -287,13 +287,15 @@ const TestSuite suite([] static noexcept {
         const auto prelude =
             std::string("fn pair(value: i32, &&owner: i32) -> i32 { return value + owner; }\n")
             + "fn identity(value: i32) -> i32 { return value; }\n";
-        for (const auto* expression : {"x + 1", "identity(x)"}) {
+        for (const auto* expression : {"x", "x + 1", "identity(x)"}) {
             static_cast<void>(analyze_test_program(
                 prelude + "fn valid() { let x = 2; let result = pair(" + expression + ", &&x); }"
             ));
         }
-        const auto direct =
-            analyze_test_errors(prelude + "fn invalid() { let x = 2; let result = pair(x, &&x); }");
+        const auto direct = analyze_test_errors(
+            "fn pair(value: String, &&owner: String) {}\n"
+            "fn invalid() { let x: String = \"text\"; pair(x, &&x); }"
+        );
         expect_diagnostic(direct, DiagnosticCode::AccessOperationConflict);
     };
 
@@ -725,6 +727,84 @@ const TestSuite suite([] static noexcept {
             expect_diagnostic(text, DiagnosticCode::AccessBorrowConflict);
         };
 
+    "Semantic ownership: scalar field writes preserve unrelated holder loans"_test =
+        [] static noexcept {
+            const auto prelude = std::string(R"(
+        struct Holder { n: i32, text: str }
+        fn increment(&value: i32) { value += 1; }
+    )");
+            static_cast<void>(analyze_test_program(prelude + R"(
+        fn valid() -> usize {
+            var owner: String = "hello";
+            var holder = Holder { n: 0, text: owner.as_str() };
+            increment(&holder.n);
+            return holder.text.len();
+        }
+    )"));
+            expect_diagnostic(
+                analyze_test_errors(prelude + R"(
+        fn invalid() -> usize {
+            var owner: String = "hello";
+            var holder = Holder { n: 0, text: owner.as_str() };
+            increment(&holder.n);
+            owner.clear();
+            return holder.text.len();
+        }
+    )"),
+                DiagnosticCode::AccessBorrowConflict
+            );
+        };
+
+    "Semantic stable selection: scalar writes retain selector checks through calls"_test =
+        [] static noexcept {
+            const auto prelude = std::string(R"(
+        fn touch(&value: i32) -> bool { value += 1; return true; }
+        fn guarded(&selected: i32, &written: i32) {
+            match selected { _ if touch(&written) => {}, _ => {}, }
+        }
+        fn relay(&selected: i32, &written: i32) { guarded(&selected, &written); }
+    )");
+            for (const auto indirect : {false, true}) {
+                const auto call = [indirect](std::string_view target) noexcept {
+                    if (indirect) {
+                        return std::format("relay(&selected, &{});", target);
+                    }
+                    return std::format(
+                        "match selected {{ _ if touch(&{}) => {{}}, _ => {{}}, }}",
+                        target
+                    );
+                };
+                static_cast<void>(analyze_test_program(
+                    prelude
+                    + std::format(
+                        R"(
+        fn valid() {{
+            var selected = 1;
+            var other = 2;
+            {}
+        }}
+    )",
+                        call("other")
+                    )
+                ));
+                expect_diagnostic(
+                    analyze_test_errors(
+                        prelude
+                        + std::format(
+                            R"(
+        fn invalid() {{
+            var selected = 1;
+            {}
+        }}
+    )",
+                            call("selected")
+                        )
+                    ),
+                    DiagnosticCode::AccessOperationConflict
+                );
+            }
+        };
+
     "Semantic ownership: indirect calls preserve recursive components"_test = [] static noexcept {
         const auto program = analyze_test_program(R"(
         fn apply(action: fn() -> void) { action(); }
@@ -765,6 +845,32 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect_equal(distinct.size(), components.size());
+        };
+
+    "Semantic ownership: generated views protect backing across scalar writer calls"_test =
+        [] static noexcept {
+            const auto prelude = std::string(R"(
+        fn view_of(values: [i32; 2]) -> [i32] => values;
+        fn increment(&value: i32) { value += 1; }
+        fn combine(values: [i32; 2], &written: i32) -> usize {
+            let view = view_of(values);
+            increment(&written);
+            return view.len();
+        }
+    )");
+            static_cast<void>(analyze_test_program(prelude + R"(
+        fn valid(&values: [i32; 2], &other: i32) -> usize {
+            return combine(values, &other);
+        }
+    )"));
+            expect_diagnostic(
+                analyze_test_errors(prelude + R"(
+        fn invalid(&values: [i32; 2]) -> usize {
+            return combine(values, &values[0]);
+        }
+    )"),
+                DiagnosticCode::AccessBorrowConflict
+            );
         };
 
     "Semantic ownership: constant array backing permits immediate views but rejects holders"_test =

@@ -10,6 +10,7 @@ import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.decl;
 import :semantic.semir.simd;
+import :semantic.semir.sequence;
 import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
@@ -88,7 +89,9 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
             } else if constexpr (std::same_as<Form, ASTInterpolationExpr>
                                  || std::same_as<Form, ASTCppNameExpr>
                                  || std::same_as<Form, ASTNameExpr>
+                                 || std::same_as<Form, ASTTypeApplicationExpr>
                                  || std::same_as<Form, ASTArrayExpr>
+                                 || std::same_as<Form, ASTArrayRepeatExpr>
                                  || std::same_as<Form, ASTConstructionExpr>
                                  || std::same_as<Form, ASTPrefixExpr>
                                  || std::same_as<Form, ASTAccessExpr>
@@ -118,12 +121,6 @@ struct ArrayShape final {
     std::uint64_t extent;
 };
 
-struct CallableShape final {
-    std::optional<TypeID> owning_type;
-    std::vector<ConstructionCallableParameter> parameters;
-    ConstructionTypeRef result;
-};
-
 auto array_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ArrayShape> {
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
@@ -146,39 +143,6 @@ auto array_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
                                       .extent = array->extent,
                                   }
                               );
-}
-
-auto callable_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::optional<CallableShape> {
-    if (const auto* concrete = std::get_if<TypeID>(&type)) {
-        const auto canonical = draft.type_copy(*concrete);
-        auto callable = std::optional<CallableID>();
-        if (const auto* function = std::get_if<FunctionTypeValue>(&canonical.value)) {
-            callable = function->callable;
-        } else if (const auto* closure = std::get_if<ClosureTypeValue>(&canonical.value)) {
-            callable = closure->callable;
-        }
-        if (callable.has_value()) {
-            const auto contract = draft.construction_callable_contract_copy(*callable);
-            return CallableShape {
-                .owning_type = *concrete,
-                .parameters = contract.parameters,
-                .result = contract.result,
-            };
-        }
-        return std::nullopt;
-    }
-
-    const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
-    const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
-    return view == nullptr ? std::nullopt
-                           : std::optional(
-                                 CallableShape {
-                                     .owning_type = std::nullopt,
-                                     .parameters = view->parameters,
-                                     .result = view->result,
-                                 }
-                             );
 }
 
 auto shapes_compatible(
@@ -211,8 +175,8 @@ auto shapes_compatible(
             && shapes_compatible(draft, *left_slice, *right_slice, visited);
     }
 
-    const auto left_callable = callable_shape(draft, left);
-    const auto right_callable = callable_shape(draft, right);
+    const auto left_callable = draft.callable_shape(left);
+    const auto right_callable = draft.callable_shape(right);
     if (left_callable.has_value() || right_callable.has_value()) {
         if (!left_callable.has_value() || !right_callable.has_value()) {
             return false;
@@ -443,6 +407,16 @@ auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef 
     if (const auto* array = std::get_if<ArrayTypeValue>(&concrete.value)) {
         return type_contains_callable_view(draft, ConstructionTypeRef {array->element});
     }
+    if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&concrete.value)) {
+        return type_contains_callable_view(draft, ConstructionTypeRef {sequence->element});
+    }
+    if (const auto* native = std::get_if<CppTypeValue>(&concrete.value)) {
+        if (const auto* named = std::get_if<CppNamedType>(&native->form)) {
+            return std::ranges::any_of(named->arguments, [&](TypeID argument) noexcept {
+                return type_contains_callable_view(draft, ConstructionTypeRef {argument});
+            });
+        }
+    }
     return std::holds_alternative<CallableViewTypeValue>(concrete.value);
 }
 
@@ -467,24 +441,13 @@ auto supports_equality(
             [](const PointerTypeValue&) static noexcept { return true; },
             [](const RangeTypeValue&) static noexcept { return false; },
             [](const SliceTypeValue&) static noexcept { return false; },
+            [](const OwnedSequenceTypeValue&) static noexcept { return false; },
         }
     );
 }
 
 auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
-    const auto* concrete = std::get_if<TypeID>(&type);
-    if (concrete == nullptr) {
-        const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
-        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
-            return type_supports_equality(draft, array->element);
-        }
-        return false;
-    }
-    return supports_equality(
-        draft.type_copy(*concrete),
-        [&](EnumID id) noexcept { return draft.enum_declaration_copy(id).supports_equality; },
-        [&](TypeID id) noexcept { return type_supports_equality(draft, ConstructionTypeRef {id}); }
-    );
+    return draft.equality_support(std::array {type}).front();
 }
 
 auto type_supports_equality(
@@ -887,7 +850,7 @@ auto decide_slice_method(
     }
     const auto contract = slice_intrinsic_contract(*operation);
     const auto receiver = array ? SliceIntrinsicShape::Array : SliceIntrinsicShape::Slice;
-    if (receiver != contract.receiver) {
+    if (!slice_intrinsic_accepts_receiver(contract.receiver, receiver)) {
         return operation_error("sequence has no such method", DiagnosticCode::TypeMethodCall);
     }
     if (arguments != contract.arguments.size()) {
@@ -897,6 +860,39 @@ auto decide_slice_method(
         );
     }
     return operation;
+}
+
+auto decide_sequence_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<SequenceIntrinsic>, OperationDiagnostic> {
+    const auto shape = sequence_shape(draft, operand);
+    if (!shape || shape->kind != SequenceShapeKind::OwnedSequence) {
+        return std::optional<SequenceIntrinsic>();
+    }
+    auto intrinsic = SequenceIntrinsic::Len;
+    if (name == "len") {
+        intrinsic = SequenceIntrinsic::Len;
+    } else if (name == "is_empty") {
+        intrinsic = SequenceIntrinsic::IsEmpty;
+    } else if (name == "push") {
+        intrinsic = SequenceIntrinsic::Push;
+    } else if (name == "remove") {
+        intrinsic = SequenceIntrinsic::Remove;
+    } else if (name == "clear") {
+        intrinsic = SequenceIntrinsic::Clear;
+    } else {
+        return operation_error("Sequence has no such method", DiagnosticCode::TypeMethodCall);
+    }
+    if (arguments != (sequence_intrinsic_contract(intrinsic).argument ? 1uz : 0uz)) {
+        return operation_error(
+            "Sequence method argument count does not match",
+            DiagnosticCode::TypeMethodCallArity
+        );
+    }
+    return std::optional(intrinsic);
 }
 
 auto decide_text_method(
@@ -954,11 +950,54 @@ auto decide_text_property(std::string_view name) noexcept -> TextIntrinsicDecisi
 
 auto sequence_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<SequenceShape> {
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto canonical = draft.type_copy(*concrete);
+        if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&canonical.value)) {
+            return SequenceShape {
+                .kind = SequenceShapeKind::OwnedSequence,
+                .element = sequence->element,
+                .extent = std::nullopt,
+            };
+        }
+    }
     if (const auto array = array_shape(draft, type)) {
-        return SequenceShape {.element = array->element, .extent = array->extent};
+        return SequenceShape {
+            .kind = SequenceShapeKind::Array,
+            .element = array->element,
+            .extent = array->extent
+        };
     }
     if (const auto element = slice_element(draft, type)) {
-        return SequenceShape {.element = *element, .extent = std::nullopt};
+        return SequenceShape {
+            .kind = SequenceShapeKind::Slice,
+            .element = *element,
+            .extent = std::nullopt
+        };
     }
     return std::nullopt;
+}
+
+auto decide_float_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<FloatIntrinsic>, OperationDiagnostic> {
+    const auto* type = std::get_if<TypeID>(&operand);
+    if (type == nullptr || name != "is_finite") {
+        return std::nullopt;
+    }
+    const auto canonical = draft.type_copy(*type);
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+    if (builtin == nullptr
+        || (builtin->kind != BuiltinType::F32 && builtin->kind != BuiltinType::F64)) {
+        return std::nullopt;
+    }
+    if (arguments != 0) {
+        return operation_error(
+            "is_finite requires no arguments",
+            DiagnosticCode::TypeMethodCallArity
+        );
+    }
+    return FloatIntrinsic::IsFinite;
 }

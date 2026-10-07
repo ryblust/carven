@@ -1,6 +1,7 @@
 module carven:semantic.evaluation.admission;
 
 import :semantic.semir.constant_access;
+import :semantic.semir.sequence;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import std;
@@ -31,6 +32,9 @@ constexpr auto unsupported_execution_operation(const Operation& operation) noexc
             default:                          return "cast is not supported in execution";
         }
     } else if constexpr (std::same_as<Operation, SemIntrinsic>) {
+        if (std::holds_alternative<SequenceIntrinsicOperation>(operation.operation)) {
+            return "Sequence operations are not supported in compile-time execution";
+        }
         const auto* text = std::get_if<TextIntrinsic>(&operation.operation);
         if (!text) {
             return std::nullopt;

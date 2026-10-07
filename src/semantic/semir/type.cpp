@@ -41,7 +41,8 @@ auto type_key(const CanonicalType& type, ProgramIdentity owner) noexcept -> std:
         } else if constexpr (std::same_as<Value, PointerTypeValue>) {
             child(value.target, "ptr type used a foreign target");
             mix(static_cast<std::size_t>(value.access));
-        } else if constexpr (std::same_as<Value, SliceTypeValue>
+        } else if constexpr (std::same_as<Value, OwnedSequenceTypeValue>
+                             || std::same_as<Value, SliceTypeValue>
                              || std::same_as<Value, RangeTypeValue>) {
             child(value.element, "slice type used a foreign element type");
         } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
@@ -460,7 +461,7 @@ auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID
             }
             validate_ref(value.result);
             require_owner(
-                value.failures.owner(),
+                value.failures.visit([](auto source) static noexcept { return source.owner(); }),
                 rows.owner(),
                 "construction callable type used a foreign failure term"
             );

@@ -97,6 +97,8 @@ public:
         -> TargetName;
     auto require_callable(CallableID id) noexcept -> void;
     auto payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames&;
+    auto enum_payload_projection(EnumID id, std::size_t case_index, TargetExpr subject) noexcept
+        -> TargetExpr;
     auto constant_storage() noexcept -> ConstantStorage&;
     auto make_callable_name_allocator() const noexcept -> TargetNameAllocator;
     auto intrinsic_type(TargetSymbol symbol, bool constant = false) noexcept -> TargetTypeID;
@@ -129,6 +131,8 @@ public:
     auto display_emitter_type(TypeID type) noexcept -> TargetTypeID;
     auto display_emitter(TypeID type) noexcept -> TargetExpr;
     auto take_query_aliases() noexcept -> std::vector<TargetItem>;
+    auto defer_enum_factory(TargetItem item) noexcept -> void;
+    auto take_enum_factories() noexcept -> std::vector<TargetItem>;
     auto take_display_helpers() noexcept -> std::vector<TargetItem>;
     auto is_void(TypeID id) const noexcept -> bool;
     auto is_integer(TypeID id) const noexcept -> bool;
@@ -147,6 +151,7 @@ private:
     ConstantStorage constants;
     std::map<TypeID, TargetTypeID> query_types;
     std::vector<TargetItem> query_aliases;
+    std::vector<TargetItem> enum_factory_definitions;
     std::map<std::pair<TypeID, TypeNameScope>, TypeState> type_cache;
     std::map<TypeID, TargetTypeID> display_types;
     std::vector<TargetItem> display_helpers;

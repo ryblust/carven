@@ -1,7 +1,7 @@
 #pragma once
 
 #include "numeric.hpp"
-#include "string.hpp"
+#include "text/text.hpp"
 
 #include <array>
 #include <charconv>
@@ -20,16 +20,16 @@ namespace carven::runtime {
 // Synchronous writes into a borrowed String. Text must be valid UTF-8 and inputs
 // must not overlap destination storage. Bounds describe the prepared fragments;
 // dynamic-width fields grow storage separately. Errors terminate without rollback.
-class Writer final {
+class FormatWriter final {
 public:
-    Writer(String& destination, std::size_t minimum_size, std::size_t maximum_size) noexcept
+    FormatWriter(String& destination, std::size_t minimum_size, std::size_t maximum_size) noexcept
         : storage(destination.storage) {
         reserve(minimum_size, maximum_size);
     }
 
     // Carven observes dynamic text only after all source operands complete.
     // Bounds cover other fragments; supplied lengths are exact byte counts.
-    Writer(
+    FormatWriter(
         String& destination,
         std::size_t minimum_size,
         std::size_t maximum_size,

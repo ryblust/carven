@@ -23,11 +23,11 @@ enum class FailureSubsetRequirementKind {
 
 struct FailureTerm final {
     std::vector<TypeID> direct_members;
-    std::vector<FailureTermID> inputs;
+    std::vector<ConstructionFailureRef> inputs;
 
     struct GuardedContribution final {
-        FailureTermID gate;
-        FailureTermID source;
+        ConstructionFailureRef gate;
+        ConstructionFailureRef source;
 
         auto operator==(const GuardedContribution&) const noexcept -> bool = default;
     };
@@ -46,31 +46,31 @@ struct FailureTerm final {
 };
 
 struct RequiresEmptyFailure final {
-    FailureTermID term;
+    ConstructionFailureRef source;
     ProgramOriginID origin;
     EmptyFailureRequirementKind kind;
 };
 
 struct RequiresNonEmptyFailure final {
-    FailureTermID term;
+    ConstructionFailureRef source;
     ProgramOriginID origin;
 };
 
 struct RequiresFailureSubset final {
-    FailureTermID actual;
-    FailureTermID allowed;
+    ConstructionFailureRef actual;
+    ConstructionFailureRef allowed;
     ProgramOriginID origin;
     FailureSubsetRequirementKind kind;
 };
 
 struct RequiresEqualFailures final {
-    FailureTermID left;
-    FailureTermID right;
+    ConstructionFailureRef left;
+    ConstructionFailureRef right;
     ProgramOriginID origin;
 };
 
 struct RequiresDeclaredFailureContract final {
-    FailureTermID actual;
+    ConstructionFailureRef actual;
     ProgramOriginID origin;
 };
 
@@ -117,11 +117,15 @@ public:
     ~FailureConstraintStore() = default;
     auto add_empty_term() noexcept -> FailureTermID;
     auto add_concrete_term(std::vector<TypeID> members) noexcept -> FailureTermID;
-    auto add_union_term(std::vector<FailureTermID> inputs) noexcept -> FailureTermID;
-    auto add_residual_term(FailureTermID input, std::vector<TypeID> handled_members) noexcept
-        -> FailureTermID;
-    auto add_intersection_term(FailureTermID input, std::vector<TypeID> retained_members) noexcept
-        -> FailureTermID;
+    auto add_union_term(std::vector<ConstructionFailureRef> inputs) noexcept -> FailureTermID;
+    auto add_residual_term(
+        ConstructionFailureRef input,
+        std::vector<TypeID> handled_members
+    ) noexcept -> FailureTermID;
+    auto add_intersection_term(
+        ConstructionFailureRef input,
+        std::vector<TypeID> retained_members
+    ) noexcept -> FailureTermID;
     auto copy(FailureTermID term) const noexcept -> FailureTerm;
     auto add_member(FailureTermID destination, TypeID member) noexcept -> void;
     auto add_thrown_member(
@@ -129,36 +133,42 @@ public:
         TypeID member,
         ProgramOriginID origin
     ) noexcept -> void;
-    auto add_contribution(FailureTermID destination, FailureTermID source) noexcept -> void;
+    auto add_contribution(FailureTermID destination, ConstructionFailureRef source) noexcept
+        -> void;
     auto add_guarded_contribution(
         FailureTermID destination,
-        FailureTermID gate,
-        FailureTermID source
+        ConstructionFailureRef gate,
+        ConstructionFailureRef source
     ) noexcept -> void;
     auto equate(FailureTermID left, FailureTermID right) noexcept -> void;
     auto require_empty(
-        FailureTermID term,
+        ConstructionFailureRef source,
         ProgramOriginID origin,
         EmptyFailureRequirementKind kind
     ) noexcept -> void;
-    auto require_non_empty(FailureTermID term, ProgramOriginID origin) noexcept -> void;
+    auto require_non_empty(ConstructionFailureRef source, ProgramOriginID origin) noexcept -> void;
     auto require_subset(
-        FailureTermID actual,
-        FailureTermID allowed,
+        ConstructionFailureRef actual,
+        ConstructionFailureRef allowed,
         ProgramOriginID origin,
         FailureSubsetRequirementKind kind
     ) noexcept -> void;
-    auto require_equal(FailureTermID left, FailureTermID right, ProgramOriginID origin) noexcept
+    auto require_equal(
+        ConstructionFailureRef left,
+        ConstructionFailureRef right,
+        ProgramOriginID origin
+    ) noexcept -> void;
+    auto require_declared_contract(ConstructionFailureRef actual, ProgramOriginID origin) noexcept
         -> void;
-    auto require_declared_contract(FailureTermID actual, ProgramOriginID origin) noexcept -> void;
     auto finish() && noexcept -> FrozenFailureConstraints;
 
 private:
     auto require_term(FailureTermID term) const noexcept -> void;
+    auto require_source(ConstructionFailureRef source) const noexcept -> void;
     auto require_origin(ProgramOriginID origin) const noexcept -> void;
     auto normalize_members(std::vector<TypeID> members) const noexcept -> std::vector<TypeID>;
-    auto normalize_inputs(std::vector<FailureTermID> inputs) const noexcept
-        -> std::vector<FailureTermID>;
+    auto normalize_inputs(std::vector<ConstructionFailureRef> inputs) const noexcept
+        -> std::vector<ConstructionFailureRef>;
 
     ProgramIdentity program_identity;
     ProvenanceIdentity provenance_identity;
@@ -190,7 +200,7 @@ public:
     ~FailureSolution() = default;
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(FailureTermID term) const noexcept -> bool;
-    auto failure_set(FailureTermID term) const noexcept -> FailureSetID;
+    auto failure_set(ConstructionFailureRef source) const noexcept -> FailureSetID;
 
 private:
     FailureSolution(ProgramIdentity identity, std::vector<FailureSetID> solutions) noexcept;

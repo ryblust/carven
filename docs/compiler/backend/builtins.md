@@ -33,7 +33,7 @@ selected format; folded operands retain their execution obligations. String
 contents are observed after all holes complete.
 
 `PreparedWriterFormat` lowers through the shared statement builder in
-`realization.format` to `runtime::Writer` in `writer.hpp`. Formatted append emits
+`realization.format` to `runtime::FormatWriter` in `format_writer.hpp`. Formatted append emits
 ordinary statements after the expression builder completes its inputs and flushes
 pending earlier work. A direct owning return with the native return ABI creates a
 local String, writes its fields, and returns it by name, permitting C++ NRVO.
@@ -128,9 +128,10 @@ The scan returns a Boolean; `checked_utf8` alone attaches the ingress site's
 failure report. Single-scalar encoding and decoding remain scalar.
 
 SIMD selection follows the consumer's compilation target and
-`CARVEN_SIMD_FORCE_SCALAR`; `simd::hardware_accelerated` exposes that selection,
-not a runtime CPU probe. Translation units using these inline runtime headers
-select the same SIMD backend. Runtime does not depend on the `std::utf` craft,
+`CARVEN_SIMD_FORCE_PORTABLE`. `simd::uses_native_backend` reports whether NEON or
+AVX2 intrinsics were selected. The portable backend may also compile to machine
+vector instructions. Translation units using these inline runtime headers select
+the same SIMD backend. Runtime does not depend on the `std::utf` craft,
 whose source implementation owns streaming state and precise encoding errors.
 
 ## Builtin calls and reports

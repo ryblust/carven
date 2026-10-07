@@ -9,3 +9,11 @@ fn f() {
         E(_) | F(_) => {},
     }
 }
+
+fn inspect(v) {
+    match v {
+        .Some(ref read, &write, copy) => {},
+        .Nested(.Some(ref inner)) => {},
+        .One(ref) => {},
+    }
+}

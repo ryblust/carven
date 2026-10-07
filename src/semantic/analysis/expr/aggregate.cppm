@@ -9,6 +9,7 @@ import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.initialization;
+import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :support.invariant;
 import std;
@@ -33,29 +34,60 @@ auto construct_default_expression(Site& site, ConstructionTypeRef type, Span spa
     return site.finish_constructed(type, SemDefault {}, Site::operand_state(), span);
 }
 
-template<typename Site>
+template<typename Site, typename Source>
 auto construct_array_expression(
     Site& site,
-    const ASTArrayExpr& source,
+    const Source& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> ExpressionTask<typename Site::Value> {
-    const auto context = array_literal_element(site.draft(), expected, source.element_ids.size());
+    constexpr auto repeated = std::same_as<Source, ASTArrayRepeatExpr>;
+    std::uint64_t count = 0u;
+    if constexpr (repeated) {
+        auto resolved = (co_await site.resolve_array_extent(source.extent));
+        if (!resolved) {
+            co_return std::unexpected(resolved.error());
+        }
+        count = *resolved;
+    } else {
+        count = source.element_ids.size();
+    }
+    if (count > std::numeric_limits<std::size_t>::max()) {
+        co_return std::unexpected(site.fail(
+            span,
+            DiagnosticCode::ConstLimit,
+            "array initializer exceeds its construction budget"
+        ));
+    }
+    const auto extent = static_cast<std::size_t>(count);
+    const auto context = repeated && extent == 0uz && !expected
+        ? std::expected<std::optional<ConstructionTypeRef>, OperationDiagnostic>(std::nullopt)
+        : array_literal_element(site.draft(), expected, extent);
     if (!context) {
         co_return std::unexpected(
             site.fail(span, context.error().code, std::string(context.error().message))
         );
     }
-    if (auto checked = site.aggregate_cost(source.element_ids.size(), span); !checked) {
+    if (auto checked = site.aggregate_cost(extent, span); !checked) {
         co_return std::unexpected(checked.error());
     }
     const auto expected_element = *context;
     auto element_type = expected_element;
     auto state = Site::operand_state();
     auto elements = std::vector<SemanticExpression>();
-    elements.reserve(source.element_ids.size());
-    for (const auto id : source.element_ids) {
-        const auto execution = site.enter_operand_execution(state.completes);
+    elements.reserve(extent);
+    const auto source_count = repeated && extent == 0uz ? 1uz : extent;
+    for (auto index = 0uz; index < source_count; ++index) {
+        const auto id = [&]() noexcept {
+            if constexpr (repeated) {
+                return source.element;
+            } else {
+                return source.element_ids[index];
+            }
+        }();
+        const auto executed = index < extent;
+        const auto execution = site.enter_operand_execution(executed && state.completes);
+        const auto pending = site.pending_checkpoint();
         const auto element_span = site.syntax().expression(id).span;
         auto element =
             (co_await site.read_array_element(id, element_type, expected_element.has_value()));
@@ -82,11 +114,15 @@ auto construct_array_expression(
                 co_return std::unexpected(checked.error());
             }
         }
-        auto operand = site.consume_read(state, std::move(*element), element_span);
+        auto operand = executed
+            ? site.consume_read(state, std::move(*element), element_span)
+            : site.consume_unexecuted_read(std::move(*element), pending, element_span);
         if (!operand) {
             co_return std::unexpected(operand.error());
         }
-        elements.push_back(std::move(*operand));
+        if (executed) {
+            elements.push_back(std::move(*operand));
+        }
     }
     if (!element_type) {
         invariant_violation("empty expected array lost its element type");
@@ -273,13 +309,19 @@ auto construct_slice_value(
 ) noexcept -> ExpressionResult<typename Site::Value> {
     const auto contract = slice_intrinsic_contract(intrinsic);
     const auto shape = sequence_shape(site.draft(), receiver_type);
-    if (!shape || shape->extent.has_value() != (contract.receiver == SliceIntrinsicShape::Array)) {
+    if (!shape
+        || shape->kind == SequenceShapeKind::OwnedSequence
+        || !slice_intrinsic_accepts_receiver(
+            contract.receiver,
+            shape->kind == SequenceShapeKind::Array ? SliceIntrinsicShape::Array
+                                                    : SliceIntrinsicShape::Slice
+        )) {
         invariant_violation("slice construction receiver mismatch");
     }
     auto result_type = receiver_type;
     if (const auto* builtin = std::get_if<BuiltinType>(&contract.result)) {
         result_type = site.draft().builtin_type(*builtin);
-    } else if (contract.receiver == SliceIntrinsicShape::Array) {
+    } else if (shape->kind == SequenceShapeKind::Array) {
         if (const auto* concrete = std::get_if<TypeID>(&shape->element)) {
             result_type =
                 site.draft().intern_type({.value = SliceTypeValue {.element = *concrete}});

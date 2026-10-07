@@ -129,6 +129,58 @@ const TestSuite suite([] static noexcept {
         );
     };
 
+    "Semantic failures: known sets contribute without becoming inference variables"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program("");
+            const auto provenance = CompilationProvenanceBuilder();
+            const auto types = CanonicalTypeStoreBuilder(program.identity());
+            const auto declarations = DeclarationBuilder(program.identity(), provenance.identity());
+            const auto first = types.builtin_type(BuiltinType::I32);
+            const auto second = types.builtin_type(BuiltinType::Bool);
+            auto terms = FailureConstraintStore(program.identity(), provenance.identity());
+            auto sets = FailureSetStoreBuilder(program.identity());
+            const auto known = sets.intern({first, first});
+            const auto empty_known = sets.empty_set();
+            const auto inferred = terms.add_union_term({known, empty_known});
+            terms.add_member(inferred, second);
+            const auto enabled = terms.add_empty_term();
+            const auto disabled = terms.add_empty_term();
+            terms.add_guarded_contribution(enabled, known, known);
+            terms.add_guarded_contribution(disabled, empty_known, known);
+            const auto complete = sets.intern({first, second});
+            const auto residual = terms.add_residual_term(complete, {first});
+            const auto intersection = terms.add_intersection_term(complete, {first});
+            expect(sets.copy(known).members == std::vector {first});
+            expect(sets.copy(empty_known).members.empty());
+
+            auto diagnostics = DiagnosticSink();
+            const auto solved = solve_failure_constraints(
+                std::move(terms).finish(),
+                sets,
+                provenance.reader(),
+                FailureTypeDiagnosticNames(
+                    types,
+                    declarations.construction_view(),
+                    provenance.reader()
+                ),
+                AnalysisDiagnostics(diagnostics)
+            );
+            if (!expect(solved.has_value())) {
+                return;
+            }
+            expect(sets.copy(solved->failure_set(known)).members == std::vector {first});
+            expect(sets.copy(solved->failure_set(empty_known)).members.empty());
+            const auto inferred_members = sets.copy(solved->failure_set(inferred)).members;
+            expect_equal(inferred_members.size(), 2uz);
+            expect(std::ranges::find(inferred_members, first) != inferred_members.end());
+            expect(std::ranges::find(inferred_members, second) != inferred_members.end());
+            expect(sets.copy(solved->failure_set(enabled)).members == std::vector {first});
+            expect(sets.copy(solved->failure_set(disabled)).members.empty());
+            expect(sets.copy(solved->failure_set(residual)).members == std::vector {second});
+            expect(sets.copy(solved->failure_set(intersection)).members == std::vector {first});
+            expect(diagnostics.empty());
+        };
+
     "Semantic effects: every branch contributes its failures whatever its condition"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(

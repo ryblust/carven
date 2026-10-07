@@ -4,6 +4,7 @@ import :semantic.evaluation.limits;
 import :semantic.evaluation.operation;
 import :semantic.evaluation.output;
 import :semantic.evaluation.value;
+import :semantic.semir.body;
 import :semantic.semir.structured;
 import :support.task;
 import std;
@@ -110,6 +111,7 @@ public:
     auto binding_count() const noexcept -> std::size_t;
     auto binding_type(LocalBindingID id) const noexcept -> ConstructionTypeRef;
     auto binding_access(LocalBindingID id) const noexcept -> AccessMode;
+    auto binding_storage(LocalBindingID id) const noexcept -> BindingStorage;
     auto bindings_in(LifetimeRegionID lifetime) const noexcept -> std::vector<std::size_t>;
 
     template<typename Visitor>

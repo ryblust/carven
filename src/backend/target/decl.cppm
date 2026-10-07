@@ -60,19 +60,6 @@ struct TargetTypeAlias final {
     TargetTypeID type;
 };
 
-struct TargetMemberInitializer final {
-    TargetIdentifier name;
-    TargetExpr value;
-};
-
-struct TargetConstructorDecl final {
-    TargetIdentifier name;
-    std::vector<TargetParameter> parameters;
-    std::vector<TargetMemberInitializer> initializers;
-    bool constexpr_specifier;
-    bool explicit_specifier;
-};
-
 enum class TargetOperatorName {
     Assignment,
     Equality,
@@ -149,12 +136,8 @@ struct TargetNestedRecord final {
     std::vector<TargetRecordMember> members;
 };
 
-using TargetClassMember = std::variant<
-    TargetMemberVariable,
-    TargetNestedRecord,
-    TargetTypeAlias,
-    TargetConstructorDecl,
-    TargetMemberFunctionDecl>;
+using TargetClassMember = std::
+    variant<TargetMemberVariable, TargetNestedRecord, TargetTypeAlias, TargetMemberFunctionDecl>;
 
 enum class TargetClassAccess {
     Public,

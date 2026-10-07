@@ -33,43 +33,8 @@ import std;
 
 auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noexcept
     -> AnalysisResult<ConstructionCallableContract> {
-    if (const auto* concrete = std::get_if<TypeID>(&type)) {
-        const auto canonical = draft().type_copy(*concrete);
-        auto callable = std::optional<CallableID>();
-        canonical.value.visit(
-            Overloaded {
-                [&](const FunctionTypeValue& value) noexcept { callable = value.callable; },
-                [&](const ClosureTypeValue& value) noexcept { callable = value.callable; },
-                []<typename Value>(const Value&) static noexcept {
-                    static_assert(
-                        std::same_as<Value, BuiltinTypeValue>
-                            || std::same_as<Value, StructTypeValue>
-                            || std::same_as<Value, EnumTypeValue>
-                            || std::same_as<Value, ArrayTypeValue>
-                            || std::same_as<Value, CallableViewTypeValue>
-                            || std::same_as<Value, CppTypeValue>
-                            || std::same_as<Value, PointerTypeValue>
-                            || std::same_as<Value, SliceTypeValue>
-                            || std::same_as<Value, RangeTypeValue>,
-                        "unhandled non-owning callable type"
-                    );
-                },
-            }
-        );
-        if (callable.has_value()) {
-            return draft().construction_callable_contract_copy(*callable);
-        }
-    } else {
-        const auto construction = draft().construction_type_copy(std::get<TypeTermID>(type));
-        if (const auto* view =
-                std::get_if<ConstructionCallableViewTypeValue>(&construction.value)) {
-            return ConstructionCallableContract {
-                .parameters = view->parameters,
-                .result = view->result,
-                .failures = view->failures,
-                .policy = FailureContractPolicy::Declared,
-            };
-        }
+    if (auto contract = draft().callable_contract(type)) {
+        return std::move(*contract);
     }
     return std::unexpected(
         fail(span, DiagnosticCode::TypeNotCallable, "expression is not callable")
@@ -271,8 +236,9 @@ auto BodyElaborator::call_expression(
                     "addressof Write requires writable storage"
                 ));
             }
-            const auto* target = std::get_if<TypeID>(&place->expression.type.construction());
-            if (target == nullptr) {
+            const auto target =
+                draft().try_canonicalize_declared_type(place->expression.type.construction());
+            if (!target) {
                 co_return std::unexpected(fail(
                     ast.expression(argument_id).span,
                     DiagnosticCode::TypeUnresolved,
@@ -298,7 +264,7 @@ auto BodyElaborator::call_expression(
         auto argument_spans = std::vector<Span>();
         auto arguments = std::vector<SemCallArgument>();
         auto parameters = std::vector<ConstructionCallableParameter>();
-        auto pending = BodyPendingFailureTerms();
+        auto pending = BodyPendingFailures();
         auto completes = true;
         auto report_condition_completes = true;
         const auto conditional_report = builtin->function == BuiltinFunction::Assert
@@ -471,7 +437,7 @@ auto BodyElaborator::call_expression(
     }
     const auto failures =
         target ? draft().construction_callable_contract_copy(*target).failures : contract->failures;
-    append_pending_failures(pending_failures, BodyPendingFailureTerms {failures});
+    append_pending_failures(pending_failures, BodyPendingFailures {failures});
     auto result = active_builder().make_expression(
         contract->result,
         active_builder().lifetime(),
@@ -498,6 +464,11 @@ auto BodyElaborator::class_operation(
     bool receiver,
     Span span
 ) noexcept -> AnalysisTask<BuiltExpression> {
+    if (owner.index() >= catalog().struct_count()) {
+        co_return std::unexpected(
+            fail(span, DiagnosticCode::TypeMethodCall, "class has no operation with this name")
+        );
+    }
     const auto* symbol = catalog().symbol(catalog().struct_symbol(owner));
     const auto& form = std::get<CatalogStructForm>(symbol->form);
     for (const auto function : form.operations) {

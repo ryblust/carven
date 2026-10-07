@@ -388,14 +388,14 @@ const TestSuite suite([] static noexcept {
             }));
         };
 
-    "SemIR publication invariant: a closure callable has one closure operation"_test =
+    "SemIR publication: a closure declaration can have no construction occurrences"_test =
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
             auto builder = begin_semir_test_compilation(
                 sources,
                 diagnostics,
-                "semir.publication.closure_site"
+                "semir.publication.closure_declaration"
             );
             const auto module_origin = make_semir_test_module_origin(builder);
             const auto module_id = builder.reserve_module_declaration();
@@ -419,9 +419,13 @@ const TestSuite suite([] static noexcept {
             auto graph =
                 make_semir_test_body(std::move(reservation), module_origin.origin, builder);
             builder.add_body_draft(std::move(graph));
-            expect(expect_termination("semir-publication-orphan-closure", [&] noexcept {
-                static_cast<void>(std::move(builder).finish());
-            }));
+            auto finished = std::move(builder).finish();
+            if (!expect(finished.has_value())) {
+                return;
+            }
+            expect(finished->declarations().body_for_callable(callable) == body_id);
+            expect(finished->declarations().callable_for_body(body_id) == callable);
+            expect(diagnostics.empty());
         };
 
     "SemIR declaration invariant: builder rejects cross-program module references"_test =

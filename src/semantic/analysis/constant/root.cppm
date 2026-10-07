@@ -151,6 +151,7 @@ public:
         -> ExpressionTask<Value> {
         const auto& source = ast.expression(id);
         const auto aggregate = std::holds_alternative<ASTArrayExpr>(source.value)
+            || std::holds_alternative<ASTArrayRepeatExpr>(source.value)
             || std::holds_alternative<ASTConstructionExpr>(source.value);
         if (aggregate && aggregate_depth >= maximum_constant_aggregate_depth) {
             co_return std::unexpected(fail(
@@ -170,6 +171,32 @@ public:
         bool
     ) noexcept -> ExpressionTask<Value> {
         co_return (co_await read(id, expected));
+    }
+
+    auto resolve_array_extent(ASTExprID expression) noexcept -> AnalysisTask<std::uint64_t>;
+
+    auto pending_checkpoint() const noexcept -> std::size_t { return pending_failures.size(); }
+
+    auto consume_unexecuted_read(Value value, std::size_t first, Span span) noexcept
+        -> ExpressionResult<SemanticExpression> {
+        if (type(value) == ConstructionTypeRef(program.builtin_type(BuiltinType::Void))) {
+            return std::unexpected(
+                fail(span, DiagnosticCode::TypeValueRequired, "expression does not produce a value")
+            );
+        }
+        auto pending = std::vector<ConstructionFailureRef>(
+            pending_failures.begin() + first,
+            pending_failures.end()
+        );
+        pending_failures.erase(pending_failures.begin() + first, pending_failures.end());
+        if (!pending.empty()) {
+            program.require_empty_failures(
+                program.add_union_failure_term(std::move(pending)),
+                value.origin,
+                EmptyFailureRequirementKind::OrdinaryConsumption
+            );
+        }
+        return value;
     }
 
     auto type(const Value& value) const noexcept -> ConstructionTypeRef {
@@ -272,11 +299,13 @@ public:
         if (!operand) {
             co_return std::unexpected(operand.error());
         }
-        auto terms =
-            std::vector<FailureTermID>(pending_failures.begin() + first, pending_failures.end());
+        auto pending = std::vector<ConstructionFailureRef>(
+            pending_failures.begin() + first,
+            pending_failures.end()
+        );
         pending_failures.erase(pending_failures.begin() + first, pending_failures.end());
         program.require_non_empty_failures(
-            program.add_union_failure_term(std::move(terms)),
+            program.add_union_failure_term(std::move(pending)),
             program
                 .append_source_origin(program.module_source(source_module_id), source.operator_span)
         );
@@ -286,6 +315,18 @@ public:
             SemPropagate {.operand = OwnedSemanticExpression(std::move(*operand))},
             span
         );
+    }
+
+    auto extension(
+        const ASTTypeApplicationExpr&,
+        Span span,
+        std::optional<ConstructionTypeRef>
+    ) noexcept -> ExpressionTask<Value> {
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::TypeGenericArguments,
+            "type arguments require a generic function or a nominal type qualifier"
+        ));
     }
 
     template<typename Form>
@@ -312,6 +353,14 @@ public:
 
     auto extension(
         const ASTArrayExpr& source,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<Value> {
+        co_return (co_await construct_array_expression(*this, source, span, expected));
+    }
+
+    auto extension(
+        const ASTArrayRepeatExpr& source,
         Span span,
         std::optional<ConstructionTypeRef> expected
     ) noexcept -> ExpressionTask<Value> {
@@ -546,6 +595,7 @@ public:
             if constexpr (std::same_as<Form, ASTLiteral>
                           || std::same_as<Form, ASTGroupExpr>
                           || std::same_as<Form, ASTNameExpr>
+                          || std::same_as<Form, ASTTypeApplicationExpr>
                           || std::same_as<Form, ASTContextualCaseExpr>
                           || std::same_as<Form, ASTPrefixExpr>
                           || std::same_as<Form, ASTRangeExpr>
@@ -554,6 +604,7 @@ public:
                           || std::same_as<Form, ASTInterpolationExpr>
                           || std::same_as<Form, ASTConstructionExpr>
                           || std::same_as<Form, ASTArrayExpr>
+                          || std::same_as<Form, ASTArrayRepeatExpr>
                           || std::same_as<Form, ASTIndexExpr>
                           || std::same_as<Form, ASTMemberExpr>
                           || std::same_as<Form, ASTPropagationExpr>
@@ -653,7 +704,7 @@ private:
     Scope& scope;
     LifetimeRegionID lifetime;
     BodyFailures empty_failures;
-    std::vector<FailureTermID> pending_failures;
+    std::vector<ConstructionFailureRef> pending_failures;
     std::size_t aggregate_work = 0uz;
 
     struct AggregateDepth final {
@@ -762,4 +813,10 @@ auto evaluate_array_extent(
         );
     }
     co_return integer->magnitude();
+}
+
+template<typename Scope>
+auto StaticRootSite<Scope>::resolve_array_extent(ASTExprID expression) noexcept
+    -> AnalysisTask<std::uint64_t> {
+    co_return (co_await evaluate_array_extent(program, source_module_id, ast, scope, expression));
 }

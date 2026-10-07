@@ -1,0 +1,100 @@
+import std::json.value using Value;
+import std::json.validation using validate;
+import std::json.error using JSONError;
+import std::json.error using ValueError;
+import std::utf.error using UTF8Error;
+
+private fn same_syntax_error(text: str) -> bool {
+    var expected = JSONError {
+        kind:.UnexpectedEnd,
+        offset: 0
+    };
+    var invalid = false;
+    try {
+        validate(text)?;
+    } catch {
+        JSONError(error) => {
+            expected = error;
+            invalid = true;
+        },
+    }
+    if invalid == false { return false; }
+    try {
+        let _ = Value::parse(text)?;
+    } catch {
+        JSONError(error) => return error.kind == expected.kind && error.offset == expected.offset,
+    }
+    return false;
+}
+
+private fn nested_document(depth: usize) -> String {
+    var text = String {};
+    for _ in 0usize..depth {
+        text.push('[');
+    }
+    text.append("null");
+    for _ in 0usize..depth {
+        text.push(']');
+    }
+    return &&text;
+}
+
+test "JSON parse: events build independent owners and preserve nested value kinds" {
+    var input: String = r#"{"\u006b":[null,true,{"s":"owned","n":123}],"empty":{"":[]}}"#;
+    try {
+        let document = Value::parse(input)?;
+        input.clear();
+        check(document.kind() == .Object);
+        check(document.len()? == 2);
+        check(document.key_at(0)? == "k" && document.key_at(1)? == "empty");
+        let values = document.member_at(0)?;
+        check(values.len()? == 3);
+        check(values.at(0)?.kind() == .Null);
+        check(values.at(1)?.as_bool()?);
+        let object = values.at(2)?;
+        check(object.get("s")?.as_string()? == "owned");
+        check(object.get("n")?.number_text()? == "123");
+        let empty = document.member_at(1)?;
+        check(empty.get("")?.len()? == 0);
+    } catch {
+        JSONError(error) => fail(f"parse rejected valid input at byte {error.offset}"),
+        ValueError(_) => fail("parsed value has an unexpected shape"),
+    }
+}
+
+test "JSON parse: syntax failures retain the validator's kind and byte position" {
+    check(same_syntax_error(r#"{"key":[null,{"\u00x0":1}]}"#));
+    check(same_syntax_error(r#"["a", "\uD800\u0041"]"#));
+    check(same_syntax_error("[1,]"));
+    check(same_syntax_error("{} false"));
+}
+
+test "JSON parse: byte ingress rejects encoding before document syntax" {
+    let bytes = [0x5bu8, 0x31, 0x2c, 0x5d, 0xff];
+    var rejected_encoding = false;
+    try {
+        let _ = Value::parse_bytes(bytes)?;
+    } catch {
+        UTF8Error(error) => { rejected_encoding = error.offset == 4; },
+        JSONError(_) => {},
+    }
+    check(rejected_encoding);
+}
+
+test "JSON parse: syntax owns the 64-container depth boundary" {
+    let accepted = nested_document(64);
+    try {
+        let document = Value::parse(accepted)?;
+        check(document.kind() == .Array);
+    } catch {
+        JSONError(error) => fail(f"the accepted depth was rejected at byte {error.offset}"),
+    }
+    let rejected = nested_document(65);
+    var depth_error = false;
+    try {
+        let _ = Value::parse(rejected)?;
+    } catch {
+        JSONError(error) => { depth_error = error.kind == .DepthLimit && error.offset == 64; },
+    }
+    check(depth_error);
+}

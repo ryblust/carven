@@ -255,7 +255,7 @@ const TestSuite suite([] static noexcept {
             expect(implementation.contains("#include <carven/runtime/numeric.hpp>"));
             expect(implementation.contains("#include <carven/runtime/outcome.hpp>"));
             expect(!(implementation.contains("#include <carven/runtime/entry.hpp>")));
-            expect(!(implementation.contains("#include <carven/runtime/text.hpp>")));
+            expect(!(implementation.contains("#include <carven/runtime/text/text.hpp>")));
             expect(implementation.contains("#include \"dependency_provider.hpp\""));
         };
 

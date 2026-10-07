@@ -3,6 +3,8 @@ module carven:semantic.semir.structured;
 import :semantic.semir.body;
 import :semantic.semir.format;
 import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.sequence;
 import :semantic.semir.simd;
 import :semantic.semir.type;
 import :support.invariant;
@@ -24,13 +26,12 @@ private:
 
 class BodyFailures final {
 public:
-    explicit BodyFailures(FailureTermID value) noexcept;
-    explicit BodyFailures(FailureSetID value) noexcept;
-    auto term() const noexcept -> FailureTermID;
+    explicit BodyFailures(ConstructionFailureRef value) noexcept;
+    auto reference() const noexcept -> const ConstructionFailureRef&;
     auto resolved() const noexcept -> FailureSetID;
 
 private:
-    std::variant<FailureTermID, FailureSetID> value;
+    ConstructionFailureRef value;
 };
 
 // A single operation tree completes its type and failure facts in place.
@@ -165,7 +166,12 @@ struct SliceIntrinsicOperation final {
     std::optional<std::uint64_t> result_extent;
 };
 
-using IntrinsicOperation = std::variant<SliceIntrinsicOperation, TextIntrinsic, SIMDIntrinsic>;
+using IntrinsicOperation = std::variant<
+    SliceIntrinsicOperation,
+    TextIntrinsic,
+    SIMDIntrinsic,
+    SequenceIntrinsicOperation,
+    FloatIntrinsic>;
 
 struct SemIntrinsic final {
     IntrinsicOperation operation;
@@ -432,7 +438,7 @@ struct SemRangeLoop final {
     bool is_static;
 };
 
-// A const for in a realized body: one specialized region per index. Continue
+// A const for in a realized body: one specialized region per element. Continue
 // leaves the current iteration and break leaves the expansion.
 struct SemExpandedLoop final {
     std::vector<SemanticRegion> iterations;

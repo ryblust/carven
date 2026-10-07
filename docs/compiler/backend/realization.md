@@ -148,8 +148,8 @@ failure transport retain explicit transfer realization.
 Read range bindings use the Read parameter policy;
 Write range bindings are mutable references. A range binding is never a Take
 source. Arrays, slices, and text use explicit Read or Write borrowing during
-realization. C++ range-for iteration consumes the range expression after operand
-construction has retained required backing.
+realization. Their C++ range-for iteration consumes the range expression after
+operand construction has retained required backing.
 Write element types can be deduced from the range. Text decodes UTF-8 in one
 sequential pass. Array initialization uses an accurate type context without
 repeating it on both the local declaration and the initializer.
@@ -169,9 +169,11 @@ when later evaluation requires them. Scalar value consumers can use direct local
 storage within an expression frame.
 
 Integer range values use `runtime::Range<T>`, which stores both bounds and an
-upper-bound inclusion flag. Its iteration operations are `constexpr`. Range loops
-use C++ range-for; integer ranges are copied before traversal. Closed iteration
-tests its final element before incrementing, so it can include the type maximum.
+upper-bound inclusion flag. Integer loops evaluate their source once and snapshot
+its bounds. Ranges known to exclude their upper bound use a direct C++ `for` with
+an independent cursor.
+Other integer ranges use C++ range-for; the runtime iterator checks its terminal
+element before incrementing, so a closed interval can include the type maximum.
 
 Carven evaluation is left to right and exactly once. Temporaries preserve that
 order when a direct C++ expression would not. Short-circuit evaluation remains
@@ -373,7 +375,8 @@ adaptation uses the same construction. A factory may return an immovable prvalue
 Owner transfer, payload extraction, and Outcome widening require the constructors
 used by those operations. Void and discarded regions need no result storage.
 Loops and handlers receive only exits belonging to their own construct. Loops
-without steps and range loops use native `continue`.
+without steps and range traversal use native `continue`. C++ completes iteration
+cleanup before the direct cursor step or range iterator increment.
 
 Expanded loops realize their ordered iteration regions. Semantic specialization
 publishes distinct binding, pattern, and lifetime identities for each iteration;

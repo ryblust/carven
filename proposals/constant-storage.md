@@ -15,11 +15,15 @@ and retained reference graphs have separate admission and retention contracts.
 Constant functions, fixed-array and struct execution, and frozen constant slices
 are implemented, as are integer wrapping arithmetic and text byte views and
 iteration during constant execution. String construction can grow and freeze to
-`str`; admitted arrays and records preserve their types. This proposal concerns
-admission and retained results for future library containers, class operations,
-and reference graphs. Non-null local pointers cannot currently become published
-constants. Temporary execution storage, extraction of a completed result, and
-backend static storage remain distinct owners and boundaries.
+`str`; admitted arrays and records preserve their types. Class operations marked
+`const fn` execute inside constant-function bodies, constant blocks, and static
+tests under ordinary access rules. Direct initializer and extent calls retain the
+[class-operation admission limits](../docs/language/aggregates.md#ordinary-value-classes).
+
+This proposal concerns additional storage-operation admission and retained results
+for library containers and reference graphs. Non-null local pointers cannot
+currently become published constants. Temporary execution storage, extraction of
+a completed result, and backend static storage remain distinct owners and boundaries.
 
 ## Library integration
 

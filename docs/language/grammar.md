@@ -287,7 +287,8 @@ top-level-item = module-item
                | statement;
 
 (* A top-level const binding is a module constant declaration;
-   const test introduces a test and const { introduces a const block. *)
+   const test introduces a test, const { a const block,
+   const if a conditional, and const for a loop. *)
 module-item = [ visibility-modifier ], module-declaration;
 
 visibility-modifier = "private" | "export";
@@ -377,7 +378,7 @@ an ordinary identifier.
 ### 3.2 Enumerations
 
 ```ebnf
-enum-declaration = "enum", IDENTIFIER,
+enum-declaration = "enum", IDENTIFIER, [ type-parameter-clause ],
                    [ ":", type ],
                    "{", enum-case-list, "}";
 
@@ -396,7 +397,7 @@ valid.
 ### 3.3 Structures
 
 ```ebnf
-struct-declaration = "struct", IDENTIFIER,
+struct-declaration = "struct", IDENTIFIER, [ type-parameter-clause ],
                      "{", [ struct-field-list ], "}";
 
 struct-field-list = struct-field,
@@ -412,10 +413,11 @@ contain fields only.
 ### 3.4 Classes and functions
 
 ```ebnf
-class-declaration = "class", IDENTIFIER, "{", { class-member }, "}";
+class-declaration = "class", IDENTIFIER, [ type-parameter-clause ],
+                    "{", { class-member }, "}";
 class-member = struct-field, ","
              | [ "private" ], class-operation;
-class-operation = "fn", IDENTIFIER,
+class-operation = [ "const" ], "fn", IDENTIFIER, [ type-parameter-clause ],
                   "(", [ class-parameter-list ], ")",
                   [ "->", function-result-type ], [ throw-clause ], function-body;
 class-parameter-list = receiver, [ ",", function-parameter-list ]
@@ -438,7 +440,7 @@ function-definition = function-head, function-body;
 
 function-body = ordinary-block | "=>", expression, ";";
 
-function-head = [ "const" ], "fn", IDENTIFIER,
+function-head = [ "const" ], "fn", IDENTIFIER, [ type-parameter-clause ],
                 "(", [ function-parameter-list ], ")",
                 [ "->", function-result-type ],
                 [ throw-clause ];
@@ -468,7 +470,15 @@ no access marker and is never the `self` receiver. Lambda parameters use
 `parameter` without this modifier.
 `throw` introduces the callable's failure contract after the success result.
 `throws` is an ordinary identifier. Nested functions, default arguments,
-variadic parameters, and explicit generic parameter lists have no syntax.
+and variadic parameters have no syntax. A type-parameter clause is parsed on
+functions and class operations, but their parameterized bodies are not supported.
+
+```ebnf
+type-parameter-clause = "<", IDENTIFIER, { ",", IDENTIFIER }, [ "," ], ">";
+```
+
+Current parameterized declaration contracts are defined under
+[Nominal type parameters](types.md#nominal-type-parameters).
 
 ### 3.5 Module Constants
 
@@ -501,7 +511,9 @@ type = named-type | array-type | slice-type | function-type | pointer-type;
 
 pointer-type = "ptr", "<", [ "&" ], type, ">";
 
-named-type = qualified-type-name, [ "<", type, { ",", type }, ">" ];
+named-type = qualified-type-name, [ type-arguments ];
+
+type-arguments = "<", type, { ",", type }, [ "," ], ">";
 
 qualified-type-name = [ "::" ], type-name-component,
                       { "::", type-name-component };
@@ -541,8 +553,7 @@ A named type can carry a nonempty type argument list after its qualified name.
 Nested lists may close with `>>`; token splitting applies only during type
 parsing and leaves expression shift operators unchanged.
 
-There is no type-alias declaration, tuple type syntax, generic
-parameter declaration, or general reference-type syntax.
+There is no type-alias declaration, tuple type syntax, or general reference-type syntax.
 
 ## 5. Statements and Blocks
 
@@ -773,6 +784,7 @@ prefix-operator = "!" | "-" | "~" | "*";
 postfix-expression = primary-expression, { postfix-operation };
 
 postfix-operation = call-operation
+                  | type-arguments
                   | index-operation
                   | member-operation
                   | propagation-operation;
@@ -789,6 +801,11 @@ member-operation = ( "." | "::" | "->" ), IDENTIFIER;
 
 propagation-operation = "?";
 ```
+
+Postfix type arguments are recognized only when the complete list is followed
+by `(` or `::`. The decision uses tokens; expression comparisons and shifts
+otherwise retain their ordinary parsing. A parameterized enum qualifier can
+select a case, as in `Maybe<i32>::Some(1)`.
 
 ### 7.4 Primary Expressions
 
@@ -834,7 +851,8 @@ field-initializer-list = field-initializer,
 
 field-initializer = IDENTIFIER, ":", expression;
 
-array-expression = "[", [ array-element-list ], "]";
+array-expression = "[", [ array-element-list ], "]"
+                 | "[", expression, ";", expression, "]";
 
 array-element-list = expression,
                      { ",", expression },

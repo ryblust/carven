@@ -6,7 +6,6 @@ import :semantic.analysis.coverage;
 import :semantic.analysis.operations;
 import :semantic.analysis.validation.context;
 import :semantic.analysis.validation;
-import :semantic.semir.constant;
 import :semantic.semir.contents;
 import :semantic.semir.program;
 import :support.invariant;

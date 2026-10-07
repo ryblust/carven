@@ -90,7 +90,6 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         == constant
     );
     const auto no_failures = builder.empty_failure_set();
-    const auto declared_no_failures = builder.add_empty_failure_term();
     expect(builder.empty_failure_set() == no_failures);
 
     const auto module_id = builder.reserve_module_declaration();
@@ -129,7 +128,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
                 },
             },
         .result = boolean,
-        .failures = declared_no_failures,
+        .failures = no_failures,
         .policy = FailureContractPolicy::Declared,
     };
     builder.define_callable_contract(first_callable, contract);
@@ -235,9 +234,9 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
             "active_builder.construction_struct_declaration_copy(holder).fields.front().type == ConstructionTypeRef(boolean_array)"
         );
     expect(((active_builder.construction_callable_contract_copy(first_callable).failures)
-            == (declared_no_failures)))
+            == (ConstructionFailureRef(no_failures))))
         .note(
-            "active_builder.construction_callable_contract_copy(first_callable).failures == declared_no_failures"
+            "active_builder.construction_callable_contract_copy(first_callable).failures == ConstructionFailureRef(no_failures)"
         );
 
     active_builder.complete_callable(
@@ -302,7 +301,7 @@ auto check_callable_view_storage_rejected(bool use_enum) noexcept -> void {
     const auto nominal_name = builder.intern_spelling(use_enum ? "Envelope" : "Holder");
     const auto member_name = builder.intern_spelling(use_enum ? "Payload" : "callback");
     const auto boolean = builder.builtin_type(BuiltinType::Bool);
-    const auto no_failures = builder.add_empty_failure_term();
+    const auto no_failures = builder.empty_failure_set();
     const auto callable_view = builder.append_construction_type(
         ConstructionType {
             .value = ConstructionCallableViewTypeValue {

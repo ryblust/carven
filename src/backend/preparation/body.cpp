@@ -128,7 +128,8 @@ auto stable_binding(
                 return parameter.access == AccessMode::Read
                     || (parameter.access == AccessMode::Take && !unstable);
             },
-            [](const CaptureBindingStorage&) static noexcept { return false; }
+            [](const CaptureBindingStorage&) static noexcept { return false; },
+            [](const AliasBindingStorage&) static noexcept { return false; }
         }
     );
 }

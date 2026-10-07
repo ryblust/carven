@@ -54,17 +54,11 @@ auto BodyElaborator::materialize_selection(
         return std::move(*built);
     }
     if (const auto* builtin = std::get_if<BuiltinSelection>(&selected)) {
-        if (expected) {
-            if (const auto* term = std::get_if<TypeTermID>(&*expected)) {
-                const auto type = draft().construction_type_copy(*term);
-                if (const auto* view =
-                        std::get_if<ConstructionCallableViewTypeValue>(&type.value)) {
-                    if (view->result
-                        == ConstructionTypeRef(draft().builtin_type(BuiltinType::Void))) {
-                        return builtin_callable(*builtin, view->parameters);
-                    }
-                }
-            }
+        const auto view = expected ? draft().callable_shape(*expected) : std::nullopt;
+        if (view
+            && !view->owning_type
+            && view->result == ConstructionTypeRef(draft().builtin_type(BuiltinType::Void))) {
+            return builtin_callable(*builtin, view->parameters);
         }
         return std::unexpected(fail(
             builtin->span,
@@ -151,12 +145,8 @@ auto BodyElaborator::cpp_expression(
     std::optional<ConstructionTypeRef> type
 ) noexcept -> AnalysisResult<BuiltExpression> {
     if (type.has_value() && std::holds_alternative<CppConvertOperation>(operation)) {
-        const auto* concrete = std::get_if<TypeID>(&*type);
-        const auto borrowed = concrete != nullptr
-            ? std::holds_alternative<CallableViewTypeValue>(draft().type_copy(*concrete).value)
-            : std::holds_alternative<ConstructionCallableViewTypeValue>(
-                  draft().construction_type_copy(std::get<TypeTermID>(*type)).value
-              );
+        const auto shape = draft().callable_shape(*type);
+        const auto borrowed = shape && !shape->owning_type;
         if (borrowed) {
             return std::unexpected(fail(
                 span,

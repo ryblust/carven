@@ -34,8 +34,7 @@ struct TargetModuleNames final {
 struct TargetClosureCatalog final {
     ProgramIdentity semantic_identity;
     std::vector<std::optional<ModuleID>> owner_modules;
-    // Discovery position within the owner module; it depends only on that
-    // module's source, so closure names stay stable when other modules change.
+    // Lexical position within the owner module, independent of reference order.
     std::vector<std::uint32_t> module_ordinals;
     std::vector<std::vector<CallableID>> production_definitions;
     std::vector<std::vector<CallableID>> test_definitions;
@@ -158,7 +157,7 @@ struct TargetInterfaceDeclaration final {
 
 struct TargetModuleSchedule final {
     ModuleID module_id;
-    std::vector<NominalDeclarationRef> private_nominal_order;
+    std::vector<NominalDeclarationRef> source_nominal_order;
     std::vector<CallableID> closure_definitions;
     // Complete set of named and closure callables with interface linkage.
     std::vector<CallableID> interface_callables;

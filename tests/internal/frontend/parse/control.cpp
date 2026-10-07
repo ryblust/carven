@@ -155,6 +155,58 @@ const TestSuite suite([] static noexcept {
             );
         };
 
+    "Parser control: payload binding markers preserve explicit access"_test = [] static noexcept {
+        const auto result = parse_valid(
+            "fn inspect(value) { match value {"
+            " .Triple(copy, ref read, &write) => {},"
+            " .Nested(.Some(ref nested)) => {},"
+            " .One(ref) => {},"
+            " } }"
+        );
+        const auto ast = result.view();
+        const auto& match = get<ASTMatchForm>(ast.statement(function_body(result).statements[0]));
+        const auto& triple = get<ASTCasePattern>(ast.pattern(match.arms[0].pattern));
+        require(triple.payload.has_value());
+        const auto modes = std::array {
+            ASTPatternBindingMode::Value,
+            ASTPatternBindingMode::Read,
+            ASTPatternBindingMode::Write,
+        };
+        for (auto index = 0uz; index < modes.size(); ++index) {
+            const auto& binding =
+                get<ASTBindingPattern>(ast.pattern(triple.payload->patterns[index]));
+            expect_equal(binding.mode, modes[index]);
+            expect_equal(binding.marker_span.has_value(), index != 0uz);
+        }
+        const auto& nested = get<ASTCasePattern>(ast.pattern(match.arms[1].pattern));
+        require(nested.payload.has_value());
+        const auto& some = get<ASTCasePattern>(ast.pattern(nested.payload->patterns[0]));
+        require(some.payload.has_value());
+        expect_equal(
+            get<ASTBindingPattern>(ast.pattern(some.payload->patterns[0])).mode,
+            ASTPatternBindingMode::Read
+        );
+        const auto& one = get<ASTCasePattern>(ast.pattern(match.arms[2].pattern));
+        require(one.payload.has_value());
+        expect_equal(
+            get<ASTBindingPattern>(ast.pattern(one.payload->patterns[0])).mode,
+            ASTPatternBindingMode::Value
+        );
+        check_invalid(
+            "fn f() { match value { ref read => {} } }",
+            "borrowed bindings require an enum case payload"
+        );
+        check_invalid(
+            "fn f() { match value { &write => {} } }",
+            "borrowed bindings require an enum case payload"
+        );
+        check_invalid(
+            "fn f() { match value { .One(&1) => {} } }",
+            "expected borrowed payload binding name"
+        );
+        check_invalid("fn f() { match value { .One(&&take) => {} } }");
+    };
+
     "Parser control: enum case patterns recursively own positional patterns"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view(

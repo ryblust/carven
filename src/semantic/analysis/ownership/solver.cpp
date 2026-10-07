@@ -24,6 +24,24 @@ auto OwnershipBatchAnalyzer::contents(TypeID type) const noexcept -> TypeContent
     return program.type_contents(type);
 }
 
+auto OwnershipBatchAnalyzer::same_recursion_component(BodyID source, BodyID target) const noexcept
+    -> bool {
+    return recursion_components.at(source) == recursion_components.at(target);
+}
+
+auto OwnershipBatchAnalyzer::region_site(
+    BodyID body,
+    TypeID type,
+    OwnershipRegionDescriptor descriptor
+) noexcept -> OwnershipStorageSite {
+    const auto [found, inserted] = region_sites.try_emplace(
+        std::tuple(body, type, std::move(descriptor)),
+        region_sites.size()
+    );
+    static_cast<void>(inserted);
+    return {body, found->second, OwnershipStorageSiteKind::Region};
+}
+
 auto OwnershipBatchAnalyzer::body(BodyID id) const noexcept -> const SemIRBody& {
     return bodies.body(id);
 }
@@ -88,15 +106,67 @@ auto OwnershipBatchAnalyzer::commit_diagnosis(
 
 auto OwnershipBatchAnalyzer::enqueue(std::size_t index) noexcept -> void {
     auto& query = *queries[index];
+    query.evaluation_is_closed = false;
     if (!query.queued) {
         query.queued = true;
         pending_queries.push_back(index);
     }
 }
 
-auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
-    -> std::span<const OwnershipCallCompletion> {
+auto OwnershipBatchAnalyzer::same_input_partition(
+    const OwnershipCallInput& left,
+    const OwnershipCallInput& right
+) noexcept -> bool {
+    if (left.body_id != right.body_id
+        || left.parameters != right.parameters
+        || left.captures != right.captures
+        || left.objects.size() != right.objects.size()
+        || left.state != right.state
+        || left.outlives != right.outlives
+        || left.accesses != right.accesses
+        || left.storage_readers != right.storage_readers) {
+        return false;
+    }
+    for (const auto [a, b] : std::views::zip(left.objects, right.objects)) {
+        if (a.type != b.type || a.site != b.site) {
+            return false;
+        }
+    }
+    return true;
+}
+
+auto OwnershipBatchAnalyzer::includes_input_topology(
+    const OwnershipCallInput& destination,
+    const OwnershipCallInput& source
+) noexcept -> bool {
+    if (!std::ranges::includes(destination.owns, source.owns)
+        || !std::ranges::includes(destination.possible_aliases, source.possible_aliases)) {
+        return false;
+    }
+    for (const auto [previous, incoming] : std::views::zip(destination.objects, source.objects)) {
+        if ((incoming.many && !previous.many) || (incoming.feedback && !previous.feedback)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+auto OwnershipBatchAnalyzer::query(OwnershipCallInput input, bool recursive) noexcept
+    -> const OwnershipCallSummary& {
     normalize_storage_loans(input.storage_readers);
+    for (auto&& [binding, parameter] :
+         std::views::zip(body(input.body_id).inputs().parameters, input.parameters)) {
+        const auto& source = body(input.body_id).binding(binding);
+        const auto* mode = std::get_if<ParameterBindingStorage>(&source.storage);
+        if (mode
+            && mode->access == AccessMode::Read
+            && contents(source.type).read_borrows_storage()) {
+            if (parameter.alias) {
+                parameter.storage.push_back(*parameter.alias);
+                parameter.alias.reset();
+            }
+        }
+    }
     for (auto& parameter : input.parameters) {
         normalize_relationships(parameter.value);
         std::ranges::sort(parameter.storage);
@@ -112,37 +182,70 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
     }
     // Only a body in the callee's recursion component can allocate at a local
     // site again; other sites need only their equality within this input.
-    auto canonical_sites = std::flat_map<OwnershipAllocationSite, OwnershipAllocationSite>();
+    auto canonical_sites = std::flat_map<OwnershipStorageSite, OwnershipStorageSite>();
+    for (auto& state : input.state.objects) {
+        normalize_relationships(state.relationships);
+    }
     for (auto& object : input.objects) {
-        normalize_relationships(object.state.relationships);
-        if (!object.site.input
-            && recursion_components.at(object.site.body)
-                == recursion_components.at(input.body_id)) {
+        // Sites within the SCC can recur; external histories need only their
+        // equality within this input, including regions from a prior interface.
+        if (same_recursion_component(object.site.body, input.body_id)) {
             continue;
         }
-        const auto canonical = OwnershipAllocationSite {
+        const auto canonical = OwnershipStorageSite {
             .body = input.body_id,
             .slot = canonical_sites.size(),
-            .input = true,
+            .kind = OwnershipStorageSiteKind::Input,
         };
         object.site = canonical_sites.emplace(object.site, canonical).first->second;
     }
     auto& candidates = body_queries[input.body_id];
     const auto found = std::ranges::find_if(candidates, [&](std::size_t index) noexcept {
-        return queries[index]->input == input;
+        const auto& query = *queries[index];
+        return query.recursive == recursive
+            && (recursive ? same_input_partition(query.input, input) : query.input == input);
     });
     auto index = queries.size();
     if (found != candidates.end()) {
         index = *found;
+        auto& query = *queries[index];
+        const auto& candidate = query.pending_input ? *query.pending_input : query.input;
+        if (recursive && !includes_input_topology(candidate, input)) {
+            if (!query.pending_input) {
+                query.pending_input = query.input;
+            }
+            auto& joined = *query.pending_input;
+            joined.possible_aliases.append_range(input.possible_aliases);
+            std::ranges::sort(joined.possible_aliases);
+            joined.possible_aliases.erase(
+                std::ranges::unique(joined.possible_aliases).begin(),
+                joined.possible_aliases.end()
+            );
+            joined.owns.append_range(input.owns);
+            std::ranges::sort(joined.owns);
+            joined.owns.erase(std::ranges::unique(joined.owns).begin(), joined.owns.end());
+            for (auto&& [previous, incoming] : std::views::zip(joined.objects, input.objects)) {
+                previous.many |= incoming.many;
+                previous.feedback |= incoming.feedback;
+            }
+            ++query.input_revision;
+            enqueue(index);
+            for (const auto consumer : query.consumers) {
+                enqueue(consumer);
+            }
+        }
     } else {
         candidates.push_back(index);
         queries.push_back(
             std::make_unique<OwnershipCallQuery>(OwnershipCallQuery {
                 .input = std::move(input),
+                .recursive = recursive,
+                .pending_input = std::nullopt,
+                .input_revision = 0uz,
                 .answer = {},
                 .consumers = {},
                 .queued = false,
-                .evaluation_matches_answer = false,
+                .evaluation_is_closed = false,
                 .diagnosis = nullptr
             })
         );
@@ -155,9 +258,9 @@ auto OwnershipBatchAnalyzer::query(OwnershipCallInput input) noexcept
     return query.answer;
 }
 
-auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
+auto OwnershipBatchAnalyzer::symbolic_input(const SemIRBody& source) const noexcept
     -> OwnershipCallInput {
-    auto result = OwnershipCallInput {source.id(), {}, {}, {}, {}, {}, {}};
+    auto result = OwnershipCallInput {source.id(), {}, {}, {}, {}, {}, {}, {}, {}, {}};
     const auto abstract_value = [&](this const auto& self,
                                     TypeID type,
                                     ProgramOriginID origin) noexcept -> OwnershipRelationships {
@@ -181,12 +284,17 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                     result.objects.push_back(
                         {capture.type,
                          capture.origin,
-                         {.available = true,
-                          .taken = std::nullopt,
-                          .relationships = std::move(captured),
-                          .modified = false},
-                         {.body = source.id(), .slot = object, .input = true},
+                         {.body = source.id(),
+                          .slot = object,
+                          .kind = OwnershipStorageSiteKind::Input},
+                         false,
                          false}
+                    );
+                    result.state.objects.push_back(
+                        {.available = true,
+                         .taken = std::nullopt,
+                         .relationships = std::move(captured),
+                         .modified = false}
                     );
                     relationships.edit().captures.push_back(
                         {OwnershipProjectionPath {index},
@@ -216,12 +324,15 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
             result.objects.push_back(
                 {type,
                  origin,
-                 {.available = true,
-                  .taken = std::nullopt,
-                  .relationships = std::move(elements),
-                  .modified = false},
-                 {.body = source.id(), .slot = backing, .input = true},
+                 {.body = source.id(), .slot = backing, .kind = OwnershipStorageSiteKind::Input},
+                 false,
                  false}
+            );
+            result.state.objects.push_back(
+                {.available = true,
+                 .taken = std::nullopt,
+                 .relationships = std::move(elements),
+                 .modified = false}
             );
             relationships.edit().storage_loans.push_back({{}, {backing, {}}, origin});
         }
@@ -266,6 +377,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                         return true;
                     },
                     [](const OwnerBindingStorage&) static noexcept { return false; },
+                    [](const AliasBindingStorage&) static noexcept { return false; },
                 }
             );
             auto alias = std::optional<OwnershipPlace>();
@@ -274,12 +386,17 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                 result.objects.push_back(
                     {binding.type,
                      binding.origin,
-                     {.available = true,
-                      .taken = std::nullopt,
-                      .relationships = relationships,
-                      .modified = false},
-                     {.body = source.id(), .slot = result.objects.size(), .input = true},
+                     {.body = source.id(),
+                      .slot = result.objects.size(),
+                      .kind = OwnershipStorageSiteKind::Input},
+                     false,
                      false}
+                );
+                result.state.objects.push_back(
+                    {.available = true,
+                     .taken = std::nullopt,
+                     .relationships = relationships,
+                     .modified = false}
                 );
             }
             destination.push_back({std::move(alias), std::move(relationships), {}, std::nullopt});
@@ -291,6 +408,61 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
     return result;
 }
 
+auto OwnershipBatchAnalyzer::join_summary(
+    OwnershipCallSummary& destination,
+    const OwnershipCallSummary& source,
+    std::size_t input_objects
+) noexcept -> void {
+    // A query's domain keeps node identities and only gains graph facts. The
+    // current topology snapshot lifts retained completions into that same domain.
+    if (source.referents.size() < destination.referents.size()
+        || !std::ranges::includes(source.owns, destination.owns)) {
+        invariant_violation("ownership call domain withdrew retained storage");
+    }
+    for (const auto [previous, current] :
+         std::views::zip(destination.referents, source.referents)) {
+        if (previous.type != current.type
+            || previous.site != current.site
+            || (previous.many && !current.many)
+            || (previous.feedback && !current.feedback)) {
+            invariant_violation("ownership call domain changed a retained storage identity");
+        }
+    }
+    for (const auto& completion : source.completions) {
+        const auto found =
+            std::ranges::find_if(destination.completions, [&](const auto& previous) noexcept {
+                return previous.test_stopped == completion.test_stopped
+                    && previous.failure == completion.failure;
+            });
+        if (found == destination.completions.end()) {
+            destination.completions.push_back(completion);
+        } else {
+            join_ownership_state(found->state, completion.state);
+            merge_relationships(found->value, completion.value);
+        }
+    }
+    destination.referents = source.referents;
+    destination.owns = source.owns;
+    for (const auto& effect : source.effects) {
+        if (!std::ranges::contains(destination.effects, effect)) {
+            destination.effects.push_back(effect);
+        }
+    }
+    std::ranges::sort(destination.effects, {}, [](const auto& effect) static noexcept {
+        return std::tuple(effect.place, effect.invalidates, effect.storage, effect.take);
+    });
+    std::ranges::sort(destination.completions, {}, [](const auto& completion) static noexcept {
+        return std::pair(completion.test_stopped, completion.failure);
+    });
+    const auto domain = input_objects + destination.referents.size();
+    for (auto& completion : destination.completions) {
+        completion.state.objects.resize(
+            domain,
+            {.available = true, .taken = std::nullopt, .relationships = {}, .modified = false}
+        );
+    }
+}
+
 auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisSummary> {
     auto evaluation_count = 0uz;
     // Source bodies are checked; an instance repeats one with fewer paths.
@@ -298,7 +470,7 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
         if (source.specialized()) {
             continue;
         }
-        auto input = root_input(source);
+        auto input = symbolic_input(source);
         commit_diagnosis(OwnershipBodyAnalyzer(*this, input).check_contracts());
         static_cast<void>(query(std::move(input)));
     }
@@ -312,9 +484,15 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
         pending_queries.pop_front();
         auto& query = *queries[index];
         query.queued = false;
+        if (query.pending_input) {
+            query.input = std::move(*query.pending_input);
+            query.pending_input.reset();
+        }
         active_query = index;
         ++evaluation_count;
-        auto result = OwnershipBodyAnalyzer(*this, query.input).run();
+        const auto input_revision = query.input_revision;
+        const auto revision = query.topology.revision;
+        auto result = OwnershipBodyAnalyzer(*this, query.input, &query.topology).run();
         active_query.reset();
         if (!result.answer.has_value()) {
             // An invalid completion keeps priority over every deferred query.
@@ -322,38 +500,30 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
             return std::unexpected(*failure);
         }
         query.diagnosis = std::move(result.diagnosis);
-        const auto& answer = result.answer;
-        if (*answer == query.answer) {
-            query.evaluation_matches_answer = true;
-            continue;
-        }
         auto joined = query.answer;
-        for (const auto& completion : *answer) {
-            const auto found = std::ranges::find_if(joined, [&](const auto& previous) noexcept {
-                return previous.test_stopped == completion.test_stopped
-                    && previous.failure == completion.failure;
-            });
-            if (found == joined.end()) {
-                joined.push_back(completion);
-            } else {
-                join_ownership_state(found->state, completion.state);
-                merge_relationships(found->value, completion.value);
-            }
-        }
-        std::ranges::sort(joined, {}, [](const auto& completion) static noexcept {
-            return std::pair(completion.test_stopped, completion.failure);
-        });
-        query.evaluation_matches_answer = *answer == joined;
-        if (joined != query.answer) {
+        join_summary(joined, *result.answer, query.input.objects.size());
+        const auto changed = joined != query.answer;
+        // Like a loop header, a call answer is an inductive upper bound. Test
+        // closure against the candidate that this evaluation actually consumed,
+        // before adding its transfer. Historical alternatives may remain in it.
+        query.evaluation_is_closed = !changed
+            && revision == query.topology.revision
+            && input_revision == query.input_revision;
+        if (changed) {
             query.answer = std::move(joined);
             for (const auto consumer : query.consumers) {
                 enqueue(consumer);
             }
         }
+        if (!query.evaluation_is_closed) {
+            // Validate the enlarged candidate even when it has no self-call.
+            // Enqueue also invalidates certificates for changed dependencies.
+            enqueue(index);
+        }
     }
     for (const auto& query : queries) {
-        if (!query->evaluation_matches_answer) {
-            invariant_violation("final ownership evaluation disagrees with a solved call answer");
+        if (!query->evaluation_is_closed) {
+            invariant_violation("final ownership evaluation did not validate a closed call answer");
         }
     }
     // Every changed answer schedules its readers. With no pending query,
@@ -376,9 +546,17 @@ auto OwnershipBatchAnalyzer::run() noexcept -> AnalysisResult<OwnershipAnalysisS
             );
         }
     }
+    auto nodes = 0uz;
+    auto edges = 0uz;
+    for (const auto& query : queries) {
+        nodes += query->topology.objects.size();
+        edges += query->topology.owns.size();
+    }
     return OwnershipAnalysisSummary {
         .query_count = queries.size(),
         .evaluation_count = evaluation_count,
+        .storage_node_count = nodes,
+        .storage_edge_count = edges,
     };
 }
 

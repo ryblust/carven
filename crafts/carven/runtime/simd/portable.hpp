@@ -10,9 +10,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 
 namespace carven::runtime::simd {
-inline namespace scalar {
+inline namespace portable {
 namespace backend {
 
 // Float lanes keep their native object representation. Masks are canonical, so
@@ -22,47 +23,52 @@ struct Storage final {
     std::array<std::uint8_t, Bytes> bytes;
 };
 
-template<std::size_t Bytes, typename Operation>
+#if defined(__clang__) || defined(__GNUC__)
+template<typename Element>
+struct CompilerVector;
+
+template<>
+struct CompilerVector<std::uint8_t> final {
+    typedef std::uint8_t Type __attribute__((vector_size(16)));
+};
+
+template<>
+struct CompilerVector<float> final {
+    typedef float Type __attribute__((vector_size(16)));
+};
+#endif
+
+template<typename Element, std::size_t Bytes, typename Operation>
 CARVEN_SIMD_INLINE auto map(Storage<Bytes> a, Storage<Bytes> b, Operation operation) noexcept
     -> Storage<Bytes> {
     auto result = Storage<Bytes> {};
-    for (auto i = std::size_t {0}; i < Bytes; ++i) {
-        result.bytes[i] = static_cast<std::uint8_t>(operation(a.bytes[i], b.bytes[i]));
+#if defined(__clang__) || defined(__GNUC__)
+    using Vector = typename CompilerVector<Element>::Type;
+    static_assert(Bytes % sizeof(Vector) == 0);
+    for (auto offset = std::size_t {0}; offset < Bytes; offset += sizeof(Vector)) {
+        auto left = Vector {};
+        auto right = Vector {};
+        std::memcpy(&left, a.bytes.data() + offset, sizeof(Vector));
+        std::memcpy(&right, b.bytes.data() + offset, sizeof(Vector));
+        auto value = operation(left, right);
+        static_assert(sizeof(value) == sizeof(Vector));
+        std::memcpy(result.bytes.data() + offset, &value, sizeof(Vector));
     }
-    return result;
-}
-
-template<std::size_t Bytes>
-CARVEN_SIMD_INLINE auto lane(Storage<Bytes> value, std::size_t index) noexcept -> float {
-    auto result = 0.0f;
-    std::memcpy(&result, value.bytes.data() + index * sizeof(float), sizeof(float));
-    return result;
-}
-
-template<std::size_t Bytes, typename Operation>
-CARVEN_SIMD_INLINE auto map_floats(Storage<Bytes> a, Storage<Bytes> b, Operation operation) noexcept
-    -> Storage<Bytes> {
-    auto result = Storage<Bytes> {};
-    for (auto i = std::size_t {0}; i < Bytes / sizeof(float); ++i) {
-        const auto value = static_cast<float>(operation(lane(a, i), lane(b, i)));
-        std::memcpy(result.bytes.data() + i * sizeof(float), &value, sizeof(float));
-    }
-    return result;
-}
-
-template<std::size_t Bytes, typename Operation>
-CARVEN_SIMD_INLINE auto compare_floats(
-    Storage<Bytes> a,
-    Storage<Bytes> b,
-    Operation operation
-) noexcept -> Storage<Bytes> {
-    auto result = Storage<Bytes> {};
-    for (auto i = std::size_t {0}; i < Bytes / sizeof(float); ++i) {
-        const auto fill = operation(lane(a, i), lane(b, i)) ? std::uint8_t {255} : std::uint8_t {0};
-        for (auto j = std::size_t {0}; j < sizeof(float); ++j) {
-            result.bytes[i * sizeof(float) + j] = fill;
+#else
+    for (auto offset = std::size_t {0}; offset < Bytes; offset += sizeof(Element)) {
+        auto left = Element {};
+        auto right = Element {};
+        std::memcpy(&left, a.bytes.data() + offset, sizeof(Element));
+        std::memcpy(&right, b.bytes.data() + offset, sizeof(Element));
+        auto value = operation(left, right);
+        if constexpr (std::is_same_v<decltype(value), bool>) {
+            std::memset(result.bytes.data() + offset, value ? 255 : 0, sizeof(Element));
+        } else {
+            const auto lane = static_cast<Element>(value);
+            std::memcpy(result.bytes.data() + offset, &lane, sizeof(Element));
         }
     }
+#endif
     return result;
 }
 
@@ -101,31 +107,31 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL store(void* data, Value<Bytes> value) n
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL add_bytes(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map<Bytes>(a, b, [](std::uint8_t a, std::uint8_t b) noexcept { return a + b; });
+    return map<std::uint8_t, Bytes>(a, b, [](auto a, auto b) noexcept { return a + b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sub_bytes(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map<Bytes>(a, b, [](std::uint8_t a, std::uint8_t b) noexcept { return a - b; });
+    return map<std::uint8_t, Bytes>(a, b, [](auto a, auto b) noexcept { return a - b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL bit_and(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map<Bytes>(a, b, [](std::uint8_t a, std::uint8_t b) noexcept { return a & b; });
+    return map<std::uint8_t, Bytes>(a, b, [](auto a, auto b) noexcept { return a & b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL bit_or(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map<Bytes>(a, b, [](std::uint8_t a, std::uint8_t b) noexcept { return a | b; });
+    return map<std::uint8_t, Bytes>(a, b, [](auto a, auto b) noexcept { return a | b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL bit_xor(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map<Bytes>(a, b, [](std::uint8_t a, std::uint8_t b) noexcept { return a ^ b; });
+    return map<std::uint8_t, Bytes>(a, b, [](auto a, auto b) noexcept { return a ^ b; });
 }
 
 template<std::size_t Bytes>
@@ -136,70 +142,62 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL bit_not(Value<Bytes> a) noexcept -> Val
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL equal_bytes(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map<Bytes>(a, b, [](std::uint8_t a, std::uint8_t b) noexcept {
-        return a == b ? 255 : 0;
-    });
+    return map<std::uint8_t, Bytes>(a, b, [](auto a, auto b) noexcept { return a == b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL less_bytes(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map<Bytes>(a, b, [](std::uint8_t a, std::uint8_t b) noexcept {
-        return a < b ? 255 : 0;
-    });
+    return map<std::uint8_t, Bytes>(a, b, [](auto a, auto b) noexcept { return a < b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL add_floats(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map_floats<Bytes>(a, b, [](float a, float b) noexcept { return a + b; });
+    return map<float, Bytes>(a, b, [](auto a, auto b) noexcept { return a + b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sub_floats(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map_floats<Bytes>(a, b, [](float a, float b) noexcept { return a - b; });
+    return map<float, Bytes>(a, b, [](auto a, auto b) noexcept { return a - b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL mul_floats(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map_floats<Bytes>(a, b, [](float a, float b) noexcept { return a * b; });
+    return map<float, Bytes>(a, b, [](auto a, auto b) noexcept { return a * b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL div_floats(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return map_floats<Bytes>(a, b, [](float a, float b) noexcept { return a / b; });
+    return map<float, Bytes>(a, b, [](auto a, auto b) noexcept { return a / b; });
 }
 
 // Ordered comparisons: every comparison involving NaN is false.
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL equal_floats(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return compare_floats<Bytes>(a, b, [](float a, float b) noexcept { return a == b; });
+    return map<float, Bytes>(a, b, [](auto a, auto b) noexcept { return a == b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL less_floats(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return compare_floats<Bytes>(a, b, [](float a, float b) noexcept { return a < b; });
+    return map<float, Bytes>(a, b, [](auto a, auto b) noexcept { return a < b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL less_equal_floats(Value<Bytes> a, Value<Bytes> b) noexcept
     -> Value<Bytes> {
-    return compare_floats<Bytes>(a, b, [](float a, float b) noexcept { return a <= b; });
+    return map<float, Bytes>(a, b, [](auto a, auto b) noexcept { return a <= b; });
 }
 
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL
 select(Value<Bytes> mask, Value<Bytes> yes, Value<Bytes> no) noexcept -> Value<Bytes> {
-    auto result = Value<Bytes> {};
-    for (auto i = std::size_t {0}; i < Bytes; ++i) {
-        result.bytes[i] = mask.bytes[i] != 0 ? yes.bytes[i] : no.bytes[i];
-    }
-    return result;
+    return bit_or<Bytes>(bit_and<Bytes>(mask, yes), bit_and<Bytes>(bit_not<Bytes>(mask), no));
 }
 
 // Every index at or beyond the logical width selects zero.
@@ -217,12 +215,10 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL lookup(Value<Bytes> table, Value<Bytes>
 template<std::size_t Bytes, std::size_t Count, bool Left>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL shift(Value<Bytes> a) noexcept -> Value<Bytes> {
     static_assert(Count < 8);
-    auto result = Value<Bytes> {};
-    for (auto i = std::size_t {0}; i < Bytes; ++i) {
-        const auto byte = static_cast<unsigned>(a.bytes[i]);
-        result.bytes[i] = static_cast<std::uint8_t>(Left ? byte << Count : byte >> Count);
-    }
-    return result;
+    return map<std::uint8_t, Bytes>(a, a, [](auto byte, auto) noexcept {
+        const auto count = static_cast<std::uint8_t>(Count);
+        return Left ? byte << count : byte >> count;
+    });
 }
 
 template<std::size_t Bytes, bool Float>
@@ -267,6 +263,15 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL count(Value<Bytes> a) noexcept -> std::
     return result;
 }
 
+template<std::size_t Bytes>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sum(Value<Bytes> a) noexcept -> std::size_t {
+    auto result = std::uint32_t {0};
+    for (const auto byte : a.bytes) {
+        result += byte;
+    }
+    return result;
+}
+
 // Offset is a byte offset in 1..Bytes-1; the public layer handles both ends.
 template<std::size_t Bytes, std::size_t Offset>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL extract(Value<Bytes> a, Value<Bytes> b) noexcept
@@ -280,5 +285,5 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL extract(Value<Bytes> a, Value<Bytes> b)
 }
 
 } // namespace backend
-} // namespace scalar
+} // namespace portable
 } // namespace carven::runtime::simd

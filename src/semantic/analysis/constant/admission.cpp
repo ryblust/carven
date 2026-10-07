@@ -126,7 +126,13 @@ auto ConstFunctionValidator::check_function(FunctionID function) noexcept -> voi
             [&](const auto& parameter) noexcept { return !supported_type(parameter.type); }
         )
         || std::ranges::any_of(
-            draft.construction_failure_term_copy(contract.failures).direct_members,
+            contract.failures.visit([&](auto source) noexcept {
+                if constexpr (std::same_as<decltype(source), FailureTermID>) {
+                    return draft.construction_failure_term_copy(source).direct_members;
+                } else {
+                    return draft.failure_set_copy(source).members;
+                }
+            }),
             [&](const auto type) noexcept { return !supported_type(type); }
         )) {
         reject(
@@ -218,6 +224,25 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                         return;
                     }
                     if (expression->operation_reachable) {
+                        if (const auto* match = std::get_if<SemMatch>(&expression->value)) {
+                            for (const auto& arm : match->arms) {
+                                if (arm.reachable
+                                    && std::ranges::any_of(
+                                        arm.bindings,
+                                        [&](LocalBindingID binding) noexcept {
+                                            return std::holds_alternative<AliasBindingStorage>(
+                                                body.bindings.get(binding).storage
+                                            );
+                                        }
+                                    )) {
+                                    reject(
+                                        expression->origin,
+                                        "borrowed pattern bindings are not supported in compile-time execution"
+                                    );
+                                    return;
+                                }
+                            }
+                        }
                         if (const auto reason = unsupported_execution_expression(*expression)) {
                             reject(expression->origin, std::string(*reason));
                             return;

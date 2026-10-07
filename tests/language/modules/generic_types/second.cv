@@ -1,0 +1,3 @@
+import .api using Box;
+
+export fn second(value: Box<i32>) -> i32 => value.value;

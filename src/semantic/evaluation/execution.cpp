@@ -113,14 +113,18 @@ auto ExecutionBody::binding_type(LocalBindingID id) const noexcept -> Constructi
     return ConstructionTypeRef(std::get<const SemIRBody*>(body)->binding(id).type);
 }
 
-auto ExecutionBody::binding_access(LocalBindingID id) const noexcept -> AccessMode {
-    const auto storage = body.visit([&](const auto* source) noexcept -> BindingStorage {
+auto ExecutionBody::binding_storage(LocalBindingID id) const noexcept -> BindingStorage {
+    return body.visit([&](const auto* source) noexcept -> BindingStorage {
         if constexpr (std::same_as<std::remove_cvref_t<decltype(*source)>, StructuredBodyDraft>) {
             return source->bindings.get(id).storage;
         } else {
             return source->binding(id).storage;
         }
     });
+}
+
+auto ExecutionBody::binding_access(LocalBindingID id) const noexcept -> AccessMode {
+    const auto storage = binding_storage(id);
     if (const auto* parameter = std::get_if<ParameterBindingStorage>(&storage)) {
         return parameter->access;
     }

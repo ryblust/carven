@@ -216,6 +216,13 @@ namespace {
       "CV-TYPE-EQUALITY-UNSUPPORTED",                                                              \
       Error,                                                                                       \
       "Type does not support equality.")                                                           \
+    X(TypeGenericArguments, "CV-TYPE-GENERIC-ARGUMENTS", Error, "Invalid generic type arguments.") \
+    X(TypeGenericDefinition, "CV-TYPE-GENERIC-DEFINITION", Error, "Invalid generic definition.")   \
+    X(TypeGenericExpansion, "CV-TYPE-GENERIC-EXPANSION", Error, "Unbounded generic expansion.")    \
+    X(TypeGenericLimits,                                                                           \
+      "CV-TYPE-GENERIC-LIMITS",                                                                    \
+      Error,                                                                                       \
+      "Generic construction resource limit exceeded.")                                             \
     X(TypeRecursiveStorage,                                                                        \
       "CV-TYPE-RECURSIVE-STORAGE",                                                                 \
       Error,                                                                                       \
@@ -261,6 +268,7 @@ namespace {
     X(TypeTextProperty, "CV-TYPE-TEXT-PROPERTY", Error, "Invalid text property.")                  \
     X(TypeUnresolved, "CV-TYPE-UNRESOLVED", Error, "Unresolved type.")                             \
     X(TypeUpdateInteger, "CV-TYPE-UPDATE-INTEGER", Error, "Integer update target required.")       \
+    X(TypeSequenceElement, "CV-TYPE-SEQUENCE-ELEMENT", Error, "Invalid owning sequence element.")  \
     X(TypeValueRequired,                                                                           \
       "CV-TYPE-VALUE-REQUIRED",                                                                    \
       Error,                                                                                       \

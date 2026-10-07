@@ -46,6 +46,21 @@ auto BodyRealizer::declare_binding(
     bool snapshot
 ) noexcept -> void {
     const auto& binding = metadata.binding(id);
+    if (const auto* alias = std::get_if<AliasBindingStorage>(&binding.storage)) {
+        destination.declare(
+            TargetVariableStmt {
+                .binding = alias->access == AccessMode::Read
+                    ? TargetVariableBinding::ConstReference
+                    : TargetVariableBinding::MutableReference,
+                .maybe_unused = true,
+                .local = binding_locals.at(id),
+                .type = context.lower_type(binding.type),
+                .initializer = std::move(initializer),
+            },
+            false
+        );
+        return;
+    }
     const auto cleanup = needs_cleanup(binding.type);
     // A typed aggregate initializer already fixes its exact native value type.
     const auto deduced_native = std::holds_alternative<TargetConstructionExpr>(initializer.value)

@@ -87,9 +87,15 @@ struct ASTEnumCase final {
     std::optional<ASTExprID> initializer;
 };
 
+struct ASTTypeParameterClause final {
+    Span span;
+    std::vector<Span> names;
+};
+
 struct ASTEnumDecl final {
     ASTDeclarationVisibility visibility;
     Span name_span;
+    std::optional<ASTTypeParameterClause> type_parameters;
     std::optional<ASTTypeID> underlying_type;
     std::vector<ASTEnumCase> cases;
 };
@@ -106,6 +112,7 @@ struct ASTRecordDecl final {
     ASTRecordKind kind;
     ASTDeclarationVisibility visibility;
     Span name_span;
+    std::optional<ASTTypeParameterClause> type_parameters;
     std::vector<ASTRecordField> fields;
     std::vector<ASTItemID> operations;
 };
@@ -137,6 +144,7 @@ struct ASTFunctionDecl final {
     std::optional<ASTCppExportForm> cpp_export;
     std::optional<Span> const_span;
     Span name_span;
+    std::optional<ASTTypeParameterClause> type_parameters;
     std::vector<ASTFunctionParameter> parameters;
     std::optional<ASTTypeID> result_type;
     std::optional<ASTThrowClause> throw_clause;

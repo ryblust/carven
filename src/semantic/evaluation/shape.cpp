@@ -26,7 +26,9 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
         const auto canonical = values.type_copy(type);
         auto result = ExecutionTypeShape {.supported = false, .depth = 0uz, .elements = 0uz};
         constexpr auto saturated = maximum_constant_aggregate_elements + 1uz;
-        if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
+        if (std::holds_alternative<OwnedSequenceTypeValue>(canonical.value)) {
+            return result;
+        } else if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
             const auto child = compute(array->element, depth + 1uz);
             if (!child) {
                 return std::nullopt;

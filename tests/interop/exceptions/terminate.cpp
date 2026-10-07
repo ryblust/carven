@@ -7,7 +7,7 @@
 
 #include <carven/runtime/callable.hpp>
 #include <carven/runtime/outcome.hpp>
-#include <carven/runtime/string.hpp>
+#include <carven/runtime/text/text.hpp>
 #include <carven/runtime/format.hpp>
 #include <carven/runtime/print.hpp>
 

@@ -1,8 +1,10 @@
 module carven:semantic.semir.surface.impl;
 
+import :semantic.semir.delegation;
 import :semantic.semir.program;
 import :semantic.semir.traversal;
 import :support.invariant;
+import :support.visit;
 import std;
 
 namespace {
@@ -127,6 +129,163 @@ auto collect_surface(const SemIRProgram& semantic, const SemIRBody& body) noexce
 
 } // namespace
 
+auto body_closure_references(const SemIRProgram& semantic, const SemIRBody& body) noexcept
+    -> std::vector<CallableID> {
+    auto references = std::vector<CallableID>();
+    auto seen_closures = std::flat_set<CallableID>();
+    auto seen_types = std::flat_set<TypeID>();
+    const auto record = [&](CallableID callable) noexcept {
+        if (seen_closures.insert(callable).second) {
+            references.push_back(callable);
+        }
+    };
+    const auto collect_type = [&](TypeID root) noexcept {
+        auto pending = std::vector<TypeID> {root};
+        const auto signature_types = [&](CallableSignatureID id) noexcept {
+            const auto& signature = semantic.callable_signatures().signature(id);
+            const auto& failures = semantic.failure_sets().failure_set(signature.failures);
+            for (const auto failure : std::views::reverse(failures.members)) {
+                pending.push_back(failure);
+            }
+            pending.push_back(signature.result);
+            for (const auto& parameter : std::views::reverse(signature.parameters)) {
+                pending.push_back(parameter.type);
+            }
+        };
+        while (!pending.empty()) {
+            const auto type = pending.back();
+            pending.pop_back();
+            if (!seen_types.insert(type).second) {
+                continue;
+            }
+            semantic.types().type(type).value.visit(
+                Overloaded {
+                    [](const BuiltinTypeValue&) static noexcept {},
+                    [&](const PointerTypeValue& value) noexcept {
+                        pending.push_back(value.target);
+                    },
+                    [&](const StructTypeValue& value) noexcept {
+                        for (const auto& field : std::views::reverse(
+                                 semantic.declarations().structure(value.structure).fields
+                             )) {
+                            pending.push_back(field.type);
+                        }
+                    },
+                    [&](const EnumTypeValue& value) noexcept {
+                        for (const auto enum_case : std::views::reverse(
+                                 semantic.declarations().enumeration(value.enumeration).cases
+                             )) {
+                            const auto& payload =
+                                semantic.declarations().enum_case(enum_case).payload_types;
+                            for (const auto type : std::views::reverse(payload)) {
+                                pending.push_back(type);
+                            }
+                        }
+                    },
+                    [&](const ArrayTypeValue& value) noexcept { pending.push_back(value.element); },
+                    [&](const OwnedSequenceTypeValue& value) noexcept {
+                        pending.push_back(value.element);
+                    },
+                    [&](const SliceTypeValue& value) noexcept { pending.push_back(value.element); },
+                    [&](const RangeTypeValue& value) noexcept { pending.push_back(value.element); },
+                    [&](const FunctionTypeValue& value) noexcept {
+                        signature_types(semantic.declarations().callable(value.callable).signature);
+                    },
+                    [&](const ClosureTypeValue& value) noexcept {
+                        record(value.callable);
+                        signature_types(semantic.declarations().callable(value.callable).signature);
+                    },
+                    [&](const CallableViewTypeValue& value) noexcept {
+                        signature_types(value.signature);
+                    },
+                    [&](const CppTypeValue& value) noexcept {
+                        const auto arguments = cpp_type_references(value);
+                        for (const auto argument : std::views::reverse(arguments)) {
+                            pending.push_back(argument);
+                        }
+                    },
+                }
+            );
+        }
+    };
+    const auto collect_pattern = [&](PatternID root) noexcept {
+        auto pending = std::vector<PatternID> {root};
+        while (!pending.empty()) {
+            const auto id = pending.back();
+            pending.pop_back();
+            const auto& pattern = body.pattern(id);
+            collect_type(pattern.type);
+            pattern.value.visit([&](const auto& value) noexcept {
+                using Value = std::remove_cvref_t<decltype(value)>;
+                if constexpr (std::same_as<Value, TypeConstraintPattern>) {
+                    collect_type(value.type);
+                } else if constexpr (std::same_as<Value, OrPattern>) {
+                    pending.append_range(std::views::reverse(value.alternatives));
+                } else if constexpr (std::same_as<Value, EnumCasePattern>) {
+                    pending.append_range(std::views::reverse(value.payload));
+                }
+            });
+        }
+    };
+    if (const auto callable = semantic.declarations().callable_for_body(body.id())) {
+        const auto& signature = semantic.callable_signatures().signature(
+            semantic.declarations().callable(*callable).signature
+        );
+        collect_type(signature.result);
+        for (const auto& parameter : signature.parameters) {
+            collect_type(parameter.type);
+        }
+        for (const auto failure : semantic.failure_sets().failure_set(signature.failures).members) {
+            collect_type(failure);
+        }
+    }
+    for (const auto parameter : body.inputs().parameters) {
+        collect_type(body.binding(parameter).type);
+    }
+    for (const auto capture : body.inputs().captures) {
+        collect_type(body.binding(capture).type);
+    }
+    visit_semantic_nodes(
+        body.realized_region(),
+        Overloaded {
+            [&](const SemanticExpression& expression) noexcept {
+                if (const auto* closure = std::get_if<SemClosure>(&expression.value)) {
+                    record(closure->callable);
+                }
+                collect_type(expression.type.resolved());
+                if (const auto* match = std::get_if<SemMatch>(&expression.value)) {
+                    for (const auto& arm : match->arms) {
+                        collect_pattern(arm.pattern);
+                    }
+                } else if (const auto* guarded = std::get_if<SemTry>(&expression.value)) {
+                    for (const auto& arm : guarded->arms) {
+                        for (const auto& alternative : arm.alternatives) {
+                            if (const auto* typed =
+                                    std::get_if<SemTypedCatchPattern>(&alternative.pattern)) {
+                                collect_type(typed->type.resolved());
+                                collect_pattern(typed->inner);
+                            }
+                        }
+                    }
+                }
+            },
+            [&](const SemanticStatement& statement) noexcept {
+                if (const auto* initialize = std::get_if<SemInitialize>(&statement.value)) {
+                    collect_type(body.binding(initialize->binding).type);
+                } else if (const auto* binding = std::get_if<SemStaticBinding>(&statement.value)) {
+                    collect_type(body.binding(binding->binding).type);
+                } else if (const auto* loop = std::get_if<SemRangeLoop>(&statement.value);
+                           loop && loop->binding) {
+                    collect_type(body.binding(*loop->binding).type);
+                } else if (const auto* failure = std::get_if<SemThrow>(&statement.value)) {
+                    collect_type(failure->failure_type);
+                }
+            },
+        }
+    );
+    return references;
+}
+
 auto SemIRProgram::publish_surfaces() noexcept -> void {
     callable_surfaces.resize(declarations().callables().size());
     for (const auto entry : declarations().functions()) {
@@ -142,14 +301,7 @@ auto SemIRProgram::publish_surfaces() noexcept -> void {
     for (const auto entry : declarations().callables()) {
         if (const auto body = callable_body_id(entry.value)) {
             auto& surface = callable_surfaces[entry.id.index()];
-            visit_semantic_nodes(
-                bodies().body(*body).region(),
-                [&](const SemanticExpression& expression) noexcept {
-                    if (const auto* closure = std::get_if<SemClosure>(&expression.value)) {
-                        surface.closures.push_back(closure->callable);
-                    }
-                }
-            );
+            surface.closures = body_closure_references(*this, bodies().body(*body));
         }
     }
 }

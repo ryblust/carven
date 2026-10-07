@@ -29,13 +29,8 @@ struct TargetScopeID final {
     constexpr auto operator<=>(const TargetScopeID&) const noexcept = default;
 };
 
-struct TargetPayloadEnumCaseNames final {
-    TargetIdentifier record_type;
-    TargetIdentifier projection_function;
-};
-
 struct TargetPayloadEnumNames final {
-    std::vector<TargetPayloadEnumCaseNames> cases;
+    std::vector<TargetIdentifier> case_records;
     TargetIdentifier storage_type;
     TargetIdentifier storage_member;
 };

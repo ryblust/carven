@@ -61,7 +61,7 @@ auto validate_callable_contract(
     }
     validate_construction_type(contract.result, owner);
     require_owner(
-        contract.failures.owner(),
+        contract.failures.visit([](auto source) static noexcept { return source.owner(); }),
         owner,
         "callable failure contract used a foreign program"
     );
@@ -389,17 +389,17 @@ auto DeclarationBuilder::reserve_function() noexcept -> FunctionID {
 }
 
 auto DeclarationBuilder::reserve_struct() noexcept -> StructID {
-    require_reserving();
+    require_open_construction();
     return structures.reserve();
 }
 
 auto DeclarationBuilder::reserve_enum() noexcept -> EnumID {
-    require_reserving();
+    require_open_construction();
     return enumerations.reserve();
 }
 
 auto DeclarationBuilder::reserve_enum_case() noexcept -> EnumCaseID {
-    require_reserving();
+    require_open_construction();
     return enum_cases.reserve();
 }
 
@@ -523,7 +523,7 @@ auto DeclarationBuilder::define(FunctionID id, FunctionDeclaration declaration) 
 
 auto DeclarationBuilder::define(StructID id, ConstructionStructDeclaration declaration) noexcept
     -> void {
-    require_reserving();
+    require_open_construction();
     require_owner(
         declaration.module_id.owner(),
         program_identity,
@@ -556,7 +556,7 @@ auto DeclarationBuilder::define(StructID id, ConstructionStructDeclaration decla
 }
 
 auto DeclarationBuilder::define(EnumID id, EnumDeclaration declaration) noexcept -> void {
-    require_reserving();
+    require_open_construction();
     require_owner(declaration.module_id.owner(), program_identity, "enum used a foreign module");
     require_provenance_owner(
         declaration.name.owner(),
@@ -590,7 +590,7 @@ auto DeclarationBuilder::define(EnumID id, EnumDeclaration declaration) noexcept
 
 auto DeclarationBuilder::define(EnumCaseID id, ConstructionEnumCaseDeclaration declaration) noexcept
     -> void {
-    require_reserving();
+    require_open_construction();
     require_owner(declaration.owner.owner(), program_identity, "enum case used a foreign enum");
     require_provenance_owner(
         declaration.name.owner(),
@@ -649,10 +649,30 @@ auto DeclarationBuilder::define_callable_contract(
     callable_contracts.define(id, std::move(contract));
 }
 
+auto DeclarationBuilder::set_enum_equality(EnumID enumeration, bool supported) noexcept -> void {
+    require_open_construction();
+    enumerations.mutate_defined(enumeration).supports_equality = supported;
+}
+
+auto DeclarationBuilder::append_nominal_item(
+    ModuleID module,
+    NominalDeclarationRef declaration
+) noexcept -> void {
+    require_open_construction();
+    declaration.visit([&](auto id) noexcept {
+        require_owner(
+            id.owner(),
+            program_identity,
+            "module instance item belongs to another program"
+        );
+        modules.mutate_defined(module).items.emplace_back(id);
+    });
+}
+
 auto DeclarationBuilder::finish_heads() noexcept -> DeclarationConstructionView {
     require_reserving();
     require_heads_defined();
-    state = State::BuildingCallables;
+    state = State::Completing;
     return DeclarationConstructionView(*this);
 }
 
@@ -662,7 +682,7 @@ auto DeclarationBuilder::construction_view() const noexcept -> DeclarationConstr
 
 auto DeclarationBuilder::append_body_callable(ConstructionCallableContract contract) noexcept
     -> CallableID {
-    require_constructing_callables();
+    require_open_construction();
     const auto id = reserve_callable_pair();
     define_callable_contract(id, std::move(contract));
     return id;
@@ -672,13 +692,14 @@ auto DeclarationBuilder::define_callable_signature(
     CallableID id,
     CallableSignatureID signature
 ) noexcept -> void {
-    require_building_callables();
+    require_completing();
     require_owner(signature.owner(), program_identity, "callable used a foreign signature");
     callable_signature_ids.define(id, signature);
 }
 
 auto DeclarationBuilder::finish_callable_signatures() noexcept -> void {
-    require_building_callables();
+    require_completing();
+    require_heads_defined();
     if (!callable_signature_ids.all_defined()) {
         invariant_violation("callable signature resolution left an undefined callable");
     }
@@ -689,7 +710,7 @@ auto DeclarationBuilder::complete_callable(
     CallableID id,
     CallableImplementation implementation
 ) noexcept -> void {
-    require_constructing_callables();
+    require_open_construction();
     implementation.visit([this](const auto& value) noexcept {
         using Value = std::remove_cvref_t<decltype(value)>;
         if constexpr (std::same_as<Value, FunctionBodyImplementation>) {
@@ -815,15 +836,15 @@ auto DeclarationBuilder::require_reserving() const noexcept -> void {
     }
 }
 
-auto DeclarationBuilder::require_building_callables() const noexcept -> void {
-    if (state != State::BuildingCallables) {
-        invariant_violation("callable construction operation used outside callable construction");
+auto DeclarationBuilder::require_completing() const noexcept -> void {
+    if (state != State::Completing) {
+        invariant_violation("signature completion used outside declaration completion");
     }
 }
 
-auto DeclarationBuilder::require_constructing_callables() const noexcept -> void {
+auto DeclarationBuilder::require_open_construction() const noexcept -> void {
     if (state == State::Concrete) {
-        invariant_violation("callable construction resumed after signature resolution");
+        invariant_violation("declaration construction resumed after signature resolution");
     }
 }
 

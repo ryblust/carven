@@ -102,7 +102,17 @@ auto OwnershipObjectState::operator==(const OwnershipObjectState& other) const n
         && modified == other.modified;
 }
 
-auto OwnershipExternalObject::operator==(const OwnershipExternalObject& other) const noexcept
+auto OwnershipStorageObject::operator==(const OwnershipStorageObject& other) const noexcept
     -> bool {
-    return type == other.type && state == other.state && site == other.site && many == other.many;
+    return type == other.type
+        && site == other.site
+        && many == other.many
+        && feedback == other.feedback;
+}
+
+auto OwnershipWriteEffect::operator==(const OwnershipWriteEffect& other) const noexcept -> bool {
+    return place == other.place
+        && invalidates == other.invalidates
+        && storage == other.storage
+        && take == other.take;
 }

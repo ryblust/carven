@@ -119,12 +119,10 @@ auto display_statements(
                 }
             } else {
                 const auto projection = [&]() noexcept {
-                    return call_member(
-                        name_expression(value),
-                        context.payload_enum(enumeration->enumeration)
-                            .cases[index]
-                            .projection_function.spelling(),
-                        {}
+                    return context.enum_payload_projection(
+                        enumeration->enumeration,
+                        index,
+                        name_expression(value)
                     );
                 };
                 if (needs_selection) {
@@ -217,6 +215,9 @@ auto ModuleLowering::display_emitter_type(TypeID type) noexcept -> TargetTypeID 
     }
     if (const auto* slice = std::get_if<SliceTypeValue>(&canonical)) {
         return aggregate(TargetSymbol::RuntimeSequenceDisplay, slice->element);
+    }
+    if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&canonical)) {
+        return aggregate(TargetSymbol::RuntimeSequenceDisplay, sequence->element);
     }
     if (const auto* range = std::get_if<RangeTypeValue>(&canonical)) {
         return aggregate(TargetSymbol::RuntimeRangeDisplay, range->element);

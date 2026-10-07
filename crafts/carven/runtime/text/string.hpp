@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utf.hpp"
+#include "utf8.hpp"
 
 #include <cstddef>
 #include <string>
@@ -11,7 +11,7 @@ namespace carven::runtime {
 
 // The formatting header defines the private bridge for formatting storage access.
 class StringFormatAccess;
-class Writer;
+class FormatWriter;
 
 // Views borrow current storage; the owner must remain alive and unchanged for each borrow.
 // from_str and append require valid UTF-8; push requires a Unicode scalar.
@@ -66,7 +66,7 @@ private:
     std::string storage;
 
     friend class StringFormatAccess;
-    friend class Writer;
+    friend class FormatWriter;
 };
 
 } // namespace carven::runtime

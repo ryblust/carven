@@ -62,10 +62,10 @@ auto BodyBuilder::make_expression(
     }
     auto failures = draft.add_empty_failure_term();
     const auto add = [&](const SemanticExpression& child) noexcept {
-        draft.add_failure_contribution(failures, child.failures.term());
+        draft.add_failure_contribution(failures, child.failures.reference());
     };
     const auto add_region = [&](const SemanticRegion& region) noexcept {
-        draft.add_failure_contribution(failures, region.failures.term());
+        draft.add_failure_contribution(failures, region.failures.reference());
         if (region.result.has_value()) {
             add(*region.result);
         }
@@ -115,31 +115,40 @@ auto BodyBuilder::make_expression(
             { visit_semantic_children(node, add); },
             [&](const SemCall& node) noexcept {
                 visit_semantic_children(node, add);
-                draft.add_failure_contribution(failures, node.callee_failures.term());
+                draft.add_failure_contribution(failures, node.callee_failures.reference());
             },
             [&](const SemReport& node) noexcept { add_selected(node); },
             [&](const SemTry& node) noexcept {
-                draft.add_failure_contribution(failures, node.residual_failures.term());
+                draft.add_failure_contribution(failures, node.residual_failures.reference());
                 for (const auto& arm : node.arms) {
                     const auto handler = draft.add_empty_failure_term();
                     for (const auto& range : arm.pattern_bounds) {
                         if (range.begin) {
-                            draft.add_failure_contribution(handler, range.begin->failures.term());
+                            draft.add_failure_contribution(
+                                handler,
+                                range.begin->failures.reference()
+                            );
                         }
                         if (range.end) {
-                            draft.add_failure_contribution(handler, range.end->failures.term());
+                            draft.add_failure_contribution(
+                                handler,
+                                range.end->failures.reference()
+                            );
                         }
                     }
                     if (arm.guard.has_value()) {
-                        draft.add_failure_contribution(handler, arm.guard->failures.term());
+                        draft.add_failure_contribution(handler, arm.guard->failures.reference());
                     }
-                    draft.add_failure_contribution(handler, arm.body.failures.term());
+                    draft.add_failure_contribution(handler, arm.body.failures.reference());
                     if (arm.body.result.has_value()) {
-                        draft.add_failure_contribution(handler, arm.body.result->failures.term());
+                        draft.add_failure_contribution(
+                            handler,
+                            arm.body.result->failures.reference()
+                        );
                     }
                     draft.add_guarded_failure_contribution(
                         failures,
-                        arm.accepted_failures.term(),
+                        arm.accepted_failures.reference(),
                         handler
                     );
                 }
@@ -169,7 +178,8 @@ auto BodyBuilder::binding_expression(LocalBindingID id) noexcept -> PlaceExpress
             using Storage = std::remove_cvref_t<decltype(storage)>;
             if constexpr (std::same_as<Storage, OwnerBindingStorage>) {
                 return storage.writable ? AccessMode::Write : AccessMode::Read;
-            } else if constexpr (std::same_as<Storage, ParameterBindingStorage>) {
+            } else if constexpr (std::same_as<Storage, ParameterBindingStorage>
+                                 || std::same_as<Storage, AliasBindingStorage>) {
                 return storage.access == AccessMode::Write ? AccessMode::Write : AccessMode::Read;
             } else {
                 return storage.mode == CaptureMode::Write ? AccessMode::Write : AccessMode::Read;

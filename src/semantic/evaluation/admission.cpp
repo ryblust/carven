@@ -22,7 +22,9 @@ auto supported_execution_type(
             continue;
         }
         const auto canonical = values.type_copy(current);
-        if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
+        if (std::holds_alternative<OwnedSequenceTypeValue>(canonical.value)) {
+            return false;
+        } else if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
             pending.push_back(array->element);
         } else if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
             const auto fields = values.struct_field_types(structure->structure);

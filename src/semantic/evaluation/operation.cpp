@@ -7,9 +7,36 @@ import :semantic.semir.constant;
 import :semantic.semir.constant_access;
 import :semantic.semir.operation;
 import :semantic.semir.simd;
+import :semantic.semir.slice;
 import :semantic.semir.type;
 import :support.invariant;
 import std;
+
+IntegerRangeCursor::IntegerRangeCursor(RangeConstant range) noexcept
+    : current(range.begin),
+      end(range.end),
+      inclusive(range.inclusive) {}
+
+auto IntegerRangeCursor::next() noexcept -> std::optional<IntegerConstant> {
+    if (!current) {
+        return std::nullopt;
+    }
+    const auto value = *current;
+    const auto less = value.negative() != end.negative() ? value.negative()
+        : value.negative()                               ? value.magnitude() > end.magnitude()
+                                                         : value.magnitude() < end.magnitude();
+    if (!less && !(inclusive && value == end)) {
+        current.reset();
+        return std::nullopt;
+    }
+    if (value == end) {
+        current.reset();
+    } else {
+        current = value.negative() ? IntegerConstant::from_parts(value.magnitude() - 1u, true)
+                                   : IntegerConstant::from_parts(value.magnitude() + 1u, false);
+    }
+    return value;
+}
 
 auto constant_evaluation_diagnostic(ConstantEvaluationFailure failure) noexcept
     -> std::optional<ConstantEvaluationDiagnostic> {
@@ -926,15 +953,25 @@ auto evaluate_slice_intrinsic_constant_value(
     TypeID result
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     validate_constant_fact(values, operand);
+    const auto* array = std::get_if<ArrayConstant>(&operand.value);
     const auto* slice = std::get_if<SliceConstant>(&operand.value);
-    if (slice == nullptr || intrinsic == SliceIntrinsic::FromArray) {
+    const auto contract = slice_intrinsic_contract(intrinsic);
+    if (array == nullptr && slice == nullptr) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
-    if (bounds.size() != (intrinsic == SliceIntrinsic::Slice ? 2uz : 0uz)) {
+    if (!slice_intrinsic_accepts_receiver(
+            contract.receiver,
+            array ? SliceIntrinsicShape::Array : SliceIntrinsicShape::Slice
+        )
+        || bounds.size() != contract.arguments.size()) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
+    if (intrinsic == SliceIntrinsic::FromArray) {
+        return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
+    }
+    const auto& elements = array ? array->elements : slice->elements;
     if (intrinsic == SliceIntrinsic::IsEmpty) {
-        return constant_boolean(values, result, slice->elements.empty());
+        return constant_boolean(values, result, elements.empty());
     }
     if (intrinsic == SliceIntrinsic::Len) {
         if (!is_builtin(values, result, BuiltinType::Usize)) {
@@ -942,7 +979,7 @@ auto evaluate_slice_intrinsic_constant_value(
         }
         return ConstantFact {
             .type = result,
-            .value = IntegerConstant::from_parts(slice->elements.size(), false),
+            .value = IntegerConstant::from_parts(elements.size(), false),
         };
     }
     if (result != operand.type) {
@@ -1158,6 +1195,13 @@ auto evaluate_simd_constant_value(
                 std::unreachable();
             }
             break;
+        case SIMDIntrinsic::Sum: {
+            auto sum = 0u;
+            for (const auto lane : lanes(0)) {
+                sum += lane;
+            }
+            return ConstantFact {.type = result, .value = IntegerConstant::from_parts(sum, false)};
+        }
         case SIMDIntrinsic::FirstOr: {
             auto first = number(1);
             for (auto i = 0uz; i < width; ++i) {
@@ -1228,4 +1272,32 @@ auto fold_simd_constant(
         inputs.push_back(**fact);
     }
     return evaluate_simd_constant_value(values, intrinsic, owner, inputs, result);
+}
+
+auto evaluate_float_intrinsic_constant_value(
+    const ExecutionValueAccess& values,
+    FloatIntrinsic intrinsic,
+    const ConstantFact& operand,
+    TypeID result
+) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
+    validate_constant_fact(values, operand);
+    if (intrinsic != FloatIntrinsic::IsFinite) {
+        return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+    }
+    if (const auto* input = std::get_if<F32Constant>(&operand.value)) {
+        return constant_boolean(
+            values,
+            result,
+            (std::bit_cast<std::uint32_t>(input->value) & 0x7f800000u) != 0x7f800000u
+        );
+    }
+    if (const auto* input = std::get_if<F64Constant>(&operand.value)) {
+        return constant_boolean(
+            values,
+            result,
+            (std::bit_cast<std::uint64_t>(input->value) & 0x7ff0000000000000ull)
+                != 0x7ff0000000000000ull
+        );
+    }
+    return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
 }
