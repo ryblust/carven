@@ -6,6 +6,7 @@ This page defines type compatibility, inference, numeric operations, and borrowe
 slices.
 
 - [Types and compatibility](#types-and-compatibility)
+- [Nominal type parameters](#nominal-type-parameters)
 - [Type context and inference](#type-context-and-inference)
 - [Numeric types and conversions](#numeric-types-and-conversions)
 - [Read-only slices](#read-only-slices)
@@ -22,7 +23,12 @@ f32 f64
 u8x16 mask16 f32x4 mask4 u8x32 mask32 f32x8 mask8
 ```
 
-Builtin type names are reserved. Module declarations cannot reuse them.
+These names, along with the type constructors `ptr`, `range`, `Sequence`, and
+`Operation`, are reserved
+for module declarations. Locals, parameters, and members may use those spellings;
+type resolution retains the builtin meaning. They are identifier tokens rather
+than reserved keywords. The [name classification](grammar.md#22-identifiers-and-keywords)
+defines their syntactic positions and reservation scope.
 
 `u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, and `mask8`
 are explicit fixed-width logical SIMD types.
@@ -31,8 +37,11 @@ Their operators, memory contracts, and native backends are documented in the
 
 Structures and enums are nominal: identity comes from the declaration, not
 from structural similarity. Arrays are identified by both element type and
-extent. Slices are identified by their element type. Function-view types
-include parameter access, parameter types, success result, and failure set.
+extent. Nonempty tuples are identified by their ordered element types, arity,
+and nesting: `(i32, bool)` differs from `(bool, i32)` and `((i32,), bool)`.
+`(T,)` is a one-element tuple; `(T)` groups a type. Slices are identified by their
+element type. Function-view types include parameter access, parameter types,
+success result, and failure set.
 
 For Carven types, ordinary compatibility requires the same canonical type.
 Contextual conversions are defined for numbers, slices,
@@ -41,13 +50,82 @@ Contextual conversions are defined for numbers, slices,
 There are no general implicit numeric promotions, structural conversions,
 truthiness conversions, or opaque dynamically typed values.
 
-`void` is the absence of a value. It may describe a callable's success result,
-but cannot be a parameter type, structure field, array element, runtime binding
-value, or match subject. Calling a `void` function as a statement is valid;
-binding its nonexistent result is not.
+`void` is the zero-information unit type, with the single value `()`. The empty
+tuple type `()` denotes the same canonical type as `void`. A completed call with
+a `void` success result produces that value. It can be bound, passed as an
+argument, stored in a field, array or tuple, returned, and matched with a wildcard
+or binding pattern. Its default value is `()`, and two unit values compare equal.
+
+```carven
+fn finish() {}
+fn accept(value: void) {}
+fn example() {
+    let completed: void = finish();
+    let product: (i32, void) = (7, completed);
+    let units: [void; 2] = [(), ()];
+    accept(completed);
+}
+```
+
+Generated C++ represents unit values in ordinary value positions with
+`carven::runtime::Void`, including parameters and aggregate elements. An
+infallible synchronous callable with a unit result returns native C++ `void`,
+including native imports and exports. Async and fallible completion carriers
+likewise retain `void` as their success type. The source call still produces
+`()` when it completes successfully.
 
 Operations involving external C++ types have delegated construction and
 conversion rules, specified under [C++ interoperation](interop.md#external-operations-and-conversions).
+
+## Nominal type parameters
+
+Structs and payload enums can declare type and failure-set parameters:
+
+```carven
+struct Box<T> { value: T }
+enum Maybe<T> { None, Some(T) }
+
+let boxed = Box<i32> { value: 7 };
+let present = Maybe<i32>::Some(7);
+let absent: Maybe<String> = .None;
+```
+
+A parameter is scoped to its declaration. Field and payload types can use type
+parameters, nested nominal applications, arrays, tuples, slices, pointers, and
+Operations. `throw E` declares a failure-set parameter, which may appear in
+failure contracts but cannot be used as an object type:
+
+```carven
+struct Pending<T, throw E> { operation: Operation<T, throw E> }
+```
+
+An application supplies every argument explicitly and in its declared kind,
+for example `Pending<i32, throw Error>` or `Pending<i32, throw ()>`.
+[Failure-set parameters](failures.md#failure-set-parameters) define these sets.
+The declaration and its ordered canonical type and failure-set arguments
+determine nominal identity;
+repeated applications share that identity.
+Array extents and nominal failure payload types must be independent of type
+parameters. Callable signatures and native template arguments that depend on a
+parameter are not supported.
+
+Definitions are checked even when unused. Recursive applications may forward
+or permute parameters; a recursive cycle that constructs larger arguments is
+rejected. By-value layout cycles are rejected independently of argument growth.
+Pointers and slices break by-value storage cycles.
+
+Concrete instances use the existing construction, copying, Take, borrowing,
+matching, default-initialization, and equality rules for their actual types.
+An enum still has no implicit default case. Visibility checks consider both the
+generic declaration, every type argument, and every member of a failure-set
+argument.
+
+Parameterized class operations and numeric enums are not supported.
+A parameterized class without operations uses the same field-type model and
+keeps its representation private.
+
+Functions support the same parameter kinds and local argument inference; see
+[Parameterized functions](functions.md#parameterized-functions).
 
 ## Type context and inference
 
@@ -64,6 +142,7 @@ The following are supported sources of context:
 | Return value | Declared or context-supplied callable result |
 | Structure field or enum payload initializer | Declared field or payload type |
 | Array element with an expected array type | Expected element type |
+| Tuple element with an expected tuple type | Corresponding element type |
 | Value-control result branch | Expected result type, when supplied |
 | Lambda parameter and result | Expected callable view, subject to explicit annotations |
 
@@ -111,6 +190,16 @@ Floating literal text is converted directly to the selected precision using the
 host's native parsing, without an intermediate floating type. A literal outside
 the selected type's conversion range is rejected.
 
+Integer literals with `ns`, `us`, `ms`, or `s` suffixes produce the ordinary
+standard-library `Duration` struct without an import. Naming `Duration` in an
+annotation or constructor requires its ordinary import from `std::time.duration`.
+`100ms` has the same value as
+`Duration { nanoseconds: 100000000 }`; it is not a distinct numeric type.
+Scaling is checked at compilation and the result must fit signed `i64`
+nanoseconds. `-9223372036854775808ns` is admitted. Floating duration literals
+are not supported. Dynamic values use the ordinary checked constructors such
+as `milliseconds(value)?`.
+
 Numeric types are otherwise compatible only with the identical
 canonical type. There is no implicit integer promotion, signedness conversion,
 or integer-to-floating conversion.
@@ -146,7 +235,10 @@ width is fixed by the supported compilation data model and participates in the
 ordinary integer rules above. Analysis uses the host pointer-sized integer
 widths; the target must use the same data model.
 
-`f32` and `f64` use IEEE 754 binary32 and binary64 storage. Runtime floating
+`f32` and `f64` use IEEE 754 binary32 and binary64 storage. Both provide
+`is_finite() -> bool`, which is true for zeros, subnormal values, and normal
+values, and false for infinities and NaNs. The query evaluates its receiver once
+and is available in constant, interpreted, and native execution. Runtime floating
 arithmetic and integer-to-floating conversion use the corresponding native C++
 operations. The language does not supply a rounding-mode control or a separate
 floating exception mechanism. Native floating results depend on the selected

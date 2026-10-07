@@ -20,8 +20,8 @@ Ordering requires identical numeric operands. Logical `&&` and `||` require
 `bool` and short-circuit from left to right.
 
 Equality requires compatible operands and an equality-capable type. It is
-available for `bool`, `char`, integers, floating-point values, `str`, `String`, arrays
-whose elements support equality, numeric enums, payload enums whose payloads all
+available for `void`, `bool`, `char`, integers, floating-point values, `str`, `String`, arrays
+and tuples whose elements support equality, numeric enums, payload enums whose payloads all
 support equality, and pointers with identical target types. Structures and classes
 do not support `==` or `!=`. Callable types, process-entry arguments, slices, and
 `str.chars` iteration views do not support equality.
@@ -30,7 +30,7 @@ Payload enum values with different cases compare unequal. Values of the same
 case compare payloads in position order with short-circuiting. Floating-point
 equality follows IEEE `==`; `!=` is its negation.
 
-All Carven expression evaluation is left to right and exactly once. This
+Carven evaluates operands left to right, once per executed occurrence. This
 includes callee before arguments, binary left before right, receiver before
 index, assignment target before value, and initializer clauses in source order.
 Short-circuiting operators and control expressions evaluate only the selected
@@ -50,14 +50,23 @@ Conditions and guards require `bool`. Value-form `if` requires an `else` and
 all result branches must be compatible. Statement-form conditionals do not
 produce a value.
 
-The value of a condition does not change analysis. Reachability, failure
-contracts, ownership, pointer proofs, and return analysis consider every branch
-of `if`, `&&`, `||`, `match`, and a loop with a condition, whether the condition
-is a runtime value, a literal, or a `const`: `if false { ... }` and
-`while true { ... }` retain both paths. A loop is known not to end by itself
-only when it has no condition, written `while { ... }`; it then ends through
-`break`. `const if` selects the arm that executes
-and is generated; its arms follow the same analysis.
+A value-control block that completes without a final expression produces `()`.
+It is compatible with a `void` result; a branch supplying another result type
+still requires a final expression of that type.
+
+Structural reachability, failure contracts, and return analysis consider every
+branch of `if`, `&&`, `||`, `match`, and a loop with a condition, whether the
+condition is a runtime value, a literal, or a `const`: `if false { ... }` and
+`while true { ... }` retain both structural paths. A loop is known not to end by
+itself only when it has no condition, written `while { ... }`; it then ends
+through `break`. `const if` selects the arm that executes and is generated;
+its arms still receive operation, result-compatibility, and failure-consumption
+checks.
+
+Ownership availability and pointer proofs first evaluate condition effects and
+exits, then use proven Boolean normal-completion facts to select successors.
+Unknown conditions merge both possible successors. Every source operation still
+receives access-form admission checks, including in an unselected branch.
 
 `while` evaluates its condition before each iteration; without a condition it
 repeats until `break`. A C-style `for` creates one loop scope, evaluates its
@@ -78,13 +87,19 @@ ascends; a reversed range is empty, and equal endpoints produce zero elements
 for `..` or one for `..=`. Closed intervals may include the type maximum without
 overflow. Integer-range bindings cannot use Write access.
 
-Arrays support Read and, for a mutable source, Write range bindings. Slices
+Arrays and owning sequences support Read and, for a mutable source, Write range bindings. Slices
 and `str.chars` support Read bindings only. A range binding is scoped to the
 loop and cannot be taken. Its name is not visible in its declared type or range
 source; it is published only after those inputs complete and is then visible
 throughout the loop body. Array iteration retains access to its source owner
 until the loop exits, so the source cannot be taken during traversal. Writing
 an element does not restore an unavailable whole-array owner.
+
+A range target may recursively decompose a tuple-valued element, such as
+`for (key, value) in entries` or `for &(key, value) in entries`. Every name
+projects the current element under the loop's access mode, remains scoped to
+that iteration, and cannot be taken. This does not make tuples themselves
+iterable; arrays and slices provide the sequence of complete product elements.
 
 Array and text-range loops access an element only after confirming that the
 cursor is within the range. The terminating check does not access an element.
@@ -109,6 +124,11 @@ through aliases or callable captures. Guards may modify other storage, call
 functions, and produce failures. A selected arm's body may modify the subject.
 The first arm whose pattern matches and whose optional guard succeeds is selected.
 
+`match &&owner` transfers the complete subject into retained match storage.
+Its pattern bindings still use Read or Write access; rejecting a guard does not
+transfer individual payloads. To create an independent owner in an arm, write
+`let owned = payload`, then use `&&owned` when transferring it.
+
 Integer range patterns accept `a..b`, `a..=b`, `..b`, `..=b`, and `a..`.
 Bounds have the subject's integer type. Each present bound evaluates once from
 left to right when its pattern is attempted, before testing containment. Enum
@@ -122,16 +142,30 @@ bounds provide no coverage proof; use a fallback when constant patterns are
 insufficient. Effectful bounds retain their evaluation even when their result is
 known.
 
-Patterns are recursive. Enum payload positions admit case, literal, binding,
-wildcard, integer range, `is`, and or-patterns. Structure and array destructuring
-are not supported. Payload arity must be exact. A bare identifier creates an immutable
-owning binding and never pins a constant. The selected payload is copied once
-after its case matches and before the guard runs.
+Patterns are recursive. Tuple and enum payload positions admit case, literal,
+binding, wildcard, integer range, `is`, and or-patterns. Structure and array
+destructuring are not supported. Payload arity must be exact. A bare identifier
+creates an immutable Read binding and never pins a constant. Bindings are
+established after the complete pattern matches and before the guard runs.
+
+Tuple patterns require the exact arity and nesting of their subject. `()`
+matches unit, `(pattern)` groups a pattern, and `(pattern,)` matches a singleton.
+Coverage checks the complete product: `(true, _) | (_, true)` still leaves
+`(false, false)` uncovered. Element tests and dynamic bounds proceed from left
+to right; rejection of an earlier slot skips later tests and bound effects.
+
+A bare binding name uses the ordinary Read binding policy: pure Carven values
+are snapshots; storage-containing values, including native holders, are borrowed.
+`&name` binds with Write access and requires a writable tracked subject.
+Bindings cannot be taken; Read bindings cannot be captured with Write access.
+Borrowed bindings pin their enclosing storage, so replacing or taking an ancestor
+is invalid. Updates within a writable payload remain valid. Match guards cannot
+mutate the subject through an alias. Bindings are scoped to their selected arm.
 
 `is T` constrains the subject to `T`. The subject must already have a compatible
 canonical type, so the constraint covers that type.
 
-Or-pattern alternatives must bind the same names with the same types; an
+Or-pattern alternatives must bind the same names with the same types and access modes; an
 alternative cannot bind one name twice. Guards run after pattern bindings are
 available. They affect arm selection but do not contribute exhaustiveness
 coverage.

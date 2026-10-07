@@ -1,0 +1,15 @@
+private struct Failure {}
+
+private async fn finish_during_close() {
+    await yield_once();
+    eprintln("child cancellation requested:", cancellation_requested());
+    eprintln("child closed");
+}
+
+// Entry failure reporting waits for the child to finish during scope closure.
+// The child observes the request without accepting cancellation at a checkpoint.
+private async fn main() throw Failure {
+    async let child = finish_during_close();
+    eprintln("root failure selected");
+    throw Failure {};
+}

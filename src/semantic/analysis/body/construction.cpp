@@ -11,6 +11,7 @@ import :frontend.ast.pattern;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
+import :semantic.analysis.async;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.expr_site;
@@ -19,10 +20,12 @@ import :semantic.analysis.constant.freeze;
 import :semantic.analysis.constant.root;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
+import :semantic.analysis.names;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
-import :semantic.analysis.types;
 import :semantic.analysis.types.display;
+import :semantic.analysis.types.standard;
+import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.evaluation.output;
@@ -44,12 +47,14 @@ BodyElaborator::BodyElaborator(
     std::optional<ConstructionTypeRef> result,
     FailureTermID outward_failure_term_id,
     bool accepts_catch_residual,
-    bool test_body
+    bool test_body,
+    std::optional<GenericTypeContext> generic_context
 ) noexcept
     : batch(std::addressof(owner)),
       source_module_id(source_module_id),
       semantic_module_id(semantic_module_id),
       ast(source),
+      generic_context(generic_context),
       body_builder(std::move(reservation), *owner.draft),
       result_type(result),
       infer_result(!result.has_value()),
@@ -161,14 +166,24 @@ auto BodyElaborator::read_local(const BodyLocalStorage& local, Span span) noexce
         if (!*constant) {
             co_return std::nullopt;
         }
-        co_return active_builder().make_expression(
-            local.type,
+        auto value = active_builder().make_expression(
+            draft().constant(**constant).type,
             active_builder().lifetime(),
             origin(span),
             SemConstant {.constant = **constant}
         );
+        for (const auto index : local.projection) {
+            const auto elements = tuple_elements(draft(), value.type.construction());
+            value = active_builder().make_expression(
+                (*elements)[index],
+                active_builder().lifetime(),
+                origin(span),
+                SemTupleElement {UniqueIndirect(std::move(value)), index}
+            );
+        }
+        co_return value;
     }
-    auto value = active_builder().binding_expression(binding).expression;
+    auto value = local_place(local, span).expression;
     value.category = SemanticValueCategory::Value;
     value.lifetime = active_builder().lifetime();
     value.origin = origin(span);
@@ -240,7 +255,18 @@ auto BodyElaborator::compute_static_binding(LocalBindingID binding) noexcept
 auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noexcept
     -> AnalysisTask<std::optional<ConstantID>> {
     if (const auto* local = use_local(name)) {
-        co_return co_await compute_static_binding(local->storage.binding);
+        auto result = co_await compute_static_binding(local->storage.binding);
+        if (!result || !*result) {
+            co_return result;
+        }
+        for (const auto index : local->projection) {
+            const auto* tuple = std::get_if<TupleConstant>(&draft().constant(**result).value);
+            if (!tuple || index >= tuple->elements.size()) {
+                invariant_violation("static local projection exceeds its constant shape");
+            }
+            result = std::optional(tuple->elements[index]);
+        }
+        co_return result;
     }
     auto selected = (co_await find_global(name, span));
     if (!selected.has_value()) {
@@ -271,7 +297,9 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
             },
             [&]<typename Form>(const Form&) noexcept -> AnalysisTask<std::optional<ConstantID>> {
                 static_assert(
-                    std::same_as<Form, CatalogStructForm> || std::same_as<Form, CatalogEnumForm>,
+                    std::same_as<Form, CatalogStructForm>
+                        || std::same_as<Form, CatalogEnumForm>
+                        || std::same_as<Form, CatalogGenericForm>,
                     "unhandled non-constant catalog symbol"
                 );
                 co_return std::unexpected(fail(
@@ -288,18 +316,67 @@ auto BodyElaborator::construction_requests() noexcept -> ConstructionRequests& {
     return batch->requests;
 }
 
-auto BodyElaborator::resolve_function(std::string_view name, Span span) noexcept
-    -> AnalysisTask<std::optional<FunctionID>> {
-    if (use_local(name) != nullptr || catalog().lookup(source_module_id, name).empty()) {
-        co_return std::optional<FunctionID>();
+auto BodyElaborator::resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID> {
+    co_return co_await resolve_standard_record(
+        draft(),
+        catalog(),
+        construction_requests(),
+        source_module_id,
+        span,
+        StandardRecord::Duration
+    );
+}
+
+auto BodyElaborator::resolve_static_callable(std::string_view name, Span span) noexcept
+    -> AnalysisTask<std::optional<ResolvedStaticCallable>> {
+    if (use_local(name) != nullptr) {
+        co_return std::optional<ResolvedStaticCallable>();
+    }
+    if (catalog().lookup(source_module_id, name).empty()) {
+        if (const auto builtin = find_async_builtin(name)) {
+            auto native = lookup_cpp_name(
+                draft(),
+                catalog(),
+                import_usage(),
+                source_module_id,
+                CppNameLookup::ModuleScope,
+                std::span(&span, 1uz)
+            );
+            if (!native) {
+                co_return std::unexpected(native.error());
+            }
+            if (*native && (**native).lookup == CppNameLookup::Global) {
+                co_return std::optional<ResolvedStaticCallable>();
+            }
+            auto resolved = co_await resolve_async_builtin(
+                draft(),
+                catalog(),
+                construction_requests(),
+                source_module_id,
+                *builtin,
+                span
+            );
+            if (!resolved) {
+                co_return std::unexpected(resolved.error());
+            }
+            co_return std::optional<ResolvedStaticCallable>(std::move(*resolved));
+        }
+        co_return std::optional<ResolvedStaticCallable>();
     }
     auto selected = (co_await find_global(name, span));
     if (!selected) {
         co_return std::unexpected(selected.error());
     }
+    if (const auto* generic = std::get_if<CatalogGenericForm>(&(*selected)->form)) {
+        const auto definition = draft().generic_declaration_copy(generic->definition);
+        if (std::holds_alternative<GenericFunctionDefinition>(definition)) {
+            co_return std::optional<ResolvedStaticCallable>(generic->definition);
+        }
+        co_return std::optional<ResolvedStaticCallable>();
+    }
     const auto* function = std::get_if<CatalogFunctionForm>(&(*selected)->form);
     if (function == nullptr) {
-        co_return std::optional<FunctionID>();
+        co_return std::optional<ResolvedStaticCallable>();
     }
 
     auto completed =
@@ -307,7 +384,7 @@ auto BodyElaborator::resolve_function(std::string_view name, Span span) noexcept
     if (!completed) {
         co_return std::unexpected(completed.error());
     }
-    co_return std::optional(function->function);
+    co_return std::optional<ResolvedStaticCallable>(function->function);
 }
 
 auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
@@ -315,6 +392,31 @@ auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
     auto current_id = expression;
     while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(current_id).value)) {
         current_id = group->expression;
+    }
+    if (const auto* application =
+            std::get_if<ASTTypeApplicationExpr>(&ast.expression(current_id).value)) {
+        if (const auto* name =
+                std::get_if<ASTNameExpr>(&ast.expression(application->operand_id).value);
+            name && find_local(spelling(name->name_span)) != nullptr) {
+            co_return std::optional<TypeID>();
+        }
+        const auto extent = [&](ASTExprID expression) noexcept {
+            return resolve_array_extent(expression);
+        };
+        auto type = (co_await resolve_source_type_application(
+            draft(),
+            catalog(),
+            import_usage(),
+            source_module_id,
+            ast,
+            *application,
+            extent,
+            &batch->requests
+        ));
+        if (!type) {
+            co_return std::unexpected(type.error());
+        }
+        co_return std::optional(draft().canonicalize_declared_type(*type));
     }
     const auto* name = std::get_if<ASTNameExpr>(&ast.expression(current_id).value);
     if (name == nullptr) {
@@ -363,7 +465,7 @@ auto BodyElaborator::resolve_constant_enum_case(
             "scope qualifier does not name an enum or class type"
         ));
     }
-    if (const auto case_id = catalog().enum_case_named(nominal->enumeration, name)) {
+    if (const auto case_id = draft().enum_case_named(nominal->enumeration, name)) {
         const auto declaration = draft().construction_enum_case_declaration_copy(*case_id);
         co_return ResolvedEnumCase {
             .id = *case_id,
@@ -379,7 +481,7 @@ auto BodyElaborator::resolve_constant_enum_case(
             "enum '{}' has no case named '{}'{}",
             type_display_name(draft(), type),
             name,
-            spelling_suggestion(name, catalog().enum_case_names(nominal->enumeration))
+            spelling_suggestion(name, draft().enum_case_names(nominal->enumeration))
         )
     ));
 }
@@ -395,7 +497,9 @@ auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisTask<Const
         source_module_id,
         ast,
         type,
-        resolve_extent
+        resolve_extent,
+        &batch->requests,
+        generic_context ? std::addressof(*generic_context) : nullptr
     ));
     if (result) {
         auto prepared =
@@ -419,7 +523,9 @@ auto BodyElaborator::resolve_construction_type(const ASTConstructionType& type) 
         source_module_id,
         ast,
         type,
-        resolve_extent
+        resolve_extent,
+        &batch->requests,
+        generic_context ? std::addressof(*generic_context) : nullptr
     ));
     if (result) {
         auto prepared =

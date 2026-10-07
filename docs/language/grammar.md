@@ -48,10 +48,10 @@ lexical analysis except inside literals and opaque C++ source fragments.
 
 ### 2.1 Source Text
 
-Carven-tokenized source is UTF-8 encoded. C++ source-fragment payloads are
-byte-opaque and are not validated as UTF-8. The identifier alphabet is
-ASCII-only. Unicode source characters may occur in comments, string literals,
-and C++ header names, but not in identifiers.
+All source text, including C++ source-fragment payloads, must be valid UTF-8.
+C++ payload bytes are preserved without tokenizing their contents. The identifier
+alphabet is ASCII-only. Unicode source characters may occur in comments, string
+literals, C++ header names, and C++ source fragments, but not in identifiers.
 
 ```ebnf
 line-terminator = U+000A | U+000D, [ U+000A ];
@@ -78,9 +78,15 @@ IDENTIFIER = ( ASCII_LETTER | "_" ),
 The following spellings are reserved keywords and are not emitted as
 `IDENTIFIER` tokens:
 
-```text
-as break catch class const continue else enum export false fn for if import in is let
-match nullptr private rethrow return struct test throw true try using var while
+```ebnf
+reserved-keyword = "as" | "async" | "await" | "break" | "cancel" | "catch"
+                 | "class" | "const" | "continue" | "else" | "enum" | "export"
+                 | "false" | "fn" | "for" | "if" | "import" | "in" | "is"
+                 | "let" | "match" | "nullptr" | "private" | "rethrow"
+                 | "return" | "struct" | "test" | "throw" | "true" | "try"
+                 | "using" | "var" | "while";
+
+identifier-shaped-name = IDENTIFIER | reserved-keyword;
 ```
 
 `as` participates in the cast-expression production. Spellings without a
@@ -88,6 +94,32 @@ language production, including `new` and `delete`, remain
 ordinary identifiers.
 
 Naming style conventions do not restrict syntactically valid identifiers.
+
+The following classification distinguishes token recognition from name lookup.
+`identifier-shaped-name` accepts either an `IDENTIFIER` token or a reserved
+keyword token whose spelling matches the identifier alphabet. Accepting a keyword
+in one name position does not change its token kind or make it a bare identifier.
+There is no escaped-identifier syntax.
+
+| Class | Recognition layer | Grammar role and legal positions | Reservation scope | Shadowing | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| Reserved keywords, including `async`, `await`, `cancel`, and `fn` | Lexical token classification | Their language productions; also identifier-shaped name positions below | Bare declaration, binding, and expression names cannot use these tokens | Cannot be shadowed as bare names | [Token classification](../../tests/internal/frontend/lex/tokens.cpp), [source identifiers](../../tests/internal/source/identifier.cpp) |
+| `self` and `cpp` | Identifier token; contextual syntax or semantic checks | `self` is an untyped first class-operation receiver; `cpp` selects the native declaration form | Only those positions have special meaning | Ordinary names elsewhere | [Class operations](../../tests/language/types/classes.cv), [declaration parser](../../tests/internal/frontend/parse/decl.cpp) |
+| `ptr` and `range` | Identifier token; pointer parsing or interval type resolution | Unqualified `ptr<T>` / `ptr<&T>` and `range<T>` in type position | Module declaration names are reserved | Locals, parameters, and members may use these names; type forms retain their meaning | [Type parser](../../tests/internal/frontend/parse/type.cpp), [name diagnostics](../../tests/internal/compiler/diagnostics/names.cpp) |
+| Builtin type names, including `String`, `i32`, `Sequence`, and `Operation` | Identifier token; semantic type resolution | Named types, construction, and defined type factories | Module declaration names are reserved | Locals, parameters, and members may use these names; type resolution remains independent | [Builtin type diagnostics](../../tests/internal/compiler/diagnostics/simd.cpp), [text lookup](../../tests/language/text/lookup.cv), [operation types](../../tests/internal/semantic/analysis/async_contracts.cpp) |
+| Root builtin callables, including `print`, `assert`, `addressof`, and `when_all` | Identifier token; ordinary name lookup | Ordinary expression and call productions | No lexical or module-name reservation | Local bindings, module declarations, and imports may shadow them | Source call contracts |
+| Literal prefixes `c`, `r`, and `f` | Lexical recognition of an adjacent literal introducer | C strings, raw strings, and interpolated strings under their literal productions | Bare `c`, `r`, and `f` remain identifiers | Ordinary names may use them; bindings do not alter adjacent prefix recognition | [Literal and prefix boundaries](../../tests/internal/frontend/lex/literals.cpp) |
+| `#[cpp]` | Exact lexical source-fragment introducer | One complete `CPP_SOURCE_FRAGMENT` token at module scope | Bare `cpp` remains an identifier; no general attribute-name grammar | Name lookup does not participate in fragment recognition | [Fragment tokens](../../tests/internal/frontend/lex/literals.cpp), [fragment placement](../../tests/internal/frontend/parse/decl.cpp) |
+| Module path components | Identifier-shaped tokens; module-reference parsing | Module and craft path components; `std::` selects the standard-library domain | Paths do not reserve bare names | Path selection follows module resolution | [Module paths](../../tests/internal/source/module_path.cpp), [import parser](../../tests/internal/frontend/parse/decl.cpp) |
+| Qualified and member name components | Identifier-shaped tokens; name-position parsing | After expression `.`, `::`, or `->`; after type or pattern `::`; global C++ path roots; native header selections | Keywords are accepted only in these positions | Carven or C++ lookup determines the selected declaration | [Expression parser](../../tests/internal/frontend/parse/expr.cpp), [type parser](../../tests/internal/frontend/parse/type.cpp), [pattern parser](../../tests/internal/frontend/parse/control.cpp), [native keyword names](../../tests/interop/bindings/keyword_names.cv) |
+| Tuple positions | Number token with syntax-checked decimal spelling | After expression `.` or `->`; zero-based positional fields | Not names and not subject to name lookup | Semantic analysis requires a tuple and an existing slot | [Position parsing](../../tests/internal/frontend/parse/expr.cpp), [position diagnostics](../../tests/internal/compiler/diagnostics/types.cpp) |
+
+Source declaration names, unqualified expression names, and source-module `using`
+selections require `IDENTIFIER`. A global C++ path or a qualified/member name may
+use keyword spellings: `::vendor::cancel`, `value.cancel()`, and `::vendor::async`
+are parsed as names. Parsing does not prove that the selected declaration exists
+or is accessible. Native name spellings must also pass Carven's C++ identifier
+check; C++ validates the selected declarations and operations.
 
 The adjacent prefix `c"` starts a `CStringLiteral` token. Its quoted payload
 uses ordinary string decoding, but decoded NUL is rejected at the originating
@@ -106,7 +138,8 @@ decimal-digits = DIGIT, { DIGIT };
 
 integer-suffix = "i8" | "i16" | "i32" | "i64"
                | "u8" | "u16" | "u32" | "u64"
-               | "isize" | "usize";
+               | "isize" | "usize"
+               | "ns" | "us" | "ms" | "s";
 
 floating-suffix = "f32" | "f64";
 
@@ -143,6 +176,14 @@ A decimal spelling with a floating suffix is a `decimal-floating-literal` even
 when its value portion contains neither a decimal point nor an exponent. Thus
 `1f32` and `1f64` are floating literals, while `1` and `1i32` are integer
 literals.
+
+The integer suffixes `ns`, `us`, `ms`, and `s` construct standard `Duration`
+values. Decimal, hexadecimal, binary, and octal integer spellings are admitted.
+Scaling to signed 64-bit nanoseconds is checked during compilation, including
+the minimum negative value. These suffixes do not apply to floating literals.
+A duration literal directly selects the standard `Duration` declaration without
+introducing that name into source scope. An explicit `Duration` type name still
+requires an ordinary import.
 
 ### 2.4 Character and String Literals
 
@@ -242,7 +283,8 @@ CPP_SOURCE_FRAGMENT = "#[cpp]",
                       cpp-source-tail;
 ```
 
-The exact introducer is `#[cpp]`; no whitespace is allowed inside it. At least
+The exact introducer is `#[cpp]`; no whitespace is allowed inside it. It starts
+a dedicated source-fragment token; there is no general attribute-name production. At least
 one horizontal-space character separates it from an opening fence of at least
 three `-` characters. Only horizontal space may follow that fence before the
 required line terminator.
@@ -287,7 +329,8 @@ top-level-item = module-item
                | statement;
 
 (* A top-level const binding is a module constant declaration;
-   const test introduces a test and const { introduces a const block. *)
+   const test introduces a test, const { a const block,
+   const if a conditional, and const for a loop. *)
 module-item = [ visibility-modifier ], module-declaration;
 
 visibility-modifier = "private" | "export";
@@ -334,9 +377,12 @@ cpp-header-import-declaration = "import",
                                 | CPP_QUOTE_HEADER_NAME ),
                                 [ "using", cpp-import-selection ], ";";
 
-cpp-name = IDENTIFIER, { "::", IDENTIFIER };
-cpp-import-selection = using-list
-                     | cpp-name, [ "::", ( using-list | "*" ) ];
+cpp-name = identifier-shaped-name, { "::", identifier-shaped-name };
+cpp-import-selection = cpp-using-list
+                     | cpp-name, [ "::", ( cpp-using-list | "*" ) ];
+
+cpp-using-list = "{", identifier-shaped-name,
+                 { ",", identifier-shaped-name }, [ "," ], "}";
 
 module-reference = module-path
                  | ".", module-path
@@ -353,8 +399,9 @@ using-list = "{", IDENTIFIER, { ",", IDENTIFIER }, [ "," ], "}";
 ```
 
 Module components accept every identifier-shaped spelling, including keywords.
-C++ selection lists contain only simple identifiers; qualified names, nested
-lists, aliases, and wildcards are not list items. A shared C++ path precedes
+C++ selection paths and lists also accept keyword spellings as names. Lists
+contain only simple names; qualified names, nested lists, aliases, and wildcards
+are not list items. A shared C++ path precedes
 the list: `import <print> using std::{ print, println };`.
 
 The semicolon terminates the complete import declaration. A closing brace ends
@@ -377,7 +424,7 @@ an ordinary identifier.
 ### 3.2 Enumerations
 
 ```ebnf
-enum-declaration = "enum", IDENTIFIER,
+enum-declaration = "enum", IDENTIFIER, [ type-parameter-clause ],
                    [ ":", type ],
                    "{", enum-case-list, "}";
 
@@ -396,7 +443,7 @@ valid.
 ### 3.3 Structures
 
 ```ebnf
-struct-declaration = "struct", IDENTIFIER,
+struct-declaration = "struct", IDENTIFIER, [ type-parameter-clause ],
                      "{", [ struct-field-list ], "}";
 
 struct-field-list = struct-field,
@@ -412,13 +459,14 @@ contain fields only.
 ### 3.4 Classes and functions
 
 ```ebnf
-class-declaration = "class", IDENTIFIER, "{", { class-member }, "}";
+class-declaration = "class", IDENTIFIER, [ type-parameter-clause ],
+                    "{", { class-member }, "}";
 class-member = struct-field, ","
              | [ "private" ], class-operation;
-class-operation = "fn", IDENTIFIER,
+class-operation = [ function-modifier ], "fn", IDENTIFIER, [ type-parameter-clause ],
                   "(", [ class-parameter-list ], ")",
                   [ "->", function-result-type ], [ throw-clause ], function-body;
-class-parameter-list = receiver, [ ",", function-parameter-list ]
+class-parameter-list = receiver, [ ",", [ function-parameter-list ] ]
                      | function-parameter-list;
 receiver = [ "&" | "&&" ], "self";
 ```
@@ -430,6 +478,8 @@ function is an associated operation; no `static` keyword is needed. Other
 parameters require ordinary type annotations. Class fields and operations
 may be interleaved. Class forms, nested declarations, `const fn`, and C++ boundary
 operations are not admitted within class bodies.
+Associated operations may use `async fn`; async operations with an instance
+receiver are rejected.
 
 #### Functions
 
@@ -438,10 +488,12 @@ function-definition = function-head, function-body;
 
 function-body = ordinary-block | "=>", expression, ";";
 
-function-head = [ "const" ], "fn", IDENTIFIER,
+function-head = [ function-modifier ], "fn", IDENTIFIER, [ type-parameter-clause ],
                 "(", [ function-parameter-list ], ")",
                 [ "->", function-result-type ],
                 [ throw-clause ];
+
+function-modifier = "const", [ "async" ] | "async", [ "const" ];
 
 function-parameter-list = function-parameter,
                           { ",", function-parameter }, [ "," ];
@@ -455,11 +507,17 @@ access-marker = "&" | "&&";
 
 function-result-type = type;
 
-throw-clause = "throw", named-type, { "+", named-type };
+throw-clause = "throw", ( "(", ")" | named-type, { "+", named-type } );
 ```
 
 Function definitions are top-level items or class operations. `import(cpp)` uses the same function
 head followed by `;`; `export(cpp)` uses either function-body form.
+Both `const async fn` and `async const fn` apply the same two modifiers.
+The official source style uses `const async fn`, placing static-execution
+capability before execution kind.
+`async` must introduce a function rather than another declaration. Async
+execution and admission follow the [async source rules](async.md).
+
 The optional `const` before `fn` declares that the function can execute in the
 static stage. Static execution can call only functions with this modifier, including through
 local callable bindings. A `const fn` may call only other `const fn` dependencies.
@@ -467,8 +525,20 @@ A `const` function parameter requires a static argument at each call. It takes
 no access marker and is never the `self` receiver. Lambda parameters use
 `parameter` without this modifier.
 `throw` introduces the callable's failure contract after the success result.
-`throws` is an ordinary identifier. Nested functions, default arguments,
-variadic parameters, and explicit generic parameter lists have no syntax.
+`throws` is an ordinary identifier. Nested functions and default arguments have
+no syntax.
+Named functions support checked parameterized bodies; parameterized class
+operations are not supported.
+
+```ebnf
+type-parameter-clause = "<", generic-parameter,
+                        { ",", generic-parameter }, [ "," ], ">";
+generic-parameter = [ "throw" ], IDENTIFIER;
+```
+
+A plain identifier declares a type parameter; `throw E` declares a failure-set
+parameter. An application supplies a type or a failure clause in the declared
+position. `throw ()` denotes an empty failure set.
 
 ### 3.5 Module Constants
 
@@ -497,18 +567,30 @@ Name resolution and argument constraints are semantic rules.
 ## 4. Types
 
 ```ebnf
-type = named-type | array-type | slice-type | function-type | pointer-type;
+type = named-type | array-type | slice-type | tuple-type
+     | grouped-type | function-type | pointer-type;
+
+grouped-type = "(", type, ")";
+
+tuple-type = "(", ")"
+           | "(", type-list-element, ",",
+             [ type-list-element, { ",", type-list-element }, [ "," ] ], ")";
+
+type-list-element = type;
 
 pointer-type = "ptr", "<", [ "&" ], type, ">";
 
-named-type = qualified-type-name, [ "<", type, { ",", type }, ">" ];
+named-type = qualified-type-name, [ type-arguments ];
 
-qualified-type-name = [ "::" ], type-name-component,
-                      { "::", type-name-component };
+type-arguments = "<", generic-argument,
+                 { ",", generic-argument }, [ "," ], ">";
+generic-argument = type | throw-clause;
 
-type-name-component = IDENTIFIER;
+qualified-type-name = IDENTIFIER, { "::", identifier-shaped-name }
+                    | "::", identifier-shaped-name,
+                      { "::", identifier-shaped-name };
 
-qualified-name = IDENTIFIER, { "::", IDENTIFIER };
+qualified-name = IDENTIFIER, { "::", identifier-shaped-name };
 
 array-type = "[", type, ";", expression, "]";
 
@@ -537,12 +619,15 @@ Unqualified `ptr` in type position constructs a pointer type. Its optional inner
 the pointer-type production. `*p` is dereference; `p->member`
 abbreviates `(*p).member`. Neither spelling adds an address-of operation.
 
-A named type can carry a nonempty type argument list after its qualified name.
+A named type can carry a nonempty generic argument list after its qualified name.
+Arguments use their declared kind: an ordinary type or a `throw` failure clause.
+A Tuple such as `(i32, bool)` is one type argument.
 Nested lists may close with `>>`; token splitting applies only during type
 parsing and leaves expression shift operators unchanged.
 
-There is no type-alias declaration, tuple type syntax, generic
-parameter declaration, or general reference-type syntax.
+Tuple types are positional products and preserve nesting. `(T)` groups a type;
+`(T,)` is a one-element tuple. `()` denotes `void`, the empty product.
+There is no type-alias declaration or general reference-type syntax.
 
 ## 5. Statements and Blocks
 
@@ -565,6 +650,7 @@ statement = variable-declaration
           | rethrow-statement
           | break-statement
           | continue-statement
+          | cancel-statement
           | while-statement
           | for-statement
           | assignment-statement
@@ -616,15 +702,27 @@ variable-declaration-head = binding-kind, binding-target,
                             [ ":", type ],
                             "=", expression;
 
-binding-kind = "let" | "var" | "const";
+binding-kind = "let" | "var" | "const" | "async", "let";
 
-binding-target = IDENTIFIER;
+named-binding-target = IDENTIFIER;
+
+binding-target = named-binding-target
+               | "(", binding-target, ")"
+               | tuple-binding-target;
+
+tuple-binding-target = "(", ")"
+                     | "(", binding-target, ",",
+                       [ binding-target, { ",", binding-target }, [ "," ] ], ")";
 ```
 
 Every variable declaration has an initializer. The
 identifier spelling `_` is a discard binding target; every other identifier,
-including one beginning with `_`, is named. The same `binding-target`
-classification is used by parameters and range bindings.
+including one beginning with `_`, is named. `let`, `var`, and local `const`
+also accept recursive tuple targets such as `(a, _, (b, c))`. A trailing comma
+distinguishes a one-element tuple target `(a,)` from grouped target `(a)`.
+Targets preserve tuple positions and nesting; `_` discards its position,
+including a `void` slot. Parameters and range bindings accept only named or
+discard targets. `async let` continues to require one named target.
 
 ### 5.5 Control Transfer
 
@@ -638,10 +736,14 @@ rethrow-statement = "rethrow", ";";
 break-statement = "break", ";";
 
 continue-statement = "continue", ";";
+
+cancel-statement = "cancel", IDENTIFIER, ";";
 ```
 
 The grammar does not decide whether a control-transfer form is valid at its
-location.
+location. A cancel statement names one lexical child; analysis validates its
+identity and owning scope. It requests cancellation without transferring control.
+Its operand is a bare identifier, not a general expression.
 
 ### 5.6 While Statements
 
@@ -762,10 +864,29 @@ or alternative productions.
 
 ```ebnf
 prefix-expression = prefix-operator, prefix-expression
+                  | await-expression
                   | postfix-expression;
 
 prefix-operator = "!" | "-" | "~" | "*";
+
+await-expression = "await", await-operand, { propagation-operation };
+
+await-operand = prefix-operator, await-operand
+              | "await", await-operand
+              | nonpropagating-postfix-expression;
+
+nonpropagating-postfix-expression = primary-expression,
+                                   { call-operation | index-operation
+                                   | member-operation };
 ```
+
+`await action()?` applies propagation to the awaited completion. The `?`
+marker is parsed outside the await operand. Grouping starts a full expression,
+so `await (action()?)` instead propagates inside the operand. A call, member, or
+index operation on an awaited result requires grouping, such as
+`(await action()).member`; the postfix operations in `await action().member`
+belong to its operand. Async admission follows
+[Async functions and lexical children](async.md).
 
 ### 7.3 Postfix Expressions
 
@@ -773,6 +894,7 @@ prefix-operator = "!" | "-" | "~" | "*";
 postfix-expression = primary-expression, { postfix-operation };
 
 postfix-operation = call-operation
+                  | type-arguments
                   | index-operation
                   | member-operation
                   | propagation-operation;
@@ -781,14 +903,31 @@ call-operation = "(", [ argument-list ], ")";
 
 argument-list = call-argument, { ",", call-argument }, [ "," ];
 
-call-argument = expression;
+call-argument = expression-list-element;
+
+expression-list-element = expression;
 
 index-operation = "[", expression, "]";
 
-member-operation = ( "." | "::" | "->" ), IDENTIFIER;
+member-operation = ( "." | "::" | "->" ), identifier-shaped-name
+                 | ( "." | "->" ), tuple-position;
+
+tuple-position = "0" | NONZERO_DECIMAL_DIGIT, { DECIMAL_DIGIT };
 
 propagation-operation = "?";
 ```
+
+`tuple-position` uses decimal digits without leading zeros, separators, suffixes,
+or exponents. Numeric fields chain normally: `value.0.1` selects two positions,
+and `pointer->0` is `(*pointer).0`. Decimal components following a member dot or
+arrow remain separate from the next dot; ordinary numeric literals retain their
+floating-point syntax. `::` and a bare leading dot do not introduce positional
+fields.
+
+Postfix type arguments are recognized only when the complete list is followed
+by `(` or `::`. The decision uses tokens; expression comparisons and shifts
+otherwise retain their ordinary parsing. A parameterized enum qualifier can
+select a case, as in `Maybe<i32>::Some(1)`.
 
 ### 7.4 Primary Expressions
 
@@ -800,6 +939,7 @@ primary-expression = interpolated-string
                    | IDENTIFIER
                    | global-cpp-name
                    | grouped-expression
+                   | tuple-expression
                    | array-expression
                    | lambda-expression
                    | if-form
@@ -809,11 +949,17 @@ primary-expression = interpolated-string
 literal = NUMBER_LITERAL | STRING_LITERAL | C_STRING_LITERAL | CHAR_LITERAL
         | "true" | "false" | "nullptr";
 
-global-cpp-name = "::", IDENTIFIER, { "::", IDENTIFIER };
+global-cpp-name = "::", identifier-shaped-name,
+                  { "::", identifier-shaped-name };
 
 contextual-case-expression = ".", IDENTIFIER;
 
 grouped-expression = "(", expression, ")";
+
+tuple-expression = "(", ")"
+                 | "(", expression-list-element, ",",
+                   [ expression-list-element,
+                     { ",", expression-list-element }, [ "," ] ], ")";
 
 construction-expression = construction-type,
                           "{", [ construction-initializer-list ], "}"
@@ -834,7 +980,8 @@ field-initializer-list = field-initializer,
 
 field-initializer = IDENTIFIER, ":", expression;
 
-array-expression = "[", [ array-element-list ], "]";
+array-expression = "[", [ array-element-list ], "]"
+                 | "[", expression, ";", expression, "]";
 
 array-element-list = expression,
                      { ",", expression },
@@ -858,8 +1005,8 @@ is one complete expression, including nested lambdas and value control forms.
 An access expression begins only at the start of an `expression` production.
 Its marker therefore covers the complete expression to its right. Infix `&`
 and `&&` remain bitwise-and and logical-and at their existing precedence
-levels. Calls add no argument-specific marker syntax: a marked argument is an
-ordinary access expression. Captures and range bindings admit only their
+levels. Access markers introduce no call-specific syntax: a marked argument
+is an ordinary access expression. Captures and range bindings admit only their
 separate optional `&` marker, not `&&`.
 
 Parentheses group an expression and do not introduce a block. The grammar
@@ -916,7 +1063,12 @@ atomic-pattern = wildcard-pattern
                | binding-pattern
                | constraint-pattern
                | case-pattern
+               | tuple-pattern
+               | "(", pattern, ")"
                | range-pattern;
+
+tuple-pattern = "(", ")"
+              | "(", pattern, ",", [ pattern, { ",", pattern }, [ "," ] ], ")";
 
 range-pattern = shift-expression, "..", [ shift-expression ]
               | "..", shift-expression
@@ -929,12 +1081,12 @@ literal-pattern = NUMBER_LITERAL | STRING_LITERAL | C_STRING_LITERAL | CHAR_LITE
 
 negative-number-pattern = "-", NUMBER_LITERAL;
 
-binding-pattern = IDENTIFIER;
+binding-pattern = [ "&" ], IDENTIFIER;
 
 case-pattern = case-name, [ "(", [ pattern-list ], ")" ];
 
 case-name = ".", IDENTIFIER
-          | qualified-name, "::", IDENTIFIER;
+          | qualified-name, "::", identifier-shaped-name;
 
 pattern-list = pattern, { ",", pattern }, [ "," ];
 

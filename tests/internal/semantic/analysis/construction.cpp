@@ -398,42 +398,6 @@ const TestSuite suite([] static noexcept {
                 }
             }
         };
-
-    "Analysis catalog: enum name lookup respects program identity"_test = [] static noexcept {
-        with_catalog(
-            "enum Choice { First, Second }",
-            [](ProgramDraft&,
-               AnalysisCatalogView catalog,
-               ImportUsage&,
-               DiagnosticSink&) static noexcept {
-                const auto found =
-                    std::ranges::find(catalog.symbols(), "Choice", &CatalogSymbol::name);
-                if (!expect(found != catalog.symbols().end())) {
-                    return;
-                }
-                const auto* form = std::get_if<CatalogEnumForm>(&found->form);
-                if (!expect(form != nullptr)) {
-                    return;
-                }
-                const auto enumeration = form->enumeration;
-                if (!expect(catalog.enum_case_named(enumeration, "First").has_value())) {
-                    return;
-                }
-                expect(!(catalog.enum_case_named(enumeration, "Missing").has_value()));
-                with_catalog(
-                    "enum Choice { First, Second }",
-                    [&](ProgramDraft&,
-                        AnalysisCatalogView other,
-                        ImportUsage&,
-                        DiagnosticSink&) noexcept {
-                        expect(expect_termination("enum-name-foreign-owner", [&] noexcept {
-                            static_cast<void>(other.enum_case_named(enumeration, "First"));
-                        }));
-                    }
-                );
-            }
-        );
-    };
 });
 
 } // namespace

@@ -68,6 +68,11 @@ including negation, short-circuit expressions, and early returns. Branch joins
 keep only common facts. A bool helper, API success code, or test assertion is
 not a proof. Functions and closures establish their own conditions.
 
+Parameterized function definitions use the same check even when no call forms
+an instance. A `ptr<T>` has the ordinary nullable address contract independently
+of `T`; its target must be proven non-null before dereference. Passing its slot
+to a generic Write parameter invalidates the proof just as an ordinary call does.
+
 Address copies and permission narrowing carry the current fact to the new
 slot without creating a lasting equality relationship. Assignment replaces a
 fact; Take removes the source fact. Write calls clear facts for overlapping

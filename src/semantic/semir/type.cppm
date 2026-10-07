@@ -86,6 +86,11 @@ struct ArrayTypeValue final {
     constexpr auto operator==(const ArrayTypeValue&) const noexcept -> bool = default;
 };
 
+struct TupleTypeValue final {
+    std::vector<TypeID> elements;
+    auto operator==(const TupleTypeValue&) const noexcept -> bool = default;
+};
+
 struct RangeTypeValue final {
     TypeID element;
     constexpr auto operator==(const RangeTypeValue&) const noexcept -> bool = default;
@@ -94,6 +99,11 @@ struct RangeTypeValue final {
 struct SliceTypeValue final {
     TypeID element;
     constexpr auto operator==(const SliceTypeValue&) const noexcept -> bool = default;
+};
+
+struct OwnedSequenceTypeValue final {
+    TypeID element;
+    constexpr auto operator==(const OwnedSequenceTypeValue&) const noexcept -> bool = default;
 };
 
 struct FunctionTypeValue final {
@@ -111,17 +121,26 @@ struct CallableViewTypeValue final {
     constexpr auto operator==(const CallableViewTypeValue&) const noexcept -> bool = default;
 };
 
+struct OperationTypeValue final {
+    TypeID success;
+    FailureSetID failures;
+    constexpr auto operator==(const OperationTypeValue&) const noexcept -> bool = default;
+};
+
 using CanonicalTypeValue = std::variant<
     BuiltinTypeValue,
     StructTypeValue,
     EnumTypeValue,
     ArrayTypeValue,
+    TupleTypeValue,
     SliceTypeValue,
+    OwnedSequenceTypeValue,
     RangeTypeValue,
     PointerTypeValue,
     FunctionTypeValue,
     ClosureTypeValue,
     CallableViewTypeValue,
+    OperationTypeValue,
     CppTypeValue>;
 
 struct CanonicalType final {
@@ -143,7 +162,10 @@ struct CallableParameter final {
     constexpr auto operator==(const CallableParameter&) const noexcept -> bool = default;
 };
 
+enum class CallableExecutionKind { Synchronous, Async };
+
 struct CallableSignature final {
+    CallableExecutionKind execution;
     std::vector<CallableParameter> parameters;
     TypeID result;
     FailureSetID failures;
@@ -152,7 +174,9 @@ struct CallableSignature final {
     auto operator==(const CallableSignature&) const noexcept -> bool = default;
 };
 
-using ConstructionTypeRef = std::variant<TypeID, TypeTermID>;
+using ConstructionTypeRef = std::variant<TypeID, TypeTermID, GenericTypeID>;
+using ConstructionStructRef = std::variant<StructID, GenericTypeID>;
+using ConstructionFailureRef = std::variant<FailureTermID, FailureSetID, GenericFailureID>;
 
 struct ConstructionCallableParameter final {
     ParameterStage stage;
@@ -165,6 +189,10 @@ struct ConstructionArrayTypeValue final {
     std::uint64_t extent;
 };
 
+struct ConstructionTupleTypeValue final {
+    std::vector<ConstructionTypeRef> elements;
+};
+
 struct ConstructionSliceTypeValue final {
     ConstructionTypeRef element;
 };
@@ -172,13 +200,20 @@ struct ConstructionSliceTypeValue final {
 struct ConstructionCallableViewTypeValue final {
     std::vector<ConstructionCallableParameter> parameters;
     ConstructionTypeRef result;
-    FailureTermID failures;
+    ConstructionFailureRef failures;
+};
+
+struct ConstructionOperationTypeValue final {
+    ConstructionTypeRef success;
+    ConstructionFailureRef failures;
 };
 
 using ConstructionTypeValue = std::variant<
     ConstructionArrayTypeValue,
+    ConstructionTupleTypeValue,
     ConstructionSliceTypeValue,
-    ConstructionCallableViewTypeValue>;
+    ConstructionCallableViewTypeValue,
+    ConstructionOperationTypeValue>;
 
 struct ConstructionType final {
     ConstructionTypeValue value;
@@ -201,13 +236,16 @@ public:
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(TypeTermID term) const noexcept -> bool;
     auto type(TypeTermID term) const noexcept -> TypeID;
+    auto normalize(ConstructionTypeRef reference) const noexcept -> ConstructionTypeRef;
     auto resolve(ConstructionTypeRef reference) const noexcept -> TypeID;
+    auto normalize_generics(std::vector<ConstructionTypeRef> types) && noexcept -> TypeResolution;
 
 private:
-    TypeResolution(ProgramIdentity identity, std::vector<TypeID> types) noexcept;
+    TypeResolution(ProgramIdentity identity, std::vector<ConstructionTypeRef> types) noexcept;
 
     ProgramIdentity program_identity;
-    std::vector<TypeID> resolved_types;
+    std::vector<ConstructionTypeRef> resolved_types;
+    std::vector<ConstructionTypeRef> generic_types;
 
     friend class ConstructionTypeStore;
 };
@@ -302,6 +340,7 @@ public:
     auto copy(FailureSetID id) const noexcept -> FailureSet;
     auto owner() const noexcept -> ProgramIdentity;
     auto seal() && noexcept -> FailureSetStore;
+    auto snapshot() const noexcept -> FailureSetStore;
 
 private:
     MutableProgramTable<FailureSet, FailureSetID> rows;
@@ -362,45 +401,78 @@ public:
     auto size() const noexcept -> std::size_t;
 
     template<typename TypeResolver, typename FailureResolver>
-    static auto canonicalize_type(
+    static auto try_canonicalize_type(
         const ConstructionType& type,
         CanonicalTypeStoreBuilder& types,
         CallableSignatureStoreBuilder& signatures,
         TypeResolver resolve_ref,
         FailureResolver resolve_failure
-    ) noexcept -> TypeID {
-        return type.value.visit([&](const auto& value) noexcept -> TypeID {
+    ) noexcept -> std::optional<TypeID> {
+        return type.value.visit([&](const auto& value) noexcept -> std::optional<TypeID> {
             using Value = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
-                return types.intern(
-                    CanonicalType {
-                        .value = ArrayTypeValue {
-                            .element = resolve_ref(value.element),
-                            .extent = value.extent,
-                        },
+            if constexpr (std::same_as<Value, ConstructionArrayTypeValue>
+                          || std::same_as<Value, ConstructionSliceTypeValue>) {
+                const auto element = resolve_ref(value.element);
+                if (!element) {
+                    return std::nullopt;
+                }
+                if constexpr (std::same_as<Value, ConstructionArrayTypeValue>) {
+                    return types.intern(
+                        {.value = ArrayTypeValue {.element = *element, .extent = value.extent}}
+                    );
+                } else {
+                    return types.intern({.value = SliceTypeValue {.element = *element}});
+                }
+            } else if constexpr (std::same_as<Value, ConstructionTupleTypeValue>) {
+                auto elements = std::vector<TypeID>();
+                elements.reserve(value.elements.size());
+                for (const auto element : value.elements) {
+                    const auto resolved = resolve_ref(element);
+                    if (!resolved) {
+                        return std::nullopt;
                     }
-                );
-            } else if constexpr (std::same_as<Value, ConstructionSliceTypeValue>) {
+                    elements.push_back(*resolved);
+                }
+                return types.intern({.value = TupleTypeValue {.elements = std::move(elements)}});
+            } else if constexpr (std::same_as<Value, ConstructionOperationTypeValue>) {
+                const auto success = resolve_ref(value.success);
+                const auto failures = resolve_failure(value.failures);
+                if (!success || !failures) {
+                    return std::nullopt;
+                }
                 return types.intern(
-                    {.value = SliceTypeValue {.element = resolve_ref(value.element)}}
+                    {.value = OperationTypeValue {.success = *success, .failures = *failures}}
                 );
             } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
                 auto parameters = std::vector<CallableParameter>();
                 parameters.reserve(value.parameters.size());
                 for (const auto& parameter : value.parameters) {
+                    const auto parameter_type = resolve_ref(parameter.type);
+                    if (!parameter_type) {
+                        return std::nullopt;
+                    }
                     parameters.push_back(
                         CallableParameter {
                             .stage = parameter.stage,
                             .access = parameter.access,
-                            .type = resolve_ref(parameter.type),
+                            .type = *parameter_type,
                         }
                     );
                 }
+                const auto result = resolve_ref(value.result);
+                if (!result) {
+                    return std::nullopt;
+                }
+                const auto failures = resolve_failure(value.failures);
+                if (!failures) {
+                    return std::nullopt;
+                }
                 const auto signature = signatures.intern(
                     CallableSignature {
+                        .execution = CallableExecutionKind::Synchronous,
                         .parameters = std::move(parameters),
-                        .result = resolve_ref(value.result),
-                        .failures = resolve_failure(value.failures),
+                        .result = *result,
+                        .failures = *failures,
                     }
                 );
                 return types.intern_resolved_callable_view(signature, signatures);
@@ -408,6 +480,34 @@ public:
                 static_assert(std::same_as<Value, void>, "unhandled construction type shape");
             }
         });
+    }
+
+    template<typename TypeResolver, typename FailureResolver>
+    static auto canonicalize_type(
+        const ConstructionType& type,
+        CanonicalTypeStoreBuilder& types,
+        CallableSignatureStoreBuilder& signatures,
+        TypeResolver resolve_ref,
+        FailureResolver resolve_failure
+    ) noexcept -> TypeID {
+        const auto result = try_canonicalize_type(
+            type,
+            types,
+            signatures,
+            [&](ConstructionTypeRef child) noexcept -> std::optional<TypeID> {
+                return resolve_ref(child);
+            },
+            [&](ConstructionFailureRef failure) noexcept -> std::optional<FailureSetID> {
+                if (const auto* known = std::get_if<FailureSetID>(&failure)) {
+                    return *known;
+                }
+                return resolve_failure(std::get<FailureTermID>(failure));
+            }
+        );
+        if (!result) {
+            invariant_violation("completed construction type failed canonicalization");
+        }
+        return *result;
     }
 
     template<FailureResolutionReader FailureReader>
@@ -423,13 +523,13 @@ public:
         }
 
         const auto terms = std::move(rows).seal();
-        auto resolved = std::vector<TypeID>();
+        auto resolved = std::vector<ConstructionTypeRef>();
         resolved.reserve(terms.size());
         const auto resolve_ref = [&](ConstructionTypeRef ref) noexcept -> TypeID {
             if (const auto* concrete = std::get_if<TypeID>(&ref)) {
                 return *concrete;
             }
-            return resolved[std::get<TypeTermID>(ref).index()];
+            return std::get<TypeID>(resolved[std::get<TypeTermID>(ref).index()]);
         };
         for (const auto entry : terms.entries()) {
             const auto concrete = canonicalize_type(
@@ -447,6 +547,28 @@ public:
                 }
             );
             resolved.push_back(concrete);
+        }
+        return TypeResolution(terms.owner(), std::move(resolved));
+    }
+
+    template<typename Normalizer>
+    auto normalize(Normalizer normalize_type) && noexcept -> TypeResolution {
+        const auto terms = std::move(rows).seal();
+        auto resolved = std::vector<ConstructionTypeRef>();
+        resolved.reserve(terms.size());
+        const auto normalize_child = [&](ConstructionTypeRef reference) noexcept {
+            if (const auto* term = std::get_if<TypeTermID>(&reference)) {
+                if (term->owner() != terms.owner() || term->index() >= resolved.size()) {
+                    invariant_violation(
+                        "construction type normalization requires an earlier child"
+                    );
+                }
+                return resolved[term->index()];
+            }
+            return reference;
+        };
+        for (const auto entry : terms.entries()) {
+            resolved.push_back(normalize_type(entry.value, normalize_child));
         }
         return TypeResolution(terms.owner(), std::move(resolved));
     }

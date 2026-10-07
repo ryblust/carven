@@ -1,0 +1,48 @@
+struct Error<T> {
+    value: T
+}
+
+struct Box<T> {
+    value: T
+}
+
+enum Failure<T> {
+    Item(T)
+}
+
+fn select(which: i32) throw Error<i32> + Error<u32> + Failure<Box<i32>> + Failure<Box<u32>> {
+    if which == 0 { throw Error<i32> { value: -7 }; }
+    if which == 1 { throw Error<u32> { value: 11u32 }; }
+    if which == 2 { throw Failure<Box<i32>>::Item(Box<i32> { value: -13 }); }
+    throw Failure<Box<u32>>::Item(Box<u32> { value: 17u32 });
+}
+
+fn forward(which: i32) throw Failure<Box<u32>> + Error<u32> + Failure<Box<i32>> + Error<i32> {
+    try {
+        select(which)?;
+    } catch {
+        Error<i32>(error) => throw error,
+        Error<u32>(error) => throw error,
+        Failure<Box<i32>>(error) => throw error,
+        Failure<Box<u32>>(error) => throw error,
+    }
+}
+
+test "Generic failures: concrete identities survive propagation and typed handlers" {
+    for which in 0..4 {
+        let observed = try {
+            forward(which)?;
+            0
+        } catch {
+            Error<i32>(error) => -error.value,
+            Error<u32>(error) => error.value as i32,
+            Failure<Box<i32>>(error) => match error {
+                .Item(value) => -value.value
+            },
+            Failure<Box<u32>>(error) => match error {
+                .Item(value) => value.value as i32
+            },
+        };
+        check(observed == [7, 11, 13, 17][which]);
+    }
+}

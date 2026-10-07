@@ -1,5 +1,6 @@
 module carven:semantic.analysis.nullability.context;
 
+import :semantic.analysis.model;
 import :semantic.analysis.nullability;
 import :semantic.semir.structured;
 import :support.task;
@@ -28,7 +29,7 @@ struct NullNormal final {
 };
 enum class NullTransfer { Return, Break, Continue };
 
-using NullExitPayload = std::variant<NullTransfer, TypeID>;
+using NullExitPayload = std::variant<NullTransfer, AnalysisFailureKey>;
 
 struct NullExit final {
     NullExitPayload payload;
@@ -61,8 +62,8 @@ auto project_null_value(const NullValue& value, std::uint64_t index) noexcept ->
 class NullabilityBodyAnalyzer final {
 public:
     NullabilityBodyAnalyzer(
-        const SemIRProgram& program,
-        const SemIRBody& body,
+        const AnalysisModelView& analysis,
+        const AnalysisBodyView& body,
         AnalysisDiagnostics diagnostics
     ) noexcept;
     auto run() noexcept -> void;
@@ -88,6 +89,11 @@ private:
     auto scan_writes_impl(NullState& state, const Source& source) noexcept -> void;
     auto add_range_aliases(const SemRangeLoop& source) noexcept -> void;
     auto scan_write(NullState& state, const SemanticExpression& expression) const noexcept -> void;
+    auto call_execution(GenericDeclarationID definition) const noexcept -> CallableExecutionKind;
+    auto apply_call_writes(
+        NullState& state,
+        std::span<const SemCallArgument> arguments
+    ) const noexcept -> void;
     auto expression(const SemanticExpression& source, NullState state) noexcept
         -> ContinuationTask<NullFlow>;
     auto condition(const SemanticExpression& source, NullState state) noexcept
@@ -108,13 +114,14 @@ private:
         std::span<const SemPatternBounds> bounds,
         NullState state
     ) noexcept -> ContinuationTask<NullCondition>;
-    auto failures(NullFlow& flow, FailureSetID failures) const noexcept -> void;
+    auto failures(NullFlow& flow, ConstructionFailureRef failures) const noexcept -> void;
     auto require_nonnull(ProgramOriginID origin, const NullValue& value) noexcept -> void;
 
+    const AnalysisModelView& analysis;
     const SemIRProgram& program;
-    const SemIRBody& body;
+    const AnalysisBodyView& body;
     AnalysisDiagnostics diagnostics;
     std::flat_set<LocalBindingID> input_aliases;
     std::flat_set<LocalBindingID> range_aliases;
-    std::vector<TypeID> caught;
+    std::vector<AnalysisFailureKey> caught;
 };

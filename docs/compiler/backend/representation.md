@@ -23,9 +23,32 @@ use the same name representation.
 These describe native C++ syntax, with type dependencies visited normally.
 
 Structure declarations lower to C++ aggregates containing their declared fields.
-Payload enum factories, storage constructors, and projections are ordinary C++
-functions. Carven evaluates source constants during semantic analysis; their
+Payload enum factories are ordinary C++ functions. Payload access uses
+standard variant selection on the checked case record. Carven evaluates source constants during semantic analysis; their
 uses reconstruct the normalized values through the same target operations.
+
+Tuple types have canonical ordered element types before lowering. Their native
+representation is the runtime's recursively nested C++ aggregate, initialized
+directly into each member without constructor-argument forwarding. Direct final
+member construction permits native elements with neither copy nor move constructors.
+An element completed in separate storage before a sequencing or failure barrier
+requires its native copy or move capability for delivery into the final member.
+Decomposition retains one stable aggregate owner and binds names to its selected
+members; the source
+and discarded members share the declaration's lexical cleanup scope.
+
+Positional fields use the same projections and value-delivery policy as named
+fields. Read and Write parameter or loop targets expand to paths over their
+existing bindings. Take parameter decomposition establishes independent logical
+bindings over the already initialized parameter; it does not reconstruct the
+product. Tuple patterns test borrowed projections and use the ordinary match
+binding construction and cleanup protocol after complete pattern acceptance.
+
+Carven `void` is a zero-information value. Object contexts use the private empty
+`runtime::Void` carrier; callable success results and opaque `ptr<void>` targets
+retain native C++ `void`. Constant products and decomposition execute and freeze
+during semantic specialization. Runtime products preserve evaluation, failure,
+address, and cleanup obligations; C++ optimizes their native storage and layout.
 
 ## Constants and default values
 
@@ -76,17 +99,27 @@ The qualifier alone supplies no call-result fact or permission to discard a call
 
 ## Parameters and access
 
-Read parameters, Read argument temporaries, and Read range bindings preserve
-Carven array, String, and closure storage, including storage in Carven aggregate
-fields, through const references. Lowering uses the resolved type-contents query
+Read parameters and Read argument temporaries preserve Carven array, Sequence,
+String, and closure storage, including storage in Carven aggregate fields,
+through const references. Lowering uses the resolved type-contents query
 shared with ownership analysis. Other pure Carven Read parameters use const
 values. Types containing native C++ values by value use
 `runtime::ReadArg<T>`, which selects a const value for trivially copy-constructed
 and destroyed types and a const reference otherwise. The type-contents query
-propagates native value containment through array elements, struct fields,
+propagates native value containment through array elements, tuple slots, struct fields,
 and enum payloads; pointer and slice targets do not contribute. Native template
 arguments alone leave the instantiated type's
-storage contents unknown. Interface planning includes complete definitions for
+storage contents unknown. No size threshold participates in the trait policy.
+
+Published `ReadPassingFacts` identifies parameter holders that remain reachable
+through returned values or writes to external state. Those parameters use const
+references at declarations, definitions, imports, exports, and argument storage.
+Async native-containing Read inputs carry this requirement from cold construction.
+Callable views retain ordinary ReadArg parameter types and evaluation timing;
+semantic admission rejects incompatible stable-storage target adaptation.
+Pattern and range Read bindings borrow native holders directly from their subject.
+
+Interface planning includes complete definitions for
 these trait queries. A pointer representation is complete without completing its
 target; pointer dependencies request target declarations. Forming that target's
 type expression can still require complete definitions, such as Read parameter
@@ -184,10 +217,11 @@ by their interoperation contracts.
 
 ## Failure and test-stop ABI
 
-`FailureABI` gives each failure set a deterministic member order. Failing
-results use `Outcome`; other results are direct. Widening accepts identity or a
-strict failure-set superset. Calls, propagation, handlers, and callable
-adaptation use this one contract.
+`FailureABI` orders failure members by the shared canonical type content identity,
+including the source declaration and normalized generic arguments. Generic
+nominal target naming uses the same identity. Failing results use `Outcome`;
+other results are direct. Widening accepts identity or a strict failure-set superset.
+Calls, propagation, handlers, and callable adaptation use this one contract.
 
 A concrete callable whose published effect admits
 test stop returns `Outcome<Result, TestStopped, Failures...>`. Callable views

@@ -36,6 +36,7 @@ struct ASTVariableDecl final {
     Span span;
     ASTBindingKind kind;
     Span keyword_span;
+    std::optional<Span> async_span;
     ASTBindingTarget target;
     std::optional<ASTTypeID> type;
     std::optional<ASTExprID> initializer;
@@ -58,6 +59,11 @@ struct ASTUpdate final {
 
 struct ASTExprStatement final {
     ASTExprID expression;
+};
+
+struct ASTCancelStmt final {
+    Span keyword_span;
+    ASTExprID child;
 };
 
 struct ASTForInitializer final {
@@ -111,6 +117,7 @@ struct ASTStmt final {
         ASTAssignment,
         ASTUpdate,
         ASTExprStatement,
+        ASTCancelStmt,
         ASTControlTransfer,
         ASTWhileStmt,
         ASTForStmt,

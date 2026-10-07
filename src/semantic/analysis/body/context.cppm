@@ -47,6 +47,7 @@ struct BodyLocalStorage final {
     bool static_source;
     BodyLocalRole role;
     std::optional<Span> unused_candidate;
+    std::vector<std::uint32_t> projection;
 };
 
 using BodyLocalNames = std::flat_map<std::string, BodyLocalStorage, std::less<>>;
@@ -57,13 +58,13 @@ struct BodyLocalFrame final {
 };
 
 using BodyExpressionStorage = std::variant<SemanticExpression, PlaceExpression>;
-using BodyPendingFailureTerms = std::vector<FailureTermID>;
+using BodyPendingFailures = std::vector<ConstructionFailureRef>;
 
 struct BuiltExpression final {
     // Moving this construction owner ends its borrows. Consuming the inner
     // expression leaves its storage and BuiltExpression metadata alive.
     UniqueIndirect<BodyExpressionStorage> storage;
-    BodyPendingFailureTerms pending_failures;
+    BodyPendingFailures pending_failures;
     bool takeable;
     bool completes;
 
@@ -102,11 +103,32 @@ struct BuiltinSelection final {
     std::optional<std::array<ProgramSpellingID, 2>> operand_sources;
 };
 
-using SelectedExpression = std::variant<BuiltExpression, CppSelection, BuiltinSelection>;
+struct AsyncIntrinsicSelection final {
+    AsyncIntrinsic kind;
+    Span span;
+};
+
+struct CompositionSelection final {
+    AsyncCompositionPolicy policy;
+    Span span;
+};
+
+struct TimeoutSelection final {
+    TimeoutContract contract;
+    Span span;
+};
+
+using SelectedExpression = std::variant<
+    BuiltExpression,
+    CppSelection,
+    BuiltinSelection,
+    AsyncIntrinsicSelection,
+    CompositionSelection,
+    TimeoutSelection>;
 
 struct BuiltCallArgument final {
     SemCallArgument argument;
-    BodyPendingFailureTerms pending_failures;
+    BodyPendingFailures pending_failures;
     bool completes;
 };
 
@@ -114,19 +136,19 @@ auto does_not_complete(const BuiltExpression& expression) noexcept -> bool {
     return !expression.completes;
 }
 
-auto take_pending_failures(BuiltExpression& expression) noexcept -> BodyPendingFailureTerms {
+auto take_pending_failures(BuiltExpression& expression) noexcept -> BodyPendingFailures {
     return std::exchange(expression.pending_failures, {});
 }
 
 auto append_pending_failures(
-    BodyPendingFailureTerms& destination,
-    const BodyPendingFailureTerms& source
+    BodyPendingFailures& destination,
+    const BodyPendingFailures& source
 ) noexcept -> void {
-    for (const auto failure_term_id : source) {
-        if (std::ranges::contains(destination, failure_term_id)) {
+    for (const auto failure : source) {
+        if (std::ranges::contains(destination, failure)) {
             continue;
         }
-        destination.push_back(failure_term_id);
+        destination.push_back(failure);
     }
 }
 
@@ -184,6 +206,7 @@ private:
 };
 
 auto is_void_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
+    type = unwrap_type_alias(draft, type);
     const auto* concrete = std::get_if<TypeID>(&type);
     if (concrete == nullptr) {
         return false;
@@ -192,15 +215,9 @@ auto is_void_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept 
         == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}};
 }
 
-auto is_failure_payload_type(const ProgramDraft& draft, TypeID type) noexcept -> bool {
-    const auto& canonical = draft.type_copy(type).value;
-    return std::holds_alternative<StructTypeValue>(canonical)
-        || std::holds_alternative<EnumTypeValue>(canonical);
-}
-
 auto create_body_failure_term(
     ProgramDraft& draft,
-    FailureTermID failures,
+    ConstructionFailureRef failures,
     FailureContractPolicy policy,
     ProgramOriginID origin
 ) noexcept -> FailureTermID {
@@ -217,7 +234,11 @@ auto create_body_failure_term(
         }
         case FailureContractPolicy::Inferred:
         case FailureContractPolicy::UndeclaredExplicit: {
-            draft.equate_failures(actual, failures);
+            const auto* inferred = std::get_if<FailureTermID>(&failures);
+            if (!inferred) {
+                invariant_violation("inferred callable contract has no inference variable");
+            }
+            draft.equate_failures(actual, *inferred);
             if (policy == FailureContractPolicy::UndeclaredExplicit) {
                 draft.require_declared_failure_contract(actual, origin);
             }
@@ -244,11 +265,18 @@ public:
         std::optional<ConstructionTypeRef> result,
         FailureTermID outward_failure_term_id,
         bool accepts_catch_residual,
-        bool test_body
+        bool test_body,
+        std::optional<GenericTypeContext> generic_context = std::nullopt
     ) noexcept;
     // Inside a const block, a const test or a module const block every local
     // is a static value and control is ordinary execution.
     auto static_stage() const noexcept -> bool;
+    auto await_expression(const ASTPrefixExpr& source, Span span) noexcept
+        -> AnalysisTask<BuiltExpression>;
+    auto await_child_intrinsic(const ASTCallExpr& source, AsyncIntrinsic kind, Span span) noexcept
+        -> AnalysisTask<BuiltExpression>;
+    auto operation_shape(ConstructionTypeRef type) const noexcept
+        -> std::optional<ConstructionOperationTypeValue>;
     auto initializer_value(
         const ASTVariableDecl& source,
         std::optional<ConstructionTypeRef> declared
@@ -298,11 +326,21 @@ private:
     // available only as its frozen constant; no value means it has none.
     auto read_local(const BodyLocalStorage& local, Span span) noexcept
         -> AnalysisTask<std::optional<SemanticExpression>>;
+    auto local_place(const BodyLocalStorage& local, Span span) noexcept -> PlaceExpression;
+    auto bind_tuple_target(
+        const ASTBindingTarget& target,
+        BoundStorage root,
+        ConstructionTypeRef type,
+        BodyLocalRole role,
+        bool static_source,
+        bool owning
+    ) noexcept -> AnalysisResult<std::vector<SemDecompositionBinding>>;
     auto resolve_constant_name(std::string_view name, Span span) noexcept
         -> AnalysisTask<std::optional<ConstantID>>;
-    auto resolve_function(std::string_view name, Span span) noexcept
-        -> AnalysisTask<std::optional<FunctionID>>;
+    auto resolve_static_callable(std::string_view name, Span span) noexcept
+        -> AnalysisTask<std::optional<ResolvedStaticCallable>>;
     auto construction_requests() noexcept -> ConstructionRequests&;
+    auto resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID>;
     auto resolve_type_qualifier(ASTExprID expression) noexcept
         -> AnalysisTask<std::optional<TypeID>>;
     auto resolve_constant_enum_case(TypeID type, std::string_view name, Span span) noexcept
@@ -318,6 +356,11 @@ private:
         ConstructionTypeRef target,
         Span span
     ) noexcept -> AnalysisResult<void>;
+    auto try_require_invariant_type(
+        ConstructionTypeRef source,
+        ConstructionTypeRef target,
+        Span span
+    ) noexcept -> bool;
     auto require_bool(BuiltExpression& expression, Span span) noexcept
         -> AnalysisResult<SemanticExpression>;
     auto active_builder() noexcept -> BodyBuilder&;
@@ -330,7 +373,7 @@ private:
         ConstructionTypeRef type,
         SemanticExpressionValue&& value,
         Span span,
-        BodyPendingFailureTerms pending = {},
+        BodyPendingFailures pending = {},
         std::optional<ConstantID> constant = std::nullopt
     ) noexcept -> BuiltExpression;
     auto mark_noncompleting(BuiltExpression value) noexcept -> BuiltExpression;
@@ -343,14 +386,14 @@ private:
         ASTBranchBlockID id,
         bool value_form,
         std::optional<ConstructionTypeRef>& result_type,
-        BodyPendingFailureTerms& pending,
+        BodyPendingFailures& pending,
         bool allow_pointer_narrowing
     ) noexcept -> AnalysisTask<SemanticRegion>;
     auto build_arm(
         const ASTMatchArmBody& source,
         bool value_form,
         std::optional<ConstructionTypeRef>& type,
-        BodyPendingFailureTerms& pending,
+        BodyPendingFailures& pending,
         bool allow_pointer_narrowing
     ) noexcept -> AnalysisTask<SemanticRegion>;
     auto build_if(
@@ -385,11 +428,11 @@ private:
         -> AnalysisResult<ConstructionTypeRef>;
     auto consume_pending(BuiltExpression& expression, Span span) noexcept -> AnalysisResult<void>;
     auto propagate_pending(BuiltExpression& expression, Span span) noexcept -> AnalysisResult<void>;
-    auto collect_pending(BodyPendingFailureTerms& destination, BuiltExpression& expression) noexcept
+    auto collect_pending(BodyPendingFailures& destination, BuiltExpression& expression) noexcept
         -> void;
     auto discard_pending(BuiltExpression& expression) noexcept -> void;
     auto route_pending(
-        BodyPendingFailureTerms failure_term_ids,
+        BodyPendingFailures failures,
         const BodyFailureContext& target,
         std::optional<Span> propagation_span
     ) noexcept -> void;
@@ -460,6 +503,12 @@ private:
     ) noexcept -> AnalysisTask<BuiltExpression>;
     auto access_expression(const ASTAccessExpr& source, Span span) noexcept
         -> AnalysisTask<BuiltExpression>;
+    auto generic_call_expression(
+        const ASTCallExpr& source,
+        GenericDeclarationID definition,
+        std::span<const ASTGenericArgument> type_arguments,
+        Span span
+    ) noexcept -> AnalysisTask<BuiltExpression>;
     auto call_expression(
         const ASTCallExpr& source,
         Span span,
@@ -508,7 +557,8 @@ private:
         bool allow_new_bindings,
         std::flat_set<std::string, std::less<>>& used_bindings,
         std::vector<SemPatternBounds>& pattern_bounds,
-        CompletionQuery& completion
+        CompletionQuery& completion,
+        std::optional<AccessMode> subject_access = std::nullopt
     ) noexcept -> AnalysisTask<BuiltPattern>;
     auto resolve_pattern_constraint(const ASTConstraintOperand& operand) noexcept
         -> AnalysisTask<ConstructionTypeRef>;
@@ -526,6 +576,7 @@ private:
     ) noexcept -> AnalysisTask<BuiltExpression>;
     auto statement(ASTStmtID id) noexcept -> AnalysisTask<void>;
     auto variable_statement(const ASTVariableDecl& source) noexcept -> AnalysisTask<void>;
+    auto cancel_statement(const ASTCancelStmt& source, Span span) noexcept -> AnalysisTask<void>;
     auto assignment_statement(const ASTAssignment& source) noexcept -> AnalysisTask<void>;
     auto update_statement(const ASTUpdate& source) noexcept -> AnalysisTask<void>;
     auto transfer_statement(const ASTControlTransfer& source) noexcept -> AnalysisTask<void>;
@@ -588,6 +639,7 @@ private:
     ProgramModuleID source_module_id;
     ModuleID semantic_module_id;
     ASTView ast;
+    std::optional<GenericTypeContext> generic_context;
     BodyBuilder body_builder;
     std::optional<ConstructionTypeRef> result_type;
     bool infer_result;
@@ -611,6 +663,11 @@ private:
     // The frame count at entry to each enclosing const block. A local of an
     // earlier frame is visible inside the block only when it is static.
     std::vector<std::size_t> const_block_frames;
+    bool async_body = false;
+    std::set<LocalBindingID> async_child_bindings;
+    // One lexical lambda declaration serves each evaluation of that source expression.
+    std::map<Span, CallableID> lambda_callables;
+    std::size_t aggregate_construction_work = 0uz;
     bool static_body = false;
     std::optional<LifetimeRegionID> active_full_expression;
     bool reachable;
@@ -629,6 +686,11 @@ public:
         ConstructionRequests& requests
     ) noexcept;
     auto run() noexcept -> AnalysisTask<void>;
+    auto ensure_generic_function(
+        GenericDeclarationID definition,
+        ProgramModuleID requester,
+        Span span
+    ) noexcept -> AnalysisTask<void>;
     auto ensure_function_signature(FunctionID id, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
     auto ensure_function_body(FunctionID id, ProgramModuleID requester, Span span) noexcept
@@ -661,6 +723,7 @@ private:
     using State = std::variant<Unvisited, Analyzing, Complete, Failed>;
     auto complete_function(FunctionID id) noexcept -> AnalysisTask<void>;
     auto elaborate_function(FunctionID id) noexcept -> AnalysisTask<void>;
+    std::map<GenericDeclarationID, State> generic_states;
     std::vector<const CatalogSymbol*> functions;
     std::vector<State> states;
     std::vector<std::optional<BodyID>> body_ids;

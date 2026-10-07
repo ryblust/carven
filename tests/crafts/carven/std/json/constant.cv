@@ -1,0 +1,120 @@
+import std::json.value using Value;
+import std::json.error using { JSONError, ValueError };
+import std::json.string using decode_string;
+import std::utf.error using UTF8Error;
+
+private const fn edited_document(text: str) -> String throw JSONError + ValueError {
+    var document = Value::parse(text)?;
+    var items = document.get("items")?;
+    let snapshot = items;
+    items.set_at(0, &&Value::string("你好😀"))?;
+    items.push(&&Value::integer(42))?;
+    items.remove_at(1)?;
+    assert(snapshot.len()? == 2);
+    assert(snapshot.at(0)?.number_text()? == "1E400");
+    document.set("items", &&items)?;
+    document.append_member("enabled", &&Value::boolean(false))?;
+    document.set("enabled", &&Value::boolean(true))?;
+    assert(document.has("enabled")?);
+    assert(document.get("enabled")?.as_bool()?);
+    assert(document.key_at(0)? == "items");
+    assert(document.member_value_at(0)?.kind() == .Array);
+    assert(document.erase("old")? == 2);
+    return document.to_json()?;
+}
+
+private const input = r#"{"items":[1E400,null],"old":1,"old":2}"#;
+private const expected = r#"{"items":["你好😀",42],"enabled":true}"#;
+private const edited = edited_document(input)?;
+private const decoded = decode_string(r#""a\u0000\uD83D\uDE00""#)?;
+private const compact = Value::parse_bytes(r#"{ "valid": true }"#.bytes)?.to_json()?;
+
+const test "JSON constant: parsing and owned edits produce frozen text" {
+    check(edited == expected);
+    check(decoded == "a\u{0}😀");
+    check(compact == r#"{"valid":true}"#);
+}
+
+test "JSON constant: native edits follow the same value and output contracts" {
+    try {
+        check(edited_document(input)?.as_str() == expected);
+    } catch {
+        JSONError(_) => fail("valid input must parse"),
+        ValueError(_) => fail("valid value edits must succeed"),
+    }
+}
+
+private const fn constructed_document() -> String throw JSONError + ValueError {
+    var values = Value::array();
+    values.push(&&Value::null())?;
+    values.push(&&Value::boolean(true))?;
+    values.push(&&Value::number("-0.00e+02")?)?;
+    values.push(&&Value::integer(-17))?;
+    values.push(&&Value::unsigned_integer(18446744073709551615u64))?;
+    values.push(&&Value::real(1.25)?)?;
+    var object = Value::object();
+    object.set("values", &&values)?;
+    return object.to_json()?;
+}
+
+private const constructed = constructed_document()?;
+
+const test "JSON constant: scalar constructors retain their JSON representations" {
+    check(constructed == r#"{"values":[null,true,-0.00e+02,-17,18446744073709551615,1.25]}"#);
+}
+
+private const fn round_trip_tree() -> usize throw JSONError + ValueError {
+    var tree = Value::object();
+    for branch in 0usize..4 {
+        var values = Value::array();
+        for leaf in 0usize..8 {
+            values.push(&&Value::unsigned_integer((branch * 8 + leaf) as u64))?;
+        }
+        var node = Value::object();
+        node.set("values", &&values)?;
+        tree.set(f"branch{branch}", &&node)?;
+    }
+    let text = tree.to_json()?;
+    let parsed = Value::parse(text.as_str())?;
+    assert(parsed.len()? == 4);
+    var count: usize = 0;
+    for branch in 0usize..4 {
+        let node = parsed.get(f"branch{branch}")?;
+        let values = node.get("values")?;
+        assert(values.len()? == 8);
+        for leaf in 0usize..8 {
+            let value = values.at(leaf)?;
+            let expected = f"{branch * 8 + leaf}";
+            assert(value.number_text()? == expected.as_str());
+            count += 1;
+        }
+    }
+    return count;
+}
+
+private const leaves = round_trip_tree()?;
+
+const test "JSON constant: recursive trees round trip within ordinary execution limits" {
+    check(leaves == 32);
+}
+
+const test "JSON constant: parsing preserves syntax and encoding failures" {
+    var syntax_rejected = false;
+    try {
+        let _ = Value::parse("[1,]")?;
+    } catch {
+        JSONError(error) => {
+            syntax_rejected = error.kind == .UnexpectedByte && error.offset == 3;
+        },
+    }
+    check(syntax_rejected);
+    let bytes = [0x5bu8, 0x31, 0x2c, 0x5d, 0xff];
+    var encoding_rejected = false;
+    try {
+        let _ = Value::parse_bytes(bytes)?;
+    } catch {
+        UTF8Error(error) => { encoding_rejected = error.offset == 4; },
+        JSONError(_) => {},
+    }
+    check(encoding_rejected);
+}

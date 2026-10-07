@@ -79,7 +79,9 @@ auto lower_cpp_import(
             {.local = name,
              .type = context.lower_parameter(
                  semantic_signature.parameters[index].access,
-                 semantic_signature.parameters[index].type
+                 semantic_signature.parameters[index].type,
+                 TypeNameScope::Module,
+                 context.semantic().read_requires_stable_storage(function.callable, index)
              ),
              .default_value = std::nullopt}
         );
@@ -106,7 +108,8 @@ auto lower_cpp_import(
             name_expression(TargetName::globally_qualified(std::move(provider_name))),
             std::move(arguments)
         );
-        if (context.plan().failure_abi().members(semantic_signature.failures).empty()
+        if (semantic_signature.execution == CallableExecutionKind::Synchronous
+            && context.plan().failure_abi().members(semantic_signature.failures).empty()
             && is_char_type(context.semantic(), semantic_signature.result)) {
             call = call_expression(
                 intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
@@ -124,6 +127,7 @@ auto lower_cpp_import(
         .result = context.callable_result(function.callable),
         .form = declaration_only ? TargetFreeFunctionForm {TargetFreeFunctionDeclaration {}}
                                  : TargetFreeFunctionForm {TargetFreeFunctionDefinition {
+                                       .execution = TargetCallableExecution::Ordinary,
                                        .body = std::move(body),
                                    }},
         .constexpr_specifier = false,
@@ -171,7 +175,9 @@ auto lower_carven_function(
             .local = name,
             .type = context.lower_parameter(
                 signature.parameters[index].access,
-                signature.parameters[index].type
+                signature.parameters[index].type,
+                TypeNameScope::Module,
+                context.semantic().read_requires_stable_storage(callable_id, index)
             ),
             .default_value = std::nullopt,
         });
@@ -193,10 +199,14 @@ auto lower_carven_function(
         .name = TargetName {context.names().callable_identifier(callable_id)},
         .parameters = std::move(parameters),
         .result = context.callable_result(callable_id),
-        .form = declaration_only ? TargetFreeFunctionForm {TargetFreeFunctionDeclaration {}}
-                                 : TargetFreeFunctionForm {TargetFreeFunctionDefinition {
-                                       .body = std::move(statements),
-                                   }},
+        .form = declaration_only
+            ? TargetFreeFunctionForm {TargetFreeFunctionDeclaration {}}
+            : TargetFreeFunctionForm {TargetFreeFunctionDefinition {
+                  .execution = signature.execution == CallableExecutionKind::Async
+                      ? TargetCallableExecution::Coroutine
+                      : TargetCallableExecution::Ordinary,
+                  .body = std::move(statements),
+              }},
         .constexpr_specifier = false,
         .static_specifier = false,
         .inline_specifier =

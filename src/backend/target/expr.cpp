@@ -43,6 +43,10 @@ auto prefix_expression(TargetPrefixOperator operation, TargetExpr operand) noexc
     };
 }
 
+auto co_await_expression(TargetExpr operand) noexcept -> TargetExpr {
+    return {.value = TargetCoAwaitExpr {.operand = UniqueIndirect(std::move(operand))}};
+}
+
 auto template_name_expression(
     TargetExpr operand,
     std::vector<TargetTemplateArgument> arguments

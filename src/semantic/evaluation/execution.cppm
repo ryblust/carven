@@ -4,6 +4,7 @@ import :semantic.evaluation.limits;
 import :semantic.evaluation.operation;
 import :semantic.evaluation.output;
 import :semantic.evaluation.value;
+import :semantic.semir.body;
 import :semantic.semir.structured;
 import :support.task;
 import std;
@@ -49,6 +50,7 @@ struct ExecutionEvent final {
     std::variant<ExecutionIssue, ReportKind> cause;
     std::vector<ExecutionReportField> fields;
     std::vector<ProgramOriginID> calls;
+    std::vector<BlockSource> blocks = {};
     auto reason() const noexcept -> ExecutionReason;
     auto message() const noexcept -> std::string_view;
     auto report_kind() const noexcept -> std::optional<ReportKind>;
@@ -71,10 +73,17 @@ struct ExecutionSourceFailure final {
     std::shared_ptr<const ExecutionValue> payload;
     ProgramOriginID origin;
     std::vector<ProgramOriginID> calls;
+    std::vector<BlockSource> blocks = {};
 };
 
-using ExecutionFailure =
-    std::variant<ExecutionHalt, ExecutionSourceFailure, ExecutionDependencyFailure>;
+struct ExecutionCancelled final {
+    ProgramOriginID origin;
+    std::vector<ProgramOriginID> calls;
+    std::vector<BlockSource> blocks;
+};
+
+using ExecutionFailure = std::
+    variant<ExecutionHalt, ExecutionSourceFailure, ExecutionCancelled, ExecutionDependencyFailure>;
 
 // An adapter supplies either a new event for the executor to report or an
 // existing execution failure to propagate without delivering it again.
@@ -110,7 +119,10 @@ public:
     auto binding_count() const noexcept -> std::size_t;
     auto binding_type(LocalBindingID id) const noexcept -> ConstructionTypeRef;
     auto binding_access(LocalBindingID id) const noexcept -> AccessMode;
+    auto binding_storage(LocalBindingID id) const noexcept -> BindingStorage;
     auto bindings_in(LifetimeRegionID lifetime) const noexcept -> std::vector<std::size_t>;
+    auto binding_lifetime(LocalBindingID binding) const noexcept -> LifetimeRegionID;
+    auto has_children(LifetimeRegionID lifetime) const noexcept -> bool;
 
     template<typename Visitor>
     auto visit_pattern(PatternID id, Visitor&& visitor) const noexcept {
@@ -125,8 +137,11 @@ public:
     }
 
 private:
+    auto index_children() noexcept -> void;
+
     std::variant<const StructuredBodyDraft*, const SemIRBody*> body;
     const SemanticRegion* selected_region;
+    std::vector<LifetimeRegionID> child_lifetimes;
 };
 
 enum class ExecutionTraceKind { Statement, Call, Return };
@@ -143,8 +158,6 @@ public:
     virtual ~SemanticExecutionContext() = default;
 
     virtual auto trace(const ExecutionTraceEvent&) noexcept -> void;
-    virtual auto enter_block(BlockSource source) noexcept -> void;
-    virtual auto leave_block() noexcept -> void;
     virtual auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void = 0;
     virtual auto function_for_callable(CallableID callable) const noexcept
         -> std::optional<FunctionID> = 0;

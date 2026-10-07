@@ -86,6 +86,20 @@ const TestSuite suite([] static noexcept {
          )",
                  .code = DiagnosticCode::ConstEvaluation,
                  .primary_text = "*address"},
+                {.name = "reinitializing a decomposed binding does not revive its old pointer",
+                 .source = R"(
+             const fn invalid() -> i32 {
+                 var (a, b) = (1, 2);
+                 let address = addressof(a);
+                 let value = &&a;
+                 a = 3;
+                 if address != nullptr { return *address; }
+                 return b;
+             }
+             const result = invalid();
+         )",
+                 .code = DiagnosticCode::ConstEvaluation,
+                 .primary_text = "*address"},
                 {.name = "reinitialization does not revive an old target",
                  .source = R"(
              const test "reinitialized" {

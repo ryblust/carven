@@ -118,9 +118,10 @@ delivery experiment preserves operand evaluation and destruction order, includin
 temporary backing and failure before later operands.
 
 Concrete native adapters can use the existing explicit C++ boundary. The selected
-storage surface determines any generic prerequisites; generic classes remain
-unimplemented. Runtime and constant execution need their respective operation
-admission and retained-result rules. Text output also needs UTF-8 validity and a
+storage surface determines any generic prerequisites; parameterized class fields
+are implemented, while their operations remain unsupported. Runtime and constant
+execution need their respective operation admission and retained-result rules.
+Text output also needs UTF-8 validity and a
 failure policy beyond initialized byte extents.
 
 ## Open decisions
@@ -199,10 +200,10 @@ compilation cost separately.
 
 - [C++ interoperation](../docs/language/interop.md): existing concrete native
   adapters and provider obligations.
-- [Generics](generics.md): prerequisites for a generic storage surface.
+- [Generic extensions](generic-extensions.md): prerequisites for a generic storage surface.
 - [Constant storage](constant-storage.md): operation admission and retained
   results during constant execution.
-- [Async](async.md): lifetime closure before suspending operations release or
+- [Async](../docs/language/async.md): lifetime closure before suspending operations release or
   reuse storage.
 - [Concurrency](concurrency.md): synchronization and visibility for cross-thread
   construction and access.

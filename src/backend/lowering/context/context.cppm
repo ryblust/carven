@@ -97,6 +97,8 @@ public:
         -> TargetName;
     auto require_callable(CallableID id) noexcept -> void;
     auto payload_enum(EnumID id) noexcept -> const TargetPayloadEnumNames&;
+    auto enum_payload_projection(EnumID id, std::size_t case_index, TargetExpr subject) noexcept
+        -> TargetExpr;
     auto constant_storage() noexcept -> ConstantStorage&;
     auto make_callable_name_allocator() const noexcept -> TargetNameAllocator;
     auto intrinsic_type(TargetSymbol symbol, bool constant = false) noexcept -> TargetTypeID;
@@ -106,9 +108,18 @@ public:
     auto pointer_type(TargetTypeID pointee, bool constant = false) noexcept -> TargetTypeID;
     auto optional_type(TargetTypeID value) noexcept -> TargetTypeID;
     auto variant_type(std::span<const TypeID> members) noexcept -> TargetTypeID;
+    auto async_type(
+        TargetSymbol symbol,
+        TypeID success,
+        FailureSetID failures,
+        TypeNameScope scope = TypeNameScope::Module
+    ) noexcept -> TargetTypeID;
+    auto callable_completion(CallableID callable_id) noexcept -> TargetTypeID;
     auto callable_result(CallableID callable_id) noexcept -> TargetTypeID;
     auto call_result(const SemCall& call) noexcept -> TargetTypeID;
     auto lower_type(TypeID id, TypeNameScope scope = TypeNameScope::Module) noexcept
+        -> TargetTypeID;
+    auto lower_native_type(TypeID id, TypeNameScope scope = TypeNameScope::Module) noexcept
         -> TargetTypeID;
     auto cpp_name(const CppNameReference& name) noexcept -> TargetName;
     auto cpp_constant_argument(
@@ -119,7 +130,8 @@ public:
     auto lower_parameter(
         AccessMode access,
         TypeID type,
-        TypeNameScope scope = TypeNameScope::Module
+        TypeNameScope scope = TypeNameScope::Module,
+        bool requires_stable_storage = false
     ) noexcept -> TargetTypeID;
     auto lower_signature_result(
         CallableSignatureID signature,
@@ -129,6 +141,8 @@ public:
     auto display_emitter_type(TypeID type) noexcept -> TargetTypeID;
     auto display_emitter(TypeID type) noexcept -> TargetExpr;
     auto take_query_aliases() noexcept -> std::vector<TargetItem>;
+    auto defer_enum_factory(TargetItem item) noexcept -> void;
+    auto take_enum_factories() noexcept -> std::vector<TargetItem>;
     auto take_display_helpers() noexcept -> std::vector<TargetItem>;
     auto is_void(TypeID id) const noexcept -> bool;
     auto is_integer(TypeID id) const noexcept -> bool;
@@ -138,8 +152,12 @@ private:
 
     using TypeState = std::variant<Resolving, TargetTypeID>;
 
-    auto function_type(CallableSignatureID signature, bool stops_test, TypeNameScope scope) noexcept
-        -> TargetType;
+    auto function_type(
+        CallableSignatureID signature,
+        bool stops_test,
+        TypeNameScope scope,
+        std::optional<CallableID> callable = std::nullopt
+    ) noexcept -> TargetType;
     auto cpp_type_query(const CppQueryType& query, TypeNameScope scope) noexcept -> TargetExpr;
 
     ArtifactLowering& artifact_lowering;
@@ -147,6 +165,7 @@ private:
     ConstantStorage constants;
     std::map<TypeID, TargetTypeID> query_types;
     std::vector<TargetItem> query_aliases;
+    std::vector<TargetItem> enum_factory_definitions;
     std::map<std::pair<TypeID, TypeNameScope>, TypeState> type_cache;
     std::map<TypeID, TargetTypeID> display_types;
     std::vector<TargetItem> display_helpers;

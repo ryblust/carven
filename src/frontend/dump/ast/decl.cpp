@@ -201,6 +201,35 @@ auto ASTDumper::render_top_level_item(
             }
         );
     };
+    const auto render_type_parameters = [&](const std::optional<ASTTypeParameterClause>& parameters,
+                                            std::string_view prefix) noexcept {
+        if (!parameters) {
+            return;
+        }
+        render_list(
+            prefix,
+            false,
+            "type_parameters",
+            parameters->parameters,
+            [&](const ASTGenericParameter& parameter,
+                std::string_view item_prefix,
+                bool item_last) noexcept {
+                if (parameter.kind == ASTGenericParameterKind::Type) {
+                    render_span_field(item_prefix, item_last, "name", parameter.name_span);
+                    return;
+                }
+                append_line(item_prefix, item_last, "GenericParameter");
+                const auto nested = child_prefix(item_prefix, item_last);
+                append_line(
+                    nested,
+                    false,
+                    parameter.kind == ASTGenericParameterKind::Type ? "kind Type"
+                                                                    : "kind FailureSet"
+                );
+                render_span_field(nested, true, "name", parameter.name_span);
+            }
+        );
+    };
     item.value.visit(
         Overloaded {
             [&](const ASTEnumDecl& declaration) noexcept {
@@ -212,6 +241,7 @@ auto ASTDumper::render_top_level_item(
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_visibility(declaration.visibility, nested_prefix);
                 render_span_field(nested_prefix, false, "name", declaration.name_span);
+                render_type_parameters(declaration.type_parameters, nested_prefix);
                 if (!declaration.underlying_type.has_value()) {
                     append_line(nested_prefix, false, "underlying_type <absent>");
                 } else {
@@ -272,6 +302,7 @@ auto ASTDumper::render_top_level_item(
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_visibility(declaration.visibility, nested_prefix);
                 render_span_field(nested_prefix, false, "name", declaration.name_span);
+                render_type_parameters(declaration.type_parameters, nested_prefix);
                 render_list(
                     nested_prefix,
                     true,
@@ -302,6 +333,7 @@ auto ASTDumper::render_top_level_item(
                     );
                 }
             },
+
             [&](const ASTFunctionDecl& definition) noexcept {
                 append_line(
                     prefix,
@@ -329,6 +361,7 @@ auto ASTDumper::render_top_level_item(
                 }
                 if (!definition.is_implicit_entry) {
                     render_span_field(nested_prefix, false, "name", definition.name_span);
+                    render_type_parameters(definition.type_parameters, nested_prefix);
                 }
                 render_list(
                     nested_prefix,
@@ -362,14 +395,7 @@ auto ASTDumper::render_top_level_item(
                         } else {
                             append_line(parameter_prefix, false, "access Read");
                         }
-                        render_span_field(
-                            parameter_prefix,
-                            !parameter.type.has_value(),
-                            std::holds_alternative<ASTNamedBindingTarget>(parameter.target)
-                                ? "name"
-                                : "discard",
-                            binding_target_span(parameter.target)
-                        );
+                        render_binding_target(parameter.target, parameter_prefix, !parameter.type);
                         if (parameter.type.has_value()) {
                             render_type(*parameter.type, parameter_prefix, true, "type ");
                         }

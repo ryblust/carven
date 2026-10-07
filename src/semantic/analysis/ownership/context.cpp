@@ -16,7 +16,10 @@ namespace {
 const auto empty_relationship_rows = OwnershipRelationshipRows {};
 
 auto empty_rows(const OwnershipRelationshipRows& rows) noexcept -> bool {
-    return rows.callable_loans.empty() && rows.captures.empty() && rows.storage_loans.empty();
+    return rows.callable_loans.empty()
+        && rows.captures.empty()
+        && rows.storage_loans.empty()
+        && rows.formal_bundles.empty();
 }
 
 } // namespace
@@ -89,7 +92,8 @@ auto OwnershipCapture::operator==(const OwnershipCapture& other) const noexcept 
 
 auto OwnershipStorageLoan::operator<=>(const OwnershipStorageLoan& other) const noexcept
     -> std::strong_ordering {
-    return std::tie(holder, backing) <=> std::tie(other.holder, other.backing);
+    return std::tie(holder, backing, protection)
+        <=> std::tie(other.holder, other.backing, other.protection);
 }
 
 auto OwnershipStorageLoan::operator==(const OwnershipStorageLoan& other) const noexcept -> bool {
@@ -99,10 +103,32 @@ auto OwnershipStorageLoan::operator==(const OwnershipStorageLoan& other) const n
 auto OwnershipObjectState::operator==(const OwnershipObjectState& other) const noexcept -> bool {
     return available == other.available
         && relationships == other.relationships
-        && modified == other.modified;
+        && modified == other.modified
+        && child_intent == other.child_intent;
 }
 
-auto OwnershipExternalObject::operator==(const OwnershipExternalObject& other) const noexcept
+auto OwnershipStorageObject::operator==(const OwnershipStorageObject& other) const noexcept
     -> bool {
-    return type == other.type && state == other.state && site == other.site && many == other.many;
+    return type == other.type
+        && site == other.site
+        && many == other.many
+        && feedback == other.feedback;
+}
+
+auto OwnershipWriteEffect::operator==(const OwnershipWriteEffect& other) const noexcept -> bool {
+    return place == other.place
+        && invalidates == other.invalidates
+        && storage == other.storage
+        && take == other.take
+        && preserves_backing == other.preserves_backing;
+}
+
+auto OwnershipFormalBundle::operator<=>(const OwnershipFormalBundle& other) const noexcept
+    -> std::strong_ordering {
+    return std::tie(holder, body, input, source)
+        <=> std::tie(other.holder, other.body, other.input, other.source);
+}
+
+auto OwnershipFormalBundle::operator==(const OwnershipFormalBundle& other) const noexcept -> bool {
+    return (*this <=> other) == 0;
 }

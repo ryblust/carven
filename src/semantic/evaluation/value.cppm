@@ -1,5 +1,6 @@
 module carven:semantic.evaluation.value;
 
+import :semantic.semir.async;
 import :semantic.semir.constant;
 import :semantic.semir.constant_access;
 import std;
@@ -16,7 +17,8 @@ using ConstantAtomValue = std::variant<
     StringConstant,
     CStringConstant,
     NullPointerConstant,
-    NumericEnumConstant>;
+    NumericEnumConstant,
+    VoidConstant>;
 
 struct ConstantAtom final {
     TypeID type;
@@ -54,6 +56,15 @@ struct ExecutionPlace final {
     auto operator==(const ExecutionPlace&) const -> bool = default;
 };
 
+// A slice borrows elements of one live array or text backing. Copying it copies the coordinate,
+// not its backing storage. A sub-slice advances offset within the same owner.
+struct ExecutionSlice final {
+    TypeID type;
+    ExecutionPlace backing;
+    std::size_t offset;
+    std::size_t extent;
+};
+
 class ExecutionOwnedText;
 
 // Storage is private to text handles and memory. Only the String owner can mutate bytes.
@@ -70,16 +81,35 @@ private:
     friend class ExecutionMemory;
 };
 
-// Computed text shares immutable content. A String view retains only a weak borrow.
+// An observation owns only the temporary contiguous bytes needed by its consumer.
+// Array-backed text is read afresh; observations never become backing storage.
+class ExecutionTextObservation final {
+public:
+    explicit ExecutionTextObservation(std::string_view bytes) noexcept;
+    explicit ExecutionTextObservation(std::string bytes) noexcept;
+    auto view() const noexcept -> std::string_view;
+    auto size() const noexcept -> std::size_t;
+    auto operator==(const ExecutionTextObservation& other) const noexcept -> bool;
+    auto operator==(std::string_view other) const noexcept -> bool;
+
+private:
+    std::variant<std::string_view, std::string> bytes;
+};
+
+// Computed text shares immutable content; views borrow String storage or byte coordinates.
 class ExecutionText final {
 public:
     explicit ExecutionText(std::string bytes) noexcept;
+    explicit ExecutionText(ExecutionSlice bytes) noexcept;
     // The reader's spelling storage must outlive every handle and byte observation.
     static auto retained(std::string_view bytes) noexcept -> ExecutionText;
     auto borrow() const noexcept -> ExecutionText;
     auto is_borrowed() const noexcept -> bool;
-    // The view ends when its backing is changed or released; it never keeps a String alive.
-    auto bytes() const noexcept -> std::optional<std::string_view>;
+    auto size(const ExecutionMemory* memory) const noexcept -> std::optional<std::size_t>;
+    auto alive(const ExecutionMemory* memory) const noexcept -> bool;
+    auto slice() const noexcept -> const ExecutionSlice*;
+    auto observe(const ConstantValueReader& values, const ExecutionMemory* memory) const noexcept
+        -> std::optional<ExecutionTextObservation>;
 
 private:
     explicit ExecutionText(std::shared_ptr<const ExecutionTextStorage> storage) noexcept;
@@ -88,7 +118,8 @@ private:
 
     std::variant<
         std::shared_ptr<const ExecutionTextStorage>,
-        std::weak_ptr<const ExecutionTextStorage>>
+        std::weak_ptr<const ExecutionTextStorage>,
+        ExecutionSlice>
         storage;
 
     friend class ExecutionOwnedText;
@@ -119,15 +150,6 @@ struct ExecutionPointer final {
     std::optional<ExecutionPlace> target;
 };
 
-// A slice borrows elements of one live array or text backing. Copying it copies the coordinate,
-// not its backing storage. A sub-slice advances offset within the same owner.
-struct ExecutionSlice final {
-    TypeID type;
-    ExecutionPlace backing;
-    std::size_t offset;
-    std::size_t extent;
-};
-
 struct ExecutionFunction final {
     ConstructionTypeRef type;
     CallableID callable;
@@ -146,6 +168,8 @@ struct ExecutionEnumValue final {
     std::vector<ExecutionValue> payload;
 };
 
+struct ExecutionColdOperation;
+
 // IDs borrow retained inputs; newly computed facts and text remain execution-local.
 struct ExecutionValue final : std::variant<
                                   ConstantID,
@@ -156,6 +180,7 @@ struct ExecutionValue final : std::variant<
                                   ExecutionPointer,
                                   ExecutionSlice,
                                   ExecutionFunction,
+                                  std::unique_ptr<ExecutionColdOperation>,
                                   ExecutionAggregateValue,
                                   ExecutionEnumValue> {
     using variant::variant;
@@ -167,11 +192,31 @@ struct ExecutionValue final : std::variant<
     ~ExecutionValue() = default;
 };
 
+// Cold arguments are acquired once in the same execution memory domain.
+// Ownership is affine; the descriptor executes only when consumed by await.
+struct ExecutionCompositionAction final {
+    AsyncCompositionPolicy policy;
+    ConstructionTypeRef success;
+};
+
+struct ExecutionTimeoutAction final {
+    TypeID timeout_failure;
+};
+
+struct ExecutionColdOperation final {
+    ConstructionTypeRef type;
+    std::variant<CallableID, AsyncIntrinsic, ExecutionCompositionAction, ExecutionTimeoutAction>
+        action;
+    std::vector<std::variant<ExecutionValue, ExecutionPlace>> arguments;
+};
+
 auto execution_atom(const ConstantValueReader& values, const ExecutionValue& value) noexcept
     -> std::optional<ConstantAtom>;
-// Views borrow the retained value or execution owner; mutation ends the borrow.
-auto execution_text(const ConstantValueReader& values, const ExecutionValue& value) noexcept
-    -> std::optional<std::string_view>;
+auto execution_text(
+    const ConstantValueReader& values,
+    const ExecutionValue& value,
+    const ExecutionMemory* memory = nullptr
+) noexcept -> std::optional<ExecutionTextObservation>;
 
 enum class ExecutionComparisonFailure { StepLimit, ExpiredText, Unsupported };
 
@@ -180,7 +225,8 @@ auto execution_equal(
     const ExecutionValue& left,
     const ExecutionValue& right,
     std::size_t& steps,
-    std::size_t maximum_steps
+    std::size_t maximum_steps,
+    const ExecutionMemory* memory = nullptr
 ) noexcept -> std::expected<bool, ExecutionComparisonFailure>;
 
 auto execution_value_type(const ConstantValueReader& values, const ExecutionValue& value) noexcept

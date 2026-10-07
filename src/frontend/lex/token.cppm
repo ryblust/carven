@@ -21,7 +21,10 @@ enum class TokenKind {
     CppSourceFragment,
 
     As,
+    Async,
+    Await,
     Break,
+    Cancel,
     Catch,
     Const,
     Continue,

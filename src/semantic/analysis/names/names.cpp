@@ -8,6 +8,27 @@ import :source.cpp.identifier;
 import :support.invariant;
 import std;
 
+auto check_class_representation_access(
+    const ProgramDraft& draft,
+    ProgramModuleID source_module,
+    StructID owner,
+    std::optional<StructID> lexical_class,
+    Span span
+) noexcept -> AnalysisResult<void> {
+    if (draft.construction_struct_declaration_copy(owner).kind == RecordKind::Class
+        && lexical_class != owner) {
+        return std::unexpected(draft.diagnostics().error(
+            DiagnosticBuilder(
+                DiagnosticCode::AccessClassPrivate,
+                "class representation is accessible only inside its defining class"
+            )
+                .primary(locate(draft.syntax_tree(source_module).view().source_id(), span))
+                .build()
+        ));
+    }
+    return {};
+}
+
 auto lookup_cpp_name(
     const ProgramDraft& draft,
     AnalysisCatalogView catalog,
@@ -63,4 +84,53 @@ auto lookup_cpp_name(
         .lookup = lookup,
         .components = std::move(names)
     };
+}
+
+auto lookup_class_operation(
+    const ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ProgramModuleID source_module,
+    StructID owner,
+    std::optional<StructID> lexical_class,
+    std::string_view name,
+    bool receiver,
+    Span span
+) noexcept -> AnalysisResult<FunctionID> {
+    const auto fail = [&](DiagnosticCode code, std::string message) noexcept {
+        return std::unexpected(draft.diagnostics().error(
+            DiagnosticBuilder(code, std::move(message))
+                .primary(locate(draft.syntax_tree(source_module).view().source_id(), span))
+                .build()
+        ));
+    };
+    if (owner.index() >= catalog.struct_count()) {
+        return fail(DiagnosticCode::TypeMethodCall, "class has no operation with this name");
+    }
+    const auto* symbol = catalog.symbol(catalog.struct_symbol(owner));
+    const auto& form = std::get<CatalogStructForm>(symbol->form);
+    for (const auto function : form.operations) {
+        const auto* selected = catalog.symbol(catalog.function_symbol(function));
+        if (selected->name != name) {
+            continue;
+        }
+        const auto operation = *selected->class_operation;
+        if (operation.visibility == MemberVisibility::Private && lexical_class != owner) {
+            return fail(
+                DiagnosticCode::AccessClassPrivate,
+                "private operation is accessible only inside its defining class"
+            );
+        }
+        if (operation.receiver != receiver) {
+            return fail(
+                DiagnosticCode::TypeMethodCall,
+                operation.receiver ? "instance operation requires a receiver"
+                                   : "associated operation requires Type::name"
+            );
+        }
+        return function;
+    }
+    return fail(
+        DiagnosticCode::TypeMemberUnresolved,
+        std::format("class has no operation named '{}'", name)
+    );
 }

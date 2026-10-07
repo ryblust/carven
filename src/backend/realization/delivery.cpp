@@ -46,6 +46,17 @@ auto BodyRealizer::deliver_result(
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> void {
+    if (std::holds_alternative<LoweringCompleted>(value)
+        && (std::holds_alternative<LoweringYieldResult>(result)
+            || std::holds_alternative<LoweringInitializeResult>(result)
+            || std::holds_alternative<LoweringAssignResult>(result))) {
+        value = LoweringDirectExpression {TargetExpr {
+            .value = TargetConstructionExpr {
+                .type = context.intrinsic_type(TargetSymbol::RuntimeVoid),
+                .initializer = std::vector<TargetExpr> {}
+            }
+        }};
+    }
     if (returns_result(result)) {
         emit_return(remaining_expression(std::move(value)), destination, result);
     } else if (const auto* initialize = std::get_if<LoweringInitializeResult>(&result)) {

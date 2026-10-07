@@ -1,0 +1,75 @@
+import std::time.duration using {
+    Duration,
+    RangeError,
+    nanoseconds,
+    microseconds,
+    milliseconds,
+    seconds,
+};
+
+const test "Time: nanoseconds preserve every signed value" {
+    const minimum = nanoseconds(-9223372036854775808i64);
+    const maximum = nanoseconds(9223372036854775807i64);
+    const negative = Duration { nanoseconds: -1 };
+    check(minimum.nanoseconds == -9223372036854775808i64);
+    check(maximum.nanoseconds == 9223372036854775807i64);
+    check(negative.nanoseconds == -1);
+    check(nanoseconds(0).nanoseconds == 0);
+}
+
+const test "Time: unit conversion preserves signs and accepts exact boundaries" {
+    try {
+        check(microseconds(1)?.nanoseconds == 1000);
+        check(milliseconds(-1)?.nanoseconds == -1000000);
+        check(seconds(0)?.nanoseconds == 0);
+        check(seconds(1)?.nanoseconds == 1000000000);
+        check(microseconds(9223372036854775i64)?.nanoseconds == 9223372036854775000i64);
+        check(microseconds(-9223372036854775i64)?.nanoseconds == -9223372036854775000i64);
+        check(milliseconds(9223372036854i64)?.nanoseconds == 9223372036854000000i64);
+        check(milliseconds(-9223372036854i64)?.nanoseconds == -9223372036854000000i64);
+        check(seconds(9223372036i64)?.nanoseconds == 9223372036000000000i64);
+        check(seconds(-9223372036i64)?.nanoseconds == -9223372036000000000i64);
+    } catch {
+        RangeError(_) => fail("representable conversions must succeed"),
+    }
+}
+
+const test "Time: unit conversion rejects both overflow directions" {
+    var rejected = 0;
+    try {
+        let _ = microseconds(9223372036854776i64)?;
+    } catch {
+        RangeError(_) => { ++rejected; },
+    }
+    try {
+        let _ = microseconds(-9223372036854776i64)?;
+    } catch {
+        RangeError(_) => { ++rejected; },
+    }
+    try {
+        let _ = milliseconds(9223372036855i64)?;
+    } catch {
+        RangeError(_) => { ++rejected; },
+    }
+    try {
+        let _ = milliseconds(-9223372036855i64)?;
+    } catch {
+        RangeError(_) => { ++rejected; },
+    }
+    try {
+        let _ = seconds(9223372037i64)?;
+    } catch {
+        RangeError(_) => { ++rejected; },
+    }
+    try {
+        let _ = seconds(-9223372037i64)?;
+    } catch {
+        RangeError(_) => { ++rejected; },
+    }
+    try {
+        let _ = seconds(-9223372036854775808i64)?;
+    } catch {
+        RangeError(_) => { ++rejected; },
+    }
+    check(rejected == 7);
+}

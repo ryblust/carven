@@ -180,12 +180,6 @@ const TestSuite suite([] static noexcept {
                 .primary_text = "action()",
             },
             {
-                .name = "void cannot initialize a binding",
-                .source = "fn action() {} fn invalid() { let value = action(); }",
-                .code = DiagnosticCode::TypeValueRequired,
-                .primary_text = "action()",
-            },
-            {
                 .name = "void forwarding requires failure consumption",
                 .source =
                     "struct Failure {} fn action() throw Failure { throw Failure {}; } fn invalid() throw Failure { return action(); }",

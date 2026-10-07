@@ -1,0 +1,3 @@
+let values = [make(); 3];
+let empty = [1; 0];
+let nested = [[2; 4]; 3];

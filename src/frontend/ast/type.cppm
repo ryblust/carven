@@ -19,10 +19,24 @@ struct ASTTypeNameComponent final {
     Span name_span;
 };
 
+struct ASTThrowClause final {
+    Span span;
+    Span keyword_span;
+    std::vector<ASTTypeID> failures;
+    std::vector<Span> plus_spans;
+};
+
+enum class ASTGenericParameterKind { Type, FailureSet };
+
+struct ASTGenericArgument final {
+    Span span;
+    std::variant<ASTTypeID, ASTThrowClause> value;
+};
+
 struct ASTNamedType final {
     std::optional<Span> global_root;
     std::vector<ASTTypeNameComponent> components;
-    std::vector<ASTTypeID> arguments;
+    std::vector<ASTGenericArgument> arguments;
 };
 
 struct ASTPointerType final {
@@ -39,17 +53,14 @@ struct ASTSliceType final {
     ASTTypeID element_type;
 };
 
+struct ASTTupleType final {
+    std::vector<ASTTypeID> elements;
+};
+
 struct ASTFunctionTypeParameter final {
     Span span;
     ASTAccessSyntax access;
     ASTTypeID type;
-};
-
-struct ASTThrowClause final {
-    Span span;
-    Span keyword_span;
-    std::vector<ASTTypeID> failures;
-    std::vector<Span> plus_spans;
 };
 
 struct ASTFunctionType final {
@@ -60,7 +71,14 @@ struct ASTFunctionType final {
 
 struct ASTType final {
     Span span;
-    std::variant<ASTNamedType, ASTArrayType, ASTSliceType, ASTFunctionType, ASTPointerType> value;
+    std::variant<
+        ASTNamedType,
+        ASTArrayType,
+        ASTSliceType,
+        ASTTupleType,
+        ASTFunctionType,
+        ASTPointerType>
+        value;
 };
 
 struct ASTConstructionType final {

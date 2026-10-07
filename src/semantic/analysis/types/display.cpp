@@ -4,6 +4,7 @@ import :semantic.analysis.program;
 import :semantic.analysis.types.display;
 import :semantic.semir.decl;
 import :semantic.semir.delegation;
+import :semantic.semir.generic;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.type;
@@ -73,6 +74,22 @@ auto callable_name(const Parameters& parameters, std::string_view result, const 
     return text;
 }
 
+template<typename Elements, typename Name>
+auto tuple_name(const Elements& elements, const Name& name) noexcept -> std::string {
+    auto text = std::string("(");
+    for (auto index = 0uz; index < elements.size(); ++index) {
+        if (index > 0uz) {
+            text += ", ";
+        }
+        text += name(elements[index]);
+    }
+    if (elements.size() == 1uz) {
+        text += ',';
+    }
+    text += ')';
+    return text;
+}
+
 auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::string {
     const auto name = [&](TypeID nested) noexcept {
         return canonical_name(draft, nested);
@@ -101,8 +118,12 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
             [&](const ArrayTypeValue& value) noexcept {
                 return std::format("[{}; {}]", name(value.element), value.extent);
             },
+            [&](const TupleTypeValue& value) noexcept { return tuple_name(value.elements, name); },
             [&](const SliceTypeValue& value) noexcept {
                 return std::format("[{}]", name(value.element));
+            },
+            [&](const OwnedSequenceTypeValue& value) noexcept {
+                return std::format("Sequence<{}>", name(value.element));
             },
             [&](const RangeTypeValue& value) noexcept {
                 return std::format("range<{}>", name(value.element));
@@ -119,6 +140,9 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
             [&](const CallableViewTypeValue& value) noexcept {
                 const auto signature = draft.callable_signature_copy(value.signature);
                 return callable_name(signature.parameters, name(signature.result), name);
+            },
+            [&](const OperationTypeValue& value) noexcept {
+                return std::format("Operation<{}>", name(value.success));
             },
             [](const CppTypeValue& value) static noexcept {
                 const auto* reference = cpp_type_name(value);
@@ -148,14 +172,87 @@ auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noex
     const auto name = [&](ConstructionTypeRef nested) noexcept {
         return type_display_name(draft, nested);
     };
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        return draft.generic_type_copy(*generic).visit(
+            Overloaded {
+                [&](TypeID value) noexcept { return name(value); },
+                [&](const GenericTypeParameter& value) noexcept {
+                    const auto contract = draft.generic_declaration_contract_copy(value.definition);
+                    return draft.spelling_copy(contract.parameters[value.index]);
+                },
+
+                [&](const GenericArrayType& value) noexcept {
+                    return std::format("[{}; {}]", name(value.element), value.extent);
+                },
+                [&](const GenericTupleType& value) noexcept {
+                    return tuple_name(value.elements, name);
+                },
+                [&](const GenericSliceType& value) noexcept {
+                    return std::format("[{}]", name(value.element));
+                },
+                [&](const GenericOwnedSequenceType& value) noexcept {
+                    return std::format("Sequence<{}>", name(value.element));
+                },
+                [&](const GenericPointerType& value) noexcept {
+                    return std::format(
+                        "ptr<{}{}>",
+                        value.access == PointerAccess::Write ? "&" : "",
+                        name(value.target)
+                    );
+                },
+                [&](const GenericOperationType& value) noexcept {
+                    return std::format("Operation<{}>", name(value.success));
+                },
+                [&](const GenericNominalApplication& value) noexcept {
+                    const auto contract = draft.generic_declaration_contract_copy(value.definition);
+                    auto text = draft.spelling_copy(contract.name) + "<";
+                    for (const auto [index, argument] : std::views::enumerate(value.arguments)) {
+                        if (index != 0) {
+                            text += ", ";
+                        }
+                        if (const auto* type = std::get_if<ConstructionTypeRef>(&argument)) {
+                            text += name(*type);
+                        } else if (const auto* source_effect =
+                                       std::get_if<ConstructionFailureRef>(&argument)) {
+                            text += "throw ";
+                            const auto& effect = *source_effect;
+                            if (const auto* known = std::get_if<FailureSetID>(&effect)) {
+                                auto first = true;
+                                for (const auto member : draft.failure_set_copy(*known).members) {
+                                    if (!first) {
+                                        text += "+";
+                                    }
+                                    first = false;
+                                    text += name(member);
+                                }
+                                if (first) {
+                                    text += "()";
+                                }
+                            } else {
+                                text += "<dependent>";
+                            }
+                        }
+                    }
+                    return text + ">";
+                },
+            }
+        );
+    }
     return draft.construction_type_copy(std::get<TypeTermID>(type))
         .value.visit(
             Overloaded {
                 [&](const ConstructionArrayTypeValue& value) noexcept {
                     return std::format("[{}; {}]", name(value.element), value.extent);
                 },
+                [&](const ConstructionTupleTypeValue& value) noexcept {
+                    return value.elements.empty() ? std::string("void")
+                                                  : tuple_name(value.elements, name);
+                },
                 [&](const ConstructionSliceTypeValue& value) noexcept {
                     return std::format("[{}]", name(value.element));
+                },
+                [&](const ConstructionOperationTypeValue& value) noexcept {
+                    return std::format("Operation<{}>", name(value.success));
                 },
                 [&](const ConstructionCallableViewTypeValue& value) noexcept {
                     return callable_name(value.parameters, name(value.result), name);

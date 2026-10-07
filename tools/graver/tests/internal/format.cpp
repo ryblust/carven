@@ -69,6 +69,14 @@ auto check_format(std::string_view input, std::string_view expected) noexcept ->
 }
 
 const TestSuite suite([] static noexcept {
+    "Graver async: keywords stay separate from operands and preserve propagation"_test =
+        [] static noexcept {
+            check_format(
+                "async fn f(){async let child=leaf();cancel child;await child?;}\n",
+                "async fn f() {\n    async let child = leaf();\n    cancel child;\n    await child?;\n}\n"
+            );
+        };
+
     "Graver format: examples have exact and stable output"_test = [] static noexcept {
         auto folders = std::vector<std::filesystem::path>();
         auto error = std::error_code();
@@ -268,6 +276,27 @@ const TestSuite suite([] static noexcept {
             check_format(
                 "fn f(){let s=f\"\"\"\n  {f\"\"\"\n    { value+1 }\n\"\"\"}\n  tail\n\"\"\";}",
                 "fn f() {\n    let s = f\"\"\"\n  {f\"\"\"\n    {value + 1}\n\"\"\"}\n  tail\n\"\"\";\n}\n"
+            );
+        };
+
+    "Graver format: generic clauses preserve application and comparison syntax"_test =
+        [] static noexcept {
+            check_format(
+                "struct Box < T , U , >{first:T,second:U}"
+                "fn relay < T > (&&value:T)->T=>&&value;"
+                "relay < Box < i32 , u8 > , > (value);"
+                "Owner < i32 > :: create(value);"
+                "a < b > (c);(a < b)>c;value>>amount;",
+                "struct Box<T, U,> {\n"
+                "    first: T,\n"
+                "    second: U\n"
+                "}\n\n"
+                "fn relay<T>(&&value: T) -> T => &&value;\n\n"
+                "relay<Box<i32, u8>,>(value);\n"
+                "Owner<i32>::create(value);\n"
+                "a<b>(c);\n"
+                "(a < b) > c;\n"
+                "value >> amount;\n"
             );
         };
 });

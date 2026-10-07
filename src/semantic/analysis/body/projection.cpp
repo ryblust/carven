@@ -45,12 +45,14 @@ auto BodyElaborator::dereference_expression(const ASTPrefixExpr& source, Span sp
             "dereference requires a ptr value"
         ));
     }
-    if (is_void_type(draft(), pointer->target)) {
-        co_return std::unexpected(fail(
-            source.operator_span,
-            DiagnosticCode::TypeValueRequired,
-            "ptr<void> has no object to dereference"
-        ));
+    auto formed = draft().require_type_formation(
+        {TypeFormationRequirementKind::NonVoidObject,
+         pointer->target,
+         origin(source.operator_span)},
+        generic_context ? std::optional(generic_context->definition) : std::nullopt
+    );
+    if (!formed) {
+        co_return std::unexpected(formed.error());
     }
     auto pending = take_pending_failures(*operand);
     auto value = consume_value(*operand, span, AccessMode::Read);
@@ -110,6 +112,9 @@ auto BodyExprSite::finish_index(
     Value index,
     Span span
 ) noexcept -> ExpressionResult<Value> {
+    const auto receiver_shape = sequence_shape(draft(), receiver.type());
+    const auto takeable =
+        receiver.takeable && receiver_shape && receiver_shape->kind == SequenceShapeKind::Array;
     const auto known = element_constant(draft(), receiver.constant(), index.constant());
     auto state = operand_state();
     state.completes = receiver.completes;
@@ -127,12 +132,13 @@ auto BodyExprSite::finish_index(
                 SemIndex {
                     UniqueIndirect(std::move(place->expression)),
                     UniqueIndirect(std::move(*subscript)),
-                    bounds
+                    bounds,
+                    true
                 },
                 body.origin(span)
             )}},
             .pending_failures = std::move(state.pending),
-            .takeable = true,
+            .takeable = takeable,
             .completes = state.completes
         };
     }
@@ -150,7 +156,8 @@ auto BodyExprSite::finish_index(
             SemIndex {
                 UniqueIndirect(std::move(*value)),
                 UniqueIndirect(std::move(*subscript)),
-                bounds
+                bounds,
+                false
             },
             body.origin(span)
         );
@@ -164,7 +171,12 @@ auto BodyExprSite::finish_index(
     }
     return finish_constructed(
         type,
-        SemIndex {UniqueIndirect(std::move(*value)), UniqueIndirect(std::move(*subscript)), bounds},
+        SemIndex {
+            UniqueIndirect(std::move(*value)),
+            UniqueIndirect(std::move(*subscript)),
+            bounds,
+            true
+        },
         std::move(state),
         span,
         known
@@ -188,7 +200,7 @@ auto BodyExprSite::finish_field(
                 body.origin(span)
             )}},
             .pending_failures = take_pending_failures(receiver),
-            .takeable = true,
+            .takeable = receiver.takeable,
             .completes = receiver.completes
         };
     }
@@ -220,4 +232,47 @@ auto BodyElaborator::propagation_expression(const ASTPropagationExpr& source, Sp
     auto result = make_built(type, SemPropagate {UniqueIndirect(take_built(*operand, span))}, span);
     result.completes = operand->completes;
     co_return result;
+}
+
+auto BodyExprSite::finish_tuple_element(
+    ConstructionTypeRef type,
+    std::uint32_t index,
+    Value receiver,
+    Span span
+) noexcept -> ExpressionResult<Value> {
+    auto known = std::optional<ConstantID>();
+    if (const auto constant = receiver.constant()) {
+        const auto* tuple = std::get_if<TupleConstant>(&draft().constant(*constant).value);
+        if (tuple) {
+            known = tuple->elements.at(index);
+        }
+    }
+    if (auto* place = std::get_if<PlaceExpression>(&*receiver.storage)) {
+        auto projected = body.active_builder().make_place(
+            place->root,
+            place->access,
+            type,
+            SemTupleElement {UniqueIndirect(std::move(place->expression)), index},
+            body.origin(span)
+        );
+        projected.expression.constant = known;
+        return Value {
+            .storage = UniqueIndirect {BodyExpressionStorage {std::move(projected)}},
+            .pending_failures = take_pending_failures(receiver),
+            .takeable = true,
+            .completes = receiver.completes
+        };
+    }
+    auto state = operand_state();
+    auto value = consume_read(state, std::move(receiver), span);
+    if (!value) {
+        return std::unexpected(value.error());
+    }
+    return finish_constructed(
+        type,
+        SemTupleElement {UniqueIndirect(std::move(*value)), index},
+        std::move(state),
+        span,
+        known
+    );
 }

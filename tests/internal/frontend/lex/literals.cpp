@@ -1,8 +1,8 @@
 module carven:test.internal.frontend.lex.literals;
 
-import :frontend.lex;
 import :frontend.lex.literal;
 import :frontend.lex.token;
+import :frontend.lex;
 import :frontend.literal;
 import :source.identifier;
 import :source.text;
@@ -15,9 +15,11 @@ namespace {
 const TestSuite suite([] static noexcept {
     "Lexer: numeric spellings follow the grammar exactly"_test = [] static noexcept {
         static constexpr auto valid = std::to_array<std::string_view>({
-            "0",     "42",         "42i8",    "42i16",         "42i32",   "42i64",     "42u8",
-            "42u16", "42u32",      "42u64",   "42isize",       "42usize", "1f32",      "1f64",
-            "3.14",  "3.14e-2f32", "1E+9f64", "0xDeadBEEFu64", "0x1f32",  "0B1010i16", "0o755usize",
+            "0ns",           "1us",    "20ms",      "3s",         "0xffns",     "0b10us",
+            "0o7ms",         "0",      "42",        "42i8",       "42i16",      "42i32",
+            "42i64",         "42u8",   "42u16",     "42u32",      "42u64",      "42isize",
+            "42usize",       "1f32",   "1f64",      "3.14",       "3.14e-2f32", "1E+9f64",
+            "0xDeadBEEFu64", "0x1f32", "0B1010i16", "0o755usize",
         });
         each(valid, std::identity {}, [](const auto& spelling) static noexcept {
             check_token(spelling, TokenKind::NumberLiteral);
@@ -32,6 +34,12 @@ const TestSuite suite([] static noexcept {
         });
 
         static constexpr auto malformed = std::to_array<std::string_view>({
+            "1.5ns",
+            "1.0us",
+            "1.5ms",
+            "1e2s",
+            "1m",
+            "1seconds",
             "1e",
             "0x",
             "0b102",
@@ -44,6 +52,29 @@ const TestSuite suite([] static noexcept {
             check_lexical_error(spelling);
         });
     };
+
+    "Lexer: tuple positions keep chained dots without changing ordinary floating literals"_test =
+        [] static noexcept {
+            const auto expected = std::to_array<TokenCase>({
+                {.spelling = "pair", .kind = TokenKind::Identifier},
+                {.spelling = ".", .kind = TokenKind::Dot},
+                {.spelling = "0", .kind = TokenKind::NumberLiteral},
+                {.spelling = ".", .kind = TokenKind::Dot},
+                {.spelling = "1", .kind = TokenKind::NumberLiteral},
+                {.spelling = ";", .kind = TokenKind::Semicolon},
+                {.spelling = "1.0", .kind = TokenKind::NumberLiteral},
+                {.spelling = ";", .kind = TokenKind::Semicolon},
+                {.spelling = "2.5e-3f64", .kind = TokenKind::NumberLiteral},
+                {.spelling = ";", .kind = TokenKind::Semicolon},
+                {.spelling = "pointer", .kind = TokenKind::Identifier},
+                {.spelling = "->", .kind = TokenKind::Arrow},
+                {.spelling = "0", .kind = TokenKind::NumberLiteral},
+                {.spelling = ".", .kind = TokenKind::Dot},
+                {.spelling = "1", .kind = TokenKind::NumberLiteral},
+            });
+            check_token_sequence("pair.0.1; 1.0; 2.5e-3f64; pointer->0.1", expected);
+            check_lexical_error("pair.0_1");
+        };
 
     "Lexer: strings and characters accept only shared simple escapes"_test = [] static noexcept {
         static constexpr auto valid_characters = std::to_array<std::string_view>({

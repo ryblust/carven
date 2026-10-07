@@ -1,0 +1,318 @@
+import std::json.validation using { validate, validate_bytes };
+import std::json.error using { JSONError, JSONErrorKind };
+import std::utf.error using UTF8Error;
+
+const fn valid_documents() -> bool {
+    let inputs = [
+        "null",
+        "true",
+        "false",
+        "0",
+        "-0",
+        "123",
+        "-12.34e+56",
+        "1E400",
+        "[]",
+        "{}",
+        "[true, false, null, -12.5e-2]",
+        r#"{"a":[{},[]],"b":true}"#,
+        r#"{"a":1,"a":2}"#,
+        r#""你好😀""#,
+        r#""\u0000\uD834\uDD1E""#,
+        r#""\"\\\/\b\f\n\r\t""#,
+        " \t\n\r [ 0 ] \r\n\t ",
+    ];
+    for input in inputs {
+        try {
+            validate(input)?;
+        } catch {
+            JSONError(_) => return false,
+        }
+    }
+    return true;
+}
+
+private struct InvalidCase {
+    text: str,
+    kind: JSONErrorKind,
+    offset: usize,
+}
+
+const fn invalid_documents() -> bool {
+    let inputs = [
+        InvalidCase {
+            text: "",
+            kind:.UnexpectedEnd,
+            offset: 0
+        },
+        {
+            text: " ",
+            kind:.UnexpectedEnd,
+            offset: 1
+        },
+        {
+            text: "[",
+            kind:.UnexpectedEnd,
+            offset: 1
+        },
+        {
+            text: "[1,]",
+            kind:.UnexpectedByte,
+            offset: 3
+        },
+        {
+            text: r#"{"a":1,}"#,
+            kind:.UnexpectedByte,
+            offset: 7
+        },
+        {
+            text: r#"{"a" 1}"#,
+            kind:.UnexpectedByte,
+            offset: 5
+        },
+        {
+            text: "[1 2]",
+            kind:.UnexpectedByte,
+            offset: 3
+        },
+        {
+            text: "true false",
+            kind:.TrailingInput,
+            offset: 5
+        },
+        {
+            text: "01",
+            kind:.InvalidNumber,
+            offset: 1
+        },
+        {
+            text: "-",
+            kind:.InvalidNumber,
+            offset: 1
+        },
+        {
+            text: "1.",
+            kind:.InvalidNumber,
+            offset: 2
+        },
+        {
+            text: "1e+",
+            kind:.InvalidNumber,
+            offset: 3
+        },
+        {
+            text: "+1",
+            kind:.UnexpectedByte,
+            offset: 0
+        },
+        {
+            text: "NaN",
+            kind:.UnexpectedByte,
+            offset: 0
+        },
+        {
+            text: "tru",
+            kind:.UnexpectedEnd,
+            offset: 3
+        },
+        {
+            text: "truX",
+            kind:.UnexpectedByte,
+            offset: 3
+        },
+        {
+            text: "[}\n",
+            kind:.UnexpectedByte,
+            offset: 1
+        },
+        {
+            text: "[\u{b}0]",
+            kind:.UnexpectedByte,
+            offset: 1
+        },
+        {
+            text: "\u{feff}null",
+            kind:.UnexpectedByte,
+            offset: 0
+        },
+        {
+            text: r#""unterminated"#,
+            kind:.UnexpectedEnd,
+            offset: 13
+        },
+        {
+            text: r#""\x""#,
+            kind:.InvalidEscape,
+            offset: 2
+        },
+        {
+            text: r#""\u00x0""#,
+            kind:.InvalidHex,
+            offset: 5
+        },
+        {
+            text: r#""\uDEAD""#,
+            kind:.UnpairedSurrogate,
+            offset: 1
+        },
+        {
+            text: r#""\uD800""#,
+            kind:.UnpairedSurrogate,
+            offset: 1
+        },
+        {
+            text: r#""\uD800\u0041""#,
+            kind:.UnpairedSurrogate,
+            offset: 7
+        },
+        {
+            text: "\"a\n\"",
+            kind:.ControlCharacter,
+            offset: 2
+        },
+    ];
+    for input in inputs {
+        var rejected = false;
+        try {
+            validate(input.text)?;
+        } catch {
+            JSONError(error) => {
+                rejected = error.kind == input.kind && error.offset == input.offset;
+            },
+        }
+        assert(rejected, f"JSON case: {input.text}");
+    }
+    return true;
+}
+
+const fn byte_ingress() -> bool {
+    let invalid_utf: [u8; 4] = [0x22, 0xff, 0x22, 0];
+    var rejected = false;
+    try {
+        validate_bytes(invalid_utf.as_slice().slice(0, 3))?;
+    } catch {
+        UTF8Error(error) => { rejected = error.offset == 1; },
+        JSONError(_) => return false,
+    }
+    assert(rejected);
+    let both_invalid: [u8; 3] = [0x5b, 0x7d, 0xff];
+    rejected = false;
+    try {
+        validate_bytes(both_invalid)?;
+    } catch {
+        UTF8Error(error) => { rejected = error.offset == 2; },
+        JSONError(_) => return false,
+    }
+    assert(rejected);
+    for byte in 0u8..32 {
+        let input: [u8; 3] = [0x22, byte, 0x22];
+        rejected = false;
+        try {
+            validate_bytes(input)?;
+        } catch {
+            JSONError(error) => {
+                rejected = error.kind == .ControlCharacter && error.offset == 1;
+            },
+            UTF8Error(_) => return false,
+        }
+        assert(rejected);
+    }
+    return true;
+}
+
+const fn depth_boundary(const count: usize) -> bool {
+    var nested: [u8; 130] = {};
+    for index in 0..count {
+        nested[index] = 0x5b;
+        nested[count * 2 - 1 - index] = 0x5d;
+    }
+    var accepted = false;
+    try {
+        validate_bytes(nested.as_slice().slice(0, count * 2))?;
+        accepted = true;
+    } catch {
+        JSONError(error) => {
+            assert(count == 65 && error.kind == .DepthLimit && error.offset == 64);
+        },
+        UTF8Error(_) => return false,
+    }
+    return accepted == (count == 64);
+}
+
+const test "JSON: complete grammar and strict Unicode validation" {
+    check(valid_documents());
+    check(invalid_documents());
+}
+
+const test "JSON: UTF ingress and unescaped control bytes" {
+    check(byte_ingress());
+}
+
+const test "JSON: maximum nesting is accepted" {
+    check(depth_boundary(64));
+}
+
+const test "JSON: excessive nesting is rejected" {
+    check(depth_boundary(65));
+}
+
+test "JSON: native complete grammar and strict Unicode validation" {
+    check(valid_documents());
+    check(invalid_documents());
+    check(byte_ingress());
+    check(depth_boundary(64));
+    check(depth_boundary(65));
+}
+
+test "JSON: long whitespace and number runs preserve syntax and EOF offsets" {
+    for length in [0usize, 1, 31, 32, 33, 63, 64, 65, 97] {
+        var spaces = String {};
+        var digits = String {};
+        for _ in 0..length {
+            spaces.push(' ');
+            digits.push('7');
+        }
+        var document = String {};
+        document.append(spaces);
+        document.push('[');
+        document.append(spaces);
+        document.push('1');
+        document.append(digits);
+        document.push('.');
+        document.push('1');
+        document.append(digits);
+        document.push('e');
+        document.push('+');
+        document.push('1');
+        document.append(digits);
+        document.append(spaces);
+        document.push(']');
+        document.append(spaces);
+        try {
+            validate(document)?;
+        } catch {
+            JSONError(_) => fail("long runs must be accepted"),
+        }
+        let end = document.len();
+        document.push('x');
+        var rejected = false;
+        try {
+            validate(document)?;
+        } catch {
+            JSONError(error) => { rejected = error.kind == .TrailingInput && error.offset == end; },
+        }
+        check(rejected);
+        var incomplete: String = "1";
+        incomplete.append(digits);
+        incomplete.append("e+");
+        rejected = false;
+        try {
+            validate(incomplete)?;
+        } catch {
+            JSONError(error) => {
+                rejected = error.kind == .InvalidNumber && error.offset == incomplete.len();
+            },
+        }
+        check(rejected);
+    }
+}

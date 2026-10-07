@@ -2,6 +2,7 @@ module carven:semantic.semir.content.impl;
 
 import :semantic.semir.constant;
 import :semantic.semir.content;
+import :semantic.semir.generic;
 import :semantic.semir.program;
 import :semantic.semir.stage;
 import :support.invariant;
@@ -26,6 +27,7 @@ private:
     auto integer(IntegerConstant value) noexcept -> void;
     auto module_path(ModuleID id) noexcept -> void;
     auto callable(CallableID id) noexcept -> ContentTask;
+    auto nominal(NominalDeclarationRef declaration) noexcept -> ContentTask;
     auto signature(CallableSignatureID id) noexcept -> ContentTask;
     auto name(const CppNameReference& value) noexcept -> void;
     auto operand(const CppTypeOperand& value) noexcept -> ContentTask;
@@ -78,6 +80,43 @@ auto ContentWriter::module_path(ModuleID id) noexcept -> void {
               .path.value());
 }
 
+auto ContentWriter::nominal(NominalDeclarationRef reference) noexcept -> ContentTask {
+    if (const auto* instance = program.generic_nominal_instance(reference)) {
+        const auto& definition = program.generic_declaration_contract(instance->definition);
+        token("generic");
+        module_path(definition.module_id);
+        token(provenance.spelling(definition.name));
+        number(instance->arguments.size());
+        for (const auto& argument : instance->arguments) {
+            if (const auto* object = std::get_if<TypeID>(&argument)) {
+                token("type");
+                co_await type(*object);
+            } else {
+                token("failures");
+                const auto& members =
+                    program.failure_sets().failure_set(std::get<FailureSetID>(argument)).members;
+                number(members.size());
+                for (const auto member : members) {
+                    co_await type(member);
+                }
+            }
+        }
+    } else {
+        reference.visit([&](auto id) noexcept {
+            const auto& declaration = [&]() noexcept -> const auto& {
+                if constexpr (std::same_as<decltype(id), StructID>) {
+                    return program.declarations().structure(id);
+                } else {
+                    return program.declarations().enumeration(id);
+                }
+            }();
+            module_path(declaration.module_id);
+            token(provenance.spelling(declaration.name));
+        });
+    }
+    co_return {};
+}
+
 auto ContentWriter::callable(CallableID id) noexcept -> ContentTask {
     const auto& declarations = program.declarations();
     if (const auto function = declarations.function_for_callable(id)) {
@@ -110,6 +149,7 @@ auto ContentWriter::callable(CallableID id) noexcept -> ContentTask {
 
 auto ContentWriter::signature(CallableSignatureID id) noexcept -> ContentTask {
     const auto& value = program.callable_signatures().signature(id);
+    number(static_cast<std::uint64_t>(value.execution));
     number(value.parameters.size());
     for (const auto& parameter : value.parameters) {
         number(static_cast<std::uint64_t>(parameter.stage));
@@ -220,17 +260,19 @@ auto ContentWriter::type(TypeID id) noexcept -> ContentTask {
             if constexpr (std::same_as<Value, BuiltinTypeValue>) {
                 number(static_cast<std::uint64_t>(value.kind));
             } else if constexpr (std::same_as<Value, StructTypeValue>) {
-                const auto& declaration = program.declarations().structure(value.structure);
-                module_path(declaration.module_id);
-                token(provenance.spelling(declaration.name));
+                co_await nominal(value.structure);
             } else if constexpr (std::same_as<Value, EnumTypeValue>) {
-                const auto& declaration = program.declarations().enumeration(value.enumeration);
-                module_path(declaration.module_id);
-                token(provenance.spelling(declaration.name));
+                co_await nominal(value.enumeration);
             } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
                 co_await type(value.element);
                 number(value.extent);
-            } else if constexpr (std::same_as<Value, SliceTypeValue>
+            } else if constexpr (std::same_as<Value, TupleTypeValue>) {
+                number(value.elements.size());
+                for (const auto element : value.elements) {
+                    co_await type(element);
+                }
+            } else if constexpr (std::same_as<Value, OwnedSequenceTypeValue>
+                                 || std::same_as<Value, SliceTypeValue>
                                  || std::same_as<Value, RangeTypeValue>) {
                 co_await type(value.element);
             } else if constexpr (std::same_as<Value, PointerTypeValue>) {
@@ -239,6 +281,13 @@ auto ContentWriter::type(TypeID id) noexcept -> ContentTask {
             } else if constexpr (std::same_as<Value, FunctionTypeValue>
                                  || std::same_as<Value, ClosureTypeValue>) {
                 co_await callable(value.callable);
+            } else if constexpr (std::same_as<Value, OperationTypeValue>) {
+                co_await type(value.success);
+                const auto& failures = program.failure_sets().failure_set(value.failures).members;
+                number(failures.size());
+                for (const auto member : failures) {
+                    co_await type(member);
+                }
             } else if constexpr (std::same_as<Value, CallableViewTypeValue>) {
                 co_await signature(value.signature);
             } else if constexpr (std::same_as<Value, CppTypeValue>) {

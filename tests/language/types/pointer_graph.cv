@@ -15,7 +15,7 @@ const fn connect_cycle(&first: CycleLink, &second: CycleLink) {
 
 const fn increase_through_address(address: ptr<&CycleLink>) {
     if address == nullptr { return; }
-    address -> value += 1;
+    address->value += 1;
 }
 
 const fn run_local_cycle() -> i32 {
@@ -41,8 +41,8 @@ const fn run_local_cycle() -> i32 {
     var total = 0;
     for _ in 0..4 {
         if current == nullptr { return -3; }
-        total += current -> value;
-        current = current -> next;
+        total += current->value;
+        current = current->next;
     }
     if current != first_address { return -4; }
     return total;
@@ -73,12 +73,12 @@ const fn relink_local_nodes() -> i32 {
     last.previous = middle_address;
 
     // Replacing links through aliases changes the same two-way graph.
-    first_address -> next = last_address;
-    last_address -> previous = first_address;
+    first_address->next = last_address;
+    last_address->previous = first_address;
     let forward = first.next;
     let backward = last.previous;
     if forward == nullptr || backward == nullptr { return -1; }
-    return forward -> value * 10 + backward -> value;
+    return forward->value * 10 + backward->value;
 }
 
 const fn assignment_keeps_address() -> i32 {

@@ -65,49 +65,6 @@ auto upper_camel_spelling(std::string_view spelling) noexcept -> std::string {
     return result;
 }
 
-auto lower_snake_spelling(std::string_view spelling) noexcept -> std::string {
-    const auto is_lower = [](char value) static noexcept {
-        return value >= 'a' && value <= 'z';
-    };
-    const auto is_upper = [](char value) static noexcept {
-        return value >= 'A' && value <= 'Z';
-    };
-    const auto is_digit = [](char value) static noexcept {
-        return value >= '0' && value <= '9';
-    };
-    auto result = std::string {};
-    result.reserve(spelling.size());
-    for (auto index = 0uz; index < spelling.size(); ++index) {
-        const auto value = spelling[index];
-        if (value == '_') {
-            if (!result.empty() && result.back() != '_') {
-                result += '_';
-            }
-            continue;
-        }
-        if (is_upper(value)) {
-            const auto previous_boundary =
-                index != 0 && (is_lower(spelling[index - 1]) || is_digit(spelling[index - 1]));
-            const auto acronym_boundary = index != 0
-                && is_upper(spelling[index - 1])
-                && index + 1 < spelling.size()
-                && is_lower(spelling[index + 1]);
-            if (!result.empty()
-                && result.back() != '_'
-                && (previous_boundary || acronym_boundary)) {
-                result += '_';
-            }
-            result += static_cast<char>(value - 'A' + 'a');
-            continue;
-        }
-        result += value;
-    }
-    while (!result.empty() && result.back() == '_') {
-        result.pop_back();
-    }
-    return result.empty() ? "value" : result;
-}
-
 auto claim_spelling(
     std::string_view preferred,
     std::string_view suffix_separator,
@@ -125,13 +82,6 @@ auto derived_type_identifier(const TargetIdentifier& source_name, std::string_vi
     -> TargetIdentifier {
     return TargetIdentifier::from_spelling(
         std::format("{}{}", upper_camel_spelling(source_name.spelling()), role)
-    );
-}
-
-auto derived_value_identifier(std::string_view role, const TargetIdentifier& source_name) noexcept
-    -> TargetIdentifier {
-    return TargetIdentifier::from_spelling(
-        std::format("{}_{}", role, lower_snake_spelling(source_name.spelling()))
     );
 }
 
@@ -307,19 +257,14 @@ auto payload_enum_names(std::span<const TargetIdentifier> case_names) noexcept
     for (const auto& name : case_names) {
         occupied.insert(std::string(name.spelling()));
     }
-    auto cases = std::vector<TargetPayloadEnumCaseNames> {};
-    cases.reserve(case_names.size());
+    auto case_records = std::vector<TargetIdentifier> {};
+    case_records.reserve(case_names.size());
     for (const auto& name : case_names) {
         const auto record_type = derived_type_identifier(name, "Payload");
-        const auto projection_base = derived_value_identifier("as", name);
-        const auto projection_function = std::format("{}_if", projection_base.spelling());
-        cases.push_back({
-            .record_type = claim_target_type_identifier(record_type.spelling(), occupied),
-            .projection_function = claim_target_identifier(projection_function, occupied),
-        });
+        case_records.push_back(claim_target_type_identifier(record_type.spelling(), occupied));
     }
     return {
-        .cases = std::move(cases),
+        .case_records = std::move(case_records),
         .storage_type = claim_target_type_identifier("Storage", occupied),
         .storage_member = claim_target_identifier("storage", occupied),
     };

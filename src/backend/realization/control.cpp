@@ -68,7 +68,8 @@ BodyRealizer::FailureSiteQuery::FailureSiteQuery(std::span<FailureEdge> edges) n
 auto BodyRealizer::FailureSiteQuery::enter_scope(TargetTraversalScope scope) noexcept -> bool {
     if (scope.kind == TargetTraversalScopeKind::Loop) {
         ++loop_depth;
-    } else if (scope.kind == TargetTraversalScopeKind::Callable) {
+    } else if (scope.kind == TargetTraversalScopeKind::Callable
+               || scope.kind == TargetTraversalScopeKind::CoroutineCallable) {
         ++callable_depth;
     }
     return true;
@@ -77,7 +78,8 @@ auto BodyRealizer::FailureSiteQuery::enter_scope(TargetTraversalScope scope) noe
 auto BodyRealizer::FailureSiteQuery::leave_scope(TargetTraversalScope scope) noexcept -> bool {
     if (scope.kind == TargetTraversalScopeKind::Loop) {
         --loop_depth;
-    } else if (scope.kind == TargetTraversalScopeKind::Callable) {
+    } else if (scope.kind == TargetTraversalScopeKind::Callable
+               || scope.kind == TargetTraversalScopeKind::CoroutineCallable) {
         --callable_depth;
     }
     return true;
@@ -110,7 +112,7 @@ auto BodyRealizer::structured_expression(
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
-    return preparation.operation(source).value.visit(
+    co_await preparation.operation(source).value.visit(
         Overloaded {
             [&](const SemIf& value) noexcept -> ContinuationTask<std::monostate> {
                 return lower_if(value, result, destination);
@@ -126,6 +128,7 @@ auto BodyRealizer::structured_expression(
             },
         }
     );
+    co_return {};
 }
 
 auto BodyRealizer::guarded_region(
@@ -183,7 +186,9 @@ auto BodyRealizer::lower_if(
             std::size_t index) noexcept -> ContinuationTask<LoweringStmtBuilder> {
         if (index == value.branches.size()) {
             if (value.otherwise.has_value()) {
-                co_return (co_await region(**value.otherwise, result));
+                auto selected = LoweringStmtBuilder();
+                selected.scope((co_await region(**value.otherwise, result)));
+                co_return selected;
             }
             auto completed = LoweringStmtBuilder();
             deliver_result(LoweringCompleted {}, result, completed);
@@ -271,10 +276,23 @@ auto BodyRealizer::lower_match(
         && !delayed_bindings.contains(named->binding);
     const auto subject =
         direct ? binding_locals.at(named->binding) : fresh_local(TargetTemporaryNameKind::Owner);
+    const auto writable = std::ranges::any_of(value.arms, [&](const auto& arm) noexcept {
+        return std::ranges::any_of(arm.bindings, [&](LocalBindingID id) noexcept {
+            const auto* alias = std::get_if<AccessBindingStorage>(&metadata.binding(id).storage);
+            return alias != nullptr && alias->access == AccessMode::Write;
+        });
+    });
+    if (direct
+        && writable
+        && std::holds_alternative<OwnerBindingStorage>(metadata.binding(named->binding).storage)) {
+        mutable_owners.emplace(subject);
+    }
     if (!direct) {
         auto subject_value = scope.accept((co_await operand({
             .expression = std::addressof(*value.subject),
-            .use = value.subject_is_place ? PreparedUse::ConstPlace : PreparedUse::Consume,
+            .use = !value.subject_is_place ? PreparedUse::Consume
+                : writable                 ? PreparedUse::WritePlace
+                                           : PreparedUse::ConstPlace,
             .demand = PreparedDemand::Value,
         })));
         if (!scope.continues()) {
@@ -292,10 +310,9 @@ auto BodyRealizer::lower_match(
             }
         ));
     }
-    // Arms are tried in order. A guard-free arm whose test needs no statements
-    // selects between its body and the remaining arms, so the chain needs no
-    // exit label; other arms fall through to their successors and leave through
-    // `done` when selected.
+    // Arms are tried in order. A guard-free arm whose test owes no cleanup
+    // selects between its body and the remaining arms. A prefix with live
+    // owners keeps its own scope and leaves through `done` when selected.
     const auto lower_arms =
         [&](this const auto& self,
             std::size_t first) noexcept -> ContinuationTask<LoweringStmtBuilder> {
@@ -313,7 +330,10 @@ auto BodyRealizer::lower_match(
                 PatternRealizer(context, names, metadata, arm.pattern_bounds, realize_bound);
             auto pattern = co_await matcher.match(
                 arm.pattern,
-                {.root = subject, .dereference_root = false, .payload_index = std::nullopt},
+                {.root = subject,
+                 .dereference_root = false,
+                 .payload_index = std::nullopt,
+                 .tuple_path = {}},
                 !arm.pattern_may_reject
             );
             for (const auto local : matcher.projection_locals()) {
@@ -321,10 +341,10 @@ auto BodyRealizer::lower_match(
             }
             if (!arm.guard
                 && pattern.tests.size() == 1uz
-                && pattern.tests.front().statements.empty()
+                && !pattern.tests.front().needs_cleanup
                 && pattern.tests.front().normal
                 && !known_predicate(pattern.tests.front().normal).has_value()) {
-                auto predicate = std::move(*pattern.tests.front().normal);
+                auto predicate = arms.accept(std::move(pattern.tests.front()));
                 pattern.tests.clear();
                 auto selected =
                     co_await lower_arm(pattern, arm.bindings, arm.body, arm.guard, result, nullptr);
@@ -334,7 +354,7 @@ auto BodyRealizer::lower_match(
                 arms.record_exits(alternative.exits());
                 arms.emit(
                     conditional(
-                        {.condition = predicate_expression(std::move(predicate)),
+                        {.condition = predicate_expression(std::move(*predicate)),
                          .body = std::move(selected).finish()},
                         std::move(alternative).finish()
                     ),
@@ -383,7 +403,7 @@ auto BodyRealizer::lower_try(
 ) noexcept -> ContinuationTask<std::monostate> {
     const auto failures = context.plan().failure_abi().members(value.protected_failures.resolved());
     if (failures.empty()) {
-        destination.append((co_await region(*value.body, result)));
+        destination.scope((co_await region(*value.body, result)));
         co_return {};
     }
     auto done = RegionExit {
@@ -392,7 +412,8 @@ auto BodyRealizer::lower_try(
     };
     const auto receiver = FailureDestination {
         .identity = failure_receivers.size(),
-        .target = exit_target(LoweringExitKind::Failure)
+        .target = exit_target(LoweringExitKind::Failure),
+        .retained_async_scopes = async_scopes.size()
     };
     failure_receivers.push_back({.layout = value.protected_failures.resolved(), .edges = {}});
     const auto outer = std::exchange(current_failure, receiver);
@@ -424,6 +445,7 @@ auto BodyRealizer::lower_try(
     } else {
         const auto direct =
             sites.size() == 1uz
+            && sites.front().edge->closing_scopes.empty()
             && !sites.front().nested_loop
             && !protected_body.exits().crosses_cleanup(receiver.target)
             && std::ranges::all_of(
@@ -468,7 +490,8 @@ auto BodyRealizer::lower_try(
             const auto relay = FailureRelay {
                 .slot = slot,
                 .label = names.fresh(TargetTemporaryNameKind::Try),
-                .target = receiver.target
+                .target = receiver.target,
+                .closing_scopes = {},
             };
             destination.declare(
                 TargetVariableStmt {
@@ -487,10 +510,12 @@ auto BodyRealizer::lower_try(
             );
             for (const auto& site : sites) {
                 auto transfer = LoweringStmtBuilder();
+                auto site_relay = relay;
+                site_relay.closing_scopes = site.edge->closing_scopes;
                 if (site.edge->initializer) {
-                    deliver_failure(std::move(*site.edge->initializer), relay, transfer);
+                    deliver_failure(std::move(*site.edge->initializer), site_relay, transfer);
                 } else {
-                    transfer = dispatch_failure(site.edge->source, site.edge->failures, relay);
+                    transfer = dispatch_failure(site.edge->source, site.edge->failures, site_relay);
                 }
                 site.statement->value =
                     TargetBlockStmt {.statements = std::move(transfer).finish()};
@@ -572,7 +597,8 @@ auto BodyRealizer::failure_handler(
                             return PatternSubject {
                                 .root = payload.storage,
                                 .dereference_root = false,
-                                .payload_index = std::nullopt
+                                .payload_index = std::nullopt,
+                                .tuple_path = {}
                             };
                         },
                         [&](const FailureSlot& slot) noexcept -> std::optional<PatternSubject> {
@@ -580,7 +606,8 @@ auto BodyRealizer::failure_handler(
                                 return PatternSubject {
                                     .root = slot.storage,
                                     .dereference_root = true,
-                                    .payload_index = std::nullopt
+                                    .payload_index = std::nullopt,
+                                    .tuple_path = {}
                                 };
                             }
                             return std::nullopt;
@@ -628,7 +655,8 @@ auto BodyRealizer::failure_handler(
                             pattern->inner,
                             {.root = projection,
                              .dereference_root = true,
-                             .payload_index = std::nullopt}
+                             .payload_index = std::nullopt,
+                             .tuple_path = {}}
                         )
                     );
                 }

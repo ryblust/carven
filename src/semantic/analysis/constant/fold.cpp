@@ -2,11 +2,27 @@ module carven:semantic.analysis.constant.fold.impl;
 
 import :diagnostics.builder;
 import :semantic.analysis.constant.fold;
+import :semantic.analysis.operations;
 import :semantic.evaluation.operation;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.simd;
 import std;
+
+auto tuple_constant(ProgramDraft& draft, TypeID type, const SemTuple& tuple) noexcept
+    -> std::optional<ConstantID> {
+    if (tuple.elements.empty()) {
+        return draft.intern_constant({.type = type, .value = VoidConstant {}});
+    }
+    auto elements = std::vector<ConstantID>();
+    for (const auto& element : tuple.elements) {
+        if (!element.constant) {
+            return std::nullopt;
+        }
+        elements.push_back(*element.constant);
+    }
+    return draft.intern_constant({.type = type, .value = TupleConstant {std::move(elements)}});
+}
 
 auto array_constant(ProgramDraft& draft, TypeID type, const SemArray& array) noexcept
     -> std::optional<ConstantID> {
@@ -24,7 +40,8 @@ auto array_constant(ProgramDraft& draft, TypeID type, const SemArray& array) noe
 
 auto struct_constant(ProgramDraft& draft, TypeID type, const SemStruct& structure) noexcept
     -> std::optional<ConstantID> {
-    if (draft.construction_struct_declaration_copy(structure.structure).kind == RecordKind::Class) {
+    if (draft.construction_struct_declaration_copy(structure.resolved_structure()).kind
+        == RecordKind::Class) {
         return std::nullopt;
     }
     auto fields = std::vector<std::optional<ConstantID>>(structure.fields.size());
@@ -82,8 +99,11 @@ auto element_constant(
 }
 
 // Optional normal-completion facts never execute a static root.
-auto fold_constant_expression(ProgramDraft& draft, SemanticExpression& source) noexcept
-    -> AnalysisResult<void> {
+auto fold_constant_expression(
+    ProgramDraft& draft,
+    SemanticExpression& source,
+    ConstantFoldFailure failure_policy
+) noexcept -> AnalysisResult<void> {
     const auto* type = std::get_if<TypeID>(&source.type.construction());
     if (!type) {
         return {};
@@ -157,6 +177,16 @@ auto fold_constant_expression(ProgramDraft& draft, SemanticExpression& source) n
                     }
                 };
             }
+        } else if constexpr (std::same_as<Operation, SemTuple>) {
+            source.constant = tuple_constant(draft, *type, operation);
+        } else if constexpr (std::same_as<Operation, SemTupleElement>) {
+            if (operation.source->constant) {
+                const auto* tuple =
+                    std::get_if<TupleConstant>(&draft.constant(*operation.source->constant).value);
+                if (tuple) {
+                    source.constant = tuple->elements.at(operation.index);
+                }
+            }
         } else if constexpr (std::same_as<Operation, SemArray>) {
             source.constant = array_constant(draft, *type, operation);
         } else if constexpr (std::same_as<Operation, SemStruct>) {
@@ -179,16 +209,43 @@ auto fold_constant_expression(ProgramDraft& draft, SemanticExpression& source) n
             source.constant =
                 field_constant(draft, operation.source->constant, operation.field.field_index);
         } else if constexpr (std::same_as<Operation, SemIndex>) {
+            if (constant_index_in_bounds(
+                    draft,
+                    sequence_extent(draft, *operation.source),
+                    operation.index->constant
+                )
+                == true) {
+                operation.bounds = ProvenInBounds {};
+            }
             source.constant =
                 element_constant(draft, operation.source->constant, operation.index->constant);
         } else if constexpr (std::same_as<Operation, SemIntrinsic>) {
+            if (const auto* slice = std::get_if<SliceIntrinsicOperation>(&operation.operation);
+                slice
+                && (slice->intrinsic == SliceIntrinsic::Len
+                    || slice->intrinsic == SliceIntrinsic::IsEmpty)) {
+                if (const auto extent =
+                        sequence_extent(draft, operation.operands.front().expression)) {
+                    folded = ConstantFact {
+                        .type = *type,
+                        .value = slice->intrinsic == SliceIntrinsic::Len
+                            ? ConstantValue(IntegerConstant::from_parts(*extent, false))
+                            : ConstantValue(BooleanConstant {.value = *extent == 0u}),
+                    };
+                    return;
+                }
+            }
             if (operation.operands.empty() || !operation.operands.front().expression.constant) {
                 return;
             }
             const auto receiver = draft.constant(*operation.operands.front().expression.constant);
             operation.operation.visit([&](auto& intrinsic) noexcept {
                 using Intrinsic = std::remove_cvref_t<decltype(intrinsic)>;
-                if constexpr (std::same_as<Intrinsic, TextIntrinsic>) {
+                if constexpr (std::same_as<Intrinsic, FloatIntrinsic>) {
+                    retain(
+                        evaluate_float_intrinsic_constant_value(draft, intrinsic, receiver, *type)
+                    );
+                } else if constexpr (std::same_as<Intrinsic, TextIntrinsic>) {
                     retain(
                         evaluate_text_intrinsic_constant_value(draft, intrinsic, receiver, *type)
                     );
@@ -238,7 +295,7 @@ auto fold_constant_expression(ProgramDraft& draft, SemanticExpression& source) n
             });
         }
     });
-    if (failure) {
+    if (failure && failure_policy == ConstantFoldFailure::Diagnose) {
         return std::unexpected(draft.diagnostics().error(
             DiagnosticBuilder(failure->code, std::string(failure->message))
                 .primary(draft.source_span(source.origin))

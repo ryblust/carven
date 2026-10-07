@@ -336,6 +336,9 @@ auto builtin_format_value(const ConstantValueReader& values, const ConstantFact&
     if (builtin == nullptr) {
         return {};
     }
+    if (builtin->kind == BuiltinType::Void && std::holds_alternative<VoidConstant>(fact.value)) {
+        return std::string_view("()");
+    }
     if (const auto* integer = std::get_if<IntegerConstant>(&fact.value);
         integer != nullptr && builtin_is_integer(builtin->kind)) {
         return *integer;

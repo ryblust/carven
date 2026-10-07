@@ -1,6 +1,12 @@
-import .api using { Box, Indirect };
+import .api using { Box, Indirect, opaque };
 
 test "Classes: private representation supports public operations across modules" {
     let box = Box::create(42);
     check(box.read() == 42);
+}
+
+test "Nominal identity: opaque pointer targets share the definition used by public operations" {
+    let holder = opaque();
+    check(!holder.references_local());
+    check(!holder.references_callback());
 }

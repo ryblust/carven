@@ -44,7 +44,7 @@ test "Pointers: Read calls snapshot addresses and dereference selects its target
 
 test "Pointers: noncopyable native targets can be observed through an address" {
     let p: ptr<::pointer_probe::Fixed> = ::pointer_probe::fixed_object();
-    if p != nullptr { check(p -> read() == 91); }
+    if p != nullptr { check(p->read() == 91); }
 }
 
 test "Pointers: native qualifiers aliases and incomplete targets retain their types" {
@@ -63,6 +63,10 @@ test "Pointers: native qualifiers aliases and incomplete targets retain their ty
     check(opaque == nullptr);
     let nothing: ptr<void> = nullptr;
     check(nothing == nullptr);
+    let opaque_address: ptr<void> = ::pointer_probe::opaque_address();
+    check(::pointer_probe::observes_opaque(opaque_address));
+    let native_argument = ::pointer_probe::NativeVoidArgument<void> {};
+    check(native_argument.is_void());
     let output: ptr<&i32> = ::pointer_output_adapter();
     check(output != nullptr);
     let owned: ptr<i32> = output;

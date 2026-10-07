@@ -1,0 +1,14 @@
+import std::json.value using Value;
+import std::json.error using { JSONError, ValueError };
+
+try {
+    var document = Value::parse(r#"{"message":"你好\u0020JSON","ok":false}"#)?;
+    let message = document.get("message")?;
+    println(message.as_str()?);
+    document.set("ok", &&Value::boolean(true))?;
+    document.set("attempts", &&Value::integer(3))?;
+    println(document.to_json()?);
+} catch {
+    JSONError(error) => println(f"Invalid JSON at byte {error.offset}"),
+    ValueError(_) => println("JSON value operation failed"),
+}

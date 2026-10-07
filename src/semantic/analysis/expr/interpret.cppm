@@ -21,7 +21,7 @@ auto interpret_expression(
         co_return std::unexpected(ExpressionNotAdmitted {});
     }
     if (const auto* form = std::get_if<ASTLiteral>(&source.value)) {
-        co_return interpret_literal(site, *form, source.span, expected);
+        co_return (co_await interpret_literal(site, *form, source.span, expected));
     }
     using ValueTask = ExpressionTask<typename Site::Value>;
     using SelectionTask = ExpressionTask<typename Site::Selection>;

@@ -1,7 +1,10 @@
 module carven:semantic.analysis.nullability.expr.impl;
 
 import :semantic.analysis.nullability.context;
+import :semantic.semir.evaluation;
 import :semantic.semir.initialization;
+import :semantic.semir.sequence;
+import :support.invariant;
 import :support.visit;
 import std;
 
@@ -36,13 +39,21 @@ auto NullabilityBodyAnalyzer::condition(const SemanticExpression& source, NullSt
         .no = std::move(evaluated.normal),
         .exits = std::move(evaluated.exits)
     };
+    // A known result selects normal successors after operand effects complete.
+    const auto truth = known_boolean(program, source);
+    if (truth == true) {
+        result.no.reset();
+    } else if (truth == false) {
+        result.yes.reset();
+    }
     if (const auto* comparison = std::get_if<SemBinary>(&source.value); comparison != nullptr
         && (comparison->operation == BinaryOperator::Equal
             || comparison->operation == BinaryOperator::NotEqual)) {
         // Only a literal/folded constant operation is side-effect free. A known
         // null result of an arbitrary operation may have changed the other slot.
         const auto is_null = [&](const SemanticExpression& value) noexcept {
-            return std::holds_alternative<SemConstant>(value.value)
+            return (std::holds_alternative<SemConstant>(value.value)
+                    || std::holds_alternative<SemDefault>(value.value))
                 && !constant_value(value).empty();
         };
         auto place = std::optional<NullPlace>();
@@ -93,6 +104,22 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
         }
         co_return {};
     };
+    const auto call = [&](std::span<const SemCallArgument> arguments,
+                          const BodyFailures& callee_failures,
+                          bool executes) noexcept -> ContinuationTask<std::monostate> {
+        for (const auto& argument : arguments) {
+            (co_await evaluate(argument.expression));
+        }
+        if (!flow.normal) {
+            co_return {};
+        }
+        if (executes) {
+            apply_call_writes(flow.normal->state, arguments);
+            failures(flow, callee_failures.reference());
+        }
+        set_value({});
+        co_return {};
+    };
     const auto external = [&](const auto& value) noexcept -> ContinuationTask<std::monostate> {
         auto operands = std::vector<const SemanticExpression*>();
         visit_cpp_operands(value, [&](AccessMode, const SemanticExpression& operand) noexcept {
@@ -120,14 +147,15 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
     (co_await source.value.visit(
         Overloaded {
             [&](const SemDefault&) noexcept -> ContinuationTask<std::monostate> {
-                if (default_initialization(program, source.type.resolved())
-                    == DefaultInitialization::Native) {
-                    invalidate_exposed(flow.normal->state);
-                }
-                if (std::holds_alternative<PointerTypeValue>(
-                        program.types().type(source.type.resolved()).value
+                if (std::holds_alternative<AnalysisPointerType>(
+                        analysis.shape(source.type.construction())
                     )) {
-                    set_value({{{}, NullFact::Null}});
+                    set_value(constant_value(source));
+                    co_return {};
+                }
+                if (const auto type = analysis.concrete_type(source.type.construction()); !type
+                    || default_initialization(program, *type) == DefaultInitialization::Native) {
+                    invalidate_exposed(flow.normal->state);
                 }
                 co_return {};
             },
@@ -166,6 +194,14 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 auto result = NullValue();
                 for (const auto& field : value.fields) {
                     (co_await aggregate(field.value, field.declaration_index, result));
+                }
+                set_value(std::move(result));
+                co_return {};
+            },
+            [&](const SemTuple& value) noexcept -> ContinuationTask<std::monostate> {
+                auto result = NullValue();
+                for (const auto [index, element] : std::views::enumerate(value.elements)) {
+                    (co_await aggregate(element, index, result));
                 }
                 set_value(std::move(result));
                 co_return {};
@@ -238,6 +274,17 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                     set_value(value_at(flow.normal->state, *place));
                 } else {
                     set_value(project_null_value(flow.normal->value, value.field.field_index));
+                }
+                co_return {};
+            },
+            [&](const SemTupleElement& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(*value.source));
+                if (flow.normal) {
+                    if (const auto place = location(source)) {
+                        set_value(value_at(flow.normal->state, *place));
+                    } else {
+                        set_value(project_null_value(flow.normal->value, value.index));
+                    }
                 }
                 co_return {};
             },
@@ -315,9 +362,29 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                             set_value({});
                             co_return {};
                         },
+                        [&](const FloatIntrinsic&) noexcept -> ContinuationTask<std::monostate> {
+                            static_cast<void>(co_await evaluate(value.operands.front().expression));
+                            set_value({});
+                            co_return {};
+                        },
                         [&](const SIMDIntrinsic&) noexcept -> ContinuationTask<std::monostate> {
                             for (const auto& operand : value.operands) {
                                 static_cast<void>(co_await evaluate(operand.expression));
+                            }
+                            set_value({});
+                            co_return {};
+                        },
+                        [&](const SequenceIntrinsicOperation& operation) noexcept
+                            -> ContinuationTask<std::monostate> {
+                            for (const auto& operand : value.operands) {
+                                static_cast<void>(co_await evaluate(operand.expression));
+                            }
+                            if (flow.normal
+                                && sequence_intrinsic_contract(operation.intrinsic).receiver_access
+                                    == AccessMode::Write) {
+                                const auto& receiver = value.operands.front().expression;
+                                expose(flow.normal->state, receiver);
+                                invalidate(flow.normal->state, location(receiver, true));
                             }
                             set_value({});
                             co_return {};
@@ -357,24 +424,71 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                 (co_await external(value));
                 co_return {};
             },
-            [&](const SemCall& value) noexcept -> ContinuationTask<std::monostate> {
+            [&](const SemColdCall& value) noexcept -> ContinuationTask<std::monostate> {
                 static_cast<void>((co_await evaluate(*value.callee)));
                 for (const auto& argument : value.arguments) {
                     static_cast<void>((co_await evaluate(argument.expression)));
                 }
-                if (!flow.normal) {
-                    co_return {};
-                }
-                for (const auto& argument : value.arguments) {
-                    if (argument.access == AccessMode::Write) {
-                        expose(flow.normal->state, argument.expression);
-                        invalidate(flow.normal->state, location(argument.expression, true));
-                    }
-                }
-                invalidate_exposed(flow.normal->state);
-                flow.normal->value = {};
-                failures(flow, value.callee_failures.resolved());
+                set_value({});
                 co_return {};
+            },
+            [&](const SemColdCompose& value) noexcept -> ContinuationTask<std::monostate> {
+                for (const auto& input : value.inputs) {
+                    static_cast<void>(co_await evaluate(input.expression));
+                }
+
+                set_value({});
+                co_return {};
+            },
+            [&](const SemColdTimeout& value) noexcept -> ContinuationTask<std::monostate> {
+                static_cast<void>(co_await evaluate(*value.operation));
+                static_cast<void>(co_await evaluate(*value.duration_ticks));
+                set_value({});
+                co_return {};
+            },
+            [&](const SemAwait& value) noexcept -> ContinuationTask<std::monostate> {
+                static_cast<void>((co_await evaluate(*value.operand)));
+                if (flow.normal) {
+                    invalidate_exposed(flow.normal->state);
+                }
+                set_value({});
+                const auto* operation = std::get_if<ConstructionOperationTypeValue>(
+                    &analysis.shape(value.operand->type.construction())
+                );
+                if (operation == nullptr) {
+                    invariant_violation("await nullability requires an operation contract");
+                }
+                // Operand failures already retain their evaluation states.
+                failures(flow, operation->failures);
+                co_return {};
+            },
+            [&](const SemWaitReady&) noexcept -> ContinuationTask<std::monostate> {
+                if (flow.normal) {
+                    invalidate_exposed(flow.normal->state);
+                }
+                set_value({});
+                co_return {};
+            },
+            [&](const SemCloseChild&) noexcept -> ContinuationTask<std::monostate> {
+                if (flow.normal) {
+                    invalidate_exposed(flow.normal->state);
+                }
+                set_value({});
+                co_return {};
+            },
+            [](const SemAsyncIntrinsic&) static noexcept -> ContinuationTask<std::monostate> {
+                co_return {};
+            },
+            [&](const SemGenericCall& value) noexcept -> ContinuationTask<std::monostate> {
+                co_return (co_await call(
+                    value.arguments,
+                    value.callee_failures,
+                    call_execution(value.definition) == CallableExecutionKind::Synchronous
+                ));
+            },
+            [&](const SemCall& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(*value.callee));
+                co_return (co_await call(value.arguments, value.callee_failures, true));
             },
             [&](const SemIf& value) noexcept -> ContinuationTask<std::monostate> {
                 flow = (co_await conditional(value, std::move(flow.normal->state)));

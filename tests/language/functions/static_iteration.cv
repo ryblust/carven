@@ -1,0 +1,111 @@
+private const fn digit(value: i32, const mark: i32) -> i32 => value + mark;
+
+private const fn trace_array(skip: i32, stop: i32) -> i32 {
+    var trace = 0;
+    const for value in [1, 2, 3, 4, 5] {
+        let current = digit(0, value);
+        if current == skip { continue; }
+        if current == stop { break; }
+        trace = trace * 10 + current;
+    }
+    return trace;
+}
+
+private const fn return_array(stop: i32) -> i32 {
+    var trace = 0;
+    const for value in [1, 2, 3, 4] {
+        trace = trace * 10 + digit(0, value);
+        if value == stop { return trace; }
+    }
+    return trace;
+}
+
+private const fn nested_sequences() -> i32 {
+    var trace = 0;
+    const for row in [
+            [1, 2],
+            [3, 4]
+        ] {
+        const for value in row {
+            trace = trace * 10 + digit(0, value);
+        }
+    }
+    return trace;
+}
+
+private struct Item {
+    value: i32
+}
+
+private const fn item_value(const item: Item) -> i32 => item.value;
+
+private const fn value_types() -> usize {
+    const words: [str] = ["a", "bc"];
+    var result: usize = 0;
+    const for text in words {
+        result += text.len();
+    }
+    const for item in [
+            Item { value: 2 },
+            Item { value: 3 }
+        ] {
+        result += item_value(item) as usize;
+    }
+    const for enabled in [true, false, true] {
+        const if enabled { result += 1; }
+    }
+    const empty: [u8; 0] = [];
+    const for _ in empty {
+        result += 100;
+    }
+    return result;
+}
+
+private const fn iterate_slice(const values: [i32]) -> i32 {
+    var trace = 0;
+    const for value in values {
+        trace = trace * 10 + digit(0, value);
+    }
+    return trace;
+}
+
+private const fn slice_sequences() -> i32 {
+    const values = [9, 1, 2, 3, 9];
+    const selected = values.as_slice().slice(1, 4);
+    const nothing = values.as_slice().slice(2, 2);
+    return iterate_slice(selected) + iterate_slice(nothing);
+}
+
+private fn runtime_body(input: i32) -> i32 {
+    const values: [i32] = [2, 4, 8];
+    var result = input;
+    const for value in values {
+        let local = digit(input, value);
+        result += local;
+    }
+    const for value in [1, 3] {
+        result += digit(input, value);
+    }
+    return result;
+}
+
+const test "Static iteration: frozen arrays and slices preserve values and exits" {
+    check(trace_array(2, 5) == 134);
+    check(return_array(3) == 123);
+    check(nested_sequences() == 1234);
+    check(value_types() == 10usize);
+    check(slice_sequences() == 123);
+}
+
+test "Static iteration: residual scopes and runtime exits match static execution" {
+    var skip = 1;
+    skip += 1;
+    var stop = 4;
+    stop += 1;
+    check(runtime_body(skip) == 30);
+    check(trace_array(skip, stop) == 134);
+    check(return_array(stop - 2) == 123);
+    check(nested_sequences() == 1234);
+    check(value_types() == 10usize);
+    check(slice_sequences() == 123);
+}

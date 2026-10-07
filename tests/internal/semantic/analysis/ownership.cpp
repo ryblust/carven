@@ -5,6 +5,8 @@ import :diagnostics.diagnostic;
 import :diagnostics.sink;
 import :frontend.program.parse;
 import :semantic.analysis.diagnostics;
+import :semantic.analysis.generics.snapshot;
+import :semantic.analysis.model;
 import :semantic.analysis.ownership.context;
 import :semantic.analysis.program;
 import :semantic.analyze;
@@ -18,7 +20,6 @@ import :semantic.semir.traversal;
 import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
-import :source.module_path;
 import :source.text;
 import :test.harness.diagnostics;
 import :test.harness.framework;
@@ -29,6 +30,220 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Async ownership: initial source rejection precedes target lowering"_test = [] static noexcept {
+        const auto cases = std::array {
+            std::pair {
+                std::string_view(
+                    "async fn leaf() -> i32 => 1; async fn bad() { let op = leaf(); print(await op); print(await op); }"
+                ),
+                DiagnosticCode::AccessUnavailable
+            },
+            std::pair {
+                std::string_view(
+                    "async fn leaf() -> i32 => 1; async fn bad() { async let child = leaf(); }"
+                ),
+                DiagnosticCode::AsyncChildIntent
+            },
+            std::pair {
+                std::string_view(
+                    "async fn leaf() -> i32 => 1; async fn bad() { var op = leaf(); op = leaf(); print(await op); print(await op); }"
+                ),
+                DiagnosticCode::AccessUnavailable
+            },
+            std::pair {
+                std::string_view(
+                    "async fn leaf(&value: i32) -> i32 => value; async fn bad() { var value = 1; let op = leaf(&value); let moved = &&value; print(await op); }"
+                ),
+                DiagnosticCode::AccessBorrowConflict
+            },
+            std::pair {
+                std::string_view("fn helper() { require(false); } async fn bad() { helper(); }"),
+                DiagnosticCode::AsyncAdmission
+            },
+            std::pair {
+                std::string_view(
+                    "async fn leaf() -> i32 => 1; fn bad() { let op = leaf(); let alias = op; }"
+                ),
+                DiagnosticCode::AsyncOwnership
+            },
+            std::pair {
+                std::string_view("async fn leaf() -> i32 => 1; fn bad() { let callable = leaf; }"),
+                DiagnosticCode::AsyncAdmission
+            },
+            std::pair {
+                std::string_view(
+                    "async fn leaf(&value: i32) -> i32 => value; fn bad() { var value = 1; return leaf(&value); }"
+                ),
+                DiagnosticCode::AccessBorrowConflict
+            },
+            std::pair {
+                std::string_view(
+                    "struct Pair { value: i32 } async fn leaf(&value: i32) -> i32 => value; async fn bad() { var pair = Pair { value: 1 }; let op = leaf(&pair.value); pair = Pair { value: 2 }; print(await op); }"
+                ),
+                DiagnosticCode::AccessBorrowConflict
+            },
+            std::pair {
+                std::string_view(
+                    "struct Pair { value: i32 } async fn leaf(&value: i32) -> i32 => value; async fn bad() { var pair = Pair { value: 1 }; let op = leaf(&pair.value); let moved = &&pair.value; print(await op); }"
+                ),
+                DiagnosticCode::AccessTakeOperand
+            },
+            std::pair {
+                std::string_view("async fn bad(values: [i32; 2]) {}"),
+                DiagnosticCode::AsyncOwnership
+            },
+            std::pair {
+                std::string_view("async fn bad(value: u8x32) {}"),
+                DiagnosticCode::AsyncOwnership
+            },
+            std::pair {
+                std::string_view("async fn leaf() -> i32 => 1; fn bad() { await leaf(); }"),
+                DiagnosticCode::AsyncAdmission
+            },
+        };
+        for (const auto& [source, code] : cases) {
+            expect_diagnostic(analyze_test_errors(std::string(source)), code);
+        }
+    };
+    "Async ownership: native Read is a source storage loan"_test = [] static noexcept {
+        const auto program = analyze_test_program(
+            "private import(cpp) async fn native(context: ::Context) -> i32; "
+            "export(cpp) async fn run(context: ::Context) -> i32 => await native(context);"
+        );
+        for (const auto [id, type] : program.types().entries()) {
+            if (std::holds_alternative<CppTypeValue>(type.value)) {
+                expect(program.type_contents(id).contains_native_value);
+                expect(program.type_contents(id).read_borrows_storage());
+                expect(!program.type_contents(id).read_is_value_snapshot());
+            }
+        }
+        expect_diagnostic(
+            analyze_test_errors(
+                "private import(cpp) fn make_context() -> ::Context; "
+                "private import(cpp) async fn native(context: ::Context) -> i32; "
+                "fn factory() { let context = make_context(); return native(context); }"
+            ),
+            DiagnosticCode::AccessBorrowConflict
+        );
+    };
+
+    "Read passing: retained native storage propagates through synchronous factories"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(
+                "private import(cpp) fn immediate(value: ::Context) -> i32; "
+                "private import(cpp) async fn native(value: ::Context) -> i32; "
+                "fn first(value: ::Context) => native(value); "
+                "fn second(value: ::Context) => first(value); "
+                "fn inspect(value: ::Context) -> i32 => immediate(value);"
+            );
+            auto retained = 0uz;
+            auto adaptive = 0uz;
+            for (const auto [id, declaration] : program.declarations().callables()) {
+                static_cast<void>(declaration);
+                if (program.read_requires_stable_storage(id, 0uz)) {
+                    ++retained;
+                } else {
+                    ++adaptive;
+                }
+            }
+            expect(retained == 3uz);
+            expect(adaptive == 2uz);
+            expect_diagnostic(
+                analyze_test_errors(
+                    "private import(cpp) async fn native(value: ::Context) -> i32; "
+                    "fn factory(value: ::Context) => native(value); "
+                    "fn invalid() { let callable = factory; }"
+                ),
+                DiagnosticCode::TypeCallableViewEscape
+            );
+        };
+
+    "Async ownership: private wrappers preserve nonexclusive covered scalar Write"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(
+                "struct Pair { value: i32 } async fn leaf(&value: i32) -> i32 => value; "
+                "fn wrapped(&pair: Pair) => leaf(&pair.value); async fn main() { "
+                "var pair = Pair { value: 3 }; let first = wrapped(&pair); let second = wrapped(&pair); "
+                "pair.value = 4; print(await first); print(await second); }"
+            );
+            expect(program.bodies().size() > 0uz);
+            expect_diagnostic(
+                analyze_test_errors(
+                    "struct Pair { value: i32 } async fn leaf(&value: i32) -> i32 => value; "
+                    "fn replace(&pair: Pair) { pair = Pair { value: 9 }; } async fn bad() { "
+                    "var pair = Pair { value: 3 }; let op = leaf(&pair.value); replace(&pair); print(await op); }"
+                ),
+                DiagnosticCode::AccessBorrowConflict
+            );
+            const auto native = analyze_test_program(
+                "private import(cpp) fn native_write(&value: i32); fn helper(&value: i32) { native_write(&value); } "
+                "async fn valid() { var value: i32 = 1; helper(&value); }"
+            );
+            expect(native.bodies().size() > 0uz);
+        };
+
+    "Async ownership: completion closes cold and child backing obligations"_test = [] static noexcept {
+        for (const auto child : {false, true}) {
+            const auto source = std::format(
+                "struct Pair {{ value: i32 }} async fn leaf(&value: i32) -> i32 => value; "
+                "async fn main() {{ var pair = Pair {{ value: 3 }}; {} "
+                "let observed = await op; let moved = &&pair; print(observed); print(moved.value); }}",
+                child ? "async let op = leaf(&pair.value);" : "let op = leaf(&pair.value);"
+            );
+            const auto program = analyze_test_program(source);
+            expect(program.bodies().size() > 0uz);
+        }
+    };
+
+    "Async intrinsics: core direct calls preserve ordinary local shadowing"_test = [] static noexcept {
+        const auto cases = std::array {
+            std::pair {
+                std::string_view(
+                    " fn query() -> bool => cancellation_requested(); fn shadow() { let yield_once = 7; print(yield_once); } async fn run() { await yield_once(); }"
+                ),
+                false
+            },
+            std::pair {std::string_view(" fn bad() { let checkpoint = yield_once; }"), true},
+        };
+        for (const auto& [source, rejected] : cases) {
+            auto sources = SourceManager();
+            const auto application = sources.append_virtual("analysis.cv", std::string(source));
+            require(application.has_value());
+            const auto inputs = std::array {
+                SourceModuleInput {
+                    .source_id = *application,
+                    .module_path = semantic_test_module_path()
+                },
+            };
+            auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
+            require(parsed.has_value());
+            auto result = analyze(std::move(*parsed));
+            if (rejected) {
+                require(!result.has_value());
+                expect_diagnostic(result.error(), DiagnosticCode::AsyncAdmission);
+            } else {
+                require(result.has_value());
+                auto found_query = false;
+                auto found_yield = false;
+                for (const auto entry : result->value.bodies().entries()) {
+                    visit_semantic_nodes(
+                        entry.value.realized_region(),
+                        [&](const SemanticExpression& expression) noexcept {
+                            if (const auto* intrinsic =
+                                    std::get_if<SemAsyncIntrinsic>(&expression.value)) {
+                                found_query |=
+                                    intrinsic->kind == AsyncIntrinsic::CancellationRequested;
+                                found_yield |= intrinsic->kind == AsyncIntrinsic::YieldOnce;
+                            }
+                        }
+                    );
+                }
+                expect(found_query);
+                expect(found_yield);
+            }
+        }
+    };
+
     "Semantic ownership: a condition retains both ownership paths"_test = [] static noexcept {
         for (const auto keyword : {"let", "const"}) {
             expect_diagnostic(
@@ -287,13 +502,15 @@ const TestSuite suite([] static noexcept {
         const auto prelude =
             std::string("fn pair(value: i32, &&owner: i32) -> i32 { return value + owner; }\n")
             + "fn identity(value: i32) -> i32 { return value; }\n";
-        for (const auto* expression : {"x + 1", "identity(x)"}) {
+        for (const auto* expression : {"x", "x + 1", "identity(x)"}) {
             static_cast<void>(analyze_test_program(
                 prelude + "fn valid() { let x = 2; let result = pair(" + expression + ", &&x); }"
             ));
         }
-        const auto direct =
-            analyze_test_errors(prelude + "fn invalid() { let x = 2; let result = pair(x, &&x); }");
+        const auto direct = analyze_test_errors(
+            "fn pair(value: String, &&owner: String) {}\n"
+            "fn invalid() { let x: String = \"text\"; pair(x, &&x); }"
+        );
         expect_diagnostic(direct, DiagnosticCode::AccessOperationConflict);
     };
 
@@ -626,8 +843,10 @@ const TestSuite suite([] static noexcept {
                         }
                         const auto program = analyze_test_program(std::move(source));
                         auto diagnostics = DiagnosticSink();
+                        const auto generics = GenericAnalysisSnapshot {};
+                        const auto model = AnalysisModelView(program, generics);
                         const auto summary =
-                            OwnershipBatchAnalyzer(program, AnalysisDiagnostics(diagnostics)).run();
+                            OwnershipBatchAnalyzer(model, AnalysisDiagnostics(diagnostics)).run();
                         if (!(expect(summary.has_value())
                                   .note(
                                       "shape.name = ",
@@ -725,6 +944,84 @@ const TestSuite suite([] static noexcept {
             expect_diagnostic(text, DiagnosticCode::AccessBorrowConflict);
         };
 
+    "Semantic ownership: scalar field writes preserve unrelated holder loans"_test =
+        [] static noexcept {
+            const auto prelude = std::string(R"(
+        struct Holder { n: i32, text: str }
+        fn increment(&value: i32) { value += 1; }
+    )");
+            static_cast<void>(analyze_test_program(prelude + R"(
+        fn valid() -> usize {
+            var owner: String = "hello";
+            var holder = Holder { n: 0, text: owner.as_str() };
+            increment(&holder.n);
+            return holder.text.len();
+        }
+    )"));
+            expect_diagnostic(
+                analyze_test_errors(prelude + R"(
+        fn invalid() -> usize {
+            var owner: String = "hello";
+            var holder = Holder { n: 0, text: owner.as_str() };
+            increment(&holder.n);
+            owner.clear();
+            return holder.text.len();
+        }
+    )"),
+                DiagnosticCode::AccessBorrowConflict
+            );
+        };
+
+    "Semantic stable selection: scalar writes retain selector checks through calls"_test =
+        [] static noexcept {
+            const auto prelude = std::string(R"(
+        fn touch(&value: i32) -> bool { value += 1; return true; }
+        fn guarded(&selected: i32, &written: i32) {
+            match selected { _ if touch(&written) => {}, _ => {}, }
+        }
+        fn relay(&selected: i32, &written: i32) { guarded(&selected, &written); }
+    )");
+            for (const auto indirect : {false, true}) {
+                const auto call = [indirect](std::string_view target) noexcept {
+                    if (indirect) {
+                        return std::format("relay(&selected, &{});", target);
+                    }
+                    return std::format(
+                        "match selected {{ _ if touch(&{}) => {{}}, _ => {{}}, }}",
+                        target
+                    );
+                };
+                static_cast<void>(analyze_test_program(
+                    prelude
+                    + std::format(
+                        R"(
+        fn valid() {{
+            var selected = 1;
+            var other = 2;
+            {}
+        }}
+    )",
+                        call("other")
+                    )
+                ));
+                expect_diagnostic(
+                    analyze_test_errors(
+                        prelude
+                        + std::format(
+                            R"(
+        fn invalid() {{
+            var selected = 1;
+            {}
+        }}
+    )",
+                            call("selected")
+                        )
+                    ),
+                    DiagnosticCode::AccessOperationConflict
+                );
+            }
+        };
+
     "Semantic ownership: indirect calls preserve recursive components"_test = [] static noexcept {
         const auto program = analyze_test_program(R"(
         fn apply(action: fn() -> void) { action(); }
@@ -732,7 +1029,9 @@ const TestSuite suite([] static noexcept {
         fn leaf() {}
         fn caller() { apply(leaf); }
     )");
-        const auto components = prepare_ownership_analysis(program).recursion_components;
+        const auto components =
+            prepare_ownership_analysis(AnalysisModelView(program, GenericAnalysisSnapshot {}))
+                .recursion_components;
         const auto callables = test_function_callables(program);
         if (!expect_equal(callables.size(), 4uz)) {
             return;
@@ -755,7 +1054,9 @@ const TestSuite suite([] static noexcept {
         fn leaf() {}
         fn caller() { []() { apply(leaf); }(); }
     )");
-            const auto components = prepare_ownership_analysis(program).recursion_components;
+            const auto components =
+                prepare_ownership_analysis(AnalysisModelView(program, GenericAnalysisSnapshot {}))
+                    .recursion_components;
             auto distinct = std::flat_set<std::uint32_t>();
             for (const auto& [body, component] : components) {
                 static_cast<void>(body);
@@ -765,6 +1066,32 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect_equal(distinct.size(), components.size());
+        };
+
+    "Semantic ownership: generated views protect backing across scalar writer calls"_test =
+        [] static noexcept {
+            const auto prelude = std::string(R"(
+        fn view_of(values: [i32; 2]) -> [i32] => values;
+        fn increment(&value: i32) { value += 1; }
+        fn combine(values: [i32; 2], &written: i32) -> usize {
+            let view = view_of(values);
+            increment(&written);
+            return view.len();
+        }
+    )");
+            static_cast<void>(analyze_test_program(prelude + R"(
+        fn valid(&values: [i32; 2], &other: i32) -> usize {
+            return combine(values, &other);
+        }
+    )"));
+            expect_diagnostic(
+                analyze_test_errors(prelude + R"(
+        fn invalid(&values: [i32; 2]) -> usize {
+            return combine(values, &values[0]);
+        }
+    )"),
+                DiagnosticCode::AccessBorrowConflict
+            );
         };
 
     "Semantic ownership: constant array backing permits immediate views but rejects holders"_test =

@@ -18,8 +18,8 @@ import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.stage.session;
-import :semantic.analysis.types;
 import :semantic.analysis.types.display;
+import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.decl;
@@ -160,6 +160,23 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
 }
 
 auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
+    for (const auto definition : draft->generic_declaration_ids()) {
+        const auto source = draft->generic_declaration_copy(definition);
+        if (!std::holds_alternative<GenericFunctionDefinition>(source)) {
+            continue;
+        }
+        const auto& symbol = *catalog_data.symbol(catalog_data.generic_symbol(definition));
+        static_cast<void>(
+            co_await ensure_generic_function(definition, symbol.module_id, symbol.declaration_span)
+        );
+    }
+    if (const auto failure = draft->diagnostics().failure()) {
+        co_return std::unexpected(*failure);
+    }
+    auto formed = draft->validate_generic_type_formations();
+    if (!formed) {
+        co_return std::unexpected(formed.error());
+    }
     for (const auto& source_module : catalog_data.modules()) {
         const auto ast = draft->syntax_tree(source_module.module_id).view();
         for (const auto& source_item : source_module.items) {
@@ -265,6 +282,10 @@ auto BodyBatchElaborator::ensure_function_signature(
     ProgramModuleID requester,
     Span span
 ) noexcept -> AnalysisTask<void> {
+    if (id.index() >= functions.size()) {
+        co_return {};
+    }
+
     auto completed =
         (co_await requests.ensure_declaration(catalog_data.function_symbol(id), requester, span));
     if (!completed) {
@@ -302,6 +323,14 @@ auto BodyBatchElaborator::ensure_function_body(
     ProgramModuleID requester,
     Span span
 ) noexcept -> AnalysisTask<BodyID> {
+    if (id.index() >= functions.size()) {
+        const auto declaration = draft->function_declaration_copy(id);
+        if (const auto body = draft->body_for_callable(declaration.callable)) {
+            co_return *body;
+        }
+        invariant_violation("generic function instance has no completed body");
+    }
+
     auto completed = (co_await ensure_function_signature(id, requester, span));
     if (!completed) {
         co_return std::unexpected(completed.error());
@@ -375,7 +404,10 @@ auto BodyBatchElaborator::complete_function(FunctionID id) noexcept -> AnalysisT
 auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> AnalysisTask<void> {
     const auto& symbol = *functions.at(id.index());
     const auto ast = draft->syntax_tree(symbol.module_id).view();
-    const auto& item = ast.item(symbol.item_id);
+    if (!symbol.item_id) {
+        invariant_violation("source function has no AST item");
+    }
+    const auto& item = ast.item(*symbol.item_id);
     const auto& function = std::get<ASTFunctionDecl>(item.value);
     const auto* implementation = std::get_if<ASTFunctionBody>(&function.implementation);
     if (implementation == nullptr) {
@@ -385,7 +417,7 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
     const auto pending = draft->pending_function_contract_copy(declaration.callable);
     auto parameters = std::vector<ConstructionCallableParameter>();
     auto result_type = std::optional<ConstructionTypeRef>();
-    auto failures = std::optional<FailureTermID>();
+    auto failures = std::optional<ConstructionFailureRef>();
     auto policy = FailureContractPolicy::Declared;
     if (pending.has_value()) {
         parameters = pending->parameters;
@@ -422,6 +454,7 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
         policy != FailureContractPolicy::UndeclaredExplicit,
         false
     );
+    elaborator.async_body = function.async_span.has_value();
     elaborator.lexical_class =
         symbol.class_operation ? std::optional(symbol.class_operation->owner) : std::nullopt;
     for (auto index = 0uz; index < function.parameters.size(); ++index) {
@@ -439,5 +472,89 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
         draft->complete_function_result(declaration.callable, result);
     }
     draft->add_body_draft(std::move(*body));
+    co_return {};
+}
+
+auto BodyBatchElaborator::ensure_generic_function(
+    GenericDeclarationID definition,
+    ProgramModuleID requester,
+    Span span
+) noexcept -> AnalysisTask<void> {
+    auto [found, inserted] = generic_states.try_emplace(definition, Unvisited {});
+    auto& state = found->second;
+    if (std::holds_alternative<Complete>(state)) {
+        co_return {};
+    }
+    if (const auto* failure = std::get_if<Failed>(&state)) {
+        co_return std::unexpected(failure->failure);
+    }
+    auto declared = co_await requests.ensure_declaration(
+        catalog_data.generic_symbol(definition),
+        requester,
+        span
+    );
+    if (!declared) {
+        co_return declared;
+    }
+    auto function =
+        std::get<GenericFunctionDefinition>(draft->generic_declaration_copy(definition));
+    if (std::holds_alternative<Analyzing>(state)) {
+        if (!function.infer_result) {
+            co_return {};
+        }
+        co_return std::unexpected(draft->diagnostics().error(
+            DiagnosticBuilder(
+                DiagnosticCode::TypeResultInferenceCycle,
+                "generic function result inference forms a cycle; add an explicit '-> T' result type"
+            )
+                .primary(locate(draft->syntax_tree(requester).view().source_id(), span))
+                .build()
+        ));
+    }
+    state = Analyzing {};
+    const auto& symbol = *catalog_data.symbol(catalog_data.generic_symbol(definition));
+    const auto syntax = draft->syntax_tree(symbol.module_id).view();
+    const auto& source = std::get<ASTFunctionDecl>(syntax.item(*symbol.item_id).value);
+    const auto actual = create_body_failure_term(
+        *draft,
+        function.signature.failures,
+        function.signature.policy,
+        function.contract.origin
+    );
+    auto elaborator = BodyElaborator(
+        *this,
+        symbol.module_id,
+        function.contract.module_id,
+        syntax,
+        draft->reserve_generic_body(definition),
+        function.infer_result ? std::nullopt : std::optional(function.signature.result),
+        actual,
+        function.signature.policy != FailureContractPolicy::UndeclaredExplicit,
+        false,
+        GenericTypeContext {
+            definition,
+            function.contract.parameters,
+            function.contract.parameter_kinds
+        }
+    );
+    elaborator.async_body = source.async_span.has_value();
+    for (auto i = 0uz; i < source.parameters.size(); ++i) {
+        auto parameter =
+            elaborator.add_parameter(source.parameters[i], function.signature.parameters[i]);
+        if (!parameter) {
+            state = Failed {parameter.error()};
+            co_return std::unexpected(parameter.error());
+        }
+    }
+    auto body = co_await elaborator.run(std::get<ASTFunctionBody>(source.implementation).body);
+    if (!body) {
+        state = Failed {body.error()};
+        co_return std::unexpected(body.error());
+    }
+    if (function.infer_result) {
+        draft->complete_generic_function_result(definition, elaborator.inferred_result_type());
+    }
+    draft->set_generic_function_body(definition, std::move(*body));
+    state = Complete {};
     co_return {};
 }

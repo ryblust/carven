@@ -200,6 +200,12 @@ public:
         return ImmutableProgramTable<Value, ID>(program_identity, std::move(storage));
     }
 
+    auto snapshot() const noexcept -> ImmutableProgramTable<Value, ID>
+        requires std::copy_constructible<Value>
+    {
+        return ImmutableProgramTable<Value, ID>(program_identity, storage);
+    }
+
 private:
     auto ensure_capacity() const noexcept -> void {
         if (storage.size() == std::numeric_limits<std::uint32_t>::max()) {
@@ -262,6 +268,11 @@ public:
     auto copy_defined(ID id) const noexcept -> Value
         requires std::copy_constructible<Value>
     {
+        require_defined(id);
+        return *storage[id.index()];
+    }
+
+    auto mutate_defined(ID id) noexcept -> Value& {
         require_defined(id);
         return *storage[id.index()];
     }

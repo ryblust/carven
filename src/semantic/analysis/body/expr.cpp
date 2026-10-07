@@ -48,15 +48,17 @@ auto BodyElaborator::lambda_expression(
     Span span,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> AnalysisTask<BuiltExpression> {
-    auto expected_view = std::optional<ConstructionCallableViewTypeValue>();
-    if (expected.has_value()) {
-        if (const auto* term = std::get_if<TypeTermID>(&*expected)) {
-            const auto construction = draft().construction_type_copy(*term);
-            if (const auto* view =
-                    std::get_if<ConstructionCallableViewTypeValue>(&construction.value)) {
-                expected_view = *view;
-            }
-        }
+    if (generic_context) {
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::TypeGenericDefinition,
+            "generic function closures require a parameterized callable representation"
+        ));
+    }
+
+    auto expected_view = expected ? draft().callable_shape(*expected) : std::nullopt;
+    if (expected_view && expected_view->owning_type) {
+        expected_view.reset();
     }
     if (expected_view.has_value() && expected_view->parameters.size() != source.parameters.size()) {
         co_return std::unexpected(fail(
@@ -126,35 +128,6 @@ auto BodyElaborator::lambda_expression(
     }
 
     const auto lambda_origin = origin(span);
-    const auto actual_failures = draft().add_empty_failure_term();
-    auto signature_failures = actual_failures;
-    auto failure_policy = FailureContractPolicy::Inferred;
-    if (source.throw_clause.has_value()) {
-        const auto resolve_extent = [&](ASTExprID extent) noexcept {
-            return resolve_array_extent(extent);
-        };
-        auto members = (co_await resolve_failure_types(
-            draft(),
-            catalog(),
-            import_usage(),
-            source_module_id,
-            ast,
-            *source.throw_clause,
-            resolve_extent
-        ));
-        if (!members.has_value()) {
-            co_return std::unexpected(members.error());
-        }
-        const auto allowed = draft().add_concrete_failure_term(std::move(*members));
-        draft().require_failure_subset(
-            actual_failures,
-            allowed,
-            lambda_origin,
-            FailureSubsetRequirementKind::DeclaredCallable
-        );
-        signature_failures = allowed;
-        failure_policy = FailureContractPolicy::Declared;
-    }
 
     struct CaptureSource final {
         ASTLambdaCapture syntax;
@@ -205,9 +178,7 @@ auto BodyElaborator::lambda_expression(
             ));
         }
         auto built = BuiltExpression {
-            .storage = UniqueIndirect {BodyExpressionStorage {
-                active_builder().binding_expression(local->storage.binding)
-            }},
+            .storage = UniqueIndirect {BodyExpressionStorage {local_place(*local, capture.span)}},
             .pending_failures = {},
             .takeable = false,
             .completes = true,
@@ -216,6 +187,15 @@ auto BodyElaborator::lambda_expression(
             capture.write_marker.has_value() ? CaptureMode::Write : CaptureMode::Value;
         auto operand = std::optional<SemCapture>();
         if (mode == CaptureMode::Write) {
+            if (std::holds_alternative<AccessBindingStorage>(
+                    active_builder().binding_copy(local->storage.binding).storage
+                )) {
+                co_return std::unexpected(fail(
+                    capture.name_span,
+                    DiagnosticCode::AccessCaptureConflict,
+                    "payload aliases cannot be captured with Write access"
+                ));
+            }
             auto place = consume_place(built, capture.span);
             if (!place.has_value()) {
                 co_return std::unexpected(place.error());
@@ -236,6 +216,73 @@ auto BodyElaborator::lambda_expression(
                 .operand = std::move(*operand),
             }
         );
+    }
+
+    const auto finish = [&](CallableID callable) noexcept -> BuiltExpression {
+        auto operands = std::vector<SemCapture>();
+        operands.reserve(captures.size());
+        for (auto& capture : captures) {
+            operands.push_back(std::move(capture.operand));
+        }
+        const auto closure_type = draft().intern_type(
+            CanonicalType {
+                .value = ClosureTypeValue {.callable = callable},
+            }
+        );
+        auto value = active_builder().make_expression(
+            closure_type,
+            active_builder().lifetime(),
+            lambda_origin,
+            SemClosure {.callable = callable, .captures = std::move(operands)}
+        );
+        return BuiltExpression {
+            .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},
+
+            .pending_failures = {},
+            .takeable = true,
+            .completes = true,
+        };
+    };
+    if (const auto cached = lambda_callables.find(span); cached != lambda_callables.end()) {
+        const auto contract = draft().construction_callable_contract_copy(cached->second);
+        if (expected_view && !compatible(contract.result, expected_view->result)) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::LambdaSignatureInference,
+                "inferred lambda result differs from its expected callable view"
+            ));
+        }
+        co_return finish(cached->second);
+    }
+
+    const auto actual_failures = draft().add_empty_failure_term();
+    auto signature_failures = ConstructionFailureRef(actual_failures);
+    auto failure_policy = FailureContractPolicy::Inferred;
+    if (source.throw_clause.has_value()) {
+        const auto resolve_extent = [&](ASTExprID extent) noexcept {
+            return resolve_array_extent(extent);
+        };
+        auto members = (co_await resolve_failure_types(
+            draft(),
+            catalog(),
+            import_usage(),
+            source_module_id,
+            ast,
+            *source.throw_clause,
+            resolve_extent
+        ));
+        if (!members.has_value()) {
+            co_return std::unexpected(members.error());
+        }
+        const auto allowed = *members;
+        draft().require_failure_subset(
+            actual_failures,
+            allowed,
+            lambda_origin,
+            FailureSubsetRequirementKind::DeclaredCallable
+        );
+        signature_failures = allowed;
+        failure_policy = FailureContractPolicy::Declared;
     }
 
     auto reservation = draft().reserve_body(BodyKind::Closure);
@@ -293,6 +340,7 @@ auto BodyElaborator::lambda_expression(
     }
     const auto callable = draft().append_body_callable(
         ConstructionCallableContract {
+            .execution = CallableExecutionKind::Synchronous,
             .parameters = std::move(parameters),
             .result = resolved_result,
             .failures = signature_failures,
@@ -302,29 +350,8 @@ auto BodyElaborator::lambda_expression(
     draft().complete_callable(callable, ClosureBodyImplementation {.body = body_id});
     draft().add_body_draft(std::move(*child_body));
 
-    auto operands = std::vector<SemCapture>();
-    operands.reserve(captures.size());
-    for (auto& capture : captures) {
-        operands.push_back(std::move(capture.operand));
-    }
-    const auto closure_type = draft().intern_type(
-        CanonicalType {
-            .value = ClosureTypeValue {.callable = callable},
-        }
-    );
-    auto value = active_builder().make_expression(
-        closure_type,
-        active_builder().lifetime(),
-        lambda_origin,
-        SemClosure {.callable = callable, .captures = std::move(operands)}
-    );
-    co_return BuiltExpression {
-        .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},
-
-        .pending_failures = {},
-        .takeable = true,
-        .completes = true,
-    };
+    lambda_callables.emplace(span, callable);
+    co_return finish(callable);
 }
 
 auto BodyElaborator::select_expression(

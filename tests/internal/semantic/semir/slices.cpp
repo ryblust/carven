@@ -33,15 +33,18 @@ const TestSuite suite([] static noexcept {
                 std::string_view name;
                 std::optional<std::uint64_t> extent;
                 bool query;
+                bool array_receiver;
                 bool valid;
             };
 
             const auto scenarios = std::to_array<Scenario>({
-                {"slice zero array extent", 0u, false, true},
-                {"slice incorrect array extent", 1u, false, false},
-                {"slice missing array extent", std::nullopt, false, false},
-                {"slice query no sequence extent", std::nullopt, true, true},
-                {"slice query sequence extent", 0u, true, false},
+                {"slice zero array extent", 0u, false, false, true},
+                {"slice incorrect array extent", 1u, false, false, false},
+                {"slice missing array extent", std::nullopt, false, false, false},
+                {"slice query no sequence extent", std::nullopt, true, false, true},
+                {"slice query sequence extent", 0u, true, false, false},
+                {"array query no sequence extent", std::nullopt, true, true, true},
+                {"array query sequence extent", 0u, true, true, false},
             });
             each(scenarios, &Scenario::name, [&](const auto& scenario) noexcept {
                 auto sources = SourceManager();
@@ -88,35 +91,40 @@ const TestSuite suite([] static noexcept {
                     LifetimeRegionKind::Lexical,
                     module_origin.origin
                 );
-                auto operands = std::vector<SemCallArgument>();
-                operands.push_back({
-                    .access = AccessMode::Read,
-                    .expression = body.make_expression(
-                        array_type,
-                        lifetime,
-                        module_origin.origin,
-                        SemArray {.elements = {}}
-                    ),
-                });
                 auto expression = body.make_expression(
-                    slice_type,
+                    array_type,
                     lifetime,
                     module_origin.origin,
-                    SemIntrinsic {
-                        .operation =
-                            SliceIntrinsicOperation {
-                                .intrinsic = SliceIntrinsic::FromArray,
-                                .result_extent = scenario.query ? std::optional<std::uint64_t>(0u)
-                                                                : scenario.extent
-                            },
-                        .operands = std::move(operands),
-                    }
+                    SemArray {.elements = {}}
                 );
+                if (!scenario.array_receiver) {
+                    auto operands = std::vector<SemCallArgument>();
+                    operands.push_back({
+                        .access = AccessMode::Read,
+                        .expression = std::move(expression),
+                    });
+                    expression = body.make_expression(
+                        slice_type,
+                        lifetime,
+                        module_origin.origin,
+                        SemIntrinsic {
+                            .operation =
+                                SliceIntrinsicOperation {
+                                    .intrinsic = SliceIntrinsic::FromArray,
+                                    .result_extent = scenario.query
+                                        ? std::optional<std::uint64_t>(0u)
+                                        : scenario.extent
+                                },
+                            .operands = std::move(operands),
+                        }
+                    );
+                }
                 if (scenario.query) {
                     auto query_operands = std::vector<SemCallArgument>();
-                    query_operands.push_back(
-                        {.access = AccessMode::Read, .expression = std::move(expression)}
-                    );
+                    query_operands.push_back({
+                        .access = AccessMode::Read,
+                        .expression = std::move(expression),
+                    });
                     expression = body.make_expression(
                         size_type,
                         lifetime,
@@ -137,6 +145,8 @@ const TestSuite suite([] static noexcept {
                     .lifetime = lifetime,
                     .reachable = true,
                     .value = SemExpressionStatement {.expression = std::move(expression)},
+
+
                 });
                 const auto publish_slice = [&]() noexcept {
                     builder.add_body_draft(
@@ -148,6 +158,8 @@ const TestSuite suite([] static noexcept {
                             .result_reachable = false,
                             .failures = BodyFailures(builder.add_empty_failure_term()),
                             .exits_test = false,
+
+
                         })
                     );
                     return std::move(builder).finish();

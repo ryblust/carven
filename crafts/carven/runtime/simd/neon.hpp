@@ -224,14 +224,18 @@ select(Value<Bytes> mask, Value<Bytes> yes, Value<Bytes> no) noexcept -> Value<B
     }
 }
 
-template<std::size_t Bytes>
-CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL lookup(Value<Bytes> table, Value<Bytes> indices) noexcept
-    -> Value<Bytes> {
-    if constexpr (Bytes == 16) {
-        return vqtbl1q_u8(table, indices);
+template<std::size_t TableBytes, std::size_t IndexBytes>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL
+lookup(Value<TableBytes> table, Value<IndexBytes> indices) noexcept -> Value<IndexBytes> {
+    if constexpr (TableBytes == 16) {
+        return map<IndexBytes>(indices, [table](auto chunk) noexcept {
+            return vqtbl1q_u8(table, chunk);
+        });
     } else {
         const auto pair = uint8x16x2_t {{table.low, table.high}};
-        return {.low = vqtbl2q_u8(pair, indices.low), .high = vqtbl2q_u8(pair, indices.high)};
+        return map<IndexBytes>(indices, [pair](auto chunk) noexcept {
+            return vqtbl2q_u8(pair, chunk);
+        });
     }
 }
 
@@ -272,6 +276,13 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL bits(Value<Bytes> a) noexcept -> std::u
     }
 }
 
+template<std::size_t Bytes, bool Float>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL first_or(Value<Bytes> a, std::size_t fallback) noexcept
+    -> std::size_t {
+    const auto packed = bits<Bytes, Float>(a);
+    return packed == 0 ? fallback : static_cast<std::size_t>(std::countr_zero(packed));
+}
+
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL any(Value<Bytes> a) noexcept -> bool {
     if constexpr (Bytes == 16) {
@@ -292,17 +303,34 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL all(Value<Bytes> a) noexcept -> bool {
 
 template<std::size_t Bytes, bool Float>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL count(Value<Bytes> a) noexcept -> std::size_t {
-    const auto chunk_count = [](uint8x16_t chunk) noexcept -> std::size_t {
-        if constexpr (Float) {
-            return vaddvq_u32(vshrq_n_u32(vreinterpretq_u32_u8(chunk), 31));
+    // Widen narrow sums and combine wide halves before reducing to avoid mask packing.
+    if constexpr (Float) {
+        const auto lanes = [](uint8x16_t chunk) noexcept {
+            return vshrq_n_u32(vreinterpretq_u32_u8(chunk), 31);
+        };
+        if constexpr (Bytes == 16) {
+            return vaddlvq_u32(lanes(a));
         } else {
-            return vaddvq_u8(vshrq_n_u8(chunk, 7));
+            return vaddvq_u32(vaddq_u32(lanes(a.low), lanes(a.high)));
         }
-    };
-    if constexpr (Bytes == 16) {
-        return chunk_count(a);
     } else {
-        return chunk_count(a.low) + chunk_count(a.high);
+        const auto lanes = [](uint8x16_t chunk) noexcept {
+            return vshrq_n_u8(chunk, 7);
+        };
+        if constexpr (Bytes == 16) {
+            return vaddlvq_u8(lanes(a));
+        } else {
+            return vaddvq_u8(vaddq_u8(lanes(a.low), lanes(a.high)));
+        }
+    }
+}
+
+template<std::size_t Bytes>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sum(Value<Bytes> a) noexcept -> std::size_t {
+    if constexpr (Bytes == 16) {
+        return vaddlvq_u8(a);
+    } else {
+        return vaddvq_u16(vaddq_u16(vpaddlq_u8(a.low), vpaddlq_u8(a.high)));
     }
 }
 

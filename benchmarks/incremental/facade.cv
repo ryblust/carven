@@ -1,0 +1,3 @@
+import library using { Value, make_value };
+
+export fn create_value(number: i32) -> Value => make_value(number);

@@ -234,7 +234,33 @@ auto Parser::parse_cast_expression() noexcept -> std::optional<ASTExprID> {
     return operand;
 }
 
-auto Parser::parse_prefix_expression() noexcept -> std::optional<ASTExprID> {
+auto Parser::parse_prefix_expression(bool allow_propagation) noexcept -> std::optional<ASTExprID> {
+    if (const auto keyword = match(TokenKind::Await)) {
+        const auto nesting = enter_syntax_nesting();
+        if (!nesting) {
+            return std::nullopt;
+        }
+        const auto operand = parse_prefix_expression(false);
+        if (!operand) {
+            return std::nullopt;
+        }
+        auto result = builder.append_expression({
+            .span = join(keyword->span, builder.expression(*operand).span),
+            .value = ASTPrefixExpr {
+                .op = ASTPrefixOperator::Await,
+                .operator_span = keyword->span,
+                .operand_id = *operand,
+            },
+        });
+        while (allow_propagation && check(TokenKind::Question)) {
+            const auto marker = consume();
+            result = builder.append_expression({
+                .span = join(builder.expression(result).span, marker.span),
+                .value = ASTPropagationExpr {.operand_id = result, .operator_span = marker.span},
+            });
+        }
+        return result;
+    }
     if (check(TokenKind::Bang)
         || check(TokenKind::Minus)
         || check(TokenKind::Tilde)
@@ -244,7 +270,7 @@ auto Parser::parse_prefix_expression() noexcept -> std::optional<ASTExprID> {
             return std::nullopt;
         }
         const auto operation = consume();
-        const auto operand = parse_prefix_expression();
+        const auto operand = parse_prefix_expression(allow_propagation);
         if (!operand) {
             return std::nullopt;
         }
@@ -263,15 +289,35 @@ auto Parser::parse_prefix_expression() noexcept -> std::optional<ASTExprID> {
             }
         );
     }
-    return parse_postfix_expression();
+    return parse_postfix_expression(allow_propagation);
 }
 
-auto Parser::parse_postfix_expression() noexcept -> std::optional<ASTExprID> {
+auto Parser::parse_postfix_expression(bool allow_propagation) noexcept -> std::optional<ASTExprID> {
     auto operand = parse_primary_expression();
     if (!operand) {
         return std::nullopt;
     }
     while (!failed) {
+        if (check(TokenKind::Less)) {
+            const auto checkpoint = begin_speculation();
+            auto parsed = parse_type_arguments();
+            const auto application =
+                !failed && (check(TokenKind::LeftParen) || check(TokenKind::ColonColon));
+            finish_speculation(checkpoint, application, false);
+            if (application) {
+                operand = builder.append_expression(
+                    ASTExpr {
+                        .span = join(builder.expression(*operand).span, parsed.span),
+                        .value = ASTTypeApplicationExpr {
+                            .operand_id = *operand,
+                            .arguments_span = parsed.span,
+                            .arguments = std::move(parsed.value),
+                        },
+                    }
+                );
+                continue;
+            }
+        }
         if (check(TokenKind::LeftParen)) {
             operand = parse_call(*operand);
             if (!operand) {
@@ -311,7 +357,38 @@ auto Parser::parse_postfix_expression() noexcept -> std::optional<ASTExprID> {
                     }
                 );
             }
-            const auto name = expect(TokenKind::Identifier, "expected member name");
+            if ((operation.kind == TokenKind::Dot || operation.kind == TokenKind::Arrow)
+                && check(TokenKind::NumberLiteral)) {
+                const auto component = consume();
+                const auto text = slice(source, component.span);
+                const auto decimal = !text.empty()
+                    && (text.size() == 1uz || text.front() != '0')
+                    && std::ranges::all_of(text, [](char character) static noexcept {
+                           return character >= '0' && character <= '9';
+                       });
+                auto index = std::uint32_t();
+                const auto converted =
+                    std::from_chars(text.data(), text.data() + text.size(), index);
+                if (!decimal
+                    || converted.ec != std::errc()
+                    || converted.ptr != text.data() + text.size()) {
+                    fail(
+                        "tuple element index requires an unprefixed decimal uint32 without leading zeros",
+                        component.span
+                    );
+                    return std::nullopt;
+                }
+                operand = builder.append_expression({
+                    .span = join(builder.expression(*operand).span, component.span),
+                    .value = ASTTupleElementExpr {
+                        .operand_id = *operand,
+                        .index_span = component.span,
+                        .index = index,
+                    },
+                });
+                continue;
+            }
+            const auto name = expect_name_component("expected member name");
             if (failed) {
                 return std::nullopt;
             }
@@ -328,6 +405,9 @@ auto Parser::parse_postfix_expression() noexcept -> std::optional<ASTExprID> {
                 }
             );
             continue;
+        }
+        if (!allow_propagation && check(TokenKind::Question)) {
+            break;
         }
         if (const auto operation = match(TokenKind::Question)) {
             operand = builder.append_expression(
@@ -348,7 +428,7 @@ auto Parser::parse_postfix_expression() noexcept -> std::optional<ASTExprID> {
 
 auto Parser::parse_call(ASTExprID callee) noexcept -> std::optional<ASTExprID> {
     expect(TokenKind::LeftParen, "expected '('");
-    auto arguments = std::vector<ASTCallArgument> {};
+    auto arguments = std::vector<ASTExprID> {};
     {
         const auto depth = enter_depth(expression_nesting);
         while (!failed && !check(TokenKind::RightParen)) {
@@ -356,9 +436,7 @@ auto Parser::parse_call(ASTExprID callee) noexcept -> std::optional<ASTExprID> {
             if (!expression) {
                 break;
             }
-            arguments.push_back({
-                .expression = *expression,
-            });
+            arguments.push_back(*expression);
             if (!match(TokenKind::Comma)) {
                 break;
             }
@@ -476,7 +554,7 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
         auto components = std::vector<Span>();
         auto end = root.span;
         do {
-            end = expect(TokenKind::Identifier, "expected C++ name after '::'").span;
+            end = expect_name_component("expected C++ name after '::'").span;
             components.push_back(end);
         } while (!failed && match(TokenKind::ColonColon));
         if (failed) {
@@ -529,19 +607,46 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
         return std::nullopt;
     }
     if (const auto left = match(TokenKind::LeftParen)) {
-        auto expression = std::optional<ASTExprID> {};
-        {
-            const auto depth = enter_depth(expression_nesting);
-            expression = parse_expression();
+        const auto depth = enter_depth(expression_nesting);
+        auto elements = std::vector<ASTExprID>();
+        if (!check(TokenKind::RightParen)) {
+            const auto first = parse_expression();
+            if (!first) {
+                return std::nullopt;
+            }
+            if (!match(TokenKind::Comma)) {
+                const auto right =
+                    expect(TokenKind::RightParen, "expected ')' after grouped expression");
+                if (failed) {
+                    return std::nullopt;
+                }
+                return builder.append_expression(
+                    ASTExpr {
+                        .span = join(left->span, right.span),
+                        .value = ASTGroupExpr {.expression = *first}
+                    }
+                );
+            }
+            elements.push_back(*first);
+            while (!failed && !check(TokenKind::RightParen)) {
+                const auto element = parse_expression();
+                if (!element) {
+                    return std::nullopt;
+                }
+                elements.push_back(*element);
+                if (!match(TokenKind::Comma)) {
+                    break;
+                }
+            }
         }
-        const auto right = expect(TokenKind::RightParen, "expected ')' after grouped expression");
-        if (!expression || failed) {
+        const auto right = expect(TokenKind::RightParen, "expected ')' after tuple expression");
+        if (failed) {
             return std::nullopt;
         }
         return builder.append_expression(
             ASTExpr {
                 .span = join(left->span, right.span),
-                .value = ASTGroupExpr {.expression = *expression},
+                .value = ASTTupleExpr {.elements = std::move(elements)},
             }
         );
     }
@@ -558,6 +663,20 @@ auto Parser::parse_primary_expression() noexcept -> std::optional<ASTExprID> {
                     break;
                 }
                 elements.push_back(*element);
+                if (elements.size() == 1uz && match(TokenKind::Semicolon)) {
+                    auto extent = parse_expression();
+                    const auto right =
+                        expect(TokenKind::RightBracket, "expected ']' after array extent");
+                    if (!extent || failed) {
+                        return std::nullopt;
+                    }
+                    return builder.append_expression(
+                        ASTExpr {
+                            .span = join(left->span, right.span),
+                            .value = ASTArrayRepeatExpr {.element = *element, .extent = *extent},
+                        }
+                    );
+                }
                 if (!match(TokenKind::Comma)) {
                     break;
                 }
@@ -705,23 +824,27 @@ auto Parser::parse_lambda_expression() noexcept -> std::optional<ASTExprID> {
         } else if (const auto marker = match(TokenKind::AmpersandAmpersand)) {
             access = {.mode = ASTAccessMode::Take, .marker = marker->span};
         }
-        const auto name = expect(TokenKind::Identifier, "expected lambda parameter name");
+        if (!check(TokenKind::Identifier) && !check(TokenKind::LeftParen)) {
+            fail_here("expected lambda parameter name");
+            return std::nullopt;
+        }
+        const auto target_start = current().span;
+        auto target = parse_binding_target();
+        if (!target) {
+            return std::nullopt;
+        }
+        const auto target_span = join(target_start, tokens[cursor - 1uz].span);
         auto type = std::optional<ASTTypeID> {};
         if (match(TokenKind::Colon)) {
             type = parse_type();
         }
-        const auto start = access.marker.value_or(name.span);
+        const auto start = access.marker.value_or(target_span);
+        const auto end = type ? builder.type(*type).span : target_span;
         parameters.push_back({
-            .span =
-                type.has_value() ? join(start, builder.type(*type).span) : join(start, name.span),
+            .span = join(start, end),
             .const_span = std::nullopt,
             .access = access,
-            .target = slice(source, name.span) == "_" ? ASTBindingTarget {ASTDiscardBindingTarget {
-                                                            .underscore_span = name.span,
-                                                        }}
-                                                      : ASTBindingTarget {ASTNamedBindingTarget {
-                                                            .name_span = name.span,
-                                                        }},
+            .target = std::move(*target),
             .type = type,
         });
         if (!match(TokenKind::Comma)) {

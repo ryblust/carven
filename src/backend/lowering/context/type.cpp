@@ -35,7 +35,7 @@ auto builtin_symbol(BuiltinType type) noexcept -> TargetSymbol {
         case String:       return TargetSymbol::RuntimeString;
         case Str:          return TargetSymbol::StdStringView;
         case StrCharsView: return TargetSymbol::RuntimeStrCharsView;
-        case Void:         return TargetSymbol::Void;
+        case Void:         return TargetSymbol::RuntimeVoid;
         case EntryArgs:    return TargetSymbol::RuntimeEntryArgsType;
     }
     std::unreachable();
@@ -116,32 +116,39 @@ auto ModuleLowering::variant_type(std::span<const TypeID> members) noexcept -> T
     });
 }
 
-auto ModuleLowering::lower_parameter(AccessMode access, TypeID type, TypeNameScope scope) noexcept
-    -> TargetTypeID {
+auto ModuleLowering::lower_parameter(
+    AccessMode access,
+    TypeID type,
+    TypeNameScope scope,
+    bool requires_stable_storage
+) noexcept -> TargetTypeID {
     const auto base = lower_type(type, scope);
     const auto* builtin = std::get_if<BuiltinTypeValue>(&semantic().types().type(type).value);
     switch (access) {
         case AccessMode::Read:
-            if (semantic().type_contents(type).read_borrows_storage()) {
+            if (const auto contents = semantic().type_contents(type); requires_stable_storage
+                || contents.contains_operation_owner
+                || contents.contains_storage_owner
+                || contents.contains_closure_owner) {
                 return reference_type(base, true);
             }
-            if (builtin != nullptr) {
-                return intrinsic_type(builtin_symbol(builtin->kind), true);
-            }
-            if (semantic().type_contents(type).read_is_value_snapshot()) {
+            if (semantic().type_contents(type).contains_native_value) {
                 return target().intern_type({
                     .value =
                         TargetIntrinsicType {
-                            .symbol = TargetSymbol::StdAddConst,
+                            .symbol = TargetSymbol::RuntimeReadArg,
                             .type_argument_ids = {base},
                         },
                     .const_qualified = false,
                 });
             }
+            if (builtin != nullptr) {
+                return intrinsic_type(builtin_symbol(builtin->kind), true);
+            }
             return target().intern_type({
                 .value =
                     TargetIntrinsicType {
-                        .symbol = TargetSymbol::RuntimeReadArg,
+                        .symbol = TargetSymbol::StdAddConst,
                         .type_argument_ids = {base},
                     },
                 .const_qualified = false,
@@ -155,13 +162,19 @@ auto ModuleLowering::lower_parameter(AccessMode access, TypeID type, TypeNameSco
 auto ModuleLowering::function_type(
     CallableSignatureID id,
     bool stops_test,
-    TypeNameScope scope
+    TypeNameScope scope,
+    std::optional<CallableID> callable
 ) noexcept -> TargetType {
     const auto& signature = semantic().callable_signatures().signature(id);
     auto parameters = std::vector<TargetTypeID>();
     parameters.reserve(signature.parameters.size());
-    for (const auto& parameter : signature.parameters) {
-        parameters.push_back(lower_parameter(parameter.access, parameter.type, scope));
+    for (const auto [index, parameter] : std::views::enumerate(signature.parameters)) {
+        parameters.push_back(lower_parameter(
+            parameter.access,
+            parameter.type,
+            scope,
+            callable && semantic().read_requires_stable_storage(*callable, index)
+        ));
     }
     return {
         .value =
@@ -171,6 +184,31 @@ auto ModuleLowering::function_type(
             },
         .const_qualified = false,
     };
+}
+
+auto ModuleLowering::async_type(
+    TargetSymbol symbol,
+    TypeID success,
+    FailureSetID failures,
+    TypeNameScope scope
+) noexcept -> TargetTypeID {
+    auto arguments = std::vector<TargetTypeID> {
+        is_void(success) ? intrinsic_type(TargetSymbol::Void) : lower_type(success, scope)
+    };
+    for (const auto member : plan().failure_abi().members(failures)) {
+        arguments.push_back(lower_type(member, scope));
+    }
+    return target().intern_type({
+        .value = TargetIntrinsicType {.symbol = symbol, .type_argument_ids = std::move(arguments)},
+        .const_qualified = false,
+    });
+}
+
+auto ModuleLowering::callable_completion(CallableID callable_id) noexcept -> TargetTypeID {
+    const auto& signature = semantic().callable_signatures().signature(
+        semantic().declarations().callable(callable_id).signature
+    );
+    return async_type(TargetSymbol::RuntimeAsyncCompletion, signature.result, signature.failures);
 }
 
 auto ModuleLowering::lower_signature_result(
@@ -194,10 +232,25 @@ auto ModuleLowering::lower_signature_result(
     const auto& signature = semantic().callable_signatures().signature(id);
     const auto failures = plan().failure_abi().members(signature.failures);
     const auto result = [&]() noexcept -> TargetTypeID {
-        if (failures.empty() && !stops_test) {
-            return lower_type(signature.result, scope);
+        if (signature.execution == CallableExecutionKind::Async) {
+            if (stops_test) {
+                invariant_violation("async callable retained test-stop effects");
+            }
+            return async_type(
+                TargetSymbol::RuntimeAsyncOperation,
+                signature.result,
+                signature.failures,
+                scope
+            );
         }
-        auto arguments = std::vector<TargetTypeID> {lower_type(signature.result, scope)};
+        if (failures.empty() && !stops_test) {
+            return is_void(signature.result) ? intrinsic_type(TargetSymbol::Void)
+                                             : lower_type(signature.result, scope);
+        }
+        auto arguments = std::vector<TargetTypeID> {
+            is_void(signature.result) ? intrinsic_type(TargetSymbol::Void)
+                                      : lower_type(signature.result, scope)
+        };
         arguments.reserve(failures.size() + 2);
         if (stops_test) {
             arguments.push_back(intrinsic_type(TargetSymbol::RuntimeTestStopped));
@@ -227,6 +280,24 @@ auto ModuleLowering::callable_result(CallableID callable_id) noexcept -> TargetT
 
 auto ModuleLowering::call_result(const SemCall& call) noexcept -> TargetTypeID {
     return lower_signature_result(semantic().call_signature(call), semantic().may_stop_test(call));
+}
+
+auto ModuleLowering::lower_native_type(TypeID id, TypeNameScope scope) noexcept -> TargetTypeID {
+    if (is_void(id)) {
+        return intrinsic_type(TargetSymbol::Void);
+    }
+    const auto* native = std::get_if<CppTypeValue>(&semantic().types().type(id).value);
+    if (native != nullptr && std::holds_alternative<CppQueryType>(native->form)) {
+        return target().intern_type(
+            {.value =
+                 TargetIntrinsicType {
+                     .symbol = TargetSymbol::StdRemoveCVRef,
+                     .type_argument_ids = {lower_cpp_query(id)}
+                 },
+             .const_qualified = false}
+        );
+    }
+    return lower_type(id, scope);
 }
 
 auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> TargetTypeID {
@@ -260,7 +331,7 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
     auto lowered = semantic().types().type(id).value.visit(
         Overloaded {
             [&](const PointerTypeValue& value) noexcept -> TargetType {
-                auto pointee = lower_type(value.target, scope);
+                auto pointee = lower_native_type(value.target, scope);
                 if (value.access == PointerAccess::Read) {
                     pointee = target().intern_type(
                         {.value =
@@ -286,7 +357,7 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                 if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
                     auto arguments = std::vector<TargetTypeID>();
                     for (const auto argument : named->arguments) {
-                        arguments.push_back(lower_type(argument, scope));
+                        arguments.push_back(lower_native_type(argument, scope));
                     }
                     return {
                         .value =
@@ -299,11 +370,19 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                     };
                 }
                 const auto result = lower_cpp_query(id);
+                const auto object = target().intern_type(
+                    {.value =
+                         TargetIntrinsicType {
+                             .symbol = TargetSymbol::StdRemoveCVRef,
+                             .type_argument_ids = {result}
+                         },
+                     .const_qualified = false}
+                );
                 return {
                     .value =
                         TargetIntrinsicType {
-                            .symbol = TargetSymbol::StdRemoveCVRef,
-                            .type_argument_ids = {result}
+                            .symbol = TargetSymbol::RuntimeNativeValue,
+                            .type_argument_ids = {object}
                         },
                     .const_qualified = false
                 };
@@ -350,6 +429,16 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                     .const_qualified = false
                 };
             },
+            [&](const OwnedSequenceTypeValue& value) noexcept -> TargetType {
+                return {
+                    .value =
+                        TargetIntrinsicType {
+                            .symbol = TargetSymbol::RuntimeSequence,
+                            .type_argument_ids = {lower_type(value.element, scope)},
+                        },
+                    .const_qualified = false
+                };
+            },
             [&](const RangeTypeValue& value) noexcept -> TargetType {
                 return {
                     .value =
@@ -370,12 +459,44 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                     .const_qualified = false,
                 };
             },
+            [&](const TupleTypeValue& value) noexcept -> TargetType {
+                auto elements = std::vector<TargetTypeID>();
+                for (const auto element : value.elements) {
+                    elements.push_back(lower_type(element, scope));
+                }
+                return {
+                    .value =
+                        TargetIntrinsicType {
+                            .symbol = TargetSymbol::RuntimeTuple,
+                            .type_argument_ids = std::move(elements)
+                        },
+                    .const_qualified = false
+                };
+            },
+            [&](const OperationTypeValue& value) noexcept -> TargetType {
+                auto arguments = std::vector<TargetTypeID> {
+                    is_void(value.success) ? intrinsic_type(TargetSymbol::Void)
+                                           : lower_type(value.success, scope)
+                };
+                for (const auto member : plan().failure_abi().members(value.failures)) {
+                    arguments.push_back(lower_type(member, scope));
+                }
+                return {
+                    .value =
+                        TargetIntrinsicType {
+                            .symbol = TargetSymbol::RuntimeAsyncOperation,
+                            .type_argument_ids = std::move(arguments),
+                        },
+                    .const_qualified = false
+                };
+            },
             [&](const FunctionTypeValue& value) noexcept -> TargetType {
                 const auto& callable = semantic().declarations().callable(value.callable);
                 return function_type(
                     callable.signature,
                     semantic().may_stop_test(value.callable),
-                    scope
+                    scope,
+                    value.callable
                 );
             },
             [&](const ClosureTypeValue& value) noexcept -> TargetType {

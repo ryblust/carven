@@ -74,6 +74,7 @@ auto make_semir_test_module_origin(ProgramDraft& builder, std::size_t index = 0u
 auto make_semir_test_callable_contract(ProgramDraft& builder, TypeID result) noexcept
     -> ConstructionCallableContract {
     return {
+        .execution = CallableExecutionKind::Synchronous,
         .parameters = {},
         .result = result,
         .failures = builder.add_empty_failure_term(),
@@ -98,6 +99,8 @@ auto make_semir_test_body(
             .result_reachable = false,
             .failures = BodyFailures(program.add_empty_failure_term()),
             .exits_test = false,
+
+
         }
     );
 }

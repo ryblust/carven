@@ -113,6 +113,58 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
     if (!statements.continues()) {
         co_return take_statements(shared).complete<LoweringResult>(std::nullopt);
     }
+    if (demand == ResultDemand::AdoptSuccess) {
+        if (!fragment.awaited_carrier) {
+            // An embedded producer delivered its ordinary result. Construct only
+            // the destination callable's completion at this actual return.
+            auto arguments = std::vector<TargetExpr>();
+            if (!owner.context.is_void(fragment.preparation.operation.type.resolved())
+                && !std::holds_alternative<LoweringCompleted>(fragment.completion)) {
+                arguments.push_back(emit(fragment, final_use, literal));
+            }
+            co_return take_statements(shared).complete<LoweringResult>(
+                LoweringDirectExpression {call_expression(
+                    static_member_expression(
+                        owner.completion_type(),
+                        TargetIdentifier::from_spelling("success")
+                    ),
+                    std::move(arguments)
+                )}
+            );
+        }
+        auto carrier = name_expression(fragment.awaited_carrier->local);
+        if (fragment.awaited_carrier->deferred) {
+            carrier = dereference_expression(std::move(carrier));
+        }
+        auto transferred = call_expression(
+            intrinsic_expression(TargetSymbol::StdMove),
+            target_expressions(std::move(carrier))
+        );
+        const auto* operation = std::get_if<OperationTypeValue>(
+            &owner.context.semantic().types().type(fragment.awaited_carrier->operation).value
+        );
+        if (operation == nullptr) {
+            invariant_violation("direct await return has no canonical operation");
+        }
+        const auto destination = owner.completion_type();
+        const auto completed = owner.context.async_type(
+            TargetSymbol::RuntimeAsyncCompletion,
+            operation->success,
+            operation->failures
+        );
+        if (completed != destination) {
+            transferred = call_expression(
+                static_member_expression(
+                    destination,
+                    TargetIdentifier::from_spelling("adopt_success")
+                ),
+                target_expressions(std::move(transferred))
+            );
+        }
+        co_return take_statements(shared).complete<LoweringResult>(
+            LoweringDirectExpression {std::move(transferred)}
+        );
+    }
     if (std::holds_alternative<LoweringCompleted>(fragment.completion)) {
         co_return take_statements(shared).complete<LoweringResult>(LoweringCompleted {});
     }
@@ -133,12 +185,15 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
 }
 
 auto BodyRealizer::ExpressionBuilder::initialize_expression(
-    const SemInitialize& initialization,
+    LocalBindingID binding,
+    const SemanticExpression& initializer,
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
+    const auto awaited = !owner.context.is_void(initializer.type.resolved())
+        && std::holds_alternative<SemAwait>(owner.preparation.operation(initializer).value);
     auto fragment = (co_await build(
-        initialization.initializer,
-        {.demand = ResultDemand::Value,
+        initializer,
+        {.demand = awaited ? ResultDemand::AdoptSuccess : ResultDemand::Value,
          .use = PreparedUse::Consume,
          .literal = ConstantLiteralContext::TargetTyped,
          .retain_backing = false,
@@ -149,16 +204,57 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         destination.scope(take_statements());
         co_return {};
     }
+    if (fragment.awaited_carrier && awaited) {
+        const auto& carrier = *fragment.awaited_carrier;
+        const auto* operation = std::get_if<OperationTypeValue>(
+            &owner.context.semantic().types().type(carrier.operation).value
+        );
+        if (operation == nullptr || owner.context.is_void(operation->success)) {
+            invariant_violation("await binding has no nonvoid canonical success");
+        }
+        const auto storage = LoweringDeferredStorage {
+            .local = owner.binding_locals.at(binding),
+            .value_type = owner.context.target().intern_type({
+                .value =
+                    TargetIntrinsicType {
+                        .symbol = TargetSymbol::RuntimeAsyncSuccessBinding,
+                        .type_argument_ids = {owner.context.lower_type(operation->success)}
+                    },
+                .const_qualified = false,
+            }),
+        };
+        owner.delayed_bindings.emplace(binding, storage);
+        owner.success_bindings.insert(binding);
+        owner.declare_deferred(storage, true, destination, true);
+        auto access = name_expression(carrier.local);
+        if (carrier.deferred) {
+            access = dereference_expression(std::move(access));
+        }
+        owner.initialize_deferred(
+            storage,
+            TargetExpr {
+                .value =
+                    TargetConstructionExpr {
+                        .type = storage.value_type,
+                        .initializer = target_expressions(std::move(access)),
+                    }
+            },
+            statements
+        );
+        destination.scope(take_statements());
+        co_return {};
+    }
     auto value = emit(fragment, PreparedUse::Consume, ConstantLiteralContext::TargetTyped);
     // Only cleanup-bearing temporaries need to end before the next source
     // statement. Final storage stays in the enclosing lexical scope.
     if (!statements.needs_cleanup() && !reservations.needs_cleanup()) {
         destination.append(take_statements());
-        owner.declare_binding(initialization.binding, std::move(value), destination);
+        owner.declare_binding(binding, std::move(value), destination);
         co_return {};
     }
-    const auto& source = initialization.initializer;
-    if (!source.exits_test
+    const auto& source = initializer;
+    if (!owner.preparation.summary(source).requires_coroutine_context
+        && !source.exits_test
         && owner.context.semantic()
                .failure_sets()
                .failure_set(source.failures.resolved())
@@ -166,9 +262,9 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         const auto yield = owner.exit_target(LoweringExitKind::Value);
         owner.emit_return(std::move(value), statements, LoweringYieldResult {.target = yield});
         owner.declare_binding(
-            initialization.binding,
+            binding,
             take_statements().result_region(
-                owner.context.lower_type(owner.metadata.binding(initialization.binding).type),
+                owner.context.lower_type(owner.metadata.binding(binding).type),
                 yield,
                 LoweringRegionDelivery::Factory
             ),
@@ -179,15 +275,15 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
     // Final storage belongs to the binding's lexical region. Pending source
     // owners belong to this full expression and die after direct delivery.
     const auto storage = LoweringDeferredStorage {
-        .local = owner.binding_locals.at(initialization.binding),
-        .value_type = owner.context.lower_type(owner.metadata.binding(initialization.binding).type)
+        .local = owner.binding_locals.at(binding),
+        .value_type = owner.context.lower_type(owner.metadata.binding(binding).type)
     };
-    owner.delayed_bindings.emplace(initialization.binding, storage);
+    owner.delayed_bindings.emplace(binding, storage);
     owner.declare_deferred(
         storage,
         true,
         destination,
-        owner.needs_cleanup(owner.metadata.binding(initialization.binding).type)
+        owner.needs_cleanup(owner.metadata.binding(binding).type)
     );
     owner.initialize_deferred(storage, std::move(value), statements);
     destination.scope(take_statements());
@@ -451,52 +547,47 @@ auto BodyRealizer::condition(const SemanticExpression& source) noexcept
 }
 
 auto BodyRealizer::initialize_binding(
-    const SemInitialize& source,
+    LocalBindingID binding,
+    const SemanticExpression& source,
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
-    const auto& initializer = preparation.operation(source.initializer);
-    const auto& type = context.semantic().types().type(metadata.binding(source.binding).type).value;
+    const auto& initializer = preparation.operation(source);
+    const auto& type = context.semantic().types().type(metadata.binding(binding).type).value;
     const auto* builtin = std::get_if<BuiltinTypeValue>(&type);
-    if (!preparation.summary(source.initializer).requires_execution
+    if (!preparation.summary(source).requires_execution
         && ((builtin != nullptr
              && (builtin_is_numeric(builtin->kind)
                  || builtin->kind == BuiltinType::Bool
                  || builtin->kind == BuiltinType::Char))
             || std::holds_alternative<CallableViewTypeValue>(type)
             || std::holds_alternative<FunctionTypeValue>(type))) {
-        unused_initializers.emplace(binding_locals.at(source.binding), UnusedInitializer::Omit);
+        unused_initializers.emplace(binding_locals.at(binding), UnusedInitializer::Omit);
     }
-    const auto escapes = source.initializer.exits_test
+    const auto escapes = source.exits_test
         || !context.semantic()
                 .failure_sets()
-                .failure_set(source.initializer.failures.resolved())
+                .failure_set(source.failures.resolved())
                 .members.empty();
     if (escapes
         && (std::holds_alternative<SemIf>(initializer.value)
             || std::holds_alternative<SemMatch>(initializer.value)
             || std::holds_alternative<SemTry>(initializer.value))) {
         const auto storage = LoweringDeferredStorage {
-            .local = binding_locals.at(source.binding),
-            .value_type = context.lower_type(metadata.binding(source.binding).type)
+            .local = binding_locals.at(binding),
+            .value_type = context.lower_type(metadata.binding(binding).type)
         };
-        delayed_bindings.emplace(source.binding, storage);
-        declare_deferred(
-            storage,
-            true,
-            destination,
-            needs_cleanup(metadata.binding(source.binding).type)
-        );
+        delayed_bindings.emplace(binding, storage);
+        declare_deferred(storage, true, destination, needs_cleanup(metadata.binding(binding).type));
         auto statements = LoweringStmtBuilder();
         (co_await result_expression(
-            source.initializer,
+            source,
             LoweringInitializeResult {.storage = storage},
             statements
         ));
         destination.scope(std::move(statements));
         co_return {};
     }
-    (co_await ExpressionBuilder(*this, source.initializer)
-         .initialize_expression(source, destination));
+    (co_await ExpressionBuilder(*this, source).initialize_expression(binding, source, destination));
     co_return {};
 }
 

@@ -101,7 +101,7 @@ auto BodyRealizer::ExpressionBuilder::complete_call(
                 .local = name,
                 .type = owner.context.pointer_type(owner.context.intrinsic_type(
                     TargetSymbol::Auto,
-                    use == PreparedUse::ReadBorrow
+                    use == PreparedUse::ReadArgument
                         || use == PreparedUse::ConstPlace
                         || use == PreparedUse::AddressValue
                         || use == PreparedUse::OperandValue

@@ -114,19 +114,68 @@ fn selected_pattern_owner(value: PatternOwners, accepted: bool) -> i32 => match 
     .Pair(_, _, _, _) => -1,
 };
 
-test "Lifetimes: pattern alternatives commit only the selected binding before one guard" {
+test "Lifetimes: pattern alternatives borrow the selected payload without copying" {
     let value = PatternOwners::Pair(PatternOwner { 1 }, PatternOwner { 2 }, 2, 2);
     reset();
     check(selected_pattern_owner(value, true) == 2);
-    check(matches("102 9 -2 "));
+    check(matches("9 "));
     reset();
     check(selected_pattern_owner(value, false) == -1);
-    check(matches("102 9 -2 "));
+    check(matches("9 "));
+}
+
+private fn copied_pattern_owner(value: PatternOwners) -> PatternOwner => match value {
+    .Pair(_, chosen, _, _) => chosen,
+};
+
+test "Lifetimes: returning a Read payload constructs one native value copy" {
+    let value = PatternOwners::Pair(PatternOwner { 1 }, PatternOwner { 2 }, 0, 0);
+    reset();
+    if true {
+        let copied = copied_pattern_owner(value);
+        check(copied.id as i32 == 2);
+        check(matches("102 "));
+    }
+    check(matches("102 -2 "));
 }
 
 enum NestedPatternOwners {
     Wrapped(PatternOwners),
     Empty,
+}
+
+enum SelectedPatternOwner {
+    First(PatternOwner),
+    Second(PatternOwner),
+    Empty,
+}
+
+fn observe_selected_owner(value: SelectedPatternOwner) {
+    match value {
+        .First(owner) => mark(owner.id as i32),
+        .Second(owner) => mark(owner.id as i32),
+        .Empty => mark(9),
+    }
+}
+
+test "Lifetimes: ordinary enum branches borrow payloads without copying" {
+    let first: SelectedPatternOwner = .First(PatternOwner { 1 });
+    let second: SelectedPatternOwner = .Second(PatternOwner { 2 });
+    reset();
+    observe_selected_owner(first);
+    observe_selected_owner(second);
+    observe_selected_owner(.Empty);
+    check(matches("1 2 9 "));
+}
+
+test "Lifetimes: pattern bound temporaries belong to the match full expression" {
+    reset();
+    match 0 {
+        (Owner { 1 }.probe() as i32).. => mark(7),
+        _ => mark(9),
+    }
+    mark(8);
+    check(matches("1 11 9 -1 8 "));
 }
 
 private fn selected_nested_pattern_owner(
@@ -138,24 +187,24 @@ private fn selected_nested_pattern_owner(
     .Empty => -1,
 };
 
-test "Lifetimes: nested payload bindings clean before a rejected guard's successor" {
+test "Lifetimes: rejected guards release payload borrows without copying" {
     let accepted = NestedPatternOwners::Wrapped(
         PatternOwners::Pair(PatternOwner { 1 }, PatternOwner { 2 }, 0, 1)
     );
     reset();
     check(selected_nested_pattern_owner(accepted, true) == 1);
-    check(matches("101 9 -1 "));
+    check(matches("9 "));
 
     reset();
     check(selected_nested_pattern_owner(accepted, false) == 2);
-    check(matches("101 9 -1 102 -2 "));
+    check(matches("9 "));
 
     let rejected = NestedPatternOwners::Wrapped(
         PatternOwners::Pair(PatternOwner { 3 }, PatternOwner { 4 }, 2, 2)
     );
     reset();
     check(selected_nested_pattern_owner(rejected, true) == 4);
-    check(matches("104 -4 "));
+    check(matches(""));
 
     let empty: NestedPatternOwners = .Empty;
     reset();
@@ -193,4 +242,30 @@ test "Lifetimes: expanded runtime transfers preserve iteration and outer cleanup
     reset();
     check(expanded_lifetime_return(3, 1) == 1);
     check(matches("9 1 -1 2 -2 -9 "));
+}
+
+test "Lifetimes: structured assignments close selected storage before the next statement" {
+    reset();
+    var selected: i32 = 0;
+    selected = if false {
+        0
+    } else {
+        let owner = Owner { 1 };
+        mark(9);
+        7
+    };
+    mark(8);
+    check(selected == 7);
+    check(matches("1 9 -1 8 "));
+    reset();
+    selected = try {
+        let owner = Owner { 2 };
+        mark(9);
+        7
+    } catch {
+        Failure(_) => 0,
+    };
+    mark(8);
+    check(selected == 7);
+    check(matches("2 9 -2 8 "));
 }

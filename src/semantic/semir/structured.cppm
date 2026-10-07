@@ -1,8 +1,12 @@
 module carven:semantic.semir.structured;
 
+import :semantic.semir.async;
 import :semantic.semir.body;
 import :semantic.semir.format;
+import :semantic.semir.generic;
 import :semantic.semir.ids;
+import :semantic.semir.operation;
+import :semantic.semir.sequence;
 import :semantic.semir.simd;
 import :semantic.semir.type;
 import :support.invariant;
@@ -15,6 +19,7 @@ public:
     explicit BodyType(ConstructionTypeRef value) noexcept;
     explicit BodyType(TypeID value) noexcept;
     explicit BodyType(TypeTermID value) noexcept;
+    explicit BodyType(GenericTypeID value) noexcept;
     auto construction() const noexcept -> const ConstructionTypeRef&;
     auto resolved() const noexcept -> TypeID;
 
@@ -24,13 +29,12 @@ private:
 
 class BodyFailures final {
 public:
-    explicit BodyFailures(FailureTermID value) noexcept;
-    explicit BodyFailures(FailureSetID value) noexcept;
-    auto term() const noexcept -> FailureTermID;
+    explicit BodyFailures(ConstructionFailureRef value) noexcept;
+    auto reference() const noexcept -> const ConstructionFailureRef&;
     auto resolved() const noexcept -> FailureSetID;
 
 private:
-    std::variant<FailureTermID, FailureSetID> value;
+    ConstructionFailureRef value;
 };
 
 // A single operation tree completes its type and failure facts in place.
@@ -78,12 +82,23 @@ struct SemArray final {
     std::vector<SemanticExpression> elements;
 };
 
+struct SemTuple final {
+    std::vector<SemanticExpression> elements;
+};
+
+struct SemTupleElement final {
+    auto consumes_source() const noexcept -> bool;
+    OwnedSemanticExpression source;
+    std::uint32_t index;
+};
+
 struct SemArrayAdopt final {
     OwnedSemanticExpression source;
 };
 
 struct SemStruct final {
-    StructID structure;
+    ConstructionStructRef structure;
+    auto resolved_structure() const noexcept -> StructID;
     std::vector<SemFieldInitializer> fields;
 };
 
@@ -132,9 +147,11 @@ struct SemField final {
 };
 
 struct SemIndex final {
+    auto consumes_source() const noexcept -> bool;
     OwnedSemanticExpression source;
     OwnedSemanticExpression index;
     IndexBoundsPolicy bounds;
+    bool source_owns_elements;
 };
 
 enum class PrintKind { Print, Println, Eprint, Eprintln };
@@ -165,7 +182,12 @@ struct SliceIntrinsicOperation final {
     std::optional<std::uint64_t> result_extent;
 };
 
-using IntrinsicOperation = std::variant<SliceIntrinsicOperation, TextIntrinsic, SIMDIntrinsic>;
+using IntrinsicOperation = std::variant<
+    SliceIntrinsicOperation,
+    TextIntrinsic,
+    SIMDIntrinsic,
+    SequenceIntrinsicOperation,
+    FloatIntrinsic>;
 
 struct SemIntrinsic final {
     IntrinsicOperation operation;
@@ -193,6 +215,60 @@ struct SemCall final {
     std::optional<CallableID> target;
     std::vector<SemCallArgument> arguments;
     BodyFailures callee_failures;
+};
+
+// A definition-site checked direct generic call. Instances resolve this reference
+// into an ordinary SemCall before executable publication.
+struct SemGenericCall final {
+    GenericDeclarationID definition;
+    GenericEnvironment environment;
+    std::vector<SemCallArgument> arguments;
+    BodyFailures callee_failures;
+};
+
+// Cold construction evaluates operands now and defers the known callee body.
+struct SemColdCall final {
+    OwnedSemanticExpression callee;
+    CallableID target;
+    std::vector<SemCallArgument> arguments;
+};
+
+// Construction takes existing deferred owners without activating any input.
+struct SemColdCompose final {
+    AsyncCompositionPolicy policy;
+    // Successful value shape is available before deferred failure terms are solved.
+    BodyType success;
+    std::vector<SemCallArgument> inputs;
+};
+
+// Retains a cold operation and a duration; consuming it establishes the deadline.
+struct SemColdTimeout final {
+    OwnedSemanticExpression operation;
+    OwnedSemanticExpression duration_ticks;
+    TypeID timeout_failure;
+    TypeID range_failure;
+};
+
+enum class AsyncAwaitOperandKind { ColdOperation, LexicalChild };
+
+struct SemAwait final {
+    OwnedSemanticExpression operand;
+    AsyncAwaitOperandKind operand_kind;
+};
+
+// Direct awaited child observers borrow lexical identities, never cold owners.
+struct SemWaitReady final {
+    std::vector<LocalBindingID> children;
+};
+
+// Idempotent consuming drain, including a conditionally observed child.
+struct SemCloseChild final {
+    LocalBindingID child;
+};
+
+struct SemAsyncIntrinsic final {
+    AsyncIntrinsic kind;
+    std::optional<LocalBindingID> child;
 };
 
 struct SemClosure final {
@@ -259,6 +335,8 @@ using SemanticExpressionValue = TreeValue<
     SemCpp,
     SemCppCall,
     SemArray,
+    SemTuple,
+    SemTupleElement,
     SemRange,
     SemArrayAdopt,
     SemStruct,
@@ -276,6 +354,14 @@ using SemanticExpressionValue = TreeValue<
     SemReport,
     SemFormat,
     SemCall,
+    SemGenericCall,
+    SemColdCall,
+    SemColdCompose,
+    SemColdTimeout,
+    SemAwait,
+    SemWaitReady,
+    SemCloseChild,
+    SemAsyncIntrinsic,
     SemClosure,
     SemBorrowCallable,
     SemTake,
@@ -387,9 +473,27 @@ struct SemExpressionStatement final {
     SemanticExpression expression;
 };
 
+struct SemAsyncLet final {
+    LocalBindingID child;
+    SemanticExpression initializer;
+};
+
 struct SemInitialize final {
     LocalBindingID binding;
     SemanticExpression initializer;
+};
+
+struct SemDecompositionBinding final {
+    LocalBindingID binding;
+    std::vector<std::uint32_t> path;
+};
+
+// Project one owned product into independent logical bindings. An absent
+// initializer uses an already initialized anonymous Take parameter.
+struct SemDecompose final {
+    LocalBindingID owner;
+    std::optional<SemanticExpression> initializer;
+    std::vector<SemDecompositionBinding> bindings;
 };
 
 // A local static root in the checked source body. The binding has the
@@ -432,7 +536,7 @@ struct SemRangeLoop final {
     bool is_static;
 };
 
-// A const for in a realized body: one specialized region per index. Continue
+// A const for in a realized body: one specialized region per element. Continue
 // leaves the current iteration and break leaves the expansion.
 struct SemExpandedLoop final {
     std::vector<SemanticRegion> iterations;
@@ -448,6 +552,8 @@ using SemanticStatementValue = TreeValue<
     SemThrow,
     SemExpressionStatement,
     SemInitialize,
+    SemDecompose,
+    SemAsyncLet,
     SemStaticBinding,
     SemConstBlock,
     SemAssign,
@@ -559,6 +665,7 @@ struct SemIRBodyData final {
     // Analysis-only source-body provenance. An instance keeps the copied local
     // identities; publication clears this link along with source bodies.
     std::optional<BodyID> specialized;
+    std::optional<GenericDeclarationID> generic_definition = std::nullopt;
 };
 
 class SemIRBody final {
@@ -582,6 +689,7 @@ public:
     // checked source. Published consumers use region().
     auto realized_region() const noexcept -> const SemanticRegion&;
     auto specialized() const noexcept -> std::optional<BodyID>;
+    auto generic_definition() const noexcept -> std::optional<GenericDeclarationID>;
 
 private:
     auto publish() noexcept -> void;
@@ -609,4 +717,5 @@ struct StructuredBodyDraft final {
     SemanticRegion region;
     std::optional<SemanticRegion> residual;
     std::optional<BodyID> specialized;
+    std::optional<GenericDeclarationID> generic_definition = std::nullopt;
 };

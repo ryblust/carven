@@ -155,15 +155,6 @@ const TestSuite suite([] static noexcept {
                  .source = R"(const fn large() -> String => f"{1:1048577}"; const text = large();)",
                  .code = DiagnosticCode::ConstLimit,
                  .primary_text = R"(f"{1:1048577}")"},
-                {.name = "active void hole",
-                 .source = R"(const fn nothing() {} const text = f"{nothing()}";)",
-                 .code = DiagnosticCode::TypeValueRequired,
-                 .primary_text = "nothing()"},
-                {.name = "inactive void hole",
-                 .source =
-                     R"(const fn nothing() {} const text = false && f"{nothing()}".is_empty();)",
-                 .code = DiagnosticCode::TypeValueRequired,
-                 .primary_text = "nothing()"},
             });
             check_compiler_errors(cases);
             const auto initializer =

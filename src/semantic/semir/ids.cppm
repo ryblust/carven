@@ -99,9 +99,15 @@ struct FailureSetIDTag final {};
 
 struct CallableSignatureIDTag final {};
 
+struct GenericDeclarationIDTag final {};
+
+struct GenericTypeIDTag final {};
+
 struct TypeTermIDTag final {};
 
 struct FailureTermIDTag final {};
+
+struct GenericFailureIDTag final {};
 
 using ModuleID = ProgramID<ModuleIDTag>;
 using FunctionID = ProgramID<FunctionIDTag>;
@@ -116,8 +122,11 @@ using TypeID = ProgramID<TypeIDTag>;
 using ConstantID = ProgramID<ConstantIDTag>;
 using FailureSetID = ProgramID<FailureSetIDTag>;
 using CallableSignatureID = ProgramID<CallableSignatureIDTag>;
+using GenericDeclarationID = ProgramID<GenericDeclarationIDTag>;
+using GenericTypeID = ProgramID<GenericTypeIDTag>;
 using TypeTermID = ProgramID<TypeTermIDTag>;
 using FailureTermID = ProgramID<FailureTermIDTag>;
+using GenericFailureID = ProgramID<GenericFailureIDTag>;
 
 struct LifetimeRegionIDTag final {};
 

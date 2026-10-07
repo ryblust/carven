@@ -1,6 +1,7 @@
 module carven:semantic.evaluation.admission;
 
 import :semantic.semir.constant_access;
+import :semantic.semir.sequence;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import std;
@@ -44,10 +45,9 @@ constexpr auto unsupported_execution_operation(const Operation& operation) noexc
             case TextIntrinsic::Append:
             case TextIntrinsic::Push:
             case TextIntrinsic::Clear:
-            case TextIntrinsic::FromU32Unchecked: return std::nullopt;
-            case TextIntrinsic::Chars:
             case TextIntrinsic::FromUTF8Unchecked:
-                return "text operation is not supported in execution";
+            case TextIntrinsic::FromU32Unchecked:  return std::nullopt;
+            case TextIntrinsic::Chars: return "text operation is not supported in execution";
         }
     } else if constexpr (std::same_as<Operation, SemDefault>
                          || std::same_as<Operation, SemConstant>
@@ -55,6 +55,8 @@ constexpr auto unsupported_execution_operation(const Operation& operation) noexc
                          || std::same_as<Operation, SemBinding>
                          || std::same_as<Operation, SemCallable>
                          || std::same_as<Operation, SemRange>
+                         || std::same_as<Operation, SemTuple>
+                         || std::same_as<Operation, SemTupleElement>
                          || std::same_as<Operation, SemArray>
                          || std::same_as<Operation, SemStruct>
                          || std::same_as<Operation, SemEnumCase>
@@ -69,6 +71,13 @@ constexpr auto unsupported_execution_operation(const Operation& operation) noexc
                          || std::same_as<Operation, SemPrint>
                          || std::same_as<Operation, SemFormat>
                          || std::same_as<Operation, SemCall>
+                         || std::same_as<Operation, SemColdCall>
+                         || std::same_as<Operation, SemColdCompose>
+                         || std::same_as<Operation, SemColdTimeout>
+                         || std::same_as<Operation, SemAsyncIntrinsic>
+                         || std::same_as<Operation, SemAwait>
+                         || std::same_as<Operation, SemWaitReady>
+                         || std::same_as<Operation, SemCloseChild>
                          || std::same_as<Operation, SemBorrowCallable>
                          || std::same_as<Operation, SemTake>
                          || std::same_as<Operation, SemPropagate>
@@ -88,8 +97,5 @@ auto unsupported_execution_expression(const SemanticExpression& source) noexcept
 auto unsupported_execution_statement(const SemanticStatement& source) noexcept
     -> std::optional<std::string_view>;
 
-auto supported_execution_type(
-    const ExecutionValueAccess& values,
-    ConstructionTypeRef type,
-    bool allow_void = false
-) noexcept -> bool;
+auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTypeRef type) noexcept
+    -> bool;

@@ -14,12 +14,15 @@ public:
     auto operator=(ExecutionMemory&&) -> ExecutionMemory& = delete;
     ~ExecutionMemory() = default;
     auto create(ExecutionValue value) noexcept -> ExecutionPlace;
+    // Give a product slot its own logical lifetime without relocating storage.
+    auto adopt_projection(ExecutionPlace place) noexcept -> ExecutionPlace;
     auto text_bytes(const ExecutionText& text, TypeID element) noexcept
         -> std::optional<ExecutionPlace>;
     auto release(const ExecutionPlace& place) noexcept -> void;
     // Returned borrows end when the object is assigned, released, or memory is destroyed.
     auto resolve(const ExecutionPlace& place) noexcept -> ExecutionValue*;
     auto resolve(const ExecutionPlace& place) const noexcept -> const ExecutionValue*;
+    auto owning_value(const ExecutionPlace& place) const noexcept -> const ExecutionValue*;
     auto view(const ExecutionSlice& slice) const noexcept -> std::optional<ExecutionSequenceView>;
     auto project(ExecutionPlace place, std::size_t index) noexcept -> std::optional<ExecutionPlace>;
     auto assign(const ExecutionPlace& place, ExecutionValue value) noexcept -> bool;
@@ -33,7 +36,11 @@ private:
         mutable std::map<std::size_t, ExecutionValue> observed;
     };
 
-    std::deque<std::variant<std::optional<ExecutionValue>, TextBytes>> objects;
+    struct Projection final {
+        std::optional<ExecutionPlace> target;
+    };
+
+    std::deque<std::variant<std::optional<ExecutionValue>, TextBytes, Projection>> objects;
     std::map<std::weak_ptr<const ExecutionTextStorage>, std::size_t, std::owner_less<>>
         text_backings;
 };

@@ -43,6 +43,8 @@ const TestSuite suite([] static noexcept {
                         .result_reachable = true,
                         .failures = BodyFailures(draft.add_empty_failure_term()),
                         .exits_test = false,
+
+
                     };
                     region.statements.push_back(
                         SemanticStatement {
@@ -50,6 +52,8 @@ const TestSuite suite([] static noexcept {
                             .lifetime = lifetime,
                             .reachable = true,
                             .value = SemExpressionStatement {.expression = std::move(expression)},
+
+
                         }
                     );
                     auto branches = std::vector<SemConditionalBranch>();

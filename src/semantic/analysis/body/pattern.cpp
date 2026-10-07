@@ -21,6 +21,7 @@ import :semantic.analysis.operations;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.semir.completion;
+import :semantic.semir.body;
 import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
@@ -36,7 +37,8 @@ auto BodyElaborator::build_pattern(
     bool allow_new_bindings,
     std::flat_set<std::string, std::less<>>& used_bindings,
     std::vector<SemPatternBounds>& pattern_bounds,
-    CompletionQuery& completion
+    CompletionQuery& completion,
+    std::optional<AccessMode> subject_access
 ) noexcept -> AnalysisTask<BuiltPattern> {
     // Predicate attempts have their own normal path. Their caller chooses the
     // execution entry through reference_path_reachable.
@@ -246,6 +248,15 @@ auto BodyElaborator::build_pattern(
             },
             [&](const ASTBindingPattern& binding) noexcept -> AnalysisTask<BuiltPattern> {
                 const auto name = spelling(binding.name_span);
+                const auto access =
+                    binding.mode == ASTAccessMode::Write ? AccessMode::Write : AccessMode::Read;
+                if (access == AccessMode::Write && subject_access != AccessMode::Write) {
+                    co_return std::unexpected(fail(
+                        binding.name_span,
+                        DiagnosticCode::AccessImmutable,
+                        "Write pattern binding requires a writable subject"
+                    ));
+                }
                 if (!used_bindings.insert(name).second) {
                     co_return std::unexpected(fail(
                         binding.name_span,
@@ -262,11 +273,11 @@ auto BodyElaborator::build_pattern(
                             "or-pattern alternatives must bind the same names"
                         ));
                     }
-                    const auto storage = body_builder.add_owner_binding(
+                    const auto storage = body_builder.add_access_binding(
                         draft().intern_spelling(name),
                         type,
                         frames.back().lifetime,
-                        false,
+                        access,
                         origin(binding.name_span)
                     );
                     auto published = bind_local(
@@ -275,10 +286,11 @@ auto BodyElaborator::build_pattern(
                             .storage = storage,
                             .type = type,
                             .used = false,
-                            .takeable = true,
+                            .takeable = false,
                             .static_source = false,
                             .role = BodyLocalRole::Local,
                             .unused_candidate = std::nullopt,
+                            .projection = {},
                         },
                         DiagnosticCode::MatchBindingMismatch
                     );
@@ -296,6 +308,15 @@ auto BodyElaborator::build_pattern(
                         binding.name_span,
                         DiagnosticCode::MatchBindingMismatch,
                         "or-pattern binding has a different type in another alternative"
+                    ));
+                }
+                const auto stored = body_builder.binding_copy(found->second.storage.binding);
+                const auto* alias = std::get_if<AccessBindingStorage>(&stored.storage);
+                if (alias == nullptr || alias->access != access) {
+                    co_return std::unexpected(fail(
+                        binding.name_span,
+                        DiagnosticCode::MatchBindingMismatch,
+                        "or-pattern binding has a different access mode in another alternative"
                     ));
                 }
                 co_return BuiltPattern {
@@ -360,7 +381,7 @@ auto BodyElaborator::build_pattern(
                     }
                 }
                 const auto case_name = spelling(case_pattern.name_span);
-                const auto selected_id = catalog().enum_case_named(owner, case_name);
+                const auto selected_id = draft().enum_case_named(owner, case_name);
                 auto selected = std::optional<ConstructionEnumCaseDeclaration>();
                 if (selected_id.has_value()) {
                     selected = draft().construction_enum_case_declaration_copy(*selected_id);
@@ -373,7 +394,7 @@ auto BodyElaborator::build_pattern(
                             "enum '{}' has no case named '{}'{}",
                             draft().spelling(draft().enum_declaration_copy(owner).name),
                             case_name,
-                            spelling_suggestion(case_name, catalog().enum_case_names(owner))
+                            spelling_suggestion(case_name, draft().enum_case_names(owner))
                         )
                     ));
                 }
@@ -400,7 +421,8 @@ auto BodyElaborator::build_pattern(
                         allow_new_bindings,
                         used_bindings,
                         pattern_bounds,
-                        completion
+                        completion,
+                        subject_access
                     ));
                     if (!child.has_value()) {
                         co_return std::unexpected(child.error());
@@ -423,6 +445,44 @@ auto BodyElaborator::build_pattern(
                     .bindings = std::move(result_bindings),
                 };
             },
+            [&](const ASTTuplePattern& tuple) noexcept -> AnalysisTask<BuiltPattern> {
+                const auto types = tuple_elements(draft(), type);
+                if (!types || types->size() != tuple.elements.size()) {
+                    co_return std::unexpected(fail(
+                        source.span,
+                        DiagnosticCode::TypeMatchPattern,
+                        "tuple pattern must match its subject's element count"
+                    ));
+                }
+                auto elements = std::vector<PatternID>();
+                auto result_bindings = std::vector<LocalBindingID>();
+                auto accepted = true;
+                for (auto index = 0uz; index < tuple.elements.size(); ++index) {
+                    [[maybe_unused]] const auto path =
+                        BodyReferencePathGuard(reference_path_reachable, accepted);
+                    auto child = (co_await build_pattern(
+                        tuple.elements[index],
+                        (*types)[index],
+                        bindings,
+                        allow_new_bindings,
+                        used_bindings,
+                        pattern_bounds,
+                        completion,
+                        subject_access
+                    ));
+                    if (!child) {
+                        co_return std::unexpected(child.error());
+                    }
+                    elements.push_back(child->pattern);
+                    accepted = accepted && completion.pattern(child->pattern).accepted;
+                    result_bindings.append_range(child->bindings);
+                }
+                std::ranges::sort(result_bindings, {}, &LocalBindingID::index);
+                co_return BuiltPattern {
+                    .pattern = add(TuplePattern {.elements = std::move(elements)}),
+                    .bindings = std::move(result_bindings),
+                };
+            },
             [&](const ASTOrPattern& or_pattern) noexcept -> AnalysisTask<BuiltPattern> {
                 if (or_pattern.alternatives.empty()) {
                     invariant_violation("or-pattern has no alternatives");
@@ -442,7 +502,8 @@ auto BodyElaborator::build_pattern(
                         index == 0uz && allow_new_bindings,
                         alternative_names,
                         pattern_bounds,
-                        completion
+                        completion,
+                        subject_access
                     ));
                     if (!alternative.has_value()) {
                         co_return std::unexpected(alternative.error());
@@ -513,7 +574,7 @@ auto BodyElaborator::build_match(
     if (!subject.has_value()) {
         co_return std::unexpected(subject.error());
     }
-    auto pending = BodyPendingFailureTerms();
+    auto pending = BodyPendingFailures();
     auto result_type = expected;
     if (value_form) {
         collect_pending(pending, *subject);
@@ -524,14 +585,11 @@ auto BodyElaborator::build_match(
     }
     const auto selection_reachable = reachable;
     const auto subject_type = subject->type();
-    if (is_void_type(draft(), subject_type)) {
-        co_return std::unexpected(fail(
-            ast.expression(source.subject).span,
-            DiagnosticCode::TypeValueRequired,
-            "void expression cannot be used as a value"
-        ));
-    }
     const auto subject_is_place = std::holds_alternative<PlaceExpression>(*subject->storage);
+    const auto* subject_place = std::get_if<PlaceExpression>(&*subject->storage);
+    const auto subject_access = subject_place != nullptr && subject_place->root.has_value()
+        ? std::optional(subject_place->access)
+        : std::nullopt;
     auto subject_tree = take_built(*subject, ast.expression(source.subject).span);
     if (source.arms.empty()) {
         co_return std::unexpected(
@@ -570,7 +628,8 @@ auto BodyElaborator::build_match(
             true,
             used,
             pattern_bounds,
-            completion
+            completion,
+            subject_access
         ));
         failure_contexts.pop_back();
         if (!pattern.has_value()) {

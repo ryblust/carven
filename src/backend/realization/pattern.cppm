@@ -15,6 +15,7 @@ struct PatternSubject final {
     TargetLocalID root;
     bool dereference_root;
     std::optional<std::uint32_t> payload_index;
+    std::vector<std::uint32_t> tuple_path;
     auto operator==(const PatternSubject&) const noexcept -> bool = default;
 };
 

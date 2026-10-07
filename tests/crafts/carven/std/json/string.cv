@@ -1,0 +1,84 @@
+import std::json.string using decode_string;
+import std::json.error using { JSONError, JSONErrorKind };
+
+test "JSON: decoded strings own independent Unicode text" {
+    try {
+        var plain: String = r#""你好😀""#;
+        let decoded_plain = decode_string(plain)?;
+        plain.clear();
+        check(decoded_plain == "你好😀");
+        var escaped: String = r#""a\u0000\u00e9\uD83D\uDE00\"\\\/\b\f\n\r\t""#;
+        let decoded_escaped = decode_string(escaped)?;
+        escaped.clear();
+        check(decoded_escaped == "a\u{0}é😀\"\\/\u{8}\u{c}\n\r\t");
+        check(decode_string("\"\"")? == "");
+    } catch {
+        JSONError(_) => fail("valid strings must decode"),
+    }
+}
+
+private struct InvalidString {
+    text: str,
+    kind: JSONErrorKind,
+    offset: usize,
+}
+
+test "JSON: decoding checks its quoted-string boundary and preserves scanner errors" {
+    let inputs = [
+        InvalidString {
+            text: "",
+            kind:.UnexpectedEnd,
+            offset: 0
+        },
+        {
+            text: "true",
+            kind:.UnexpectedByte,
+            offset: 0
+        },
+        {
+            text: " \"a\"",
+            kind:.UnexpectedByte,
+            offset: 0
+        },
+        {
+            text: "\"a\" ",
+            kind:.TrailingInput,
+            offset: 3
+        },
+        {
+            text: r#""\x""#,
+            kind:.InvalidEscape,
+            offset: 2
+        },
+    ];
+    for input in inputs {
+        var rejected = false;
+        try {
+            let _ = decode_string(input.text)?;
+        } catch {
+            JSONError(error) => {
+                rejected = error.kind == input.kind && error.offset == input.offset;
+            },
+        }
+        check(rejected, f"JSON string: {input.text}");
+    }
+}
+
+test "JSON: escape and UTF boundaries survive every SIMD lane position" {
+    for length in 0usize..64 {
+        var input: String = "\"";
+        var expected = String {};
+        for _ in 0..length {
+            input.push('a');
+            expected.push('a');
+        }
+        input.append(r#"\"\uD83D\uDE00你好"#);
+        input.push('"');
+        expected.append("\"😀你好");
+        try {
+            check(decode_string(input)? == expected);
+        } catch {
+            JSONError(_) => fail("block boundaries must preserve decoding"),
+        }
+    }
+}

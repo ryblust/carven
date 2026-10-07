@@ -1,0 +1,95 @@
+import "bindings/read_policy.hpp" using read_policy::{
+    Trivial,
+    Borrowed,
+    MoveOnly,
+    FreshSource,
+    FreshTarget,
+    make_fresh,
+    trivial_reference,
+    borrowed_reference,
+};
+
+fn trivial_read(value: Trivial, marker: i32) -> i32 {
+    let _ = marker;
+    return value.value;
+}
+
+private enum Payload {
+    Value(MoveOnly),
+    Empty
+}
+
+test "Pattern Read supports move-only native payloads without a separate marker" {
+    var payload: Payload = .Value(MoveOnly { 7 });
+    let first = match payload {
+        .Value(value) => value.value,
+        .Empty => 0,
+    };
+    check(first == 7);
+    let empty: Payload = .Empty;
+    let empty_value = match empty {
+        .Value(value) => value.value,
+        .Empty => 0,
+    };
+    check(empty_value == 0);
+    match payload {
+        .Value(&value) => { value.value = 9; },
+        .Empty => {},
+    }
+    let second = match &&payload {
+        .Value(value) if value.value == 0 => 0,
+        .Value(value) => value.value,
+        .Empty => 0,
+    };
+    check(second == 9);
+}
+
+fn borrowed_read(value: Borrowed, marker: i32) -> i32 {
+    let _ = marker;
+    return value.value;
+}
+
+fn change_trivial(&value: Trivial) -> i32 {
+    value.value = 9;
+    return 0;
+}
+
+fn change_borrowed(&value: Borrowed) -> i32 {
+    value.value = 9;
+    return 0;
+}
+
+test "Native Read snapshots before later arguments in direct and view calls" {
+    var value = Trivial { 7 };
+    check(trivial_read(value, change_trivial(&value)) == 7);
+    value.value = 7;
+    let view: fn(Trivial, i32) -> i32 = trivial_read;
+    check(view(value, change_trivial(&value)) == 7);
+    value.value = 7;
+    check(trivial_read(trivial_reference(&value), change_trivial(&value)) == 7);
+    value.value = 7;
+    check(view(trivial_reference(&value), change_trivial(&value)) == 7);
+}
+
+test "Nontrivial Native Read retains source storage in direct and view calls" {
+    var value = Borrowed { 7 };
+    let direct_result = borrowed_read(value, change_borrowed(&value));
+    check(direct_result == 9);
+    value.value = 7;
+    check(borrowed_read(value, change_borrowed(&value)) == 9);
+    value.value = 7;
+    let view: fn(Borrowed, i32) -> i32 = borrowed_read;
+    check(view(value, change_borrowed(&value)) == 9);
+    value.value = 7;
+    check(borrowed_read(borrowed_reference(&value), change_borrowed(&value)) == 9);
+    check(borrowed_read(Borrowed { 11 }, 0) == 11);
+}
+
+fn fresh_read(value: FreshTarget) -> i32 => value.value;
+fn source_fresh() -> FreshSource => FreshSource { 19 };
+
+test "Read conversions preserve fresh native rvalue capability" {
+    check(fresh_read(FreshSource { 13 }) == 13);
+    check(fresh_read(make_fresh()) == 17);
+    check(fresh_read(source_fresh()) == 19);
+}

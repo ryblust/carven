@@ -55,7 +55,8 @@ auto BodyElaborator::empty_region(Span span) noexcept -> SemanticRegion {
         .result = std::nullopt,
         .result_reachable = false,
         .failures = BodyFailures(draft().add_empty_failure_term()),
-        .exits_test = false
+        .exits_test = false,
+
     };
 }
 
@@ -80,7 +81,7 @@ auto BodyElaborator::make_built(
     ConstructionTypeRef type,
     SemanticExpressionValue&& value,
     Span span,
-    BodyPendingFailureTerms pending,
+    BodyPendingFailures pending,
     std::optional<ConstantID> constant
 ) noexcept -> BuiltExpression {
     auto expression = active_builder().make_expression(
@@ -90,8 +91,10 @@ auto BodyElaborator::make_built(
         std::move(value),
         constant
     );
-    for (const auto term : pending) {
-        draft().add_failure_contribution(expression.failures.term(), term);
+    if (!pending.empty()) {
+        auto inputs = pending;
+        inputs.push_back(expression.failures.reference());
+        expression.failures = BodyFailures(draft().add_union_failure_term(std::move(inputs)));
     }
     return BuiltExpression {
         .storage = UniqueIndirect {BodyExpressionStorage {std::move(expression)}},
@@ -114,10 +117,10 @@ auto BodyElaborator::append_statement(
     auto& destination = regions.back();
     const auto statement_failures = draft().add_empty_failure_term();
     const auto add = [&](const SemanticExpression& child) noexcept {
-        draft().add_failure_contribution(statement_failures, child.failures.term());
+        draft().add_failure_contribution(statement_failures, child.failures.reference());
     };
     const auto add_region = [&](const SemanticRegion& child) noexcept {
-        draft().add_failure_contribution(statement_failures, child.failures.term());
+        draft().add_failure_contribution(statement_failures, child.failures.reference());
         if (child.result.has_value()) {
             add(*child.result);
         }
@@ -147,6 +150,12 @@ auto BodyElaborator::append_statement(
             },
             [&](const SemExpressionStatement& node) noexcept { add(node.expression); },
             [&](const SemInitialize& node) noexcept { add(node.initializer); },
+            [&](const SemDecompose& node) noexcept {
+                if (node.initializer) {
+                    add(*node.initializer);
+                }
+            },
+            [&](const SemAsyncLet& node) noexcept { add(node.initializer); },
             [](const SemStaticBinding&) static noexcept {},
             [](const SemConstBlock&) static noexcept {},
             [&](const SemAssign& node) noexcept {
@@ -172,14 +181,14 @@ auto BodyElaborator::append_statement(
         }
     );
     destination.failures = BodyFailures(
-        draft().add_union_failure_term({destination.failures.term(), statement_failures})
+        draft().add_union_failure_term({destination.failures.reference(), statement_failures})
     );
-    destination.statements.push_back(
-        {.origin = statement_origin,
-         .lifetime = active_full_expression.value_or(frames.back().lifetime),
-         .reachable = reference_path_reachable,
-         .value = std::move(value)}
-    );
+    destination.statements.push_back({
+        .origin = statement_origin,
+        .lifetime = active_full_expression.value_or(frames.back().lifetime),
+        .reachable = reference_path_reachable,
+        .value = std::move(value),
+    });
 }
 
 auto BodyElaborator::append_expression(BuiltExpression& expression, Span span) noexcept -> void {

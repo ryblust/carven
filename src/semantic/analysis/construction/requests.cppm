@@ -2,6 +2,8 @@ module carven:semantic.analysis.construction.requests;
 
 import :semantic.analysis.catalog;
 import :semantic.analysis.diagnostics;
+import :semantic.semir.generic;
+import :semantic.semir.structured;
 import :semantic.semir.ids;
 import :semantic.semir.type;
 import :source.provenance.ids;
@@ -15,12 +17,23 @@ class ConstructionRequests final {
 public:
     auto ensure_declaration(CatalogSymbolID id, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
+    auto ensure_generic_function(
+        GenericDeclarationID id,
+        ProgramModuleID requester,
+        Span span
+    ) noexcept -> AnalysisTask<void>;
     auto ensure_function_signature(FunctionID id, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
     auto ensure_function_body(FunctionID id, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<BodyID>;
     auto ensure_type(ConstructionTypeRef type, ProgramModuleID requester, Span span) noexcept
         -> AnalysisTask<void>;
+    auto close_generic_environment(
+        std::span<const GenericArgument> arguments,
+        ProgramModuleID requester,
+        Span span
+    ) noexcept -> AnalysisTask<CanonicalGenericEnvironment>;
+    auto close_generic_calls(SemanticRegion& region) noexcept -> AnalysisTask<bool>;
     auto stage() noexcept -> StaticStage&;
 
 private:

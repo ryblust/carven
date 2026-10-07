@@ -240,7 +240,7 @@ Completion::Completion(const CompletionPatterns& patterns, bool retain_patterns)
 
 namespace {
 
-constexpr auto outward = ExitSet(Exit::Return) | Exit::Failure | Exit::Stop;
+constexpr auto outward = ExitSet(Exit::Return) | Exit::Failure | Exit::Stop | Exit::Cancelled;
 
 } // namespace
 
@@ -279,6 +279,8 @@ auto Completion::pattern(PatternID root, std::span<const SemPatternBounds> bound
                         children = operation.alternatives;
                     } else if constexpr (std::same_as<Operation, EnumCasePattern>) {
                         children = operation.payload;
+                    } else if constexpr (std::same_as<Operation, TuplePattern>) {
+                        children = operation.elements;
                     }
                 });
             });
@@ -310,6 +312,16 @@ auto Completion::pattern(PatternID root, std::span<const SemPatternBounds> bound
                 } else if constexpr (std::same_as<Operation, EnumCasePattern>) {
                     result.rejected = !patterns.single_case(operation.enum_case);
                     for (const auto child : operation.payload) {
+                        if (!result.accepted) {
+                            break;
+                        }
+                        const auto next = completed.at(child);
+                        result.accepted = next.accepted;
+                        result.rejected |= next.rejected;
+                        result.outward = result.outward | next.outward;
+                    }
+                } else if constexpr (std::same_as<Operation, TuplePattern>) {
+                    for (const auto child : operation.elements) {
                         if (!result.accepted) {
                             break;
                         }
@@ -523,6 +535,19 @@ auto Completion::leave(const SemanticExpression& expression) noexcept -> void {
             return conditional_exits(operation, facts);
         } else if constexpr (std::same_as<Operation, SemCall>) {
             return call_exits(operation, facts);
+        } else if constexpr (std::same_as<Operation, SemGenericCall>) {
+            auto result = Flow(Exit::Normal);
+            for (const auto& argument : operation.arguments) {
+                result = result.then(facts.get(argument.expression));
+            }
+            return result.then(ExitSet(Exit::Normal) | Exit::Failure);
+        } else if constexpr (std::same_as<Operation, SemAwait>) {
+            return facts.get(*operation.operand)
+                .then(ExitSet(Exit::Normal) | Exit::Failure | Exit::Cancelled);
+        } else if constexpr (std::same_as<Operation, SemWaitReady>
+                             || std::same_as<Operation, SemCloseChild>) {
+            // Terminal observation and draining never accept ambient cancellation.
+            return Flow(Exit::Normal);
         } else if constexpr (std::same_as<Operation, SemTry>) {
             return try_exits(operation, facts);
         } else if constexpr (std::same_as<Operation, SemMatch>) {
@@ -578,8 +603,11 @@ auto Completion::leave(const SemanticStatement& statement) noexcept -> void {
             return facts.get(operation.value).then(Flow::failure(operation.failure_type));
         } else if constexpr (std::same_as<Operation, SemExpressionStatement>) {
             return facts.get(operation.expression);
-        } else if constexpr (std::same_as<Operation, SemInitialize>) {
+        } else if constexpr (std::same_as<Operation, SemInitialize>
+                             || std::same_as<Operation, SemAsyncLet>) {
             return facts.get(operation.initializer);
+        } else if constexpr (std::same_as<Operation, SemDecompose>) {
+            return operation.initializer ? facts.get(*operation.initializer) : Flow(Exit::Normal);
         } else if constexpr (std::same_as<Operation, SemStaticBinding>
                              || std::same_as<Operation, SemConstBlock>) {
             // The static stage leaves nothing behind in executable code.

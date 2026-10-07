@@ -41,7 +41,7 @@ auto interpret_enum_case(
     TypeID type,
     std::string_view name,
     Span name_span,
-    std::span<const ASTCallArgument> arguments,
+    std::span<const ASTExprID> arguments,
     Span span,
     bool called
 ) noexcept -> ExpressionTask<typename Site::Value> {
@@ -72,12 +72,12 @@ auto interpret_enum_case(
     auto payload = std::vector<typename Site::Value>();
     auto constants = std::vector<ConstantID>();
     for (const auto& [argument, type] : std::views::zip(arguments, selected->payload_types)) {
-        auto value = (co_await site.read(argument.expression, type));
+        auto value = (co_await site.read(argument, type));
         if (!value.has_value()) {
             co_return std::unexpected(value.error());
         }
         auto converted =
-            site.convert_argument(*value, type, site.syntax().expression(argument.expression).span);
+            site.convert_argument(*value, type, site.syntax().expression(argument).span);
         if (!converted.has_value()) {
             co_return std::unexpected(converted.error());
         }

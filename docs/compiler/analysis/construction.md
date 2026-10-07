@@ -17,6 +17,11 @@ their construction admission rule, while called function bodies use their
 ordinary semantic construction. `analysis.expr.interpret` dispatches syntax
 to `scalar`, `member`, and `call` handlers, which recurse through the expression site.
 
+`analysis.expr.async` constructs async queries, cold leaves, composition, and
+timeout for body and static-root expressions. Sites analyze and consume operands
+under their access and execution-context rules. Shared construction determines
+arity, result types, and operation failure contracts.
+
 ### Expression construction results
 
 `analysis.expr.result` defines `ExpressionResult<T>`, which carries `T` on success.
@@ -42,10 +47,11 @@ source operand order for execution.
 
 `semir.initialization` defines default availability and native-construction
 classification over type shapes. Construction queries and published-program
-queries share the traversal, with unresolved array and slice type terms supported
-during construction. Published queries read `SemIRProgram` directly. Empty
-arrays have no element-construction requirement. Enum and callable types have no
-implicit selected value.
+queries share the traversal. Construction queries also inspect known generic
+shapes and unresolved array and slice type terms. Published queries read
+`SemIRProgram` directly. Empty arrays and owning sequences have no
+element-construction requirement; a rigid type parameter alone supplies no
+default. Enum and callable types have no implicit selected value.
 
 Nonempty structure construction maps source expressions to declared fields in
 source order and requires every field exactly once. Published `SemStruct` values
@@ -68,6 +74,101 @@ and applies the same representation-access and initializer checks as explicit
 construction. No unresolved contextual construction reaches semantic publication
 or the backend. Parsing distinguishes named construction from branch blocks by
 tokens, independently of expected types.
+
+## Nominal type parameters
+
+The source catalog reserves a generic definition identity rather than a concrete
+struct or enum identity. Each parameter has a type or failure-set kind; an
+application keeps those argument domains distinct. Declaration construction binds
+parameter references, nominal applications, and array, Tuple, slice, Sequence,
+pointer, and Operation constructors into checked type expressions. These descriptors contain semantic identities rather
+than AST nodes or unresolved names. Definition checking validates application
+arity, parameter-flow growth, and symbolic by-value storage cycles, including
+unused definitions.
+
+Instance formation keys an ordinary concrete nominal declaration by its
+definition and ordered canonical arguments. It reserves that declaration before
+completing its fields or cases; recursive references reuse the reservation.
+Field and payload resolution reads the checked type expressions under the
+canonical argument environment and directly interns each resulting concrete
+type. The owned key keeps that environment stable during nested instance
+construction. Symbolic definition checks retain substitution over rigid type
+expressions. Failed instances retain their diagnosed failure. Source-head
+completion and the concrete instance closure are separate gates.
+
+Concrete declarations pass ordinary type, storage, ownership, and publication
+checks. Enum equality is derived from those same concrete shapes. Source
+audience is checked against the generic definition and its actual arguments;
+instance declarations themselves are implementation details. Publication retains
+only source audience contracts and concrete instance metadata for content identity and
+C++ planning. Parameterized function bodies are not part of this path.
+
+## Parameterized function bodies
+
+A function definition owns rigid type and failure descriptors and one checked
+`StructuredBodyDraft`. Ordinary body construction checks universal operations,
+field access, calls, completion, and static admission against that environment.
+The definition uses its own body identity domain. It does not borrow an identity
+from the table of published concrete bodies.
+
+Concrete instance formation reserves a callable before replacing types and
+already bound generic calls in the checked body. It reuses that reservation for
+recursive calls. Array, Tuple, slice, and Operation construction retains unresolved
+failure terms until the shared failure solver completes them. Instantiation does
+not revisit source syntax or re-run definition diagnostics.
+
+A typed generic environment carries `ConstructionTypeRef`,
+or `ConstructionFailureRef` according to its parameter kind. It may contain pending
+inference terms. `GenericTypeID` and `GenericFailureID` retain distinct rigid
+identities; neither supplies a placeholder canonical type or set. Deferred calls
+keep the checked target and environment until their dependencies complete. The
+shared type and failure solvers then normalize the environment. Only canonical
+types and failure sets form the instance key.
+
+The same argument resolver handles nominal applications, ordinary calls, and
+static calls. Tuple types have fixed element lists; substituting an element type
+preserves the product shape.
+
+Ordinary batch closure and static demand use the same normalization boundary.
+Static demand first completes the callable bodies reachable through its selected
+type and failure dependencies. A preview cannot infer an empty set from an
+unfinished body. Instance substitution shares one failure-instantiation memo
+across signatures, type descriptors, expressions, regions, calls, and handlers.
+Recursive equations retain their graph edges until solving; direct members of
+an unfinished equation are not a complete failure contract.
+
+Definition failure safety checks require universal emptiness, subset, or equality
+proofs over the rigid effect environment. They are checked at the definition and
+are not copied as fresh instance constraints. Propagation whose set depends on a
+parameter retains its checked operation when a concrete set becomes empty.
+Concrete ordinary operands keep their nonempty propagation requirement.
+
+Type formation requirements retain their checked type and source origin in the
+definition. A shared checker distinguishes supported, rejected, dependent, and
+delegated native requirements. The checked call graph substitutes and propagates
+dependent requirements before instance validation. Parameter-flow checking rejects
+constructor growth before recursive requirement traversal; unfinished callee bodies
+remain pending until definition closure.
+
+`analysis.model` supplies the shared body and type reader for concrete bodies and
+checked definitions. Async admission uses that reader to reject known invalid
+input and completion shapes in definitions and leaves type-dependent admission
+for concrete instance checking. The same traversal checks both forms,
+including fields of rigid nominal applications. Ownership and nullability also
+use this reader. Unknown type inputs retain formal relationship bundles; call transfer
+substitutes the actual relationships through the same solver and query graph.
+Type-content propagation uses the shared fixed-point algorithm for both rigid
+and concrete shapes. A snapshot keeps definition bodies and normalized type and
+failure descriptors alive for that analysis. An operation type descriptor owns
+its success type and failure expression; admission reads that same descriptor.
+The post-solve checks share one model until source-body publication begins.
+Publication and the backend consume only completed concrete bodies.
+
+Async calls in a checked definition reuse their elaborated argument types and
+operation completion contract for admission. Known invalid substitutions are
+rejected even when the containing definition has no concrete instance.
+Test-stop effects propagate through concrete and generic synchronous calls in
+one call graph; the same reachability scanner and worklist compute both facts.
 
 ## Callable result completion
 
@@ -107,7 +208,7 @@ inputs retain their declared types. Explicit captures require runtime local stor
 C++ construction queries resolve explicit static references and propagate pure
 operand facts; ordinary runtime calls retain their execution obligations.
 
-`analysis/stage` copies a completed generic region and rewrites it in a static
+`analysis/stage` copies a completed checked region and rewrites it in a static
 binding environment. Static values become constant expressions; selected
 `const if` regions replace their control; `const for` becomes `SemExpandedLoop`
 with an ordered region per index. Local roots and `const` blocks execute once
@@ -139,7 +240,7 @@ the checked region and body inputs.
 Publication verifies residual regions through ordinary semantic contracts and
 checks instance identities and argument types. Executable bodies contain no static
 control or static initializers. After validation, publication computes
-callable/type surfaces and closure construction order, then discards checked
+callable/type surfaces and closure reference order, then discards checked
 source regions and static-only bodies. Declarations and tests clear references
 to removed bodies. Surviving body IDs and local table identities remain stable.
 Specialization does not change parameter, result, or layout types.
@@ -161,7 +262,12 @@ The completed operation uses `SemCall` with an ordinary receiver argument.
 Declaration analysis checks the receiver contract; recursive default
 initialization rejects classes in both construction and published-program queries.
 Private representation remains available to type contents, ownership, and target
-realization. Static execution rejects class values and operations.
+realization. Class `const fn` operations use the same execution capability and
+lexical representation rules as ordinary function bodies. Direct class-operation
+calls in module constant initializers, local `const`
+initializers outside a static block or test, and type-forming constant expressions
+require a `const fn` wrapper. These entry sites do not grant class representation
+access.
 
 ## Completion requests
 
@@ -202,11 +308,21 @@ solves all enum roots together. Structure and class types are unsupported leaves
 ## Solving and validation
 
 Canonical types, callable signatures, constants, and failure sets are the
-published query surfaces. Construction types and failure terms are solved
-before publication. Failure inference computes the least fixed point of the
-program's failure constraints. Numeric enum underlying types are concrete during
-declaration resolution; structure fields and enum payload types require
-construction-type resolution.
+published query surfaces. Concrete declarations and executable bodies close
+before publication; checked generic definitions retain their normalized
+parameterized descriptors in the separate analysis snapshot. Failure inference
+computes the least fixed point of the program's failure equations. Numeric enum
+underlying types are concrete during declaration resolution; structure fields
+and enum payload types require construction-type resolution.
+
+Callable construction queries read owning callables, unresolved views, and
+canonical views through one shape. A `ConstructionFailureRef` identifies a
+mutable inference term, an immutable canonical failure set, or an immutable
+symbolic failure expression. Declared contracts retain their set or symbolic
+expression directly; reading a callable contract does not create an inference
+term. Cold operation types use the same references, and the shared callable
+shape retains synchronous or async execution. Adoption checks failure subsets,
+while Write access requires equal contracts.
 
 `analysis.expr` interprets each expression once, with concrete constant and body
 sites. The interpreter owns contextual typing, operation selection, enum and
@@ -214,12 +330,40 @@ text rules, and diagnostics. Sites supply scope lookup and handle execution-only
 syntax. Constant-expression admission is checked separately from the computed
 value; declarations retain lazy completion and cycle diagnostics.
 
-Structural type terms reference only previously appended terms. Canonicalization
-consumes them in storage order into one final type mapping after failure solving.
+Structural terms in the construction type store reference previously appended
+child terms. Construction type normalization visits them in storage order after
+a failure solution is available. A closed type becomes a canonical `TypeID`; a
+constructor with a dependent child or effect becomes a parameterized descriptor.
+`TypeResolution::normalize` reads this partial mapping, which can retain
+`GenericTypeID` rather than require every analysis type to be concrete.
+`TypeResolution::resolve` is the stricter query for closed declarations and
+executable bodies. Generic snapshots normalize every child reference and retain
+the shared failure solution that owns symbolic inference equations.
+
 Closed declared subtypes can be interned earlier through the same construction
-operation; that path accepts no inferred failure terms.
-Callable recursion and recursive failure constraints retain their own identities
-and solving rules.
+operations. Function-view signatures can carry concrete failure sets or inferred
+terms pending closure. Source callable views with rigid type or effect contracts
+are rejected at admission. They do not enter canonicalization as unresolved
+views. Callable recursion and recursive failure constraints retain their own
+identities and solving rules.
+
+Type-formation closure tracks the object status of every type-argument slot for
+the `NonVoidObject` requirement. Closure retains the full environment for
+substitution, while failure equations do not create distinct formation states.
+
+Symbolic failure application uses normalized environment keys and reuses stable
+recursive applications. Once source dependencies complete, exact producer rows
+reduce through the same failure algebra before application lookup. Ordinary
+union cycles reduce to their reachable contributions; application, mask, and
+guard boundaries retain recursive equations that cannot be reduced this way.
+Multiple actual producers of one inferred failure
+parameter contribute shared equality requirements; term identity alone neither
+proves nor disproves equal sets. Union, fixed nominal masks, and parameter
+permutations have finite normalized flows. Nested guarded contributions are
+normalized before application lookup. Recursive growth in guard depth or newly introduced opaque
+inference-term atoms is rejected with `CV-TYPE-GENERIC-EXPANSION` when finite
+substitution cannot be established. This gate is distinct from execution or
+construction resource budgets.
 
 ## External C++ delegation
 

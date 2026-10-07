@@ -1,0 +1,59 @@
+struct BadDigit {
+    value: u8
+}
+
+const async fn decode_digit(value: u8) -> u32 throw BadDigit {
+    if value < 48u8 || value > 57u8 { throw BadDigit { value: value }; }
+    return (value - 48u8) as u32;
+}
+
+const async fn decode_code(&&bytes: [u8; 4]) -> u32 throw BadDigit {
+    var value = 0u32;
+    for byte in bytes {
+        value = value * 10u32 + await decode_digit(byte)?;
+    }
+    return value;
+}
+
+const async fn recover(&&bytes: [u8; 4]) -> u32 {
+    try {
+        return await decode_code(&&bytes)?;
+    } catch {
+        BadDigit(error) => { return 10000u32 + error.value as u32; },
+    }
+}
+
+const async fn offset(value: u32, const amount: u32) -> u32 => value + amount;
+
+const expected = await recover(&&[49u8, 50u8, 51u8, 52u8]);
+const invalid = await recover(&&[49u8, 65u8, 51u8, 52u8]);
+const adjusted = await offset(expected, 7u32);
+
+const {
+    let operation = offset(5u32, 2u32);
+    let result = await operation;
+}
+
+const test "Constant async: static tests share stored cold ownership" {
+    let operation = recover(&&[48u8, 48u8, 52u8, 50u8]);
+    check(await operation == 42u32);
+}
+
+fn local_constant() -> u32 {
+    const value = await offset(5u32, 2u32);
+    return value;
+}
+
+async fn main() {
+    var bytes = [49u8, 50u8, 51u8, 52u8];
+    let operation = recover(&&bytes);
+    let value = await operation;
+    println(value == expected);
+    println(await offset(value, 7u32) == adjusted);
+    var invalid_bytes = [49u8, 65u8, 51u8, 52u8];
+    println(await recover(&&invalid_bytes) == invalid);
+    println(expected);
+    println(invalid);
+    println(adjusted);
+    println(local_constant() == 7u32);
+}

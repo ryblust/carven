@@ -12,6 +12,7 @@ import :frontend.lex.token;
 import :frontend.parse.builder;
 import :frontend.parse.parser;
 import :source.text;
+import :support.unique_indirect;
 import std;
 
 auto Parser::parse_ordinary_block() noexcept -> std::optional<ASTBlockID> {
@@ -98,7 +99,9 @@ auto Parser::parse_branch_block() noexcept -> std::optional<ASTBranchBlockID> {
 }
 
 auto Parser::starts_unambiguous_statement() const noexcept -> bool {
-    return check(TokenKind::Let)
+    return check(TokenKind::Async)
+        || check(TokenKind::Cancel)
+        || check(TokenKind::Let)
         || check(TokenKind::Var)
         || check(TokenKind::Const)
         || check(TokenKind::Return)
@@ -116,6 +119,21 @@ auto Parser::starts_unambiguous_statement() const noexcept -> bool {
 }
 
 auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
+    if (const auto keyword = match(TokenKind::Cancel)) {
+        const auto name = expect(TokenKind::Identifier, "expected a child name after cancel");
+        const auto semicolon = expect(TokenKind::Semicolon, "expected ';' after cancellation");
+        if (failed) {
+            return std::nullopt;
+        }
+        const auto child = builder.append_expression({
+            .span = name.span,
+            .value = ASTNameExpr {.name_span = name.span},
+        });
+        return builder.append_statement({
+            .span = join(keyword->span, semicolon.span),
+            .value = ASTCancelStmt {.keyword_span = keyword->span, .child = child},
+        });
+    }
     if (check(TokenKind::Const)
         && (check_next(TokenKind::LeftBrace) || check_next(TokenKind::StringLiteral))) {
         const auto keyword = consume();
@@ -146,8 +164,11 @@ auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
             .value = std::move(*form),
         });
     }
-    if (check(TokenKind::Let) || check(TokenKind::Var) || check(TokenKind::Const)) {
-        const auto declaration = parse_variable_declaration_head();
+    if (check(TokenKind::Async)
+        || check(TokenKind::Let)
+        || check(TokenKind::Var)
+        || check(TokenKind::Const)) {
+        auto declaration = parse_variable_declaration_head();
         if (!declaration) {
             return std::nullopt;
         }
@@ -155,7 +176,7 @@ auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
             expect(TokenKind::Semicolon, "expected ';' after variable declaration");
         return builder.append_statement({
             .span = join(declaration->span, semicolon.span),
-            .value = *declaration,
+            .value = std::move(*declaration),
         });
     }
     if (check(TokenKind::Return)
@@ -228,12 +249,71 @@ auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
     });
 }
 
+auto Parser::parse_binding_target() noexcept -> std::optional<ASTBindingTarget> {
+    const auto nesting = enter_syntax_nesting();
+    if (!nesting) {
+        return std::nullopt;
+    }
+    if (const auto left = match(TokenKind::LeftParen)) {
+        auto elements = std::vector<ASTBindingTarget>();
+        if (!check(TokenKind::RightParen)) {
+            auto element = parse_binding_target();
+            if (!element) {
+                return std::nullopt;
+            }
+            if (!match(TokenKind::Comma)) {
+                expect(TokenKind::RightParen, "expected ')' after grouped binding target");
+                return failed ? std::nullopt : std::move(element);
+            }
+            elements.push_back(std::move(*element));
+            while (!failed && !check(TokenKind::RightParen)) {
+                auto next = parse_binding_target();
+                if (!next) {
+                    return std::nullopt;
+                }
+                elements.push_back(std::move(*next));
+                if (!match(TokenKind::Comma)) {
+                    break;
+                }
+            }
+        }
+        const auto right = expect(TokenKind::RightParen, "expected ')' after tuple binding target");
+        if (failed) {
+            return std::nullopt;
+        }
+        return ASTBindingTarget {UniqueIndirect(
+            ASTTupleBindingTarget {
+                .span = join(left->span, right.span),
+                .elements = std::move(elements)
+            }
+        )};
+    }
+    const auto name = expect(TokenKind::Identifier, "expected binding name or tuple target");
+    if (failed) {
+        return std::nullopt;
+    }
+    return slice(source, name.span) == "_"
+        ? ASTBindingTarget {ASTDiscardBindingTarget {.underscore_span = name.span}}
+        : ASTBindingTarget {ASTNamedBindingTarget {.name_span = name.span}};
+}
+
 auto Parser::parse_variable_declaration_head() noexcept -> std::optional<ASTVariableDecl> {
+    auto async_span = std::optional<Span>();
+    if (const auto keyword = match(TokenKind::Async)) {
+        async_span = keyword->span;
+        if (!check(TokenKind::Let)) {
+            fail_here("expected let after async");
+            return std::nullopt;
+        }
+    }
     const auto keyword = consume();
     const auto kind = keyword.kind == TokenKind::Var ? ASTBindingKind::Var
         : keyword.kind == TokenKind::Const           ? ASTBindingKind::Const
                                                      : ASTBindingKind::Let;
-    const auto name = expect(TokenKind::Identifier, "expected binding name");
+    auto target = parse_binding_target();
+    if (!target) {
+        return std::nullopt;
+    }
     auto type = std::optional<ASTTypeID> {};
     if (match(TokenKind::Colon)) {
         type = parse_type();
@@ -244,15 +324,11 @@ auto Parser::parse_variable_declaration_head() noexcept -> std::optional<ASTVari
         return std::nullopt;
     }
     return ASTVariableDecl {
-        .span = join(keyword.span, builder.expression(*initializer).span),
+        .span = join(async_span.value_or(keyword.span), builder.expression(*initializer).span),
         .kind = kind,
         .keyword_span = keyword.span,
-        .target = slice(source, name.span) == "_" ? ASTBindingTarget {ASTDiscardBindingTarget {
-                                                        .underscore_span = name.span,
-                                                    }}
-                                                  : ASTBindingTarget {ASTNamedBindingTarget {
-                                                        .name_span = name.span,
-                                                    }},
+        .async_span = async_span,
+        .target = std::move(*target),
         .type = type,
         .initializer = *initializer,
     };
@@ -375,7 +451,7 @@ auto Parser::parse_for_statement() noexcept -> std::optional<ASTStmtID> {
     const auto keyword = expect(TokenKind::For, "expected 'for'");
     const auto const_span =
         const_keyword.transform([](const Token& token) static { return token.span; });
-    const auto header = parse_for_header(const_span);
+    auto header = parse_for_header(const_span);
     if (!header) {
         return std::nullopt;
     }
@@ -388,7 +464,7 @@ auto Parser::parse_for_statement() noexcept -> std::optional<ASTStmtID> {
         .value = ASTForStmt {
             .const_span = const_span,
             .keyword_span = keyword.span,
-            .header = *header,
+            .header = std::move(*header),
             .body = *body,
         },
     });
@@ -399,12 +475,12 @@ auto Parser::parse_for_header(std::optional<Span> const_span) noexcept
     const auto start = current().span;
     const auto checkpoint = begin_speculation();
     const auto access = match(TokenKind::Ampersand);
-    const auto name = expect(TokenKind::Identifier, "expected range binding");
+    auto target = parse_binding_target();
     auto type = std::optional<ASTTypeID> {};
     if (!failed && match(TokenKind::Colon)) {
         type = parse_type();
     }
-    const auto range_form = !failed && check(TokenKind::In);
+    const auto range_form = target.has_value() && !failed && check(TokenKind::In);
     finish_speculation(checkpoint, range_form, !const_span);
     if (range_form) {
         consume();
@@ -419,13 +495,7 @@ auto Parser::parse_for_header(std::optional<Span> const_span) noexcept
             .value = ASTRangeForHeader {
                 .write_marker =
                     access.transform([](const Token& token) static { return token.span; }),
-                .target = slice(source, name.span) == "_"
-                    ? ASTBindingTarget {ASTDiscardBindingTarget {
-                          .underscore_span = name.span,
-                      }}
-                    : ASTBindingTarget {ASTNamedBindingTarget {
-                          .name_span = name.span,
-                      }},
+                .target = std::move(*target),
                 .type = type,
                 .iterable = iterable,
             },
@@ -441,12 +511,15 @@ auto Parser::parse_for_header(std::optional<Span> const_span) noexcept
         .value = std::monostate {},
     };
     if (!check(TokenKind::Semicolon)) {
-        if (check(TokenKind::Let) || check(TokenKind::Var) || check(TokenKind::Const)) {
-            const auto declaration = parse_variable_declaration_head();
+        if (check(TokenKind::Async)
+            || check(TokenKind::Let)
+            || check(TokenKind::Var)
+            || check(TokenKind::Const)) {
+            auto declaration = parse_variable_declaration_head();
             if (!declaration) {
                 return std::nullopt;
             }
-            initializer = {.span = declaration->span, .value = *declaration};
+            initializer = {.span = declaration->span, .value = std::move(*declaration)};
         } else {
             const auto expression = parse_expression();
             if (!expression) {
@@ -505,7 +578,7 @@ auto Parser::parse_for_header(std::optional<Span> const_span) noexcept
     return ASTForHeader {
         .span = join(start, end),
         .value = ASTCStyleForHeader {
-            .initializer = initializer,
+            .initializer = std::move(initializer),
             .condition = *condition,
             .steps = std::move(steps),
         },

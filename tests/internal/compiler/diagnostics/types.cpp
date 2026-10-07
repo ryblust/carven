@@ -20,6 +20,60 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {
+                    .name = "tuple position exceeds arity",
+                    .source = "fn invalid() { let pair = (1, true); let value = pair.2; }",
+                    .code = DiagnosticCode::ConstIndexBounds,
+                    .primary_text = "2",
+                },
+                {
+                    .name = "unit has no position",
+                    .source = "fn invalid() { let value = ().0; }",
+                    .code = DiagnosticCode::ConstIndexBounds,
+                    .primary_text = "0",
+                },
+                {
+                    .name = "positional field requires tuple",
+                    .source = "fn invalid() { let value = 1; let selected = value.0; }",
+                    .code = DiagnosticCode::TypeMemberUnresolved,
+                    .primary_text = "0",
+                },
+                {
+                    .name = "tuple parameter target requires same shape",
+                    .source = "fn invalid((left, right): (i32,)) {}",
+                    .code = DiagnosticCode::TypeMismatch,
+                    .primary_text = "(left, right)",
+                },
+                {
+                    .name = "tuple parameter names are unique",
+                    .source = "fn invalid((value, value): (i32, i32)) {}",
+                    .code = DiagnosticCode::NameDuplicateParameter,
+                    .primary_text = "value",
+                },
+                {
+                    .name = "tuple loop target requires same shape",
+                    .source = "fn invalid() { for (left, right) in [(1,)] {} }",
+                    .code = DiagnosticCode::TypeMismatch,
+                    .primary_text = "(left, right)",
+                },
+                {
+                    .name = "tuple binding arity",
+                    .source = "fn invalid() { let (left, right) = (1,); }",
+                    .code = DiagnosticCode::TypeMismatch,
+                    .primary_text = "(left, right)",
+                },
+                {
+                    .name = "tuple nesting remains significant",
+                    .source = "fn invalid() { let (left, (right,)) = (1, 2); }",
+                    .code = DiagnosticCode::TypeMismatch,
+                    .primary_text = "(right,)",
+                },
+                {
+                    .name = "tuple names are unique in a declaration",
+                    .source = "fn invalid() { let (value, value) = (1, 2); }",
+                    .code = DiagnosticCode::NameDuplicateLocal,
+                    .primary_text = "value",
+                },
+                {
                     .name = "unresolved type",
                     .source = "fn invalid(value: MissingType) {}",
                     .code = DiagnosticCode::TypeUnresolved,
@@ -36,36 +90,6 @@ const TestSuite suite([] static noexcept {
                     .source = "enum Invalid: fn() -> i32 { Value }",
                     .code = DiagnosticCode::TypeEnumUnderlying,
                     .primary_text = "fn() -> i32",
-                },
-                {
-                    .name = "void function parameter",
-                    .source = "fn invalid(value: void) {}",
-                    .code = DiagnosticCode::TypeValueRequired,
-                    .primary_text = "void",
-                },
-                {
-                    .name = "void structure field",
-                    .source = "struct Invalid { value: void }",
-                    .code = DiagnosticCode::TypeValueRequired,
-                    .primary_text = "void",
-                },
-                {
-                    .name = "void array element",
-                    .source = "fn invalid() { let values: [void; 1] = []; }",
-                    .code = DiagnosticCode::TypeValueRequired,
-                    .primary_text = "void",
-                },
-                {
-                    .name = "void binding",
-                    .source = "fn nothing() {} fn invalid() { let value = nothing(); }",
-                    .code = DiagnosticCode::TypeValueRequired,
-                    .primary_text = "nothing()",
-                },
-                {
-                    .name = "void match subject",
-                    .source = "fn nothing() {} fn invalid() { match nothing() { _ => {} } }",
-                    .code = DiagnosticCode::TypeValueRequired,
-                    .primary_text = "nothing()",
                 },
                 {
                     .name = "condition type",

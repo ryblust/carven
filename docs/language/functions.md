@@ -2,10 +2,27 @@
 
 [Language](README.md)
 
-This page defines ordinary calls, closures, and callable views. Calls executed
+This page defines ordinary calls, closures, and callable views.
+[Async functions](async.md) construct cold operations and deliver results on await. Calls executed
 in the static stage additionally follow [Static execution of functions](constants.md#static-execution-of-functions).
 
 ## Functions and calls
+
+Read parameters snapshot pure Carven values and borrow Carven owned storage.
+For native-containing values, C++ chooses a const value when copy construction
+and destruction are both trivial, and a const reference otherwise. A parameter
+whose storage must survive the call uses a const reference throughout the call
+chain. Write and Take retain their mutation and ownership contracts. See
+[Read values and aliases](ownership.md#read-values-and-aliases).
+
+Function and lambda parameters may use recursive tuple targets, for example
+`fn sum((left, right): (i32, i32)) -> i32 => left + right;`. A tuple target
+still occupies one parameter position. Access markers apply to the complete
+parameter: Read and Write names project its existing storage, while Take names
+are independent immutable owners. Names are unique across the entire parameter
+list. A static parameter may likewise use a tuple target; lambda targets may
+infer their complete type from an expected callable view. See
+[Tuples](aggregates.md#tuples) for shape and projection rules.
 
 Every ordinary function parameter requires an explicit type. A function with a
 body may omit its result type. Block and expression bodies infer it from return
@@ -48,6 +65,65 @@ unfinished result is rejected with `CV-TYPE-RESULT-INFERENCE-CYCLE`; add an
 explicit `-> T` to break the signature dependency. Result completion uses
 declaration signatures and body inference; operator constraints, constant
 branches, and caller context do not resolve a signature cycle.
+
+## Parameterized functions
+
+A function can declare type and failure-set parameters after its name.
+Its body is checked once against those parameters, including when the function
+is unused. A plain name declares a type parameter; `throw E` declares a
+failure-set parameter. The two kinds are distinct.
+
+```carven
+fn relay<T>(&&value: T) -> T => &&value;
+
+let number = 42;
+let result = relay(&&number);
+```
+
+An unknown type supports Read and Write access and whole-value Take. It provides
+no implicit copying, default construction, comparison, or formatting capability.
+Known arrays, slices, Tuple shapes, and nominal fields retain their ordinary
+operations. Array extents and nominal failure payload types must be independent
+of type parameters. A failure-set parameter represents a set of those payload
+types, including the empty set; see
+[Failure-set parameters](failures.md#failure-set-parameters).
+Parameterized closures, callable-view signatures that depend on rigid type or
+failure parameters, and C++ boundary functions are not supported.
+
+Operations can retain type formation requirements. Dereferencing `ptr<T>`, for
+example, requires a non-void target. The requirement follows generic forwarding
+calls; supplying `void` is rejected even inside an unused generic caller. Native
+pointer targets retain the ordinary delegated C++ type contract.
+
+An explicit application such as `relay<i64>(&&value)` supplies every argument
+in its declared kind and provides the substituted parameter types as argument
+context. A failure-set argument uses `throw`, for example
+`consume<i32, throw Error + IO>(&&pending)` or
+`consume<i32, throw ()>(&&pending)`. For scalar parameters, omitting the explicit
+clause requests bounded inference from the public signature, actual argument
+types, and immediate expected result.
+It does not inspect the body or previous applications. A whole parameter such as
+`Operation<T, throw E>` can infer both its success type and its failure set;
+inference does not recover a unique `E` from an ambiguous union such as
+`E + Error`. Missing or conflicting evidence requires explicit arguments.
+Each actual argument is evaluated once.
+
+An actual type or failure set may depend on an inferred callable contract.
+The application waits for those declaration dependencies to complete before
+selecting a concrete instance. It does not assume that a currently unfinished
+failure set is empty. This also applies to generic calls in static roots.
+
+`const fn` definitions use the same universal rules and additionally require
+their calls to support static execution. Generic static calls and the limit on
+parameter-dependent local constants follow
+[Static execution of functions](constants.md#static-execution-of-functions).
+Recursion requires a completed result signature. Concrete applications share
+instances keyed by the definition and ordered canonical type or failure-set
+arguments.
+
+Ownership summaries conservatively join relationships from actual call inputs.
+Programs that require those relationships to remain separate across applications
+may be rejected even when each individual application would be safe.
 
 ## Static parameters
 
@@ -101,6 +177,13 @@ Functions with static parameters require direct calls and cannot be imported fro
 or exported to C++. Lambda parameters and callable-view types do not accept
 `const` parameters.
 
+Async source functions use the same static-parameter instance selection. The
+residual body keeps its async execution identity and only runtime parameters are
+captured by the cold operation. `const async fn` additionally permits cooperative
+static execution through await and lexical children; see
+[static async execution](async.md#static-parameters-and-execution). A synchronous
+`const fn` can return a cold operation without executing it.
+
 ### Static control
 
 Stage selection is explicit. In a runtime body, ordinary `if`, `&&`, `||`, and `for` retain runtime
@@ -139,8 +222,9 @@ specialization, without executing their declarations. A `const { ... }` block
 in the body executes with its local constants; see the
 [`const` block rules](constants.md#const-blocks).
 
-`const for` expands a Read integer range whose bounds are static. Its index is a
-static binding in each iteration, so it can supply static arguments and dependent
+`const for` expands a Read integer range, array, or slice whose source is static.
+The source evaluates once during expansion. Each iteration's binding is a static
+value with the source element type, so it can supply static arguments and local
 constants:
 
 ```carven
@@ -157,9 +241,14 @@ In a runtime body, `const alias = index` preserves the static stage;
 `let alias = index` does not.
 Each iteration has its own scope while outer variables remain shared. `break`,
 `continue`, `return`, and failure propagation keep their ordinary meaning.
-Reversed and empty ranges have no iterations. Expansion has cumulative iteration,
-instance, and nesting limits; exceeding one is a compiler diagnostic, without an
-implicit runtime substitute.
+Reversed integer ranges and empty sources have no iterations. Array and slice
+elements must freeze without changing their declared type. Expansion has
+cumulative iteration, instance, nesting, and construction limits. Exceeding a
+limit is a compiler diagnostic.
+
+A `const for` may also appear at module scope. It expands statements in the
+module's runtime entry body; ordinary calls in those statements run at runtime.
+A `const { ... }` block instead executes its entire body during compilation.
 
 Unselected `const if` arms, iterations after a static `break`, and statements after
 a static exit are checked in the source body and omitted from specialization.

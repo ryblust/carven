@@ -3,6 +3,7 @@ module carven:test.internal.semantic.analysis.constant_functions;
 import :diagnostics.code;
 import :frontend.program.parse;
 import :semantic.analyze;
+import :semantic.evaluation.output;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -20,6 +21,20 @@ import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
+
+auto analyze_async_program(std::string text, ExecutionOutput output = {}) noexcept -> SemIRProgram {
+    auto sources = SourceManager();
+    const auto source = sources.append_virtual("constant.cv", std::move(text));
+    require(source.has_value());
+    const auto inputs = std::array {
+        SourceModuleInput {.source_id = *source, .module_path = semantic_test_module_path()},
+    };
+    auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
+    require(parsed.has_value());
+    auto analyzed = analyze(std::move(*parsed), output);
+    require(analyzed.has_value());
+    return std::move(analyzed->value);
+}
 
 auto module_constant(const SemIRProgram& program, std::string_view name) noexcept
     -> const ConstantFact& {
@@ -50,7 +65,7 @@ auto require_integer(const ConstantFact& fact, std::int64_t expected) noexcept -
     if (!expect(integer != nullptr)) {
         return;
     }
-    expect(integer->as_signed() == expected);
+    expect_equal(integer->as_signed(), expected);
 }
 
 auto require_text(
@@ -71,6 +86,127 @@ auto require_text(
 }
 
 const TestSuite suite([] static noexcept {
+    "Constant async: borrowed output targets survive scheduling and nested extent execution"_test =
+        [] static noexcept {
+            auto output = std::string();
+            auto observations = 0uz;
+            auto write_output = [state = std::make_unique<std::size_t>(0), &output, &observations](
+                                    ExecutionOutputStream stream,
+                                    std::string_view bytes
+                                ) mutable noexcept {
+                expect(stream == ExecutionOutputStream::Standard);
+                output.append(bytes);
+                observations = ++*state;
+            };
+            const auto program = analyze_async_program(
+                R"(
+
+            const async fn extent() -> i32 {
+                await yield_once();
+                return 3;
+            }
+            const fn sized() -> i32 {
+                let values: [[i32; await extent()]; 2] = [[1, 2, 3], [4, 5, 6]];
+                return values[1][2];
+            }
+            const async fn child() {
+                println("child-before");
+                await yield_once();
+                println("child-after");
+            }
+            const async fn scenario() -> i32 {
+                async let task = child();
+                println("root-before");
+                await yield_once();
+                println("root-after");
+                await task;
+                return sized();
+            }
+            const result = await scenario();
+        )",
+                write_output
+            );
+            require_integer(module_constant(program, "result"), 6);
+            expect_equal(
+                output,
+                std::string("root-before\nchild-before\nroot-after\nchild-after\n")
+            );
+            expect(observations > 0uz);
+        };
+
+    "Constant async: a stored intrinsic factory delays its scheduling action"_test =
+        [] static noexcept {
+            const auto program = analyze_async_program(R"(
+
+            private const fn deferred_turn() => yield_once();
+            const async fn marker(&trace: i32) { trace = trace * 10 + 7; }
+            const async fn scenario() -> i32 {
+                var trace = 1;
+                async let child = marker(&trace);
+                let turn = deferred_turn();
+                trace = trace * 10 + 2;
+                await turn;
+                trace = trace * 10 + 3;
+                await child;
+                return trace;
+            }
+            const result = await scenario();
+        )");
+            require_integer(module_constant(program, "result"), 1273);
+        };
+
+    "Constant async: cold construction, snapshots and stored consumption share execution storage"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+        const async fn leaf(snapshot: i32, &trace: i32) -> i32 {
+            trace = trace * 10 + 8;
+            return snapshot;
+        }
+        private const fn factory(snapshot: i32, &trace: i32) => leaf(snapshot, &trace);
+        const fn argument(&trace: i32, digit: i32) -> i32 {
+            trace = trace * 10 + digit;
+            return digit;
+        }
+        const async fn selected(value: i32, const offset: i32) -> i32 => value + offset;
+        const async fn scenario() -> i32 {
+            var trace = 0;
+            var backing = 3;
+            let unused = leaf(argument(&trace, 1), &trace);
+            let stored = factory(backing, &trace);
+            backing = 9;
+            trace = trace * 10 + 2;
+            let result = await stored;
+            let specialized = await selected(result, 4);
+            return trace * 100 + specialized * 10 + backing;
+        }
+        private const fn pure_factory(value: i32) => selected(value, 4);
+        const result = await scenario();
+        const factory_result = await pure_factory(5);
+    )");
+            require_integer(module_constant(program, "result"), 12879);
+            require_integer(module_constant(program, "factory_result"), 9);
+        };
+
+    "Constant async: failure is delivered at await through ordinary recovery"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+        struct Failure { code: i32 }
+        const async fn fail(&trace: i32) -> i32 throw Failure {
+            trace += 10;
+            throw Failure { code: trace };
+        }
+        const async fn scenario() -> i32 {
+            var trace = 1;
+            let operation = fail(&trace);
+            trace += 2;
+            try { return await operation?; }
+            catch { Failure(error) => { return trace * 100 + error.code; }, }
+        }
+        const result = await scenario();
+    )");
+            require_integer(module_constant(program, "result"), 1313);
+        };
+
     "Constant functions: execute for constants and array extents"_test = [] static noexcept {
         const auto program = analyze_test_program(R"(
         const answer = increment(41);
@@ -238,6 +374,35 @@ const TestSuite suite([] static noexcept {
                 expect(finding->attachment.primary.has_value());
                 expect_no_diagnostic(diagnostics, scenario.absent);
             });
+        };
+
+    "Async intrinsics: source declarations and wildcard imports preserve ordinary selection"_test =
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto inputs = std::vector<SourceModuleInput>();
+            const auto append = [&](std::string_view name, std::string text) noexcept {
+                const auto source =
+                    sources.append_virtual(std::format("{}.cv", name), std::move(text));
+                require(source.has_value());
+                const auto path = CanonicalModulePath::from_value(name);
+                require(path.has_value());
+                inputs.push_back({.source_id = *source, .module_path = *path});
+            };
+            append(
+                "application",
+                "import providers using *; const fn cancellation_requested() -> i32 => 11; "
+                "const requested = cancellation_requested(); const yielded = yield_once(); "
+                "async fn run() -> i32 => cancellation_requested() + yield_once();"
+            );
+            append("providers", "export const fn yield_once() -> i32 => 7;");
+            auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
+            require(syntax.has_value());
+            const auto analyzed = analyze(std::move(*syntax));
+            if (!expect(analyzed.has_value())) {
+                return;
+            }
+            require_integer(module_constant(analyzed->value, "requested"), 11);
+            require_integer(module_constant(analyzed->value, "yielded"), 7);
         };
 
     "Constant functions: forward body requests cross the compilation module graph"_test =
@@ -424,12 +589,24 @@ const TestSuite suite([] static noexcept {
             if value > 0 { return value + 1; }
             throw Failure { 9 };
         }
+        const fn generic<T>(&&value: T, ok: bool) -> T throw Failure {
+            if ok { return &&value; }
+            throw Failure { 11 };
+        }
+        private const fn generic_inferred<T>(&&value: T, ok: bool) -> T {
+            if ok { return &&value; }
+            throw Failure { 13 };
+        }
         const nested = outer(inner(true)?)?;
         const combined = (inner(true) + outer(2))?;
         const extent: [i32; inner(true)?] = [1, 2];
+        const generic_result = generic(&&7, true)?;
+        const generic_inferred_result = generic_inferred(&&9, true)?;
     )");
             require_integer(module_constant(program, "nested"), 3);
             require_integer(module_constant(program, "combined"), 5);
+            require_integer(module_constant(program, "generic_result"), 7);
+            require_integer(module_constant(program, "generic_inferred_result"), 9);
 
             struct Scenario final {
                 std::string_view source;
@@ -443,6 +620,16 @@ const TestSuite suite([] static noexcept {
                  DiagnosticCode::EffectUnmarked},
                 {R"(private const fn call() -> i32 => 1; const value = call()?;)",
                  DiagnosticCode::EffectPropagateRedundant},
+                {R"(struct Failure {} const fn call<T>(&&value: T) -> T throw Failure {
+            return &&value;
+        } const value = call(&&1);)",
+                 DiagnosticCode::EffectUnmarked},
+                {R"(const fn call<T>(&&value: T) -> T => &&value; const value = call(&&1)?;)",
+                 DiagnosticCode::EffectPropagateRedundant},
+                {R"(struct Failure {} const fn call<T>(value: T) -> T throw Failure {
+            throw Failure {};
+        } const value = call(1)?;)",
+                 DiagnosticCode::ConstEvaluation},
                 {R"(struct Failure {} const fn call() -> i32 throw Failure {
             throw Failure {};
         } const value = call()?;)",

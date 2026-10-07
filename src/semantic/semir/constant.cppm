@@ -115,6 +115,15 @@ struct SliceConstant final {
     auto operator==(const SliceConstant&) const noexcept -> bool = default;
 };
 
+struct TupleConstant final {
+    std::vector<ConstantID> elements;
+    auto operator==(const TupleConstant&) const noexcept -> bool = default;
+};
+
+struct VoidConstant final {
+    constexpr auto operator==(const VoidConstant&) const noexcept -> bool = default;
+};
+
 using ConstantValue = std::variant<
     SIMDConstant,
     IntegerConstant,
@@ -130,7 +139,9 @@ using ConstantValue = std::variant<
     PayloadEnumConstant,
     StructConstant,
     ArrayConstant,
-    SliceConstant>;
+    SliceConstant,
+    TupleConstant,
+    VoidConstant>;
 
 struct ConstantFact final {
     TypeID type;
@@ -178,7 +189,12 @@ auto constant_matches_type(
     };
     return fact.value.visit([&](const auto& value) noexcept -> bool {
         using Value = std::remove_cvref_t<decltype(value)>;
-        if constexpr (std::same_as<Value, RangeConstant>) {
+        if constexpr (std::same_as<Value, VoidConstant>) {
+            return builtin(BuiltinType::Void);
+        } else if constexpr (std::same_as<Value, TupleConstant>) {
+            const auto* tuple = std::get_if<TupleTypeValue>(&type);
+            return tuple && children_match(value.elements, tuple->elements);
+        } else if constexpr (std::same_as<Value, RangeConstant>) {
             const auto* range = std::get_if<RangeTypeValue>(&type);
             if (!range) {
                 return false;

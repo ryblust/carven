@@ -64,6 +64,65 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source, bool resi
                                 invariant_violation("initializer differs from binding type");
                             }
                         },
+                        [&](const SemDecompose& value) noexcept {
+                            const auto& owner = body.binding(value.owner);
+                            const auto* parameter =
+                                std::get_if<ParameterBindingStorage>(&owner.storage);
+                            if (value.initializer
+                                    ? (owner.type != value.initializer->type.resolved()
+                                       || !std::holds_alternative<OwnerBindingStorage>(
+                                           owner.storage
+                                       ))
+                                    : (!parameter || parameter->access != AccessMode::Take)) {
+                                invariant_violation(
+                                    "decomposition owner differs from its initializer"
+                                );
+                            }
+                            auto seen = std::flat_set<LocalBindingID>();
+                            seen.insert(value.owner);
+                            auto paths = std::vector<std::span<const std::uint32_t>>();
+                            for (const auto& binding : value.bindings) {
+                                if (body.binding(binding.binding).lifetime != owner.lifetime) {
+                                    invariant_violation(
+                                        "decomposition binding outlives its source owner"
+                                    );
+                                }
+                                for (const auto path : paths) {
+                                    const auto prefix = std::min(path.size(), binding.path.size());
+                                    if (std::ranges::equal(
+                                            path.first(prefix),
+                                            std::span(binding.path).first(prefix)
+                                        )) {
+                                        invariant_violation("decomposition binding paths overlap");
+                                    }
+                                }
+                                paths.emplace_back(binding.path);
+                                auto selected = owner.type;
+                                for (const auto index : binding.path) {
+                                    const auto* tuple =
+                                        std::get_if<TupleTypeValue>(&require_type(selected).value);
+                                    if (tuple == nullptr || index >= tuple->elements.size()) {
+                                        invariant_violation(
+                                            "decomposition path exceeds tuple shape"
+                                        );
+                                    }
+                                    selected = tuple->elements[index];
+                                }
+                                if (!seen.insert(binding.binding).second
+                                    || body.binding(binding.binding).type != selected) {
+                                    invariant_violation(
+                                        "decomposition binding differs from tuple element"
+                                    );
+                                }
+                            }
+                        },
+                        [&](const SemAsyncLet& value) noexcept {
+                            const auto& binding = body.binding(value.child);
+                            if (!std::holds_alternative<AsyncChildBindingStorage>(binding.storage)
+                                || binding.type != value.initializer.type.resolved()) {
+                                invariant_violation("async child initializer differs from binding");
+                            }
+                        },
                         [&](const SemStaticBinding& value) noexcept {
                             const auto initializer_type = value.initializer->type.resolved();
                             const auto frozen_text = require_type(initializer_type).value

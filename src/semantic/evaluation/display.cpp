@@ -111,14 +111,17 @@ auto report_field(
     }
 }
 
-auto display_text(const ConstantValueReader& values, const ExecutionValue& value) noexcept
-    -> std::optional<std::string_view> {
-    if (const auto text = execution_text(values, value)) {
+auto display_text(
+    const ConstantValueReader& values,
+    const ExecutionValue& value,
+    const ExecutionMemory* memory
+) noexcept -> std::optional<ExecutionTextObservation> {
+    if (auto text = execution_text(values, value, memory)) {
         return text;
     }
     if (const auto atom = execution_atom(values, value)) {
         if (const auto* text = std::get_if<CStringConstant>(&atom->value)) {
-            return values.spelling(text->value);
+            return ExecutionTextObservation(values.spelling(text->value));
         }
     }
     return std::nullopt;
@@ -151,11 +154,11 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
         buffer.text("...");
         return true;
     }
-    if (const auto string = display_text(values, value)) {
+    if (const auto string = display_text(values, value, memory)) {
         if (nested) {
-            buffer.quoted(*string);
+            buffer.quoted(string->view());
         } else {
-            buffer.text(*string);
+            buffer.text(string->view());
         }
         return true;
     }
@@ -191,13 +194,14 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
         }
     }
     if (compound) {
-        const auto structure =
-            std::holds_alternative<StructTypeValue>(values.type_copy(*type).value);
+        const auto canonical = values.type_copy(*type);
+        const auto structure = std::holds_alternative<StructTypeValue>(canonical.value);
+        const auto tuple = std::holds_alternative<TupleTypeValue>(canonical.value);
         if (structure) {
             buffer.text(names.name);
             buffer.text(" {");
         } else {
-            buffer.text(enum_case ? "(" : "[");
+            buffer.text(enum_case || tuple ? "(" : "[");
         }
         const auto count =
             structure || enum_case ? compound->size() : std::min(compound->size(), element_limit);
@@ -225,10 +229,14 @@ auto ExecutionDisplay::write(const ExecutionValue& value, std::size_t depth, boo
         if (count != 0) {
             buffer.line(depth);
         }
-        buffer.text(structure ? "}" : enum_case ? ")" : "]");
+        buffer.text(structure ? "}" : enum_case || tuple ? ")" : "]");
         return true;
     }
     if (atom) {
+        if (std::holds_alternative<VoidConstant>(atom->value)) {
+            buffer.text("()");
+            return true;
+        }
         if (const auto* range = std::get_if<RangeConstant>(&atom->value)) {
             const auto canonical = values.type_copy(*type);
             const auto* range_type = std::get_if<RangeTypeValue>(&canonical.value);
@@ -285,10 +293,13 @@ auto display_execution_value(
     const ExecutionMemory* memory
 ) noexcept -> std::optional<std::string> {
     if (!nested) {
-        if (const auto text = display_text(values, value)) {
-            return std::string(*text);
+        if (const auto text = display_text(values, value, memory)) {
+            return std::string(text->view());
         }
         if (const auto atom = execution_atom(values, value)) {
+            if (std::holds_alternative<VoidConstant>(atom->value)) {
+                return "()";
+            }
             if (std::holds_alternative<BuiltinTypeValue>(values.type_copy(atom->type).value)) {
                 auto formatted = format_builtin_value(
                     builtin_format_value(values, constant_fact(*atom)),
@@ -343,7 +354,9 @@ auto SemanticExecutor::observe_condition(
     const ExecutionValue* right,
     bool passed
 ) noexcept -> void {
-    if (passed || !condition_observation || condition_observation->condition != &source) {
+    if (passed
+        || !current->condition_observation
+        || current->condition_observation->condition != &source) {
         return;
     }
     auto output = ExecutionDisplayText();
@@ -357,13 +370,13 @@ auto SemanticExecutor::observe_condition(
         }
     };
     observe(
-        condition_observation->sources[0],
+        current->condition_observation->sources[0],
         display_execution_value(values, left, true, &memory).value_or("<opaque>")
     );
     observe(
-        condition_observation->sources[1],
+        current->condition_observation->sources[1],
         right ? display_execution_value(values, *right, true, &memory).value_or("<opaque>")
               : "<not evaluated>"
     );
-    *condition_observation->explanation = std::move(output).take();
+    *current->condition_observation->explanation = std::move(output).take();
 }

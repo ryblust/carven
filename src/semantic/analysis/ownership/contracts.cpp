@@ -15,6 +15,9 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
             foreign != nullptr && source.category == SemanticValueCategory::Place) {
             return self(foreign->operands.front().expression);
         }
+        if (const auto* tuple = std::get_if<SemTupleElement>(&source.value)) {
+            return self(*tuple->source);
+        }
         if (const auto* field = std::get_if<SemField>(&source.value)) {
             return self(*field->source);
         }
@@ -26,17 +29,20 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
     const auto writable = [&](this const auto& self,
                               const SemanticExpression& source) noexcept -> bool {
         if (const auto* dereference = std::get_if<SemDereference>(&source.value)) {
-            const auto* pointer = std::get_if<PointerTypeValue>(
-                &program.types().type(dereference->source->type.resolved()).value
+            const auto* pointer = std::get_if<AnalysisPointerType>(
+                &analysis.model.shape(dereference->source->type.construction())
             );
             return pointer != nullptr && pointer->access == PointerAccess::Write;
+        }
+        if (const auto* tuple = std::get_if<SemTupleElement>(&source.value)) {
+            return self(*tuple->source);
         }
         if (const auto* field = std::get_if<SemField>(&source.value)) {
             return self(*field->source);
         }
         if (const auto* index = std::get_if<SemIndex>(&source.value)) {
-            if (std::holds_alternative<SliceTypeValue>(
-                    program.types().type(index->source->type.resolved()).value
+            if (std::holds_alternative<ConstructionSliceTypeValue>(
+                    analysis.model.shape(index->source->type.construction())
                 )) {
                 return false;
             }
@@ -50,7 +56,7 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
         return id && is_writable(*id);
     };
     const auto write = [&](const SemanticExpression& source) noexcept {
-        if (!root(source) && analysis.contents(source.type.resolved()).contains_callable_view) {
+        if (!root(source) && analysis.contents(source.type.construction()).contains_callable_view) {
             diagnose(
                 DiagnosticCode::TypeCallableViewEscape,
                 "indirect storage cannot carry a tracked Carven callable borrow",
@@ -151,6 +157,20 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
                                 }
                             }
                         },
+                        [&](const SemGenericCall& value) noexcept {
+                            for (const auto& argument : value.arguments) {
+                                if (argument.access == AccessMode::Write) {
+                                    write(argument.expression);
+                                }
+                            }
+                        },
+                        [&](const SemColdCall& value) noexcept {
+                            for (const auto& argument : value.arguments) {
+                                if (argument.access == AccessMode::Write) {
+                                    write(argument.expression);
+                                }
+                            }
+                        },
                         [&](const SemClosure& value) noexcept {
                             for (const auto& capture : value.captures) {
                                 if (capture.mode == CaptureMode::Write) {
@@ -178,7 +198,8 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
                 }
                 if (const auto* value = std::get_if<SemReturn>(&source.value); value != nullptr
                     && value->value.has_value()
-                    && analysis.contents(value->value->type.resolved()).contains_callable_view) {
+                    && analysis.contents(value->value->type.construction())
+                           .contains_callable_view) {
                     diagnose(
                         DiagnosticCode::TypeCallableViewEscape,
                         "callable view cannot be returned",

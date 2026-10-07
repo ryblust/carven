@@ -17,6 +17,10 @@ enum class NumericSuffix {
     Usize,
     F32,
     F64,
+    Nanoseconds,
+    Microseconds,
+    Milliseconds,
+    Seconds,
 };
 
 enum class IntegerBase {

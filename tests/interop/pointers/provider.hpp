@@ -83,6 +83,19 @@ inline auto output(std::int32_t** slot) noexcept -> void {
 }
 struct Incomplete;
 
+inline auto opaque_address() noexcept -> void* {
+    return &first;
+}
+
+inline auto observes_opaque(const void* value) noexcept -> bool {
+    return value == &first;
+}
+
+template<typename T>
+struct NativeVoidArgument final {
+    static auto is_void() noexcept -> bool { return std::is_void_v<T>; }
+};
+
 inline auto opaque() noexcept -> Incomplete* {
     return nullptr;
 }

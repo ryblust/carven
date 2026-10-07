@@ -16,6 +16,7 @@ import :semantic.semir.evaluation;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
+import :semantic.semir.simd;
 import :semantic.semir.structured;
 import :semantic.semir.table;
 import :semantic.semir.traversal;
@@ -27,6 +28,127 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Generation: known slice results retain their range check"_test = [] static noexcept {
+        for (const auto query : {".len()", "[1] as usize"}) {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(
+                    std::format(
+                        "fn probe(values: [i32; 2]) -> usize => values.as_slice().slice(0, 3){};",
+                        query
+                    )
+                ),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("slice_range")}
+            );
+            struct Query final {
+                std::size_t ranges = 0uz;
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    const auto* member = std::get_if<TargetMemberExpr>(&expression.value);
+                    const auto* name =
+                        member ? std::get_if<TargetIdentifier>(&member->name) : nullptr;
+                    ranges += name && name->spelling() == "slice";
+                    return true;
+                }
+            };
+            auto calls = Query {};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                expect(traverse_target_unit(unit.sections(), calls));
+            }
+            expect_equal(calls.ranges, 1uz);
+        }
+    };
+
+    "Generation: static projections publish values without rebuilding their aggregate"_test =
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
+                    struct Plan { lanes: u8x16, nested: (i32, [i32; 2]) }
+                    fn vector() -> u8x16 {
+                        const plan = Plan { u8x16::splat(7), (1, [3, 9]) };
+                        return plan.lanes;
+                    }
+                    fn scalar() -> i32 {
+                        const plan = Plan { u8x16::splat(7), (1, [3, 9]) };
+                        return plan.nested.1[1];
+                    }
+                )"),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("static_projection")}
+            );
+            struct Query final {
+                std::size_t splats;
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    expect(!std::holds_alternative<TargetConstructionExpr>(expression.value));
+                    expect(!std::holds_alternative<TargetMemberExpr>(expression.value));
+                    if (const auto* member =
+                            std::get_if<TargetStaticMemberExpr>(&expression.value)) {
+                        splats += member->name.spelling() == "splat";
+                    }
+                    return true;
+                }
+            };
+            auto query = Query {.splats = 0uz};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                expect(traverse_target_unit(unit.sections(), query));
+            }
+            expect_equal(query.splats, 1uz);
+        };
+
+    "Evaluation: specialization keeps runtime failures in their executable operations"_test =
+        [] static noexcept {
+            const auto semantic = analyze_test_program(R"(
+                fn divide(const divisor: i32) -> i32 => 1 / divisor;
+                fn lane(const index: usize) -> u8 => u8x16::splat(7).lane(index);
+                fn runtime_divide() -> i32 => divide(0);
+                fn runtime_lane() -> u8 => lane(16);
+                const fn skipped() -> bool {
+                    const zero = 0;
+                    return false && (1 / zero > 0);
+                }
+                const accepted = skipped();
+            )");
+            auto divisions = 0uz;
+            auto lanes = 0uz;
+            for (const auto entry : semantic.bodies().entries()) {
+                visit_semantic_nodes(
+                    entry.value.region(),
+                    [&](const SemanticExpression& expression) noexcept {
+                        if (const auto* binary = std::get_if<SemBinary>(&expression.value); binary
+                            && binary->operation == BinaryOperator::Divide
+                            && binary->right->constant) {
+                            expect(!expression.constant);
+                            expect_equal(
+                                evaluation_rule(semantic, expression).action,
+                                EvaluationAction::Required
+                            );
+                            ++divisions;
+                        }
+                        const auto* intrinsic = std::get_if<SemIntrinsic>(&expression.value);
+                        const auto* simd =
+                            intrinsic ? std::get_if<SIMDIntrinsic>(&intrinsic->operation) : nullptr;
+                        if (simd
+                            && *simd == SIMDIntrinsic::Lane
+                            && intrinsic->operands[1].expression.constant) {
+                            expect(!expression.constant);
+                            expect_equal(
+                                evaluation_rule(semantic, expression).action,
+                                EvaluationAction::Required
+                            );
+                            ++lanes;
+                        }
+                    }
+                );
+            }
+            expect(divisions != 0uz);
+            expect(lanes != 0uz);
+        };
+
     "Evaluation: known results retain source operations and execution obligations"_test =
         [] static noexcept {
             const auto semantic = analyze_test_program(

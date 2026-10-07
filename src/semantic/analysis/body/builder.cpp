@@ -2,6 +2,7 @@ module carven:semantic.analysis.body.builder.impl;
 
 import :semantic.analysis.body.builder;
 import :semantic.analysis.constant.fold;
+import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.body;
 import :semantic.semir.children;
@@ -18,7 +19,7 @@ import std;
 
 BodyBuilder::BodyBuilder(BodyReservation reservation, ProgramDraft& draft) noexcept
     : draft(draft),
-      body_identity(reservation.body_id.owner(), reservation.body_id.index()),
+      body_identity(reservation.body_id.owner(), reservation.body_id.index(), reservation.domain),
       body_id(reservation.body_id),
       body_kind(reservation.body_kind),
       provenance_identity(reservation.provenance_identity),
@@ -53,7 +54,9 @@ auto BodyBuilder::make_expression(
     // Aggregate values are static only when every initializer is static.
     if (!constant) {
         if (const auto* concrete = std::get_if<TypeID>(&type)) {
-            if (const auto* array = std::get_if<SemArray>(&value)) {
+            if (const auto* tuple = std::get_if<SemTuple>(&value)) {
+                constant = tuple_constant(draft, *concrete, *tuple);
+            } else if (const auto* array = std::get_if<SemArray>(&value)) {
                 constant = array_constant(draft, *concrete, *array);
             } else if (const auto* structure = std::get_if<SemStruct>(&value)) {
                 constant = struct_constant(draft, *concrete, *structure);
@@ -62,10 +65,10 @@ auto BodyBuilder::make_expression(
     }
     auto failures = draft.add_empty_failure_term();
     const auto add = [&](const SemanticExpression& child) noexcept {
-        draft.add_failure_contribution(failures, child.failures.term());
+        draft.add_failure_contribution(failures, child.failures.reference());
     };
     const auto add_region = [&](const SemanticRegion& region) noexcept {
-        draft.add_failure_contribution(failures, region.failures.term());
+        draft.add_failure_contribution(failures, region.failures.reference());
         if (region.result.has_value()) {
             add(*region.result);
         }
@@ -95,6 +98,7 @@ auto BodyBuilder::make_expression(
                              || std::same_as<Operation, SemCppCall>
                              || std::same_as<Operation, SemRange>
                              || std::same_as<Operation, SemArray>
+                             || std::same_as<Operation, SemTuple>
                              || std::same_as<Operation, SemArrayAdopt>
                              || std::same_as<Operation, SemStruct>
                              || std::same_as<Operation, SemEnumCase>
@@ -104,6 +108,7 @@ auto BodyBuilder::make_expression(
                              || std::same_as<Operation, SemDereference>
                              || std::same_as<Operation, SemAddressOf>
                              || std::same_as<Operation, SemField>
+                             || std::same_as<Operation, SemTupleElement>
                              || std::same_as<Operation, SemIndex>
                              || std::same_as<Operation, SemPrint>
                              || std::same_as<Operation, SemFormat>
@@ -112,34 +117,54 @@ auto BodyBuilder::make_expression(
                              || std::same_as<Operation, SemBorrowCallable>
                              || std::same_as<Operation, SemTake>
                              || std::same_as<Operation, SemPropagate>
+                             || std::same_as<Operation, SemColdCall>
+                             || std::same_as<Operation, SemColdCompose>
+                             || std::same_as<Operation, SemColdTimeout>
+                             || std::same_as<Operation, SemAwait>
+                             || std::same_as<Operation, SemWaitReady>
+                             || std::same_as<Operation, SemCloseChild>
+                             || std::same_as<Operation, SemAsyncIntrinsic>
             { visit_semantic_children(node, add); },
             [&](const SemCall& node) noexcept {
                 visit_semantic_children(node, add);
-                draft.add_failure_contribution(failures, node.callee_failures.term());
+                draft.add_failure_contribution(failures, node.callee_failures.reference());
+            },
+            [&](const SemGenericCall& node) noexcept {
+                visit_semantic_children(node, add);
+                draft.add_failure_contribution(failures, node.callee_failures.reference());
             },
             [&](const SemReport& node) noexcept { add_selected(node); },
             [&](const SemTry& node) noexcept {
-                draft.add_failure_contribution(failures, node.residual_failures.term());
+                draft.add_failure_contribution(failures, node.residual_failures.reference());
                 for (const auto& arm : node.arms) {
                     const auto handler = draft.add_empty_failure_term();
                     for (const auto& range : arm.pattern_bounds) {
                         if (range.begin) {
-                            draft.add_failure_contribution(handler, range.begin->failures.term());
+                            draft.add_failure_contribution(
+                                handler,
+                                range.begin->failures.reference()
+                            );
                         }
                         if (range.end) {
-                            draft.add_failure_contribution(handler, range.end->failures.term());
+                            draft.add_failure_contribution(
+                                handler,
+                                range.end->failures.reference()
+                            );
                         }
                     }
                     if (arm.guard.has_value()) {
-                        draft.add_failure_contribution(handler, arm.guard->failures.term());
+                        draft.add_failure_contribution(handler, arm.guard->failures.reference());
                     }
-                    draft.add_failure_contribution(handler, arm.body.failures.term());
+                    draft.add_failure_contribution(handler, arm.body.failures.reference());
                     if (arm.body.result.has_value()) {
-                        draft.add_failure_contribution(handler, arm.body.result->failures.term());
+                        draft.add_failure_contribution(
+                            handler,
+                            arm.body.result->failures.reference()
+                        );
                     }
                     draft.add_guarded_failure_contribution(
                         failures,
-                        arm.accepted_failures.term(),
+                        arm.accepted_failures.reference(),
                         handler
                     );
                 }
@@ -155,7 +180,8 @@ auto BodyBuilder::make_expression(
         .exits_test = false,
         .operation_reachable = true,
         .category = SemanticValueCategory::Value,
-        .value = std::move(value)
+        .value = std::move(value),
+
     };
 }
 
@@ -169,8 +195,11 @@ auto BodyBuilder::binding_expression(LocalBindingID id) noexcept -> PlaceExpress
             using Storage = std::remove_cvref_t<decltype(storage)>;
             if constexpr (std::same_as<Storage, OwnerBindingStorage>) {
                 return storage.writable ? AccessMode::Write : AccessMode::Read;
-            } else if constexpr (std::same_as<Storage, ParameterBindingStorage>) {
+            } else if constexpr (std::same_as<Storage, ParameterBindingStorage>
+                                 || std::same_as<Storage, AccessBindingStorage>) {
                 return storage.access == AccessMode::Write ? AccessMode::Write : AccessMode::Read;
+            } else if constexpr (std::same_as<Storage, AsyncChildBindingStorage>) {
+                return AccessMode::Read;
             } else {
                 return storage.mode == CaptureMode::Write ? AccessMode::Write : AccessMode::Read;
             }
@@ -214,28 +243,8 @@ auto BodyBuilder::known_callable(const SemanticExpression& expression) const noe
 
 auto BodyBuilder::known_sequence_extent(const SemanticExpression& expression) const noexcept
     -> std::optional<std::uint64_t> {
-    if (const auto constant = expression.constant) {
-        const auto& fact = draft.constant(*constant);
-        if (const auto* slice = std::get_if<SliceConstant>(&fact.value)) {
-            return slice->elements.size();
-        }
-    }
-    const auto& type = expression.type.construction();
-    if (const auto* id = std::get_if<TypeID>(&type)) {
-        const auto canonical = draft.type_copy(*id);
-        if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
-            return array->extent;
-        }
-    } else {
-        const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
-        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
-            return array->extent;
-        }
-    }
-    if (const auto* intrinsic = std::get_if<SemIntrinsic>(&expression.value)) {
-        if (const auto* slice = std::get_if<SliceIntrinsicOperation>(&intrinsic->operation)) {
-            return slice->result_extent;
-        }
+    if (const auto extent = sequence_extent(draft, expression)) {
+        return extent;
     }
     if (const auto* binding = std::get_if<SemBinding>(&expression.value)) {
         const auto found = local_sequence_extents.find(binding->binding);

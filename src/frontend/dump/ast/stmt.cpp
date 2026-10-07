@@ -169,6 +169,16 @@ auto ASTDumper::render_statement_node(
                     "expression "
                 );
             },
+            [&](const ASTCancelStmt& cancellation) noexcept {
+                append_line(
+                    prefix,
+                    is_last,
+                    std::format("CancelStatement {}", format_dump_span(statement.span))
+                );
+                const auto nested_prefix = child_prefix(prefix, is_last);
+                render_span_field(nested_prefix, false, "keyword", cancellation.keyword_span);
+                render_expression(cancellation.child, nested_prefix, true, "child ");
+            },
             [&](const ASTControlTransfer& transfer) noexcept {
                 render_control_transfer(transfer, prefix, is_last, statement.span);
             },

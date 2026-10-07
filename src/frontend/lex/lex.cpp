@@ -3,10 +3,10 @@ module carven:frontend.lex.impl;
 import :diagnostics.builder;
 import :diagnostics.diagnosed;
 import :diagnostics.diagnostic;
-import :frontend.lex;
 import :frontend.lex.layout;
 import :frontend.lex.literal;
 import :frontend.lex.token;
+import :frontend.lex;
 import :frontend.literal;
 import :source.identifier;
 import :source.text;
@@ -37,7 +37,10 @@ constexpr auto token_kind(SourceKeyword keyword) noexcept -> TokenKind {
     switch (keyword) {
         using enum SourceKeyword;
         case As:       return TokenKind::As;
+        case Async:    return TokenKind::Async;
+        case Await:    return TokenKind::Await;
         case Break:    return TokenKind::Break;
+        case Cancel:   return TokenKind::Cancel;
         case Catch:    return TokenKind::Catch;
         case Const:    return TokenKind::Const;
         case Continue: return TokenKind::Continue;
@@ -495,7 +498,15 @@ auto Lexer::scan_identifier() noexcept -> void {
 }
 
 auto Lexer::scan_number() noexcept -> void {
-    auto scanned = scan_numeric_literal(source.substr(token_start), token_start);
+    auto text = source.substr(token_start);
+    const auto tokens = result.value.tokens();
+    if (!tokens.empty()
+        && (tokens.back().kind == TokenKind::Dot || tokens.back().kind == TokenKind::Arrow)) {
+        // After a member dot or arrow each decimal component ends at the next dot.
+        // Ordinary numeric literals retain their floating-point scan.
+        text = text.substr(0, text.find('.'));
+    }
+    auto scanned = scan_numeric_literal(text, token_start);
     const auto consumed = scanned.has_value() ? scanned->consumed : scanned.error().consumed;
     position = token_start + static_cast<std::uint32_t>(consumed);
     if (scanned.has_value()) {

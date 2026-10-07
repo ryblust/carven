@@ -10,6 +10,7 @@ import :frontend.ast.pattern;
 import :frontend.ast.stmt;
 import :frontend.ast.type;
 import :source.text;
+import :support.unique_indirect;
 import std;
 
 template<typename Visitor>
@@ -27,6 +28,11 @@ private:
     template<typename... Values>
     auto visit_fields(const Values&... values) noexcept -> void {
         (visit(values), ...);
+    }
+
+    template<typename Value>
+    auto visit(const UniqueIndirect<Value>& value) noexcept -> void {
+        visit(*value);
     }
 
     auto visit(Span value) noexcept -> void { (*visitor)(value); }
@@ -93,6 +99,10 @@ private:
 
     auto visit(const ASTTypeNameComponent& value) noexcept -> void { visit(value.name_span); }
 
+    auto visit(const ASTGenericArgument& value) noexcept -> void {
+        visit_fields(value.span, value.value);
+    }
+
     auto visit(const ASTNamedType& value) noexcept -> void {
         visit(value.global_root);
         visit_fields(value.components, value.arguments);
@@ -107,6 +117,8 @@ private:
     }
 
     auto visit(const ASTSliceType& value) noexcept -> void { visit(value.element_type); }
+
+    auto visit(const ASTTupleType& value) noexcept -> void { visit(value.elements); }
 
     auto visit(const ASTFunctionTypeParameter& value) noexcept -> void {
         visit_fields(value.span, value.access, value.type);
@@ -203,7 +215,10 @@ private:
         visit_fields(value.minus_span, value.number_span);
     }
 
-    auto visit(const ASTBindingPattern& value) noexcept -> void { visit(value.name_span); }
+    auto visit(const ASTBindingPattern& value) noexcept -> void {
+        visit(value.marker_span);
+        visit(value.name_span);
+    }
 
     auto visit(const ASTQualifiedName& value) noexcept -> void {
         visit_fields(value.span, value.components);
@@ -235,6 +250,8 @@ private:
         visit_fields(value.begin, value.operator_span, value.end);
     }
 
+    auto visit(const ASTTuplePattern& value) noexcept -> void { visit(value.elements); }
+
     auto visit(const ASTOrPattern& value) noexcept -> void {
         visit_fields(value.alternatives, value.pipe_spans);
     }
@@ -242,6 +259,10 @@ private:
     auto visit(const ASTPattern& value) noexcept -> void { visit_fields(value.span, value.value); }
 
     auto visit(const ASTNamedBindingTarget& value) noexcept -> void { visit(value.name_span); }
+
+    auto visit(const ASTTupleBindingTarget& value) noexcept -> void {
+        visit_fields(value.span, value.elements);
+    }
 
     auto visit(const ASTDiscardBindingTarget& value) noexcept -> void {
         visit(value.underscore_span);
@@ -291,8 +312,20 @@ private:
         visit_fields(value.span, value.name_span, value.payload_types, value.initializer);
     }
 
+    auto visit(const ASTTypeParameterClause& value) noexcept -> void {
+        visit_fields(value.span, value.parameters);
+    }
+
+    auto visit(const ASTGenericParameter& value) noexcept -> void { visit_fields(value.name_span); }
+
     auto visit(const ASTEnumDecl& value) noexcept -> void {
-        visit_fields(value.visibility, value.name_span, value.underlying_type, value.cases);
+        visit_fields(
+            value.visibility,
+            value.name_span,
+            value.type_parameters,
+            value.underlying_type,
+            value.cases
+        );
     }
 
     auto visit(const ASTRecordField& value) noexcept -> void {
@@ -300,7 +333,13 @@ private:
     }
 
     auto visit(const ASTRecordDecl& value) noexcept -> void {
-        visit_fields(value.visibility, value.name_span, value.fields, value.operations);
+        visit_fields(
+            value.visibility,
+            value.name_span,
+            value.type_parameters,
+            value.fields,
+            value.operations
+        );
     }
 
     auto visit(const ASTFunctionParameter& value) noexcept -> void {
@@ -319,6 +358,7 @@ private:
             value.cpp_export,
             value.const_span,
             value.name_span,
+            value.type_parameters,
             value.parameters,
             value.result_type,
             value.throw_clause,
@@ -359,6 +399,12 @@ private:
 
     auto visit(const ASTArrayExpr& value) noexcept -> void { visit(value.element_ids); }
 
+    auto visit(const ASTTupleExpr& value) noexcept -> void { visit(value.elements); }
+
+    auto visit(const ASTArrayRepeatExpr& value) noexcept -> void {
+        visit_fields(value.element, value.extent);
+    }
+
     auto visit(const ASTPositionalInitializerList& value) noexcept -> void {
         visit_fields(value.span, value.values);
     }
@@ -397,7 +443,9 @@ private:
         visit_fields(value.operand_id, value.operator_span, value.target_type);
     }
 
-    auto visit(const ASTCallArgument& value) noexcept -> void { visit(value.expression); }
+    auto visit(const ASTTypeApplicationExpr& value) noexcept -> void {
+        visit_fields(value.operand_id, value.arguments_span, value.arguments);
+    }
 
     auto visit(const ASTCallExpr& value) noexcept -> void {
         visit_fields(value.callee, value.arguments);
@@ -405,6 +453,10 @@ private:
 
     auto visit(const ASTIndexExpr& value) noexcept -> void {
         visit_fields(value.operand_id, value.index);
+    }
+
+    auto visit(const ASTTupleElementExpr& value) noexcept -> void {
+        visit_fields(value.operand_id, value.index_span);
     }
 
     auto visit(const ASTMemberExpr& value) noexcept -> void {
@@ -444,6 +496,10 @@ private:
     }
 
     auto visit(const ASTExprStatement& value) noexcept -> void { visit(value.expression); }
+
+    auto visit(const ASTCancelStmt& value) noexcept -> void {
+        visit_fields(value.keyword_span, value.child);
+    }
 
     auto visit(const ASTForInitializer& value) noexcept -> void {
         visit_fields(value.span, value.value);

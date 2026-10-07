@@ -152,6 +152,7 @@ auto constant_children(const ConstantValue& value) noexcept
             } else if constexpr (std::same_as<Value, StructConstant>) {
                 return stored.fields;
             } else if constexpr (std::same_as<Value, ArrayConstant>
+                                 || std::same_as<Value, TupleConstant>
                                  || std::same_as<Value, SliceConstant>) {
                 return stored.elements;
             }

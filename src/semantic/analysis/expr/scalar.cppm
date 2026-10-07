@@ -27,20 +27,53 @@ auto interpret_literal(
     Span span,
     std::optional<ConstructionTypeRef> expected,
     LiteralSign sign = LiteralSign::Positive
-) noexcept -> ExpressionResult<typename Site::Value> {
+) noexcept -> ExpressionTask<typename Site::Value> {
+    if (const auto* integer = std::get_if<IntegerLiteralValue>(&source.value)) {
+        if (const auto scale = duration_literal_scale(integer->suffix)) {
+            const auto negative = sign == LiteralSign::Negative;
+            const auto limit =
+                std::uint64_t(std::numeric_limits<std::int64_t>::max()) + (negative ? 1u : 0u);
+            if (integer->conversion == NumericConversion::OutOfRange
+                || integer->magnitude > limit / *scale) {
+                co_return std::unexpected(site.fail(
+                    span,
+                    DiagnosticCode::ConstLiteralRange,
+                    "duration literal exceeds the signed 64-bit nanosecond range"
+                ));
+            }
+            auto type = co_await site.resolve_duration_type(span);
+            if (!type) {
+                co_return std::unexpected(type.error());
+            }
+            const auto ticks = site.draft().intern_constant(
+                ConstantFact {
+                    .type = site.draft().builtin_type(BuiltinType::I64),
+                    .value = IntegerConstant::from_parts(integer->magnitude * *scale, negative)
+                }
+            );
+            co_return site.constant(
+                site.draft().intern_constant(
+                    ConstantFact {.type = *type, .value = StructConstant {.fields = {ticks}}}
+                ),
+                span
+            );
+        }
+    }
     if (std::holds_alternative<NullPointerLiteralValue>(source.value)) {
-        const auto* type = expected ? std::get_if<TypeID>(&*expected) : nullptr;
-        if (type == nullptr
-            || !std::holds_alternative<PointerTypeValue>(site.draft().type_copy(*type).value)) {
-            return std::unexpected(
+        if (!expected || !pointer_shape(site.draft(), *expected)) {
+            co_return std::unexpected(
                 site.fail(span, DiagnosticCode::TypeMismatch, "nullptr requires a ptr type context")
             );
+        }
+        expected = unwrap_type_alias(site.draft(), *expected);
+        if (!std::holds_alternative<TypeID>(*expected)) {
+            co_return construct_default_expression(site, *expected, span);
         }
     }
     auto fact = normalize_literal(site.draft(), source, expected, sign);
     if (!fact.has_value()) {
         const auto diagnostic = constant_evaluation_diagnostic(fact.error());
-        return std::unexpected(site.fail(
+        co_return std::unexpected(site.fail(
             source.span,
             diagnostic.has_value() ? diagnostic->code : DiagnosticCode::ConstLiteralRange,
             diagnostic.has_value() ? std::string(diagnostic->message) : "invalid literal value"
@@ -50,7 +83,7 @@ auto interpret_literal(
     if (std::holds_alternative<StringLiteralValue>(source.value)
         && expected
         && *expected == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::String))) {
-        return construct_text_value(
+        co_return construct_text_value(
             site,
             TextIntrinsic::FromStr,
             site.draft().builtin_type(BuiltinType::String),
@@ -59,7 +92,7 @@ auto interpret_literal(
             span
         );
     }
-    return value;
+    co_return value;
 }
 
 template<typename Site>
@@ -69,6 +102,17 @@ auto interpret_unary(
     Span span,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> ExpressionTask<typename Site::Value> {
+    if (source.op == ASTPrefixOperator::Await) {
+        if constexpr (requires { site.await_expression(source, span); }) {
+            co_return (co_await site.await_expression(source, span));
+        } else {
+            co_return std::unexpected(site.fail(
+                span,
+                DiagnosticCode::AsyncAdmission,
+                "await requires an async function body"
+            ));
+        }
+    }
     if (source.op == ASTPrefixOperator::Dereference) {
         co_return (co_await site.dereference(source, span));
     }
@@ -83,7 +127,9 @@ auto interpret_unary(
         && number != nullptr
         && (std::holds_alternative<IntegerLiteralValue>(number->value)
             || std::holds_alternative<FloatingLiteralValue>(number->value))) {
-        co_return interpret_literal(site, *number, span, expected, LiteralSign::Negative);
+        co_return (
+            co_await interpret_literal(site, *number, span, expected, LiteralSign::Negative)
+        );
     }
     auto operand = (co_await site.read(
         source.operand_id,
@@ -213,7 +259,7 @@ auto interpret_binary(
         if (site.external(site.type(operand))) {
             return std::nullopt;
         }
-        const auto operand_type = site.type(operand);
+        const auto operand_type = unwrap_type_alias(site.draft(), site.type(operand));
         if (const auto* id = std::get_if<TypeID>(&operand_type)) {
             const auto canonical = site.draft().type_copy(*id);
             const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
@@ -288,7 +334,7 @@ auto interpret_binary(
         ));
     }
     const auto builtin_kind = [&](const auto& input) noexcept -> std::optional<BuiltinType> {
-        const auto input_type = site.type(input);
+        const auto input_type = unwrap_type_alias(site.draft(), site.type(input));
         const auto* concrete = std::get_if<TypeID>(&input_type);
         if (!concrete) {
             return std::nullopt;

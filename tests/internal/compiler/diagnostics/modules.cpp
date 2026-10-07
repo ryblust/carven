@@ -17,6 +17,44 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: Sequence element errors retain the type use in later modules"_test =
+        [] static noexcept {
+            for (const auto annotation : {"Sequence<str>", "Sequence<Borrowed>"}) {
+                auto sources = SourceManager();
+                const auto healthy = *sources.append_virtual("a.cv", "fn healthy() {}\n");
+                const auto failing_text = std::format(
+                    "struct Borrowed {{ text: str }}\nfn invalid(values: {}) {{}}\n",
+                    annotation
+                );
+                const auto failing = *sources.append_virtual("b.cv", failing_text);
+                const auto inputs = std::array {
+                    SourceModuleInput {healthy, *CanonicalModulePath::from_value("a")},
+                    SourceModuleInput {failing, *CanonicalModulePath::from_value("b")},
+                };
+                const auto result = compile(
+                    sources,
+                    SourceBatch {.modules = inputs},
+                    TargetPlanningRequest {
+                        .test_mode = TestGenerationMode::None,
+                        .linkage_domain = *LinkageDomain::explicit_value("test:sequence-source"),
+                    }
+                );
+                if (!expect(!result.has_value())) {
+                    return;
+                }
+                const auto* diagnostic =
+                    find_diagnostic(result.error(), DiagnosticCode::TypeSequenceElement);
+                if (!expect(diagnostic != nullptr && diagnostic->attachment.primary.has_value())) {
+                    return;
+                }
+                expect(diagnostic->attachment.primary->span.source_id == failing);
+                expect_equal(
+                    sources.slice(diagnostic->attachment.primary->span),
+                    std::string_view(annotation)
+                );
+            }
+        };
+
     "Compiler diagnostics: module-scoped facts retain their owning source"_test =
         [] static noexcept {
             auto sources = SourceManager();

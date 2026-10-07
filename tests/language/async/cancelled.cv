@@ -1,0 +1,15 @@
+private async fn accept_cancellation() {
+    eprintln("child accepts cancellation:", cancellation_requested());
+    await cancellation_point();
+    eprintln("unreachable child");
+}
+
+// Accepted child cancellation closes the root's scope before entry reporting.
+// Requesting cancellation alone does not select a cancelled completion.
+private async fn main() {
+    async let child = accept_cancellation();
+    cancel child;
+    eprintln("root requested child cancellation");
+    await child;
+    eprintln("unreachable root");
+}

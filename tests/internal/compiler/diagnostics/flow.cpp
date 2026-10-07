@@ -41,9 +41,9 @@ const TestSuite suite([] static noexcept {
                     .primary_text = "continue",
                 },
                 {
-                    .name = "value try missing normal result",
+                    .name = "non-unit value try missing normal result",
                     .source = "fn invalid() { "
-                              "let value = try { let side_effect = 0; } catch { _ => 1, }; }",
+                              "let value: i32 = try { let side_effect = 0; } catch { _ => 1, }; }",
                     .code = DiagnosticCode::FlowValueBranchResult,
                     .primary_text = "{ let side_effect = 0; }",
                 },

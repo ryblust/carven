@@ -18,6 +18,8 @@ struct ASTNegativeNumberPattern final {
 };
 
 struct ASTBindingPattern final {
+    ASTAccessMode mode;
+    std::optional<Span> marker_span;
     Span name_span;
 };
 
@@ -67,6 +69,10 @@ struct ASTRangePattern final {
     bool inclusive;
 };
 
+struct ASTTuplePattern final {
+    std::vector<ASTPatternID> elements;
+};
+
 struct ASTOrPattern final {
     std::vector<ASTPatternID> alternatives;
     std::vector<Span> pipe_spans;
@@ -82,6 +88,7 @@ struct ASTPattern final {
         ASTConstraintPattern,
         ASTCasePattern,
         ASTRangePattern,
+        ASTTuplePattern,
         ASTOrPattern>
         value;
 };

@@ -6,7 +6,10 @@ import :frontend.ast.storage;
 import :semantic.analysis.expr.aggregate;
 import :semantic.analysis.expr.interpolation;
 import :semantic.analysis.expr.member;
+import :semantic.analysis.expr.numeric;
 import :semantic.analysis.expr.result;
+import :semantic.analysis.expr.scope;
+import :semantic.analysis.expr.sequence;
 import :semantic.analysis.expr.simd;
 import :semantic.analysis.expr.text;
 import :semantic.analysis.operations;
@@ -102,17 +105,7 @@ auto interpret_call(
                 );
             }
             if (const auto* record = std::get_if<StructTypeValue>(&canonical.value)) {
-                if constexpr (Site::mode == ExpressionMode::Body) {
-                    co_return (
-                        co_await site.associated_call(source, *member, record->structure, span)
-                    );
-                } else {
-                    co_return std::unexpected(site.fail(
-                        span,
-                        DiagnosticCode::ConstAdmission,
-                        "class operations are not supported in compile-time execution"
-                    ));
-                }
+                co_return co_await site.associated_call(source, *member, record->structure, span);
             }
             co_return (co_await interpret_enum_case(
                 site,
@@ -156,6 +149,40 @@ auto interpret_call(
                 );
             }
         }
+        const auto floating = decide_float_method(
+            site.draft(),
+            site.type(*operand),
+            site.spelling(member->name_span),
+            source.arguments.size()
+        );
+        if (!floating) {
+            co_return std::unexpected(
+                site.fail(span, floating.error().code, std::string(floating.error().message))
+            );
+        }
+        if (floating->has_value()) {
+            co_return construct_float_query(site, **floating, std::move(*operand), span);
+        }
+        const auto sequence = decide_sequence_method(
+            site.draft(),
+            site.type(*operand),
+            site.spelling(member->name_span),
+            source.arguments.size()
+        );
+        if (!sequence) {
+            co_return std::unexpected(
+                site.fail(span, sequence.error().code, std::string(sequence.error().message))
+            );
+        }
+        if (sequence->has_value()) {
+            co_return (co_await construct_sequence_call(
+                site,
+                **sequence,
+                std::move(*operand),
+                source.arguments,
+                span
+            ));
+        }
         const auto slice = decide_slice_method(
             site.draft(),
             site.type(*operand),
@@ -186,7 +213,7 @@ auto interpret_call(
                     "String.append_format requires one interpolation argument"
                 ));
             }
-            auto argument = source.arguments.front().expression;
+            auto argument = source.arguments.front();
             while (const auto* group =
                        std::get_if<ASTGroupExpr>(&site.syntax().expression(argument).value)) {
                 argument = group->expression;

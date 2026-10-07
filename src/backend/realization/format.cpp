@@ -145,7 +145,7 @@ auto realize_writer_statements(
     if (text_sizes.size() != static_cast<std::size_t>(text_fields)) {
         invariant_violation("writer format received the wrong text length pack");
     }
-    const auto writer_type = context.intrinsic_type(TargetSymbol::RuntimeWriter);
+    const auto writer_type = context.intrinsic_type(TargetSymbol::RuntimeFormatWriter);
     auto statements = std::vector<TargetStmt>();
     auto writer_arguments = target_expressions(
         std::move(output),

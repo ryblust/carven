@@ -1,0 +1,122 @@
+const async fn value(number: i32, delayed: bool) -> i32 {
+    if delayed { await yield_once(); }
+    return number;
+}
+
+const async fn pending() -> bool {
+    async let slow = value(7, true);
+    async let fast = value(9, false);
+    let (index, cancelled) = await wait_ready(slow, fast);
+    await close(slow);
+    let result = await fast;
+    return index == 1 && !cancelled && result == 9;
+}
+
+const async fn committed(reverse: bool) -> bool {
+    async let first = value(7, false);
+    async let second = value(9, false);
+    // Both children complete before the parent is dispatched. The first
+    // publication wins, even though it occupies the later input position.
+    let (index, cancelled) = if reverse {
+        await wait_ready(second, first)
+    } else {
+        await wait_ready(first, second)
+    };
+    let one = await first;
+    let two = await second;
+    return index == (if reverse { 1usize } else { 0usize }) && !cancelled && one == 7 && two == 9;
+}
+
+const async fn ready() -> bool {
+    async let first = value(7, false);
+    async let second = value(9, false);
+    await yield_once();
+    let (index, cancelled) = await wait_ready(second, first);
+    let repeated = await wait_ready(second, first);
+    await close(first);
+    await close(second);
+    return index == 0 && !cancelled && repeated == (0usize, false);
+}
+
+const async fn accepting() {
+    await cancellation_point();
+}
+
+const async fn cancelled_child() -> bool {
+    async let child = accepting();
+    cancel child;
+    let (index, cancelled) = await wait_ready(child);
+    await close(child);
+    await close(child);
+    return index == 0 && cancelled;
+}
+
+struct Failure {
+    code: i32
+}
+
+const async fn rejected() -> i32 throw Failure {
+    throw Failure { code: 17 };
+}
+
+const async fn failed_child() -> bool {
+    async let child = rejected();
+    let (index, cancelled) = await wait_ready(child);
+    let code = try {
+        await child?
+    } catch {
+        Failure(error) => error.code,
+    };
+    await close(child);
+    return index == 0 && !cancelled && code == 17;
+}
+
+const async fn borrowed(&backing: i32) {
+    await yield_once();
+    backing += 1;
+}
+
+const async fn release() -> bool {
+    var backing = 7;
+    async let child = borrowed(&backing);
+    await close(child);
+    let taken = &&backing;
+    return taken == 8;
+}
+
+const async fn conditional(observe: bool) -> bool {
+    async let child = value(7, false);
+    if observe { await child; }
+    // Unconditional close also admits a child consumed on only some paths.
+    let unit = (await close(child),);
+    return unit == ((),);
+}
+
+const async fn discarded_failure() -> bool {
+    async let child = rejected();
+    await close(child);
+    return true;
+}
+
+const async fn exercise() -> bool {
+    return await pending()
+        && await committed(true)
+        && await committed(false)
+        && await ready()
+        && await cancelled_child()
+        && await failed_child()
+        && await release()
+        && await conditional(true)
+        && await conditional(false)
+        && await discarded_failure();
+}
+
+const result = await exercise();
+
+const test "Async waiting: terminal observation and explicit closure" {
+    check(result);
+}
+
+async fn main() {
+    println(await exercise() && result);
+}

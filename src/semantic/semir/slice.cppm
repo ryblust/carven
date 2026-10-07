@@ -4,7 +4,7 @@ import :semantic.semir.type;
 import std;
 
 enum class SliceIntrinsic { FromArray, Len, IsEmpty, Slice };
-enum class SliceIntrinsicShape { Array, Slice };
+enum class SliceIntrinsicShape { Array, Slice, ArrayOrSlice };
 
 struct SliceOfReceiver final {};
 
@@ -16,14 +16,25 @@ struct SliceIntrinsicContract final {
     SliceIntrinsicResult result;
 };
 
+constexpr auto slice_intrinsic_accepts_receiver(
+    SliceIntrinsicShape requirement,
+    SliceIntrinsicShape actual
+) noexcept -> bool {
+    return requirement == SliceIntrinsicShape::ArrayOrSlice
+        ? actual == SliceIntrinsicShape::Array || actual == SliceIntrinsicShape::Slice
+        : requirement == actual;
+}
+
 // All slice operands are Read. A slice result retains the receiver's element type.
 constexpr auto slice_intrinsic_contract(SliceIntrinsic intrinsic) noexcept
     -> SliceIntrinsicContract {
     static constexpr auto bounds = std::array {BuiltinType::Usize, BuiltinType::Usize};
     switch (intrinsic) {
         case SliceIntrinsic::FromArray: return {SliceIntrinsicShape::Array, {}, SliceOfReceiver {}};
-        case SliceIntrinsic::Len:       return {SliceIntrinsicShape::Slice, {}, BuiltinType::Usize};
-        case SliceIntrinsic::IsEmpty:   return {SliceIntrinsicShape::Slice, {}, BuiltinType::Bool};
+        case SliceIntrinsic::Len:
+            return {SliceIntrinsicShape::ArrayOrSlice, {}, BuiltinType::Usize};
+        case SliceIntrinsic::IsEmpty:
+            return {SliceIntrinsicShape::ArrayOrSlice, {}, BuiltinType::Bool};
         case SliceIntrinsic::Slice: return {SliceIntrinsicShape::Slice, bounds, SliceOfReceiver {}};
     }
     std::unreachable();

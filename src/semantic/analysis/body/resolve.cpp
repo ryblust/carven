@@ -5,6 +5,7 @@ import :diagnostics.code;
 import :semantic.analysis.body.resolve;
 import :semantic.semir.children;
 import :semantic.semir.evaluation;
+import :semantic.semir.table;
 import :semantic.semir.traversal;
 import :support.visit;
 import std;
@@ -82,7 +83,7 @@ auto BodyResolver::operator()(BodyType& type) const noexcept -> void {
 }
 
 auto BodyResolver::operator()(BodyFailures& term) const noexcept -> void {
-    term = BodyFailures(failures.failure_set(term.term()));
+    term = BodyFailures(failures.failure_set(term.reference()));
 }
 
 auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
@@ -115,6 +116,9 @@ auto BodyResolver::operator()(SemanticExpression& value) noexcept -> void {
         } else if (std::holds_alternative<CallableViewTypeValue>(type)) {
             value.exits_test = true;
         }
+    }
+    if (auto* composition = std::get_if<SemColdCompose>(&value.value)) {
+        (*this)(composition->success);
     }
     if (auto* attempt = std::get_if<SemTry>(&value.value)) {
         (*this)(*attempt);
@@ -150,11 +154,11 @@ auto BodyResolver::operator()(SemanticRegion& value) const noexcept -> void {
 }
 
 auto BodyResolver::operator()(SemTry& value) const noexcept -> void {
-    const auto protected_failures = failures.failure_set(value.protected_failures.term());
+    const auto protected_failures = failures.failure_set(value.protected_failures.reference());
     const auto can_fail = !failure_sets.failure_set(protected_failures).members.empty();
     for (auto& arm : value.arms) {
         const auto accepted =
-            failure_sets.failure_set(failures.failure_set(arm.accepted_failures.term()));
+            failure_sets.failure_set(failures.failure_set(arm.accepted_failures.reference()));
         auto useful = false;
         for (auto& alternative : arm.alternatives) {
             const auto matches = alternative.pattern.visit(
@@ -277,5 +281,6 @@ auto resolve_body(
         .region = std::move(body.region),
         .residual = std::move(body.residual),
         .specialized = body.specialized,
+        .generic_definition = body.generic_definition,
     });
 }

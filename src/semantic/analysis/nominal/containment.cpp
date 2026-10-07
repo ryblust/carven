@@ -27,46 +27,6 @@ auto declaration_index(std::size_t struct_count, NominalDeclarationRef declarati
     );
 }
 
-auto nominal_declaration(ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::optional<NominalDeclarationRef> {
-    if (const auto* term = std::get_if<TypeTermID>(&type)) {
-        const auto construction = draft.construction_type_copy(*term);
-        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
-            return nominal_declaration(draft, array->element);
-        }
-        return std::nullopt;
-    }
-    return draft.type_copy(std::get<TypeID>(type))
-        .value.visit(
-            Overloaded {
-                [](const StructTypeValue& value) noexcept -> std::optional<NominalDeclarationRef> {
-                    return NominalDeclarationRef {value.structure};
-                },
-                [](const EnumTypeValue& value) noexcept -> std::optional<NominalDeclarationRef> {
-                    return NominalDeclarationRef {value.enumeration};
-                },
-                [&](const ArrayTypeValue& array) noexcept {
-                    return nominal_declaration(draft, ConstructionTypeRef {array.element});
-                },
-                []<typename Value>(const Value&) static noexcept
-                    -> std::optional<NominalDeclarationRef> {
-                    static_assert(
-                        std::same_as<Value, BuiltinTypeValue>
-                            || std::same_as<Value, FunctionTypeValue>
-                            || std::same_as<Value, ClosureTypeValue>
-                            || std::same_as<Value, CallableViewTypeValue>
-                            || std::same_as<Value, CppTypeValue>
-                            || std::same_as<Value, PointerTypeValue>
-                            || std::same_as<Value, SliceTypeValue>
-                            || std::same_as<Value, RangeTypeValue>,
-                        "unhandled non-containing canonical type"
-                    );
-                    return std::nullopt;
-                },
-            }
-        );
-}
-
 auto append_dependency(
     ProgramDraft& draft,
     NominalContainmentGraph& graph,
@@ -74,17 +34,66 @@ auto append_dependency(
     std::size_t owner,
     ConstructionTypeRef type
 ) noexcept -> void {
-    const auto declaration = nominal_declaration(draft, type);
-    if (!declaration.has_value()) {
-        return;
-    }
-    const auto dependency = declaration_index(struct_count, *declaration);
-    if (dependency >= graph.declarations.size()) {
-        invariant_violation("nominal containment references an unknown declaration");
-    }
-    auto& dependencies = graph.dependencies[owner];
-    if (!std::ranges::contains(dependencies, dependency)) {
-        dependencies.push_back(dependency);
+    auto pending = std::vector<ConstructionTypeRef> {type};
+    auto visited = std::set<ConstructionTypeRef>();
+    const auto append_nominal = [&](NominalDeclarationRef declaration) noexcept {
+        const auto dependency = declaration_index(struct_count, declaration);
+        if (dependency >= graph.declarations.size()) {
+            invariant_violation("nominal containment references an unknown declaration");
+        }
+        auto& dependencies = graph.dependencies[owner];
+        if (!std::ranges::contains(dependencies, dependency)) {
+            dependencies.push_back(dependency);
+        }
+    };
+    while (!pending.empty()) {
+        const auto current = pending.back();
+        pending.pop_back();
+        if (!visited.insert(current).second) {
+            continue;
+        }
+        if (const auto* term = std::get_if<TypeTermID>(&current)) {
+            const auto construction = draft.construction_type_copy(*term);
+            if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
+                pending.push_back(array->element);
+            } else if (const auto* tuple =
+                           std::get_if<ConstructionTupleTypeValue>(&construction.value)) {
+                pending.insert(pending.end(), tuple->elements.begin(), tuple->elements.end());
+            }
+            continue;
+        }
+        draft.type_copy(std::get<TypeID>(current))
+            .value.visit(
+                Overloaded {
+                    [&](const StructTypeValue& value) noexcept {
+                        append_nominal(NominalDeclarationRef {value.structure});
+                    },
+                    [&](const EnumTypeValue& value) noexcept {
+                        append_nominal(NominalDeclarationRef {value.enumeration});
+                    },
+                    [&](const ArrayTypeValue& value) noexcept { pending.push_back(value.element); },
+                    [&](const TupleTypeValue& value) noexcept {
+                        for (const auto element : value.elements) {
+                            pending.emplace_back(element);
+                        }
+                    },
+                    []<typename Value>(const Value&) static noexcept {
+                        static_assert(
+                            std::same_as<Value, BuiltinTypeValue>
+                                || std::same_as<Value, FunctionTypeValue>
+                                || std::same_as<Value, ClosureTypeValue>
+                                || std::same_as<Value, CallableViewTypeValue>
+                                || std::same_as<Value, OperationTypeValue>
+                                || std::same_as<Value, CppTypeValue>
+                                || std::same_as<Value, PointerTypeValue>
+                                || std::same_as<Value, OwnedSequenceTypeValue>
+                                || std::same_as<Value, SliceTypeValue>
+                                || std::same_as<Value, RangeTypeValue>,
+                            "unhandled non-containing canonical type"
+                        );
+                    },
+                }
+            );
     }
 }
 

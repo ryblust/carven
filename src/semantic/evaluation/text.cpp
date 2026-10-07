@@ -13,7 +13,7 @@ auto SemanticExecutor::text_handle(const ExecutionValue& value, ProgramOriginID 
         return text->borrow();
     }
     if (const auto* text = std::get_if<ExecutionText>(&value)) {
-        if (!text->bytes()) {
+        if (!text->alive(&memory)) {
             return std::unexpected(
                 fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
             );
@@ -75,6 +75,22 @@ auto SemanticExecutor::text_intrinsic(
 ) noexcept -> ExecutionTask<ExecutionValue> {
     const auto intrinsic = std::get<TextIntrinsic>(operation.operation);
     switch (intrinsic) {
+        case TextIntrinsic::FromUTF8Unchecked: {
+            auto source = co_await sequence_view(frame, operation.operands[0].expression, origin);
+            if (!source) {
+                co_return std::unexpected(std::move(source.error()));
+            }
+            auto result = ExecutionText(std::move(*source));
+            const auto bytes = result.observe(values, &memory);
+            if (!bytes || !UTF8Decoder::is_valid(bytes->view())) {
+                co_return std::unexpected(trap(
+                    origin,
+                    ExecutionReason::Evaluation,
+                    "str::from_utf8_unchecked requires valid UTF-8 bytes"
+                ));
+            }
+            co_return result;
+        }
         case TextIntrinsic::FromU32Unchecked: {
             auto operand = (co_await this->value(frame, operation.operands[0].expression));
             if (!operand) {
@@ -131,7 +147,7 @@ auto SemanticExecutor::text_intrinsic(
                 if (!bytes) {
                     co_return std::unexpected(std::move(bytes.error()));
                 }
-                suffix = *bytes;
+                suffix = bytes->view();
             } else if (intrinsic == TextIntrinsic::Push) {
                 auto fact = read_fact(*operand, origin);
                 if (!fact) {
@@ -158,8 +174,7 @@ auto SemanticExecutor::text_intrinsic(
         case TextIntrinsic::Bytes:
         case TextIntrinsic::Chars:
         case TextIntrinsic::FromStr:
-        case TextIntrinsic::FromUTF8Unchecked:
-        case TextIntrinsic::AsStr:             break;
+        case TextIntrinsic::AsStr:   break;
     }
     auto operand = (co_await read_operand(frame, operation.operands[0].expression));
     if (!operand) {
@@ -184,24 +199,33 @@ auto SemanticExecutor::text_intrinsic(
         }
         receiver = *selected;
     }
-    auto bytes = text(*receiver, origin);
-    if (!bytes) {
-        co_return std::unexpected(std::move(bytes.error()));
+    auto handle = text_handle(*receiver, origin);
+    if (!handle) {
+        co_return std::unexpected(std::move(handle.error()));
+    }
+    const auto size = handle->size(&memory);
+    if (!size) {
+        co_return std::unexpected(
+            fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
+        );
     }
     switch (intrinsic) {
-        case TextIntrinsic::FromStr:
-            if (auto checked = account_text(bytes->size(), origin); !checked) {
+        case TextIntrinsic::FromStr: {
+            if (auto checked = account_text(*size, origin); !checked) {
                 co_return std::unexpected(std::move(checked.error()));
             }
-            co_return ExecutionOwnedText(std::string(*bytes));
-        case TextIntrinsic::AsStr:
-        case TextIntrinsic::Bytes: {
-            auto handle = text_handle(*receiver, origin);
-            if (!handle) {
-                co_return std::unexpected(std::move(handle.error()));
+            auto bytes = text(*receiver, origin);
+            if (!bytes) {
+                co_return std::unexpected(std::move(bytes.error()));
             }
-            if (intrinsic == TextIntrinsic::AsStr) {
-                co_return handle->borrow();
+            co_return ExecutionOwnedText(std::string(bytes->view()));
+        }
+        case TextIntrinsic::AsStr: co_return handle->borrow();
+        case TextIntrinsic::Bytes: {
+            if (const auto* source = handle->slice()) {
+                auto result = *source;
+                result.type = result_type;
+                co_return result;
             }
             auto backing = memory.text_bytes(*handle, values.builtin_type(BuiltinType::U8));
             if (!backing) {
@@ -213,25 +237,25 @@ auto SemanticExecutor::text_intrinsic(
                 .type = result_type,
                 .backing = std::move(*backing),
                 .offset = 0uz,
-                .extent = bytes->size()
+                .extent = *size
             };
         }
         case TextIntrinsic::Len:
             co_return ConstantAtom {
                 .type = result_type,
-                .value = IntegerConstant::from_parts(bytes->size(), false),
+                .value = IntegerConstant::from_parts(*size, false),
             };
         case TextIntrinsic::IsEmpty:
             co_return ConstantAtom {
                 .type = result_type,
-                .value = BooleanConstant {.value = bytes->empty()},
+                .value = BooleanConstant {.value = *size == 0uz},
             };
-        case TextIntrinsic::FromU32Unchecked: std::unreachable();
+        case TextIntrinsic::FromUTF8Unchecked:
+        case TextIntrinsic::FromU32Unchecked:  std::unreachable();
         case TextIntrinsic::Clear:
         case TextIntrinsic::Append:
         case TextIntrinsic::Push:
         case TextIntrinsic::Chars:
-        case TextIntrinsic::FromUTF8Unchecked:
             co_return std::unexpected(fail(
                 origin,
                 ExecutionReason::Evaluation,
@@ -270,11 +294,13 @@ auto SemanticExecutor::format(
         }
         arguments.push_back(std::move(*result));
     }
+    auto text_observations = std::deque<ExecutionTextObservation>();
     auto observed = std::vector<BuiltinFormatValue>();
     observed.reserve(arguments.size());
     for (const auto& argument : arguments) {
-        if (const auto text = execution_text(values, argument)) {
-            observed.emplace_back(*text);
+        if (auto text = execution_text(values, argument, &memory)) {
+            text_observations.push_back(std::move(*text));
+            observed.emplace_back(text_observations.back().view());
         } else if (const auto atom = execution_atom(values, argument)) {
             observed.push_back(builtin_format_value(values, constant_fact(*atom)));
         } else {

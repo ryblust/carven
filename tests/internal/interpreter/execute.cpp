@@ -26,6 +26,28 @@ auto entry(const SemIRProgram& program) noexcept -> FunctionID {
 }
 
 const TestSuite suite([] static noexcept {
+    "Interpreter: floating classification evaluates the receiver once"_test = [] static noexcept {
+        const auto program = analyze_test_program(R"(
+        fn observe(&count: i32) -> f32 { count += 1; return 1.0; }
+        var count = 0;
+        println(observe(&count).is_finite(), count, (1.0f64 / 0.0).is_finite());
+    )");
+        auto output = std::string();
+        const auto write_output = [&](ExecutionOutputStream stream,
+                                      std::string_view bytes) noexcept {
+            expect(stream == ExecutionOutputStream::Standard);
+            output.append(bytes);
+        };
+        const auto result = interpret(
+            program,
+            entry(program),
+            write_output,
+            InterpreterOptions {.limits = static_execution_limits(), .trace = {}, .report = {}}
+        );
+        expect(result.has_value());
+        expect_equal(output, std::string("true 1 false\n"));
+    };
+
     "Interpreter: argument observation follows shared storage and evaluation rules"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(

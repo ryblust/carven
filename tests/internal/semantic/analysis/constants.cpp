@@ -45,8 +45,7 @@ const TestSuite suite([] static noexcept {
                 if (!expect(integer != nullptr)) {
                     return;
                 }
-                expect(((integer->as_signed()) == (expected_integers[index])))
-                    .note("integer->as_signed() == expected_integers[index]");
+                expect_equal(integer->as_signed(), expected_integers[index]);
             }
             const auto* equality =
                 std::get_if<BooleanConstant>(&program.constants().constant(values.back()).value);
@@ -123,7 +122,7 @@ const TestSuite suite([] static noexcept {
                     &program.constants().constant(declaration.value).value
                 );
                 if (expect(value != nullptr)) {
-                    expect(value->as_signed() == 77);
+                    expect_equal(value->as_signed(), 77);
                 }
             }
             require_equal(program.declarations().functions().size(), 1uz);

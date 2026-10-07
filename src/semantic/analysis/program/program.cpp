@@ -70,30 +70,43 @@ auto ProgramDraft::intern_type(const CanonicalType& type) noexcept -> TypeID {
     return storage.types.intern(type);
 }
 
+auto ProgramDraft::record_sequence_element(TypeID element, ProgramOriginID origin) noexcept
+    -> void {
+    storage.sequence_elements.emplace_back(element, origin);
+}
+
 auto ProgramDraft::builtin_type(BuiltinType type) const noexcept -> TypeID {
     return storage.types.builtin_type(type);
 }
 
-auto ProgramDraft::canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID {
+auto ProgramDraft::try_canonicalize_declared_type(ConstructionTypeRef type) noexcept
+    -> std::optional<TypeID> {
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
         return *concrete;
     }
-    return ConstructionTypeStore::canonicalize_type(
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto shape = generic_type_copy(*generic);
+        const auto* concrete = std::get_if<TypeID>(&shape);
+        return concrete ? std::optional(*concrete) : std::nullopt;
+    }
+    return ConstructionTypeStore::try_canonicalize_type(
         construction_type_copy(std::get<TypeTermID>(type)),
         storage.types,
         storage.callable_signatures,
-        [&](ConstructionTypeRef child) noexcept { return canonicalize_declared_type(child); },
-        [&](FailureTermID term) noexcept {
-            const auto failures = construction_failure_term_copy(term);
-            if (!failures.inputs.empty()
-                || !failures.guarded_inputs.empty()
-                || !failures.excluded_members.empty()
-                || failures.retained_members) {
-                invariant_violation("declared type contains an inferred callable contract");
-            }
-            return intern_failure_set(failures.direct_members);
+        [&](ConstructionTypeRef child) noexcept { return try_canonicalize_declared_type(child); },
+        [](ConstructionFailureRef failures) static noexcept -> std::optional<FailureSetID> {
+            const auto* known = std::get_if<FailureSetID>(&failures);
+            return known ? std::optional(*known) : std::nullopt;
         }
     );
+}
+
+auto ProgramDraft::canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID {
+    const auto concrete = try_canonicalize_declared_type(type);
+    if (!concrete) {
+        invariant_violation("declared type contains an inferred callable contract");
+    }
+    return *concrete;
 }
 
 auto ProgramDraft::type_copy(TypeID type) const noexcept -> CanonicalType {
@@ -111,6 +124,10 @@ auto ProgramDraft::intern_constant(ConstantFact fact) noexcept -> ConstantID {
 
 auto ProgramDraft::constant(ConstantID constant) const noexcept -> const ConstantFact& {
     return storage.constants.constant(constant);
+}
+
+auto ProgramDraft::failure_set_copy(FailureSetID failures) const noexcept -> FailureSet {
+    return storage.failure_sets.copy(failures);
 }
 
 auto ProgramDraft::intern_failure_set(std::vector<TypeID> members) noexcept -> FailureSetID {
@@ -244,6 +261,7 @@ auto ProgramDraft::complete_function_result(CallableID id, ConstructionTypeRef r
     storage.declarations.define_callable_contract(
         id,
         {
+            .execution = found->second.execution,
             .parameters = std::move(found->second.parameters),
             .result = result,
             .failures = found->second.failures,
@@ -318,6 +336,24 @@ auto ProgramDraft::struct_field_types(StructID structure) const noexcept
 
 auto ProgramDraft::enum_cases(EnumID id) const noexcept -> std::span<const EnumCaseID> {
     return storage.declarations.construction_view().enum_cases(id);
+}
+
+auto ProgramDraft::enum_case_named(EnumID enumeration, std::string_view name) const noexcept
+    -> std::optional<EnumCaseID> {
+    for (const auto id : enum_declaration_copy(enumeration).cases) {
+        if (spelling(construction_enum_case_declaration_copy(id).name) == name) {
+            return id;
+        }
+    }
+    return std::nullopt;
+}
+
+auto ProgramDraft::enum_case_names(EnumID enumeration) const noexcept -> std::vector<std::string> {
+    auto names = std::vector<std::string>();
+    for (const auto id : enum_declaration_copy(enumeration).cases) {
+        names.push_back(spelling_copy(construction_enum_case_declaration_copy(id).name));
+    }
+    return names;
 }
 
 auto ProgramDraft::enum_declaration_copy(EnumID id) const noexcept -> EnumDeclaration {
@@ -410,25 +446,20 @@ auto ProgramDraft::add_empty_failure_term() noexcept -> FailureTermID {
     return storage.failure_constraints.add_empty_term();
 }
 
-auto ProgramDraft::add_concrete_failure_term(std::vector<TypeID> members) noexcept
-    -> FailureTermID {
-    return storage.failure_constraints.add_concrete_term(std::move(members));
-}
-
-auto ProgramDraft::add_union_failure_term(std::vector<FailureTermID> inputs) noexcept
+auto ProgramDraft::add_union_failure_term(std::vector<ConstructionFailureRef> inputs) noexcept
     -> FailureTermID {
     return storage.failure_constraints.add_union_term(std::move(inputs));
 }
 
 auto ProgramDraft::add_residual_failure_term(
-    FailureTermID input,
+    ConstructionFailureRef input,
     std::vector<TypeID> handled_members
 ) noexcept -> FailureTermID {
     return storage.failure_constraints.add_residual_term(input, std::move(handled_members));
 }
 
 auto ProgramDraft::add_intersection_failure_term(
-    FailureTermID input,
+    ConstructionFailureRef input,
     std::vector<TypeID> retained_members
 ) noexcept -> FailureTermID {
     return storage.failure_constraints.add_intersection_term(input, std::move(retained_members));
@@ -448,15 +479,15 @@ auto ProgramDraft::add_thrown_failure_member(
 
 auto ProgramDraft::add_failure_contribution(
     FailureTermID destination,
-    FailureTermID source
+    ConstructionFailureRef source
 ) noexcept -> void {
     storage.failure_constraints.add_contribution(destination, source);
 }
 
 auto ProgramDraft::add_guarded_failure_contribution(
     FailureTermID destination,
-    FailureTermID gate,
-    FailureTermID source
+    ConstructionFailureRef gate,
+    ConstructionFailureRef source
 ) noexcept -> void {
     storage.failure_constraints.add_guarded_contribution(destination, gate, source);
 }
@@ -466,21 +497,24 @@ auto ProgramDraft::equate_failures(FailureTermID left, FailureTermID right) noex
 }
 
 auto ProgramDraft::require_empty_failures(
-    FailureTermID term,
+    ConstructionFailureRef source,
     ProgramOriginID origin,
     EmptyFailureRequirementKind kind
 ) noexcept -> void {
-    storage.failure_constraints.require_empty(term, origin, kind);
+    storage.failure_constraints.require_empty(source, origin, kind);
 }
 
-auto ProgramDraft::require_non_empty_failures(FailureTermID term, ProgramOriginID origin) noexcept
-    -> void {
-    storage.failure_constraints.require_non_empty(term, origin);
+auto ProgramDraft::require_non_empty_failures(
+    ConstructionFailureRef source,
+    ProgramOriginID origin,
+    bool allow_dependent
+) noexcept -> void {
+    storage.failure_constraints.require_non_empty(source, origin, allow_dependent);
 }
 
 auto ProgramDraft::require_failure_subset(
-    FailureTermID actual,
-    FailureTermID allowed,
+    ConstructionFailureRef actual,
+    ConstructionFailureRef allowed,
     ProgramOriginID origin,
     FailureSubsetRequirementKind kind
 ) noexcept -> void {
@@ -488,15 +522,15 @@ auto ProgramDraft::require_failure_subset(
 }
 
 auto ProgramDraft::require_equal_failures(
-    FailureTermID left,
-    FailureTermID right,
+    ConstructionFailureRef left,
+    ConstructionFailureRef right,
     ProgramOriginID origin
 ) noexcept -> void {
     storage.failure_constraints.require_equal(left, right, origin);
 }
 
 auto ProgramDraft::require_declared_failure_contract(
-    FailureTermID actual,
+    ConstructionFailureRef actual,
     ProgramOriginID origin
 ) noexcept -> void {
     storage.failure_constraints.require_declared_contract(actual, origin);
@@ -681,6 +715,7 @@ auto ProgramDraft::set_residual(BodyID body, StructuredRegionDraft residual) noe
         .region = std::move(source.region),
         .residual = std::move(residual.region),
         .specialized = std::nullopt,
+        .generic_definition = source.generic_definition,
     };
     storage.bodies[body.index()].definition =
         std::make_unique<StructuredBodyDraft>(std::move(completed));
@@ -715,6 +750,7 @@ auto ProgramDraft::reserve_static_instance(
     const auto source =
         construction_callable_contract_copy(function_declaration_copy(function).callable);
     auto contract = ConstructionCallableContract {
+        .execution = source.execution,
         .parameters = {},
         .result = source.result,
         .failures = source.failures,
@@ -855,10 +891,16 @@ auto BodyReservation::kind() const noexcept -> BodyKind {
     return body_kind;
 }
 
-BodyReservation::BodyReservation(BodyID id, BodyKind kind, ProvenanceIdentity provenance) noexcept
+BodyReservation::BodyReservation(
+    BodyID id,
+    BodyKind kind,
+    ProvenanceIdentity provenance,
+    BodyIdentityDomain domain
+) noexcept
     : body_id(id),
       body_kind(kind),
-      provenance_identity(provenance) {}
+      provenance_identity(provenance),
+      domain(domain) {}
 
 auto ProgramDraft::identity() const noexcept -> ProgramIdentity {
     return program_identity;

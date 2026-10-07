@@ -3,6 +3,7 @@ module carven:semantic.analysis.stage.session.impl;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.constant.freeze;
+import :semantic.analysis.construction.limits;
 import :semantic.analysis.stage.iteration;
 import :semantic.analysis.stage.session;
 import :semantic.analysis.stage.specialization;
@@ -19,7 +20,6 @@ import std;
 namespace {
 
 constexpr auto maximum_nested_roots = 128uz;
-constexpr auto maximum_nodes = 524'288uz;
 constexpr auto maximum_iterations = 100'000uz;
 constexpr auto maximum_instances = 4096uz;
 
@@ -68,14 +68,11 @@ public:
     auto report(const ExecutionEvent& event) noexcept -> void override;
     auto failure() const noexcept -> std::optional<AnalysisFailure>;
     auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
-    auto enter_block(BlockSource source) noexcept -> void override;
-    auto leave_block() noexcept -> void override;
 
 private:
     StaticStage& stage;
     ProgramDraft& draft;
-    std::optional<ExecutionRoot> root;
-    std::vector<std::optional<ExecutionRoot>> outer_roots;
+    const std::optional<ExecutionRoot> root;
     ExecutionOutputMode output;
     std::optional<AnalysisFailure> reported_failure;
 };
@@ -89,16 +86,6 @@ StaticExecutionContext::StaticExecutionContext(
       draft(stage.draft()),
       root(root),
       output(output) {}
-
-auto StaticExecutionContext::enter_block(BlockSource source) noexcept -> void {
-    outer_roots.push_back(root);
-    root = ExecutionRoot {.kind = "const block", .source = source};
-}
-
-auto StaticExecutionContext::leave_block() noexcept -> void {
-    root = outer_roots.back();
-    outer_roots.pop_back();
-}
 
 auto StaticExecutionContext::write(ExecutionOutputStream stream, std::string_view bytes) noexcept
     -> void {
@@ -271,12 +258,15 @@ auto StaticExecutionContext::report(const ExecutionEvent& event) noexcept -> voi
             std::format("{} additional call site{} omitted", omitted, omitted == 1 ? "" : "s")
         );
     }
-    if (root) {
-        auto message = std::format("while evaluating this {}", root->kind);
-        if (root->source.label) {
-            message += std::format(" {:?}", draft.spelling(*root->source.label));
+    const auto report_root = event.blocks.empty()
+        ? root
+        : std::optional(ExecutionRoot {.kind = "const block", .source = event.blocks.back()});
+    if (report_root) {
+        auto message = std::format("while evaluating this {}", report_root->kind);
+        if (report_root->source.label) {
+            message += std::format(" {:?}", draft.spelling(*report_root->source.label));
         }
-        diagnostic.related(draft.source_span(root->source.origin), std::move(message));
+        diagnostic.related(draft.source_span(report_root->source.origin), std::move(message));
     }
     reported_failure = draft.diagnostics().error(diagnostic.build());
 }
@@ -384,7 +374,7 @@ auto StaticStage::charge(StageResource resource, ProgramOriginID origin) noexcep
     };
 
     static constexpr auto budgets = std::array {
-        Budget {.limit = maximum_nodes, .name = "node"},
+        Budget {.limit = maximum_construction_work, .name = "node"},
         Budget {.limit = maximum_iterations, .name = "iteration"},
         Budget {.limit = maximum_instances, .name = "instance"},
     };
@@ -422,11 +412,17 @@ auto StaticStage::realize_body(BodyID body) noexcept -> AnalysisTask<void> {
         } else if constexpr (std::same_as<Node, SemanticRegion>) {
             needs_stage |= node.result && !node.result_reachable;
         } else {
+            needs_stage |= std::holds_alternative<SemGenericCall>(node.value);
             if (const auto* branch = std::get_if<SemIf>(&node.value)) {
                 needs_stage |= branch->is_static;
             }
             if (const auto* call = std::get_if<SemCall>(&node.value); call && call->target) {
                 if (const auto function = program.function_for_callable(*call->target)) {
+                    needs_stage |= program.staged_function(*function);
+                }
+            }
+            if (const auto* call = std::get_if<SemColdCall>(&node.value)) {
+                if (const auto function = program.function_for_callable(call->target)) {
                     needs_stage |= program.staged_function(*function);
                 }
             }
@@ -447,7 +443,15 @@ auto StaticStage::realize_body(BodyID body) noexcept -> AnalysisTask<void> {
         co_return std::unexpected(limit_failure(region.origin, "nesting"));
     }
     active_bodies.insert(body);
+    const auto closed = co_await construction_requests.close_generic_calls(region);
+    if (!closed) {
+        active_bodies.erase(body);
+        co_return std::unexpected(closed.error());
+    }
     auto changed = co_await specialize_region(*this, body, {}, region);
+    if (changed) {
+        *changed |= *closed;
+    }
     active_bodies.erase(body);
     if (!changed) {
         realized_bodies.emplace(body, changed.error());
@@ -505,7 +509,14 @@ auto StaticStage::instance(
         return source.region;
     }();
     const auto [callable, body] = program.reserve_static_instance(function, std::move(arguments));
+    const auto closed = co_await construction_requests.close_generic_calls(region);
+    if (!closed) {
+        co_return std::unexpected(closed.error());
+    }
     auto changed = co_await specialize_region(*this, *completed, std::move(environment), region);
+    if (changed) {
+        *changed |= *closed;
+    }
     if (!changed) {
         program.fail_static_instance(callable, changed.error());
         co_return std::unexpected(changed.error());
@@ -532,6 +543,7 @@ auto StaticStage::instance(
             .region = std::move(expanded.region),
             .residual = std::nullopt,
             .specialized = *completed,
+            .generic_definition = source.generic_definition,
         }
     );
     co_return callable;
@@ -550,6 +562,11 @@ auto StaticStage::evaluate(
 }
 
 auto StaticStage::run_body(BodyID body, BlockSource source) noexcept -> AnalysisTask<void> {
+    auto region = program.body_draft(body).region;
+    const auto closed = co_await construction_requests.close_generic_calls(region);
+    if (!closed) {
+        co_return std::unexpected(closed.error());
+    }
     const auto& definition = program.body_draft(body);
     auto context = StaticExecutionContext(
         *this,
@@ -561,17 +578,26 @@ auto StaticStage::run_body(BodyID body, BlockSource source) noexcept -> Analysis
     co_return delivered(
         program,
         context,
-        co_await execute_body(program, context, ExecutionBody(definition, definition.region))
+        co_await execute_body(program, context, ExecutionBody(definition, region))
     );
 }
 
 auto StaticStage::run_block(BodyID body, const SemanticRegion& region, BlockSource source) noexcept
     -> AnalysisTask<void> {
+    auto closed_region = region;
+    const auto closed = co_await construction_requests.close_generic_calls(closed_region);
+    if (!closed) {
+        co_return std::unexpected(closed.error());
+    }
     auto context =
         StaticExecutionContext(*this, ExecutionRoot {.kind = "const block", .source = source});
     co_return delivered(
         program,
         context,
-        co_await execute_body(program, context, ExecutionBody(program.body_draft(body), region))
+        co_await execute_body(
+            program,
+            context,
+            ExecutionBody(program.body_draft(body), closed_region)
+        )
     );
 }

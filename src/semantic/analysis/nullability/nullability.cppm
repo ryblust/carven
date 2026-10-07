@@ -1,9 +1,9 @@
 module carven:semantic.analysis.nullability;
 
 import :semantic.analysis.diagnostics;
-import :semantic.semir.program;
+import :semantic.analysis.model;
 
 auto check_pointer_nullability(
-    const SemIRProgram& program,
+    const AnalysisModelView& analysis,
     AnalysisDiagnostics diagnostics
 ) noexcept -> AnalysisResult<void>;

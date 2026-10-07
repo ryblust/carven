@@ -159,7 +159,7 @@ standard-library code.
 
 ## Support headers
 
-Generated files include the self-contained support leaves they use:
+Generated files include the self-contained support component entries they use:
 
 ```text
 carven/runtime/passing.hpp
@@ -168,11 +168,11 @@ carven/runtime/numeric.hpp
 carven/runtime/array.hpp
 carven/runtime/range.hpp
 carven/runtime/slice.hpp
-carven/runtime/text.hpp
-carven/runtime/utf.hpp
-carven/runtime/string.hpp
+carven/runtime/sequence.hpp
+carven/runtime/text/text.hpp
 carven/runtime/format.hpp
-carven/runtime/writer.hpp
+carven/runtime/format_writer.hpp
+carven/runtime/simd/simd.hpp
 carven/runtime/print.hpp
 carven/runtime/display/display.hpp
 carven/runtime/entry.hpp
@@ -183,7 +183,7 @@ carven/runtime/unreachable.hpp
 carven/runtime/testing.hpp
 ```
 
-`carven/runtime/runtime.hpp` aggregates runtime leaves for direct consumers.
+`carven/runtime/runtime.hpp` aggregates runtime component entries for direct consumers.
 The compiler and its generated support are developed together. Private target
 names, helper selections, and representation layouts are implementation details.
 Use support headers matching the compiler that generated the artifacts.
@@ -193,11 +193,12 @@ supplies process-argument ingress. `trap.hpp` supplies source-positioned
 termination for violated runtime checks. `testing.hpp` supplies inline-test execution
 contexts, failure records, and reporting in `carven::runtime`.
 
-`utf.hpp` supplies UTF validation, scalar encoding and decoding, and native
-representation conversions. `text.hpp` supplies text views; `string.hpp` supplies owning
-String. General interpolation uses `format.hpp` and requires C++20 `<format>`
-support. Supported builtin formatting uses `writer.hpp`, including mixed integer,
-floating, bool, char, and text fields; precomputed text uses direct String
+`text/text.hpp` supplies owning String, borrowed text views, UTF-8 validation,
+scalar encoding and decoding, and native representation conversions. Its
+implementation headers are `string.hpp`, `view.hpp`, and `utf8.hpp`.
+`format.hpp` supplies general interpolation and requires C++20 `<format>` support.
+`format_writer.hpp` defines FormatWriter for prepared builtin formatting, including
+mixed integer, floating, bool, char, and text fields; precomputed text uses direct String
 construction or append. Structural printing uses `display/display.hpp`. The consumer
 compiler checks delegated format strings and native formatter availability.
 `print.hpp` supplies stdout

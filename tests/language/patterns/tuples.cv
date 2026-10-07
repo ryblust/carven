@@ -1,0 +1,89 @@
+private enum Choice {
+    Number(i32),
+    Empty,
+}
+
+private const fn classify(value: (bool, bool)) -> i32 => match value {
+    (true, _) | (_, true) => 1,
+    (false, false) => 0,
+};
+
+private const fn nested(value: (Choice, (bool, void))) -> i32 => match value {
+    (.Number(number), (true, ())) => number,
+    (.Number(number), (false, ())) => -number,
+    (.Empty, (_, ())) => 0,
+};
+
+private const fn select_slot(value: (i32, i32, bool)) -> i32 => match value {
+    (selected, _, true) | (_, selected, false) => selected,
+};
+
+private const fn singleton(value: (i32,)) -> i32 => match value {
+    (selected,) => selected,
+};
+
+private const fn empty(value: void) -> i32 => match value {
+    () => 17,
+};
+
+const test "Tuple patterns: constant products preserve correlated coverage and projections" {
+    check(classify((true, true)) == 1);
+    check(classify((true, false)) == 1);
+    check(classify((false, true)) == 1);
+    check(classify((false, false)) == 0);
+    check(nested((Choice::Number(7), (true, ()))) == 7);
+    check(nested((Choice::Number(7), (false, ()))) == -7);
+    check(nested((Choice::Empty, (false, ()))) == 0);
+    check(select_slot((2, 5, true)) == 2);
+    check(select_slot((2, 5, false)) == 5);
+    check(singleton((13,)) == 13);
+    check(empty(()) == 17);
+}
+
+private fn source(&calls: i32) -> ((i32, bool), void) {
+    calls += 1;
+    return ((7, false), ());
+}
+
+private fn record_guard(&calls: i32) -> bool {
+    calls += 1;
+    return false;
+}
+
+private fn consume(&&number: i32) -> i32 => number;
+
+test "Tuple patterns: source runs once and rejected guards preserve later bindings" {
+    var sources = 0;
+    var guards = 0;
+    let selected = match source(&sources) {
+        ((number, false), ()) if record_guard(&guards) => number + 1,
+        ((number, false), ()) => {
+            let owned = number;
+            consume(&&owned)
+        },
+        ((_, true), ()) => -1,
+    };
+    check(selected == 7);
+    check(sources == 1);
+    check(guards == 1);
+    check(select_slot((2, 5, false)) == 5);
+    check(nested((Choice::Number(7), (false, ()))) == -7);
+    check(singleton((13,)) == 13);
+    check(empty(()) == 17);
+}
+
+private fn bound(&trace: i32, digit: i32, value: i32) -> i32 {
+    trace = trace * 10 + digit;
+    return value;
+}
+
+test "Tuple patterns: rejected elements skip later dynamic bounds" {
+    var trace = 0;
+    let result = match (false, 5) {
+        (true, (bound(&trace, 1, 0))..=(bound(&trace, 2, 10))) => 1,
+        (false, (bound(&trace, 3, 0))..=(bound(&trace, 4, 10))) => 2,
+        _ => 3,
+    };
+    check(result == 2);
+    check(trace == 34);
+}

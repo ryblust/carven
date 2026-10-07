@@ -33,13 +33,6 @@ auto read_value_argument(
     if (!operand) {
         co_return std::unexpected(operand.error());
     }
-    if (site.type(*operand) == ConstructionTypeRef(site.draft().builtin_type(BuiltinType::Void))) {
-        co_return std::unexpected(site.fail(
-            span,
-            DiagnosticCode::TypeValueRequired,
-            "expression does not produce a value"
-        ));
-    }
     if (expected) {
         if (auto checked = site.convert_argument(*operand, *expected, span); !checked) {
             co_return std::unexpected(checked.error());

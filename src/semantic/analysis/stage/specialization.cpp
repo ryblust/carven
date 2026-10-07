@@ -2,6 +2,7 @@ module carven:semantic.analysis.stage.specialization.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
+import :semantic.analysis.constant.fold;
 import :semantic.analysis.constant.freeze;
 import :semantic.analysis.program;
 import :semantic.analysis.stage.session;
@@ -29,6 +30,9 @@ public:
 private:
     auto expression(SemanticExpression& source) noexcept -> AnalysisTask<void>;
     auto statement(SemanticStatement& source) noexcept -> AnalysisTask<void>;
+    template<typename Call>
+    auto specialize_call(Call& call, CallableID target, ProgramOriginID origin) noexcept
+        -> AnalysisTask<bool>;
     auto pattern_bounds(
         std::span<const PatternID> roots,
         std::vector<SemPatternBounds>& bounds
@@ -174,6 +178,8 @@ auto Specializer::pattern_bounds(
                 );
             } else if constexpr (std::same_as<Operation, EnumCasePattern>) {
                 pending.insert(pending.end(), operation.payload.begin(), operation.payload.end());
+            } else if constexpr (std::same_as<Operation, TuplePattern>) {
+                pending.append_range(operation.elements);
             }
         });
     }
@@ -240,6 +246,8 @@ auto Specializer::pattern(
                 result.disjunction = true;
             } else if constexpr (std::same_as<Operation, EnumCasePattern>) {
                 result.children = operation.payload;
+            } else if constexpr (std::same_as<Operation, TuplePattern>) {
+                result.children = operation.elements;
             }
         });
         return result;
@@ -284,6 +292,46 @@ auto Specializer::pattern(
     co_return {};
 }
 
+template<typename Call>
+auto Specializer::specialize_call(Call& call, CallableID target, ProgramOriginID origin) noexcept
+    -> AnalysisTask<bool> {
+    const auto function = draft.function_for_callable(target);
+    if (!function || !draft.staged_function(*function)) {
+        co_return false;
+    }
+    rewritten = true;
+    const auto contract = draft.construction_callable_contract_copy(target);
+    auto constants = std::vector<ConstantID>();
+    auto runtime = std::vector<SemCallArgument>();
+    for (auto index = 0uz; index < call.arguments.size(); ++index) {
+        auto& argument = call.arguments[index];
+        if (contract.parameters[index].stage == ParameterStage::Static) {
+            auto value = co_await evaluate(argument.expression);
+            if (!value) {
+                co_return std::unexpected(value.error());
+            }
+            constants.push_back(*value);
+        } else {
+            auto value = co_await expression(argument.expression);
+            if (!value) {
+                co_return std::unexpected(value.error());
+            }
+            runtime.push_back(std::move(argument));
+        }
+    }
+    auto instance = co_await stage.instance(*function, std::move(constants), origin);
+    if (!instance) {
+        co_return std::unexpected(instance.error());
+    }
+    // The call retains its execution kind and names the selected instance.
+    call.target = *instance;
+    call.callee->type =
+        BodyType(draft.intern_type({.value = FunctionTypeValue {.callable = *instance}}));
+    call.callee->value = SemCallable {.callable = *instance};
+    call.arguments = std::move(runtime);
+    co_return true;
+}
+
 auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTask<void> {
     if (auto charged = stage.charge(StageResource::Nodes, source.origin); !charged) {
         co_return std::unexpected(charged.error());
@@ -323,40 +371,20 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
         }
         co_return {};
     }
-    if (auto* call = std::get_if<SemCall>(&source.value)) {
-        const auto function =
-            call->target ? draft.function_for_callable(*call->target) : std::nullopt;
-        if (function && draft.staged_function(*function)) {
-            rewritten = true;
-            const auto contract = draft.construction_callable_contract_copy(*call->target);
-            auto constants = std::vector<ConstantID>();
-            auto runtime = std::vector<SemCallArgument>();
-            for (auto index = 0uz; index < call->arguments.size(); ++index) {
-                auto& argument = call->arguments[index];
-                if (contract.parameters[index].stage == ParameterStage::Static) {
-                    auto value = co_await evaluate(argument.expression);
-                    if (!value) {
-                        co_return std::unexpected(value.error());
-                    }
-                    constants.push_back(*value);
-                } else {
-                    auto value = co_await expression(argument.expression);
-                    if (!value) {
-                        co_return std::unexpected(value.error());
-                    }
-                    runtime.push_back(std::move(argument));
-                }
-            }
-            auto instance = co_await stage.instance(*function, std::move(constants), source.origin);
-            if (!instance) {
-                co_return std::unexpected(instance.error());
-            }
-            // The call names the instance as an ordinary callable.
-            call->target = *instance;
-            call->callee->type =
-                BodyType(draft.intern_type({.value = FunctionTypeValue {.callable = *instance}}));
-            call->callee->value = SemCallable {.callable = *instance};
-            call->arguments = std::move(runtime);
+    if (auto* call = std::get_if<SemCall>(&source.value); call && call->target) {
+        auto specialized = co_await specialize_call(*call, *call->target, source.origin);
+        if (!specialized) {
+            co_return std::unexpected(specialized.error());
+        }
+        if (*specialized) {
+            co_return {};
+        }
+    } else if (auto* call = std::get_if<SemColdCall>(&source.value)) {
+        auto specialized = co_await specialize_call(*call, call->target, source.origin);
+        if (!specialized) {
+            co_return std::unexpected(specialized.error());
+        }
+        if (*specialized) {
             co_return {};
         }
     }
@@ -531,7 +559,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
                 }
             }
             attempt->residual_failures = BodyFailures(draft.add_intersection_failure_term(
-                attempt->residual_failures.term(),
+                attempt->residual_failures.reference(),
                 std::move(types)
             ));
             rewritten = true;
@@ -557,6 +585,16 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
             co_return std::unexpected(result.error());
         }
     }
+    // Substitution refreshes value facts and bounds proven by concrete array extents.
+    const auto previous = source.constant;
+    const auto* index = std::get_if<SemIndex>(&source.value);
+    const auto checked_index = index && std::holds_alternative<RuntimeCheckedBounds>(index->bounds);
+    if (auto folded = fold_constant_expression(draft, source, ConstantFoldFailure::KeepRuntime);
+        !folded) {
+        co_return std::unexpected(folded.error());
+    }
+    rewritten |= previous != source.constant
+        || (index && checked_index != std::holds_alternative<RuntimeCheckedBounds>(index->bounds));
     co_return {};
 }
 
@@ -566,31 +604,47 @@ auto Specializer::expand(SemRangeLoop& loop, ProgramOriginID origin) noexcept
     if (!constant) {
         co_return std::unexpected(constant.error());
     }
-    const auto fact = draft.constant(*constant);
+    const auto& fact = draft.constant(*constant);
     const auto* range = std::get_if<RangeConstant>(&fact.value);
-    if (!range) {
-        invariant_violation("static loop source is not an integer range");
+    auto elements = std::span<const ConstantID>();
+    if (const auto* array = std::get_if<ArrayConstant>(&fact.value)) {
+        elements = array->elements;
+    } else if (const auto* slice = std::get_if<SliceConstant>(&fact.value)) {
+        elements = slice->elements;
+    } else if (!range) {
+        invariant_violation("static loop source is not a range, array, or slice");
     }
-    const auto range_type = draft.type_copy(fact.type);
-    const auto element = std::get<RangeTypeValue>(range_type.value).element;
+    const auto sequence_type = draft.type_copy(fact.type);
+    const auto element = sequence_type.value.visit([](const auto& value) static noexcept -> TypeID {
+        using Value = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::same_as<Value, RangeTypeValue>
+                      || std::same_as<Value, ArrayTypeValue>
+                      || std::same_as<Value, SliceTypeValue>) {
+            return value.element;
+        } else {
+            invariant_violation("static loop source has no element type");
+        }
+    });
+    auto cursor = range ? std::optional(IntegerRangeCursor(*range)) : std::nullopt;
+    auto index = 0uz;
+    const auto next = [&]() noexcept -> std::optional<ConstantID> {
+        if (cursor) {
+            const auto current = cursor->next();
+            return current
+                ? std::optional(draft.intern_constant({.type = element, .value = *current}))
+                : std::nullopt;
+        }
+        return index < elements.size() ? std::optional(elements[index++]) : std::nullopt;
+    };
     const auto saved = environment;
     auto expanded = SemExpandedLoop {.iterations = {}};
-    auto current = range->begin;
-    const auto less = [](IntegerConstant a, IntegerConstant b) static noexcept {
-        return a.negative() != b.negative() ? a.negative()
-            : a.negative()                  ? a.magnitude() > b.magnitude()
-                                            : a.magnitude() < b.magnitude();
-    };
-    while (less(current, range->end) || (range->inclusive && current == range->end)) {
+    while (const auto current = next()) {
         if (auto charged = stage.charge(StageResource::Iterations, origin); !charged) {
             co_return std::unexpected(charged.error());
         }
         environment = saved;
         if (loop.binding) {
-            environment.insert_or_assign(
-                *loop.binding,
-                draft.intern_constant({.type = element, .value = current})
-            );
+            environment.insert_or_assign(*loop.binding, *current);
         }
         auto iteration = *loop.body;
         auto result = co_await region(iteration);
@@ -601,12 +655,9 @@ auto Specializer::expand(SemRangeLoop& loop, ProgramOriginID origin) noexcept
         expanded.iterations.push_back(std::move(iteration));
         // Continue enters the next copy; a copy that neither completes nor
         // continues makes the later ones unreachable.
-        if ((!leaves.contains(Exit::Normal) && !leaves.contains(Exit::Continue))
-            || current == range->end) {
+        if (!leaves.contains(Exit::Normal) && !leaves.contains(Exit::Continue)) {
             break;
         }
-        current = current.negative() ? IntegerConstant::from_parts(current.magnitude() - 1u, true)
-                                     : IntegerConstant::from_parts(current.magnitude() + 1u, false);
     }
     environment = saved;
     co_return expanded;

@@ -1,5 +1,6 @@
 module carven:semantic.analysis.operations.impl;
 
+import :diagnostics.builder;
 import :diagnostics.code;
 import :frontend.ast.expr;
 import :frontend.ast.literal;
@@ -8,8 +9,13 @@ import :frontend.literal;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.body;
+import :semantic.semir.constant;
 import :semantic.semir.decl;
+import :semantic.semir.generic;
+import :semantic.semir.sequence;
 import :semantic.semir.simd;
+import :semantic.semir.slice;
+import :semantic.semir.structured;
 import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
@@ -25,6 +31,7 @@ auto builtin_type(const CanonicalTypeStore& types, TypeID type) noexcept
 
 auto builtin_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<BuiltinType> {
+    type = unwrap_type_alias(draft, type);
     const auto* concrete = std::get_if<TypeID>(&type);
     if (concrete == nullptr) {
         return std::nullopt;
@@ -88,7 +95,11 @@ auto contextual_operand_kind(const ASTView& ast, ASTExprID id) noexcept -> Conte
             } else if constexpr (std::same_as<Form, ASTInterpolationExpr>
                                  || std::same_as<Form, ASTCppNameExpr>
                                  || std::same_as<Form, ASTNameExpr>
+                                 || std::same_as<Form, ASTTypeApplicationExpr>
                                  || std::same_as<Form, ASTArrayExpr>
+                                 || std::same_as<Form, ASTTupleExpr>
+                                 || std::same_as<Form, ASTTupleElementExpr>
+                                 || std::same_as<Form, ASTArrayRepeatExpr>
                                  || std::same_as<Form, ASTConstructionExpr>
                                  || std::same_as<Form, ASTPrefixExpr>
                                  || std::same_as<Form, ASTAccessExpr>
@@ -118,12 +129,6 @@ struct ArrayShape final {
     std::uint64_t extent;
 };
 
-struct CallableShape final {
-    std::optional<TypeID> owning_type;
-    std::vector<ConstructionCallableParameter> parameters;
-    ConstructionTypeRef result;
-};
-
 auto array_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ArrayShape> {
     if (const auto* concrete = std::get_if<TypeID>(&type)) {
@@ -137,6 +142,16 @@ auto array_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
                                       }
                                   );
     }
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto expression = draft.generic_type_copy(*generic);
+        if (const auto* concrete = std::get_if<TypeID>(&expression)) {
+            return array_shape(draft, ConstructionTypeRef(*concrete));
+        }
+        if (const auto* array = std::get_if<GenericArrayType>(&expression)) {
+            return ArrayShape {.element = array->element, .extent = array->extent};
+        }
+        return std::nullopt;
+    }
     const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
     const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value);
     return array == nullptr ? std::nullopt
@@ -146,39 +161,6 @@ auto array_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
                                       .extent = array->extent,
                                   }
                               );
-}
-
-auto callable_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::optional<CallableShape> {
-    if (const auto* concrete = std::get_if<TypeID>(&type)) {
-        const auto canonical = draft.type_copy(*concrete);
-        auto callable = std::optional<CallableID>();
-        if (const auto* function = std::get_if<FunctionTypeValue>(&canonical.value)) {
-            callable = function->callable;
-        } else if (const auto* closure = std::get_if<ClosureTypeValue>(&canonical.value)) {
-            callable = closure->callable;
-        }
-        if (callable.has_value()) {
-            const auto contract = draft.construction_callable_contract_copy(*callable);
-            return CallableShape {
-                .owning_type = *concrete,
-                .parameters = contract.parameters,
-                .result = contract.result,
-            };
-        }
-        return std::nullopt;
-    }
-
-    const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
-    const auto* view = std::get_if<ConstructionCallableViewTypeValue>(&construction.value);
-    return view == nullptr ? std::nullopt
-                           : std::optional(
-                                 CallableShape {
-                                     .owning_type = std::nullopt,
-                                     .parameters = view->parameters,
-                                     .result = view->result,
-                                 }
-                             );
 }
 
 auto shapes_compatible(
@@ -194,6 +176,40 @@ auto shapes_compatible(
         return true;
     }
 
+    const auto unwrapped_left = unwrap_type_alias(draft, left);
+    const auto unwrapped_right = unwrap_type_alias(draft, right);
+    if (unwrapped_left != left || unwrapped_right != right) {
+        return shapes_compatible(draft, unwrapped_left, unwrapped_right, visited);
+    }
+    const auto operation_success =
+        [&](ConstructionTypeRef type) noexcept -> std::optional<ConstructionTypeRef> {
+        if (const auto* concrete = std::get_if<TypeID>(&type)) {
+            const auto canonical = draft.type_copy(*concrete);
+            if (const auto* operation = std::get_if<OperationTypeValue>(&canonical.value)) {
+                return operation->success;
+            }
+        } else if (const auto* term = std::get_if<TypeTermID>(&type)) {
+            const auto construction = draft.construction_type_copy(*term);
+            if (const auto* operation =
+                    std::get_if<ConstructionOperationTypeValue>(&construction.value)) {
+                return operation->success;
+            }
+        }
+        if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+            const auto expression = draft.generic_type_copy(*generic);
+            if (const auto* operation = std::get_if<GenericOperationType>(&expression)) {
+                return operation->success;
+            }
+        }
+        return std::nullopt;
+    };
+    const auto left_operation = operation_success(left);
+    const auto right_operation = operation_success(right);
+    if (left_operation || right_operation) {
+        return left_operation
+            && right_operation
+            && shapes_compatible(draft, *left_operation, *right_operation, visited);
+    }
     const auto left_array = array_shape(draft, left);
     const auto right_array = array_shape(draft, right);
     if (left_array.has_value() || right_array.has_value()) {
@@ -201,6 +217,20 @@ auto shapes_compatible(
             && right_array.has_value()
             && left_array->extent == right_array->extent
             && shapes_compatible(draft, left_array->element, right_array->element, visited);
+    }
+
+    const auto left_tuple = tuple_elements(draft, left);
+    const auto right_tuple = tuple_elements(draft, right);
+    if (left_tuple || right_tuple) {
+        return left_tuple
+            && right_tuple
+            && std::ranges::equal(
+                   *left_tuple,
+                   *right_tuple,
+                   [&](ConstructionTypeRef a, ConstructionTypeRef b) noexcept {
+                       return shapes_compatible(draft, a, b, visited);
+                   }
+            );
     }
 
     const auto left_slice = slice_element(draft, left);
@@ -211,8 +241,17 @@ auto shapes_compatible(
             && shapes_compatible(draft, *left_slice, *right_slice, visited);
     }
 
-    const auto left_callable = callable_shape(draft, left);
-    const auto right_callable = callable_shape(draft, right);
+    const auto left_pointer = pointer_shape(draft, left);
+    const auto right_pointer = pointer_shape(draft, right);
+    if (left_pointer || right_pointer) {
+        return left_pointer
+            && right_pointer
+            && left_pointer->access == right_pointer->access
+            && shapes_compatible(draft, left_pointer->target, right_pointer->target, visited);
+    }
+
+    const auto left_callable = draft.callable_shape(left);
+    const auto right_callable = draft.callable_shape(right);
     if (left_callable.has_value() || right_callable.has_value()) {
         if (!left_callable.has_value() || !right_callable.has_value()) {
             return false;
@@ -247,6 +286,8 @@ auto shapes_compatible(
 
 auto semantic_operator(ASTPrefixOperator op) noexcept -> UnaryOperator {
     switch (op) {
+        case ASTPrefixOperator::Await:
+            invariant_violation("await is not an ordinary unary operator");
         case ASTPrefixOperator::Dereference:
             invariant_violation("pointer dereference is not a scalar unary operator");
         case ASTPrefixOperator::LogicalNot: return UnaryOperator::LogicalNot;
@@ -381,7 +422,8 @@ auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool {
         case BuiltinType::F32:
         case BuiltinType::F64:
         case BuiltinType::String:
-        case BuiltinType::Str:          return true;
+        case BuiltinType::Str:
+        case BuiltinType::Void:         return true;
         case BuiltinType::U8x32:
         case BuiltinType::F32x8:
         case BuiltinType::Mask8:
@@ -391,21 +433,73 @@ auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool {
         case BuiltinType::Mask4:
         case BuiltinType::Mask16:
         case BuiltinType::StrCharsView:
-        case BuiltinType::Void:
         case BuiltinType::EntryArgs:    return false;
     }
     std::unreachable();
 }
 
+auto unwrap_type_alias(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> ConstructionTypeRef {
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto expression = draft.generic_type_copy(*generic);
+        if (const auto* concrete = std::get_if<TypeID>(&expression)) {
+            return *concrete;
+        }
+    }
+    return type;
+}
+
 auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::optional<PointerTypeValue> {
+    -> std::optional<PointerShape> {
+    type = unwrap_type_alias(draft, type);
     if (const auto* id = std::get_if<TypeID>(&type)) {
         const auto canonical = draft.type_copy(*id);
         if (const auto* pointer = std::get_if<PointerTypeValue>(&canonical.value)) {
-            return *pointer;
+            return PointerShape {pointer->target, pointer->access};
+        }
+    }
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto expression = draft.generic_type_copy(*generic);
+        if (const auto* pointer = std::get_if<GenericPointerType>(&expression)) {
+            return PointerShape {pointer->target, pointer->access};
         }
     }
     return std::nullopt;
+}
+
+auto type_formation_status(
+    const ProgramDraft& draft,
+    TypeFormationRequirementKind requirement,
+    ConstructionTypeRef type
+) noexcept -> TypeFormationStatus {
+    type = unwrap_type_alias(draft, type);
+    switch (requirement) {
+        case TypeFormationRequirementKind::NonVoidObject: {
+            if (const auto* concrete = std::get_if<TypeID>(&type)) {
+                const auto canonical = draft.type_copy(*concrete);
+                if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+                    builtin && builtin->kind == BuiltinType::Void) {
+                    return TypeFormationStatus::Rejected;
+                }
+                return std::holds_alternative<CppTypeValue>(canonical.value)
+                    ? TypeFormationStatus::NativeDelegated
+                    : TypeFormationStatus::Supported;
+            }
+            if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+                const auto expression = draft.generic_type_copy(*generic);
+                if (std::holds_alternative<GenericTypeParameter>(expression)) {
+                    return TypeFormationStatus::Dependent;
+                }
+
+                return TypeFormationStatus::Supported;
+            }
+            // Every deferred construction describes an object constructor;
+            // its element or completion effects do not change that outer shape.
+            static_cast<void>(draft.construction_type_copy(std::get<TypeTermID>(type)));
+            return TypeFormationStatus::Supported;
+        }
+    }
+    std::unreachable();
 }
 
 auto pointer_narrows(
@@ -415,7 +509,11 @@ auto pointer_narrows(
 ) noexcept -> bool {
     const auto from = pointer_shape(draft, source);
     const auto to = pointer_shape(draft, target);
-    return from && to && pointer_narrows(*from, *to);
+    return from
+        && to
+        && from->access == PointerAccess::Write
+        && to->access == PointerAccess::Read
+        && unwrap_type_alias(draft, from->target) == unwrap_type_alias(draft, to->target);
 }
 
 auto type_shapes_compatible(
@@ -427,10 +525,184 @@ auto type_shapes_compatible(
     return shapes_compatible(draft, left, right, visited);
 }
 
+auto make_array_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef element,
+    std::uint64_t extent
+) noexcept -> ConstructionTypeRef {
+    element = unwrap_type_alias(draft, element);
+    if (const auto* concrete = std::get_if<TypeID>(&element)) {
+        return draft.intern_type(
+            {.value = ArrayTypeValue {.element = *concrete, .extent = extent}}
+        );
+    }
+    if (const auto* generic = std::get_if<GenericTypeID>(&element)) {
+        return draft.intern_generic_type(GenericArrayType {.element = *generic, .extent = extent});
+    }
+    return draft.append_construction_type(
+        {.value = ConstructionArrayTypeValue {.element = element, .extent = extent}}
+    );
+}
+
+auto make_slice_type(ProgramDraft& draft, ConstructionTypeRef element) noexcept
+    -> ConstructionTypeRef {
+    element = unwrap_type_alias(draft, element);
+    if (const auto* concrete = std::get_if<TypeID>(&element)) {
+        return draft.intern_type({.value = SliceTypeValue {.element = *concrete}});
+    }
+    if (const auto* generic = std::get_if<GenericTypeID>(&element)) {
+        return draft.intern_generic_type(GenericSliceType {.element = *generic});
+    }
+    return draft.append_construction_type(
+        {.value = ConstructionSliceTypeValue {.element = element}}
+    );
+}
+
+auto make_pointer_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef target,
+    PointerAccess access,
+    ProgramOriginID origin
+) noexcept -> AnalysisResult<ConstructionTypeRef> {
+    target = unwrap_type_alias(draft, target);
+    if (std::holds_alternative<TypeTermID>(target)) {
+        const auto concrete = draft.try_canonicalize_declared_type(target);
+        if (!concrete) {
+            return std::unexpected(draft.diagnostics().error(
+                DiagnosticBuilder(
+                    DiagnosticCode::TypeUnresolved,
+                    "addressof target requires a determined type and failure contract"
+                )
+                    .primary(draft.source_span(origin))
+                    .build()
+            ));
+        }
+        target = *concrete;
+    }
+    if (const auto* concrete = std::get_if<TypeID>(&target)) {
+        return ConstructionTypeRef(
+            draft.intern_type({.value = PointerTypeValue {*concrete, access}})
+        );
+    }
+    return ConstructionTypeRef(draft.intern_generic_type(GenericPointerType {target, access}));
+}
+
+auto operation_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<ConstructionOperationTypeValue> {
+    type = unwrap_type_alias(draft, type);
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto canonical = draft.type_copy(*concrete);
+        if (const auto* operation = std::get_if<OperationTypeValue>(&canonical.value)) {
+            return ConstructionOperationTypeValue {operation->success, operation->failures};
+        }
+    } else if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto expression = draft.generic_type_copy(*generic);
+        if (const auto* operation = std::get_if<GenericOperationType>(&expression)) {
+            return ConstructionOperationTypeValue {
+                unwrap_type_alias(draft, operation->success),
+                operation->failures
+            };
+        }
+    } else {
+        const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
+        if (const auto* operation =
+                std::get_if<ConstructionOperationTypeValue>(&construction.value)) {
+            return *operation;
+        }
+    }
+    return std::nullopt;
+}
+
+auto make_operation_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef success,
+    ConstructionFailureRef failures
+) noexcept -> ConstructionTypeRef {
+    success = unwrap_type_alias(draft, success);
+    if (std::holds_alternative<GenericTypeID>(success)
+        || std::holds_alternative<GenericFailureID>(failures)) {
+        return draft.intern_generic_type(
+            GenericOperationType {.success = success, .failures = failures}
+        );
+    }
+    if (const auto* concrete = std::get_if<TypeID>(&success)) {
+        if (const auto* known = std::get_if<FailureSetID>(&failures)) {
+            return draft.intern_type({.value = OperationTypeValue {*concrete, *known}});
+        }
+    }
+    return draft.append_construction_type(
+        {.value = ConstructionOperationTypeValue {.success = success, .failures = failures}}
+    );
+}
+
+auto make_tuple_type(ProgramDraft& draft, std::vector<ConstructionTypeRef> elements) noexcept
+    -> ConstructionTypeRef {
+    for (auto& element : elements) {
+        element = unwrap_type_alias(draft, element);
+    }
+    if (elements.empty()) {
+        return draft.builtin_type(BuiltinType::Void);
+    }
+    auto canonical = std::vector<TypeID>();
+    for (const auto& element : elements) {
+        if (const auto* id = std::get_if<TypeID>(&element)) {
+            canonical.push_back(*id);
+        }
+    }
+    if (canonical.size() == elements.size()) {
+        return draft.intern_type({.value = TupleTypeValue {.elements = std::move(canonical)}});
+    }
+    if (std::ranges::any_of(elements, [](const auto& element) static noexcept {
+            return std::holds_alternative<GenericTypeID>(element);
+        })) {
+        return draft.intern_generic_type(GenericTupleType {.elements = std::move(elements)});
+    }
+    return draft.append_construction_type(
+        {.value = ConstructionTupleTypeValue {.elements = std::move(elements)}}
+    );
+}
+
+auto tuple_elements(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<std::vector<ConstructionTypeRef>> {
+    if (const auto* term = std::get_if<TypeTermID>(&type)) {
+        const auto construction = draft.construction_type_copy(*term);
+        if (const auto* tuple = std::get_if<ConstructionTupleTypeValue>(&construction.value)) {
+            return tuple->elements;
+        }
+        return std::nullopt;
+    }
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto expression = draft.generic_type_copy(*generic);
+        if (const auto* concrete = std::get_if<TypeID>(&expression)) {
+            return tuple_elements(draft, ConstructionTypeRef(*concrete));
+        }
+        if (const auto* tuple = std::get_if<GenericTupleType>(&expression)) {
+            return tuple->elements;
+        }
+        return std::nullopt;
+    }
+    const auto canonical = draft.type_copy(std::get<TypeID>(type));
+    if (const auto* tuple = std::get_if<TupleTypeValue>(&canonical.value)) {
+        return tuple->elements | std::views::transform([](TypeID element) static noexcept {
+                   return ConstructionTypeRef {element};
+               })
+            | std::ranges::to<std::vector>();
+    }
+    if (canonical.value == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}}) {
+        return std::vector<ConstructionTypeRef>();
+    }
+    return std::nullopt;
+}
+
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> bool {
     if (const auto element = slice_element(draft, type)) {
         return type_contains_callable_view(draft, *element);
+    }
+    if (const auto elements = tuple_elements(draft, type)) {
+        return std::ranges::any_of(*elements, [&](ConstructionTypeRef element) noexcept {
+            return type_contains_callable_view(draft, element);
+        });
     }
     if (const auto* term = std::get_if<TypeTermID>(&type)) {
         const auto construction = draft.construction_type_copy(*term);
@@ -439,9 +711,32 @@ auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef 
         }
         return std::holds_alternative<ConstructionCallableViewTypeValue>(construction.value);
     }
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto expression = draft.generic_type_copy(*generic);
+        if (const auto* concrete = std::get_if<TypeID>(&expression)) {
+            return type_contains_callable_view(draft, ConstructionTypeRef(*concrete));
+        }
+        if (const auto* array = std::get_if<GenericArrayType>(&expression)) {
+            return type_contains_callable_view(draft, ConstructionTypeRef(array->element));
+        }
+        if (const auto* sequence = std::get_if<GenericOwnedSequenceType>(&expression)) {
+            return type_contains_callable_view(draft, ConstructionTypeRef(sequence->element));
+        }
+        return false;
+    }
     const auto concrete = draft.type_copy(std::get<TypeID>(type));
     if (const auto* array = std::get_if<ArrayTypeValue>(&concrete.value)) {
         return type_contains_callable_view(draft, ConstructionTypeRef {array->element});
+    }
+    if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&concrete.value)) {
+        return type_contains_callable_view(draft, ConstructionTypeRef {sequence->element});
+    }
+    if (const auto* native = std::get_if<CppTypeValue>(&concrete.value)) {
+        if (const auto* named = std::get_if<CppNamedType>(&native->form)) {
+            return std::ranges::any_of(named->arguments, [&](TypeID argument) noexcept {
+                return type_contains_callable_view(draft, ConstructionTypeRef {argument});
+            });
+        }
     }
     return std::holds_alternative<CallableViewTypeValue>(concrete.value);
 }
@@ -460,31 +755,24 @@ auto supports_equality(
             [](const StructTypeValue&) static noexcept { return false; },
             [&](const EnumTypeValue& value) noexcept { return enumeration(value.enumeration); },
             [&](const ArrayTypeValue& value) noexcept { return element(value.element); },
+            [&](const TupleTypeValue& value) noexcept {
+                return std::ranges::all_of(value.elements, element);
+            },
             [](const FunctionTypeValue&) static noexcept { return false; },
             [](const ClosureTypeValue&) static noexcept { return false; },
             [](const CallableViewTypeValue&) static noexcept { return false; },
+            [](const OperationTypeValue&) static noexcept { return false; },
             [](const CppTypeValue&) static noexcept { return false; },
             [](const PointerTypeValue&) static noexcept { return true; },
             [](const RangeTypeValue&) static noexcept { return false; },
             [](const SliceTypeValue&) static noexcept { return false; },
+            [](const OwnedSequenceTypeValue&) static noexcept { return false; },
         }
     );
 }
 
 auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
-    const auto* concrete = std::get_if<TypeID>(&type);
-    if (concrete == nullptr) {
-        const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
-        if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
-            return type_supports_equality(draft, array->element);
-        }
-        return false;
-    }
-    return supports_equality(
-        draft.type_copy(*concrete),
-        [&](EnumID id) noexcept { return draft.enum_declaration_copy(id).supports_equality; },
-        [&](TypeID id) noexcept { return type_supports_equality(draft, ConstructionTypeRef {id}); }
-    );
+    return draft.equality_support(std::array {type}).front();
 }
 
 auto type_supports_equality(
@@ -844,6 +1132,16 @@ auto array_literal_element(
 
 auto slice_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionTypeRef> {
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto expression = draft.generic_type_copy(*generic);
+        if (const auto* concrete = std::get_if<TypeID>(&expression)) {
+            return slice_element(draft, ConstructionTypeRef(*concrete));
+        }
+        if (const auto* slice = std::get_if<GenericSliceType>(&expression)) {
+            return slice->element;
+        }
+        return std::nullopt;
+    }
     if (const auto* id = std::get_if<TypeID>(&type)) {
         const auto value = draft.type_copy(*id).value;
         if (const auto* slice = std::get_if<SliceTypeValue>(&value)) {
@@ -887,7 +1185,7 @@ auto decide_slice_method(
     }
     const auto contract = slice_intrinsic_contract(*operation);
     const auto receiver = array ? SliceIntrinsicShape::Array : SliceIntrinsicShape::Slice;
-    if (receiver != contract.receiver) {
+    if (!slice_intrinsic_accepts_receiver(contract.receiver, receiver)) {
         return operation_error("sequence has no such method", DiagnosticCode::TypeMethodCall);
     }
     if (arguments != contract.arguments.size()) {
@@ -897,6 +1195,39 @@ auto decide_slice_method(
         );
     }
     return operation;
+}
+
+auto decide_sequence_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<SequenceIntrinsic>, OperationDiagnostic> {
+    const auto shape = sequence_shape(draft, operand);
+    if (!shape || shape->kind != SequenceShapeKind::OwnedSequence) {
+        return std::optional<SequenceIntrinsic>();
+    }
+    auto intrinsic = SequenceIntrinsic::Len;
+    if (name == "len") {
+        intrinsic = SequenceIntrinsic::Len;
+    } else if (name == "is_empty") {
+        intrinsic = SequenceIntrinsic::IsEmpty;
+    } else if (name == "push") {
+        intrinsic = SequenceIntrinsic::Push;
+    } else if (name == "remove") {
+        intrinsic = SequenceIntrinsic::Remove;
+    } else if (name == "clear") {
+        intrinsic = SequenceIntrinsic::Clear;
+    } else {
+        return operation_error("Sequence has no such method", DiagnosticCode::TypeMethodCall);
+    }
+    if (arguments != (sequence_intrinsic_contract(intrinsic).argument ? 1uz : 0uz)) {
+        return operation_error(
+            "Sequence method argument count does not match",
+            DiagnosticCode::TypeMethodCallArity
+        );
+    }
+    return std::optional(intrinsic);
 }
 
 auto decide_text_method(
@@ -952,13 +1283,107 @@ auto decide_text_property(std::string_view name) noexcept -> TextIntrinsicDecisi
     );
 }
 
-auto sequence_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::optional<SequenceShape> {
-    if (const auto array = array_shape(draft, type)) {
-        return SequenceShape {.element = array->element, .extent = array->extent};
+auto sequence_extent(const ProgramDraft& draft, const SemanticExpression& source) noexcept
+    -> std::optional<std::uint64_t> {
+    if (const auto shape = sequence_shape(draft, source.type.construction());
+        shape && shape->kind == SequenceShapeKind::Array) {
+        return shape->extent;
     }
-    if (const auto element = slice_element(draft, type)) {
-        return SequenceShape {.element = *element, .extent = std::nullopt};
+    if (source.constant) {
+        const auto* slice = std::get_if<SliceConstant>(&draft.constant(*source.constant).value);
+        if (slice) {
+            return slice->elements.size();
+        }
+    }
+    if (const auto* intrinsic = std::get_if<SemIntrinsic>(&source.value)) {
+        if (const auto* slice = std::get_if<SliceIntrinsicOperation>(&intrinsic->operation)) {
+            return slice->result_extent;
+        }
+    }
+    if (const auto* take = std::get_if<SemTake>(&source.value)) {
+        return sequence_extent(draft, *take->place);
     }
     return std::nullopt;
+}
+
+auto constant_index_in_bounds(
+    const ProgramDraft& draft,
+    std::optional<std::uint64_t> extent,
+    std::optional<ConstantID> index
+) noexcept -> std::optional<bool> {
+    if (!extent || !index) {
+        return std::nullopt;
+    }
+    const auto* integer = std::get_if<IntegerConstant>(&draft.constant(*index).value);
+    if (!integer) {
+        return std::nullopt;
+    }
+    return !integer->negative() && integer->magnitude() < *extent;
+}
+
+auto sequence_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<SequenceShape> {
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        const auto expression = draft.generic_type_copy(*generic);
+        if (const auto* concrete = std::get_if<TypeID>(&expression)) {
+            return sequence_shape(draft, ConstructionTypeRef(*concrete));
+        }
+        if (const auto* sequence = std::get_if<GenericOwnedSequenceType>(&expression)) {
+            return SequenceShape {
+                .kind = SequenceShapeKind::OwnedSequence,
+                .element = sequence->element,
+                .extent = std::nullopt,
+            };
+        }
+    }
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto canonical = draft.type_copy(*concrete);
+        if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&canonical.value)) {
+            return SequenceShape {
+                .kind = SequenceShapeKind::OwnedSequence,
+                .element = sequence->element,
+                .extent = std::nullopt,
+            };
+        }
+    }
+    if (const auto array = array_shape(draft, type)) {
+        return SequenceShape {
+            .kind = SequenceShapeKind::Array,
+            .element = array->element,
+            .extent = array->extent
+        };
+    }
+    if (const auto element = slice_element(draft, type)) {
+        return SequenceShape {
+            .kind = SequenceShapeKind::Slice,
+            .element = *element,
+            .extent = std::nullopt
+        };
+    }
+    return std::nullopt;
+}
+
+auto decide_float_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<FloatIntrinsic>, OperationDiagnostic> {
+    const auto* type = std::get_if<TypeID>(&operand);
+    if (type == nullptr || name != "is_finite") {
+        return std::nullopt;
+    }
+    const auto canonical = draft.type_copy(*type);
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+    if (builtin == nullptr
+        || (builtin->kind != BuiltinType::F32 && builtin->kind != BuiltinType::F64)) {
+        return std::nullopt;
+    }
+    if (arguments != 0) {
+        return operation_error(
+            "is_finite requires no arguments",
+            DiagnosticCode::TypeMethodCallArity
+        );
+    }
+    return FloatIntrinsic::IsFinite;
 }

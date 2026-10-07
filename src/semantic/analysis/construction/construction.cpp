@@ -34,7 +34,15 @@ auto ProgramConstruction::construct() noexcept -> AnalysisTask<void> {
     if (const auto failure = draft.diagnostics().failure()) {
         co_return std::unexpected(*failure);
     }
-    co_return (co_await bodies.run());
+    result = (co_await bodies.run());
+    if (!result) {
+        co_return result;
+    }
+    static_cast<void>(analyze_nominal_containment(draft));
+    if (const auto failure = draft.diagnostics().failure()) {
+        co_return std::unexpected(*failure);
+    }
+    co_return {};
 }
 
 auto ProgramConstruction::construction_requests() noexcept -> ConstructionRequests& {

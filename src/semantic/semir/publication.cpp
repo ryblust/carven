@@ -220,13 +220,8 @@ auto validate_publication_topology(
     require_complete(constant_claims, "module constant was absent from every module item list");
     require_complete(test_claims, "test was absent from every module item list");
 
-    auto closure_site_claims = std::vector<std::uint8_t>(callable_count, 0u);
     for (const auto [body_id, body] : bodies.entries()) {
         static_cast<void>(body_id);
-        // An instance repeats the construction sites of the body it specializes.
-        if (body.specialized()) {
-            continue;
-        }
         visit_semantic_nodes(body.region(), [&](const SemanticExpression& expression) noexcept {
             const auto* closure = std::get_if<SemClosure>(&expression.value);
             if (closure == nullptr) {
@@ -240,11 +235,6 @@ auto validate_publication_topology(
                 )) {
                 invariant_violation("closure expression used a non-closure callable");
             }
-            claim_once(
-                closure_site_claims,
-                closure->callable.index(),
-                "closure callable was assigned to more than one construction site"
-            );
         });
     }
 
@@ -277,9 +267,6 @@ auto validate_publication_topology(
                         invariant_violation(
                             "function declaration used a closure body implementation"
                         );
-                    }
-                    if (closure_site_claims[callable_id.index()] != 1u) {
-                        invariant_violation("closure callable had no closure operation");
                     }
                     if (!bodies.contains(implementation.body)) {
                         invariant_violation("closure implementation used an invalid body");
@@ -371,6 +358,11 @@ auto validate_publication_facts(
                         invariant_violation("canonical ptr used an invalid target or access");
                     }
                 },
+                [&](const OwnedSequenceTypeValue& value) noexcept {
+                    if (!types.contains(value.element)) {
+                        invariant_violation("canonical Sequence used an unpublished element type");
+                    }
+                },
                 [&](const SliceTypeValue& value) noexcept {
                     if (!types.contains(value.element)) {
                         invariant_violation("canonical array used an unpublished element type");
@@ -391,6 +383,16 @@ auto validate_publication_facts(
                         invariant_violation("canonical array used an unpublished element type");
                     }
                 },
+                [&](const TupleTypeValue& value) noexcept {
+                    if (value.elements.empty()) {
+                        invariant_violation("empty tuples require the canonical void type");
+                    }
+                    for (const auto element : value.elements) {
+                        if (!types.contains(element)) {
+                            invariant_violation("canonical tuple used an unpublished element type");
+                        }
+                    }
+                },
                 [&](const FunctionTypeValue& value) noexcept {
                     if (!declarations.contains(value.callable)) {
                         invariant_violation("function type used an unpublished callable");
@@ -402,6 +404,11 @@ auto validate_publication_facts(
                             declarations.callable(value.callable).implementation
                         )) {
                         invariant_violation("closure type used a non-closure callable");
+                    }
+                },
+                [&](const OperationTypeValue& value) noexcept {
+                    if (!types.contains(value.success) || !failure_sets.contains(value.failures)) {
+                        invariant_violation("operation used an unpublished completion contract");
                     }
                 },
                 [&](const CallableViewTypeValue& value) noexcept {

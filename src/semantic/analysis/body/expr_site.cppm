@@ -34,7 +34,7 @@ public:
     static constexpr auto mode = ExpressionMode::Body;
 
     struct OperandState final {
-        BodyPendingFailureTerms pending;
+        BodyPendingFailures pending;
         bool completes;
     };
 
@@ -43,7 +43,11 @@ public:
     auto module_id() const noexcept -> ProgramModuleID;
     auto permits_pointer_narrowing() const noexcept -> bool;
     auto infer_type(Value& value, Span span) noexcept -> ExpressionResult<ConstructionTypeRef>;
-    auto aggregate_cost(std::size_t count, Span span) const noexcept -> ExpressionResult<void>;
+    auto aggregate_cost(std::size_t count, Span span) noexcept -> ExpressionResult<void>;
+    auto resolve_array_extent(ASTExprID expression) noexcept -> AnalysisTask<std::uint64_t>;
+    auto pending_checkpoint() const noexcept -> std::monostate;
+    auto consume_unexecuted_read(Value value, std::monostate, Span span) noexcept
+        -> ExpressionResult<SemanticExpression>;
     auto representation_access(StructID owner, Span span) noexcept -> AnalysisResult<void>;
     auto associated_reference(StructID owner, Span name_span) noexcept -> ExpressionTask<Value>;
     auto associated_call(
@@ -62,7 +66,18 @@ public:
     ) noexcept -> ExpressionTask<Value>;
     auto consume_write(OperandState& state, Value value, Span span) noexcept
         -> ExpressionResult<SemanticExpression>;
+    auto consume_take(OperandState& state, Value value, Span span) noexcept
+        -> ExpressionResult<SemanticExpression>;
+    auto consume_cold_owner(OperandState& state, Value value, AccessMode access, Span span) noexcept
+        -> ExpressionResult<SemanticExpression>;
+    auto require_matching_type(
+        ConstructionTypeRef source,
+        ConstructionTypeRef target,
+        Span span
+    ) noexcept -> ExpressionResult<void>;
     auto consume_read(OperandState& state, Value value, Span span) noexcept
+        -> ExpressionResult<SemanticExpression>;
+    auto consume_read_argument(OperandState& state, Value value, Span span) noexcept
         -> ExpressionResult<SemanticExpression>;
     auto finish_constructed(
         ConstructionTypeRef type,
@@ -83,7 +98,7 @@ public:
     auto fail(Span span, DiagnosticCode code, std::string message) noexcept -> AnalysisFailure;
     auto read(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
         -> ExpressionTask<Value>;
-    auto read_array_element(
+    auto read_aggregate_element(
         ASTExprID id,
         std::optional<ConstructionTypeRef> expected,
         bool explicit_context
@@ -91,12 +106,20 @@ public:
     auto type(const Value& value) const noexcept -> ConstructionTypeRef;
     auto known(const Value& value) const noexcept -> std::optional<ConstantID>;
     auto external(ConstructionTypeRef type) const noexcept -> bool;
+    auto await_expression(const ASTPrefixExpr& source, Span span) noexcept -> ExpressionTask<Value>;
     auto dereference(const ASTPrefixExpr& source, Span span) noexcept -> ExpressionTask<Value>;
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
     auto numeric_enum(ConstructionTypeRef type) noexcept -> bool;
     auto resolve_type(ASTTypeID type) noexcept -> ExpressionTask<ConstructionTypeRef>;
+    auto resolve_failure_clause(const ASTThrowClause& clause) noexcept
+        -> AnalysisTask<ConstructionFailureRef>;
+    auto resolve_generic_arguments(
+        std::span<const ASTGenericArgument> arguments,
+        std::span<const GenericParameterKind> policies
+    ) noexcept -> AnalysisTask<GenericEnvironment>;
     auto resolve_construction_type(const ASTConstructionType& type) noexcept
         -> ExpressionTask<ConstructionTypeRef>;
+    auto resolve_duration_type(Span span) noexcept -> ExpressionTask<TypeID>;
     auto constant(ConstantID constant, Span span) noexcept -> Value;
     auto enter_operand_execution(bool executed) noexcept -> BodyReferencePathGuard;
     auto finish_short_circuit(
@@ -123,7 +146,33 @@ public:
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected
     ) noexcept -> ExpressionTask<Selection>;
     auto extension(
+        const ASTTupleExpr& value,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<Selection>;
+    auto extension(
+        const ASTTypeApplicationExpr& value,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<Selection>;
+    auto extension(
+        const ASTTupleElementExpr& value,
+        Span span,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<Selection>;
+    auto finish_tuple_element(
+        ConstructionTypeRef type,
+        std::uint32_t index,
+        Value receiver,
+        Span span
+    ) noexcept -> ExpressionResult<Value>;
+    auto extension(
         const ASTArrayExpr& value,
+        Span span,
+        [[maybe_unused]] std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<Selection>;
+    auto extension(
+        const ASTArrayRepeatExpr& value,
         Span span,
         [[maybe_unused]] std::optional<ConstructionTypeRef> expected
     ) noexcept -> ExpressionTask<Selection>;
@@ -174,8 +223,14 @@ public:
     auto resolve_name(std::string_view name, Span span) noexcept
         -> ExpressionTask<std::optional<ConstantID>>;
     auto construction_requests() noexcept -> ConstructionRequests&;
-    auto resolve_function(std::string_view name, Span span) noexcept
-        -> ExpressionTask<std::optional<FunctionID>>;
+    auto resolve_class_operation(
+        StructID owner,
+        std::string_view name,
+        bool receiver,
+        Span span
+    ) noexcept -> AnalysisResult<FunctionID>;
+    auto resolve_static_callable(std::string_view name, Span span) noexcept
+        -> ExpressionTask<std::optional<ResolvedStaticCallable>>;
     auto resolve_type_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>>;
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> ExpressionTask<ResolvedEnumCase>;
@@ -232,7 +287,7 @@ private:
         SemanticExpressionValue&& value,
         std::optional<ConstantID> known,
         Span span,
-        BodyPendingFailureTerms pending,
+        BodyPendingFailures pending,
         bool completes
     ) noexcept -> ExpressionResult<Value>;
     auto external_operation(

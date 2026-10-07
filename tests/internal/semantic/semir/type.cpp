@@ -14,6 +14,36 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Canonical tuples: arity order and nesting determine identity with void as empty product"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program("");
+            auto types = CanonicalTypeStoreBuilder(program.identity());
+            const auto integer = types.builtin_type(BuiltinType::I32);
+            const auto boolean = types.builtin_type(BuiltinType::Bool);
+            const auto unit = types.builtin_type(BuiltinType::Void);
+            expect(types.intern({.value = TupleTypeValue {.elements = {}}}) == unit);
+            const auto pair =
+                types.intern({.value = TupleTypeValue {.elements = {integer, boolean}}});
+            expect(
+                types.intern({.value = TupleTypeValue {.elements = {integer, boolean}}}) == pair
+            );
+            const auto reversed =
+                types.intern({.value = TupleTypeValue {.elements = {boolean, integer}}});
+            const auto singleton = types.intern({.value = TupleTypeValue {.elements = {integer}}});
+            const auto nested = types.intern({.value = TupleTypeValue {.elements = {pair, unit}}});
+            expect(pair != reversed);
+            expect(singleton != integer);
+            expect(nested != pair);
+            const auto sealed = std::move(types).seal();
+            const auto* shape = std::get_if<TupleTypeValue>(&sealed.type(nested).value);
+            if (!expect(shape != nullptr)) {
+                return;
+            }
+            expect_equal(shape->elements.size(), 2uz);
+            expect(shape->elements[0] == pair);
+            expect(shape->elements[1] == unit);
+        };
+
     "Construction types: children must already exist in the owning store"_test =
         [] static noexcept {
             const auto program = analyze_test_program("");
@@ -33,6 +63,11 @@ const TestSuite suite([] static noexcept {
             expect(expect_termination("type-array-child-must-exist", [&] noexcept {
                 static_cast<void>(types.append(
                     {.value = ConstructionArrayTypeValue {.element = self, .extent = 1u}}
+                ));
+            }));
+            expect(expect_termination("type-tuple-child-must-exist", [&] noexcept {
+                static_cast<void>(types.append(
+                    {.value = ConstructionTupleTypeValue {.elements = {integer, self}}}
                 ));
             }));
 

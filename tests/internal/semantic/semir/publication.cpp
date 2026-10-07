@@ -55,6 +55,8 @@ auto make_body_with_closure(
                     SemClosure {.callable = closure_callable, .captures = {}}
                 ),
             },
+
+
         }
     );
     return std::move(body).finish(
@@ -66,6 +68,8 @@ auto make_body_with_closure(
             .result_reachable = false,
             .failures = BodyFailures(program.add_empty_failure_term()),
             .exits_test = false,
+
+
         }
     );
 }
@@ -141,6 +145,8 @@ auto check_unresolved_residual_call() noexcept -> void {
                                       .result_reachable = false,
                                       .failures = BodyFailures(builder.add_empty_failure_term()),
                                       .exits_test = false,
+
+
                                   }
                               );
     const auto constant =
@@ -183,8 +189,14 @@ auto check_unresolved_residual_call() noexcept -> void {
             .target = callable,
             .arguments =
                 {
-                    {.access = AccessMode::Read, .expression = argument},
-                    {.access = AccessMode::Read, .expression = argument},
+                    {
+                        .access = AccessMode::Read,
+                        .expression = argument,
+                    },
+                    {
+                        .access = AccessMode::Read,
+                        .expression = argument,
+                    },
                 },
             .callee_failures = BodyFailures(builder.add_empty_failure_term()),
         }
@@ -198,11 +210,15 @@ auto check_unresolved_residual_call() noexcept -> void {
                 .lifetime = lifetime,
                 .reachable = true,
                 .value = SemExpressionStatement {.expression = std::move(expression)},
+
+
             }},
             .result = std::nullopt,
             .result_reachable = false,
             .failures = BodyFailures(builder.add_empty_failure_term()),
             .exits_test = false,
+
+
         }
     );
     graph.residual = graph.region;
@@ -261,6 +277,8 @@ auto check_residual_static_statement(ResidualStaticStatement kind, bool retained
             .result_reachable = false,
             .failures = BodyFailures(builder.add_empty_failure_term()),
             .exits_test = false,
+
+
         };
     };
     const auto statement_value = [&]() noexcept -> SemanticStatementValue {
@@ -348,6 +366,8 @@ auto check_residual_static_statement(ResidualStaticStatement kind, bool retained
             .lifetime = lifetime,
             .reachable = true,
             .value = statement_value(),
+
+
         }
     );
     auto graph = std::move(body).finish(std::move(region));
@@ -499,16 +519,19 @@ const TestSuite suite([] static noexcept {
                     SemanticRegion {
                         .lifetime = lifetime,
                         .origin = module_origin.origin,
-                        .statements =
-                            {{.origin = module_origin.origin,
-                              .lifetime = lifetime,
-                              .reachable = true,
-                              .value =
-                                  SemExpressionStatement {.expression = std::move(expression)}}},
+                        .statements = {{
+                            .origin = module_origin.origin,
+                            .lifetime = lifetime,
+                            .reachable = true,
+                            .value = SemExpressionStatement {.expression = std::move(expression)},
+
+                        }},
                         .result = std::nullopt,
                         .result_reachable = false,
                         .failures = BodyFailures(builder.add_empty_failure_term()),
                         .exits_test = false,
+
+
                     }
                 );
                 auto& residual = scenario.explicit_residual ? graph.residual.emplace(graph.region)
@@ -536,6 +559,45 @@ const TestSuite suite([] static noexcept {
             check_residual_static_statement(ResidualStaticStatement::Loop, false);
             check_residual_static_statement(ResidualStaticStatement::Loop, true);
         };
+    "SemIR publication: closure declarations are shared by zero or multiple occurrences"_test =
+        [] static noexcept {
+            for (const auto count : {0uz, 2uz}) {
+                const auto program = analyze_test_program(
+                    std::format("fn make() {{ let values = [[]() -> i32 => 7; {}]; }}", count)
+                );
+                auto closure_count = 0uz;
+                auto closure = std::optional<CallableID>();
+                for (const auto [callable, declaration] : program.declarations().callables()) {
+                    if (const auto* implementation =
+                            std::get_if<ClosureBodyImplementation>(&declaration.implementation)) {
+                        ++closure_count;
+                        closure = callable;
+                        expect(
+                            program.declarations().callable_for_body(implementation->body)
+                            == callable
+                        );
+                    }
+                }
+                if (!expect_equal(closure_count, 1uz) || !expect(closure.has_value())) {
+                    return;
+                }
+                auto occurrences = 0uz;
+                for (const auto [body_id, body] : program.bodies().entries()) {
+                    static_cast<void>(body_id);
+                    visit_semantic_nodes(
+                        body.region(),
+                        [&](const SemanticExpression& value) noexcept {
+                            if (const auto* construction = std::get_if<SemClosure>(&value.value)) {
+                                expect(construction->callable == *closure);
+                                ++occurrences;
+                            }
+                        }
+                    );
+                }
+                expect_equal(occurrences, count);
+            }
+        };
+
     "SemIR publication: declarations retain body identities when static bodies are removed"_test =
         [] static noexcept {
             auto sources = SourceManager();

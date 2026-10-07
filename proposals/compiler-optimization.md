@@ -21,6 +21,19 @@ needed for adoption.
 Compiler wall time, CPU time, peak RSS, generated size, native compilation, and
 program runtime and memory are measured separately.
 
+## Current foundation
+
+Static specialization substitutes checked semantic values and refreshes parent
+constant facts through the shared folding dispatcher. A successful fact preserves
+operand effects; a failed optional fold leaves runtime checks and failure timing
+intact. Equal-bit SIMD constants already lower through compact splats. The SIMD
+library uses ordinary static parameters to select byte-set comparisons and lookup
+tables, which also support UTF validation.
+
+The candidates below concern remaining runtime work, broader value propagation,
+and representation costs. Extending local dataflow, sharing constant backing, or
+changing product layout needs evidence beyond the implemented specialization.
+
 ## Measurements
 
 Define the measured boundary and preserve results, effects, diagnostics, and
@@ -32,8 +45,8 @@ Use the repository benchmark commands:
 
 ```sh
 ./xmakew bench compile --list
-./xmakew bench compile --samples=5 --warmups=1 --timings --output=build/bench/compile.json
-./xmakew bench incremental --samples=5 --warmups=1 --timings --output=build/bench/incremental.json
+./xmakew bench compile --samples=5 --warmups=1 --timings --output=build/benchmarks/compile.json
+./xmakew bench incremental --samples=5 --warmups=1 --timings --output=build/benchmarks/incremental.json
 ```
 
 These use the current configuration. Record the source revision, local changes,
@@ -42,6 +55,12 @@ throughput decisions; Debug development costs can be measured separately.
 External `--compiler` artifacts need their own revision and mode records.
 `compile` excludes native compilation; `incremental` includes Xmake and native
 build work. Neither directly measures target-program speed.
+
+The `async`, `simd`, and `json` topics measure generated program execution. SIMD
+and JSON calibrate iteration counts by duration and retain raw samples and input
+identities. JSON measures the byte-validation API, including UTF-8 and failure
+delivery, without constructing a DOM. Match the measured boundary to the proposed
+optimization and inspect generated C++ as well as timings.
 
 Select workloads with `--case=<id>`. JSON retains inputs, commands, and samples.
 The displayed stage report is from the valid sample closest to median wall time,
@@ -74,6 +93,10 @@ memoization that skips output, diagnostics, budgets, or other required-execution
 events. Preparing an entire body must not reject an unexecuted native branch in
 interpretation. Slot reuse needs generations or an equivalent stale-coordinate
 proof so Take, release, and reinitialization cannot revive prior pointers.
+
+Grouping compatible passes around each body may improve data locality. Preserve
+analysis dependencies and invalidation rules, and measure locality benefits
+against scheduling overhead and retained memory.
 
 Evaluate native-call diagnostic replay separately from call-free paths: extending
 eligibility can reverse a gain on real native-contract inputs. For synchronous
@@ -184,6 +207,20 @@ check observable behavior and target structure.
 
 ## Constant output and local facts
 
+### Product representation
+
+Tuples currently use recursive C++ aggregates, preserving ordered construction,
+stable element storage, and direct initialization of immovable native results.
+A measured large-product cost may justify flat aggregates selected by canonical
+product identity. Shared definitions need consistent cross-module placement and
+dependencies.
+
+Compare generated size and native compile time before adding another target form.
+Preserve nested shapes, unit slots, operand effects, partial construction, retained
+loans, discarded-slot lifetime, and cleanup. Local direct delivery can reuse the
+existing preparation and realization contracts; changing storage does not expand
+the source tuple API.
+
 ### Compact default arrays
 
 Frozen `ArrayConstant` lowering reconstructs elements individually. A candidate
@@ -209,14 +246,15 @@ eligibility for each reconstruction path, including payload-enum factories.
 Use shared static storage only for paths proven to permit C++20 constant
 initialization; retain current reconstruction for other paths.
 
-### Non-diagnostic local precomputation
+### Broader local value propagation
 
-A use such as `let count = 4; return f"{count + 1}";` can motivate additional
-facts when it removes meaningful runtime work. Define propagation, invalidation,
-joins, and consumers. Source folding can diagnose; an optional non-diagnostic
-analysis instead returns no fact for unknown, invalid, or over-budget operations
-and retains the operation. It does not implicitly execute ordinary functions or
-broaden floating precomputation.
+Static-parameter substitution already refreshes non-diagnostic expression facts.
+Further propagation through ordinary local bindings, mutation, branches, or loops
+needs a workload with residual runtime work and explicit invalidation and join
+rules. Reuse existing folding and known-result consumers where applicable; do not
+introduce another evaluator to repeat their work. Unknown, invalid, or over-budget
+operations retain their runtime execution. An extension does not implicitly
+execute ordinary functions or broaden floating precomputation.
 
 Preserve SemIR known-result boundaries: facts do not change ordinary source
 reachability, failure, ownership, or return analysis. Storage stability does not
@@ -239,8 +277,7 @@ require disproportionate complexity.
 
 ## References
 
-- [Benchmarks](../xmake/README.md#benchmarks) and [testing](../docs/development/testing.md): measurement and validation commands.
+- [Benchmarks](../benchmarks/README.md) and [testing](../docs/development/testing.md): measurement and validation commands.
 - [Realization](../docs/compiler/backend/realization.md) and [known results](../docs/compiler/analysis/semir.md#known-results-and-execution-requirements): current semantic boundaries.
-- [Compiler architecture notes](../notes/compiler-architecture.md#preparation-and-scheduling-should-match-reuse): preparation cost and locality.
-- [Execution model](execution-model.md), [constant storage](constant-storage.md), [uninitialized storage](uninitialized-storage.md), and [layout](layout.md): related semantic designs.
-- [Infrastructure candidates](roadmap.md#deferred-infrastructure): concurrent queries and persistent caches.
+- [Semantic execution](semantic-execution.md), [constant storage](constant-storage.md), [uninitialized storage](uninitialized-storage.md), and [data representation](data-representation.md): related semantic designs.
+- [Infrastructure candidates](design-directions.md#deferred-infrastructure): concurrent queries and persistent caches.

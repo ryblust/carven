@@ -17,6 +17,64 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: builtin standard types do not consume unused imports"_test =
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto inputs = std::vector<SourceModuleInput>();
+            const auto modules = std::array {
+                std::pair<std::string_view, std::string_view> {
+                    "crafts.carven.std.time.duration",
+                    "export struct Duration { nanoseconds: i64 } export struct RangeError {}"
+                },
+                std::pair<std::string_view, std::string_view> {
+                    "crafts.carven.std.time.timeout",
+                    "export struct Timeout {}"
+                },
+                std::pair<std::string_view, std::string_view> {
+                    "main",
+                    "import std::time.duration using Duration; "
+                    "import std::time.duration using RangeError; "
+                    "import std::time.timeout using Timeout; "
+                    "async fn leaf() -> i32 => 7; "
+                    "const delay = 1ms; fn run() { let pending = timeout(leaf(), delay); }"
+                },
+            };
+            for (const auto& [path, source] : modules) {
+                const auto id =
+                    sources.append_virtual(std::string(path) + ".cv", std::string(source));
+                require(id.has_value());
+                inputs.push_back(
+                    {.source_id = *id, .module_path = *CanonicalModulePath::from_value(path)}
+                );
+            }
+            const auto result = compile(
+                sources,
+                SourceBatch {.modules = inputs},
+                TargetPlanningRequest {
+                    .test_mode = TestGenerationMode::None,
+                    .linkage_domain =
+                        LinkageDomain::explicit_value("test:timeout-type-imports").value(),
+                }
+            );
+            if (!expect(result.has_value())) {
+                return;
+            }
+            auto unused = std::set<std::string_view>();
+            for (const auto& diagnostic : result->diagnostics) {
+                if (diagnostic.finding.code != DiagnosticCode::LintUnusedImport) {
+                    continue;
+                }
+                require(diagnostic.attachment.primary.has_value());
+                unused.insert(sources.slice(diagnostic.attachment.primary->span));
+            }
+            const auto expected = std::set<std::string_view> {
+                "import std::time.duration using Duration;",
+                "import std::time.duration using RangeError;",
+                "import std::time.timeout using Timeout;",
+            };
+            expect(unused == expected);
+        };
+
     "Compiler diagnostics: successful compilation retains warning location"_test =
         [] static noexcept {
             auto sources = SourceManager();

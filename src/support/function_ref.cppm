@@ -71,7 +71,7 @@ public:
                      && (!std::same_as<std::remove_cvref_t<Callable>, FunctionRef>)
                      && (compatible<Callable>())
     FunctionRef(Callable&& callable [[clang::lifetimebound]]) noexcept
-        : target(static_cast<const void*>(std::addressof(callable))),
+        : target(static_cast<const void*>(std::addressof(std::forward<Callable>(callable)))),
           thunk(&invoke_object<std::remove_reference_t<Callable>>) {}
 
     // Temporary noncapturing lambdas have a function target with static lifetime.

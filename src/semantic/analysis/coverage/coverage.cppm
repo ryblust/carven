@@ -47,3 +47,10 @@ auto patterns_exhaustive(
     TypeID subject_type,
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<bool, std::string>;
+
+auto patterns_exhaustive(
+    const SemIRProgram& semantic,
+    const ImmutableBodyTable<ElaboratedPattern, PatternID>& patterns,
+    TypeID subject_type,
+    std::span<const PatternCoverageArm> arms
+) noexcept -> std::expected<bool, std::string>;

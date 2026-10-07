@@ -1,5 +1,6 @@
 module;
 #include <carven/runtime/array.hpp>
+#include <carven/runtime/slice.hpp>
 
 module carven:test.internal.runtime.array;
 
@@ -38,6 +39,12 @@ AdoptedArrayElement::~AdoptedArrayElement() noexcept {
 }
 
 const TestSuite suite([] static noexcept {
+    "Runtime: zero-extent array views have independent empty storage"_test = [] static noexcept {
+        const auto view = carven::runtime::as_slice(std::array<int, 0> {});
+        expect(view.empty());
+        expect(view.data() == nullptr);
+    };
+
     "Runtime: checked array indexing preserves references"_test = [] static noexcept {
         using namespace carven::runtime;
         auto values = std::array<std::int32_t, 3> {1, 2, 3};

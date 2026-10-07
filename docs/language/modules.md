@@ -57,7 +57,9 @@ must be visible to the importer under the declaration rules below. Explicit
 selections cannot collide with a local declaration or bind one name to different
 symbols, and they deterministically shadow same-name wildcard candidates.
 Multiple wildcard providers are ambiguous only when an actual use requires that
-name. Import declarations have no runtime side effects. A declaration is used
+name. Importing a module selects its declarations; it does not bring that
+module's imported bindings into the importing scope. Import declarations have
+no runtime side effects. A declaration is used
 when one of its selected bindings uniquely resolves an actual reference; an
 otherwise unused declaration produces one `CV-LINT-UNUSED-IMPORT` warning.
 
@@ -72,6 +74,19 @@ blocks, and C++ source fragments. Function, structure, class, enum, and constant
 share one module namespace. Duplicate module declarations are invalid; function
 overloading is not supported.
 
+Bare source declaration names require identifier tokens, so reserved keywords
+cannot name declarations. Fixed builtin type names and the type constructors
+`ptr` and `range` are additionally reserved for module declarations; locals,
+parameters, and members may use those identifier spellings. Root builtin
+callable names such as `print` may be shadowed. The
+[name classification](grammar.md#22-identifiers-and-keywords) distinguishes these
+semantic reservations from keywords and contextual spellings.
+
+Module path components and qualified/member components accept identifier-shaped
+keyword tokens. This permits keyword-named native members and paths without
+permitting bare source declarations with those names. Source-module `using`
+selections still require ordinary identifiers. There is no escaped-identifier form.
+
 Nominal and callable identities are collected across the closed compilation.
 Declaration signatures, constants, and any function bodies needed
 for static execution are completed through their dependencies. Declaration order
@@ -82,7 +97,10 @@ are supported. A cycle among constant-required facts is invalid.
 Unqualified lookup checks the innermost lexical scope first, then enclosing
 scopes, module declarations, and imports. A declaration in an inner lexical
 scope may shadow an outer binding. Declaring the same name twice in one lexical
-scope is invalid. Lambda bodies add a capture boundary: a free runtime binding
+scope is invalid. Visible Carven import candidates, including wildcard imports,
+and explicit native selections take precedence over root builtin callables. Known
+builtins take precedence over opened C++ namespaces, which supply fallback
+lookup for otherwise unresolved names. Lambda bodies add a capture boundary: a free runtime binding
 must be captured explicitly before ordinary lexical lookup may cross it.
 
 Named module functions, structures, classes, enums, and module constants use one visibility
@@ -102,8 +120,13 @@ Official standard-library modules belong to the `carven` craft, including those
 selected through `std::`. Ordinary application modules share the unprefixed
 module domain and can import each other's bare declarations.
 
-Every declaration is visible in its defining module. Qualified lookup selects
-the named module or nominal owner.
+Every declaration is visible in its defining module. In expressions, `::`
+selects type-associated operations, enum cases, or qualified native names.
+`char::from_u32_unchecked` selects an associated operation of the `char` type.
+Root builtins such as `print` and `when_all` use ordinary unqualified lookup.
+Resolve the name before checking its call contract; an incompatible user
+declaration produces a diagnostic rather than falling back to a builtin.
+Standard library modules use the explicit `std::` import prefix.
 
 A declaration surface may refer only to nominal declarations whose audience
 contains the surface's audience. This structural check recursively covers

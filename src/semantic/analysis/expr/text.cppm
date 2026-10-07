@@ -38,7 +38,7 @@ auto construct_text_call(
     Site& site,
     TextIntrinsic intrinsic,
     std::optional<typename Site::Value> receiver,
-    std::span<const ASTCallArgument> arguments,
+    std::span<const ASTExprID> arguments,
     Span span
 ) noexcept -> ExpressionTask<typename Site::Value> {
     if constexpr (Site::mode == ExpressionMode::StaticRoot) {
@@ -73,15 +73,12 @@ auto construct_text_call(
         }
         const auto argument_type = resolve_text_intrinsic_type(site.draft(), parameter.type);
         const auto execution = site.enter_operand_execution(state.completes);
-        auto built = (co_await site.read_argument(argument.expression, argument_type));
+        auto built = (co_await site.read_argument(argument, argument_type));
         if (!built) {
             co_return std::unexpected(built.error());
         }
-        auto value = site.consume_read(
-            state,
-            std::move(*built),
-            site.syntax().expression(argument.expression).span
-        );
+        auto value =
+            site.consume_read(state, std::move(*built), site.syntax().expression(argument).span);
         if (!value) {
             co_return std::unexpected(value.error());
         }

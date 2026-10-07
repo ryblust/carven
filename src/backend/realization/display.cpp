@@ -63,7 +63,27 @@ auto display_statements(
         ));
     };
     const auto& canonical = context.semantic().types().type(type).value;
-    if (const auto* structure = std::get_if<StructTypeValue>(&canonical)) {
+    if (const auto* tuple = std::get_if<TupleTypeValue>(&canonical)) {
+        text("(");
+        for (auto index = 0uz; index < tuple->elements.size(); ++index) {
+            line();
+            child(
+                tuple->elements[index],
+                template_call_expression(
+                    intrinsic_expression(TargetSymbol::RuntimeTupleGet),
+                    {TargetIntegerLiteral {
+                        .negative = false,
+                        .magnitude = index,
+                        .suffix = TargetIntegerSuffix::None
+                    }},
+                    target_expressions(name_expression(value))
+                )
+            );
+            text(",");
+        }
+        line(true);
+        text(")");
+    } else if (const auto* structure = std::get_if<StructTypeValue>(&canonical)) {
         const auto& declaration = context.semantic().declarations().structure(structure->structure);
         const auto name = context.semantic().provenance().spelling(declaration.name);
         if (declaration.kind == RecordKind::Class) {
@@ -119,12 +139,10 @@ auto display_statements(
                 }
             } else {
                 const auto projection = [&]() noexcept {
-                    return call_member(
-                        name_expression(value),
-                        context.payload_enum(enumeration->enumeration)
-                            .cases[index]
-                            .projection_function.spelling(),
-                        {}
+                    return context.enum_payload_projection(
+                        enumeration->enumeration,
+                        index,
+                        name_expression(value)
                     );
                 };
                 if (needs_selection) {
@@ -218,11 +236,15 @@ auto ModuleLowering::display_emitter_type(TypeID type) noexcept -> TargetTypeID 
     if (const auto* slice = std::get_if<SliceTypeValue>(&canonical)) {
         return aggregate(TargetSymbol::RuntimeSequenceDisplay, slice->element);
     }
+    if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&canonical)) {
+        return aggregate(TargetSymbol::RuntimeSequenceDisplay, sequence->element);
+    }
     if (const auto* range = std::get_if<RangeTypeValue>(&canonical)) {
         return aggregate(TargetSymbol::RuntimeRangeDisplay, range->element);
     }
     if (!std::holds_alternative<StructTypeValue>(canonical)
-        && !std::holds_alternative<EnumTypeValue>(canonical)) {
+        && !std::holds_alternative<EnumTypeValue>(canonical)
+        && !std::holds_alternative<TupleTypeValue>(canonical)) {
         const auto emitter_type = intrinsic_type(TargetSymbol::RuntimeScalarDisplay);
         display_types.emplace(type, emitter_type);
         return emitter_type;

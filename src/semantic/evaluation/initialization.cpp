@@ -13,6 +13,9 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
         co_return std::unexpected(std::move(checked.error()));
     }
     const auto canonical = values.type_copy(target);
+    if (std::holds_alternative<OwnedSequenceTypeValue>(canonical.value)) {
+        co_return ExecutionAggregateValue {.type = target, .elements = {}};
+    }
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
         if (builtin_is_integer(builtin->kind)) {
             co_return ConstantAtom {.type = target, .value = IntegerConstant::zero()};
@@ -32,6 +35,7 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
                 co_return ConstantAtom {.type = target, .value = F32Constant {0.0f}};
             case BuiltinType::F64:
                 co_return ConstantAtom {.type = target, .value = F64Constant {0.0}};
+            case BuiltinType::Void:   co_return ExecutionVoid {};
             case BuiltinType::String: co_return ExecutionOwnedText({});
             case BuiltinType::Str:    co_return ExecutionText(std::string());
             default:                  break;
@@ -48,15 +52,18 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
     } else if (std::holds_alternative<PointerTypeValue>(canonical.value)) {
         co_return ConstantAtom {.type = target, .value = NullPointerConstant {}};
     } else if (std::holds_alternative<ArrayTypeValue>(canonical.value)
-               || std::holds_alternative<StructTypeValue>(canonical.value)) {
+               || std::holds_alternative<StructTypeValue>(canonical.value)
+               || std::holds_alternative<TupleTypeValue>(canonical.value)) {
         if (auto checked = check_aggregate_size(target, origin); !checked) {
             co_return std::unexpected(std::move(checked.error()));
         }
         const auto* array = std::get_if<ArrayTypeValue>(&canonical.value);
         auto fields = std::optional<std::vector<TypeID>>();
         if (array == nullptr) {
-            fields =
-                values.struct_field_types(std::get<StructTypeValue>(canonical.value).structure);
+            const auto* tuple = std::get_if<TupleTypeValue>(&canonical.value);
+            fields = tuple
+                ? std::optional(tuple->elements)
+                : values.struct_field_types(std::get<StructTypeValue>(canonical.value).structure);
             if (!fields) {
                 co_return std::unexpected(fail(
                     origin,
@@ -82,7 +89,10 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
             }
             elements.push_back(std::move(*element));
         }
-        co_return ExecutionAggregateValue {.type = target, .elements = std::move(elements)};
+        co_return bounded_value(
+            ExecutionAggregateValue {.type = target, .elements = std::move(elements)},
+            origin
+        );
     }
     co_return std::unexpected(fail(
         origin,

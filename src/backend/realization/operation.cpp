@@ -19,6 +19,7 @@ import :semantic.semir.delegation;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
+import :semantic.semir.sequence;
 import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :semantic.semir.text;
@@ -28,6 +29,28 @@ import :source.provenance;
 import :support.invariant;
 import :support.visit;
 import std;
+
+auto native_result_query(const SemIRProgram& program, const SemanticExpression& source) noexcept
+    -> std::optional<TypeID> {
+    const auto type = source.type.resolved();
+    const auto* native = std::get_if<CppTypeValue>(&program.types().type(type).value);
+    const auto* query = native == nullptr ? nullptr : std::get_if<CppQueryType>(&native->form);
+    if (query == nullptr) {
+        return std::nullopt;
+    }
+    if (std::holds_alternative<SemCppCall>(source.value)) {
+        return std::holds_alternative<CppCallQuery>(query->expression) ? std::optional(type)
+                                                                       : std::nullopt;
+    }
+    const auto* cpp = std::get_if<SemCpp>(&source.value);
+    if (cpp == nullptr
+        || std::holds_alternative<CppConvertOperation>(cpp->operation)
+        || std::holds_alternative<CppConstructOperation>(cpp->operation)
+        || std::holds_alternative<CppUpdateOperation>(cpp->operation)) {
+        return std::nullopt;
+    }
+    return type;
+}
 
 auto realize_callable_adaptation(
     ModuleLowering& context,
@@ -365,14 +388,30 @@ auto realize_operation(
                     }
                 };
             },
+            [&](const SemTuple&) noexcept -> TargetExpr {
+                return tuple_expression(context, source.type.resolved(), std::move(operands));
+            },
+            [&](const SemTupleElement& value) noexcept -> TargetExpr {
+                return template_call_expression(
+                    intrinsic_expression(TargetSymbol::RuntimeTupleGet),
+                    {TargetIntegerLiteral {
+                        .negative = false,
+                        .magnitude = value.index,
+                        .suffix = TargetIntegerSuffix::None
+                    }},
+                    std::move(operands)
+                );
+            },
             [&](const SemStruct& value) noexcept -> TargetExpr {
                 auto fields = std::vector<std::pair<std::uint32_t, TargetFieldInitializer>>();
                 for (auto index = 0uz; index < value.fields.size(); ++index) {
                     const auto& field = value.fields[index];
                     fields.push_back(
                         {field.declaration_index,
-                         {.name =
-                              context.field_identifier(value.structure, field.declaration_index),
+                         {.name = context.field_identifier(
+                              value.resolved_structure(),
+                              field.declaration_index
+                          ),
                           .value = target_child(std::move(operands[index]))}}
                     );
                 }
@@ -452,20 +491,24 @@ auto realize_operation(
             [&](const SemField& value) noexcept -> TargetExpr {
                 return member_expression(
                     std::move(operands[0]),
-                    context.field_identifier(value.field.owner, value.field.field_index)
+                    context.field_identifier(value.field.resolved_owner(), value.field.field_index)
                 );
             },
             [&](const SemIndex& value) noexcept -> TargetExpr {
+                const auto is_slice = std::holds_alternative<SliceTypeValue>(
+                    context.semantic().types().type(value.source->type.resolved()).value
+                );
                 if (std::holds_alternative<RuntimeCheckedBounds>(value.bounds)) {
                     // A consumed place takes its consumer's origin; the subscript
                     // keeps the position the executor reports.
-                    const auto is_slice = std::holds_alternative<SliceTypeValue>(
+                    const auto is_sequence = std::holds_alternative<OwnedSequenceTypeValue>(
                         context.semantic().types().type(value.source->type.resolved()).value
                     );
                     return call_expression(
                         intrinsic_expression(
-                            is_slice ? TargetSymbol::RuntimeCheckedSliceIndex
-                                     : TargetSymbol::RuntimeCheckedArrayIndex
+                            is_sequence    ? TargetSymbol::RuntimeCheckedSequenceIndex
+                                : is_slice ? TargetSymbol::RuntimeCheckedSliceIndex
+                                           : TargetSymbol::RuntimeCheckedArrayIndex
                         ),
                         target_expressions(
                             std::move(operands[0]),
@@ -473,6 +516,9 @@ auto realize_operation(
                             source_site_expression(context, value.index->origin)
                         )
                     );
+                }
+                if (is_slice) {
+                    operands[0] = call_member(std::move(operands[0]), "data", {});
                 }
                 return TargetExpr {
                     .value = TargetIndexExpr {
@@ -535,6 +581,30 @@ auto realize_operation(
             [&](const SemIntrinsic& value) noexcept -> TargetExpr {
                 return value.operation.visit(
                     Overloaded {
+                        [&](const FloatIntrinsic&) noexcept -> TargetExpr {
+                            return call_expression(
+                                intrinsic_expression(TargetSymbol::StdIsFinite),
+                                std::move(operands)
+                            );
+                        },
+                        [&](const SequenceIntrinsicOperation& family) noexcept -> TargetExpr {
+                            auto receiver = std::move(operands.front());
+                            operands.erase(operands.begin());
+                            const auto name = [&]() noexcept {
+                                switch (family.intrinsic) {
+                                    case SequenceIntrinsic::Len:     return "size";
+                                    case SequenceIntrinsic::IsEmpty: return "empty";
+                                    case SequenceIntrinsic::Push:    return "push";
+                                    case SequenceIntrinsic::Remove:  return "remove";
+                                    case SequenceIntrinsic::Clear:   return "clear";
+                                }
+                                std::unreachable();
+                            }();
+                            if (family.intrinsic == SequenceIntrinsic::Remove) {
+                                operands.push_back(source_site_expression(context, source.origin));
+                            }
+                            return call_member(std::move(receiver), name, std::move(operands));
+                        },
                         [&](const SliceIntrinsicOperation& family) noexcept -> TargetExpr {
                             const auto method = [&](const char* name) noexcept -> TargetExpr {
                                 auto receiver = std::move(operands.front());
@@ -558,15 +628,7 @@ auto realize_operation(
                             std::unreachable();
                         },
                         [&](const SIMDIntrinsic& family) noexcept -> TargetExpr {
-                            const auto owner = simd_owner(
-                                family,
-                                source.type.resolved(),
-                                value.operands.front().expression.type.resolved(),
-                                [&](TypeID type) noexcept -> const CanonicalType& {
-                                    return context.semantic().types().type(type);
-                                }
-                            );
-                            const auto contract = simd_contract(family, owner);
+                            const auto name = simd_intrinsic_name(family);
                             if (const auto* lane = std::get_if<PreparedSIMDLane>(preparation)) {
                                 auto receiver = std::move(operands.front());
                                 operands.erase(operands.begin(), operands.begin() + 2);
@@ -575,8 +637,7 @@ auto realize_operation(
                                         .value =
                                             TargetMemberExpr {
                                                 .operand = target_child(std::move(receiver)),
-                                                .name =
-                                                    TargetIdentifier::from_spelling(contract.name)
+                                                .name = TargetIdentifier::from_spelling(name)
                                             }
                                     },
                                     {TargetIntegerLiteral {
@@ -594,7 +655,7 @@ auto realize_operation(
                                 return call_expression(
                                     static_member_expression(
                                         context.lower_type(source.type.resolved()),
-                                        TargetIdentifier::from_spelling(contract.name)
+                                        TargetIdentifier::from_spelling(name)
                                     ),
                                     std::move(operands)
                                 );
@@ -615,7 +676,7 @@ auto realize_operation(
                                 auto callee = TargetExpr {
                                     .value = TargetMemberExpr {
                                         .operand = target_child(std::move(receiver)),
-                                        .name = TargetIdentifier::from_spelling(contract.name)
+                                        .name = TargetIdentifier::from_spelling(name)
                                     }
                                 };
                                 return template_call_expression(
@@ -628,11 +689,7 @@ auto realize_operation(
                                     std::move(operands)
                                 );
                             }
-                            return call_member(
-                                std::move(receiver),
-                                contract.name,
-                                std::move(operands)
-                            );
+                            return call_member(std::move(receiver), name, std::move(operands));
                         },
                         [&](const TextIntrinsic& family) noexcept -> TargetExpr {
                             switch (family) {
@@ -708,6 +765,9 @@ auto realize_operation(
                 );
             },
             [&](const SemTake&) noexcept -> TargetExpr { return std::move(operands[0]); },
+            [](const SemGenericCall&) static noexcept -> TargetExpr {
+                invariant_violation("unsubstituted generic call reached backend");
+            },
             [&](const SemCall& value) noexcept -> TargetExpr {
                 if (value.target) {
                     return call_expression(
@@ -718,6 +778,101 @@ auto realize_operation(
                 auto callee = std::move(operands.front());
                 operands.erase(operands.begin());
                 return call_expression(std::move(callee), std::move(operands));
+            },
+            [&](const SemColdCall& value) noexcept -> TargetExpr {
+                return call_expression(
+                    name_expression(context.callable_name(value.target)),
+                    std::move(operands)
+                );
+            },
+            [&](const SemColdCompose& value) noexcept -> TargetExpr {
+                const auto& operation = std::get<OperationTypeValue>(
+                    context.semantic().types().type(source.type.resolved()).value
+                );
+                auto arguments = std::vector<TargetTemplateArgument> {
+                    context.is_void(operation.success) ? context.intrinsic_type(TargetSymbol::Void)
+                                                       : context.lower_type(operation.success)
+                };
+                auto symbol = TargetSymbol::RuntimeAsyncWhenAll;
+                for (auto index = 0uz; index < value.inputs.size(); ++index) {
+                    const auto& input = value.inputs[index].expression;
+                    const auto& input_operation = std::get<OperationTypeValue>(
+                        context.semantic().types().type(input.type.resolved()).value
+                    );
+                    const auto* success = std::get_if<BuiltinTypeValue>(
+                        &context.semantic().types().type(input_operation.success).value
+                    );
+                    if (success != nullptr && success->kind == BuiltinType::Char) {
+                        operands[index] = template_call_expression(
+                            intrinsic_expression(TargetSymbol::RuntimeAsyncCompositionOperand),
+                            {true},
+                            target_expressions(
+                                std::move(operands[index]),
+                                source_site_expression(context, input.origin)
+                            )
+                        );
+                    }
+                }
+                switch (value.policy) {
+                    case AsyncCompositionPolicy::WhenAll: break;
+                    case AsyncCompositionPolicy::WhenAny:
+                        symbol = TargetSymbol::RuntimeAsyncWhenAny;
+                        break;
+                    case AsyncCompositionPolicy::FirstSuccessful:
+                        symbol = TargetSymbol::RuntimeAsyncFirstSuccessful;
+                        break;
+                }
+                for (const auto failure :
+                     context.plan().failure_abi().members(operation.failures)) {
+                    arguments.emplace_back(context.lower_type(failure));
+                }
+                return template_call_expression(
+                    intrinsic_expression(symbol),
+                    std::move(arguments),
+                    std::move(operands)
+                );
+            },
+            [&](const SemColdTimeout& value) noexcept -> TargetExpr {
+                const auto& operation = std::get<OperationTypeValue>(
+                    context.semantic().types().type(source.type.resolved()).value
+                );
+                auto arguments = std::vector<TargetTemplateArgument> {
+                    context.is_void(operation.success) ? context.intrinsic_type(TargetSymbol::Void)
+                                                       : context.lower_type(operation.success),
+                    context.lower_type(value.timeout_failure),
+                    context.lower_type(value.range_failure),
+                };
+                for (const auto failure :
+                     context.plan().failure_abi().members(operation.failures)) {
+                    arguments.emplace_back(context.lower_type(failure));
+                }
+                return template_call_expression(
+                    intrinsic_expression(TargetSymbol::RuntimeAsyncTimeout),
+                    std::move(arguments),
+                    std::move(operands)
+                );
+            },
+            [](const SemAwait&) static noexcept -> TargetExpr {
+                invariant_violation("await requires owning completion body realization");
+            },
+            [](const SemWaitReady&) static noexcept -> TargetExpr {
+                invariant_violation("wait_ready requires coroutine body realization");
+            },
+            [](const SemCloseChild&) static noexcept -> TargetExpr {
+                invariant_violation("close requires coroutine body realization");
+            },
+            [&](const SemAsyncIntrinsic& value) noexcept -> TargetExpr {
+                if (value.kind == AsyncIntrinsic::WaitReady
+                    || value.kind == AsyncIntrinsic::CloseChild) {
+                    invariant_violation("child control intrinsic requires direct await");
+                }
+                const auto symbol = value.kind == AsyncIntrinsic::CancellationRequested
+                    ? TargetSymbol::RuntimeAsyncCancellationRequested
+                    : value.kind == AsyncIntrinsic::CancellationPoint
+                    ? TargetSymbol::RuntimeAsyncCancellationPoint
+                    : value.kind == AsyncIntrinsic::YieldOnce ? TargetSymbol::RuntimeAsyncYieldOnce
+                                                              : TargetSymbol::RuntimeAsyncCancel;
+                return call_expression(intrinsic_expression(symbol), std::move(operands));
             },
             [](const SemIf&) static noexcept -> TargetExpr {
                 invariant_violation("structured operation requires body realization");
@@ -733,6 +888,30 @@ auto realize_operation(
             }
         }
     );
+    const auto* native_type =
+        std::get_if<CppTypeValue>(&context.semantic().types().type(source.type.resolved()).value);
+    if (native_type != nullptr
+        && std::holds_alternative<CppQueryType>(native_type->form)
+        && source.category == SemanticValueCategory::Value
+        && (std::holds_alternative<SemCppCall>(source.value)
+            || std::holds_alternative<SemCpp>(source.value))) {
+        auto body = std::vector<TargetStmt>();
+        body.push_back(generated_statement(TargetReturnStmt {.expression = std::move(result)}));
+        return call_expression(
+            intrinsic_expression(TargetSymbol::RuntimeMaterializeNative),
+            target_expressions(
+                TargetExpr {
+                    .value = TargetLambdaExpr {
+                        .parameters = {},
+                        .result = native_result_query(context.semantic(), source)
+                            ? context.lower_cpp_query(source.type.resolved())
+                            : context.lower_type(source.type.resolved()),
+                        .body = std::move(body)
+                    }
+                }
+            )
+        );
+    }
     return result;
 }
 

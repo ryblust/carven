@@ -11,6 +11,11 @@ The compiler selects construction, storage, and control flow that preserve
 those choices. Expose representation choices when they affect behavior or a
 caller's obligations.
 
+Prefer direct source forms for common operations. Let the compiler use known
+types and semantic facts to perform the required checking and implementation
+selection. Evaluate the resulting complexity across user code, language rules,
+compiler implementation, and generated C++.
+
 Inference has defined inputs, precedence, defaults, stopping conditions, and
 incompatible cases. Changes to ownership, mutable access, captures, failure
 handling, or retained lifetimes follow an explicit source form or a rule of
@@ -126,20 +131,38 @@ where a language rule depends on them.
 
 ## Language mechanisms and library composition
 
-Give each builtin a defined role in language semantics: typing, evaluation,
-access, ownership, lifetimes, or observable effects. The compiler establishes
-these contracts and carries their facts through execution and lowering. Runtime
-support implements the operations required by their native realization.
+Choose builtins for common, stable operations whose checked behavior benefits
+from compiler knowledge and a compact source contract. Source implementability
+is one consideration alongside usability and total complexity. Treat builtins
+as complete language APIs with explicit, bounded contracts.
 
-Libraries compose these mechanisms into algorithms, data structures, and public
-APIs. A type's language-level contract and its library operations have distinct
-responsibilities. Place compiler knowledge at the semantic boundary and keep
-algorithmic choices with the library that owns them.
+`print` accepts heterogeneous arguments. The compiler knows their number and
+types, checks supported values, and preserves evaluation order while selecting
+output operations. This provides variable-arity printing without requiring a
+public parameter-pack mechanism. `when_all` similarly derives result and
+failure types from its inputs and checks their ownership transfer.
 
-Standard and user crafts use the same language facilities and admission rules.
-Develop shared execution capabilities so library code can benefit from
-static execution and specialization within defined operation and result
-contracts. Let concrete library needs guide the evolution of language mechanisms.
+Keep builtin inputs and results within the shared type, access, ownership,
+lifetime, and failure models. An operation returned by `when_all` can
+participate in further composition through the ordinary operation contract.
+Using an API in larger programs and expressing its implementation through a
+general language mechanism are separate design requirements.
+
+Library APIs can hide complex implementations behind simple contracts. Prefer
+them when existing source semantics and native interoperation fully express
+their contracts. When implementing an API requires additional language
+mechanisms, evaluate their public rules, feature interactions, diagnostics, and
+compiler maintenance costs as part of the design.
+
+Libraries own algorithms, data structures, and the native support needed to
+implement them. Depending on a clock, operating system, or runtime facility does
+not by itself require a builtin. Standard and user crafts use the same
+declaration facilities and admission rules; shared execution capabilities
+support library static execution and specialization.
+
+Give each builtin one semantic definition for typing, evaluation, and effects.
+Analysis, static execution, and lowering consume that definition and its
+published facts. Runtime support implements the remaining native work.
 
 ## Semantic authority and native boundaries
 
@@ -161,7 +184,10 @@ layout. The build system owns dependency acquisition, additional source selectio
 and native build configuration.
 
 Give each semantic fact one authority. Later stages consume published facts;
-generated names and text represent their output.
+generated names and text represent their output. Repeated local exceptions call
+for reviewing the owning contract and the information it publishes. Consolidate
+equivalent paths at that boundary. Distinguish implementation simplification
+from changes to observable behavior, admitted programs, or caller obligations.
 
 At each native boundary, define the responsibilities of Carven, the provider,
 and the caller. State delegated checks, object validity and lifetime assumptions,
@@ -210,6 +236,14 @@ and delimiters to keep syntactic structure consistent across scopes.
 
 Require a concrete use that existing forms cannot adequately express. Evaluate
 features against that use, including their rules, exceptions, interactions,
-runtime costs, and tooling burden. Settle meaning before syntax.
-Add extension points when a consumer needs them. Define admitted uses and
-diagnostics at the boundary responsible for each feature.
+compilation and runtime costs, and tooling burden. Settle meaning before syntax.
+Introduce general mechanisms such as higher-order interfaces, parameter packs,
+or generic composition when independent use cases justify their shared rules.
+The ability to reimplement a builtin alone does not establish that need.
+Add extension points when a consumer needs them, with admitted uses and
+diagnostics defined at the responsible boundary.
+
+Judge simplification by clarity of responsibilities, fewer interacting rules
+and execution paths, and preserved contracts. Reduced code size is a useful
+consequence. Update names and owning boundaries to match the resulting
+responsibilities.

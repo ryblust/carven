@@ -15,6 +15,7 @@ import :frontend.ast.type;
 import :frontend.lex.token;
 import :frontend.parse.builder;
 import :frontend.parse.parser;
+import :source.identifier;
 import :source.text;
 import std;
 
@@ -83,8 +84,11 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
             || kind == TokenKind::Enum
             || kind == TokenKind::Struct
             || kind == TokenKind::Class
+            || kind == TokenKind::Async
             || kind == TokenKind::Fn
-            || kind == TokenKind::Const
+            || (kind == TokenKind::Const
+                && !check_next(TokenKind::If)
+                && !check_next(TokenKind::For))
             || kind == TokenKind::Test;
         auto item = std::optional<ASTItemID>();
         if (is_declaration) {
@@ -143,7 +147,9 @@ auto Parser::run() noexcept -> std::expected<SyntaxTree, Diagnostics> {
                     .visibility = ASTBareDeclarationVisibility {},
                     .cpp_export = std::nullopt,
                     .const_span = std::nullopt,
+                    .async_span = std::nullopt,
                     .name_span = Span::at(span.start()),
+                    .type_parameters = std::nullopt,
                     .parameters = {},
                     .result_type = std::nullopt,
                     .throw_clause = std::nullopt,
@@ -179,6 +185,7 @@ auto Parser::synchronize_top_level_item(std::size_t item_start) noexcept -> void
             || kind == TokenKind::Enum
             || kind == TokenKind::Struct
             || kind == TokenKind::Class
+            || kind == TokenKind::Async
             || kind == TokenKind::Fn
             || kind == TokenKind::Const
             || kind == TokenKind::Test
@@ -273,6 +280,14 @@ auto Parser::fail_here(std::string_view message) noexcept -> void {
 
 auto Parser::expect(TokenKind kind, std::string_view message) noexcept -> Token {
     if (check(kind)) {
+        return consume();
+    }
+    fail_here(message);
+    return current();
+}
+
+auto Parser::expect_name_component(std::string_view message) noexcept -> Token {
+    if (is_identifier_spelling(slice(source, current().span))) {
         return consume();
     }
     fail_here(message);

@@ -123,6 +123,10 @@ arguments; ordinary function parameter rules apply elsewhere. An entry with
 outward failures must declare an explicit `throw` contract, including a
 `private` entry. Its body must stay within that declared failure set.
 
+An [`async fn main()`](async.md) accepts zero parameters. Its private driver
+waits for root completion and lexical child closure before reporting failure or
+cancelled completion.
+
 Normal completion produces process status zero; a declared Carven result, if
 present, is not a process exit status. A typed failure that escapes either entry
 produces the host C++ `EXIT_FAILURE` status and one report on stderr containing

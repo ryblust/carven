@@ -6,7 +6,7 @@ import std::simd.bytes using {
     first_or,
     ascii_digit,
     ascii_prefix,
-    ascii_whitespace,
+    json_whitespace,
     ascii_lower,
     extract,
     shift_in,
@@ -116,7 +116,7 @@ const fn verify_classification() -> bool {
         let v = u8x32::splat(scalar);
         assert(ascii_digit(v).all() == (scalar >= 0x30 && scalar <= 0x39));
         assert(
-            ascii_whitespace(v).all()
+            json_whitespace(v).all()
                 == (scalar == 0x20 || scalar == 0x09 || scalar == 0x0a || scalar == 0x0d)
         );
         var expected = scalar;

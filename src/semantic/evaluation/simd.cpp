@@ -11,16 +11,16 @@ auto SemanticExecutor::simd(
     const SemanticExpression& source
 ) noexcept -> ExecutionTask<ExecutionValue> {
     const auto intrinsic = std::get<SIMDIntrinsic>(operation.operation);
-    auto result_type = type(source.type.construction(), source.origin);
-    if (!result_type) {
-        co_return std::unexpected(std::move(result_type.error()));
+    auto target = type(source.type.construction(), source.origin);
+    if (!target) {
+        co_return std::unexpected(std::move(target.error()));
     }
     auto first_type =
         type(operation.operands.front().expression.type.construction(), source.origin);
     if (!first_type) {
         co_return std::unexpected(std::move(first_type.error()));
     }
-    const auto owner = simd_owner(intrinsic, *result_type, *first_type, [&](TypeID id) noexcept {
+    const auto owner = simd_owner(intrinsic, *target, *first_type, [&](TypeID id) noexcept {
         return values.type_copy(id);
     });
     const auto layout = *simd_layout(owner);
@@ -29,11 +29,16 @@ auto SemanticExecutor::simd(
     using Lane = std::uint32_t;
     using Vector = SIMDConstant;
     const auto origin = source.origin;
-    auto target = type(source.type.construction(), origin);
-    if (!target) {
-        co_return std::unexpected(std::move(target.error()));
+    const auto result_shape = values.type_copy(*target);
+    auto result_elements = std::uint64_t(0);
+    if (const auto* builtin = std::get_if<BuiltinTypeValue>(&result_shape.value)) {
+        if (const auto result_layout = simd_layout(builtin->kind)) {
+            result_elements = result_layout->width;
+        }
+    } else if (const auto* array = std::get_if<ArrayTypeValue>(&result_shape.value)) {
+        result_elements = array->extent;
     }
-    if (auto budget = account_aggregate(width, origin); !budget) {
+    if (auto budget = account_aggregate(result_elements, origin); !budget) {
         co_return std::unexpected(std::move(budget.error()));
     }
     const auto bounds_failure = [&]() noexcept {

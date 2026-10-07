@@ -1,0 +1,175 @@
+import "lifetimes/lifetimes.hpp" using lifetime_probe::{
+    FixedOwner,
+    Owner,
+    PatternOwner,
+    mark,
+    reset,
+    matches,
+};
+
+import "lifetimes/tuples.hpp";
+
+private import(cpp) fn accept_void_value(value: void) -> i32;
+
+export(cpp) fn consume_void(value: void) -> void => value;
+
+private fn fixed_pair() -> (FixedOwner, void, FixedOwner) => (
+    FixedOwner { 1 },
+    mark(7),
+    FixedOwner { 2 },
+);
+
+test "Tuples: immovable results initialize final slots and decompose without transfer" {
+    reset();
+    if true {
+        let (first, empty, second) = fixed_pair();
+        check(matches("1 7 2 "));
+        check(first.probe(0, 0));
+        check(second.probe(0, 0));
+        check(accept_void_value(empty) == 17);
+        consume_void(empty);
+    }
+    check(matches("1 7 2 9 9 -2 -1 "));
+}
+
+test "Tuples: discarded slots remain owned until the decomposition scope closes" {
+    reset();
+    if true {
+        let (first, _) = (FixedOwner { 3 }, FixedOwner { 4 });
+        check(matches("3 4 "));
+        check(first.probe(0, 0));
+        check(matches("3 4 9 "));
+    }
+    check(matches("3 4 9 -4 -3 "));
+}
+
+private struct TupleFailure {}
+
+private fn maybe_slot(succeeds: bool) -> i32 throw TupleFailure {
+    if !succeeds { throw TupleFailure {}; }
+    return 19;
+}
+
+test "Tuples: completed native slots transfer on success and clean up on later failure" {
+    reset();
+    try {
+        let (_, value) = (Owner { 5 }, maybe_slot(true)?);
+        check(value == 19);
+        check(matches("5 105 -5 "));
+    } catch {
+        TupleFailure(_) => fail("unexpected tuple failure"),
+    }
+    check(matches("5 105 -5 -5 "));
+    reset();
+    try {
+        let _ = (Owner { 5 }, maybe_slot(false)?);
+        fail("expected tuple failure");
+    } catch {
+        TupleFailure(_) => {},
+    }
+    check(matches("5 -5 "));
+}
+
+test "Tuples: native void is materialized once at its logical position" {
+    reset();
+    let ordinary_void = mark(4);
+    let _ = ordinary_void;
+    let (_, value, _) = (mark(6), 19, mark(8));
+    check(value == 19);
+    check(matches("4 6 8 "));
+}
+
+private fn void_choice(flag: bool) -> void => if flag { mark(10); } else { mark(11); };
+
+private fn borrow_parts((number, fixed): (i32, FixedOwner), &same: (i32, FixedOwner)) -> i32 {
+    same.0 += 1;
+    check(fixed.probe(0, 0));
+    return number;
+}
+
+private fn borrow_loop(values: [(i32, FixedOwner); 1]) -> i32 {
+    var result = 0;
+    for (number, fixed) in values {
+        check(fixed.probe(0, 0));
+        result += number;
+    }
+    return result;
+}
+
+private fn take_parameter(&&(first, second): (Owner, Owner)) {
+    let consumed = &&first;
+    check(second.probe());
+    check(consumed.probe());
+}
+
+test "Tuples: borrowed targets retain native storage and live scalar projections" {
+    reset();
+    if true {
+        var pair: (i32, FixedOwner) = (20, FixedOwner { 6 });
+        check(borrow_parts(pair, &pair) == 21);
+        let pointer = addressof(pair);
+        if pointer != nullptr { check(pointer->0 == 21); }
+        let values: [(i32, FixedOwner); 1] = [(22, FixedOwner { 7 })];
+        check(borrow_loop(values) == 22);
+        check(matches("6 9 7 9 "));
+    }
+    check(matches("6 9 7 9 -7 -6 "));
+}
+
+test "Tuples: Take parameter slots transfer independently without relocating the product" {
+    reset();
+    take_parameter(&&(Owner { 11 }, Owner { 12 }));
+    check(matches("11 12 111 22 21 -11 -12 -11 "));
+}
+
+private fn select_owned_slot() -> Owner => (Owner { 7 }, Owner { 8 }).0;
+
+test "Tuples: owning field selection retains unselected slots through delivery" {
+    reset();
+    if true {
+        let selected = select_owned_slot();
+        check(matches("7 8 107 -8 -7 "));
+        check(selected.probe());
+    }
+    check(matches("7 8 107 -8 -7 17 -7 "));
+}
+
+private fn accept_tuple_pattern(accepted: bool) -> bool {
+    mark(9);
+    return accepted;
+}
+
+private fn selected_tuple_owner(
+    value: (PatternOwner, PatternOwner, i32, i32),
+    accepted: bool
+) -> i32 => match value {
+    (chosen, _, 0 | 1, 0 | 1)
+        | (_, chosen, 2 | 3, 2 | 3)
+        | (chosen, _, 2 | 4, 2 | 4) if accept_tuple_pattern(accepted) => chosen.id as i32,
+    (_, _, _, _) => -1,
+};
+
+test "Tuple patterns: Read alternatives borrow the selected slot before one guard" {
+    let value: (PatternOwner, PatternOwner, i32, i32) = (
+        PatternOwner { 1 },
+        PatternOwner { 2 },
+        2,
+        2
+    );
+    reset();
+    check(selected_tuple_owner(value, true) == 2);
+    check(matches("9 "));
+    reset();
+    check(selected_tuple_owner(value, false) == -1);
+    check(matches("9 "));
+}
+
+test "Tuples: empty structured branches deliver a void object value" {
+    reset();
+    let chosen: void = if true { mark(12); } else {};
+    let (first, second, number) = (chosen, void_choice(false), 13);
+    check(accept_void_value(first) == 17);
+    check(accept_void_value(second) == 17);
+    check(number == 13);
+    check(matches("12 11 "));
+}

@@ -69,7 +69,7 @@ auto convert_intrinsic_argument(
             }
             const auto extent = site.known_sequence_extent(value);
             auto state = Site::operand_state();
-            auto receiver = site.consume_read(state, std::move(value), span);
+            auto receiver = site.consume_read_argument(state, std::move(value), span);
             if (!receiver) {
                 return std::unexpected(receiver.error());
             }
@@ -94,9 +94,10 @@ auto convert_intrinsic_argument(
     if (pointer_narrows(site.draft(), source, target)) {
         auto known = std::optional<ConstantID>();
         if constexpr (Site::mode == ExpressionMode::Body) {
-            if (site.known(value)) {
+            const auto normalized_target = unwrap_type_alias(site.draft(), target);
+            if (site.known(value) && std::holds_alternative<TypeID>(normalized_target)) {
                 known = site.draft().intern_constant(
-                    {.type = std::get<TypeID>(target), .value = NullPointerConstant {}}
+                    {.type = std::get<TypeID>(normalized_target), .value = NullPointerConstant {}}
                 );
             }
         }

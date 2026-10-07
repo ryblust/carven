@@ -54,7 +54,11 @@ constexpr auto checked_slice_index(Slice<Element> slice, Index index, SourceSite
 
 template<typename Element, std::size_t Size>
 constexpr auto as_slice(const std::array<Element, Size>& input) noexcept -> Slice<Element> {
-    return Slice<Element>(std::span<const Element>(input));
+    if constexpr (Size == 0) {
+        return {};
+    } else {
+        return Slice<Element>(std::span<const Element>(input));
+    }
 }
 
 } // namespace carven::runtime

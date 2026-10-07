@@ -57,6 +57,17 @@ BodyType::BodyType(TypeID value) noexcept
 BodyType::BodyType(TypeTermID value) noexcept
     : value(value) {}
 
+BodyType::BodyType(GenericTypeID value) noexcept
+    : value(value) {}
+
+auto SemStruct::resolved_structure() const noexcept -> StructID {
+    return std::get<StructID>(structure);
+}
+
+auto FieldProjection::resolved_owner() const noexcept -> StructID {
+    return std::get<StructID>(owner);
+}
+
 auto BodyType::construction() const noexcept -> const ConstructionTypeRef& {
     return value;
 }
@@ -68,17 +79,11 @@ auto BodyType::resolved() const noexcept -> TypeID {
     invariant_violation("body type has not been resolved");
 }
 
-BodyFailures::BodyFailures(FailureTermID value) noexcept
+BodyFailures::BodyFailures(ConstructionFailureRef value) noexcept
     : value(value) {}
 
-BodyFailures::BodyFailures(FailureSetID value) noexcept
-    : value(value) {}
-
-auto BodyFailures::term() const noexcept -> FailureTermID {
-    if (const auto* term = std::get_if<FailureTermID>(&value)) {
-        return *term;
-    }
-    invariant_violation("resolved body failures have no construction term");
+auto BodyFailures::reference() const noexcept -> const ConstructionFailureRef& {
+    return value;
 }
 
 auto BodyFailures::resolved() const noexcept -> FailureSetID {
@@ -93,12 +98,27 @@ auto SemField::consumes_source() const noexcept -> bool {
     return source->category == SemanticValueCategory::Value && !source->selects_storage();
 }
 
+auto SemTupleElement::consumes_source() const noexcept -> bool {
+    return source->category == SemanticValueCategory::Value && !source->selects_storage();
+}
+
+auto SemIndex::consumes_source() const noexcept -> bool {
+    return source_owns_elements
+        && source->category == SemanticValueCategory::Value
+        && !source->selects_storage();
+}
+
 auto SemanticExpression::selects_storage() const noexcept -> bool {
+    if (const auto* element = std::get_if<SemTupleElement>(&value)) {
+        return !element->consumes_source();
+    }
     if (const auto* field = std::get_if<SemField>(&value)) {
         return !field->consumes_source();
     }
+    if (const auto* index = std::get_if<SemIndex>(&value)) {
+        return !index->consumes_source();
+    }
     return std::holds_alternative<SemBinding>(value)
-        || std::holds_alternative<SemIndex>(value)
         || std::holds_alternative<SemDereference>(value);
 }
 
@@ -153,6 +173,10 @@ auto SemIRBody::region() const noexcept -> const SemanticRegion& {
 
 auto SemIRBody::realized_region() const noexcept -> const SemanticRegion& {
     return data.residual ? *data.residual : data.region;
+}
+
+auto SemIRBody::generic_definition() const noexcept -> std::optional<GenericDeclarationID> {
+    return data.generic_definition;
 }
 
 auto SemIRBody::specialized() const noexcept -> std::optional<BodyID> {

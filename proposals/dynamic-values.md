@@ -9,8 +9,9 @@
 ## Current boundary
 
 Ordinary classes encapsulate a known nominal value. Their operations are checked
-as ordinary calls with Read, Write, or Take receivers. The language has no erased
-value, dynamic conformance declaration, or dynamic dispatch operation.
+as ordinary calls with Read, Write, or Take receivers. Callable views already
+provide borrowed indirect calls through a fixed checked signature. The language
+has no general nominal erased-value or dynamic-conformance facility.
 
 A dynamic value needs a contract for available operations and a holding form for
 its concrete value. The holding form determines ownership, borrowing, allocation,
@@ -96,7 +97,7 @@ testing a C++ representation.
 
 - [Ordinary aggregates](../docs/language/aggregates.md#ordinary-value-classes):
   current value, access, and lifetime rules.
-- [Generics](generics.md): checked polymorphic calls, static evidence, and finite
+- [Generic extensions](generic-extensions.md): checked polymorphic calls, static evidence, and finite
   instances required by generic elimination.
 - [Mitchell and Plotkin, Abstract Types Have Existential Type](https://www.cs.cmu.edu/~crary/819-f09/MitchellPlotkin88.pdf):
   existential packaging, hidden type identity, and polymorphic elimination.

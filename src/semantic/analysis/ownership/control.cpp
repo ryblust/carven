@@ -1,7 +1,9 @@
 module carven:semantic.analysis.ownership.control.impl;
 
 import :semantic.analysis.ownership.context;
+import :semantic.analysis.failure;
 import :semantic.analysis.pattern.control;
+import :semantic.semir.evaluation;
 import std;
 
 auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state) noexcept
@@ -19,10 +21,15 @@ auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state
         if (!remaining.has_value()) {
             break;
         }
-        auto selected = (co_await region(branch.body, remaining->state));
-        join_normal_ownership(result.normal, std::move(selected.normal));
-
-        append_ownership_exits(result, selected);
+        const auto truth = known_boolean(program, branch.condition);
+        if (truth != false) {
+            auto selected = co_await region(branch.body, remaining->state);
+            join_normal_ownership(result.normal, std::move(selected.normal));
+            append_ownership_exits(result, selected);
+        }
+        if (truth == true) {
+            remaining.reset();
+        }
     }
     if (remaining.has_value()) {
         if (value.otherwise.has_value()) {
@@ -40,11 +47,27 @@ auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state
 auto OwnershipBodyAnalyzer::bind_pattern(
     OwnershipState& state,
     PatternID id,
-    const OwnershipRelationships& relationships
+    const OwnershipRelationships& relationships,
+    std::span<const OwnershipPlace> places
 ) noexcept -> void {
     body.pattern(id).value.visit(
         Overloaded {
             [&](const BindingPattern& pattern) noexcept {
+                const auto& binding = body.binding(pattern.binding);
+                const auto* access = std::get_if<AccessBindingStorage>(&binding.storage);
+                if (access != nullptr
+                    && !places.empty()
+                    && (access->access == AccessMode::Write
+                        || analysis.contents(binding.type).read_borrows_storage())) {
+                    auto& targets = selected_storage[pattern.binding];
+                    targets.append_range(places);
+                    std::ranges::sort(targets);
+                    targets.erase(std::ranges::unique(targets).begin(), targets.end());
+                    return;
+                }
+                // A temporary or caught value may have no selected place. Keep
+                // its relationships in the arm-local object so views still
+                // borrow backing whose lifetime ends with this arm.
                 store(
                     state,
                     binding_place(pattern.binding),
@@ -54,16 +77,36 @@ auto OwnershipBodyAnalyzer::bind_pattern(
             },
             [&](const EnumCasePattern& pattern) noexcept {
                 for (const auto [index, child] : std::views::enumerate(pattern.payload)) {
+                    auto projected = std::vector<OwnershipPlace>(places.begin(), places.end());
+                    for (auto& place : projected) {
+                        place.path.push_back(index);
+                    }
+                    bind_pattern(
+
+                        state,
+                        child,
+                        project_relationships(relationships, OwnershipProjectionPath {index}),
+                        projected
+                    );
+                }
+            },
+            [&](const TuplePattern& pattern) noexcept {
+                for (const auto [index, child] : std::views::enumerate(pattern.elements)) {
+                    auto projected = std::vector<OwnershipPlace>(places.begin(), places.end());
+                    for (auto& place : projected) {
+                        place.path.push_back(index);
+                    }
                     bind_pattern(
                         state,
                         child,
-                        project_relationships(relationships, OwnershipProjectionPath {index})
+                        project_relationships(relationships, OwnershipProjectionPath {index}),
+                        projected
                     );
                 }
             },
             [&](const OrPattern& pattern) noexcept {
                 for (const auto alternative : pattern.alternatives) {
-                    bind_pattern(state, alternative, relationships);
+                    bind_pattern(state, alternative, relationships, places);
                 }
             },
             [](const auto&) static noexcept {},
@@ -118,11 +161,21 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
         if (!arm.reachable || !remaining.has_value()) {
             continue;
         }
+
+        struct RestoreSelections final {
+            std::flat_map<LocalBindingID, std::vector<OwnershipPlace>>& current;
+            std::flat_map<LocalBindingID, std::vector<OwnershipPlace>> saved;
+
+            ~RestoreSelections() { current = std::move(saved); }
+        };
+
+        const auto selection_scope = RestoreSelections {selected_storage, selected_storage};
         auto selected = std::move(*remaining);
-        bind_pattern(selected.state, arm.pattern, subject_value);
+        bind_pattern(selected.state, arm.pattern, subject_value, subject_places);
+
         const auto previous_access = accesses.size();
         for (const auto& place : subject_places) {
-            accesses.push_back({place, true});
+            accesses.push_back({place, OwnershipAccessKind::Stable});
         }
         auto checked = (co_await pattern_condition(
             arm.pattern,
@@ -139,18 +192,36 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
         if (accepted && arm.guard.has_value()) {
             const auto previous = accesses.size();
             for (const auto& place : subject_places) {
-                accesses.push_back({place, true});
+                accesses.push_back({place, OwnershipAccessKind::Stable});
             }
             auto guard = (co_await complete_expression(*arm.guard, std::move(accepted->state)));
             accesses.resize(previous);
             accepted = std::move(guard.normal);
             append_ownership_exits(result, guard);
-            join_normal_ownership(remaining, accepted);
+            const auto truth = known_boolean(program, *arm.guard);
+            if (truth != true) {
+                join_normal_ownership(remaining, accepted);
+            }
+            if (truth == false) {
+                accepted.reset();
+            }
         }
         if (accepted.has_value()) {
+            const auto previous = accesses.size();
+            for (const auto binding : arm.bindings) {
+                if (!std::holds_alternative<AccessBindingStorage>(body.binding(binding).storage)) {
+                    continue;
+                }
+                if (const auto found = selected_storage.find(binding);
+                    found != selected_storage.end()) {
+                    for (const auto& selected : found->second) {
+                        accesses.push_back({selected, OwnershipAccessKind::Structural});
+                    }
+                }
+            }
             auto branch = (co_await region(arm.body, std::move(accepted->state)));
+            accesses.resize(previous);
             join_normal_ownership(result.normal, std::move(branch.normal));
-
             append_ownership_exits(result, branch);
         }
         if (remaining.has_value()) {
@@ -181,15 +252,67 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
     }
     for (const auto& arm : value.arms) {
         auto rejected = std::vector<OwnershipExit>();
+        const auto catches_any =
+            std::ranges::any_of(arm.alternatives, [](const auto& alternative) static noexcept {
+                return alternative.reachable
+                    && !std::holds_alternative<SemTypedCatchPattern>(alternative.pattern);
+            });
+        if (!catches_any) {
+            auto expanded = std::vector<OwnershipExit>();
+            for (auto& failure : pending) {
+                const auto& payload = std::get<OwnershipFailure>(failure.payload);
+                const auto* symbolic = std::get_if<AnalysisSymbolicFailure>(&payload.type.value);
+                if (!symbolic) {
+                    expanded.push_back(std::move(failure));
+                    continue;
+                }
+                auto mask = symbolic->mask;
+                auto handled = std::vector<TypeID>();
+                for (const auto& [type, acceptance] : facts.catches.at(std::addressof(arm))) {
+                    if (!failure_mask_contains(mask, type)
+                        || !analysis.model.failure_may_contain(symbolic->source, type)) {
+                        continue;
+                    }
+                    expanded.push_back(
+                        {OwnershipFailure {AnalysisFailureKey(type), payload.value}, failure.state}
+                    );
+                    if (acceptance.exhaustive
+                        && (!arm.guard || known_boolean(program, *arm.guard) == true)) {
+                        handled.push_back(type);
+                    }
+                }
+                mask = residual_failure_mask(std::move(mask), std::move(handled));
+                if (mask.complemented || !mask.members.empty()) {
+                    rejected.push_back({
+                        OwnershipFailure {
+                            AnalysisFailureKey(
+                                AnalysisSymbolicFailure {
+                                    .source = symbolic->source,
+                                    .mask = std::move(mask)
+                                }
+                            ),
+                            payload.value
+                        },
+                        std::move(failure.state),
+                    });
+                }
+            }
+            pending = std::move(expanded);
+        }
         for (auto& failure : pending) {
             const auto& accepted_types = facts.catches.at(std::addressof(arm));
-            const auto found =
-                accepted_types.find(std::get<OwnershipFailure>(failure.payload).type);
-            if (found == accepted_types.end()) {
+            const auto& payload = std::get<OwnershipFailure>(failure.payload);
+            const auto* nominal = std::get_if<TypeID>(&payload.type.value);
+            const auto found = nominal ? accepted_types.find(*nominal) : accepted_types.end();
+            if (found == accepted_types.end() && !catches_any) {
                 rejected.push_back(std::move(failure));
                 continue;
             }
-            const auto& acceptance = found->second;
+            const auto wildcard = OwnershipCatchAcceptance {
+                .alternatives = {std::nullopt},
+                .exhaustive = true,
+            };
+            const auto& acceptance = found == accepted_types.end() ? wildcard : found->second;
             auto remaining = std::optional<OwnershipNormal>();
             auto accepted = std::optional(OwnershipNormal {std::move(failure.state), {}, {}});
             for (const auto pattern : acceptance.alternatives) {
@@ -232,7 +355,13 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
                 auto guard = (co_await complete_expression(*arm.guard, std::move(accepted->state)));
                 accepted = std::move(guard.normal);
                 append_ownership_exits(result, guard);
-                join_normal_ownership(remaining, accepted);
+                const auto truth = known_boolean(program, *arm.guard);
+                if (truth != true) {
+                    join_normal_ownership(remaining, accepted);
+                }
+                if (truth == false) {
+                    accepted.reset();
+                }
             }
             if (accepted.has_value()) {
                 auto handled = (co_await region(arm.body, std::move(accepted->state)));
@@ -252,11 +381,23 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
         }
         pending = std::move(rejected);
     }
-    const auto residual =
-        program.failure_sets().failure_set(value.residual_failures.resolved()).members;
+    const auto residual = value.residual_failures.reference();
     for (auto& exit : pending) {
-        if (std::ranges::contains(residual, std::get<OwnershipFailure>(exit.payload).type)) {
-            result.exits.push_back(std::move(exit));
+        auto& payload = std::get<OwnershipFailure>(exit.payload);
+        if (const auto* nominal = std::get_if<TypeID>(&payload.type.value)) {
+            if (analysis.model.failure_may_contain(residual, *nominal)) {
+                result.exits.push_back(std::move(exit));
+            }
+        } else {
+            auto& symbolic = std::get<AnalysisSymbolicFailure>(payload.type.value);
+            symbolic.mask = intersect_failure_masks(
+                std::move(symbolic.mask),
+                analysis.model.failure_support(residual)
+            );
+            symbolic.source = residual;
+            if (symbolic.mask.complemented || !symbolic.mask.members.empty()) {
+                result.exits.push_back(std::move(exit));
+            }
         }
     }
     co_return result;
@@ -270,6 +411,8 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     }
     const auto entry = std::move(result.normal->state);
     auto header = entry;
+    const auto previous_feedback = feedback_origin;
+    feedback_origin = value.body->origin;
     const auto iterate = [&](OwnershipState input) noexcept -> ContinuationTask<OwnershipFlow> {
         auto pass =
             OwnershipFlow {.normal = OwnershipNormal {std::move(input), {}, {}}, .exits = {}};
@@ -281,8 +424,13 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
         if (!pass.normal.has_value()) {
             co_return iteration;
         }
-        if (value.condition.has_value()) {
+        const auto truth =
+            value.condition ? known_boolean(program, *value.condition) : std::optional(true);
+        if (truth != true) {
             iteration.exits.push_back({OwnershipBreak {}, pass.normal->state});
+        }
+        if (truth == false) {
+            co_return iteration;
         }
         auto child = (co_await region(*value.body, std::move(pass.normal->state)));
         auto steps = std::move(child.normal);
@@ -306,13 +454,19 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     const auto previous = diagnosing;
     diagnosing = false;
     auto pass = OwnershipFlow {};
+    auto reached_exits = OwnershipFlow {};
     for (;;) {
+        const auto revision = topology.revision;
         pass = (co_await iterate(header));
-        auto next = entry;
+        auto next = header;
         if (pass.normal.has_value()) {
             join_ownership_state(next, pass.normal->state);
         }
-        const auto converged = next == header;
+        synchronize_storage(next);
+        synchronize_storage(header);
+        const auto converged = next == header && revision == topology.revision;
+        append_ownership_exits(reached_exits, pass);
+        pass.exits.clear();
         // Semantic equality excludes diagnostic origins. Retain the witnesses
         // selected by this join even when no semantic fact changed.
         header = std::move(next);
@@ -324,6 +478,9 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
     if (diagnosing) {
         pass = (co_await iterate(std::move(header)));
     }
+    append_ownership_exits(reached_exits, pass);
+    pass.exits = std::move(reached_exits.exits);
+    feedback_origin = previous_feedback;
     result.normal.reset();
     for (auto& exit : pass.exits) {
         if (std::holds_alternative<OwnershipBreak>(exit.payload)) {
@@ -342,9 +499,8 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
 auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState state) noexcept
     -> ContinuationTask<OwnershipFlow> {
     const auto& iterable = value.source;
-    const auto range_value = std::holds_alternative<RangeTypeValue>(
-        program.types().type(iterable.type.resolved()).value
-    );
+    const auto range_value =
+        std::holds_alternative<RangeTypeValue>(analysis.model.shape(iterable.type.construction()));
     auto result = iterable.category == SemanticValueCategory::Place
         ? (co_await place(iterable, std::move(state)))
         : (co_await expression(iterable, std::move(state)));
@@ -354,35 +510,34 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     const auto previous = accesses.size();
     const auto previous_readers = storage_readers.size();
     protect_storage(result.normal->value);
-    auto elements = std::vector<OwnershipPlace>();
-    if (!range_value) {
-        for (const auto& selected : result.normal->storage) {
-            accesses.push_back({selected, false});
-        }
-    }
-    const auto slice_value = std::holds_alternative<SliceTypeValue>(
-        program.types().type(iterable.type.resolved()).value
+    const auto slice_value = std::holds_alternative<ConstructionSliceTypeValue>(
+        analysis.model.shape(iterable.type.construction())
     );
-    if (!range_value && !slice_value) {
-        elements = result.normal->storage;
-        for (auto& element : elements) {
-            element.path.push_back(std::nullopt);
+    auto elements = range_value ? std::vector<OwnershipPlace>()
+                                : select_element_storage(
+                                      iterable.type.construction(),
+                                      result.normal->storage,
+                                      result.normal->value,
+                                      std::nullopt,
+                                      iterable.origin,
+                                      result.normal->state
+                                  );
+    if (!range_value) {
+        const auto sequence_value = std::holds_alternative<AnalysisSequenceType>(
+            analysis.model.shape(iterable.type.construction())
+        );
+        for (const auto& selected : sequence_value ? elements : result.normal->storage) {
+            accesses.push_back(
+                {selected,
+                 sequence_value ? OwnershipAccessKind::Structural : selected_access_kind(iterable)}
+            );
         }
     }
     const auto borrowed = value.binding.has_value()
         && value.access == AccessMode::Read
         && analysis.contents(body.binding(*value.binding).type).read_borrows_storage();
     if (borrowed) {
-        selected_storage.emplace(
-            *value.binding,
-            select_element_storage(
-                program.types(),
-                iterable.type.resolved(),
-                result.normal->storage,
-                result.normal->value,
-                std::nullopt
-            )
-        );
+        selected_storage.emplace(*value.binding, elements);
     } else if (value.binding.has_value()
                && value.access == AccessMode::Write
                && !elements.empty()) {
@@ -390,15 +545,11 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     }
     const auto entry = std::move(result.normal->state);
     auto header = entry;
+    const auto previous_feedback = feedback_origin;
+    feedback_origin = value.body->origin;
     auto initial_elements = OwnershipRelationships {};
     if (slice_value) {
-        for (const auto& selected : select_element_storage(
-                 program.types(),
-                 iterable.type.resolved(),
-                 result.normal->storage,
-                 result.normal->value,
-                 std::nullopt
-             )) {
+        for (const auto& selected : elements) {
             merge_relationships(
                 initial_elements,
                 project_relationships(entry.objects[selected.object].relationships, selected.path)
@@ -429,9 +580,11 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     const auto previous_diagnosing = diagnosing;
     diagnosing = false;
     auto pass = OwnershipFlow {};
+    auto reached_exits = OwnershipFlow {};
     for (;;) {
+        const auto revision = topology.revision;
         pass = (co_await iterate(header));
-        auto next = entry;
+        auto next = header;
         if (pass.normal.has_value()) {
             join_ownership_state(next, pass.normal->state);
         }
@@ -440,7 +593,11 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
                 join_ownership_state(next, exit.state);
             }
         }
-        const auto converged = next == header;
+        synchronize_storage(next);
+        synchronize_storage(header);
+        const auto converged = next == header && revision == topology.revision;
+        append_ownership_exits(reached_exits, pass);
+        pass.exits.clear();
         header = std::move(next);
         if (converged) {
             break;
@@ -450,6 +607,9 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
     if (diagnosing) {
         pass = (co_await iterate(header));
     }
+    append_ownership_exits(reached_exits, pass);
+    pass.exits = std::move(reached_exits.exits);
+    feedback_origin = previous_feedback;
     result.normal = OwnershipNormal {std::move(header), {}, {}};
     for (auto& exit : pass.exits) {
         if (std::holds_alternative<OwnershipBreak>(exit.payload)) {

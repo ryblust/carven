@@ -7,6 +7,7 @@ auto OwnershipBodyAnalyzer::complete_expression(
     const SemanticExpression& source,
     OwnershipState state
 ) noexcept -> ContinuationTask<OwnershipFlow> {
+    synchronize_storage(state);
     const auto previous = full_expression;
     const auto owns = full_expression != source.lifetime
         && body.lifetime_regions().region(source.lifetime).kind
@@ -30,6 +31,7 @@ auto OwnershipBodyAnalyzer::region(
     OwnershipState state,
     bool release
 ) noexcept -> ContinuationTask<OwnershipFlow> {
+    synchronize_storage(state);
     auto result = OwnershipFlow {.normal = OwnershipNormal {std::move(state), {}, {}}, .exits = {}};
     for (const auto& item : source.statements) {
         if (!result.normal.has_value()) {
@@ -58,6 +60,7 @@ auto OwnershipBodyAnalyzer::statement(
     const SemanticStatement& source,
     OwnershipState state
 ) noexcept -> ContinuationTask<OwnershipFlow> {
+    synchronize_storage(state);
     const auto previous_full_expression = full_expression;
     const auto owns =
         body.lifetime_regions().region(source.lifetime).kind == LifetimeRegionKind::FullExpression
@@ -117,7 +120,7 @@ auto OwnershipBodyAnalyzer::statement(
             },
             [&](const SemThrow& value) noexcept -> ContinuationTask<std::monostate> {
                 (co_await evaluate(value.value));
-                transfer(OwnershipFailure {value.failure_type, {}});
+                transfer(OwnershipFailure {AnalysisFailureKey(value.failure_type), {}});
                 co_return {};
             },
             [&](const SemExpressionStatement& value) noexcept -> ContinuationTask<std::monostate> {
@@ -126,6 +129,47 @@ auto OwnershipBodyAnalyzer::statement(
             },
             [&](const SemStaticBinding& value) noexcept -> ContinuationTask<std::monostate> {
                 store(result.normal->state, binding_place(value.binding), {}, source.origin);
+                co_return {};
+            },
+            [&](const SemDecompose& value) noexcept -> ContinuationTask<std::monostate> {
+                if (value.initializer) {
+                    co_await evaluate(*value.initializer);
+                } else {
+                    result.normal->value =
+                        result.normal->state.objects[binding_place(value.owner).object]
+                            .relationships;
+                }
+                if (result.normal) {
+                    const auto product = result.normal->value;
+                    auto discarded = product;
+                    for (const auto& binding : value.bindings) {
+                        auto path = OwnershipProjectionPath();
+                        for (const auto index : binding.path) {
+                            path.push_back(index);
+                        }
+                        store(
+                            result.normal->state,
+                            binding_place(binding.binding),
+                            project_relationships(product, path),
+                            source.origin
+                        );
+                        if (auto* rows = discarded.edit_existing()) {
+                            const auto transferred = [&](const auto& row) noexcept {
+                                return row.holder.size() >= path.size()
+                                    && std::equal(path.begin(), path.end(), row.holder.begin());
+                            };
+                            std::erase_if(rows->callable_loans, transferred);
+                            std::erase_if(rows->captures, transferred);
+                            std::erase_if(rows->storage_loans, transferred);
+                        }
+                    }
+                    store(
+                        result.normal->state,
+                        binding_place(value.owner),
+                        discarded,
+                        source.origin
+                    );
+                }
                 co_return {};
             },
             [&](const SemInitialize& value) noexcept -> ContinuationTask<std::monostate> {
@@ -140,6 +184,20 @@ auto OwnershipBodyAnalyzer::statement(
                 }
                 co_return {};
             },
+            [&](const SemAsyncLet& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.initializer));
+                if (result.normal) {
+                    store(
+                        result.normal->state,
+                        binding_place(value.child),
+                        result.normal->value,
+                        source.origin
+                    );
+                    result.normal->state.objects[binding_place(value.child).object].child_intent =
+                        false;
+                }
+                co_return {};
+            },
             [&](const SemAssign& value) noexcept -> ContinuationTask<std::monostate> {
                 result = (co_await place(value.target, std::move(result.normal->state), false));
                 if (!result.normal) {
@@ -147,11 +205,21 @@ auto OwnershipBodyAnalyzer::statement(
                 }
                 const auto targets = result.normal->storage;
                 const auto previous = accesses.size();
+                const auto target_type = value.target.type.construction();
+                // Scalar leaf writes cannot reconstruct a selected ancestor.
+                // Aggregate replacement can invalidate an inline field even
+                // when the aggregate contains no owning storage.
+                const auto scalar =
+                    std::holds_alternative<BuiltinTypeValue>(analysis.model.shape(target_type))
+                    && analysis.contents(target_type).read_is_value_snapshot();
+                const auto invalidates = !scalar;
                 for (const auto& target : targets) {
-                    write_access(target, value.target.origin);
-                    if (!target.path.empty() || value.compound) {
+                    write_access(target, value.target.origin, invalidates);
+                    if (!target.path.empty()
+                        || value.compound
+                        || selected_access_kind(value.target) == OwnershipAccessKind::Structural) {
                         require_available(result.normal->state, target, value.target.origin);
-                        accesses.push_back({target, false});
+                        accesses.push_back({target, selected_access_kind(value.target)});
                     }
                 }
                 (co_await evaluate(value.value));
@@ -172,7 +240,8 @@ auto OwnershipBodyAnalyzer::statement(
                             target,
                             result.normal->value,
                             source.origin,
-                            targets.size() == 1uz
+                            targets.size() == 1uz,
+                            preserves_backing(value.target.type.construction())
                         );
                     }
                 }

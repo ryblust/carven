@@ -20,12 +20,6 @@ const TestSuite suite([] static noexcept {
     "Compiler diagnostics: interop failures preserve code and precise span"_test = [] static noexcept {
         static constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {
-                .name = "import parameters require value types",
-                .source = "import(cpp) fn invalid(value: void);",
-                .code = DiagnosticCode::TypeValueRequired,
-                .primary_text = "void",
-            },
-            {
                 .name = "import Write requires mutable storage",
                 .source = "import(cpp) fn change(&value: String); "
                           "fn f() { let value: String = \"text\"; change(&value); }",

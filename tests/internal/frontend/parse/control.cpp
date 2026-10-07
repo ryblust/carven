@@ -11,6 +11,7 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :frontend.ast.type;
 import :frontend.literal;
+import :source.text;
 import :test.harness.framework;
 import :test.internal.frontend.parse.fixture;
 import std;
@@ -98,6 +99,38 @@ const TestSuite suite([] static noexcept {
         check_invalid("fn f() { const for ; true; {} }", "'const for' requires a range header");
     };
 
+    "Parser control: tuple patterns distinguish unit singleton nested and grouped patterns"_test =
+        [] static noexcept {
+            const auto tree = parse_valid(
+                "fn f(value) { match value { () => 0, (a,) => 1, (1 | 2, (_, (b,))) => 2, (grouped) => 3, } }"
+            );
+            const auto ast = tree.view();
+            const auto& match = get<ASTMatchForm>(ast.statement(function_body(tree).statements[0]));
+            if (!expect_equal(match.arms.size(), 4uz)) {
+                return;
+            }
+            expect(get<ASTTuplePattern>(ast.pattern(match.arms[0].pattern)).elements.empty());
+            expect_equal(
+                get<ASTTuplePattern>(ast.pattern(match.arms[1].pattern)).elements.size(),
+                1uz
+            );
+            const auto& outer = get<ASTTuplePattern>(ast.pattern(match.arms[2].pattern));
+            if (!expect_equal(outer.elements.size(), 2uz)) {
+                return;
+            }
+            expect(is<ASTOrPattern>(ast.pattern(outer.elements[0])));
+            const auto& inner = get<ASTTuplePattern>(ast.pattern(outer.elements[1]));
+            if (!expect_equal(inner.elements.size(), 2uz)) {
+                return;
+            }
+            expect(is<ASTWildcardPattern>(ast.pattern(inner.elements[0])));
+            expect_equal(get<ASTTuplePattern>(ast.pattern(inner.elements[1])).elements.size(), 1uz);
+            expect(is<ASTBindingPattern>(ast.pattern(match.arms[3].pattern)));
+            check_invalid("fn f(value) { match value { (,) => 0 } }");
+            check_invalid("fn f(value) { match value { (a,,b) => 0 } }");
+            check_invalid("fn f(value) { match value { (a,b => 0 } }");
+        };
+
     "Parser control: patterns own inline type children and typed match-arm bodies"_test =
         [] static noexcept {
             const auto result = parse_valid(
@@ -152,6 +185,152 @@ const TestSuite suite([] static noexcept {
             check_invalid(
                 "fn f() { match value { -State => value } }",
                 "expected number after '-' in pattern"
+            );
+        };
+
+    "Parser control: qualified pattern components use the shared name policy"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "fn names(value) { match value { Kind::await => {}, is Type::match => {} } }"
+            );
+            const auto tree = parse_valid(text);
+            const auto ast = tree.view();
+            const auto& body = function_body(tree);
+            const auto& match = get<ASTMatchForm>(ast.statement(body.statements[0]));
+            if (!expect_equal(match.arms.size(), 2uz)) {
+                return;
+            }
+            const auto& enum_case = get<ASTCasePattern>(ast.pattern(match.arms[0].pattern));
+            expect_equal(slice(text, enum_case.name_span), std::string_view("await"));
+            const auto& constraint = get<ASTConstraintPattern>(ast.pattern(match.arms[1].pattern));
+            const auto& name = get<ASTQualifiedName>(constraint.operand);
+            expect_equal(slice(text, name.components.back()), std::string_view("match"));
+            check_invalid("fn invalid(value) { match value { Kind::7 => {} } }");
+        };
+
+    "Parser control: nested tuples preserve uniform Read and Write bindings"_test =
+        [] static noexcept {
+            const auto tree = parse_valid(
+                "fn inspect(value) { match value { (first, (&second, third)) => {}, } }"
+            );
+            const auto ast = tree.view();
+            const auto& match = get<ASTMatchForm>(ast.statement(function_body(tree).statements[0]));
+            const auto& tuple = get<ASTTuplePattern>(ast.pattern(match.arms[0].pattern));
+            require(tuple.elements.size() == 2uz);
+            expect_equal(
+                get<ASTBindingPattern>(ast.pattern(tuple.elements[0])).mode,
+                ASTAccessMode::Read
+            );
+            const auto& nested = get<ASTTuplePattern>(ast.pattern(tuple.elements[1]));
+            require(nested.elements.size() == 2uz);
+            expect_equal(
+                get<ASTBindingPattern>(ast.pattern(nested.elements[0])).mode,
+                ASTAccessMode::Write
+            );
+            expect_equal(
+                get<ASTBindingPattern>(ast.pattern(nested.elements[1])).mode,
+                ASTAccessMode::Read
+            );
+            check_invalid("fn f(value) { match value { (ref first,) => {} } }");
+            check_invalid("fn f(value) { match value { (&&taken,) => {} } }");
+            check_invalid("fn f(value) { match value { .Nested((&&taken,)) => {} } }");
+        };
+
+    "Parser control: tuple and enum payloads share default Read bindings"_test =
+        [] static noexcept {
+            const auto tree = parse_valid(
+                "fn inspect(value) { match value { .Pair((first, second), borrowed) => {}, } }"
+            );
+            const auto ast = tree.view();
+            const auto& match = get<ASTMatchForm>(ast.statement(function_body(tree).statements[0]));
+            const auto& pattern = get<ASTCasePattern>(ast.pattern(match.arms[0].pattern));
+            require(pattern.payload.has_value());
+            require(pattern.payload->patterns.size() == 2uz);
+            const auto& tuple = get<ASTTuplePattern>(ast.pattern(pattern.payload->patterns[0]));
+            expect_equal(tuple.elements.size(), 2uz);
+            const auto& borrowed =
+                get<ASTBindingPattern>(ast.pattern(pattern.payload->patterns[1]));
+            expect_equal(borrowed.mode, ASTAccessMode::Read);
+            expect(!borrowed.marker_span.has_value());
+        };
+
+    "Parser control: payload binding markers preserve explicit Write access"_test =
+        [] static noexcept {
+            const auto result = parse_valid(
+                "fn inspect(value) { match value {"
+                " .Triple(first, read, &write) => {},"
+                " .Nested(.Some(nested)) => {},"
+                " .One(ref) => {},"
+                " } }"
+            );
+            const auto ast = result.view();
+            const auto& match =
+                get<ASTMatchForm>(ast.statement(function_body(result).statements[0]));
+            const auto& triple = get<ASTCasePattern>(ast.pattern(match.arms[0].pattern));
+            require(triple.payload.has_value());
+            const auto modes = std::array {
+                ASTAccessMode::Read,
+                ASTAccessMode::Read,
+                ASTAccessMode::Write,
+            };
+            for (auto index = 0uz; index < modes.size(); ++index) {
+                const auto& binding =
+                    get<ASTBindingPattern>(ast.pattern(triple.payload->patterns[index]));
+                expect_equal(binding.mode, modes[index]);
+                expect_equal(binding.marker_span.has_value(), index == 2uz);
+            }
+            const auto& nested = get<ASTCasePattern>(ast.pattern(match.arms[1].pattern));
+            require(nested.payload.has_value());
+            const auto& some = get<ASTCasePattern>(ast.pattern(nested.payload->patterns[0]));
+            require(some.payload.has_value());
+            expect_equal(
+                get<ASTBindingPattern>(ast.pattern(some.payload->patterns[0])).mode,
+                ASTAccessMode::Read
+            );
+            const auto& one = get<ASTCasePattern>(ast.pattern(match.arms[2].pattern));
+            require(one.payload.has_value());
+            const auto& ref = get<ASTBindingPattern>(ast.pattern(one.payload->patterns[0]));
+            expect_equal(ref.mode, ASTAccessMode::Read);
+            expect(!ref.marker_span.has_value());
+            check_invalid("fn f() { match value { ref read => {} } }");
+            check_invalid(
+                "fn f() { match value { .One(&1) => {} } }",
+                "expected Write pattern binding name"
+            );
+            check_invalid("fn f() { match value { .One(&&take) => {} } }");
+        };
+
+    "Parser control: root bindings share Read and Write modes"_test = [] static noexcept {
+        static constexpr auto text =
+            std::string_view("fn inspect(value) { match value { ref => {}, &write => {}, } }");
+        const auto tree = parse_valid(text);
+        const auto ast = tree.view();
+        const auto& match = get<ASTMatchForm>(ast.statement(function_body(tree).statements[0]));
+        const auto& read = get<ASTBindingPattern>(ast.pattern(match.arms[0].pattern));
+        expect_equal(read.mode, ASTAccessMode::Read);
+        expect(!read.marker_span.has_value());
+        expect_equal(slice(text, read.name_span), std::string_view("ref"));
+        const auto& write = get<ASTBindingPattern>(ast.pattern(match.arms[1].pattern));
+        expect_equal(write.mode, ASTAccessMode::Write);
+        expect(write.marker_span.has_value());
+        check_invalid("fn f(value) { match value { &&take => {} } }");
+    };
+
+    "Parser control: consuming match retains Read payload binding syntax"_test =
+        [] static noexcept {
+            const auto tree =
+                parse_valid("fn inspect(value) { match &&value { .Some(payload) => {}, } }");
+            const auto ast = tree.view();
+            const auto& match = get<ASTMatchForm>(ast.statement(function_body(tree).statements[0]));
+            expect_equal(
+                get<ASTAccessExpr>(ast.expression(match.subject)).mode,
+                ASTAccessMode::Take
+            );
+            const auto& some = get<ASTCasePattern>(ast.pattern(match.arms[0].pattern));
+            require(some.payload.has_value());
+            expect_equal(
+                get<ASTBindingPattern>(ast.pattern(some.payload->patterns[0])).mode,
+                ASTAccessMode::Read
             );
         };
 

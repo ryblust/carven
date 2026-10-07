@@ -1,0 +1,125 @@
+private struct Box<T> {
+    value: T,
+}
+
+private const fn relay<T>(&&value: T) -> T => &&value;
+
+private const fn hold<T>(&&value: T) -> Box<T> => { value: &&value };
+
+private const fn release<T>(&&owner: Box<T>) -> T => (&&owner).value;
+
+private const fn pass_slice<T>(values: [T]) -> [T] => values;
+
+private const fn pass_array<T>(values: [T; 2]) -> [T] => values.as_slice();
+
+private const fn empty_slice<T>() -> [T] {
+    let values: [T] = [];
+    return values;
+}
+
+private const async fn produce() -> i32 => 42;
+
+private const async fn complete<T, throw E>(&&pending: Operation<T, throw E>) -> T throw E {
+    return (await pending)?;
+}
+
+const {
+    let pending = produce();
+    assert(await complete(&&pending) == 42);
+}
+
+const test "Generic functions: cold operations transfer through checked value algorithms" {
+    let pending: Operation<i32> = produce();
+    let boxed = hold(&&pending);
+    let released = release(&&boxed);
+    check(await relay<Operation<i32>>(&&released) == 42);
+    let inferred = produce();
+    check(await complete(&&inferred) == 42);
+    let explicit = produce();
+    check(await complete<i32, throw ()>(&&explicit) == 42);
+}
+
+const test "Generic functions: empty slices do not retain temporary array backing" {
+    check(empty_slice<i32>().is_empty());
+    check(empty_slice<(i32, bool)>().len() == 0);
+}
+
+test "Generic functions: empty slice delivery has no element storage" {
+    check(empty_slice<String>().is_empty());
+    let values: [String; 0] = [];
+    let view = values.as_slice();
+    let moved = &&values;
+    check(view.is_empty());
+    check(moved.len() == 0);
+}
+
+private const fn choose<T>(first: bool, &&left: T, &&right: T) -> T {
+    if first { return &&left; }
+    return &&right;
+}
+
+const test "Generic functions: checked bodies specialize ordinary values and products" {
+    let number = 42;
+    check(relay<i32>(&&number) == 42);
+    let product = (20, true, ());
+    let boxed = hold<(i32, bool, void)>(&&product);
+    let unpacked = release<(i32, bool, void)>(&&boxed);
+    check(unpacked.0 == 20);
+    check(unpacked.1);
+    let left = 21;
+    let right = 42;
+    check(choose<i32>(false, &&left, &&right) == 42);
+    let unit = ();
+    relay<void>(&&unit);
+}
+
+test "Generic functions: owned values transfer through ordinary aggregate fields" {
+    let text = "first" as String;
+    let boxed = hold<String>(&&text);
+    var unpacked = release<String>(&&boxed);
+    unpacked.append(" second");
+    check(unpacked.as_str() == "first second");
+}
+
+test "Generic functions: slice forwarding retains its backing and element type" {
+    let data = [20, 22];
+    let forwarded = pass_slice<i32>(data.as_slice());
+    check(forwarded.len() == 2);
+    check(forwarded[0] + forwarded[1] == 42);
+    let boxed = hold<[i32]>(&&forwarded);
+    let extracted = release<[i32]>(&&boxed);
+    check(extracted[1] == 22);
+    let from_array = pass_array<i32>(data);
+    check(from_array[0] + from_array[1] == 42);
+}
+
+private const fn inferred<T>(&&value: T) => &&value;
+
+private const fn bounce<T>(depth: i32, &&value: T) -> T {
+    if depth == 0 { return &&value; }
+    return bounce<T>(depth - 1, &&value);
+}
+
+const test "Generic functions: local inference and recursion use canonical checked instances" {
+    let number = 42;
+    check(inferred(&&number) == 42);
+    let first = 40;
+    let boxed = hold(&&first);
+    let recovered = release(&&boxed);
+    check(bounce(3, &&recovered) == 40);
+}
+
+private const fn discard<T>(_: T) {}
+
+const test "Generic functions: explicit signatures guide ordinary argument construction" {
+    discard<i64>(42);
+    let named: i64 = 42;
+    check(relay<i64>(&&named) == 42);
+    let product = relay<(i64, bool)>(&&(42, true));
+    check(product.0 == 42);
+    check(product.1);
+    let boxed = hold<(i64, bool)>(&&(20, true));
+    let extracted = release<(i64, bool)>(&&boxed);
+    check(extracted.0 == 20);
+    check(extracted.1);
+}

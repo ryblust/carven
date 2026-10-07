@@ -1,0 +1,34 @@
+fn pair(value: (i32, (bool, ()))) -> (i32, (bool, ())) {
+    let (a, (_, b)): (i32, ((), bool)) = (1, ((), true));
+    var (single,) = (a,);
+    const (left, right) = (2, 3);
+    return (a, (b, ()));
+}
+
+fn unpack(const (a, (_, b)): (i32, ((), bool)), &(single,): (i32,)) -> i32 {
+    let project = ((1, 2), true).0.1;
+    let selected = address->0.1;
+    let field = record->field;
+    let callback = []((left, right): (i32, i32)) => left + right;
+    for &(x, y) in pairs {
+        x += y;
+    }
+    const for () in units {
+    }
+    return match (a, b) {
+        (1 | 2, true) => project,
+        (_, false) => callback((a, 0)),
+    };
+}
+
+fn unit(value: ()) -> i32 {
+    return match value {
+        () => 0,
+    };
+}
+
+fn singleton(value: (i32,)) -> i32 {
+    return match value {
+        (item,) => item,
+    };
+}

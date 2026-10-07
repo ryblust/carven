@@ -21,7 +21,8 @@ import std;
 
 auto BodyRealizer::needs_cleanup(TypeID type) const noexcept -> bool {
     const auto contents = context.semantic().type_contents(type);
-    return contents.contains_native_value
+    return contents.contains_operation_owner
+        || contents.contains_native_value
         || contents.contains_storage_owner
         || contents.contains_closure_owner;
 }
@@ -34,7 +35,10 @@ auto BodyRealizer::binding_expression(LocalBindingID id) noexcept -> TargetExpr 
         return call_member(std::move(result), "get", {});
     }
     if (const auto found = delayed_bindings.find(id); found != delayed_bindings.end()) {
-        return dereference_expression(name_expression(found->second.local));
+        result = dereference_expression(name_expression(found->second.local));
+    }
+    if (success_bindings.contains(id)) {
+        result = call_member(std::move(result), "get", {});
     }
     return result;
 }
@@ -46,6 +50,23 @@ auto BodyRealizer::declare_binding(
     bool snapshot
 ) noexcept -> void {
     const auto& binding = metadata.binding(id);
+    if (const auto* alias = std::get_if<AccessBindingStorage>(&binding.storage)) {
+        destination.declare(
+            TargetVariableStmt {
+                .binding = alias->access == AccessMode::Write
+                    ? TargetVariableBinding::MutableReference
+                    : context.semantic().type_contents(binding.type).read_borrows_storage()
+                    ? TargetVariableBinding::ConstReference
+                    : TargetVariableBinding::ConstValue,
+                .maybe_unused = true,
+                .local = binding_locals.at(id),
+                .type = context.lower_type(binding.type),
+                .initializer = std::move(initializer),
+            },
+            false
+        );
+        return;
+    }
     const auto cleanup = needs_cleanup(binding.type);
     // A typed aggregate initializer already fixes its exact native value type.
     const auto deduced_native = std::holds_alternative<TargetConstructionExpr>(initializer.value)

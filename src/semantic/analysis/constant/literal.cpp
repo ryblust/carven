@@ -3,11 +3,22 @@ module carven:semantic.analysis.constant.literal.impl;
 import :frontend.ast.literal;
 import :frontend.literal;
 import :semantic.analysis.constant.literal;
+import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.evaluation.operation;
 import :semantic.semir.constant;
 import :semantic.semir.type;
 import std;
+
+auto duration_literal_scale(NumericSuffix suffix) noexcept -> std::optional<std::uint64_t> {
+    switch (suffix) {
+        case NumericSuffix::Nanoseconds:  return 1;
+        case NumericSuffix::Microseconds: return 1'000;
+        case NumericSuffix::Milliseconds: return 1'000'000;
+        case NumericSuffix::Seconds:      return 1'000'000'000;
+        default:                          return std::nullopt;
+    }
+}
 
 namespace {
 
@@ -19,19 +30,23 @@ auto builtin_type(const ProgramDraft& draft, TypeID type) noexcept -> std::optio
 
 auto suffix_builtin(NumericSuffix suffix) noexcept -> std::optional<BuiltinType> {
     switch (suffix) {
-        case NumericSuffix::None:  return std::nullopt;
-        case NumericSuffix::I8:    return BuiltinType::I8;
-        case NumericSuffix::I16:   return BuiltinType::I16;
-        case NumericSuffix::I32:   return BuiltinType::I32;
-        case NumericSuffix::I64:   return BuiltinType::I64;
-        case NumericSuffix::U8:    return BuiltinType::U8;
-        case NumericSuffix::U16:   return BuiltinType::U16;
-        case NumericSuffix::U32:   return BuiltinType::U32;
-        case NumericSuffix::U64:   return BuiltinType::U64;
-        case NumericSuffix::Isize: return BuiltinType::Isize;
-        case NumericSuffix::Usize: return BuiltinType::Usize;
-        case NumericSuffix::F32:   return BuiltinType::F32;
-        case NumericSuffix::F64:   return BuiltinType::F64;
+        case NumericSuffix::Nanoseconds:
+        case NumericSuffix::Microseconds:
+        case NumericSuffix::Milliseconds:
+        case NumericSuffix::Seconds:
+        case NumericSuffix::None:         return std::nullopt;
+        case NumericSuffix::I8:           return BuiltinType::I8;
+        case NumericSuffix::I16:          return BuiltinType::I16;
+        case NumericSuffix::I32:          return BuiltinType::I32;
+        case NumericSuffix::I64:          return BuiltinType::I64;
+        case NumericSuffix::U8:           return BuiltinType::U8;
+        case NumericSuffix::U16:          return BuiltinType::U16;
+        case NumericSuffix::U32:          return BuiltinType::U32;
+        case NumericSuffix::U64:          return BuiltinType::U64;
+        case NumericSuffix::Isize:        return BuiltinType::Isize;
+        case NumericSuffix::Usize:        return BuiltinType::Usize;
+        case NumericSuffix::F32:          return BuiltinType::F32;
+        case NumericSuffix::F64:          return BuiltinType::F64;
     }
     std::unreachable();
 }
@@ -49,6 +64,8 @@ auto validate_expected_type(
             static_cast<void>(draft.type_copy(id));
         } else if constexpr (std::same_as<ID, TypeTermID>) {
             static_cast<void>(draft.construction_type_copy(id));
+        } else if constexpr (std::same_as<ID, GenericTypeID>) {
+            static_cast<void>(draft.generic_type_copy(id));
         } else {
             static_assert(std::same_as<ID, void>, "unhandled expected type reference");
         }
@@ -86,11 +103,17 @@ auto normalize_literal(
     LiteralSign sign
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
     validate_expected_type(draft, expected);
+    if (expected) {
+        expected = unwrap_type_alias(draft, *expected);
+    }
     const auto negative = sign == LiteralSign::Negative;
     return literal.value.visit(
         [&](const auto& value) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure> {
             using Value = std::remove_cvref_t<decltype(value)>;
             if constexpr (std::same_as<Value, IntegerLiteralValue>) {
+                if (duration_literal_scale(value.suffix)) {
+                    return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
+                }
                 if (value.conversion == NumericConversion::OutOfRange) {
                     return std::unexpected(ConstantEvaluationFailure::IntegerLiteralOutOfRange);
                 }

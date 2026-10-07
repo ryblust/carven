@@ -81,10 +81,15 @@ auto lower_closure_type(ModuleLowering& context, CallableID callable_id) noexcep
         );
     }
     auto parameters = std::vector<TargetParameter>();
-    for (const auto& parameter : signature.parameters) {
+    for (const auto [index, parameter] : std::views::enumerate(signature.parameters)) {
         parameters.push_back(
             {.local = std::nullopt,
-             .type = context.lower_parameter(parameter.access, parameter.type),
+             .type = context.lower_parameter(
+                 parameter.access,
+                 parameter.type,
+                 TypeNameScope::Module,
+                 context.semantic().read_requires_stable_storage(callable_id, index)
+             ),
              .default_value = std::nullopt}
         );
     }
@@ -143,7 +148,9 @@ auto lower_closure_body(ModuleLowering& context, CallableID callable_id) noexcep
             {.local = name,
              .type = context.lower_parameter(
                  signature.parameters[index].access,
-                 signature.parameters[index].type
+                 signature.parameters[index].type,
+                 TypeNameScope::Module,
+                 context.semantic().read_requires_stable_storage(callable_id, index)
              ),
              .default_value = std::nullopt}
         );

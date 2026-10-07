@@ -1,11 +1,14 @@
 module carven:semantic.semir.program;
 
+import :semantic.semir.async;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.contents;
 import :semantic.semir.decl;
+import :semantic.semir.generic;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
+import :semantic.semir.passing;
 import :semantic.semir.stage;
 import :semantic.semir.structured;
 import :semantic.semir.table;
@@ -81,12 +84,11 @@ enum class DefinitionPlacement {
     Use,
 };
 
-// The source-level references that an inline definition may expose, independent
-// of the static arguments selected by any caller.
 struct CallableSurface final {
+    // Source-template references, independent of callers' static arguments.
     std::vector<TypeID> types;
     std::vector<CallableID> callables;
-    // Source construction order, retained independently of specialization.
+    // First-encounter closure references for this callable, without duplicates.
     std::vector<CallableID> closures;
 };
 
@@ -109,6 +111,13 @@ public:
     auto tests() const noexcept -> const TestStore&;
     // A staged function has static parameters and executes only through instances.
     auto is_staged(FunctionID function) const noexcept -> bool;
+    auto generic_declaration_contracts() const noexcept
+        -> std::span<const GenericDeclarationContract>;
+    auto generic_declaration_contract(GenericDeclarationID id) const noexcept
+        -> const GenericDeclarationContract&;
+    auto generic_nominal_instances() const noexcept -> std::span<const GenericNominalInstance>;
+    auto generic_nominal_instance(NominalDeclarationRef declaration) const noexcept
+        -> const GenericNominalInstance*;
     auto static_instances() const noexcept -> std::span<const StaticInstance>;
     // The function a callable implements: its declaration, or the function
     // an instance was produced from.
@@ -125,15 +134,23 @@ public:
         FunctionID function,
         std::span<const ConstantID> arguments
     ) const noexcept -> std::optional<CallableID>;
+    // Outward cancellation of execution, independent of nominal failures.
+    auto may_complete_cancelled(CallableID callable) const noexcept -> bool;
+    // Completion observed by this await, excluding evaluation of its operand.
+    auto await_completion_may_be_cancelled(BodyID body, const SemAwait& occurrence) const noexcept
+        -> bool;
     auto may_stop_test(CallableID callable_id) const noexcept -> bool;
     auto may_stop_test(TypeID type) const noexcept -> bool;
     auto may_stop_test(const SemCall& call) const noexcept -> bool;
     auto call_signature(TypeID type) const noexcept -> CallableSignatureID;
     auto call_signature(const SemCall& call) const noexcept -> CallableSignatureID;
+    auto read_requires_stable_storage(CallableID callable, std::size_t parameter) const noexcept
+        -> bool;
 
 private:
     auto publish_surfaces() noexcept -> void;
     auto publish_bodies() noexcept -> void;
+    auto publish_read_passing_facts(ReadPassingFacts facts) noexcept -> void;
     SemIRProgram(
         ProgramIdentity identity,
         CompilationProvenance provenance,
@@ -145,6 +162,8 @@ private:
         BodyStore bodies,
         TestStore tests,
         std::vector<StaticInstance> static_instances,
+        std::vector<GenericDeclarationContract> generic_declarations,
+        std::vector<GenericNominalInstance> generic_instances,
         std::vector<bool> test_stops
     ) noexcept;
 
@@ -158,12 +177,20 @@ private:
     BodyStore body_store;
     TestStore test_store;
     std::vector<StaticInstance> static_instance_store;
+    std::vector<GenericDeclarationContract> generic_declaration_store;
+    std::vector<GenericNominalInstance> generic_instance_store;
+    std::map<NominalDeclarationRef, std::size_t> generic_instance_nominals;
     std::map<std::pair<FunctionID, std::vector<ConstantID>>, CallableID> static_instance_index;
     std::map<CallableID, std::size_t> instance_callables;
     std::vector<bool> executed_bodies;
     std::vector<bool> test_stops;
+    std::unique_ptr<const AsyncCancellationFacts> cancellation_facts;
     std::vector<TypeContents> contents;
     std::vector<CallableSurface> callable_surfaces;
+    ReadPassingFacts read_passing_facts;
 
     friend class ProgramDraft;
 };
+
+auto body_closure_references(const SemIRProgram& semantic, const SemIRBody& body) noexcept
+    -> std::vector<CallableID>;

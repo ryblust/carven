@@ -17,6 +17,7 @@ spelling and parsing. Topic references define the rules for each language featur
 | Understand copying, mutation, Take, or a borrowed value's lifetime | [Bindings, access, and mutation](ownership.md) |
 | Create a pointer, check for null, or access its target | [Pointer values](pointers.md) |
 | Declare or call functions, create closures, or use callable views | [Functions and callable values](functions.md) |
+| Await cold operations, start lexical children, or request cancellation | [Async functions and lexical children](async.md) |
 | Determine evaluation order, loop behavior, or match selection | [Evaluation and control flow](control-flow.md) |
 | Declare, propagate, catch, or rethrow a typed failure | [Failure contracts](failures.md) |
 | Evaluate constants, execute `const fn` or `const` blocks, or freeze a result | [Values and constants](constants.md) |

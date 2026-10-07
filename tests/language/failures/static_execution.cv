@@ -54,7 +54,8 @@ const fn relay() -> i32 throw ReadError {
         read(false)?
     } catch {
         ReadError(error) => {
-            let copy = &&error;
+            let owned = error;
+            let copy = &&owned;
             let nested = try {
                 decode(0)?
             } catch {
@@ -104,7 +105,8 @@ const fn text_relay() -> i32 throw TextError {
         text_failure()?
     } catch {
         TextError(error) => {
-            let moved = &&error;
+            let owned = error;
+            let moved = &&owned;
             if moved.text.len() == 16usize { rethrow; }
             0
         },
@@ -160,7 +162,13 @@ const fn control() -> i32 {
     return -1;
 }
 
+const fn generic_read<T>(&&value: T, ok: bool) -> T throw ReadError {
+    if ok { return &&value; }
+    throw ReadError { 13 };
+}
+
 const success = read(true)?;
+const generic_success = generic_read(&&42, true)?;
 const inferred_success = inferred(true)?;
 const recovered = recover(false);
 const decoded = recover_decode(1);
@@ -169,6 +177,7 @@ const values = [DecodeError::Empty, DecodeError::Invalid(12)];
 
 const test "typed failures execute with normal control and payload semantics" {
     check(success == 42 && inferred_success == 3);
+    check(generic_success == 42);
     check(recovered == 7 && recover(true) == 42);
     check(decoded == 73 && recover_decode(0) == 11 && recover_decode(2) == 2);
     check(recover_relay() == 7 && recover_guard() == 73);
@@ -184,6 +193,11 @@ const test "typed failures execute with normal control and payload semantics" {
 }
 
 test "static failure results agree with native execution" {
+    try {
+        check(generic_read(&&42, true)? == generic_success);
+    } catch {
+        ReadError(_) => fail("successful generic input must return its value"),
+    }
     check(success == recover(true));
     check(recovered == recover(false));
     check(decoded == recover_decode(1));

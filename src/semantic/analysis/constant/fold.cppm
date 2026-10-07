@@ -7,6 +7,9 @@ import std;
 
 // Known values of aggregate construction and projection from known operands.
 // Body construction and static specialization share these rules.
+auto tuple_constant(ProgramDraft& draft, TypeID type, const SemTuple& tuple) noexcept
+    -> std::optional<ConstantID>;
+
 auto array_constant(ProgramDraft& draft, TypeID type, const SemArray& array) noexcept
     -> std::optional<ConstantID>;
 
@@ -26,5 +29,10 @@ auto element_constant(
     std::optional<ConstantID> index
 ) noexcept -> std::optional<ConstantID>;
 
-auto fold_constant_expression(ProgramDraft& draft, SemanticExpression& expression) noexcept
-    -> AnalysisResult<void>;
+enum class ConstantFoldFailure { Diagnose, KeepRuntime };
+
+auto fold_constant_expression(
+    ProgramDraft& draft,
+    SemanticExpression& expression,
+    ConstantFoldFailure failure = ConstantFoldFailure::Diagnose
+) noexcept -> AnalysisResult<void>;

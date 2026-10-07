@@ -27,11 +27,19 @@ auto ExecutionMemory::text_bytes(const ExecutionText& text, TypeID element) noex
     return ExecutionPlace {.owner = identity, .object = index, .path = {}};
 }
 
+auto ExecutionMemory::adopt_projection(ExecutionPlace place) noexcept -> ExecutionPlace {
+    const auto index = objects.size();
+    objects.emplace_back(Projection {.target = std::move(place)});
+    return {.owner = identity, .object = index, .path = {}};
+}
+
 auto ExecutionMemory::release(const ExecutionPlace& place) noexcept -> void {
     if (place.owner == identity && place.object < objects.size() && place.path.empty()) {
         if (auto* object = std::get_if<std::optional<ExecutionValue>>(&objects[place.object]);
             object && *object) {
             object->reset();
+        } else if (auto* projection = std::get_if<Projection>(&objects[place.object])) {
+            projection->target.reset();
         }
     }
 }
@@ -39,6 +47,14 @@ auto ExecutionMemory::release(const ExecutionPlace& place) noexcept -> void {
 auto ExecutionMemory::resolve(const ExecutionPlace& place) const noexcept -> const ExecutionValue* {
     if (place.owner != identity || place.object >= objects.size()) {
         return nullptr;
+    }
+    if (const auto* projection = std::get_if<Projection>(&objects[place.object])) {
+        if (!projection->target) {
+            return nullptr;
+        }
+        auto selected = *projection->target;
+        selected.path.insert(selected.path.end(), place.path.begin(), place.path.end());
+        return resolve(selected);
     }
     if (const auto* text = std::get_if<TextBytes>(&objects[place.object])) {
         const auto storage = text->storage.lock();
@@ -61,16 +77,32 @@ auto ExecutionMemory::resolve(const ExecutionPlace& place) const noexcept -> con
     auto* current = &*object;
     for (const auto index : place.path) {
         const auto* aggregate = std::get_if<ExecutionAggregateValue>(current);
-        if (aggregate == nullptr || index >= aggregate->elements.size()) {
+        const auto* enumeration = std::get_if<ExecutionEnumValue>(current);
+        const auto* elements = aggregate ? &aggregate->elements
+            : enumeration                ? &enumeration->payload
+                                         : nullptr;
+        if (elements == nullptr || index >= elements->size()) {
             return nullptr;
         }
-        current = &aggregate->elements[index];
+        current = &(*elements)[index];
     }
     return current;
 }
 
 auto ExecutionMemory::resolve(const ExecutionPlace& place) noexcept -> ExecutionValue* {
     return const_cast<ExecutionValue*>(std::as_const(*this).resolve(place));
+}
+
+auto ExecutionMemory::owning_value(const ExecutionPlace& place) const noexcept
+    -> const ExecutionValue* {
+    if (place.owner != identity || place.object >= objects.size()) {
+        return nullptr;
+    }
+    if (const auto* projection = std::get_if<Projection>(&objects[place.object])) {
+        return projection->target ? owning_value(*projection->target) : nullptr;
+    }
+    const auto* object = std::get_if<std::optional<ExecutionValue>>(&objects[place.object]);
+    return object && *object ? &**object : nullptr;
 }
 
 auto ExecutionMemory::view(const ExecutionSlice& slice) const noexcept
@@ -118,7 +150,11 @@ auto ExecutionMemory::project(ExecutionPlace place, std::size_t index) noexcept
     }
     const auto* value = resolve(place);
     const auto* aggregate = value ? std::get_if<ExecutionAggregateValue>(value) : nullptr;
-    if (aggregate == nullptr || index >= aggregate->elements.size()) {
+    const auto* enumeration = value ? std::get_if<ExecutionEnumValue>(value) : nullptr;
+    const auto* elements = aggregate ? &aggregate->elements
+        : enumeration                ? &enumeration->payload
+                                     : nullptr;
+    if (elements == nullptr || index >= elements->size()) {
         return std::nullopt;
     }
     place.path.push_back(index);

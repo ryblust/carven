@@ -2,7 +2,7 @@
 
 #include "display/display.hpp"
 #include "trap.hpp"
-#include "utf.hpp"
+#include "text/text.hpp"
 
 #include <concepts>
 #include <cstddef>

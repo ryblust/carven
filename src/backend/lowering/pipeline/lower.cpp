@@ -96,6 +96,14 @@ auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& s
         });
     }
     flush();
+    active = nullptr;
+    for (const auto member : schedule.component_members) {
+        active = &context.module_context(member);
+        module_items = active->take_enum_factories();
+        if (!module_items.empty()) {
+            flush();
+        }
+    }
     return {
         .preamble = {},
         .body = wrap_linkage_namespaces(context, std::move(root)),

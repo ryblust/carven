@@ -32,7 +32,7 @@ export const fn decode_utf8_prefix(bytes: [u8]) -> UTF8DecodeResult throw UTF8Er
     return .End;
 }
 
-private const fn continuation(value: u32, shift: u32) -> u8 {
+private const fn continuation(value: u32, const shift: u32) -> u8 {
     let payload = (value >> shift) & 63;
     return (0x80 | payload) as u8;
 }
@@ -67,4 +67,10 @@ export const fn encode_utf8(character: char) -> UTF8Encoded {
             width: 4,
         },
     };
+}
+
+// Bind the encoding result before retaining this view; it borrows that result.
+export const fn encoded_bytes(encoded: UTF8Encoded) -> [u8] {
+    assert(encoded.width >= 1 && encoded.width <= 4);
+    return encoded.bytes.as_slice().slice(0, encoded.width);
 }

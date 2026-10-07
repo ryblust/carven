@@ -132,12 +132,12 @@ ordinary borrow analysis. Construction does not extend the backing lifetime.
 Use the UTF standard library's checked functions for input that has not been
 validated. Validation algorithms and their error types belong to that library.
 
-Character construction is also available in constant initializers, `const fn`,
-and interpretation. The executor checks the scalar precondition when the operation
-executes and diagnoses an invalid value; this is an execution error, not a typed
-failure. Native construction retains the caller-provided precondition without
-adding validation. Unchecked borrowed text construction is not yet supported
-during static execution or interpretation.
+Both constructors are available in constant initializers, `const fn`, and
+interpretation. The executor checks their content preconditions when they execute
+and diagnoses invalid input as an execution error, not a typed failure. Borrowed
+text retains the selected byte range and its backing lifetime; its `.bytes` view
+refers to that same range. Native construction retains the caller-provided
+precondition without adding validation.
 
 ## Owning String and text borrowing
 

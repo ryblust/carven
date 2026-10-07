@@ -20,6 +20,14 @@ struct TargetReturnStmt final {
     std::optional<TargetExpr> expression;
 };
 
+struct TargetCoReturnStmt final {
+    TargetExpr expression;
+
+    static constexpr auto native_symbol() noexcept -> TargetSymbol {
+        return TargetSymbol::CoReturn;
+    }
+};
+
 enum class TargetVariableBinding {
     MutableValue,
     MutableReference,
@@ -174,6 +182,7 @@ using TargetStmtValue = TreeValue<
     TargetExprStmt,
     TargetDiscardStmt,
     TargetReturnStmt,
+    TargetCoReturnStmt,
     TargetVariableStmt,
     TargetBlockStmt,
     TargetAssignmentStmt,

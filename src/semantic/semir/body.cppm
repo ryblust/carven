@@ -66,8 +66,18 @@ struct CaptureBindingStorage final {
     CaptureMode mode;
 };
 
-using BindingStorage =
-    std::variant<OwnerBindingStorage, ParameterBindingStorage, CaptureBindingStorage>;
+struct AsyncChildBindingStorage final {};
+
+struct AccessBindingStorage final {
+    AccessMode access;
+};
+
+using BindingStorage = std::variant<
+    OwnerBindingStorage,
+    ParameterBindingStorage,
+    CaptureBindingStorage,
+    AsyncChildBindingStorage,
+    AccessBindingStorage>;
 
 struct LocalBinding final {
     ProgramSpellingID name;
@@ -120,6 +130,10 @@ struct EnumCasePattern final {
     std::vector<PatternID> payload;
 };
 
+struct TuplePattern final {
+    std::vector<PatternID> elements;
+};
+
 using PatternValue = std::variant<
     WildcardPattern,
     LiteralPattern,
@@ -127,7 +141,8 @@ using PatternValue = std::variant<
     OrPattern,
     TypeConstraintPattern,
     BindingPattern,
-    EnumCasePattern>;
+    EnumCasePattern,
+    TuplePattern>;
 
 struct Pattern final {
     TypeID type;
@@ -146,7 +161,8 @@ using ElaboratedPatternValue = std::variant<
     OrPattern,
     ElaboratedTypeConstraintPattern,
     BindingPattern,
-    EnumCasePattern>;
+    EnumCasePattern,
+    TuplePattern>;
 
 struct ElaboratedPattern final {
     ConstructionTypeRef type;
@@ -161,7 +177,8 @@ struct RuntimeCheckedBounds final {};
 using IndexBoundsPolicy = std::variant<ProvenInBounds, RuntimeCheckedBounds>;
 
 struct FieldProjection final {
-    StructID owner;
+    ConstructionStructRef owner;
+    auto resolved_owner() const noexcept -> StructID;
     std::uint32_t field_index;
 };
 

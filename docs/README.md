@@ -14,10 +14,8 @@ and development guidance for the current checkout.
 
 Runnable programs live in [examples](../examples/README.md); unfinished designs
 live in [proposals](../proposals/README.md), with additional candidates in
-[design directions](../proposals/roadmap.md). Craft APIs and Xmake
+[design directions](../proposals/design-directions.md). Craft APIs and Xmake
 procedures are documented alongside their sources.
-Cross-project mechanisms, comparisons, and annotated external references live
-in [research notes](../notes/README.md).
 
 The language tutorial introduces concepts in learning order. Grammar and the
 topic references define source rules. Compiler documentation describes their

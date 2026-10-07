@@ -1,0 +1,14 @@
+const delay = 1ms;
+
+const test "Time literals: inferred constants require no type import" {
+    check(delay.nanoseconds == 1000000i64);
+    check((-2s).nanoseconds == -2000000000i64);
+}
+
+fn interval() => 7us;
+
+test "Time literals: ordinary functions return standard duration values" {
+    let value = interval();
+    check(value.nanoseconds == 7000i64);
+    check((1ns).nanoseconds == 1i64);
+}

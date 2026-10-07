@@ -1,0 +1,15 @@
+import .api using { Box, Maybe };
+
+private struct Local {
+    value: i32,
+}
+
+export class HiddenBox {
+    stored: Box<Local>,
+
+    fn create(value: i32) -> HiddenBox => { stored: { value: { value: value } } };
+
+    fn read(self) -> i32 => self.stored.value.value;
+}
+
+export fn first(value: Box<i32>) -> Maybe<i32> => Maybe<i32>::Some(value.value);

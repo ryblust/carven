@@ -99,11 +99,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(wrapped.has_value())) {
                 return;
             }
-            const auto wrapped_value = std::get<IntegerConstant>(wrapped->value).as_unsigned();
-            if (!expect(wrapped_value.has_value())) {
-                return;
-            }
-            expect_equal(*wrapped_value, 255u);
+            expect_equal(std::get<IntegerConstant>(wrapped->value).as_unsigned(), 255u);
 
             const auto narrow_float = values.intern_constant(
                 ConstantFact {
@@ -133,11 +129,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(length.has_value())) {
                 return;
             }
-            const auto length_value = std::get<IntegerConstant>(length->value).as_unsigned();
-            if (!expect(length_value.has_value())) {
-                return;
-            }
-            expect_equal(*length_value, 3u);
+            expect_equal(std::get<IntegerConstant>(length->value).as_unsigned(), 3u);
             const auto empty =
                 fold_text_intrinsic_constant(values, TextIntrinsic::IsEmpty, string_id, boolean);
             if (!expect(empty.has_value())) {

@@ -54,11 +54,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect(((contextual->type) == (i64))).note("contextual->type == i64");
-            const auto contextual_value = std::get<IntegerConstant>(contextual->value).as_signed();
-            if (!expect(contextual_value.has_value())) {
-                return;
-            }
-            expect_equal(*contextual_value, 42);
+            expect_equal(std::get<IntegerConstant>(contextual->value).as_signed(), 42);
 
             const auto suffixed = normalize_literal(
                 compilation,
@@ -79,12 +75,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(signed_minimum.has_value())) {
                 return;
             }
-            const auto minimum_constant =
-                std::get<IntegerConstant>(signed_minimum->value).as_signed();
-            if (!expect(minimum_constant.has_value())) {
-                return;
-            }
-            expect_equal(*minimum_constant, -128);
+            expect_equal(std::get<IntegerConstant>(signed_minimum->value).as_signed(), -128);
 
             const auto positive_overflow =
                 normalize_literal(compilation, integer_literal(128u, NumericSuffix::I8));

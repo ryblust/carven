@@ -392,6 +392,23 @@ auto Parser::parse_pattern() noexcept -> std::optional<ASTPatternID> {
 
 auto Parser::parse_primary_pattern() noexcept -> std::optional<ASTPatternID> {
     const auto start = current().span;
+    if (check(TokenKind::Ampersand)) {
+        const auto marker = consume();
+        const auto name = expect(TokenKind::Identifier, "expected Write pattern binding name");
+        if (failed) {
+            return std::nullopt;
+        }
+        return builder.append_pattern(
+            ASTPattern {
+                .span = join(marker.span, name.span),
+                .value = ASTBindingPattern {
+                    .mode = ASTAccessMode::Write,
+                    .marker_span = marker.span,
+                    .name_span = name.span,
+                },
+            }
+        );
+    }
     const auto checkpoint = begin_speculation();
     auto begin = std::optional<ASTExprID>();
     if (!check(TokenKind::DotDot) && !check(TokenKind::DotDotEqual)) {
@@ -429,6 +446,45 @@ auto Parser::parse_primary_pattern() noexcept -> std::optional<ASTPatternID> {
                 }
             }
         );
+    }
+    if (const auto left = match(TokenKind::LeftParen)) {
+        auto elements = std::vector<ASTPatternID>();
+        if (!check(TokenKind::RightParen)) {
+            auto first = parse_pattern();
+            if (!first) {
+                return std::nullopt;
+            }
+            if (!match(TokenKind::Comma)) {
+                const auto right =
+                    expect(TokenKind::RightParen, "expected ')' after grouped pattern");
+                if (failed) {
+                    return std::nullopt;
+                }
+                return builder.append_pattern({
+                    .span = join(left->span, right.span),
+                    .value = builder.pattern(*first).value,
+                });
+            }
+            elements.push_back(*first);
+            while (!failed && !check(TokenKind::RightParen)) {
+                auto element = parse_pattern();
+                if (!element) {
+                    return std::nullopt;
+                }
+                elements.push_back(*element);
+                if (!match(TokenKind::Comma)) {
+                    break;
+                }
+            }
+        }
+        const auto right = expect(TokenKind::RightParen, "expected ')' after tuple pattern");
+        if (failed) {
+            return std::nullopt;
+        }
+        return builder.append_pattern({
+            .span = join(left->span, right.span),
+            .value = ASTTuplePattern {.elements = std::move(elements)},
+        });
     }
     if (check(TokenKind::Identifier) && slice(source, current().span) == "_") {
         const auto wildcard = consume();
@@ -517,13 +573,17 @@ auto Parser::parse_primary_pattern() noexcept -> std::optional<ASTPatternID> {
         auto separators = std::vector<Span> {};
         while (const auto separator = match(TokenKind::ColonColon)) {
             separators.push_back(separator->span);
-            components.push_back(expect(TokenKind::Identifier, "expected name after '::'").span);
+            components.push_back(expect_name_component("expected name after '::'").span);
         }
         if (components.size() == 1) {
             return builder.append_pattern(
                 ASTPattern {
                     .span = components.front(),
-                    .value = ASTBindingPattern {.name_span = components.front()},
+                    .value = ASTBindingPattern {
+                        .mode = ASTAccessMode::Read,
+                        .marker_span = std::nullopt,
+                        .name_span = components.front(),
+                    },
                 }
             );
         }
@@ -590,7 +650,7 @@ auto Parser::parse_qualified_name() noexcept -> ASTQualifiedName {
     auto components = std::vector<Span> {start.span};
     auto end = start.span;
     while (match(TokenKind::ColonColon)) {
-        end = expect(TokenKind::Identifier, "expected name after '::'").span;
+        end = expect_name_component("expected name after '::'").span;
         components.push_back(end);
     }
     return {

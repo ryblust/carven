@@ -42,9 +42,11 @@ order, retain borrowed results, and complete fallible calls. Semantic publicatio
 owns source legality and lifetime contracts; native compilation checks delegated
 C++ operations.
 
-`TargetUnitBuilder::finish` verifies the target tree and combines its header
-requirements with artifact references and ordered native imports.
-Rendering serializes that finished tree. Filesystem output and native compilation
+`TargetUnitBuilder::finish` verifies the target tree, collects its header
+requirements, and plans directives with artifact references and ordered native
+imports. Async runtime symbols use the same header-provider metadata and
+dependency collection as other target facilities. Rendering serializes the
+finished tree and directives. Filesystem output and native compilation
 are separate consumers.
 
 ## Realization choices
@@ -85,8 +87,8 @@ module-owned support names. Provider artifacts are independent of the instances
 selected by their callers.
 
 Source-template bodies have been discarded before planning. Published closure
-construction order supplies stable names and dependency discovery without
-recovering source trees from instances.
+references supply dependency discovery. Closure names follow source-location order within their owning module, with
+semantic callable identity ordering closures that share a source location.
 
 Semantic specialization gives each expanded iteration distinct local bindings,
 patterns, and lifetimes. The backend uses these identities through its ordinary

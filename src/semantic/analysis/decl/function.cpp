@@ -32,7 +32,25 @@ auto DeclResolver::resolve_function(
     const ASTFunctionDecl& function,
     Span item_span
 ) noexcept -> AnalysisTask<void> {
+    if (function.type_parameters) {
+        co_return std::unexpected(declaration_failure(
+            draft,
+            symbol.module_id,
+            function.type_parameters->span,
+            DiagnosticCode::TypeGenericDefinition,
+            "type-parameterized function operations are not supported"
+        ));
+    }
     const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
+    if (function.async_span && symbol.class_operation && symbol.class_operation->receiver) {
+        co_return std::unexpected(declaration_failure(
+            draft,
+            symbol.module_id,
+            *function.async_span,
+            DiagnosticCode::AsyncAdmission,
+            "async fn does not admit class receivers"
+        ));
+    }
     const auto entry = !symbol.class_operation && symbol.name == "main" && !cpp_import;
     if (function.const_span && (cpp_import || entry)) {
         co_return std::unexpected(declaration_failure(
@@ -41,6 +59,15 @@ auto DeclResolver::resolve_function(
             *function.const_span,
             DiagnosticCode::ConstAdmission,
             cpp_import ? "const fn requires a Carven body" : "the entry function cannot be const fn"
+        ));
+    }
+    if (entry && function.async_span && !function.parameters.empty()) {
+        co_return std::unexpected(declaration_failure(
+            draft,
+            symbol.module_id,
+            function.name_span,
+            DiagnosticCode::EntryParameters,
+            "async main requires zero parameters"
         ));
     }
     if (entry && function.parameters.size() > 1uz) {
@@ -54,13 +81,24 @@ auto DeclResolver::resolve_function(
     }
 
     auto parameter_names = std::flat_map<std::string, Span, std::less<>>();
-    for (const auto& parameter : function.parameters) {
-        const auto* named = std::get_if<ASTNamedBindingTarget>(&parameter.target);
-        if (named == nullptr) {
-            continue;
+    auto names = std::vector<Span>();
+    const auto collect_names = [&](this const auto& self,
+                                   const ASTBindingTarget& target) noexcept -> void {
+        if (const auto* named = std::get_if<ASTNamedBindingTarget>(&target)) {
+            names.push_back(named->name_span);
+        } else if (const auto* tuple =
+                       std::get_if<UniqueIndirect<ASTTupleBindingTarget>>(&target)) {
+            for (const auto& element : (*tuple)->elements) {
+                self(element);
+            }
         }
-        auto name = draft.source_slice_copy(symbol.module_id, named->name_span);
-        const auto [prior, inserted] = parameter_names.emplace(name, named->name_span);
+    };
+    for (const auto& parameter : function.parameters) {
+        collect_names(parameter.target);
+    }
+    for (const auto name_span : names) {
+        auto name = draft.source_slice_copy(symbol.module_id, name_span);
+        const auto [prior, inserted] = parameter_names.emplace(name, name_span);
         if (inserted) {
             continue;
         }
@@ -69,7 +107,7 @@ auto DeclResolver::resolve_function(
             "a function parameter name is declared more than once"
         );
         diagnostic.primary(
-            locate(declaration_source_id(draft, symbol.module_id), named->name_span),
+            locate(declaration_source_id(draft, symbol.module_id), name_span),
             "duplicate parameter"
         );
         diagnostic.related(
@@ -195,7 +233,7 @@ auto DeclResolver::resolve_function(
         result = *resolved;
     }
 
-    auto failures = std::optional<FailureTermID>();
+    auto failures = std::optional<ConstructionFailureRef>();
     auto policy = FailureContractPolicy::Declared;
     if (function.throw_clause.has_value()) {
         auto resolved =
@@ -203,9 +241,9 @@ auto DeclResolver::resolve_function(
         if (!resolved.has_value()) {
             co_return std::unexpected(resolved.error());
         }
-        failures = draft.add_concrete_failure_term(std::move(*resolved));
+        failures = *resolved;
     } else if (cpp_import) {
-        failures = draft.add_empty_failure_term();
+        failures = draft.empty_failure_set();
     } else {
         failures = draft.add_empty_failure_term();
         policy = (function.is_implicit_entry
@@ -243,6 +281,8 @@ auto DeclResolver::resolve_function(
         draft.define_callable_contract(
             form.callable,
             ConstructionCallableContract {
+                .execution = function.async_span ? CallableExecutionKind::Async
+                                                 : CallableExecutionKind::Synchronous,
                 .parameters = std::move(parameters),
                 .result = *result,
                 .failures = *failures,
@@ -253,6 +293,8 @@ auto DeclResolver::resolve_function(
         draft.define_pending_function_contract(
             form.callable,
             PendingFunctionContract {
+                .execution = function.async_span ? CallableExecutionKind::Async
+                                                 : CallableExecutionKind::Synchronous,
                 .parameters = std::move(parameters),
                 .failures = *failures,
                 .policy = policy,

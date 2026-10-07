@@ -1,6 +1,7 @@
 module carven:semantic.analysis.constant.literal;
 
 import :frontend.ast.literal;
+import :frontend.literal;
 import :semantic.analysis.program;
 import :semantic.evaluation.operation;
 import :semantic.semir.constant;
@@ -18,3 +19,5 @@ auto normalize_literal(
     std::optional<ConstructionTypeRef> expected = std::nullopt,
     LiteralSign sign = LiteralSign::Positive
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
+
+auto duration_literal_scale(NumericSuffix suffix) noexcept -> std::optional<std::uint64_t>;

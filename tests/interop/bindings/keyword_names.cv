@@ -1,0 +1,35 @@
+import "bindings/keyword_names.hpp" using async::{ create };
+
+fn keyword_result(value: ::async::match) -> i32 => value.await();
+
+struct ConstructorNames {
+    ptr: i32,
+    range: i32,
+}
+
+fn constructor_names(ptr: i32, range: i32) -> i32 {
+    let values = ConstructorNames {
+        ptr: ptr,
+        range: range
+    };
+    return values.ptr + values.range;
+}
+
+test "C++ names: keyword spellings work in native paths and members" {
+    let value: ::async::match = create(7);
+    check(value.var == 7);
+    check(value.await() == 8);
+    check(value.cancel() == 9);
+    check(keyword_result(value) == 8);
+    check(::async::test() == 42);
+    let constructed = ::async::match { 9 };
+    check(constructed.await() == 10);
+    let pointer = addressof(value);
+    check(pointer->cancel() == 9);
+}
+
+test "Type constructor names: local values and members remain ordinary names" {
+    let ptr = 4;
+    let range = 5;
+    check(constructor_names(ptr, range) == 9);
+}

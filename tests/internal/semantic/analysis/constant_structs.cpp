@@ -59,12 +59,12 @@ const TestSuite suite([] static noexcept {
                     if (!expect(fields->fields.size() == 2uz)) {
                         return;
                     }
-                    expect(
+                    expect_equal(
                         std::get<IntegerConstant>(
                             program.constants().constant(fields->fields[0]).value
                         )
-                            .as_signed()
-                        == keys[index]
+                            .as_signed(),
+                        keys[index]
                     );
                     expect(
                         std::get<BooleanConstant>(

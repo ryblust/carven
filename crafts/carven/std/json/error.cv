@@ -1,0 +1,25 @@
+export enum JSONErrorKind {
+    UnexpectedEnd,
+    UnexpectedByte,
+    InvalidEscape,
+    InvalidHex,
+    UnpairedSurrogate,
+    ControlCharacter,
+    InvalidNumber,
+    TrailingInput,
+    DepthLimit,
+}
+
+// Zero-based byte offset; UnexpectedEnd points at the input length.
+export struct JSONError {
+    kind: JSONErrorKind,
+    offset: usize,
+}
+
+export enum ValueError {
+    WrongKind,
+    MissingKey,
+    IndexOutOfBounds,
+    NumberConversion,
+    DepthLimit,
+}

@@ -1,0 +1,11 @@
+import .api using { Box, Maybe };
+import .first using { HiddenBox, first };
+import .second using second;
+
+test "Generic modules: shared instances and private representations cross translation units" {
+    let box = Box<i32> { value: 42 };
+    check(second(box) == 42);
+    check(first(box) == Maybe<i32>::Some(42));
+    let hidden = HiddenBox::create(17);
+    check(hidden.read() == 17);
+}

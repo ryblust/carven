@@ -36,6 +36,17 @@ as `::std::vector<i32>`. No header import is required for
 Carven to admit such a reference; C++ checks whether the declaration is available.
 Global references do not mark explicit `using` selections as used.
 
+Global C++ path components, native header selection paths and list items, and
+member components after `.`, `::`, or `->` accept identifier-shaped Carven
+keyword tokens. For example, `::vendor::async`, `::vendor::cancel`, and
+`handle.cancel()` use native names. Native selection lists may contain keyword
+spellings, but a selected keyword does not become a bare Carven identifier.
+Use a global path or an already available non-keyword prefix to refer to such a
+native declaration. Global paths retain the unused-import rules above. Carven
+rejects native name spellings in its C++ keyword set with `CV-CPP-IDENTIFIER`; C++
+validates the selected declarations and operations. This rule does not permit
+keyword-named bare Carven declarations or provide escaped identifiers.
+
 A header import without `using` creates no Carven names. A `using` selection
 introduces external names or a namespace lookup environment in the importing
 module:
@@ -190,9 +201,10 @@ Known input borrows remain checked while the operation evaluates.
 
 ## Source fragments
 
-Each top-level `#[cpp]` payload remains an independent, byte-opaque C++ source
-fragment. Carven does not parse or type-check it, interpolate Carven values, or
-bind same-spelled Carven names. C++ owns macros, overloads, templates, linkage,
+Each top-level `#[cpp]` payload remains an independent UTF-8 C++ source fragment.
+Carven validates its encoding and preserves its bytes without parsing or
+type-checking C++ syntax, interpolating Carven values, or binding same-spelled
+Carven names. C++ owns macros, overloads, templates, linkage,
 exceptions, lifetime, ODR, and undefined behavior inside each fragment.
 Fragments are implementation-only and never publish declarations to generated
 headers. Public Carven entry points use `export(cpp)`; public native declarations
@@ -225,8 +237,8 @@ whether such a spelling is reserved in its downstream C++ context is the
 author/toolchain's responsibility. `main`, `std`, and `carven` are not valid
 provider names.
 
-An `export(cpp)` declaration is an ordinary, complete-compilation-visible
-Carven function with a Carven body. It is also declared in the generated C++
+An `export(cpp)` declaration is a complete-compilation-visible Carven function
+with a Carven body. It may be synchronous or async. It is also declared in the generated C++
 API for its module:
 
 ```carven
@@ -236,9 +248,11 @@ export(cpp) fn value() -> i32 => 42;
 An `import(cpp)` declaration cannot be exported directly in any syntactic
 combination; re-export is not a language feature. A wider capability requires
 an explicit ordinary Carven wrapper. Both directions use ordinary function type,
-access, visibility, ownership, and declared failure rules. `void` remains
-result-only; callable-view escape and
-public-surface visibility checks remain ordinary Carven restrictions.
+access, visibility, ownership, and declared failure rules. Unit values in
+parameters and aggregates use `carven::runtime::Void`; an infallible synchronous
+unit result returns native C++ `void`. Async and fallible carriers keep `void` as
+their success type. Callable-view escape and public-surface
+visibility checks remain ordinary Carven restrictions.
 
 The generated signatures use the same C++ representations as Carven functions:
 
@@ -246,7 +260,8 @@ The generated signatures use the same C++ representations as Carven functions:
 | --- | --- |
 | Scalars | Their ordinary scalar types, including `char32_t` for `char` |
 | `String` / `str` | `carven::runtime::String` / `std::string_view` |
-| Arrays, slices, ranges, pointers | Their ordinary generated container, view, and pointer types |
+| Arrays, tuples, slices, ranges, pointers | Their ordinary generated container, product, view, and pointer types |
+| Unit values in parameters and aggregates | `carven::runtime::Void` |
 | Structures, enums, concrete closures | Their generated nominal types |
 | Native types | The declared C++ type, with its header environment |
 | Callable views | The runtime callable representation for the declared signature |
@@ -254,7 +269,17 @@ The generated signatures use the same C++ representations as Carven functions:
 | Write parameters | Mutable references |
 | Take parameters | Owned values; exports use ordinary transfer and imports forward native rvalues |
 | Infallible result | The ordinary result type, including `void` |
-| Declared failures | `carven::runtime::Outcome<Result, Failures...>` |
+| Declared synchronous failures | `carven::runtime::Outcome<Result, Failures...>` |
+| Async completion contract | Cold `carven::runtime::execution::Operation<Result, Failures...>` |
+
+Async imports and exports use the [async borrowing and host contracts](async.md#native-providers-and-hosts).
+Native-containing Read uses `carven::runtime::ReadArg<T>` unless the callable
+retains the parameter holder across the call boundary; retained holders use
+`const T&`. ReadArg selects a const value for trivial copy construction and
+destruction, and a const reference otherwise. The native callee's own signature
+still controls its C++ parameter initialization. Async providers must capture
+builtin scalar Read values by value; native-containing Read holders remain
+borrowed until the cold operation closes.
 
 The generated API header includes the required generated type definitions,
 native header environments, and runtime support. Consumers use that header and

@@ -3,6 +3,7 @@ module carven:semantic.analysis.operations.structure.impl;
 import :diagnostics.builder;
 import :diagnostics.suggestion;
 import :semantic.analysis.operations;
+import :semantic.semir.generic;
 import :support.invariant;
 import std;
 
@@ -89,18 +90,175 @@ auto select_structure_initializers(
     invariant_violation("structure initializer selection requires a nonempty construction");
 }
 
-auto default_initialization(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+auto default_initialization(ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> DefaultInitialization {
     return query_default_initialization(
-        type,
-        [&](ConstructionTypeRef reference) noexcept -> InitializationType {
+        unwrap_type_alias(draft, type),
+        [&](ConstructionTypeRef reference) noexcept
+            -> std::variant<CanonicalType, ConstructionType, GenericTypeExpression> {
             if (const auto* concrete = std::get_if<TypeID>(&reference)) {
                 return draft.type_copy(*concrete);
             }
+            if (const auto* generic = std::get_if<GenericTypeID>(&reference)) {
+                return draft.generic_type_copy(*generic);
+            }
             return draft.construction_type_copy(std::get<TypeTermID>(reference));
         },
-        [&](StructID structure) noexcept {
-            return draft.construction_struct_declaration_copy(structure);
+        [&](ConstructionTypeRef reference, auto shape) noexcept {
+            if constexpr (std::same_as<decltype(shape), StructTypeValue>) {
+                return draft.construction_struct_declaration_copy(shape.structure);
+            } else {
+                return record_shape(draft, reference);
+            }
         }
     );
+}
+
+// Nominal fields are checked against the declaration's rigid parameter environment.
+auto record_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<RecordShape> {
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        const auto canonical = draft.type_copy(*concrete);
+        const auto* record = std::get_if<StructTypeValue>(&canonical.value);
+        if (!record) {
+            return std::nullopt;
+        }
+        auto declaration = draft.construction_struct_declaration_copy(record->structure);
+        return RecordShape {
+            record->structure,
+            declaration.kind,
+            declaration.name,
+            std::move(declaration.fields)
+        };
+    }
+    const auto* generic = std::get_if<GenericTypeID>(&type);
+    if (!generic) {
+        return std::nullopt;
+    }
+    const auto expression = draft.generic_type_copy(*generic);
+    if (const auto* concrete = std::get_if<TypeID>(&expression)) {
+        return record_shape(draft, *concrete);
+    }
+    const auto* application = std::get_if<GenericNominalApplication>(&expression);
+    if (!application) {
+        return std::nullopt;
+    }
+    const auto definition = draft.generic_declaration_copy(application->definition);
+    const auto* record = std::get_if<GenericRecordDefinition>(&definition);
+    if (!record) {
+        return std::nullopt;
+    }
+    auto fields = std::vector<ConstructionStructField>();
+    for (const auto& field : record->fields) {
+        fields.push_back(
+            {field.name,
+             draft.substitute_generic_type(
+                 field.type,
+                 application->definition,
+                 application->arguments
+             ),
+             field.origin}
+        );
+    }
+    return RecordShape {*generic, record->kind, record->contract.name, std::move(fields)};
+}
+
+// Copy is a value construction capability, independently of Read forwarding.
+auto type_supports_copy(ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
+    auto pending = std::vector<ConstructionTypeRef> {type};
+    auto seen = std::flat_set<ConstructionTypeRef>();
+    while (!pending.empty()) {
+        const auto current = pending.back();
+        pending.pop_back();
+        if (!seen.insert(current).second) {
+            continue;
+        }
+        if (const auto* generic = std::get_if<GenericTypeID>(&current)) {
+            const auto expression = draft.generic_type_copy(*generic);
+            if (const auto* concrete = std::get_if<TypeID>(&expression)) {
+                pending.push_back(*concrete);
+            } else if (std::holds_alternative<GenericTypeParameter>(expression)
+                       || std::holds_alternative<GenericOperationType>(expression)) {
+                return false;
+            } else if (const auto* array = std::get_if<GenericArrayType>(&expression)) {
+                if (array->extent != 0u) {
+                    pending.push_back(array->element);
+                }
+            } else if (const auto* tuple = std::get_if<GenericTupleType>(&expression)) {
+                for (const auto element : tuple->elements) {
+                    pending.push_back(element);
+                }
+            } else if (const auto* sequence = std::get_if<GenericOwnedSequenceType>(&expression)) {
+                pending.push_back(sequence->element);
+            } else if (const auto* application =
+                           std::get_if<GenericNominalApplication>(&expression)) {
+                const auto definition = draft.generic_declaration_copy(application->definition);
+                if (const auto* record = std::get_if<GenericRecordDefinition>(&definition)) {
+                    for (const auto& field : record->fields) {
+                        pending.push_back(draft.substitute_generic_type(
+                            field.type,
+                            application->definition,
+                            application->arguments
+                        ));
+                    }
+                } else if (const auto* enumeration =
+                               std::get_if<GenericEnumDefinition>(&definition)) {
+                    for (const auto& item : enumeration->cases) {
+                        for (const auto field : item.payload_types) {
+                            pending.push_back(draft.substitute_generic_type(
+                                field,
+                                application->definition,
+                                application->arguments
+                            ));
+                        }
+                    }
+                } else {
+                    return false;
+                }
+            }
+            continue;
+        }
+        if (const auto* term = std::get_if<TypeTermID>(&current)) {
+            const auto value = draft.construction_type_copy(*term);
+            if (std::holds_alternative<ConstructionOperationTypeValue>(value.value)) {
+                return false;
+            }
+            if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&value.value)) {
+                if (array->extent != 0u) {
+                    pending.push_back(array->element);
+                }
+            } else if (const auto* tuple = std::get_if<ConstructionTupleTypeValue>(&value.value)) {
+                pending.append_range(tuple->elements);
+            }
+            continue;
+        }
+        const auto value = draft.type_copy(std::get<TypeID>(current));
+        if (std::holds_alternative<OperationTypeValue>(value.value)) {
+            return false;
+        }
+        if (const auto* array = std::get_if<ArrayTypeValue>(&value.value)) {
+            if (array->extent != 0u) {
+                pending.push_back(array->element);
+            }
+        } else if (const auto* tuple = std::get_if<TupleTypeValue>(&value.value)) {
+            for (const auto element : tuple->elements) {
+                pending.push_back(element);
+            }
+        } else if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&value.value)) {
+            pending.push_back(sequence->element);
+        } else if (const auto* record = std::get_if<StructTypeValue>(&value.value)) {
+            for (const auto& field :
+                 draft.construction_struct_declaration_copy(record->structure).fields) {
+                pending.push_back(field.type);
+            }
+        } else if (const auto* enumeration = std::get_if<EnumTypeValue>(&value.value)) {
+            for (const auto item : draft.enum_declaration_copy(enumeration->enumeration).cases) {
+                for (const auto element :
+                     draft.construction_enum_case_declaration_copy(item).payload_types) {
+                    pending.push_back(element);
+                }
+            }
+        }
+    }
+    return true;
 }

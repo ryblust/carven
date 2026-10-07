@@ -1,4 +1,4 @@
-// Explicit 32-byte operations; no automatic vectorization or runtime dispatch.
+// Explicit 32-byte logical operations; no runtime dispatch.
 export struct ByteBlock {
     value: u8x32,
     active: mask32,
@@ -47,7 +47,7 @@ export const fn find_byte(bytes: [u8], needle: u8) -> usize {
 
 export const fn ascii_digit(bytes: u8x32) -> mask32 => (bytes >= 0x30) & (bytes <= 0x39);
 
-export const fn ascii_whitespace(bytes: u8x32) -> mask32 => (bytes == 0x20)
+export const fn json_whitespace(bytes: u8x32) -> mask32 => (bytes == 0x20)
     | (bytes == 0x09)
     | (bytes == 0x0a)
     | (bytes == 0x0d);

@@ -47,6 +47,12 @@ auto execution_value_type(const ConstantValueReader& values, const ExecutionValu
     if (const auto* function = std::get_if<ExecutionFunction>(&value)) {
         return function->type;
     }
+    if (const auto* operation = std::get_if<std::unique_ptr<ExecutionColdOperation>>(&value)) {
+        if (!*operation) {
+            invariant_violation("consumed cold operation has no execution value type");
+        }
+        return (*operation)->type;
+    }
     if (std::holds_alternative<ExecutionText>(value)) {
         return values.builtin_type(BuiltinType::Str);
     }
@@ -72,6 +78,12 @@ auto execution_atom(const ConstantValueReader& values, const ExecutionValue& val
     if (const auto* pointer = std::get_if<ExecutionPointer>(&value); pointer && !pointer->target) {
         return ConstantAtom {.type = pointer->type, .value = NullPointerConstant {}};
     }
+    if (std::holds_alternative<ExecutionVoid>(value)) {
+        return ConstantAtom {
+            .type = values.builtin_type(BuiltinType::Void),
+            .value = VoidConstant {}
+        };
+    }
     return std::nullopt;
 }
 
@@ -83,6 +95,32 @@ ExecutionTextStorage::ExecutionTextStorage(
 auto ExecutionTextStorage::view() const noexcept -> std::string_view {
     return bytes.visit([](const auto& value) static noexcept { return std::string_view(value); });
 }
+
+ExecutionTextObservation::ExecutionTextObservation(std::string_view bytes) noexcept
+    : bytes(bytes) {}
+
+ExecutionTextObservation::ExecutionTextObservation(std::string bytes) noexcept
+    : bytes(std::move(bytes)) {}
+
+auto ExecutionTextObservation::view() const noexcept -> std::string_view {
+    return bytes.visit([](const auto& value) static noexcept { return std::string_view(value); });
+}
+
+auto ExecutionTextObservation::size() const noexcept -> std::size_t {
+    return view().size();
+}
+
+auto ExecutionTextObservation::operator==(const ExecutionTextObservation& other) const noexcept
+    -> bool {
+    return view() == other.view();
+}
+
+auto ExecutionTextObservation::operator==(std::string_view other) const noexcept -> bool {
+    return view() == other;
+}
+
+ExecutionText::ExecutionText(ExecutionSlice bytes) noexcept
+    : storage(std::move(bytes)) {}
 
 ExecutionText::ExecutionText(std::string bytes) noexcept
     : storage(std::make_shared<const ExecutionTextStorage>(std::move(bytes))) {}
@@ -101,25 +139,71 @@ auto ExecutionText::lock() const noexcept -> std::shared_ptr<const ExecutionText
     if (const auto* owned = std::get_if<std::shared_ptr<const ExecutionTextStorage>>(&storage)) {
         return *owned;
     }
-    return std::get<std::weak_ptr<const ExecutionTextStorage>>(storage).lock();
+    const auto* borrowed = std::get_if<std::weak_ptr<const ExecutionTextStorage>>(&storage);
+    return borrowed ? borrowed->lock() : nullptr;
 }
 
 auto ExecutionText::borrow() const noexcept -> ExecutionText {
     return storage.visit([](const auto& source) static noexcept {
-        return ExecutionText(std::weak_ptr<const ExecutionTextStorage>(source));
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(source)>, ExecutionSlice>) {
+            return ExecutionText(source);
+        } else {
+            return ExecutionText(std::weak_ptr<const ExecutionTextStorage>(source));
+        }
     });
 }
 
 auto ExecutionText::is_borrowed() const noexcept -> bool {
-    return std::holds_alternative<std::weak_ptr<const ExecutionTextStorage>>(storage);
+    return !std::holds_alternative<std::shared_ptr<const ExecutionTextStorage>>(storage);
 }
 
-auto ExecutionText::bytes() const noexcept -> std::optional<std::string_view> {
-    const auto selected = lock();
-    if (!selected) {
-        return std::nullopt;
+auto ExecutionText::size(const ExecutionMemory* memory) const noexcept
+    -> std::optional<std::size_t> {
+    if (const auto* borrowed = slice()) {
+        return alive(memory) ? std::optional(borrowed->extent) : std::nullopt;
     }
-    return selected->view();
+    const auto selected = lock();
+    return selected ? std::optional(selected->view().size()) : std::nullopt;
+}
+
+auto ExecutionText::alive(const ExecutionMemory* memory) const noexcept -> bool {
+    if (const auto* borrowed = slice()) {
+        return memory && memory->view(*borrowed).has_value();
+    }
+    return bool(lock());
+}
+
+auto ExecutionText::slice() const noexcept -> const ExecutionSlice* {
+    return std::get_if<ExecutionSlice>(&storage);
+}
+
+auto ExecutionText::observe(
+    const ConstantValueReader& values,
+    const ExecutionMemory* memory
+) const noexcept -> std::optional<ExecutionTextObservation> {
+    if (const auto* borrowed = slice()) {
+        const auto elements = memory ? memory->view(*borrowed) : std::nullopt;
+        if (!elements) {
+            return std::nullopt;
+        }
+        if (const auto* text = std::get_if<ExecutionByteView>(&*elements)) {
+            return ExecutionTextObservation(text->bytes);
+        }
+        const auto slots = std::get<std::span<const ExecutionValue>>(*elements);
+        auto bytes = std::string();
+        bytes.reserve(slots.size());
+        for (const auto& slot : slots) {
+            const auto atom = execution_atom(values, slot);
+            const auto* integer = atom ? std::get_if<IntegerConstant>(&atom->value) : nullptr;
+            if (!integer || integer->negative() || integer->magnitude() > 255u) {
+                return std::nullopt;
+            }
+            bytes.push_back(static_cast<char>(integer->magnitude()));
+        }
+        return ExecutionTextObservation(std::move(bytes));
+    }
+    const auto selected = lock();
+    return selected ? std::optional(ExecutionTextObservation(selected->view())) : std::nullopt;
 }
 
 ExecutionOwnedText::ExecutionOwnedText(std::string bytes) noexcept
@@ -152,17 +236,20 @@ auto ExecutionOwnedText::transfer() noexcept -> void {
     storage = std::make_shared<ExecutionTextStorage>(std::move(replacement));
 }
 
-auto execution_text(const ConstantValueReader& values, const ExecutionValue& value) noexcept
-    -> std::optional<std::string_view> {
+auto execution_text(
+    const ConstantValueReader& values,
+    const ExecutionValue& value,
+    const ExecutionMemory* memory
+) noexcept -> std::optional<ExecutionTextObservation> {
     if (const auto* text = std::get_if<ExecutionText>(&value)) {
-        return text->bytes();
+        return text->observe(values, memory);
     }
     if (const auto* text = std::get_if<ExecutionOwnedText>(&value)) {
-        return text->bytes();
+        return ExecutionTextObservation(text->bytes());
     }
     if (const auto atom = execution_atom(values, value)) {
         if (const auto* text = std::get_if<StringConstant>(&atom->value)) {
-            return values.spelling(text->value);
+            return ExecutionTextObservation(values.spelling(text->value));
         }
     }
     return std::nullopt;
@@ -193,7 +280,8 @@ auto execution_equal(
     const ExecutionValue& left,
     const ExecutionValue& right,
     std::size_t& steps,
-    std::size_t maximum_steps
+    std::size_t maximum_steps,
+    const ExecutionMemory* memory
 ) noexcept -> std::expected<bool, ExecutionComparisonFailure> {
     if (steps >= maximum_steps) {
         return std::unexpected(ExecutionComparisonFailure::StepLimit);
@@ -210,8 +298,8 @@ auto execution_equal(
             && std::holds_alternative<NullPointerConstant>(other->value)
             && !(lhs_pointer ? lhs_pointer : rhs_pointer)->target;
     }
-    const auto lhs_text = execution_text(values, left);
-    const auto rhs_text = execution_text(values, right);
+    const auto lhs_text = execution_text(values, left, memory);
+    const auto rhs_text = execution_text(values, right, memory);
     if ((std::holds_alternative<ExecutionText>(left) && !lhs_text)
         || (std::holds_alternative<ExecutionText>(right) && !rhs_text)) {
         return std::unexpected(ExecutionComparisonFailure::ExpiredText);
@@ -220,10 +308,10 @@ auto execution_equal(
         if (!lhs_text || !rhs_text || lhs_text->size() != rhs_text->size()) {
             return false;
         }
-        return lhs_text->data() == rhs_text->data() || *lhs_text == *rhs_text;
+        return *lhs_text == *rhs_text;
     }
-    const auto lhs = execution_compound_view(values, left);
-    const auto rhs = execution_compound_view(values, right);
+    const auto lhs = execution_compound_view(values, left, memory);
+    const auto rhs = execution_compound_view(values, right, memory);
     if (lhs || rhs) {
         if (!lhs || !rhs || lhs->type != rhs->type || lhs->enum_case != rhs->enum_case) {
             return false;
@@ -240,7 +328,8 @@ auto execution_equal(
                         left_children[index],
                         right_children[index],
                         steps,
-                        maximum_steps
+                        maximum_steps,
+                        memory
                     );
                     if (!equal || !*equal) {
                         return equal;

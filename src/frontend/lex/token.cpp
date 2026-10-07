@@ -131,8 +131,11 @@ auto std::formatter<TokenKind>::display_name(TokenKind kind) noexcept -> std::st
         case CppAngleHeaderName: return "CppAngleHeaderName";
         case CppQuoteHeaderName: return "CppQuoteHeaderName";
         case CppSourceFragment:  return "CppSourceFragment";
+        case Async:              return "async";
+        case Await:              return "await";
         case As:                 return "As";
         case Break:              return "Break";
+        case Cancel:             return "cancel";
         case Catch:              return "Catch";
         case Const:              return "Const";
         case Continue:           return "Continue";

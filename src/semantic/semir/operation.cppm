@@ -30,3 +30,6 @@ enum class BinaryOperator {
     Divide,
     Remainder,
 };
+
+// Scalar floating classification preserves its operand and yields bool.
+enum class FloatIntrinsic { IsFinite };

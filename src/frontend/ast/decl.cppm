@@ -5,6 +5,7 @@ import :frontend.ast.interop;
 import :frontend.ast.literal;
 import :frontend.ast.type;
 import :source.text;
+import :support.unique_indirect;
 import std;
 
 struct ASTNamedBindingTarget final {
@@ -15,7 +16,15 @@ struct ASTDiscardBindingTarget final {
     Span underscore_span;
 };
 
-using ASTBindingTarget = std::variant<ASTNamedBindingTarget, ASTDiscardBindingTarget>;
+struct ASTTupleBindingTarget;
+
+using ASTBindingTarget = std::
+    variant<ASTNamedBindingTarget, ASTDiscardBindingTarget, UniqueIndirect<ASTTupleBindingTarget>>;
+
+struct ASTTupleBindingTarget final {
+    Span span;
+    std::vector<ASTBindingTarget> elements;
+};
 
 auto binding_target_span(const ASTBindingTarget& target) noexcept -> Span;
 
@@ -87,9 +96,20 @@ struct ASTEnumCase final {
     std::optional<ASTExprID> initializer;
 };
 
+struct ASTGenericParameter final {
+    Span name_span;
+    ASTGenericParameterKind kind;
+};
+
+struct ASTTypeParameterClause final {
+    Span span;
+    std::vector<ASTGenericParameter> parameters;
+};
+
 struct ASTEnumDecl final {
     ASTDeclarationVisibility visibility;
     Span name_span;
+    std::optional<ASTTypeParameterClause> type_parameters;
     std::optional<ASTTypeID> underlying_type;
     std::vector<ASTEnumCase> cases;
 };
@@ -106,6 +126,7 @@ struct ASTRecordDecl final {
     ASTRecordKind kind;
     ASTDeclarationVisibility visibility;
     Span name_span;
+    std::optional<ASTTypeParameterClause> type_parameters;
     std::vector<ASTRecordField> fields;
     std::vector<ASTItemID> operations;
 };
@@ -136,7 +157,9 @@ struct ASTFunctionDecl final {
     ASTDeclarationVisibility visibility;
     std::optional<ASTCppExportForm> cpp_export;
     std::optional<Span> const_span;
+    std::optional<Span> async_span;
     Span name_span;
+    std::optional<ASTTypeParameterClause> type_parameters;
     std::vector<ASTFunctionParameter> parameters;
     std::optional<ASTTypeID> result_type;
     std::optional<ASTThrowClause> throw_clause;

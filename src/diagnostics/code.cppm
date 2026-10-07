@@ -28,6 +28,9 @@ enum class DiagnosticCode {
     AccessNotAssignable,
     AccessRangeBinding,
     AccessRangeIterable,
+    AsyncAdmission,
+    AsyncOwnership,
+    AsyncChildIntent,
     Catalog,
     CompilationInput,
     CppIdentifier,
@@ -128,6 +131,10 @@ enum class DiagnosticCode {
     TypeEnumCaseArity,
     TypeEnumContext,
     TypeEqualityUnsupported,
+    TypeGenericArguments,
+    TypeGenericDefinition,
+    TypeGenericExpansion,
+    TypeGenericLimits,
     TypeRecursiveStorage,
     TypeVisibilityLeak,
     TypeIfBranch,
@@ -158,6 +165,7 @@ enum class DiagnosticCode {
     TypeTextProperty,
     TypeUnresolved,
     TypeUpdateInteger,
+    TypeSequenceElement,
     TypeValueRequired,
 };
 

@@ -95,16 +95,14 @@ task("bench")
         description = "Build the compiler and run a Carven benchmark",
         options = {
             function ()
-                return import("xmake.benchmark.options", {rootdir = os.projectdir()}).definitions()
+                return import("benchmarks.harness.options", {rootdir = os.projectdir()}).menu()
             end,
-            {nil, "name", "v", nil, "Benchmark to run", values = {"compile", "incremental"}},
-            {nil, "arguments", "vs", nil, "Benchmark options after the name"},
         },
     })
     on_run(function ()
-        local settings = import("xmake.benchmark.options", {rootdir = os.projectdir()}).configure()
+        local settings = import("benchmarks.harness.options", {rootdir = os.projectdir()}).configure()
         if not settings then return end
-        import("xmake.benchmark." .. settings.name, {rootdir = os.projectdir()}).main(settings)
+        import("benchmarks." .. settings.name .. ".run", {rootdir = os.projectdir()}).main(settings)
     end)
 task_end()
 

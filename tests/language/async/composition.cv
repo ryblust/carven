@@ -1,0 +1,176 @@
+
+struct Failure {
+    code: i32,
+}
+
+const async fn number(value: i32, turns: i32) -> i32 {
+    var remaining = turns;
+    while remaining > 0 {
+        await yield_once();
+        --remaining;
+    }
+    return value;
+}
+
+const async fn flag() -> bool => true;
+
+const async fn inferred() => 42;
+
+const async fn idle() {
+    await yield_once();
+}
+
+const async fn rejected(code: i32, turns: i32) -> i32 throw Failure {
+    let _ = await number(0, turns);
+    throw Failure { code: code };
+}
+
+const async fn accepting() -> i32 {
+    await cancellation_point();
+    return 42;
+}
+
+const async fn cancelled() -> i32 {
+    async let child = accepting();
+    cancel child;
+    return await child;
+}
+
+const async fn touch(&value: i32) {
+    ++value;
+}
+
+const async fn waiting(&stopped: i32) -> i32 {
+    while !cancellation_requested() {
+        await yield_once();
+    }
+    ++stopped;
+    await cancellation_point();
+    return 0;
+}
+
+const async fn products() -> bool {
+    let empty = await when_all();
+    let singleton = await when_all(number(7, 0));
+    let inferred_result = await when_all(inferred());
+    let mixed = await when_all(number(7, 2), flag(), idle());
+    let nested = await when_all(when_all(number(9, 1), flag()), idle());
+    let left = number(11, 2);
+    let right = number(13, 0);
+    let owned = when_all(&&left, &&right);
+    let values = await owned;
+    var backing = 0;
+    let _ = await when_all(when_all(touch(&backing)), idle());
+    let moved = &&backing;
+    return empty
+        == ()
+        && singleton == (7,)
+        && inferred_result == (42,)
+        && mixed == (7, true, ())
+        && nested == ((9, true), ())
+        && values == (11, 13)
+        && moved == 1;
+}
+
+const async fn cold_drop(consume: bool) -> bool {
+    var backing = 0;
+    if true {
+        let operation = when_all(touch(&backing));
+        if consume { await operation; }
+    }
+    let moved = &&backing;
+    return moved == 0;
+}
+
+const fn failed_argument() -> i32 throw Failure {
+    throw Failure { code: 31 };
+}
+
+const async fn construction_failure() -> bool {
+    var backing = 0;
+    let observed = try {
+        let operation = when_all(touch(&backing), number(failed_argument()?, 0));
+        await operation;
+        -1
+    } catch {
+        Failure(error) => error.code,
+    };
+    let moved = &&backing;
+    return observed == 31 && moved == 0;
+}
+
+const async fn races() -> bool {
+    let winner = await when_any(number(7, 3), number(9, 0));
+    let successful = try {
+        await first_successful(rejected(17, 0), number(42, 2))?
+    } catch {
+        Failure(_) => (0usize, -1),
+    };
+    let fallback = try {
+        let _ = await first_successful(rejected(17, 0), rejected(19, 3), cancelled())?;
+        -1
+    } catch {
+        Failure(error) => error.code,
+    };
+    async let all_cancelled = first_successful(cancelled(), cancelled());
+    let (_, cancellation) = await wait_ready(all_cancelled);
+    await close(all_cancelled);
+    let units = await when_any(idle(), idle());
+    return winner
+        == (1usize, 9)
+        && successful == (1usize, 42)
+        && fallback == 17
+        && cancellation
+        && units == (0usize, ());
+}
+
+const async fn failure_cleanup() -> bool {
+    var stopped = 0;
+    let failure = try {
+        let _ = await when_all(waiting(&stopped), rejected(17, 2))?;
+        -1
+    } catch {
+        Failure(error) => error.code,
+    };
+    let precedence = try {
+        let _ = await when_all(cancelled(), rejected(19, 3))?;
+        -1
+    } catch {
+        Failure(error) => error.code,
+    };
+    let winner_failure = try {
+        let _ = await when_any(rejected(23, 0), rejected(29, 3))?;
+        -1
+    } catch {
+        Failure(error) => error.code,
+    };
+    return failure == 17 && stopped == 1 && precedence == 19 && winner_failure == 23;
+}
+
+const async fn ambient_cancellation() -> bool {
+    async let composite = when_any(number(7, 5), number(9, 6));
+    await yield_once();
+    cancel composite;
+    let (_, cancellation) = await wait_ready(composite);
+    await close(composite);
+    return cancellation;
+}
+
+const async fn exercise() -> bool {
+    return await products()
+        && await cold_drop(false)
+        && await construction_failure()
+        && await races()
+        && await failure_cleanup()
+        && await ambient_cancellation();
+}
+
+const result = await exercise();
+
+const test "Async composition: products, selection, and owned cleanup" {
+    check(result);
+}
+
+async fn main() {
+    println(result && await exercise());
+}

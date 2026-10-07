@@ -62,17 +62,32 @@ private:
         DeclResolver& resolver;
         ProgramModuleID module_id;
         ASTView syntax;
+        const GenericTypeContext* generic_context = nullptr;
 
         auto resolve_name(std::string_view name, Span span) noexcept
             -> AnalysisTask<std::optional<ConstantID>>;
-        auto resolve_function(std::string_view name, Span span) noexcept
-            -> AnalysisTask<std::optional<FunctionID>>;
+        auto resolve_class_operation(
+            StructID owner,
+            std::string_view name,
+            bool receiver,
+            Span span
+        ) noexcept -> AnalysisResult<FunctionID>;
+        auto representation_access(StructID owner, Span span) noexcept -> AnalysisResult<void>;
+        auto resolve_static_callable(std::string_view name, Span span) noexcept
+            -> AnalysisTask<std::optional<ResolvedStaticCallable>>;
         auto construction_requests() noexcept -> ConstructionRequests&;
+        auto resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID>;
         auto resolve_type_qualifier(ASTExprID expression) noexcept
             -> AnalysisTask<std::optional<TypeID>>;
         auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
             -> AnalysisTask<ResolvedEnumCase>;
         auto resolve_type(ASTTypeID type) noexcept -> AnalysisTask<ConstructionTypeRef>;
+        auto resolve_failure_clause(const ASTThrowClause& clause) noexcept
+            -> AnalysisTask<ConstructionFailureRef>;
+        auto resolve_generic_arguments(
+            std::span<const ASTGenericArgument> arguments,
+            std::span<const GenericParameterKind> policies
+        ) noexcept -> AnalysisTask<GenericEnvironment>;
         auto resolve_construction_type(const ASTConstructionType& type) noexcept
             -> AnalysisTask<ConstructionTypeRef>;
         auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
@@ -90,14 +105,19 @@ private:
     auto resolve_failures(
         ProgramModuleID module_id,
         ASTView syntax,
-        const ASTThrowClause& clause
-    ) noexcept -> AnalysisTask<std::vector<TypeID>>;
+        const ASTThrowClause& clause,
+        const GenericTypeContext* generic_context = nullptr
+    ) noexcept -> AnalysisTask<ConstructionFailureRef>;
     auto resolve_function(
         const CatalogSymbol& symbol,
         const CatalogFunctionForm& form,
         ASTView syntax,
         const ASTFunctionDecl& function,
         Span item_span
+    ) noexcept -> AnalysisTask<void>;
+    auto resolve_generic_declaration(
+        const CatalogSymbol& symbol,
+        const CatalogGenericForm& form
     ) noexcept -> AnalysisTask<void>;
     auto resolve_struct(
         const CatalogSymbol& symbol,
@@ -130,7 +150,8 @@ private:
     auto resolve_type_qualifier(
         ProgramModuleID module_id,
         ASTView syntax,
-        ASTExprID expression
+        ASTExprID expression,
+        const GenericTypeContext* generic_context = nullptr
     ) noexcept -> AnalysisTask<std::optional<TypeID>>;
     auto resolve_constant_enum_case(
         ProgramModuleID module_id,
@@ -138,11 +159,8 @@ private:
         std::string_view name,
         Span origin
     ) noexcept -> AnalysisTask<ResolvedEnumCase>;
-    auto resolve_equality_support(std::span<const ConstructionTypeRef> roots) noexcept
-        -> std::vector<bool>;
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
     auto validate_enum_codes(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
-    auto finish_enum_equality() noexcept -> void;
     auto publish_modules() noexcept -> void;
     auto finish_declarations() noexcept -> void;
     auto publish_declaration(const CatalogSymbol& symbol) noexcept -> AnalysisResult<void>;
@@ -150,7 +168,7 @@ private:
         ConstructionTypeRef type,
         ProgramModuleID requester,
         Span span,
-        std::flat_set<TypeID>& visiting,
+        std::flat_set<ConstructionTypeRef>& visiting,
         std::vector<CatalogSymbolID>& prepared
     ) noexcept -> AnalysisTask<void>;
 

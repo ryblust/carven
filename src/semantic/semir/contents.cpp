@@ -9,19 +9,6 @@ import std;
 
 namespace {
 
-constexpr auto closure_content = 1u;
-constexpr auto callable_content = 2u;
-constexpr auto storage_content = 4u;
-constexpr auto native_content = 8u;
-constexpr auto string_storage_content = 16u;
-constexpr auto all_contents =
-    closure_content | callable_content | storage_content | native_content | string_storage_content;
-
-struct ContentDependent final {
-    std::size_t index;
-    unsigned mask;
-};
-
 template<typename Types, typename Declarations>
 auto solve_type_contents(
     const Types& types,
@@ -33,7 +20,7 @@ auto solve_type_contents(
     }
     auto indices = std::map<TypeID, std::size_t>();
     auto reachable = std::vector<TypeID>();
-    auto dependents = std::vector<std::vector<ContentDependent>>();
+    auto dependents = std::vector<std::vector<TypeContentDependent>>();
     auto contents = std::vector<unsigned>();
     const auto intern = [&](TypeID type) noexcept {
         const auto [entry, inserted] = indices.try_emplace(type, reachable.size());
@@ -66,19 +53,35 @@ auto solve_type_contents(
         }();
         canonical.value.visit(
             Overloaded {
-                [&](const ClosureTypeValue&) noexcept { contents[index] = closure_content; },
-                [&](const CallableViewTypeValue&) noexcept { contents[index] = callable_content; },
+                [&](const OperationTypeValue&) noexcept {
+                    contents[index] = operation_owner_content;
+                },
+                [&](const ClosureTypeValue&) noexcept { contents[index] = closure_owner_content; },
+                [&](const CallableViewTypeValue&) noexcept {
+                    contents[index] = callable_view_content;
+                },
+                [&](const OwnedSequenceTypeValue& value) noexcept {
+                    contents[index] = storage_owner_content;
+                    depend(value.element, all_type_contents);
+                },
                 [&](const ArrayTypeValue& value) noexcept {
-                    contents[index] = storage_content;
+                    contents[index] = storage_owner_content;
                     depend(
                         value.element,
-                        value.extent == 0u ? all_contents & ~string_storage_content : all_contents
+                        value.extent == 0u
+                            ? all_type_contents & ~(string_storage_content | storage_view_content)
+                            : all_type_contents
                     );
                 },
                 [&](const StructTypeValue& value) noexcept {
                     const auto& declaration = declarations.structure(value.structure);
                     for (const auto& field : declaration.fields) {
-                        depend(field.type, all_contents);
+                        depend(field.type, all_type_contents);
+                    }
+                },
+                [&](const TupleTypeValue& value) noexcept {
+                    for (const auto element : value.elements) {
+                        depend(element, all_type_contents);
                     }
                 },
                 [&](const EnumTypeValue& value) noexcept {
@@ -86,23 +89,27 @@ auto solve_type_contents(
                     for (const auto case_id : declaration.cases) {
                         const auto& member = declarations.enum_case(case_id);
                         for (const auto element : member.payload_types) {
-                            depend(element, all_contents);
+                            depend(element, all_type_contents);
                         }
                     }
                 },
                 [&](const SliceTypeValue& value) noexcept {
-                    depend(value.element, callable_content);
+                    contents[index] = storage_view_content;
+                    depend(value.element, callable_view_content);
                 },
                 [&](const BuiltinTypeValue& value) noexcept {
                     if (value.kind == BuiltinType::String) {
-                        contents[index] = storage_content | string_storage_content;
+                        contents[index] = storage_owner_content | string_storage_content;
+                    } else if (value.kind == BuiltinType::Str
+                               || value.kind == BuiltinType::StrCharsView) {
+                        contents[index] = storage_view_content;
                     }
                 },
                 [&](const CppTypeValue& value) noexcept {
-                    contents[index] = native_content;
+                    contents[index] = native_value_content;
                     if (const auto* named = std::get_if<CppNamedType>(&value.form)) {
                         for (const auto argument : named->arguments) {
-                            depend(argument, callable_content);
+                            depend(argument, callable_view_content);
                         }
                     }
                 },
@@ -116,6 +123,54 @@ auto solve_type_contents(
             }
         );
     }
+    const auto solved = solve_type_content_graph(std::move(contents), dependents);
+    auto result = std::vector<TypeContents>();
+    result.reserve(roots.size());
+    for (const auto index : root_indices) {
+        result.push_back(solved[index]);
+    }
+    return result;
+}
+
+} // namespace
+
+auto compute_type_contents(
+    const CanonicalTypeStore& types,
+    const DeclarationStore& declarations
+) noexcept -> std::vector<TypeContents> {
+    auto roots = std::vector<TypeID>();
+    roots.reserve(types.size());
+    for (const auto [id, type] : types.entries()) {
+        static_cast<void>(type);
+        roots.push_back(id);
+    }
+    return solve_type_contents(types, declarations, roots);
+}
+
+auto TypeContents::read_borrows_storage() const noexcept -> bool {
+    return contains_parametric_value
+        || contains_operation_owner
+        || contains_storage_owner
+        || contains_closure_owner
+        || contains_native_value;
+}
+
+auto TypeContents::read_is_value_snapshot() const noexcept -> bool {
+    return !read_borrows_storage();
+}
+
+auto query_type_contents(
+    const CanonicalTypeStoreBuilder& types,
+    DeclarationConstructionView declarations,
+    TypeID type
+) noexcept -> TypeContents {
+    return solve_type_contents(types, declarations, std::array {type}).front();
+}
+
+auto solve_type_content_graph(
+    std::vector<unsigned> contents,
+    std::span<const std::vector<TypeContentDependent>> dependents
+) noexcept -> std::vector<TypeContents> {
     auto pending = std::deque<std::size_t>();
     auto queued = std::vector<bool>(contents.size());
     for (auto index = 0uz; index < contents.size(); ++index) {
@@ -140,46 +195,29 @@ auto solve_type_contents(
         }
     }
     auto result = std::vector<TypeContents>();
-    result.reserve(roots.size());
-    for (const auto index : root_indices) {
+    result.reserve(contents.size());
+    for (auto index = 0uz; index < contents.size(); ++index) {
         result.push_back({
-            .contains_closure_owner = (contents[index] & closure_content) != 0u,
-            .contains_callable_view = (contents[index] & callable_content) != 0u,
-            .contains_storage_owner = (contents[index] & storage_content) != 0u,
-            .contains_native_value = (contents[index] & native_content) != 0u,
+            .contains_operation_owner = (contents[index] & operation_owner_content) != 0u,
+            .contains_closure_owner = (contents[index] & closure_owner_content) != 0u,
+            .contains_callable_view = (contents[index] & callable_view_content) != 0u,
+            .contains_storage_owner = (contents[index] & storage_owner_content) != 0u,
+            .contains_storage_view = (contents[index] & storage_view_content) != 0u,
+            .contains_native_value = (contents[index] & native_value_content) != 0u,
             .contains_string_storage = (contents[index] & string_storage_content) != 0u,
+            .contains_parametric_value = (contents[index] & parametric_value_content) != 0u,
         });
     }
     return result;
 }
 
-} // namespace
-
-auto compute_type_contents(
-    const CanonicalTypeStore& types,
-    const DeclarationStore& declarations
-) noexcept -> std::vector<TypeContents> {
-    auto roots = std::vector<TypeID>();
-    roots.reserve(types.size());
-    for (const auto [id, type] : types.entries()) {
-        static_cast<void>(type);
-        roots.push_back(id);
-    }
-    return solve_type_contents(types, declarations, roots);
-}
-
-auto TypeContents::read_borrows_storage() const noexcept -> bool {
-    return contains_storage_owner || contains_closure_owner;
-}
-
-auto TypeContents::read_is_value_snapshot() const noexcept -> bool {
-    return !read_borrows_storage() && !contains_native_value;
-}
-
-auto query_type_contents(
-    const CanonicalTypeStoreBuilder& types,
-    DeclarationConstructionView declarations,
-    TypeID type
-) noexcept -> TypeContents {
-    return solve_type_contents(types, declarations, std::array {type}).front();
+auto TypeContents::mask() const noexcept -> unsigned {
+    return (contains_operation_owner ? operation_owner_content : 0u)
+        | (contains_closure_owner ? closure_owner_content : 0u)
+        | (contains_callable_view ? callable_view_content : 0u)
+        | (contains_storage_owner ? storage_owner_content : 0u)
+        | (contains_storage_view ? storage_view_content : 0u)
+        | (contains_native_value ? native_value_content : 0u)
+        | (contains_string_storage ? string_storage_content : 0u)
+        | (contains_parametric_value ? parametric_value_content : 0u);
 }

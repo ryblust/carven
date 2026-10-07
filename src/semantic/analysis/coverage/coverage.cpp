@@ -1,6 +1,7 @@
 module carven:semantic.analysis.coverage.impl;
 
 import :semantic.analysis.coverage;
+import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -37,13 +38,25 @@ struct CoverageCase final {
     std::vector<CoveragePattern> payload;
 };
 
+struct CoverageProduct final {
+    ConstructionTypeRef type;
+    std::vector<CoveragePattern> elements;
+};
+
 struct CoverageOr final {
     ConstructionTypeRef type;
     std::vector<CoveragePattern> alternatives;
 };
 
 struct CoveragePattern final {
-    std::variant<CoverageAny, CoverageAtom, CoverageInterval, CoverageCase, CoverageOr> value;
+    std::variant<
+        CoverageAny,
+        CoverageAtom,
+        CoverageInterval,
+        CoverageCase,
+        CoverageProduct,
+        CoverageOr>
+        value;
 };
 
 // Rows borrow lowered patterns and constructor shapes for the active query.
@@ -66,6 +79,7 @@ auto pattern_type(const CoveragePattern& pattern) noexcept -> ConstructionTypeRe
                 std::same_as<Value, CoverageAny>
                     || std::same_as<Value, CoverageAtom>
                     || std::same_as<Value, CoverageCase>
+                    || std::same_as<Value, CoverageProduct>
                     || std::same_as<Value, CoverageOr>
                     || std::same_as<Value, CoverageInterval>,
                 "unhandled coverage pattern"
@@ -80,6 +94,9 @@ auto children(const CoveragePattern& pattern) noexcept -> std::span<const Covera
         Overloaded {
             [](const CoverageCase& value) static noexcept -> std::span<const CoveragePattern> {
                 return value.payload;
+            },
+            [](const CoverageProduct& value) static noexcept -> std::span<const CoveragePattern> {
+                return value.elements;
             },
             [](const CoverageOr& value) static noexcept -> std::span<const CoveragePattern> {
                 return value.alternatives;
@@ -98,6 +115,10 @@ auto children(const CoveragePattern& pattern) noexcept -> std::span<const Covera
 }
 
 auto same_constructor(const CoveragePattern& left, const CoveragePattern& right) noexcept -> bool {
+    if (const auto* left_product = std::get_if<CoverageProduct>(&left.value)) {
+        const auto* right_product = std::get_if<CoverageProduct>(&right.value);
+        return right_product != nullptr && left_product->type == right_product->type;
+    }
     if (const auto* left_case = std::get_if<CoverageCase>(&left.value)) {
         const auto* right_case = std::get_if<CoverageCase>(&right.value);
         return right_case != nullptr && left_case->enum_case == right_case->enum_case;
@@ -436,7 +457,11 @@ private:
 
     auto owned(ConstructionTypeRef type) const noexcept -> bool {
         return type.visit([&]<typename ID>(ID id) noexcept {
-            static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
+            static_assert(
+                std::same_as<ID, TypeID>
+                || std::same_as<ID, TypeTermID>
+                || std::same_as<ID, GenericTypeID>
+            );
             return id.owner() == program.identity();
         });
     }
@@ -537,6 +562,25 @@ private:
                             .dynamic = dynamic,
                             .empty = empty || begin > end
                         }
+                    };
+                },
+                [&](const TuplePattern& value) -> std::expected<CoveragePattern, std::string> {
+                    const auto types = product_types(expected_type);
+                    if (!types || types->size() != value.elements.size()) {
+                        return std::unexpected("tuple coverage elements do not match its subject");
+                    }
+                    auto elements = std::vector<CoveragePattern>();
+                    for (const auto [child, element_type] :
+                         std::views::zip(value.elements, *types)) {
+                        auto lowered = lower(child, element_type);
+                        if (!lowered) {
+                            return std::unexpected(std::move(lowered.error()));
+                        }
+                        elements.push_back(std::move(*lowered));
+                    }
+                    return CoveragePattern {
+                        .value =
+                            CoverageProduct {.type = expected_type, .elements = std::move(elements)}
                     };
                 },
                 [&](const EnumCasePattern& value) -> std::expected<CoveragePattern, std::string> {
@@ -656,7 +700,16 @@ private:
                     );
                 }
             } else if (const auto* any = std::get_if<CoverageAny>(&pattern->value)) {
-                if (const auto enumeration = enum_type(any->type)) {
+                if (product_types(any->type)) {
+                    const auto constructor = product_constructor(any->type);
+                    auto found = inhabitant(Row {std::addressof(constructor)});
+                    if (!found) {
+                        return std::unexpected(std::move(found.error()));
+                    }
+                    if (found->has_value()) {
+                        value = std::move((*found)->front());
+                    }
+                } else if (const auto enumeration = enum_type(any->type)) {
                     for (const auto id : enum_cases(*enumeration)) {
                         auto constructor = case_constructor(any->type, id);
                         if (!constructor) {
@@ -794,6 +847,10 @@ private:
             }
             return found;
         }
+        if (product_types(pattern_type(head))) {
+            const auto constructor = product_constructor(pattern_type(head));
+            return residual_constructor(expanded, constructor, tail);
+        }
         if (const auto enumeration = enum_type(pattern_type(head))) {
             for (const auto id : enum_cases(*enumeration)) {
                 auto constructor = case_constructor(pattern_type(head), id);
@@ -840,6 +897,8 @@ private:
                 return std::unexpected(std::move(canonical.error()));
             }
             shape = std::move(*canonical);
+        } else if (std::holds_alternative<CoverageProduct>(constructor.value)) {
+            shape = product_constructor(pattern_type(constructor));
         }
         auto found = residual_witness(specialize(matrix, shape ? *shape : constructor), query);
         if (!found || !found->has_value()) {
@@ -867,6 +926,23 @@ private:
             }
             return boolean != nullptr ? (*boolean ? "true" : "false") : "_";
         }
+        if (const auto* product = std::get_if<CoverageProduct>(&constructor.value)) {
+            if (product->elements.size() != payload.size()) {
+                return std::unexpected("tuple coverage constructor has the wrong witness arity");
+            }
+            auto witness = std::string("(");
+            for (auto index = 0uz; index < payload.size(); ++index) {
+                if (index != 0uz) {
+                    witness += ", ";
+                }
+                witness += payload[index];
+            }
+            if (payload.size() == 1uz) {
+                witness += ',';
+            }
+            witness += ')';
+            return witness;
+        }
         const auto* value = std::get_if<CoverageCase>(&constructor.value);
         if (value == nullptr || value->payload.size() != payload.size()) {
             return std::unexpected("enum coverage constructor has the wrong witness arity");
@@ -891,6 +967,39 @@ private:
             witness += ')';
         }
         return witness;
+    }
+
+    auto product_types(ConstructionTypeRef reference) const noexcept
+        -> std::optional<std::vector<ConstructionTypeRef>> {
+        if constexpr (std::same_as<Program, ProgramDraft>) {
+            return tuple_elements(program, reference);
+        } else {
+            const auto* concrete = std::get_if<TypeID>(&reference);
+            if (!concrete) {
+                return std::nullopt;
+            }
+            const auto& canonical = program.types().type(*concrete);
+            if (const auto* tuple = std::get_if<TupleTypeValue>(&canonical.value)) {
+                return tuple->elements | std::views::transform([](TypeID element) static noexcept {
+                           return ConstructionTypeRef {element};
+                       })
+                    | std::ranges::to<std::vector>();
+            }
+            const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+            return builtin && builtin->kind == BuiltinType::Void
+                ? std::optional(std::vector<ConstructionTypeRef>())
+                : std::nullopt;
+        }
+    }
+
+    auto product_constructor(ConstructionTypeRef type) const noexcept -> CoveragePattern {
+        auto elements = std::vector<CoveragePattern>();
+        for (const auto element : *product_types(type)) {
+            elements.push_back({.value = CoverageAny {.type = element}});
+        }
+        return CoveragePattern {
+            .value = CoverageProduct {.type = type, .elements = std::move(elements)}
+        };
     }
 
     auto enum_type(ConstructionTypeRef reference) const noexcept -> std::optional<EnumID> {
@@ -988,4 +1097,13 @@ auto compute_pattern_coverage(
     std::span<const PatternCoverageArm> arms
 ) noexcept -> std::expected<PatternCoverage, std::string> {
     return CoverageAnalyzer(semantic, patterns).run(subject_type, arms);
+}
+
+auto patterns_exhaustive(
+    const SemIRProgram& semantic,
+    const ImmutableBodyTable<ElaboratedPattern, PatternID>& patterns,
+    TypeID subject_type,
+    std::span<const PatternCoverageArm> arms
+) noexcept -> std::expected<bool, std::string> {
+    return CoverageAnalyzer(semantic, patterns).exhaustive(subject_type, arms);
 }

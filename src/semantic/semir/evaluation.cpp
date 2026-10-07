@@ -8,6 +8,7 @@ import :semantic.semir.evaluation;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
+import :semantic.semir.sequence;
 import :semantic.semir.simd;
 import :semantic.semir.slice;
 import :semantic.semir.structured;
@@ -257,6 +258,10 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                             }
                             return rule;
                         },
+                        [&](const FloatIntrinsic&) noexcept {
+                            return operands(value.operands.front().expression);
+                        },
+                        [&](const SequenceIntrinsicOperation&) noexcept { return required; },
                         [&](const TextIntrinsic& family) noexcept {
                             return text_intrinsic_writes(family) || family == TextIntrinsic::FromStr
                                 ? required
@@ -268,6 +273,7 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
             [&](const SemDereference&) noexcept { return required; },
             [&](const SemAddressOf&) noexcept { return required; },
             [&](const SemField& value) noexcept { return operands(*value.source); },
+            [&](const SemTupleElement& value) noexcept { return operands(*value.source); },
             [&](const SemIndex& value) noexcept {
                 return std::holds_alternative<RuntimeCheckedBounds>(value.bounds)
                     ? required
@@ -277,12 +283,21 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                 return operands(*value.begin, std::addressof(*value.end));
             },
             [&](const SemArray&) noexcept { return required; },
+            [&](const SemTuple&) noexcept { return required; },
             [&](const SemArrayAdopt&) noexcept { return required; },
             [&](const SemStruct&) noexcept { return required; },
             [&](const SemEnumCase&) noexcept { return required; },
             [&](const SemCpp&) noexcept { return required; },
             [&](const SemCppCall&) noexcept { return required; },
             [&](const SemCall&) noexcept { return required; },
+            [&](const SemGenericCall&) noexcept { return required; },
+            [&](const SemColdCall&) noexcept { return required; },
+            [&](const SemColdCompose&) noexcept { return required; },
+            [&](const SemColdTimeout&) noexcept { return required; },
+            [&](const SemAwait&) noexcept { return required; },
+            [&](const SemWaitReady&) noexcept { return required; },
+            [&](const SemCloseChild&) noexcept { return required; },
+            [&](const SemAsyncIntrinsic&) noexcept { return required; },
             [&](const SemClosure&) noexcept { return required; },
             [&](const SemBorrowCallable& value) noexcept { return operands(*value.source); },
             [&](const SemTake&) noexcept { return required; },

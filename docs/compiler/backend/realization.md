@@ -34,7 +34,7 @@ execution obligation. After required execution is selected,
 runtime callable and result contracts use ordinary expression statements.
 Non-void native calls, opaque result types, and other retained value expressions
 use explicit void conversion. `TargetSymbolInfo` owns each intrinsic's spelling,
-defining header, and call-result discard policy. Emission, dependency
+optional header provider, and call-result discard policy. Emission, dependency
 collection, and realization consume that record. Discard policy does not grant
 permission to omit execution.
 
@@ -67,10 +67,12 @@ transfers. Function-body completion uses these retained demands to select const 
 mutable storage for directly initialized local owners. Deferred initialization
 uses mutable result storage.
 
-Automatic value temporaries use const storage for observation and mutable
-storage for `WritePlace`, `Consume`, and `NativeTake`. Reference, Read-parameter,
-and exact native-query storage retain the access qualification selected by their
-types; consumer access remains independent of the local declaration.
+Hidden owners of newly produced values retain mutable backing so later delivery
+can preserve the original conversion capabilities. Read consumption applies const
+access; value snapshots of named storage retain their selected parameter policy.
+Reference, Read-parameter, and exact native-query storage retain the qualification
+selected by their types. Consumer access remains independent of the local
+declaration.
 
 `ProjectionPlace` forwards the consumer's access through fields and array elements;
 `WritePlace` requires mutable access. Realization resolves projection access before
@@ -88,6 +90,27 @@ Read operands whose types are value snapshots need no separate temporary backing
 The published type-contents query excludes storage owners, closures, and native
 values from this case. Sequencing still saves earlier values before later effects;
 place projections and borrowed owners retain their storage requirements.
+`ReadArgument` applies the source parameter policy at an argument evaluation
+barrier; `ReadBorrow` preserves delegated native observation. Required stable
+storage uses `ConstPlace`. For native query results, `ReadArgumentStorage<Query>`
+applies ReadArg to reference results and owns value results, keeping fresh backing
+alive without delaying a trivial snapshot until the final call. Implicit native
+conversions in Read position retain complete source backing and use
+`ReadConversionStorage<Parameter, Source>`: standard storage-compatible reference
+conversions preserve identity, while value parameters and conversions requiring a
+new object own their converted value. Explicit casts and owning consumers use
+ordinary value construction. The original native query supplies delivery category
+for a fresh source; named storage always supplies a const lvalue. Compatible
+storage uses const access even for a fresh source, while a genuinely new target
+retains an original rvalue conversion capability. Hidden native backing preserves
+its query qualification; Read qualification applies at consumption.
+Only a native producer's own query determines its result category. A conversion
+target may reuse another expression's query type; constructing that target still
+produces an owned normalized value. Materialization, anchoring, and Read conversion
+share this distinction.
+Native construction always produces a fresh object. It uses normalized type
+lowering, which reuses an explicit target and retains a deduction query only when
+the object type requires deduction.
 
 Bindings initialize in their natural scopes. Assignment uses C++ assignment
 and requires an assignable destination. When the realized initializer prefix has
@@ -148,8 +171,8 @@ failure transport retain explicit transfer realization.
 Read range bindings use the Read parameter policy;
 Write range bindings are mutable references. A range binding is never a Take
 source. Arrays, slices, and text use explicit Read or Write borrowing during
-realization. C++ range-for iteration consumes the range expression after operand
-construction has retained required backing.
+realization. Their C++ range-for iteration consumes the range expression after
+operand construction has retained required backing.
 Write element types can be deduced from the range. Text decodes UTF-8 in one
 sequential pass. Array initialization uses an accurate type context without
 repeating it on both the local declaration and the initializer.
@@ -169,9 +192,11 @@ when later evaluation requires them. Scalar value consumers can use direct local
 storage within an expression frame.
 
 Integer range values use `runtime::Range<T>`, which stores both bounds and an
-upper-bound inclusion flag. Its iteration operations are `constexpr`. Range loops
-use C++ range-for; integer ranges are copied before traversal. Closed iteration
-tests its final element before incrementing, so it can include the type maximum.
+upper-bound inclusion flag. Integer loops evaluate their source once and snapshot
+its bounds. Ranges known to exclude their upper bound use a direct C++ `for` with
+an independent cursor.
+Other integer ranges use C++ range-for; the runtime iterator checks its terminal
+element before incrementing, so a closed interval can include the type maximum.
 
 Carven evaluation is left to right and exactly once. Temporaries preserve that
 order when a direct C++ expression would not. Short-circuit evaluation remains
@@ -373,7 +398,8 @@ adaptation uses the same construction. A factory may return an immovable prvalue
 Owner transfer, payload extraction, and Outcome widening require the constructors
 used by those operations. Void and discarded regions need no result storage.
 Loops and handlers receive only exits belonging to their own construct. Loops
-without steps and range loops use native `continue`.
+without steps and range traversal use native `continue`. C++ completes iteration
+cleanup before the direct cursor step or range iterator increment.
 
 Expanded loops realize their ordered iteration regions. Semantic specialization
 publishes distinct binding, pattern, and lifetime identities for each iteration;
@@ -405,9 +431,10 @@ same arm; differing sources and sources local to an alternative join through
 address slots. A common source already visible outside the alternatives needs
 no slot. Match and catch use the same selection operations.
 
-Owning pattern bindings retain an independent snapshot and its cleanup. Target
-declarations record this obligation as `ConstSnapshot`; emission annotates the
-binding name for clang-tidy's copy-initialization check.
+Pattern bindings reuse Read or Write access. Pure Read values form const
+snapshots; storage-containing Read values and Write bindings project the retained
+subject. Pattern binding itself does not construct an independent owner. An
+explicit local declaration or value result establishes an owning copy normally.
 
 Enum payload projections are pure borrowed pointers. Realization records them as
 removable locals; body completion retains only projections referenced by tag
@@ -427,10 +454,11 @@ reject. Pure alternatives with a common source need no selection tests. Dynamic
 bounds retain their execution, and differing binding sources join through the
 same selection machinery.
 
-A guard-free arm whose test needs no statements selects between its body and the
-remaining arms, so consecutive such arms form one `if`/`else if` chain. An arm
-with a guard or a test prefix falls through to its successor when it does not
-apply and leaves through the match exit label when selected.
+A guard-free arm with one test and no outstanding cleanup selects between its
+body and the remaining arms with an ordinary C++ `if/else`. Its prefix can include
+enum payload pointers, which require no cleanup. Guards, multiple tests, and
+prefixes with live owners retain the scoped selection path and leave through
+the match exit label when selected.
 
 ### Failure dispatch and transport
 
@@ -514,3 +542,81 @@ Labels carry a control purpose and must respect initialization barriers. The
 label remains local to the source control construct it implements. Region exits
 record use when emitting a jump. Only their owning construct can restore an
 entry.
+
+## Async realization
+
+Async calls construct cold operations. Async function bodies use C++20 coroutines;
+ordinary wrappers and native imports forward the operation without an adapter
+activation. Direct await transfers to its dependency without an implicit scheduling
+turn. The shared execution runtime owns scheduling, clocks, timed waiting, task
+cancellation, and completion storage. Generated dependencies use its single entry,
+`carven/runtime/execution/execution.hpp`.
+Generated code owns source evaluation order, lexical child scopes, and result
+delivery.
+
+Await separates success, nominal failure, and cancelled completion. Published
+callable and await facts determine whether to emit cancellation propagation.
+Failure and cancellation transfer precede success projection. Character success
+is validated at consumption, including discarded results. Direct returns and
+whole-await initializers can adopt the completion carrier; a success binding uses
+an available value transfer or retains backing for an immovable value. Carrier
+cleanup remains at the full-expression boundary and binding cleanup at its lexical
+boundary.
+
+Suspending operands execute in their owning coroutine. Preparation records
+coroutine-context requirements so expression factories cannot capture an await or
+coroutine exit. Target verification checks this boundary and distinguishes ordinary
+returns from coroutine returns. Direct awaits of `yield_once` and
+`cancellation_point` use runtime awaitables; stored operations keep their ordinary
+cold representation.
+
+`wait_ready` and `close` have distinct semantic nodes. The former lowers to a fixed
+candidate awaiter returning `(usize, bool)` metadata; the latter consumes and
+destroys a child completion after cancellation and drain. Their metadata and void
+results need no completion carrier or nominal-failure dispatch.
+
+The three cold composition policies select runtime `when_all`, `when_any`, or
+`first_successful` with concrete success and failure types. Ordered operands
+preserve input construction effects. Character inputs carry their validation sites.
+The runtime starts and drains children under the same child-scope protocol used
+by source async bodies.
+
+`SemColdTimeout` carries the owned operation, signed duration ticks, and nominal
+failure identities. Realization calls the shared execution timeout operation with
+those concrete types. Deadline arithmetic and timer registration begin when the
+cold wrapper executes. Selected success backing can be adopted without moving an
+immovable payload, and cancellation is checked after observing the candidate and
+before committing its completion.
+
+An exit evaluates its operand before cleanup. Pending storage retains the selected
+completion across lexical exits. Each C++ block closes its children before leaving;
+C++ destroys that block's local storage before an enclosing block's child closure
+can suspend. Exit relays connect only blocks that own asynchronous closure work.
+This ordering applies to completion, failure delivery, break, and continue.
+Continue retains loop-initializer storage; break exits the body before closing the
+initializer's child scope. C++ RAII performs ordinary object destruction.
+
+A fresh direct await may realize its producer inside the caller's coroutine.
+Preparation selects bodies with scalar Read inputs, scalar or void success, and
+no outward failure, cancellation, children, or test stop. Realization checks module
+ownership, active recursive edges, and a shared expansion budget. It borrows the
+published callee body and gives its realizer independent binding, loop, handler,
+and lifetime contexts while sharing target names and the expansion budget.
+
+Arguments execute left to right and scalar inputs are snapshotted once. Callee
+returns assign an ordinary scalar result or use the discard destination, then exit
+the callee's native scope. Explicit yields remain suspension points. Character
+results retain the value needed for validation. A callee without normal completion
+has no successor or result read. A transparent synchronous factory maps its input
+snapshots and frozen constants to the same producer path, including unused and
+repeated arguments.
+
+Prepared scalar self tail awaits use a native loop. Mutable iteration slots sit
+outside it; each iteration creates fresh const parameter values. Tail arguments
+finish left to right before any slot changes. The transfer leaves the iteration's
+scope and reaches the outer loop, bypassing enclosing source-loop steps. Ordinary
+returns and yields retain their result and scheduling behavior. Other recursive
+edges use cold operations.
+
+The private root wrapper drives a zero-argument async main and reports its outcome.
+It emits a cancellation branch only when the published main completion permits it.

@@ -55,6 +55,98 @@ auto array_type(ProgramDraft& draft, TypeID element, std::uint64_t extent) noexc
 }
 
 const TestSuite suite([] static noexcept {
+    "SemIR constants: tuples preserve heterogeneous element types and nested unit values"_test =
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto diagnostics = DiagnosticSink();
+            auto draft = begin_compilation(sources, diagnostics);
+            const auto integer = draft.builtin_type(BuiltinType::I32);
+            const auto boolean = draft.builtin_type(BuiltinType::Bool);
+            const auto unit = draft.builtin_type(BuiltinType::Void);
+            const auto number =
+                draft.intern_constant({.type = integer, .value = IntegerConstant::from_signed(42)});
+            const auto truth =
+                draft.intern_constant({.type = boolean, .value = BooleanConstant {.value = true}});
+            const auto nothing = draft.intern_constant({.type = unit, .value = VoidConstant {}});
+            expect(draft.intern_constant({.type = unit, .value = VoidConstant {}}) == nothing);
+            const auto pair_type =
+                draft.intern_type({.value = TupleTypeValue {.elements = {integer, boolean}}});
+            const auto pair = ConstantFact {
+                .type = pair_type,
+                .value = TupleConstant {.elements = {number, truth}}
+            };
+            const auto pair_id = draft.intern_constant(pair);
+            expect(draft.intern_constant(pair) == pair_id);
+            const auto nested_type =
+                draft.intern_type({.value = TupleTypeValue {.elements = {pair_type, unit}}});
+            const auto nested = draft.intern_constant(
+                {.type = nested_type, .value = TupleConstant {.elements = {pair_id, nothing}}}
+            );
+            const auto program = std::move(draft).finish();
+            if (!expect(program.has_value())) {
+                return;
+            }
+            expect(program->constants().constant(pair_id) == pair);
+            const auto children = constant_children(program->constants().constant(nested).value);
+            if (!expect(children.has_value())) {
+                return;
+            }
+            expect_equal(children->size(), 2uz);
+            expect((*children)[0] == pair_id);
+            expect((*children)[1] == nothing);
+        };
+
+    "SemIR publication invariant: tuple constants retain product shape and unit identity"_test =
+        [] static noexcept {
+            enum class Malformation { Arity, ElementType, EmptyTuple, NonVoidUnit };
+            const auto scenarios = std::array {
+                Malformation::Arity,
+                Malformation::ElementType,
+                Malformation::EmptyTuple,
+                Malformation::NonVoidUnit
+            };
+            for (const auto scenario : scenarios) {
+                expect(expect_termination(
+                    std::format("tuple-constant-shape-{}", static_cast<unsigned>(scenario)),
+                    [&] noexcept {
+                        auto sources = SourceManager();
+                        auto diagnostics = DiagnosticSink();
+                        auto draft = begin_compilation(sources, diagnostics);
+                        const auto integer = draft.builtin_type(BuiltinType::I32);
+                        const auto boolean = draft.builtin_type(BuiltinType::Bool);
+                        const auto unit = draft.builtin_type(BuiltinType::Void);
+                        const auto number = draft.intern_constant(
+                            {.type = integer, .value = IntegerConstant::zero()}
+                        );
+                        const auto pair_type = draft.intern_type(
+                            {.value = TupleTypeValue {.elements = {integer, boolean}}}
+                        );
+                        const auto malformed = [&]() noexcept -> ConstantFact {
+                            switch (scenario) {
+                                case Malformation::Arity:
+                                    return {
+                                        .type = pair_type,
+                                        .value = TupleConstant {.elements = {number}}
+                                    };
+                                case Malformation::ElementType:
+                                    return {
+                                        .type = pair_type,
+                                        .value = TupleConstant {.elements = {number, number}}
+                                    };
+                                case Malformation::EmptyTuple:
+                                    return {.type = unit, .value = TupleConstant {.elements = {}}};
+                                case Malformation::NonVoidUnit:
+                                    return {.type = integer, .value = VoidConstant {}};
+                            }
+                            std::unreachable();
+                        }();
+                        static_cast<void>(draft.intern_constant(malformed));
+                        static_cast<void>(std::move(draft).finish());
+                    }
+                ));
+            }
+        };
+
     "SemIR constants: nested arrays preserve canonical type and value identity"_test =
         [] static noexcept {
             auto sources = SourceManager();

@@ -9,6 +9,7 @@ import :source.text;
 import std;
 
 enum class ASTPrefixOperator {
+    Await,
     Dereference,
     LogicalNot,
     Negate,
@@ -61,6 +62,15 @@ struct ASTGroupExpr final {
 
 struct ASTArrayExpr final {
     std::vector<ASTExprID> element_ids;
+};
+
+struct ASTTupleExpr final {
+    std::vector<ASTExprID> elements;
+};
+
+struct ASTArrayRepeatExpr final {
+    ASTExprID element;
+    ASTExprID extent;
 };
 
 struct ASTPositionalInitializerList final {
@@ -120,18 +130,26 @@ struct ASTCastExpr final {
     ASTTypeID target_type;
 };
 
-struct ASTCallArgument final {
-    ASTExprID expression;
+struct ASTTypeApplicationExpr final {
+    ASTExprID operand_id;
+    Span arguments_span;
+    std::vector<ASTGenericArgument> arguments;
 };
 
 struct ASTCallExpr final {
     ASTExprID callee;
-    std::vector<ASTCallArgument> arguments;
+    std::vector<ASTExprID> arguments;
 };
 
 struct ASTIndexExpr final {
     ASTExprID operand_id;
     ASTExprID index;
+};
+
+struct ASTTupleElementExpr final {
+    ASTExprID operand_id;
+    Span index_span;
+    std::uint32_t index;
 };
 
 struct ASTMemberExpr final {
@@ -191,14 +209,18 @@ struct ASTExpr final {
         ASTContextualCaseExpr,
         ASTGroupExpr,
         ASTArrayExpr,
+        ASTTupleExpr,
+        ASTArrayRepeatExpr,
         ASTConstructionExpr,
         ASTPrefixExpr,
         ASTAccessExpr,
         ASTBinaryExpr,
         ASTRangeExpr,
         ASTCastExpr,
+        ASTTypeApplicationExpr,
         ASTCallExpr,
         ASTIndexExpr,
+        ASTTupleElementExpr,
         ASTMemberExpr,
         ASTLambdaExpr,
         ASTPropagationExpr,

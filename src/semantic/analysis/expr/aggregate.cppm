@@ -9,6 +9,7 @@ import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.semir.initialization;
+import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :support.invariant;
 import std;
@@ -33,32 +34,63 @@ auto construct_default_expression(Site& site, ConstructionTypeRef type, Span spa
     return site.finish_constructed(type, SemDefault {}, Site::operand_state(), span);
 }
 
-template<typename Site>
+template<typename Site, typename Source>
 auto construct_array_expression(
     Site& site,
-    const ASTArrayExpr& source,
+    const Source& source,
     Span span,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> ExpressionTask<typename Site::Value> {
-    const auto context = array_literal_element(site.draft(), expected, source.element_ids.size());
+    constexpr auto repeated = std::same_as<Source, ASTArrayRepeatExpr>;
+    std::uint64_t count = 0u;
+    if constexpr (repeated) {
+        auto resolved = (co_await site.resolve_array_extent(source.extent));
+        if (!resolved) {
+            co_return std::unexpected(resolved.error());
+        }
+        count = *resolved;
+    } else {
+        count = source.element_ids.size();
+    }
+    if (count > std::numeric_limits<std::size_t>::max()) {
+        co_return std::unexpected(site.fail(
+            span,
+            DiagnosticCode::ConstLimit,
+            "array initializer exceeds its construction budget"
+        ));
+    }
+    const auto extent = static_cast<std::size_t>(count);
+    const auto context = repeated && extent == 0uz && !expected
+        ? std::expected<std::optional<ConstructionTypeRef>, OperationDiagnostic>(std::nullopt)
+        : array_literal_element(site.draft(), expected, extent);
     if (!context) {
         co_return std::unexpected(
             site.fail(span, context.error().code, std::string(context.error().message))
         );
     }
-    if (auto checked = site.aggregate_cost(source.element_ids.size(), span); !checked) {
+    if (auto checked = site.aggregate_cost(extent, span); !checked) {
         co_return std::unexpected(checked.error());
     }
     const auto expected_element = *context;
     auto element_type = expected_element;
     auto state = Site::operand_state();
     auto elements = std::vector<SemanticExpression>();
-    elements.reserve(source.element_ids.size());
-    for (const auto id : source.element_ids) {
-        const auto execution = site.enter_operand_execution(state.completes);
+    elements.reserve(extent);
+    const auto source_count = repeated && extent == 0uz ? 1uz : extent;
+    for (auto index = 0uz; index < source_count; ++index) {
+        const auto id = [&]() noexcept {
+            if constexpr (repeated) {
+                return source.element;
+            } else {
+                return source.element_ids[index];
+            }
+        }();
+        const auto executed = index < extent;
+        const auto execution = site.enter_operand_execution(executed && state.completes);
+        const auto pending = site.pending_checkpoint();
         const auto element_span = site.syntax().expression(id).span;
         auto element =
-            (co_await site.read_array_element(id, element_type, expected_element.has_value()));
+            (co_await site.read_aggregate_element(id, element_type, expected_element.has_value()));
         if (!element) {
             co_return std::unexpected(element.error());
         }
@@ -82,11 +114,15 @@ auto construct_array_expression(
                 co_return std::unexpected(checked.error());
             }
         }
-        auto operand = site.consume_read(state, std::move(*element), element_span);
+        auto operand = executed
+            ? site.consume_read(state, std::move(*element), element_span)
+            : site.consume_unexecuted_read(std::move(*element), pending, element_span);
         if (!operand) {
             co_return std::unexpected(operand.error());
         }
-        elements.push_back(std::move(*operand));
+        if (executed) {
+            elements.push_back(std::move(*operand));
+        }
     }
     if (!element_type) {
         invariant_violation("empty expected array lost its element type");
@@ -95,15 +131,7 @@ auto construct_array_expression(
         if (expected_element && !slice_element(site.draft(), *expected)) {
             return *expected;
         }
-        if (const auto* concrete = std::get_if<TypeID>(&*element_type)) {
-            return site.draft().intern_type(
-                {.value = ArrayTypeValue {.element = *concrete, .extent = elements.size()}}
-            );
-        }
-        return site.draft().append_construction_type(
-            {.value =
-                 ConstructionArrayTypeValue {.element = *element_type, .extent = elements.size()}}
-        );
+        return make_array_type(site.draft(), *element_type, elements.size());
     }();
     const auto admitted = site.aggregate_admitted(type, span);
     if (!admitted) {
@@ -118,6 +146,65 @@ auto construct_array_expression(
         std::move(state),
         span
     );
+}
+
+template<typename Site>
+auto construct_tuple_expression(
+    Site& site,
+    const ASTTupleExpr& source,
+    Span span,
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> ExpressionTask<typename Site::Value> {
+    auto expected_elements = expected ? tuple_elements(site.draft(), *expected) : std::nullopt;
+    if (expected_elements && expected_elements->size() != source.elements.size()) {
+        co_return std::unexpected(site.fail(
+            span,
+            DiagnosticCode::TypeMismatch,
+            "tuple initializer differs from its expected product shape"
+        ));
+    }
+    if (auto checked = site.aggregate_cost(source.elements.size(), span); !checked) {
+        co_return std::unexpected(checked.error());
+    }
+    auto state = Site::operand_state();
+    auto elements = std::vector<SemanticExpression>();
+    auto types = std::vector<ConstructionTypeRef>();
+    for (const auto [index, element] : std::views::enumerate(source.elements)) {
+        const auto id = element;
+        const auto execution = site.enter_operand_execution(state.completes);
+        const auto element_span = site.syntax().expression(id).span;
+        const auto context =
+            expected_elements ? std::optional((*expected_elements)[index]) : std::nullopt;
+        auto value = co_await site.read_aggregate_element(id, context, context.has_value());
+        if (!value) {
+            co_return std::unexpected(value.error());
+        }
+        auto inferred = context ? ExpressionResult<ConstructionTypeRef>(*context)
+                                : site.infer_type(*value, element_span);
+        if (!inferred) {
+            co_return std::unexpected(inferred.error());
+        }
+        if (context) {
+            if (auto checked = site.convert_argument(*value, *context, element_span); !checked) {
+                co_return std::unexpected(checked.error());
+            }
+        }
+        types.push_back(*inferred);
+        auto operand = site.consume_read(state, std::move(*value), element_span);
+        if (!operand) {
+            co_return std::unexpected(operand.error());
+        }
+        elements.push_back(std::move(*operand));
+    }
+    const auto type = make_tuple_type(site.draft(), std::move(types));
+    const auto admitted = site.aggregate_admitted(type, span);
+    if (!admitted) {
+        co_return std::unexpected(admitted.error());
+    }
+    if (!*admitted) {
+        co_return std::unexpected(ExpressionNotAdmitted {});
+    }
+    co_return site.finish_constructed(type, SemTuple {std::move(elements)}, std::move(state), span);
 }
 
 template<typename Site>
@@ -156,22 +243,19 @@ auto construct_structure_expression(
         }
         co_return (co_await site.cpp_construct(source, *resolved, span));
     }
-    const auto* concrete = std::get_if<TypeID>(&*resolved);
-    const auto canonical =
-        concrete ? std::optional(site.draft().type_copy(*concrete)) : std::nullopt;
-    const auto* structure = canonical ? std::get_if<StructTypeValue>(&canonical->value) : nullptr;
-    if (structure != nullptr) {
-        if (auto access = site.representation_access(structure->structure, span); !access) {
-            co_return std::unexpected(access.error());
+    const auto structure = record_shape(site.draft(), *resolved);
+    if (structure) {
+        if (const auto* concrete = std::get_if<StructID>(&structure->owner)) {
+            if (auto access = site.representation_access(*concrete, span); !access) {
+                co_return std::unexpected(access.error());
+            }
         }
-        const auto declaration =
-            site.draft().construction_struct_declaration_copy(structure->structure);
-        if (declaration.kind == RecordKind::Class
-            && declaration.fields.empty()
+        if (structure->kind == RecordKind::Class
+            && structure->fields.empty()
             && std::holds_alternative<std::monostate>(source.initializer.value)) {
             co_return site.finish_constructed(
-                *concrete,
-                SemStruct {.structure = structure->structure, .fields = {}},
+                *resolved,
+                SemStruct {.structure = structure->owner, .fields = {}},
                 Site::operand_state(),
                 span
             );
@@ -180,15 +264,14 @@ auto construct_structure_expression(
     if (std::holds_alternative<std::monostate>(source.initializer.value)) {
         co_return construct_default_expression(site, *resolved, span);
     }
-    if (structure == nullptr) {
+    if (!structure) {
         co_return std::unexpected(site.fail(
             source.type ? source.type->span : span,
             DiagnosticCode::TypeConstructNotStruct,
             "construction expression requires a structure type"
         ));
     }
-    const auto declaration =
-        site.draft().construction_struct_declaration_copy(structure->structure);
+    const auto& declaration = *structure;
     const auto initializers = select_structure_initializers(
         site.draft(),
         site.module_id(),
@@ -207,9 +290,13 @@ auto construct_structure_expression(
         const auto execution = site.enter_operand_execution(state.completes);
         const auto& field = declaration.fields[initializer.declaration_index];
         const auto field_span = site.syntax().expression(initializer.expression).span;
-        auto value = (co_await site.read_argument(initializer.expression, field.type));
+        auto value =
+            (co_await site.read_aggregate_element(initializer.expression, field.type, true));
         if (!value) {
             co_return std::unexpected(value.error());
+        }
+        if (auto checked = site.convert_argument(*value, field.type, field_span); !checked) {
+            co_return std::unexpected(checked.error());
         }
         auto operand = site.consume_read(state, std::move(*value), field_span);
         if (!operand) {
@@ -219,7 +306,7 @@ auto construct_structure_expression(
             {.declaration_index = initializer.declaration_index, .value = std::move(*operand)}
         );
     }
-    const auto admitted = site.aggregate_admitted(*concrete, span);
+    const auto admitted = site.aggregate_admitted(*resolved, span);
     if (!admitted) {
         co_return std::unexpected(admitted.error());
     }
@@ -227,8 +314,8 @@ auto construct_structure_expression(
         co_return std::unexpected(ExpressionNotAdmitted {});
     }
     co_return site.finish_constructed(
-        *concrete,
-        SemStruct {.structure = structure->structure, .fields = std::move(fields)},
+        *resolved,
+        SemStruct {.structure = structure->owner, .fields = std::move(fields)},
         std::move(state),
         span
     );
@@ -273,21 +360,20 @@ auto construct_slice_value(
 ) noexcept -> ExpressionResult<typename Site::Value> {
     const auto contract = slice_intrinsic_contract(intrinsic);
     const auto shape = sequence_shape(site.draft(), receiver_type);
-    if (!shape || shape->extent.has_value() != (contract.receiver == SliceIntrinsicShape::Array)) {
+    if (!shape
+        || shape->kind == SequenceShapeKind::OwnedSequence
+        || !slice_intrinsic_accepts_receiver(
+            contract.receiver,
+            shape->kind == SequenceShapeKind::Array ? SliceIntrinsicShape::Array
+                                                    : SliceIntrinsicShape::Slice
+        )) {
         invariant_violation("slice construction receiver mismatch");
     }
     auto result_type = receiver_type;
     if (const auto* builtin = std::get_if<BuiltinType>(&contract.result)) {
         result_type = site.draft().builtin_type(*builtin);
-    } else if (contract.receiver == SliceIntrinsicShape::Array) {
-        if (const auto* concrete = std::get_if<TypeID>(&shape->element)) {
-            result_type =
-                site.draft().intern_type({.value = SliceTypeValue {.element = *concrete}});
-        } else {
-            result_type = site.draft().append_construction_type(
-                {.value = ConstructionSliceTypeValue {.element = shape->element}}
-            );
-        }
+    } else if (shape->kind == SequenceShapeKind::Array) {
+        result_type = make_slice_type(site.draft(), shape->element);
     }
     auto result_extent = std::optional<std::uint64_t>();
     auto known = std::optional<ConstantID>();
@@ -309,7 +395,7 @@ auto construct_slice_value(
             if (start && end && *start <= *end) {
                 result_extent = *end - *start;
             }
-        } else if (extent && operands.front().expression.constant) {
+        } else if (extent) {
             switch (intrinsic) {
                 case SliceIntrinsic::Len:
                     known = site.draft().intern_constant(
@@ -346,7 +432,7 @@ auto construct_slice_call(
     Site& site,
     SliceIntrinsic intrinsic,
     typename Site::Value receiver,
-    std::span<const ASTCallArgument> arguments,
+    std::span<const ASTExprID> arguments,
     Span span
 ) noexcept -> ExpressionTask<typename Site::Value> {
     const auto receiver_type = site.type(receiver);
@@ -356,7 +442,7 @@ auto construct_slice_call(
         invariant_violation("slice construction argument count mismatch");
     }
     auto state = Site::operand_state();
-    auto value = site.consume_read(state, std::move(receiver), span);
+    auto value = site.consume_read_argument(state, std::move(receiver), span);
     if (!value) {
         co_return std::unexpected(value.error());
     }
@@ -366,17 +452,14 @@ auto construct_slice_call(
         const auto& argument = arguments[index];
         const auto execution = site.enter_operand_execution(state.completes);
         auto built = (co_await site.read_argument(
-            argument.expression,
+            argument,
             site.draft().builtin_type(contract.arguments[index])
         ));
         if (!built) {
             co_return std::unexpected(built.error());
         }
-        auto operand = site.consume_read(
-            state,
-            std::move(*built),
-            site.syntax().expression(argument.expression).span
-        );
+        auto operand =
+            site.consume_read(state, std::move(*built), site.syntax().expression(argument).span);
         if (!operand) {
             co_return std::unexpected(operand.error());
         }

@@ -20,6 +20,7 @@ public:
     explicit UTFCompilation(std::string_view application) noexcept {
         for (const auto& [directory, name] :
              {std::pair {"utf", "error"},
+              {"utf", "codec"},
               std::pair {"utf", "scan"},
               std::pair {"utf", "block"},
               std::pair {"utf", "validation"},
@@ -106,6 +107,29 @@ const TestSuite suite([] static noexcept {
         });
     };
 
+    "UTF craft: encoded views retain their encoding storage"_test = [] static noexcept {
+        const auto inputs = std::to_array<std::string_view>({
+            "fn bad() -> [u8] { let encoded = encode_utf8('a'); return encoded_bytes(encoded); }",
+            "fn bad() { let bytes = encoded_bytes(encode_utf8('a')); }",
+            "fn bad() { var encoded = encode_utf8('a'); let bytes = encoded_bytes(encoded); encoded = encode_utf8('b'); }",
+        });
+        each(
+            inputs,
+            [](auto input) static noexcept { return input; },
+            [](auto input) static noexcept {
+                auto fixture = UTFCompilation(
+                    "import std::utf.codec using { encode_utf8, encoded_bytes }; "
+                    + std::string(input)
+                );
+                const auto result = fixture.run();
+                if (!expect(!result.has_value())) {
+                    return;
+                }
+                expect_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
+            }
+        );
+    };
+
     "Compiler diagnostics: unchecked text construction checks types and backing"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
@@ -159,6 +183,26 @@ const TestSuite suite([] static noexcept {
                     );
                 }
             );
+        };
+
+    "Text construction: static execution diagnoses invalid UTF8 preconditions"_test =
+        [] static noexcept {
+            const auto cases = std::to_array<CompilerErrorExpectation>({
+                {.name = "invalid leading byte",
+                 .source = "const fn invalid() -> String { let bytes = [0xffu8]; "
+                           "return str::from_utf8_unchecked(bytes) as String; } "
+                           "const text = invalid();",
+                 .code = DiagnosticCode::ConstEvaluation,
+                 .primary_text = "str::from_utf8_unchecked(bytes)"},
+                {.name = "incomplete scalar at selected range end",
+                 .source =
+                     "const fn invalid() -> String { let bytes = [0x61u8, 0xe2, 0x82, 0xac]; "
+                     "return str::from_utf8_unchecked(bytes.as_slice().slice(1, 3)) as String; } "
+                     "const text = invalid();",
+                 .code = DiagnosticCode::ConstEvaluation,
+                 .primary_text = "str::from_utf8_unchecked(bytes.as_slice().slice(1, 3))"},
+            });
+            check_compiler_errors(cases);
         };
 });
 

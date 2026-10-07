@@ -1,0 +1,184 @@
+struct Units {
+    value: void,
+    values: [void; 2]
+}
+
+const fn tick(&trace: i32, value: i32) -> i32 {
+    trace = trace * 10 + value;
+    return value;
+}
+
+const fn tick_void(&trace: i32) {
+    trace = trace * 10 + 2;
+}
+
+const fn product(&trace: i32) -> (i32, void, (i32,)) {
+    return (tick(&trace, 1), tick_void(&trace), (tick(&trace, 3),));
+}
+
+const fn destructure() -> i32 {
+    var trace = 0;
+    var (first, unit, (last,)) = product(&trace);
+    first += last;
+    unit = ();
+    assert(unit == ());
+    return trace + first;
+}
+
+const fn unit_input(value: void) -> void => value;
+
+const fn empty_control(flag: bool) -> void {
+    let value: void = if flag {} else {};
+    let (_, selected) = (
+        match flag {
+            true => {},
+            false => {}
+        },
+        value
+    );
+    return selected;
+}
+
+const result = destructure();
+
+const test "Tuple: nested products preserve order and zero-information slots" {
+    check(result == 127);
+    const (first, unit, (last,)) = (1, (), (3,));
+    check(first + last == 4);
+    check(unit == ());
+    check((1, (), (3,)) == (1, (), (3,)));
+    check((1,) != (2,));
+    const unit_value: () = ();
+    check(unit_value == void {});
+    check(empty_control(true) == ());
+    check(empty_control(false) == ());
+}
+
+test "Tuple: runtime and static execution use the same value semantics" {
+    check(destructure() == result);
+    let value: void = unit_input(());
+    let units = Units {};
+    check(value == units.value);
+    check(units.values[0] == ());
+    var row: (i32, void, (i32,)) = (20, (), (22,));
+    let (left, _, (right,)) = &&row;
+    check(left + right == 42);
+    let () = unit_input(());
+    let singleton: (i32,) = (7,);
+    let (only,) = singleton;
+    check(only == 7);
+    check(empty_control(true) == unit_input(()));
+}
+
+const fn transfer_element() -> i32 {
+    var (text, count): (String, i32) = ("hello", 3);
+    let moved = &&text;
+    text = "again";
+    return moved.len() as i32 + text.len() as i32 + count;
+}
+
+const fn construct_from_owner() -> i32 {
+    var text: String = "owner";
+    let (moved, count) = (&&text, 4);
+    return moved.len() as i32 + count;
+}
+
+const test "Tuple: element owners transfer independently" {
+    check(transfer_element() == 13);
+    check(construct_from_owner() == 9);
+}
+
+test "Tuple: runtime element owners transfer independently" {
+    check(transfer_element() == 13);
+    check(construct_from_owner() == 9);
+}
+
+const fn positional(&count: i32) -> (i32, (i32, void)) {
+    count += 1;
+    return (3, (4, ()));
+}
+
+const fn access_positions() -> i32 {
+    var calls = 0;
+    let answer = positional(&calls).1.0;
+    var row = (20, (21, ()));
+    row.1.0 += 1;
+    let address = addressof(&row.0);
+    if address != nullptr { *address += row.1.0; }
+    assert(row.1.1 == ());
+    assert((1.0, 2.0).1 == 2.0);
+    return row.0 + answer + calls;
+}
+
+const fn parameter_parts((first, _, (last,)): (i32, void, (i32,))) -> i32 {
+    return first + last;
+}
+
+const fn mutate_parts(&(first, (last,)): (i32, (i32,))) {
+    first += 1;
+    last += first;
+}
+
+const fn take_parts(&&(text, count): (String, i32)) -> i32 {
+    let moved = &&text;
+    return moved.len() as i32 + count;
+}
+
+const fn static_parts(const (first, (last,)): (i32, (i32,))) -> i32 {
+    return first + last;
+}
+
+const fn loop_parts() -> i32 {
+    var rows = [(1, (2,)), (3, (4,))];
+    for &(first, (last,)) in rows {
+        first += 1;
+        last += first;
+    }
+    var result = 0;
+    for (first, (last,)) in rows {
+        result += first + last;
+    }
+    return result;
+}
+
+const fn binding_forms() -> i32 {
+    var pair = (2, (3,));
+    mutate_parts(&pair);
+    let from_parameter = parameter_parts((pair.0, (), (pair.1.0,)));
+    let owner: (String, i32) = ("hello", 2);
+    let from_take = take_parts(&&owner);
+    return from_parameter + from_take + loop_parts() + static_parts((1, (2,)));
+}
+
+const test "Tuple: positional places and binding forms execute statically" {
+    check(access_positions() == 47);
+    check(binding_forms() == 37);
+}
+
+test "Tuple: positional places and binding forms preserve runtime behavior" {
+    check(access_positions() == 47);
+    check(binding_forms() == 37);
+    let function: fn((i32, i32)) -> i32 = []((first, second)) => first + second;
+    check(function((3, 4)) == 7);
+}
+
+private enum ProductPayload<T> {
+    Items((T, bool)),
+    Empty,
+}
+
+test "Tuple: nested generic payload borrowing preserves source storage" {
+    var entry = ProductPayload<i32>::Items((41, true));
+    match &entry {
+        .Items((&number, flag)) => {
+            number += 1;
+            check(flag);
+        },
+        .Empty => check(false),
+    }
+    let observed = match entry {
+        .Items((number, _)) => number,
+        .Empty => 0,
+    };
+    check(observed == 42);
+}

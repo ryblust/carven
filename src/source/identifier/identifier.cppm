@@ -4,7 +4,10 @@ import std;
 
 enum class SourceKeyword {
     As,
+    Async,
+    Await,
     Break,
+    Cancel,
     Catch,
     Const,
     Continue,

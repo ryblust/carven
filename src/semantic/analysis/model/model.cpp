@@ -1,0 +1,378 @@
+module carven:semantic.analysis.model.impl;
+
+import :semantic.analysis.model;
+import :support.invariant;
+import std;
+
+AnalysisFailureKey::AnalysisFailureKey(TypeID type) noexcept
+    : value(type) {}
+
+AnalysisFailureKey::AnalysisFailureKey(AnalysisSymbolicFailure failure) noexcept
+    : value(std::move(failure)) {}
+
+AnalysisBodyView::AnalysisBodyView(const SemIRBody& body) noexcept
+    : source(&body) {
+    for (const auto [id, binding] : body.bindings()) {
+        binding_rows.emplace_back(
+            id,
+            ElaboratedLocalBinding {
+                binding.name,
+                binding.type,
+                binding.lifetime,
+                binding.storage,
+                binding.origin
+            }
+        );
+    }
+    for (const auto [id, pattern] : body.patterns()) {
+        static_cast<void>(id);
+        auto value =
+            pattern.value.visit([](const auto& value) static noexcept -> ElaboratedPatternValue {
+                using Value = std::remove_cvref_t<decltype(value)>;
+                if constexpr (std::same_as<Value, TypeConstraintPattern>) {
+                    return ElaboratedTypeConstraintPattern {value.type};
+                } else {
+                    return value;
+                }
+            });
+        pattern_rows.push_back({pattern.type, std::move(value), pattern.origin});
+    }
+}
+
+AnalysisBodyView::AnalysisBodyView(const StructuredBodyDraft& body) noexcept
+    : source(&body) {
+    for (const auto [id, binding] : body.bindings.entries()) {
+        binding_rows.emplace_back(id, binding);
+    }
+    for (const auto [id, pattern] : body.patterns.entries()) {
+        static_cast<void>(id);
+        pattern_rows.push_back(pattern);
+    }
+}
+
+auto AnalysisBodyView::id() const noexcept -> AnalysisBodyID {
+    return source.visit([](const auto* body) static noexcept -> AnalysisBodyID {
+        using Body = std::remove_cvref_t<decltype(*body)>;
+        if constexpr (std::same_as<Body, SemIRBody>) {
+            return body->id();
+        } else {
+            if (!body->generic_definition) {
+                invariant_violation("generic analysis body lacks definition identity");
+            }
+            return *body->generic_definition;
+        }
+    });
+}
+
+auto AnalysisBodyView::inputs() const noexcept -> const BodyInputs& {
+    return source.visit([](const auto* body) static noexcept -> const BodyInputs& {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(*body)>, SemIRBody>) {
+            return body->inputs();
+        } else {
+            return body->inputs;
+        }
+    });
+}
+
+auto AnalysisBodyView::lifetime_regions() const noexcept -> const LifetimeRegionTree& {
+    return source.visit([](const auto* body) static noexcept -> const LifetimeRegionTree& {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(*body)>, SemIRBody>) {
+            return body->lifetime_regions();
+        } else {
+            return body->lifetime_regions;
+        }
+    });
+}
+
+auto AnalysisBodyView::bindings() const noexcept
+    -> std::span<const std::pair<LocalBindingID, ElaboratedLocalBinding>> {
+    return binding_rows;
+}
+
+auto AnalysisBodyView::binding(LocalBindingID id) const noexcept -> const ElaboratedLocalBinding& {
+    const auto& row = binding_rows.at(id.index());
+    if (row.first != id) {
+        invariant_violation("analysis binding belongs to a foreign body");
+    }
+    return row.second;
+}
+
+auto AnalysisBodyView::pattern(PatternID id) const noexcept -> const ElaboratedPattern& {
+    if (id.owner() != lifetime_regions().owner()) {
+        invariant_violation("analysis pattern belongs to a foreign body");
+    }
+    return pattern_rows.at(id.index());
+}
+
+auto AnalysisBodyView::elaborated_pattern_table() const noexcept
+    -> const ImmutableBodyTable<ElaboratedPattern, PatternID>& {
+    const auto* body = std::get_if<const StructuredBodyDraft*>(&source);
+    if (!body) {
+        invariant_violation("elaborated pattern table requires a definition body");
+    }
+    return (*body)->patterns;
+}
+
+auto AnalysisBodyView::pattern_table() const noexcept
+    -> const ImmutableBodyTable<Pattern, PatternID>& {
+    const auto* body = concrete();
+    if (!body) {
+        invariant_violation("rigid coverage requires definition-site structural coverage");
+    }
+    return body->pattern_table();
+}
+
+auto AnalysisBodyView::region() const noexcept -> const SemanticRegion& {
+    return source.visit([](const auto* body) static noexcept -> const SemanticRegion& {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(*body)>, SemIRBody>) {
+            return body->region();
+        } else {
+            return body->region;
+        }
+    });
+}
+
+auto AnalysisBodyView::specialized() const noexcept -> std::optional<BodyID> {
+    return source.visit([](const auto* body) static noexcept -> std::optional<BodyID> {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(*body)>, SemIRBody>) {
+            return body->specialized();
+        } else {
+            return std::nullopt;
+        }
+    });
+}
+
+auto AnalysisBodyView::concrete() const noexcept -> const SemIRBody* {
+    const auto* body = std::get_if<const SemIRBody*>(&source);
+    return body ? *body : nullptr;
+}
+
+AnalysisModelView::AnalysisModelView(
+    const SemIRProgram& program,
+    const GenericAnalysisSnapshot& generics
+) noexcept
+    : program(program),
+      generics(generics) {
+    for (const auto [id, body] : program.bodies().entries()) {
+        body_views.emplace(id, AnalysisBodyView(body));
+    }
+    for (const auto& [id, body] : generics.bodies) {
+        body_views.emplace(id, AnalysisBodyView(*body));
+    }
+}
+
+auto AnalysisModelView::bodies() const noexcept
+    -> const std::map<AnalysisBodyID, AnalysisBodyView>& {
+    return body_views;
+}
+
+auto AnalysisModelView::body(AnalysisBodyID id) const noexcept -> const AnalysisBodyView& {
+    return body_views.at(id);
+}
+
+auto AnalysisModelView::shape(ConstructionTypeRef type) const noexcept -> const AnalysisTypeShape& {
+    const auto found = shapes.find(type);
+    if (found != shapes.end()) {
+        return found->second;
+    }
+    return shapes.emplace(type, compute_shape(type)).first->second;
+}
+
+auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
+    -> AnalysisTypeShape {
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        return program.types().type(*concrete).value.visit(
+            [](const auto& shape) static noexcept -> AnalysisTypeShape {
+                using Shape = std::remove_cvref_t<decltype(shape)>;
+                if constexpr (std::same_as<Shape, ArrayTypeValue>) {
+                    return ConstructionArrayTypeValue {shape.element, shape.extent};
+                } else if constexpr (std::same_as<Shape, TupleTypeValue>) {
+                    auto elements = std::vector<ConstructionTypeRef>();
+                    for (const auto element : shape.elements) {
+                        elements.push_back(element);
+                    }
+                    return ConstructionTupleTypeValue {std::move(elements)};
+                } else if constexpr (std::same_as<Shape, SliceTypeValue>) {
+                    return ConstructionSliceTypeValue {shape.element};
+                } else if constexpr (std::same_as<Shape, OwnedSequenceTypeValue>) {
+                    return AnalysisSequenceType {shape.element};
+                } else if constexpr (std::same_as<Shape, PointerTypeValue>) {
+                    return AnalysisPointerType {shape.target, shape.access};
+                } else if constexpr (std::same_as<Shape, OperationTypeValue>) {
+                    return ConstructionOperationTypeValue {shape.success, shape.failures};
+                } else {
+                    return shape;
+                }
+            }
+        );
+    }
+    const auto* generic = std::get_if<GenericTypeID>(&type);
+    if (!generic) {
+        invariant_violation("unsolved construction term reached analysis model");
+    }
+    return generics.generic_type(*generic).visit(
+        [&](const auto& shape) noexcept -> AnalysisTypeShape {
+            using Shape = std::remove_cvref_t<decltype(shape)>;
+            if constexpr (std::same_as<Shape, TypeID>) {
+                return this->shape(shape);
+            } else if constexpr (std::same_as<Shape, GenericArrayType>) {
+                return ConstructionArrayTypeValue {shape.element, shape.extent};
+            } else if constexpr (std::same_as<Shape, GenericTupleType>) {
+                auto elements = std::vector<ConstructionTypeRef>();
+                for (const auto element : shape.elements) {
+                    elements.push_back(element);
+                }
+                return ConstructionTupleTypeValue {std::move(elements)};
+            } else if constexpr (std::same_as<Shape, GenericSliceType>) {
+                return ConstructionSliceTypeValue {shape.element};
+            } else if constexpr (std::same_as<Shape, GenericOwnedSequenceType>) {
+                return AnalysisSequenceType {shape.element};
+            } else if constexpr (std::same_as<Shape, GenericPointerType>) {
+                return AnalysisPointerType {shape.target, shape.access};
+            } else if constexpr (std::same_as<Shape, GenericOperationType>) {
+                return ConstructionOperationTypeValue {shape.success, shape.failures};
+            } else {
+                return shape;
+            }
+        }
+    );
+}
+
+auto AnalysisModelView::concrete_type(ConstructionTypeRef type) const noexcept
+    -> std::optional<TypeID> {
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        return *concrete;
+    }
+    if (const auto* generic = std::get_if<GenericTypeID>(&type)) {
+        if (const auto* concrete = std::get_if<TypeID>(&generics.generic_type(*generic))) {
+            return *concrete;
+        }
+    }
+    return std::nullopt;
+}
+
+auto AnalysisModelView::contents(ConstructionTypeRef type) const noexcept -> TypeContents {
+    if (const auto* concrete = std::get_if<TypeID>(&type)) {
+        return program.type_contents(*concrete);
+    }
+    if (const auto found = content_facts.find(type); found != content_facts.end()) {
+        return found->second;
+    }
+    auto indices = std::map<ConstructionTypeRef, std::size_t>();
+    auto reachable = std::vector<ConstructionTypeRef>();
+    auto masks = std::vector<unsigned>();
+    auto dependents = std::vector<std::vector<TypeContentDependent>>();
+    const auto intern = [&](ConstructionTypeRef value) noexcept {
+        const auto [found, inserted] = indices.try_emplace(value, reachable.size());
+        if (inserted) {
+            reachable.push_back(value);
+            masks.push_back(0u);
+            dependents.emplace_back();
+        }
+        return found->second;
+    };
+    const auto root = intern(type);
+    for (auto index = 0uz; index < reachable.size(); ++index) {
+        const auto current = reachable[index];
+        if (const auto* concrete = std::get_if<TypeID>(&current)) {
+            masks[index] = program.type_contents(*concrete).mask();
+            continue;
+        }
+        const auto generic = std::get<GenericTypeID>(current);
+        if (const auto* concrete = std::get_if<TypeID>(&generics.generic_type(generic))) {
+            masks[index] = program.type_contents(*concrete).mask();
+            continue;
+        }
+        const auto depend = [&](ConstructionTypeRef child, unsigned mask) noexcept {
+            const auto position = intern(child);
+            dependents[position].push_back({index, mask});
+        };
+        shape(current).visit([&](const auto& value) noexcept {
+            using Shape = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<Shape, GenericTypeParameter>) {
+                masks[index] = parametric_value_content;
+            } else if constexpr (std::same_as<Shape, ConstructionArrayTypeValue>) {
+                masks[index] = storage_owner_content;
+                depend(
+                    value.element,
+                    value.extent == 0u ? all_type_contents
+                            & ~(string_storage_content | storage_view_content
+                                | parametric_value_content)
+                                       : all_type_contents
+                );
+            } else if constexpr (std::same_as<Shape, ConstructionTupleTypeValue>) {
+                for (const auto element : value.elements) {
+                    depend(element, all_type_contents);
+                }
+            } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
+                for (const auto field : fields(generic)) {
+                    depend(field, all_type_contents);
+                }
+            } else if constexpr (std::same_as<Shape, ConstructionSliceTypeValue>) {
+                masks[index] = storage_view_content;
+                depend(value.element, callable_view_content);
+            } else if constexpr (std::same_as<Shape, AnalysisSequenceType>) {
+                masks[index] = storage_owner_content;
+                depend(value.element, all_type_contents);
+            } else if constexpr (std::same_as<Shape, ConstructionOperationTypeValue>) {
+                masks[index] = operation_owner_content;
+            }
+        });
+    }
+    const auto facts = solve_type_content_graph(std::move(masks), dependents);
+    for (const auto [index, value] : std::views::enumerate(reachable)) {
+        content_facts.emplace(value, facts[index]);
+    }
+    return facts[root];
+}
+
+auto AnalysisModelView::fields(GenericTypeID type) const noexcept
+    -> std::vector<ConstructionTypeRef> {
+    if (const auto record = generics.records.find(type); record != generics.records.end()) {
+        return record->second;
+    }
+    auto result = std::vector<ConstructionTypeRef>();
+    if (const auto enumeration = generics.enum_payloads.find(type);
+        enumeration != generics.enum_payloads.end()) {
+        for (const auto& payload : enumeration->second) {
+            result.append_range(payload);
+        }
+        return result;
+    }
+    invariant_violation("generic analysis nominal shape lacks checked fields");
+}
+
+auto AnalysisModelView::failure_closed_set(ConstructionFailureRef failures) const noexcept
+    -> std::optional<FailureSetID> {
+    if (const auto* set = std::get_if<FailureSetID>(&failures)) {
+        return *set;
+    }
+    if (!generics.failures) {
+        invariant_violation("symbolic failure query lacks its shared solution");
+    }
+    return generics.failures->closed_set(failures);
+}
+
+auto AnalysisModelView::failure_support(ConstructionFailureRef failures) const noexcept
+    -> GenericFailureMask {
+    if (const auto set = failure_closed_set(failures)) {
+        return {.complemented = false, .members = program.failure_sets().failure_set(*set).members};
+    }
+    return generics.failures->support(failures);
+}
+
+auto AnalysisModelView::failure_known_members(ConstructionFailureRef failures) const noexcept
+    -> std::vector<TypeID> {
+    if (const auto set = failure_closed_set(failures)) {
+        return program.failure_sets().failure_set(*set).members;
+    }
+    return generics.failures->known_members(failures);
+}
+
+auto AnalysisModelView::failure_may_contain(
+    ConstructionFailureRef failures,
+    TypeID member
+) const noexcept -> bool {
+    const auto mask = failure_support(failures);
+    return std::ranges::contains(mask.members, member) != mask.complemented;
+}

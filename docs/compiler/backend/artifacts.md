@@ -16,20 +16,33 @@ nominal member names from their semantic identity and planned enclosing name.
 Source encoding is injective: reserved C++ names and source spellings in its escape
 domain are encoded. The plan also owns encoded public namespace and function names
 shared by API headers and export façades. Artifact paths retain canonical source names.
-Closure types are numbered by their discovery order within the owner module, so other
-modules cannot renumber them.
+Closure names use source-location order within their owning module. Closures
+sharing a source location are ordered by their semantic callable identity.
 
 Semantic visibility and C++ definition requirements determine interface
 artifacts. Declaration-only dependencies use forward declarations. Complete
 requirements form interface edges; strongly connected components share an
-interface. Function declaration return types, including Outcome and arrays,
-require only declarations of their component types. Object storage and Read
+interface. Function results and Take parameters require complete component
+types for the caller's value operations without imposing layout order. Object storage and Read
 traits require complete definitions. Body-only calls do not merge interfaces.
 Private nominals needed by an interface layout receive definitions in their
 owner's interface; declaration-only references receive forward declarations.
-This placement does not change Carven source visibility.
+Nominal declarations and definitions use the same module namespace, including
+source-only definitions. Completeness determines the artifact that owns a
+definition; it does not change the type's C++ identity or Carven source visibility.
 
-Schedules own interface definitions, C++ façades, private nominal and closure
+Owning sequence elements require complete definitions for their operations,
+but only declarations for the carrier layout. These deferred complete requirements
+participate in interface closure without imposing layout order. Both interface
+and source artifacts emit forwards, ordered nominal layouts, then dependent enum
+factory bodies. Payload enums use aggregate variant storage and implicit C++
+copy, move, and destruction; source construction and access remain checked by Carven.
+
+Concrete generic nominal instances seed the internal interface schedule. Their
+private layout dependencies use the same completeness closure and module ordering.
+Source audience remains a semantic check on the definition and its type arguments.
+
+Schedules own interface definitions, C++ façades, source nominal and closure
 ordering, and selected tests. Module lowering starts with externally visible
 functions, process and C++ export entries, interface closures, and enabled runtime
 tests. Realizing native function references and closure types requests their local
@@ -146,17 +159,19 @@ Owned syntax nodes define occurrence identity. `TreeValue` uses an explicit work
 stack to clear descendants, including partially moved trees, statement bodies,
 and namespace items. Child cleanup also bounds the stack depth of variant
 replacement. Traversal preserves scope order through enter/leave events.
-Dependency collection visits the finished tree and referenced types to derive
-standard and runtime header requirements. Target nodes identify their native
-facilities; shared symbol metadata supplies their C++ spelling and header provider
-to rendering and dependency collection. Unused interned types contribute no
-requirements.
+Dependency collection visits the verified tree and referenced types to
+derive standard and runtime header requirements. Target nodes identify their
+native facilities; shared symbol metadata supplies their C++ spelling and optional
+header provider. Async coroutine nodes and runtime symbols use this same query.
+Unused interned types contribute no requirements.
 
-`TargetUnitBuilder::finish` combines these requirements with planned artifact
-references and ordered native imports. Header references retain their delimiter
-and path. Automatic requirements merge by reference; source imports retain their
-order, repetitions, and attribution. The completed unit owns structured include
-and pragma-once directives; emission serializes them.
+`TargetUnitBuilder::finish` plans directives from the collected requirements,
+planned artifact references, and ordered native imports. Header references retain
+their delimiter and path. Automatic requirements merge by exact
+reference; source imports retain their order, repetitions, and attribution.
+Directive planning orders associated headers, source imports, runtime headers,
+generated references, and standard-library headers. The completed unit owns
+structured include and pragma-once directives; emission serializes them.
 
 The renderer builds completed layout tables in postorder for expressions,
 statements, items and the type dependency DAG, including decltype expressions.

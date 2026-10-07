@@ -41,15 +41,24 @@ auto type_key(const CanonicalType& type, ProgramIdentity owner) noexcept -> std:
         } else if constexpr (std::same_as<Value, PointerTypeValue>) {
             child(value.target, "ptr type used a foreign target");
             mix(static_cast<std::size_t>(value.access));
-        } else if constexpr (std::same_as<Value, SliceTypeValue>
+        } else if constexpr (std::same_as<Value, OwnedSequenceTypeValue>
+                             || std::same_as<Value, SliceTypeValue>
                              || std::same_as<Value, RangeTypeValue>) {
             child(value.element, "slice type used a foreign element type");
         } else if constexpr (std::same_as<Value, ArrayTypeValue>) {
             child(value.element, "array type used a foreign element type");
             mix(std::hash<std::uint64_t>()(value.extent));
+        } else if constexpr (std::same_as<Value, TupleTypeValue>) {
+            mix(value.elements.size());
+            for (const auto element : value.elements) {
+                child(element, "tuple type used a foreign element type");
+            }
         } else if constexpr (std::same_as<Value, FunctionTypeValue>
                              || std::same_as<Value, ClosureTypeValue>) {
             child(value.callable, "callable type used a foreign program");
+        } else if constexpr (std::same_as<Value, OperationTypeValue>) {
+            child(value.success, "operation used a foreign success type");
+            child(value.failures, "operation used a foreign failure set");
         } else if constexpr (std::same_as<Value, CallableViewTypeValue>) {
             child(value.signature, "callable view type used a foreign signature");
         } else {
@@ -267,6 +276,10 @@ CanonicalTypeStoreBuilder::CanonicalTypeStoreBuilder(ProgramIdentity owner) noex
       }(std::make_index_sequence<builtin_types.size()> {})) {}
 
 auto CanonicalTypeStoreBuilder::intern(const CanonicalType& type) noexcept -> TypeID {
+    if (const auto* tuple = std::get_if<TupleTypeValue>(&type.value);
+        tuple && tuple->elements.empty()) {
+        return builtin_type(BuiltinType::Void);
+    }
     if (std::holds_alternative<CallableViewTypeValue>(type.value)) {
         invariant_violation(
             "callable view types must be interned through construction type resolution"
@@ -377,6 +390,10 @@ auto FailureSetStoreBuilder::seal() && noexcept -> FailureSetStore {
     return FailureSetStore(std::move(rows).seal());
 }
 
+auto FailureSetStoreBuilder::snapshot() const noexcept -> FailureSetStore {
+    return FailureSetStore(rows.snapshot());
+}
+
 CallableSignatureStore::CallableSignatureStore(
     ImmutableProgramTable<CallableSignature, CallableSignatureID> values
 ) noexcept
@@ -430,7 +447,11 @@ auto TypeResolution::type(TypeTermID term) const noexcept -> TypeID {
     if (!contains(term)) {
         invariant_violation("type resolution lookup used a foreign or invalid term");
     }
-    return resolved_types[term.index()];
+    const auto* concrete = std::get_if<TypeID>(&resolved_types[term.index()]);
+    if (!concrete) {
+        invariant_violation("symbolic construction type used as a canonical type");
+    }
+    return *concrete;
 }
 
 ConstructionTypeStore::ConstructionTypeStore(ProgramIdentity owner) noexcept
@@ -440,7 +461,9 @@ auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID
     const auto validate_ref = [this](ConstructionTypeRef ref) noexcept {
         ref.visit([this](const auto id) noexcept {
             using ID = std::remove_cvref_t<decltype(id)>;
-            static_assert(std::same_as<ID, TypeID> || std::same_as<ID, TypeTermID>);
+            if constexpr (std::same_as<ID, GenericTypeID>) {
+                invariant_violation("rigid type cannot enter the canonical construction store");
+            }
             require_owner(id.owner(), rows.owner(), "construction type used a foreign child");
             if constexpr (std::same_as<ID, TypeTermID>) {
                 if (!rows.contains(id)) {
@@ -454,13 +477,24 @@ auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID
         if constexpr (std::same_as<Value, ConstructionArrayTypeValue>
                       || std::same_as<Value, ConstructionSliceTypeValue>) {
             validate_ref(value.element);
+        } else if constexpr (std::same_as<Value, ConstructionTupleTypeValue>) {
+            for (const auto element : value.elements) {
+                validate_ref(element);
+            }
+        } else if constexpr (std::same_as<Value, ConstructionOperationTypeValue>) {
+            validate_ref(value.success);
+            require_owner(
+                value.failures.visit([](auto source) static noexcept { return source.owner(); }),
+                rows.owner(),
+                "construction operation used a foreign failure term"
+            );
         } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
             for (const auto& parameter : value.parameters) {
                 validate_ref(parameter.type);
             }
             validate_ref(value.result);
             require_owner(
-                value.failures.owner(),
+                value.failures.visit([](auto source) static noexcept { return source.owner(); }),
                 rows.owner(),
                 "construction callable type used a foreign failure term"
             );
@@ -492,20 +526,41 @@ auto TypeResolution::contains(TypeTermID term) const noexcept -> bool {
         && static_cast<std::size_t>(term.index()) < resolved_types.size();
 }
 
-auto TypeResolution::resolve(ConstructionTypeRef reference) const noexcept -> TypeID {
-    return reference.visit([&](auto id) noexcept -> TypeID {
+auto TypeResolution::normalize(ConstructionTypeRef reference) const noexcept
+    -> ConstructionTypeRef {
+    return reference.visit([&](auto id) noexcept -> ConstructionTypeRef {
         if (id.owner() != owner()) {
             invariant_violation("type resolution used a foreign identity");
         }
-        if constexpr (std::same_as<decltype(id), TypeID>) {
+        if constexpr (std::same_as<decltype(id), TypeTermID>) {
+            if (!contains(id)) {
+                invariant_violation("type resolution lookup used an invalid term");
+            }
+            return normalize(resolved_types[id.index()]);
+        } else if constexpr (std::same_as<decltype(id), GenericTypeID>) {
+            if (id.index() < generic_types.size()) {
+                return generic_types[id.index()];
+            }
             return id;
         } else {
-            return type(id);
+            return id;
         }
     });
 }
 
-TypeResolution::TypeResolution(ProgramIdentity identity, std::vector<TypeID> types) noexcept
+auto TypeResolution::resolve(ConstructionTypeRef reference) const noexcept -> TypeID {
+    const auto normalized = normalize(reference);
+    const auto* concrete = std::get_if<TypeID>(&normalized);
+    if (!concrete) {
+        invariant_violation("rigid type was not substituted before canonical resolution");
+    }
+    return *concrete;
+}
+
+TypeResolution::TypeResolution(
+    ProgramIdentity identity,
+    std::vector<ConstructionTypeRef> types
+) noexcept
     : program_identity(identity),
       resolved_types(std::move(types)) {}
 
@@ -514,4 +569,13 @@ auto pointer_narrows(const PointerTypeValue& source, const PointerTypeValue& tar
     return source.target == target.target
         && source.access == PointerAccess::Write
         && target.access == PointerAccess::Read;
+}
+
+auto TypeResolution::normalize_generics(std::vector<ConstructionTypeRef> types) && noexcept
+    -> TypeResolution {
+    generic_types = std::move(types);
+    for (auto& type : resolved_types) {
+        type = normalize(type);
+    }
+    return std::move(*this);
 }

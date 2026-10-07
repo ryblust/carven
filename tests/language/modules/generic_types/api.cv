@@ -1,0 +1,8 @@
+export struct Box<T> {
+    value: T,
+}
+
+export enum Maybe<T> {
+    None,
+    Some(T),
+}

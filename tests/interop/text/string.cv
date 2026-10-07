@@ -5,6 +5,20 @@ struct View {
     text: str,
 }
 
+struct Envelope<T> {
+    value: T,
+}
+
+test "Nominal type parameters: native fields retain ordinary copy and Take semantics" {
+    var original = Envelope<::std::string> { value: "before" as ::std::string, };
+    let copy = original;
+    original.value.clear();
+    check(::native_text::read(copy.value) == 6usize);
+    original.value.append(c"moved");
+    let moved = &&original;
+    check(::native_text::read(moved.value) == 5usize);
+}
+
 fn same(text: String) -> bool => ::native_text::aliases_retained(text);
 
 test "String C++ boundary: dynamic views and aggregates can be read and retained" {

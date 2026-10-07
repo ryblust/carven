@@ -24,6 +24,7 @@ import :semantic.analysis.types.display;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
+import :semantic.semir.async;
 import :semantic.semir.decl;
 import :semantic.semir.simd;
 import :semantic.semir.structured;
@@ -31,6 +32,36 @@ import :semantic.semir.type;
 import :support.invariant;
 import :support.visit;
 import std;
+
+auto BodyElaborator::cancel_statement(const ASTCancelStmt& source, Span span) noexcept
+    -> AnalysisTask<void> {
+    if (!async_body && !static_stage()) {
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::AsyncAdmission,
+            "cancel requires a lexical child in an async owner or const execution"
+        ));
+    }
+    auto selected = co_await expression(source.child);
+    if (!selected) {
+        co_return std::unexpected(selected.error());
+    }
+    const auto* binding = std::get_if<SemBinding>(&selected->expression().value);
+    if (!binding || !async_child_bindings.contains(binding->binding)) {
+        co_return std::unexpected(fail(
+            ast.expression(source.child).span,
+            DiagnosticCode::AsyncOwnership,
+            "cancel requires a complete lexical child binding, not a cold operation"
+        ));
+    }
+    auto request = make_built(
+        ConstructionTypeRef(draft().builtin_type(BuiltinType::Void)),
+        SemAsyncIntrinsic {.kind = AsyncIntrinsic::CancelChild, .child = binding->binding},
+        span
+    );
+    append_expression(request, span);
+    co_return {};
+}
 
 auto BodyElaborator::initializer_value(
     const ASTVariableDecl& source,
@@ -99,6 +130,60 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             "every binding declaration requires an initializer"
         ));
     }
+    if (source.async_span) {
+        const auto* named = std::get_if<ASTNamedBindingTarget>(&source.target);
+        if ((!async_body && !static_stage())
+            || source.kind != ASTBindingKind::Let
+            || source.type
+            || !named) {
+            co_return std::unexpected(fail(
+                source.span,
+                DiagnosticCode::AsyncAdmission,
+                "async let requires one inferred named let binding in an async fn or const execution"
+            ));
+        }
+        auto built = co_await expression(*source.initializer);
+        if (!built) {
+            co_return std::unexpected(built.error());
+        }
+        const auto type = built->type();
+        if (!operation_shape(type)) {
+            co_return std::unexpected(fail(
+                source.span,
+                DiagnosticCode::AsyncAdmission,
+                "async let initializer requires a complete cold operation"
+            ));
+        }
+        auto value = consume_value(*built, source.span, AccessMode::Take);
+        if (!value) {
+            co_return std::unexpected(value.error());
+        }
+        const auto storage = body_builder.add_async_child_binding(
+            draft().intern_spelling(spelling(named->name_span)),
+            type,
+            frames.back().lifetime,
+            origin(named->name_span)
+        );
+        async_child_bindings.insert(storage.binding);
+        append_statement(
+            SemAsyncLet {.child = storage.binding, .initializer = std::move(*value)},
+            origin(source.span)
+        );
+        co_return bind_local(
+            named->name_span,
+            BodyLocalStorage {
+                .storage = storage,
+                .type = type,
+                .used = false,
+                .takeable = false,
+                .static_source = false,
+                .role = BodyLocalRole::Local,
+                .unused_candidate = std::nullopt,
+                .projection = {}
+            },
+            DiagnosticCode::NameDuplicateLocal
+        );
+    }
     auto declared = std::optional<ConstructionTypeRef>();
     if (source.type.has_value()) {
         auto resolved = (co_await resolve_type(*source.type));
@@ -106,6 +191,126 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             co_return std::unexpected(resolved.error());
         }
         declared = *resolved;
+    }
+    if (std::holds_alternative<UniqueIndirect<ASTTupleBindingTarget>>(source.target)) {
+        auto value = source.kind == ASTBindingKind::Const
+            ? co_await constant_initializer(source, declared)
+            : co_await initializer_value(source, declared);
+        if (!value) {
+            co_return std::unexpected(value.error());
+        }
+        const auto binding_type = source.kind == ASTBindingKind::Const
+            ? constant_initializer_type(draft(), value->type.construction())
+            : (declared ? *declared : value->type.construction());
+        auto bindings = std::vector<SemDecompositionBinding>();
+        const auto collect = [&](this auto&& self,
+                                 const ASTBindingTarget& target,
+                                 ConstructionTypeRef type,
+                                 std::vector<std::uint32_t> path) noexcept -> AnalysisResult<void> {
+            if (const auto* nested = std::get_if<UniqueIndirect<ASTTupleBindingTarget>>(&target)) {
+                const auto elements = tuple_elements(draft(), type);
+                if (!elements || elements->size() != (*nested)->elements.size()) {
+                    return std::unexpected(fail(
+                        binding_target_span(target),
+                        DiagnosticCode::TypeMismatch,
+                        "tuple binding differs from its initializer product shape"
+                    ));
+                }
+                for (const auto [index, element] : std::views::enumerate((*nested)->elements)) {
+                    auto child_path = path;
+                    child_path.push_back(static_cast<std::uint32_t>(index));
+                    if (auto result = self(element, (*elements)[index], std::move(child_path));
+                        !result) {
+                        return result;
+                    }
+                }
+                return {};
+            }
+            if (const auto* named = std::get_if<ASTNamedBindingTarget>(&target)) {
+                const auto storage = body_builder.add_owner_binding(
+                    draft().intern_spelling(spelling(named->name_span)),
+                    type,
+                    frames.back().lifetime,
+                    source.kind == ASTBindingKind::Var,
+                    origin(named->name_span)
+                );
+                auto bound = bind_local(
+                    named->name_span,
+                    BodyLocalStorage {
+                        .storage = storage,
+                        .type = type,
+                        .used = false,
+                        .takeable = source.kind != ASTBindingKind::Const,
+                        .static_source = source.kind == ASTBindingKind::Const,
+                        .role = BodyLocalRole::Local,
+                        .unused_candidate = std::nullopt,
+                        .projection = {}
+                    },
+                    DiagnosticCode::NameDuplicateLocal
+                );
+                if (!bound) {
+                    return bound;
+                }
+                bindings.push_back({storage.binding, std::move(path)});
+            }
+            return {};
+        };
+        if (auto checked = collect(source.target, binding_type, {}); !checked) {
+            co_return std::unexpected(checked.error());
+        }
+        if (source.kind != ASTBindingKind::Const) {
+            const auto owner = body_builder.add_owner_binding(
+                draft().intern_spelling("$tuple"),
+                binding_type,
+                frames.back().lifetime,
+                true,
+                origin(source.span)
+            );
+            append_statement(
+                SemDecompose {owner.binding, std::move(*value), std::move(bindings)},
+                origin(source.span)
+            );
+            co_return {};
+        }
+        const auto parent = body_builder.add_owner_binding(
+            draft().intern_spelling("$tuple"),
+            binding_type,
+            frames.back().lifetime,
+            false,
+            origin(source.span)
+        );
+        auto initializer = OwnedSemanticExpression(std::move(*value));
+        batch->static_roots.emplace(
+            parent.binding,
+            BodyBatchElaborator::StaticRoot {.initializer = *initializer, .value = std::nullopt}
+        );
+        append_statement(
+            SemStaticBinding {parent.binding, std::move(initializer)},
+            origin(source.span)
+        );
+        for (const auto& binding : bindings) {
+            auto selected = body_builder.binding_expression(parent.binding).expression;
+            auto type = binding_type;
+            for (const auto index : binding.path) {
+                type = tuple_elements(draft(), type)->at(index);
+                selected = body_builder.make_expression(
+                    type,
+                    frames.back().lifetime,
+                    origin(source.span),
+                    SemTupleElement {OwnedSemanticExpression(std::move(selected)), index}
+                );
+            }
+            auto child = OwnedSemanticExpression(std::move(selected));
+            batch->static_roots.emplace(
+                binding.binding,
+                BodyBatchElaborator::StaticRoot {.initializer = *child, .value = std::nullopt}
+            );
+            append_statement(
+                SemStaticBinding {binding.binding, std::move(child)},
+                origin(source.span)
+            );
+        }
+        co_return {};
     }
     const auto* named = std::get_if<ASTNamedBindingTarget>(&source.target);
     if (source.kind == ASTBindingKind::Const) {
@@ -151,6 +356,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
                 .static_source = true,
                 .role = BodyLocalRole::Local,
                 .unused_candidate = std::nullopt,
+                .projection = {},
             },
             DiagnosticCode::NameDuplicateLocal
         );
@@ -189,6 +395,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             .static_source = false,
             .role = BodyLocalRole::Local,
             .unused_candidate = std::nullopt,
+            .projection = {},
         },
         DiagnosticCode::NameDuplicateLocal
     );
@@ -580,21 +787,17 @@ auto BodyElaborator::transfer_statement(const ASTControlTransfer& source) noexce
             if (!payload.has_value()) {
                 co_return std::unexpected(payload.error());
             }
+            const auto throw_origin = origin(source.span);
+            auto failure_type = draft().require_failure_member(payload->type(), throw_origin);
+            if (!failure_type) {
+                co_return std::unexpected(failure_type.error());
+            }
             auto value =
                 consume_value(*payload, ast.expression(*source.value).span, AccessMode::Read);
             if (!value.has_value()) {
                 co_return std::unexpected(value.error());
             }
-            const auto* failure_type = std::get_if<TypeID>(&value->type.construction());
-            if (failure_type == nullptr || !is_failure_payload_type(draft(), *failure_type)) {
-                co_return std::unexpected(fail(
-                    source.span,
-                    DiagnosticCode::EffectThrowType,
-                    "throw payload must have a concrete nominal value type"
-                ));
-            }
             const auto& target = failure_context_for_current_path();
-            const auto throw_origin = origin(source.span);
             draft().add_thrown_failure_member(target.term, *failure_type, throw_origin);
             append_statement(SemThrow {std::move(*value), *failure_type}, throw_origin);
             reachable = false;

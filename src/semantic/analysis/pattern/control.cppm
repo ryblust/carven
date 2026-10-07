@@ -12,10 +12,10 @@ import std;
 // State domains provide evaluation and joins.
 // A rejected enum tag skips its payload. Range comparisons reject only after
 // both bounds complete, and every outward exit bypasses later alternatives.
-template<typename State, typename Initial, typename Evaluate, typename Join>
+template<typename Body, typename State, typename Initial, typename Evaluate, typename Join>
 auto analyze_pattern_condition(
     const SemIRProgram& program,
-    const SemIRBody& body,
+    const Body& body,
     PatternID id,
     std::span<const SemPatternBounds> bounds,
     State state,
@@ -73,6 +73,10 @@ auto analyze_pattern_condition(
         for (const auto child : enumeration->payload) {
             (co_await sequence(child));
         }
+    } else if (const auto* tuple = std::get_if<TuplePattern>(&pattern)) {
+        for (const auto child : tuple->elements) {
+            (co_await sequence(child));
+        }
     } else if (std::holds_alternative<LiteralPattern>(pattern)
                || std::holds_alternative<RangePattern>(pattern)) {
         const auto found = std::ranges::find(bounds, id, &SemPatternBounds::pattern);
@@ -89,18 +93,51 @@ auto analyze_pattern_condition(
         result.no = result.yes;
     } else if (!std::holds_alternative<WildcardPattern>(pattern)
                && !std::holds_alternative<BindingPattern>(pattern)
-               && !std::holds_alternative<TypeConstraintPattern>(pattern)) {
+               && !pattern.visit([](const auto& value) static noexcept {
+                      using Value = std::remove_cvref_t<decltype(value)>;
+                      return std::same_as<Value, TypeConstraintPattern>
+                          || std::same_as<Value, ElaboratedTypeConstraintPattern>;
+                  })) {
         invariant_violation("pattern selection received an unsupported pattern");
     }
     if (result.no
         && (std::holds_alternative<LiteralPattern>(pattern)
             || std::holds_alternative<RangePattern>(pattern)
-            || std::holds_alternative<OrPattern>(pattern))) {
+            || std::holds_alternative<OrPattern>(pattern)
+            || std::holds_alternative<TuplePattern>(pattern))) {
         const auto arms = std::array {
             PatternCoverageArm {.alternatives = {id}, .guarded = false},
         };
-        const auto exhaustive =
-            patterns_exhaustive(program, body.pattern_table(), body.pattern(id).type, arms);
+        const auto exhaustive = [&]() noexcept -> std::expected<bool, std::string> {
+            if constexpr (std::same_as<Body, SemIRBody>) {
+                return patterns_exhaustive(
+                    program,
+                    body.pattern_table(),
+                    body.pattern(id).type,
+                    arms
+                );
+            } else {
+                if (const auto* concrete = body.concrete()) {
+                    return patterns_exhaustive(
+                        program,
+                        concrete->pattern_table(),
+                        concrete->pattern(id).type,
+                        arms
+                    );
+                }
+                if (const auto* concrete = std::get_if<TypeID>(&body.pattern(id).type)) {
+                    return patterns_exhaustive(
+                        program,
+                        body.elaborated_pattern_table(),
+                        *concrete,
+                        arms
+                    );
+                }
+                // Rigid arms carry definition-site coverage on their owning
+                // control operation. Do not infer coverage from an instantiation.
+                return false;
+            }
+        }();
         if (!exhaustive) {
             invariant_violation(exhaustive.error());
         }

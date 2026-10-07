@@ -1,0 +1,23 @@
+import "carven/std/number/parse.hpp";
+
+export enum ParseError {
+    Invalid
+}
+
+export fn parse_i64(text: str) -> i64 throw ParseError {
+    let result = ::carven::number::parse_i64(text);
+    if result.has_value() { return result.value() as i64; }
+    throw ParseError::Invalid;
+}
+
+export fn parse_u64(text: str) -> u64 throw ParseError {
+    let result = ::carven::number::parse_u64(text);
+    if result.has_value() { return result.value() as u64; }
+    throw ParseError::Invalid;
+}
+
+export fn parse_f64(text: str) -> f64 throw ParseError {
+    let result = ::carven::number::parse_f64(text);
+    if result.has_value() { return result.value() as f64; }
+    throw ParseError::Invalid;
+}

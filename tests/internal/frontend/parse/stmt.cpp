@@ -11,6 +11,7 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :frontend.ast.type;
 import :source.text;
+import :support.unique_indirect;
 import :test.harness.framework;
 import :test.internal.frontend.parse.fixture;
 import std;
@@ -26,6 +27,91 @@ auto statement_at(const SyntaxTree& tree, std::size_t index) noexcept -> const A
 }
 
 const TestSuite suite([] static noexcept {
+    "Parser statement: tuple bindings retain nested targets and discards"_test = [] static noexcept {
+        constexpr auto text = std::string_view(
+            "fn f() { let (a, _, (b, c)): (i32, (), (bool, i32)) = source; var (single,) = (1,); const (left, right) = (2, 3); let (grouped) = 4; }"
+        );
+        const auto tree = parse_valid(text);
+        const auto& declaration = get<ASTVariableDecl>(statement_at(tree, 0));
+        const auto& outer = *get<UniqueIndirect<ASTTupleBindingTarget>>(declaration.target);
+        if (!expect_equal(outer.elements.size(), 3uz)) {
+            return;
+        }
+        expect_equal(
+            slice(text, get<ASTNamedBindingTarget>(outer.elements[0]).name_span),
+            std::string_view("a")
+        );
+        expect(is<ASTDiscardBindingTarget>(outer.elements[1]));
+        const auto& inner = *get<UniqueIndirect<ASTTupleBindingTarget>>(outer.elements[2]);
+        if (!expect_equal(inner.elements.size(), 2uz)) {
+            return;
+        }
+        expect_equal(
+            slice(text, get<ASTNamedBindingTarget>(inner.elements[1]).name_span),
+            std::string_view("c")
+        );
+        expect(is<ASTTupleType>(tree.view().type(*declaration.type)));
+        expect_equal(get<ASTVariableDecl>(statement_at(tree, 1)).kind, ASTBindingKind::Var);
+        expect_equal(get<ASTVariableDecl>(statement_at(tree, 2)).kind, ASTBindingKind::Const);
+        expect(is<ASTNamedBindingTarget>(get<ASTVariableDecl>(statement_at(tree, 3)).target));
+        check_invalid("fn f() { let (a,,b) = value; }");
+        check_invalid("fn f() { let (a, 7) = value; }");
+        check_invalid("fn f() { let (a, await) = value; }");
+        check_invalid("fn f() { let (a, b = value; }");
+    };
+
+    "Parser statement: range loops preserve recursive targets and Write markers"_test =
+        [] static noexcept {
+            const auto tree = parse_valid(
+                "fn f() { for (a, (_, b)): (i32, ((), bool)) in values {} for &(c,) in singles {} const for () in units {} }"
+            );
+            const auto& first =
+                get<ASTRangeForHeader>(get<ASTForStmt>(statement_at(tree, 0uz)).header);
+            const auto& target = *get<UniqueIndirect<ASTTupleBindingTarget>>(first.target);
+            if (!expect_equal(target.elements.size(), 2uz)) {
+                return;
+            }
+            const auto& nested = *get<UniqueIndirect<ASTTupleBindingTarget>>(target.elements[1]);
+            if (!expect_equal(nested.elements.size(), 2uz)) {
+                return;
+            }
+            expect(is<ASTDiscardBindingTarget>(nested.elements[0]));
+            expect(first.type.has_value());
+            const auto& second =
+                get<ASTRangeForHeader>(get<ASTForStmt>(statement_at(tree, 1uz)).header);
+            expect(second.write_marker.has_value());
+            expect_equal(
+                (*get<UniqueIndirect<ASTTupleBindingTarget>>(second.target)).elements.size(),
+                1uz
+            );
+            const auto& unrolled = get<ASTForStmt>(statement_at(tree, 2uz));
+            expect(unrolled.const_span.has_value());
+            expect((*get<UniqueIndirect<ASTTupleBindingTarget>>(
+                        get<ASTRangeForHeader>(unrolled.header).target
+                    ))
+                       .elements.empty());
+            check_invalid("fn f() { for (a,,b) in values {} }");
+            check_invalid("fn f() { for (a, 1) in values {} }");
+        };
+
+    "Parser statement: cancel names one lexical child"_test = [] static noexcept {
+        static constexpr auto text = std::string_view("async fn f() { cancel child; }");
+        const auto tree = parse_valid(text);
+        const auto& cancellation = get<ASTCancelStmt>(statement_at(tree, 0));
+        expect_equal(slice(text, cancellation.keyword_span), std::string_view("cancel"));
+        const auto& child = tree.view().expression(cancellation.child);
+        expect(is<ASTNameExpr>(child));
+        expect_equal(slice(text, child.span), std::string_view("child"));
+        for (const auto source : {
+                 "async fn f() { cancel(child); }",
+                 "async fn f() { cancel &child; }",
+                 "async fn f() { cancel object.child; }",
+                 "async fn f() { cancel child }",
+             }) {
+            check_rejected(source);
+        }
+    };
+
     "Parser statement: else-if chains use an ordered branch list"_test = [] static noexcept {
         static constexpr auto text = std::string_view(
             "fn classify(value: i32) {\n"

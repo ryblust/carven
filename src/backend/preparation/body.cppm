@@ -8,6 +8,7 @@ import std;
 
 // ReadBorrow observes an object; AddressValue reads a pointer slot. Neither
 // requires a C++ local declaration. Realization chooses storage at boundaries.
+// ReadArgument applies the source parameter policy when saving an argument.
 // OperandValue reads a completed value without requiring mutable access.
 // Consume requires transferable owned storage when realization saves a value.
 // ProjectionPlace forwards the consumer access through a field or element projection.
@@ -16,6 +17,7 @@ import std;
 // trivial values whose Carven transfer policy otherwise observes const T&.
 enum class PreparedUse {
     ReadBorrow,
+    ReadArgument,
     AddressValue,
     OperandValue,
     ProjectionPlace,
@@ -39,6 +41,7 @@ struct PreparedOperation final {
     bool requires_execution;
     // A pending observation may change across later execution. Stable reads need no protection.
     bool reads_storage;
+    bool requires_coroutine_context;
     std::vector<PreparedOperand> operands;
     std::unique_ptr<OperationPreparation> preparation;
 };
@@ -47,6 +50,7 @@ struct ExpressionSummary final {
     bool executes_operation;
     bool requires_execution;
     bool reads_storage;
+    bool requires_coroutine_context;
 };
 
 class BodyPreparation final {
@@ -57,6 +61,8 @@ public:
     static auto operation(const SemanticExpression& source) noexcept -> const SemanticExpression&;
     auto prepare(const SemanticExpression& source) const noexcept -> PreparedOperation;
     auto summary(const SemanticExpression& source) const noexcept -> const ExpressionSummary&;
+    auto requires_coroutine_context(const SemanticRegion& source) const noexcept -> bool;
+    auto children(LifetimeRegionID lifetime) const noexcept -> std::span<const LocalBindingID>;
 
 private:
     auto operands(
@@ -69,4 +75,6 @@ private:
     const SemIRProgram& semantic;
     const SemIRBody& metadata;
     std::unordered_map<const SemanticExpression*, ExpressionSummary> summaries;
+    std::unordered_map<const SemanticRegion*, bool> region_contexts;
+    std::map<LifetimeRegionID, std::vector<LocalBindingID>> child_bindings;
 };

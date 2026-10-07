@@ -1,0 +1,29 @@
+async fn successful_void() {
+    await yield_once();
+}
+
+async fn successful_number() -> i32 {
+    await yield_once();
+    return 42;
+}
+
+private fn forward<T>(&&value: T) -> T => &&value;
+
+async fn collect() -> (void, i32) {
+    async let empty = successful_void();
+    async let number = successful_number();
+    return (await empty, await number);
+}
+
+async fn main() {
+    let (empty, number) = await collect();
+    assert(empty == ());
+    assert(number == 42);
+    let pending = successful_number();
+    let product = (true, &&pending, ());
+    let forwarded = forward(&&product);
+    assert(forwarded.0);
+    let _ = forwarded.2;
+    assert(await (&&forwarded).1 == 42);
+    println(number);
+}

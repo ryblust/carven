@@ -27,33 +27,6 @@ auto merge_rows(std::vector<T>& destination, const std::vector<T>& source) noexc
 
 } // namespace
 
-auto select_element_storage(
-    const CanonicalTypeStore& types,
-    TypeID sequence,
-    std::span<const OwnershipPlace> storage,
-    const OwnershipRelationships& relationships,
-    std::optional<std::uint64_t> index
-) noexcept -> std::vector<OwnershipPlace> {
-    auto result = std::vector<OwnershipPlace>();
-    if (std::holds_alternative<SliceTypeValue>(types.type(sequence).value)) {
-        for (const auto& loan : relationships.view().storage_loans) {
-            if (loan.holder.empty()) {
-                result.push_back(loan.backing);
-            }
-        }
-        // A slice can rebase indices; its backing is protected as a whole.
-        index = std::nullopt;
-    } else {
-        result.assign(storage.begin(), storage.end());
-    }
-    for (auto& selected : result) {
-        selected.path.push_back(index);
-    }
-    std::ranges::sort(result);
-    result.erase(std::ranges::unique(result).begin(), result.end());
-    return result;
-}
-
 auto overlaps(
     std::span<const std::optional<std::uint64_t>> left,
     std::span<const std::optional<std::uint64_t>> right
@@ -79,6 +52,7 @@ auto normalize_relationships(OwnershipRelationships& relationships) noexcept -> 
         normalize_rows(rows->callable_loans);
         normalize_rows(rows->captures);
         normalize_storage_loans(rows->storage_loans);
+        normalize_rows(rows->formal_bundles);
     }
 }
 
@@ -96,6 +70,7 @@ auto merge_relationships(
     merge_rows(rows.callable_loans, incoming.callable_loans);
     merge_rows(rows.captures, incoming.captures);
     merge_rows(rows.storage_loans, incoming.storage_loans);
+    merge_rows(rows.formal_bundles, incoming.formal_bundles);
 }
 
 auto project_relationships(
@@ -119,6 +94,7 @@ auto project_relationships(
     select(rows.callable_loans, &OwnershipRelationshipRows::callable_loans);
     select(rows.captures, &OwnershipRelationshipRows::captures);
     select(rows.storage_loans, &OwnershipRelationshipRows::storage_loans);
+    select(rows.formal_bundles, &OwnershipRelationshipRows::formal_bundles);
     normalize_relationships(result);
     return result;
 }
@@ -132,6 +108,9 @@ auto nest_relationships(OwnershipRelationships source, const OwnershipProjection
         for (auto& loan : rows->storage_loans) {
             loan.holder.insert(loan.holder.begin(), path.begin(), path.end());
         }
+        for (auto& bundle : rows->formal_bundles) {
+            bundle.holder.insert(bundle.holder.begin(), path.begin(), path.end());
+        }
         for (auto& capture : rows->captures) {
             capture.holder.insert(capture.holder.begin(), path.begin(), path.end());
         }
@@ -141,12 +120,26 @@ auto nest_relationships(OwnershipRelationships source, const OwnershipProjection
 
 auto join_ownership_state(OwnershipState& destination, const OwnershipState& source) noexcept
     -> void {
-    if (destination.objects.size() != source.objects.size()) {
-        invariant_violation("ownership join has different storage domains");
+    // Query-local referents append to a stable domain. A branch that did not
+    // select a referent has no relationships for it, rather than unavailable storage.
+    if (destination.objects.size() < source.objects.size()) {
+        destination.objects.resize(
+            source.objects.size(),
+            {.available = true,
+             .taken = std::nullopt,
+             .relationships = {},
+             .modified = false,
+             .child_intent = std::nullopt}
+        );
     }
     for (auto&& [target, incoming] : std::views::zip(destination.objects, source.objects)) {
         target.available &= incoming.available;
         target.modified |= incoming.modified;
+        if (incoming.child_intent) {
+            target.child_intent = target.child_intent
+                ? std::optional(*target.child_intent && *incoming.child_intent)
+                : incoming.child_intent;
+        }
         if (incoming.taken.has_value()
             && (!target.taken.has_value() || *incoming.taken < *target.taken)) {
             target.taken = incoming.taken;

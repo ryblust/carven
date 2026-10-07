@@ -1,20 +1,25 @@
 module carven:semantic.analysis.program.publication.impl;
 
+import :semantic.analysis.async;
+import :semantic.analysis.model;
 import :semantic.analysis.nullability;
 import :semantic.analysis.ownership;
 import :semantic.analysis.program;
 import :semantic.analysis.validation;
+import :semantic.semir.passing;
 import std;
 
 auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
     const auto diagnostics = analysis_diagnostics;
-    auto result = [this]() noexcept {
+    auto solved = [this]() noexcept {
         auto draft = std::move(*this);
         return std::move(draft).resolve();
     }();
-    if (!result) {
-        return result;
+    if (!solved) {
+        return std::unexpected(solved.error());
     }
+    auto generics = std::move(solved->generics);
+    auto result = AnalysisResult<SemIRProgram> {std::move(solved->program)};
     if (const auto failure = diagnostics.failure()) {
         return std::unexpected(*failure);
     }
@@ -26,15 +31,26 @@ auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
     if (!checked) {
         return std::unexpected(checked.error());
     }
-    checked = analyze_body_batch(program, diagnostics);
-    if (!checked) {
-        return std::unexpected(checked.error());
-    }
-    checked = check_pointer_nullability(program, diagnostics);
-    if (!checked) {
-        return std::unexpected(checked.error());
+    {
+        const auto model = AnalysisModelView(program, generics);
+        checked = analyze_async_contracts(model, diagnostics);
+        if (!checked) {
+            return std::unexpected(checked.error());
+        }
+        auto passing = ReadPassingFacts {};
+        checked = analyze_body_batch(model, diagnostics, &passing);
+        if (!checked) {
+            return std::unexpected(checked.error());
+        }
+        result->publish_read_passing_facts(std::move(passing));
+        checked = check_pointer_nullability(model, diagnostics);
+        if (!checked) {
+            return std::unexpected(checked.error());
+        }
     }
     result->publish_surfaces();
     result->publish_bodies();
+    result->cancellation_facts =
+        std::make_unique<const AsyncCancellationFacts>(analyze_async_cancellation(*result));
     return result;
 }

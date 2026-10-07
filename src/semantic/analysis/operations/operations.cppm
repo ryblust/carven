@@ -6,8 +6,12 @@ import :frontend.ast.storage;
 import :frontend.literal;
 import :semantic.analysis.program;
 import :semantic.semir.body;
+import :semantic.semir.generic;
 import :semantic.semir.initialization;
+import :semantic.semir.operation;
 import :semantic.semir.program;
+import :semantic.semir.sequence;
+import :semantic.semir.structured;
 import :semantic.semir.type;
 import std;
 
@@ -33,7 +37,18 @@ using CastDecision = std::expected<CastKind, OperationDiagnostic>;
 using TextMethodDecision = std::expected<std::optional<TextIntrinsic>, OperationDiagnostic>;
 using TextIntrinsicDecision = std::expected<TextIntrinsic, OperationDiagnostic>;
 
-auto default_initialization(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+auto type_supports_copy(ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool;
+
+// Concrete aliases in rigid environments preserve the ordinary type identity.
+auto unwrap_type_alias(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> ConstructionTypeRef;
+auto type_formation_status(
+    const ProgramDraft& draft,
+    TypeFormationRequirementKind requirement,
+    ConstructionTypeRef type
+) noexcept -> TypeFormationStatus;
+
+auto default_initialization(ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> DefaultInitialization;
 
 struct StructureInitializer final {
@@ -48,13 +63,36 @@ auto select_structure_initializers(
     std::span<const ConstructionStructField> fields
 ) noexcept -> AnalysisResult<std::vector<StructureInitializer>>;
 
+struct RecordShape final {
+    ConstructionStructRef owner;
+    RecordKind kind;
+    ProgramSpellingID name;
+    std::vector<ConstructionStructField> fields;
+};
+
+auto record_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<RecordShape>;
+
+enum class SequenceShapeKind { Array, Slice, OwnedSequence };
+
 struct SequenceShape final {
+    SequenceShapeKind kind;
     ConstructionTypeRef element;
     std::optional<std::uint64_t> extent;
 };
 
 auto sequence_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<SequenceShape>;
+
+// The extent is a normal-completion fact; obtaining the value may still execute.
+auto sequence_extent(const ProgramDraft& draft, const SemanticExpression& source) noexcept
+    -> std::optional<std::uint64_t>;
+
+auto constant_index_in_bounds(
+    const ProgramDraft& draft,
+    std::optional<std::uint64_t> extent,
+    std::optional<ConstantID> index
+) noexcept -> std::optional<bool>;
 
 auto array_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionTypeRef>;
@@ -66,6 +104,31 @@ auto array_literal_element(
 
 auto slice_element(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<ConstructionTypeRef>;
+auto make_array_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef element,
+    std::uint64_t extent
+) noexcept -> ConstructionTypeRef;
+auto make_slice_type(ProgramDraft& draft, ConstructionTypeRef element) noexcept
+    -> ConstructionTypeRef;
+auto make_pointer_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef target,
+    PointerAccess access,
+    ProgramOriginID origin
+) noexcept -> AnalysisResult<ConstructionTypeRef>;
+auto operation_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<ConstructionOperationTypeValue>;
+auto make_operation_type(
+    ProgramDraft& draft,
+    ConstructionTypeRef success,
+    ConstructionFailureRef failures
+) noexcept -> ConstructionTypeRef;
+auto make_tuple_type(ProgramDraft& draft, std::vector<ConstructionTypeRef> elements) noexcept
+    -> ConstructionTypeRef;
+
+auto tuple_elements(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
+    -> std::optional<std::vector<ConstructionTypeRef>>;
 
 auto semantic_operator(ASTPrefixOperator op) noexcept -> UnaryOperator;
 auto semantic_operator(ASTBinaryOperator op) noexcept -> std::optional<BinaryOperator>;
@@ -87,8 +150,14 @@ auto select_contextual_numeric_type(
 ) noexcept -> TypeID;
 
 auto builtin_type_supports_equality(BuiltinType type) noexcept -> bool;
+
+struct PointerShape final {
+    ConstructionTypeRef target;
+    PointerAccess access;
+};
+
 auto pointer_shape(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> std::optional<PointerTypeValue>;
+    -> std::optional<PointerShape>;
 auto pointer_narrows(
     const ProgramDraft& draft,
     ConstructionTypeRef source,
@@ -100,6 +169,7 @@ auto type_shapes_compatible(
     ConstructionTypeRef left,
     ConstructionTypeRef right
 ) noexcept -> bool;
+// Inspects construction shapes; nominal members are checked at their storage boundary.
 auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> bool;
 auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool;
@@ -142,6 +212,13 @@ auto decide_slice_method(
     std::size_t arguments
 ) noexcept -> std::expected<std::optional<SliceIntrinsic>, OperationDiagnostic>;
 
+auto decide_sequence_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<SequenceIntrinsic>, OperationDiagnostic>;
+
 auto decide_text_method(
     const ProgramDraft& draft,
     ConstructionTypeRef operand,
@@ -174,3 +251,10 @@ auto type_supports_equality(
     const DeclarationStore& declarations,
     TypeID type
 ) noexcept -> bool;
+
+auto decide_float_method(
+    const ProgramDraft& draft,
+    ConstructionTypeRef operand,
+    std::string_view name,
+    std::size_t arguments
+) noexcept -> std::expected<std::optional<FloatIntrinsic>, OperationDiagnostic>;

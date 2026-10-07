@@ -251,6 +251,16 @@ inline constexpr auto contracts = std::array {
         .arity = 3uz,
         .result = SIMDSlot::Vector,
         .static_input = std::nullopt
+    },
+    IntrinsicContract {
+        .intrinsic = SIMDIntrinsic::Sum,
+        .name = "sum",
+        .factory = false,
+        .bytes_only = true,
+        .inputs = {SIMDSlot::Vector},
+        .arity = 1uz,
+        .result = SIMDSlot::Index,
+        .static_input = std::nullopt
     }
 };
 
@@ -266,6 +276,10 @@ auto contract_for(SIMDIntrinsic intrinsic) noexcept -> const IntrinsicContract& 
 
 auto simd_is_factory(SIMDIntrinsic intrinsic) noexcept -> bool {
     return contract_for(intrinsic).factory;
+}
+
+auto simd_intrinsic_name(SIMDIntrinsic intrinsic) noexcept -> std::string_view {
+    return contract_for(intrinsic).name;
 }
 
 auto simd_reports(SIMDIntrinsic intrinsic) noexcept -> bool {
@@ -287,7 +301,11 @@ auto simd_static_limit(SIMDIntrinsic intrinsic, BuiltinType owner) noexcept -> s
     return intrinsic == SIMDIntrinsic::Extract ? simd_layout(owner)->width + 1u : 8u;
 }
 
-auto simd_contract(SIMDIntrinsic intrinsic, BuiltinType owner) noexcept -> SIMDContract {
+auto simd_contract(
+    SIMDIntrinsic intrinsic,
+    BuiltinType owner,
+    std::optional<BuiltinType> lookup_indices
+) noexcept -> SIMDContract {
     const auto layout = simd_layout(owner);
     if (!layout) {
         invariant_violation("invalid SIMD owner");
@@ -316,9 +334,17 @@ auto simd_contract(SIMDIntrinsic intrinsic, BuiltinType owner) noexcept -> SIMDC
     if (contract.static_input) {
         stages[*contract.static_input] = ParameterStage::Static;
     }
+    auto result = slot(contract.result);
+    if (intrinsic == SIMDIntrinsic::Lookup && lookup_indices) {
+        if (*lookup_indices != BuiltinType::U8x16 && *lookup_indices != BuiltinType::U8x32) {
+            invariant_violation("SIMD lookup requires byte vector indices");
+        }
+        inputs[1] = *lookup_indices;
+        result = *lookup_indices;
+    }
     return {
         .inputs = std::move(inputs),
-        .result = slot(contract.result),
+        .result = result,
         .name = contract.name,
         .stages = std::move(stages)
     };

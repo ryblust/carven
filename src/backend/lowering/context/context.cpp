@@ -253,3 +253,11 @@ auto ModuleLowering::make_callable_name_allocator() const noexcept -> TargetName
 auto ModuleLowering::take_query_aliases() noexcept -> std::vector<TargetItem> {
     return std::exchange(query_aliases, {});
 }
+
+auto ModuleLowering::defer_enum_factory(TargetItem item) noexcept -> void {
+    enum_factory_definitions.push_back(std::move(item));
+}
+
+auto ModuleLowering::take_enum_factories() noexcept -> std::vector<TargetItem> {
+    return std::exchange(enum_factory_definitions, {});
+}

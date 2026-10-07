@@ -7,9 +7,15 @@ import :backend.target.name;
 import :backend.target.stmt;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
+import :semantic.semir.program;
 import :semantic.semir.structured;
 import :source.provenance.ids;
 import std;
+
+// Target adaptation may reuse another expression's query type. Only a native
+// producer's own query carries its exact result category.
+auto native_result_query(const SemIRProgram& program, const SemanticExpression& source) noexcept
+    -> std::optional<TypeID>;
 
 // Prepared operands preserve their use contract's native type and value category.
 // The body realizer must stabilize residual evaluations whose observable order

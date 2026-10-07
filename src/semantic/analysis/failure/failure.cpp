@@ -7,11 +7,15 @@ import std;
 FrozenFailureConstraints::FrozenFailureConstraints(
     ImmutableProgramTable<FailureTerm, FailureTermID> terms,
     std::vector<FailureConstraint> constraints,
-    ProvenanceIdentity provenance
+    ProvenanceIdentity provenance,
+    std::shared_ptr<GenericFailureAlgebra> generic_failures,
+    std::vector<FailureTermID> pending
 ) noexcept
     : term_table(std::move(terms)),
       requirements(std::move(constraints)),
-      provenance_identity(provenance) {}
+      provenance_identity(provenance),
+      symbolic_graph(std::move(generic_failures)),
+      pending_applications(std::move(pending)) {}
 
 auto FrozenFailureConstraints::owner() const noexcept -> ProgramIdentity {
     return term_table.owner();
@@ -30,13 +34,88 @@ auto FrozenFailureConstraints::constraints() const noexcept -> std::span<const F
     return requirements;
 }
 
+auto FrozenFailureConstraints::generic_failures() const noexcept -> const GenericFailureAlgebra& {
+    return *symbolic_graph;
+}
+
 FailureConstraintStore::FailureConstraintStore(
     ProgramIdentity owner,
     ProvenanceIdentity provenance
 ) noexcept
     : program_identity(owner),
       provenance_identity(provenance),
-      term_table(owner) {}
+      term_table(owner),
+      symbolic_graph(std::make_shared<GenericFailureAlgebra>(owner)) {}
+
+auto FailureConstraintStore::add_generic_parameter(GenericFailureParameter parameter) noexcept
+    -> GenericFailureID {
+    return intern_generic_failure({
+        .concrete_members = {},
+        .parameters = {{.parameter = parameter, .mask = {.complemented = true, .members = {}}}},
+        .guards = {},
+    });
+}
+
+auto FailureConstraintStore::intern_generic_failure(GenericFailureExpression expression) noexcept
+    -> GenericFailureID {
+    return symbolic_graph->intern(std::move(expression));
+}
+
+auto FailureConstraintStore::generic_failure_copy(GenericFailureID id) const noexcept
+    -> GenericFailureExpression {
+    return symbolic_graph->copy(id);
+}
+
+auto FailureConstraintStore::add_generic_concrete(std::vector<TypeID> members) noexcept
+    -> GenericFailureID {
+    return intern_generic_failure({
+        .concrete_members = std::move(members),
+        .parameters = {},
+        .guards = {},
+    });
+}
+
+auto FailureConstraintStore::add_generic_union(std::vector<GenericFailureID> inputs) noexcept
+    -> GenericFailureID {
+    return symbolic_graph->unite(inputs);
+}
+
+auto FailureConstraintStore::add_generic_residual(
+    GenericFailureID input,
+    std::vector<TypeID> members
+) noexcept -> GenericFailureID {
+    return symbolic_graph->residual(input, std::move(members));
+}
+
+auto FailureConstraintStore::add_generic_intersection(
+    GenericFailureID input,
+    std::vector<TypeID> members
+) noexcept -> GenericFailureID {
+    return symbolic_graph->intersection(input, std::move(members));
+}
+
+auto FailureConstraintStore::add_generic_guard(
+    GenericFailureID gate,
+    GenericFailureID source
+) noexcept -> GenericFailureID {
+    return symbolic_graph->guard(gate, source);
+}
+
+auto FailureConstraintStore::generic_subset(
+    GenericFailureID actual,
+    GenericFailureID allowed
+) const noexcept -> FailureProof {
+    return symbolic_graph->subset(actual, allowed);
+}
+
+auto FailureConstraintStore::generic_empty(GenericFailureID source) const noexcept -> FailureProof {
+    return symbolic_graph->empty(source);
+}
+
+auto FailureConstraintStore::generic_non_empty(GenericFailureID source) const noexcept
+    -> FailureProof {
+    return symbolic_graph->non_empty(source);
+}
 
 auto FailureConstraintStore::add_empty_term() noexcept -> FailureTermID {
     return term_table.add(FailureTerm {});
@@ -56,10 +135,10 @@ auto FailureConstraintStore::add_concrete_term(std::vector<TypeID> members) noex
     );
 }
 
-auto FailureConstraintStore::add_union_term(std::vector<FailureTermID> inputs) noexcept
+auto FailureConstraintStore::add_union_term(std::vector<ConstructionFailureRef> inputs) noexcept
     -> FailureTermID {
     for (const auto input : inputs) {
-        require_term(input);
+        require_source(input);
     }
     return term_table.add(
         FailureTerm {
@@ -74,10 +153,10 @@ auto FailureConstraintStore::add_union_term(std::vector<FailureTermID> inputs) n
 }
 
 auto FailureConstraintStore::add_residual_term(
-    FailureTermID input,
+    ConstructionFailureRef input,
     std::vector<TypeID> handled_members
 ) noexcept -> FailureTermID {
-    require_term(input);
+    require_source(input);
     return term_table.add(
         FailureTerm {
             .direct_members = {},
@@ -91,10 +170,10 @@ auto FailureConstraintStore::add_residual_term(
 }
 
 auto FailureConstraintStore::add_intersection_term(
-    FailureTermID input,
+    ConstructionFailureRef input,
     std::vector<TypeID> retained_members
 ) noexcept -> FailureTermID {
-    require_term(input);
+    require_source(input);
     return term_table.add(
         FailureTerm {
             .direct_members = {},
@@ -136,22 +215,22 @@ auto FailureConstraintStore::add_thrown_member(
 
 auto FailureConstraintStore::add_contribution(
     FailureTermID destination,
-    FailureTermID source
+    ConstructionFailureRef source
 ) noexcept -> void {
     require_term(destination);
-    require_term(source);
+    require_source(source);
     // Inputs are an unordered set; finish() normalizes each term once.
     term_table.mutate(destination).inputs.push_back(source);
 }
 
 auto FailureConstraintStore::add_guarded_contribution(
     FailureTermID destination,
-    FailureTermID gate,
-    FailureTermID source
+    ConstructionFailureRef gate,
+    ConstructionFailureRef source
 ) noexcept -> void {
     require_term(destination);
-    require_term(gate);
-    require_term(source);
+    require_source(gate);
+    require_source(source);
     term_table.mutate(destination)
         .guarded_inputs.push_back(
             FailureTerm::GuardedContribution {
@@ -180,41 +259,45 @@ auto FailureConstraintStore::equate(FailureTermID left, FailureTermID right) noe
 }
 
 auto FailureConstraintStore::require_empty(
-    FailureTermID term,
+    ConstructionFailureRef source,
     ProgramOriginID origin,
     EmptyFailureRequirementKind kind
 ) noexcept -> void {
-    require_term(term);
+    require_source(source);
     require_origin(origin);
     requirements.push_back(
         RequiresEmptyFailure {
-            .term = term,
+            .source = source,
             .origin = origin,
             .kind = kind,
         }
     );
 }
 
-auto FailureConstraintStore::require_non_empty(FailureTermID term, ProgramOriginID origin) noexcept
-    -> void {
-    require_term(term);
+auto FailureConstraintStore::require_non_empty(
+    ConstructionFailureRef source,
+    ProgramOriginID origin,
+    bool allow_dependent
+) noexcept -> void {
+    require_source(source);
     require_origin(origin);
     requirements.push_back(
         RequiresNonEmptyFailure {
-            .term = term,
+            .source = source,
             .origin = origin,
+            .allow_dependent = allow_dependent,
         }
     );
 }
 
 auto FailureConstraintStore::require_subset(
-    FailureTermID actual,
-    FailureTermID allowed,
+    ConstructionFailureRef actual,
+    ConstructionFailureRef allowed,
     ProgramOriginID origin,
     FailureSubsetRequirementKind kind
 ) noexcept -> void {
-    require_term(actual);
-    require_term(allowed);
+    require_source(actual);
+    require_source(allowed);
     require_origin(origin);
     requirements.push_back(
         RequiresFailureSubset {
@@ -227,12 +310,12 @@ auto FailureConstraintStore::require_subset(
 }
 
 auto FailureConstraintStore::require_equal(
-    FailureTermID left,
-    FailureTermID right,
+    ConstructionFailureRef left,
+    ConstructionFailureRef right,
     ProgramOriginID origin
 ) noexcept -> void {
-    require_term(left);
-    require_term(right);
+    require_source(left);
+    require_source(right);
     require_origin(origin);
     requirements.push_back(
         RequiresEqualFailures {
@@ -244,10 +327,10 @@ auto FailureConstraintStore::require_equal(
 }
 
 auto FailureConstraintStore::require_declared_contract(
-    FailureTermID actual,
+    ConstructionFailureRef actual,
     ProgramOriginID origin
 ) noexcept -> void {
-    require_term(actual);
+    require_source(actual);
     require_origin(origin);
     requirements.push_back(
         RequiresDeclaredFailureContract {
@@ -258,10 +341,15 @@ auto FailureConstraintStore::require_declared_contract(
 }
 
 auto FailureConstraintStore::finish() && noexcept -> FrozenFailureConstraints {
+    if (std::ranges::any_of(applications, [](const auto& application) static noexcept {
+            return !application.complete;
+        })) {
+        invariant_violation("failure publication retained a pending application");
+    }
     for (auto& term : term_table.mutable_values()) {
         term.inputs = normalize_inputs(std::move(term.inputs));
         std::ranges::sort(term.guarded_inputs, {}, [](const auto& input) static noexcept {
-            return std::pair(input.gate.index(), input.source.index());
+            return std::pair(input.gate, input.source);
         });
         term.guarded_inputs.erase(
             std::ranges::unique(term.guarded_inputs).begin(),
@@ -271,13 +359,43 @@ auto FailureConstraintStore::finish() && noexcept -> FrozenFailureConstraints {
     return FrozenFailureConstraints(
         std::move(term_table).seal(),
         std::move(requirements),
-        provenance_identity
+        provenance_identity,
+        std::move(symbolic_graph),
+        {}
+    );
+}
+
+auto FailureConstraintStore::snapshot() const noexcept -> FrozenFailureConstraints {
+    auto pending = std::vector<FailureTermID>();
+    for (const auto& application : applications) {
+        if (!application.complete) {
+            pending.push_back(application.result);
+        }
+    }
+    return FrozenFailureConstraints(
+        term_table.snapshot(),
+        requirements,
+        provenance_identity,
+        symbolic_graph,
+        std::move(pending)
     );
 }
 
 auto FailureConstraintStore::require_term(FailureTermID term) const noexcept -> void {
     if (!term_table.contains(term)) {
         invariant_violation("failure constraint used a foreign or invalid term identity");
+    }
+}
+
+auto FailureConstraintStore::require_source(ConstructionFailureRef source) const noexcept -> void {
+    if (const auto* term = std::get_if<FailureTermID>(&source)) {
+        require_term(*term);
+    } else if (const auto* known = std::get_if<FailureSetID>(&source)) {
+        if (known->owner() != program_identity) {
+            invariant_violation("failure source belongs to another semantic program");
+        }
+    } else if (!symbolic_graph->contains(std::get<GenericFailureID>(source))) {
+        invariant_violation("failure source uses a foreign or invalid generic identity");
     }
 }
 
@@ -299,12 +417,13 @@ auto FailureConstraintStore::normalize_members(std::vector<TypeID> members) cons
     return members;
 }
 
-auto FailureConstraintStore::normalize_inputs(std::vector<FailureTermID> inputs) const noexcept
-    -> std::vector<FailureTermID> {
+auto FailureConstraintStore::normalize_inputs(
+    std::vector<ConstructionFailureRef> inputs
+) const noexcept -> std::vector<ConstructionFailureRef> {
     for (const auto input : inputs) {
-        require_term(input);
+        require_source(input);
     }
-    std::ranges::sort(inputs, {}, &FailureTermID::index);
+    std::ranges::sort(inputs);
     inputs.erase(std::ranges::unique(inputs).begin(), inputs.end());
     return inputs;
 }

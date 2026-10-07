@@ -231,7 +231,10 @@ auto DeclResolver::resolve_enum_case(
     const auto& owner = *enumerations[form.owner.index()];
     const auto& owner_symbol = require_catalog_symbol(catalog, owner_symbol_id);
     const auto syntax = draft.syntax_tree(symbol.module_id).view();
-    const auto* source_enum = std::get_if<ASTEnumDecl>(&syntax.item(owner_symbol.item_id).value);
+    if (!owner_symbol.item_id) {
+        invariant_violation("source enum has no AST item");
+    }
+    const auto* source_enum = std::get_if<ASTEnumDecl>(&syntax.item(*owner_symbol.item_id).value);
     if (source_enum == nullptr || form.index >= source_enum->cases.size()) {
         invariant_violation("enum case source syntax is inconsistent");
     }

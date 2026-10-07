@@ -1,0 +1,14 @@
+async fn ready_leaf(value: u64) -> u64 {
+    cv_async_bench_observe_stack();
+    return value + 1;
+}
+
+async fn yielding_leaf(value: u64) -> u64 {
+    cv_async_bench_observe_stack();
+    await yield_once();
+    return value + 1;
+}
+
+private fn static_leaf(value: u64, const deferred: bool) {
+    const if deferred { return yielding_leaf(value); } else { return ready_leaf(value); }
+}

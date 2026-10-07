@@ -37,6 +37,28 @@ elements stable; indexing still observes backing storage. Stable reads need no
 operand snapshot. Calls and checked operations retain their execution requirements;
 source constant admission remains separate.
 
+## Async preparation
+
+`BodyPreparation` records coroutine-context requirements and indexes lexical
+children by lifetime. Await, escaping completion, and child closure require the
+owning coroutine even when their value is discarded.
+
+`PreparedAwaitProducer` borrows an eligible producer body and an optional
+transparent synchronous factory, together with their semantic-node expansion
+cost. Producers have scalar Read inputs, scalar or void success, and no outward
+failure, cancelled completion, children, or test stop. Factories return one cold
+call using parameter reads and frozen constants. Residual static selection may
+leave unconditional region wrappers. Realization supplies module visibility,
+active-callable checks, and the remaining expansion budget.
+
+`PreparedTailAwaitLoop` identifies self awaits in return position. Eligibility
+requires scalar Read inputs and locals, a scalar result other than `char`, and no
+captures, children, outward failure, cancellation, or test stop. Address formation
+and opaque native operations exclude the body. Tail arguments and enclosing
+conditions must finish without retained operation storage or suspension; this
+preserves invocation lifetimes when one native loop reuses the parameter slots.
+Explicit yields remain eligible.
+
 ## Operation preparation
 
 `backend/preparation` consumes immutable semantic operations and their known

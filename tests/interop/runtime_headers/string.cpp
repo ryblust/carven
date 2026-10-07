@@ -1,4 +1,4 @@
-#include <carven/runtime/string.hpp>
+#include <carven/runtime/text/text.hpp>
 
 auto string_header_contract() noexcept -> bool {
     auto text = carven::runtime::String::from_str("text");

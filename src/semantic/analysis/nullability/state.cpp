@@ -5,6 +5,7 @@ import :diagnostics.code;
 import :semantic.analysis.nullability.context;
 import :semantic.semir.evaluation;
 import :semantic.semir.traversal;
+import :support.invariant;
 import :support.visit;
 import std;
 
@@ -53,31 +54,37 @@ auto project_null_value(const NullValue& value, std::uint64_t index) noexcept ->
 }
 
 NullabilityBodyAnalyzer::NullabilityBodyAnalyzer(
-    const SemIRProgram& program,
-    const SemIRBody& body,
+    const AnalysisModelView& analysis,
+    const AnalysisBodyView& body,
     AnalysisDiagnostics diagnostics
 ) noexcept
-    : program(program),
+    : analysis(analysis),
+      program(analysis.program),
       body(body),
       diagnostics(diagnostics) {
-    for (const auto entry : body.bindings()) {
-        const auto aliases = entry.value.storage.visit(
+    for (const auto& [id, binding] : body.bindings()) {
+        const auto aliases = binding.storage.visit(
             Overloaded {
                 [&](const ParameterBindingStorage& storage) noexcept {
                     return storage.access == AccessMode::Write
                         || (storage.access == AccessMode::Read
-                            && !std::holds_alternative<PointerTypeValue>(
-                                program.types().type(entry.value.type).value
+                            && !std::holds_alternative<AnalysisPointerType>(
+                                analysis.shape(binding.type)
                             ));
                 },
                 [](const CaptureBindingStorage& storage) static noexcept {
                     return storage.mode == CaptureMode::Write;
                 },
                 [](const OwnerBindingStorage&) static noexcept { return false; },
+                [](const AsyncChildBindingStorage&) static noexcept { return false; },
+                [&](const AccessBindingStorage& access) noexcept {
+                    return access.access == AccessMode::Write
+                        || analysis.contents(binding.type).read_borrows_storage();
+                },
             }
         );
         if (aliases) {
-            input_aliases.insert(entry.id);
+            input_aliases.insert(id);
         }
     }
 }
@@ -97,6 +104,13 @@ auto NullabilityBodyAnalyzer::location(
         auto result = location(*field->source, enclosing);
         if (result) {
             result->path.push_back(field->field.field_index);
+        }
+        return result;
+    }
+    if (const auto* element = std::get_if<SemTupleElement>(&source.value)) {
+        auto result = location(*element->source, enclosing);
+        if (result) {
+            result->path.push_back(element->index);
         }
         return result;
     }
@@ -149,6 +163,12 @@ auto NullabilityBodyAnalyzer::value_at(
 
 auto NullabilityBodyAnalyzer::constant_value(const SemanticExpression& source) const noexcept
     -> NullValue {
+    if (std::holds_alternative<SemDefault>(source.value)
+        && std::holds_alternative<AnalysisPointerType>(
+            analysis.shape(source.type.construction())
+        )) {
+        return {{{}, NullFact::Null}};
+    }
     if (source.constant
         && std::holds_alternative<NullPointerConstant>(
             program.constants().constant(*source.constant).value
@@ -244,14 +264,49 @@ auto NullabilityBodyAnalyzer::require_nonnull(
     );
 }
 
-auto NullabilityBodyAnalyzer::failures(NullFlow& flow, FailureSetID failures_id) const noexcept
-    -> void {
+auto NullabilityBodyAnalyzer::failures(
+    NullFlow& flow,
+    ConstructionFailureRef failures_id
+) const noexcept -> void {
     if (!flow.normal) {
         return;
     }
-    for (const auto type : program.failure_sets().failure_set(failures_id).members) {
-        flow.exits.push_back({.payload = type, .state = flow.normal->state});
+    const auto mask = analysis.failure_support(failures_id);
+    if (mask.complemented) {
+        flow.exits.push_back(
+            {.payload = AnalysisFailureKey(AnalysisSymbolicFailure {failures_id, mask}),
+             .state = flow.normal->state}
+        );
+    } else {
+        for (const auto type : mask.members) {
+            flow.exits.push_back(
+                {.payload = AnalysisFailureKey(type), .state = flow.normal->state}
+            );
+        }
     }
+}
+
+auto NullabilityBodyAnalyzer::call_execution(GenericDeclarationID definition) const noexcept
+    -> CallableExecutionKind {
+    const auto& declaration = analysis.generics.definition(definition);
+    const auto* function = std::get_if<GenericFunctionDefinition>(&declaration);
+    if (!function) {
+        invariant_violation("generic call requires a function definition");
+    }
+    return function->signature.execution;
+}
+
+auto NullabilityBodyAnalyzer::apply_call_writes(
+    NullState& state,
+    std::span<const SemCallArgument> arguments
+) const noexcept -> void {
+    for (const auto& argument : arguments) {
+        if (argument.access == AccessMode::Write) {
+            expose(state, argument.expression);
+            invalidate(state, location(argument.expression, true));
+        }
+    }
+    invalidate_exposed(state);
 }
 
 auto NullabilityBodyAnalyzer::scan_write(
@@ -267,11 +322,11 @@ auto NullabilityBodyAnalyzer::scan_write(
     source.value.visit(
         Overloaded {
             [&](const SemTake& value) noexcept { invalidate(state, location(*value.place, true)); },
-            [&](const SemCall& value) noexcept {
-                for (const auto& item : value.arguments) {
-                    argument(item.access, item.expression);
+            [&](const SemCall& value) noexcept { apply_call_writes(state, value.arguments); },
+            [&](const SemGenericCall& value) noexcept {
+                if (call_execution(value.definition) == CallableExecutionKind::Synchronous) {
+                    apply_call_writes(state, value.arguments);
                 }
-                invalidate_exposed(state);
             },
             [&](const SemCppCall& value) noexcept {
                 visit_cpp_operands(value, argument);
@@ -280,6 +335,11 @@ auto NullabilityBodyAnalyzer::scan_write(
             [&](const SemCpp& value) noexcept {
                 visit_cpp_operands(value, argument);
                 invalidate_exposed(state);
+            },
+            [&](const SemIntrinsic& value) noexcept {
+                for (const auto& operand : value.operands) {
+                    argument(operand.access, operand.expression);
+                }
             },
             [&](const SemClosure& value) noexcept {
                 for (const auto& capture : value.captures) {
@@ -349,13 +409,14 @@ auto NullabilityBodyAnalyzer::scan_writes(NullState& state, const SemanticRegion
 }
 
 auto check_pointer_nullability(
-    const SemIRProgram& program,
+    const AnalysisModelView& analysis,
     AnalysisDiagnostics diagnostics
 ) noexcept -> AnalysisResult<void> {
-    // Source bodies are checked; an instance repeats one with fewer paths.
-    for (const auto entry : program.bodies().entries()) {
-        if (!entry.value.specialized()) {
-            NullabilityBodyAnalyzer(program, entry.value, diagnostics).run();
+    // Definition and executable bodies use the same proof and storage paths.
+    for (const auto& [id, body] : analysis.bodies()) {
+        static_cast<void>(id);
+        if (!body.specialized()) {
+            NullabilityBodyAnalyzer(analysis, body, diagnostics).run();
         }
     }
     if (const auto failure = diagnostics.failure()) {

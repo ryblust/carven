@@ -1,0 +1,11 @@
+
+const async fn forever() {
+    while true {
+        await yield_once();
+    }
+}
+
+async fn main() {
+    let _ = await when_all(forever(), forever());
+    println("unreachable");
+}

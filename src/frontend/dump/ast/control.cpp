@@ -11,7 +11,43 @@ import :frontend.ast.storage;
 import :frontend.ast.type;
 import :frontend.dump.ast;
 import :support.visit;
+import :support.unique_indirect;
 import std;
+
+auto ASTDumper::render_binding_target(
+    const ASTBindingTarget& target,
+    std::string_view prefix,
+    bool is_last
+) noexcept -> void {
+    target.visit(
+        Overloaded {
+            [&](const ASTNamedBindingTarget& named) noexcept {
+                render_span_field(prefix, is_last, "name", named.name_span);
+            },
+            [&](const ASTDiscardBindingTarget& discarded) noexcept {
+                render_span_field(prefix, is_last, "discard", discarded.underscore_span);
+            },
+            [&](const UniqueIndirect<ASTTupleBindingTarget>& tuple) noexcept {
+                append_line(
+                    prefix,
+                    is_last,
+                    std::format("TupleBindingTarget {}", format_dump_span(tuple->span))
+                );
+                render_list(
+                    child_prefix(prefix, is_last),
+                    true,
+                    "elements",
+                    tuple->elements,
+                    [&](const ASTBindingTarget& element,
+                        std::string_view item_prefix,
+                        bool item_last) noexcept {
+                        render_binding_target(element, item_prefix, item_last);
+                    }
+                );
+            },
+        }
+    );
+}
 
 auto ASTDumper::render_variable_declaration(
     const ASTVariableDecl& declaration,
@@ -26,12 +62,7 @@ auto ASTDumper::render_variable_declaration(
     );
     const auto nested = child_prefix(prefix, is_last);
     render_span_field(nested, false, "keyword", declaration.keyword_span);
-    render_span_field(
-        nested,
-        false,
-        std::holds_alternative<ASTNamedBindingTarget>(declaration.target) ? "name" : "discard",
-        binding_target_span(declaration.target)
-    );
+    render_binding_target(declaration.target, nested, false);
     if (declaration.type) {
         render_type(*declaration.type, nested, false, "type ");
     } else {
@@ -193,6 +224,24 @@ auto ASTDumper::render_pattern_node(ASTPatternID id, std::string_view prefix, bo
     };
     pattern.value.visit(
         Overloaded {
+            [&](const ASTTuplePattern& tuple) noexcept {
+                append_line(
+                    prefix,
+                    is_last,
+                    std::format("TuplePattern {}", format_dump_span(pattern.span))
+                );
+                render_list(
+                    child_prefix(prefix, is_last),
+                    true,
+                    "elements",
+                    tuple.elements,
+                    [&](ASTPatternID element,
+                        std::string_view item_prefix,
+                        bool item_last) noexcept {
+                        render_pattern(element, item_prefix, item_last);
+                    }
+                );
+            },
             [&](const ASTWildcardPattern& wildcard) noexcept {
                 append_line(
                     prefix,
@@ -221,9 +270,17 @@ auto ASTDumper::render_pattern_node(ASTPatternID id, std::string_view prefix, bo
                 append_line(
                     prefix,
                     is_last,
-                    std::format("BindingPattern {}", format_dump_span(pattern.span))
+                    std::format(
+                        "BindingPattern {} {}",
+                        binding.mode == ASTAccessMode::Write ? "Write" : "Read",
+                        format_dump_span(pattern.span)
+                    )
                 );
-                render_span_field(child_prefix(prefix, is_last), true, "name", binding.name_span);
+                const auto nested = child_prefix(prefix, is_last);
+                if (binding.marker_span) {
+                    render_span_field(nested, false, "Write marker", *binding.marker_span);
+                }
+                render_span_field(nested, true, "name", binding.name_span);
             },
             [&](const ASTConstraintPattern& constraint) noexcept {
                 append_line(

@@ -37,7 +37,7 @@ const TestSuite suite([] static noexcept {
                     if (!expect(integer != nullptr)) {
                         return;
                     }
-                    expect(integer->as_signed() == (name == "selected" ? 8 : 5));
+                    expect_equal(integer->as_signed(), name == "selected" ? 8 : 5);
                     ++checked;
                 } else if (name == "equal"
                            || name == "converted"

@@ -178,6 +178,54 @@ auto ASTDumper::render_expression(
 }
 
 auto ASTDumper::render_expression(
+    const ASTTupleExpr& tuple,
+    ASTExprID expression,
+    std::string_view prefix,
+    bool is_last,
+    std::string_view field
+) noexcept -> void {
+    append_line(
+        prefix,
+        is_last,
+        std::format(
+            "{}TupleExpression {}",
+            field,
+            format_dump_span(ast.expression(expression).span)
+        )
+    );
+    render_list(
+        child_prefix(prefix, is_last),
+        true,
+        "elements",
+        tuple.elements,
+        [&](const ASTExprID& element, std::string_view item_prefix, bool item_last) noexcept {
+            render_expression(element, item_prefix, item_last);
+        }
+    );
+}
+
+auto ASTDumper::render_expression(
+    const ASTArrayRepeatExpr& array,
+    ASTExprID expression,
+    std::string_view prefix,
+    bool is_last,
+    std::string_view field
+) noexcept -> void {
+    append_line(
+        prefix,
+        is_last,
+        std::format(
+            "{}ArrayRepeatExpression {}",
+            field,
+            format_dump_span(ast.expression(expression).span)
+        )
+    );
+    const auto nested = child_prefix(prefix, is_last);
+    render_expression(array.element, nested, false, "element ");
+    render_expression(array.extent, nested, true, "extent ");
+}
+
+auto ASTDumper::render_expression(
     const ASTConstructionExpr& construction,
     ASTExprID expression,
     std::string_view prefix,
@@ -323,6 +371,35 @@ auto ASTDumper::render_expression(
 }
 
 auto ASTDumper::render_expression(
+    const ASTTypeApplicationExpr& application,
+    ASTExprID expression,
+    std::string_view prefix,
+    bool is_last,
+    std::string_view field
+) noexcept -> void {
+    append_line(
+        prefix,
+        is_last,
+        std::format(
+            "{}TypeApplicationExpression {}",
+            field,
+            format_dump_span(ast.expression(expression).span)
+        )
+    );
+    const auto nested = child_prefix(prefix, is_last);
+    render_expression(application.operand_id, nested, false, "operand ");
+    render_list(
+        nested,
+        true,
+        "type_arguments",
+        application.arguments,
+        [&](const ASTGenericArgument& argument,
+            std::string_view item_prefix,
+            bool item_last) noexcept { render_generic_argument(argument, item_prefix, item_last); }
+    );
+}
+
+auto ASTDumper::render_expression(
     const ASTCallExpr& call,
     ASTExprID expression,
     std::string_view prefix,
@@ -341,10 +418,8 @@ auto ASTDumper::render_expression(
         true,
         "arguments",
         call.arguments,
-        [&](const ASTCallArgument& argument,
-            std::string_view item_prefix,
-            bool item_last) noexcept {
-            render_expression(argument.expression, item_prefix, item_last);
+        [&](const ASTExprID& argument, std::string_view item_prefix, bool item_last) noexcept {
+            render_expression(argument, item_prefix, item_last);
         }
     );
 }
@@ -368,6 +443,28 @@ auto ASTDumper::render_expression(
     const auto nested_prefix = child_prefix(prefix, is_last);
     render_expression(index.operand_id, nested_prefix, false, "operand ");
     render_expression(index.index, nested_prefix, true, "index ");
+}
+
+auto ASTDumper::render_expression(
+    const ASTTupleElementExpr& element,
+    ASTExprID expression,
+    std::string_view prefix,
+    bool is_last,
+    std::string_view field
+) noexcept -> void {
+    append_line(
+        prefix,
+        is_last,
+        std::format(
+            "{}TupleElementExpression {}",
+            field,
+            format_dump_span(ast.expression(expression).span)
+        )
+    );
+    const auto nested = child_prefix(prefix, is_last);
+    render_expression(element.operand_id, nested, false, "operand ");
+    append_line(nested, false, std::format("index {}", element.index));
+    render_span_field(nested, true, "index spelling", element.index_span);
 }
 
 auto ASTDumper::render_expression(
@@ -458,12 +555,7 @@ auto ASTDumper::render_expression(
             } else {
                 append_line(parameter_prefix, false, "access Read");
             }
-            render_span_field(
-                parameter_prefix,
-                !parameter.type.has_value(),
-                "name",
-                binding_target_span(parameter.target)
-            );
+            render_binding_target(parameter.target, parameter_prefix, !parameter.type);
             if (parameter.type.has_value()) {
                 render_type(*parameter.type, parameter_prefix, true, "type ");
             }

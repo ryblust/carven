@@ -32,7 +32,8 @@ auto SemanticExecutor::fail(
                     .termination = ExecutionTermination::StopRoot,
                 },
             .fields = std::move(fields),
-            .calls = calls,
+            .calls = current->calls,
+            .blocks = current->blocks,
         }
     );
 }
@@ -41,8 +42,11 @@ auto SemanticExecutor::halt(ExecutionEvent event) noexcept -> ExecutionFailure {
     if (event.termination() == ExecutionTermination::Continue) {
         invariant_violation("a continuing report cannot stop execution");
     }
+    if (stopped) {
+        return *stopped;
+    }
     context.report(event);
-    return ExecutionHalt {.event = std::move(event)};
+    return stop(ExecutionHalt {.event = std::move(event)});
 }
 
 auto SemanticExecutor::trap(
@@ -61,7 +65,8 @@ auto SemanticExecutor::trap(
                     .termination = ExecutionTermination::Abort,
                 },
             .fields = std::move(fields),
-            .calls = calls,
+            .calls = current->calls,
+            .blocks = current->blocks,
         }
     );
 }
@@ -112,7 +117,7 @@ auto SemanticExecutor::equal(
     const ExecutionValue& right,
     ProgramOriginID origin
 ) noexcept -> ExecutionResult<bool> {
-    const auto result = execution_equal(values, left, right, steps, limits.steps);
+    const auto result = execution_equal(values, left, right, steps, limits.steps, &memory);
     if (!result) {
         switch (result.error()) {
             case ExecutionComparisonFailure::StepLimit:
@@ -167,12 +172,90 @@ auto SemanticExecutor::account_aggregate(std::size_t elements, ProgramOriginID o
 auto SemanticExecutor::check_aggregate_size(TypeID type, ProgramOriginID origin) noexcept
     -> ExecutionResult<void> {
     const auto result = shapes.get(type);
-    if (!result || result->elements > maximum_constant_aggregate_elements) {
+    if (result && result->exact && result->elements > maximum_constant_aggregate_elements) {
         return std::unexpected(
             fail(origin, ExecutionReason::Limit, "aggregate exceeds its element or nesting limit")
         );
     }
     return {};
+}
+
+auto SemanticExecutor::check_value_size(
+    const ExecutionValue& value,
+    ProgramOriginID origin
+) noexcept -> ExecutionResult<void> {
+    auto elements = 0uz;
+    const auto fail_limit = [&]() noexcept {
+        return std::unexpected(
+            fail(origin, ExecutionReason::Limit, "aggregate exceeds its element or nesting limit")
+        );
+    };
+    const auto account = [&](std::size_t count) noexcept -> ExecutionResult<void> {
+        if (count > maximum_constant_aggregate_elements - elements) {
+            return fail_limit();
+        }
+        elements += count;
+        return {};
+    };
+    const auto inspect = [&](this auto&& self,
+                             const ExecutionValue& current,
+                             std::size_t depth) noexcept -> ExecutionResult<void> {
+        if (depth > maximum_constant_aggregate_depth) {
+            return fail_limit();
+        }
+        const auto compound = execution_compound_view(values, current);
+        if (!compound) {
+            return {};
+        }
+        if (depth >= maximum_constant_aggregate_depth) {
+            return fail_limit();
+        }
+        if (const auto shape = shapes.get(compound->type); shape && shape->exact) {
+            if (shape->depth > maximum_constant_aggregate_depth - depth) {
+                return fail_limit();
+            }
+            return account(shape->elements);
+        }
+        const auto canonical = values.type_copy(compound->type);
+        if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&canonical.value)) {
+            if (const auto child = shapes.get(sequence->element); child && child->exact) {
+                if (compound->size() == 0uz) {
+                    return {};
+                }
+                if (child->depth >= maximum_constant_aggregate_depth - depth
+                    || compound->size() > (maximum_constant_aggregate_elements - elements)
+                            / (child->elements + 1uz)) {
+                    return fail_limit();
+                }
+                return account(compound->size() * (child->elements + 1uz));
+            }
+        }
+        // Dynamic recursive storage has no fixed type shape. Charge its actual
+        // inspection to the same work bound as other execution steps.
+        if (auto checked = step(origin); !checked) {
+            return checked;
+        }
+        if (auto checked = account(compound->size()); !checked) {
+            return checked;
+        }
+        return compound->elements.visit([&](const auto children) noexcept -> ExecutionResult<void> {
+            for (auto index = 0uz; index < children.size(); ++index) {
+                if (auto checked = self(children[index], depth + 1uz); !checked) {
+                    return checked;
+                }
+            }
+            return {};
+        });
+    };
+    return inspect(value, 0uz);
+}
+
+auto SemanticExecutor::bounded_value(ExecutionValue value, ProgramOriginID origin) noexcept
+    -> ExecutionResult<ExecutionValue> {
+    if (auto checked = check_value_size(value, origin); !checked) {
+        return std::unexpected(std::move(checked.error()));
+    }
+    return value;
 }
 
 auto SemanticExecutor::retained_slice(ConstantID id, ProgramOriginID origin) noexcept
@@ -251,10 +334,12 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
             }
             return *slice;
         }
+        if (std::holds_alternative<std::unique_ptr<ExecutionColdOperation>>(value)) {
+            return std::unexpected(
+                fail(origin, ExecutionReason::Admission, "a cold operation cannot be copied")
+            );
+        }
         if (const auto compound = execution_compound_view(values, value)) {
-            if (auto checked = check_aggregate_size(compound->type, origin); !checked) {
-                return std::unexpected(std::move(checked.error()));
-            }
             auto copied = compound->elements.visit(
                 [&](const auto children) noexcept -> ExecutionResult<std::vector<ExecutionValue>> {
                     if (auto checked = account_aggregate(children.size(), origin); !checked) {
@@ -291,7 +376,7 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
             }
             return ExecutionOwnedText(std::string(bytes));
         }
-        if (const auto* text = std::get_if<ExecutionText>(&value); text && !text->bytes()) {
+        if (const auto* text = std::get_if<ExecutionText>(&value); text && !text->alive(&memory)) {
             return std::unexpected(
                 fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
             );
@@ -300,7 +385,8 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
             using Atom = std::remove_cvref_t<decltype(atom)>;
             if constexpr (std::same_as<Atom, ExecutionAggregateValue>
                           || std::same_as<Atom, ExecutionEnumValue>
-                          || std::same_as<Atom, ExecutionOwnedText>) {
+                          || std::same_as<Atom, ExecutionOwnedText>
+                          || std::same_as<Atom, std::unique_ptr<ExecutionColdOperation>>) {
                 invariant_violation("owned execution value bypassed semantic copying");
             } else {
                 return atom;
@@ -331,9 +417,9 @@ auto SemanticExecutor::read_fact(const ExecutionValue& value, ProgramOriginID or
 }
 
 auto SemanticExecutor::text(const ExecutionValue& value, ProgramOriginID origin) noexcept
-    -> ExecutionResult<std::string_view> {
-    if (const auto text = execution_text(values, value)) {
-        return *text;
+    -> ExecutionResult<ExecutionTextObservation> {
+    if (auto text = execution_text(values, value, &memory)) {
+        return std::move(*text);
     }
     return std::unexpected(fail(origin, ExecutionReason::Evaluation, "expected text"));
 }
@@ -432,6 +518,8 @@ auto SemanticExecutor::has_bound_storage(const SemanticExpression& expression) n
     while (true) {
         if (const auto* index = std::get_if<SemIndex>(&current->value)) {
             current = &*index->source;
+        } else if (const auto* tuple = std::get_if<SemTupleElement>(&current->value)) {
+            current = &*tuple->source;
         } else if (const auto* field = std::get_if<SemField>(&current->value)) {
             current = &*field->source;
         } else {
@@ -477,6 +565,20 @@ auto SemanticExecutor::place(ExecutionFrame& frame, const SemanticExpression& ex
             co_return std::unexpected(std::move(target.error()));
         }
         co_return *address->target;
+    }
+    if (const auto* tuple = std::get_if<SemTupleElement>(&expression.value)) {
+        auto selected = co_await place(frame, *tuple->source);
+        if (!selected) {
+            co_return std::unexpected(std::move(selected.error()));
+        }
+        if (auto projected = memory.project(std::move(*selected), tuple->index)) {
+            co_return std::move(*projected);
+        }
+        co_return std::unexpected(fail(
+            expression.origin,
+            ExecutionReason::Evaluation,
+            "tuple storage projection is unavailable"
+        ));
     }
     if (const auto* field = std::get_if<SemField>(&expression.value)) {
         auto selected = (co_await place(frame, *field->source));
@@ -626,7 +728,7 @@ auto SemanticExecutor::detach_views(
         );
     }
     if (const auto* text = std::get_if<ExecutionText>(&value); text && text->is_borrowed()) {
-        const auto bytes = text->bytes();
+        const auto bytes = text->observe(values, &memory);
         if (!bytes) {
             return std::unexpected(
                 fail(origin, ExecutionReason::Evaluation, "text backing is no longer alive")
@@ -635,7 +737,7 @@ auto SemanticExecutor::detach_views(
         if (auto checked = account_text(bytes->size(), origin); !checked) {
             return std::unexpected(std::move(checked.error()));
         }
-        return ExecutionText(std::string(*bytes));
+        return ExecutionText(std::string(bytes->view()));
     }
     if (const auto* constant = std::get_if<ConstantID>(&value);
         constant && std::holds_alternative<SliceConstant>(values.constant(*constant).value)) {
@@ -816,23 +918,23 @@ auto SemanticExecutor::detach_argument(ExecutionOperand operand, ProgramOriginID
     return detach_result(std::move(*value), origin);
 }
 
-auto SemanticExecutor::invoke(
+auto SemanticExecutor::call(
     CallableID callable,
     std::vector<ExecutionOperand> arguments,
     ProgramOriginID origin
 ) noexcept -> ExecutionTask<ExecutionValue> {
     const auto function = context.function_for_callable(callable);
-    if (calls.size() >= maximum_constant_depth) {
+    if (current->calls.size() >= maximum_constant_depth) {
         co_return std::unexpected(
             fail(origin, ExecutionReason::Limit, "execution exceeded 128 nested calls")
         );
     }
-    calls.push_back(origin);
+    current->calls.push_back(origin);
     context.trace(
         {.kind = ExecutionTraceKind::Call,
          .origin = origin,
          .function = function,
-         .depth = calls.size()}
+         .depth = current->calls.size()}
     );
     auto run = co_await [&]() noexcept -> ExecutionTask<ExecutionValue> {
         if (auto checked = step(origin); !checked) {
@@ -840,11 +942,12 @@ auto SemanticExecutor::invoke(
         }
         const auto unavailable = [&](ExecutionCallFailure failure) noexcept {
             if (auto* event = std::get_if<ExecutionEvent>(&failure)) {
-                event->calls = calls;
+                event->calls = current->calls;
+                event->blocks = current->blocks;
                 return halt(std::move(*event));
             }
             if (auto* delivered = std::get_if<ExecutionFailure>(&failure)) {
-                return std::move(*delivered);
+                return stop(std::move(*delivered));
             }
             std::unreachable();
         };
@@ -871,6 +974,7 @@ auto SemanticExecutor::invoke(
             .slots = std::vector<ExecutionSlot>(body.binding_count()),
             .caught = {},
             .temporaries = {},
+            .children = {},
         };
         const auto execute = [&]() noexcept -> ExecutionTask<ExecutionValue> {
             for (auto index = 0uz; index < arguments.size(); ++index) {
@@ -920,17 +1024,22 @@ auto SemanticExecutor::invoke(
             {.kind = ExecutionTraceKind::Return,
              .origin = origin,
              .function = function,
-             .depth = calls.size()}
+             .depth = current->calls.size()}
         );
     }
-    calls.pop_back();
+    current->calls.pop_back();
     co_return run;
 }
 
-auto SemanticExecutor::evaluate_root(const SemanticExpression& source) noexcept
+auto SemanticExecutor::root_expression(const SemanticExpression& source) noexcept
     -> ExecutionTask<ExecutionValue> {
-    auto frame =
-        ExecutionFrame {.body = std::nullopt, .slots = {}, .caught = {}, .temporaries = {}};
+    auto frame = ExecutionFrame {
+        .body = std::nullopt,
+        .slots = {},
+        .caught = {},
+        .temporaries = {},
+        .children = {},
+    };
     auto result = (co_await this->value(frame, source));
     if (result) {
         result = detach_views(std::move(*result), source.origin);
@@ -954,7 +1063,23 @@ auto SemanticExecutor::freeze(ExecutionValue value, ProgramOriginID origin) noex
 }
 
 auto SemanticExecutor::escaped(ExecutionFailure failure) noexcept -> ExecutionFailure {
-    auto* source = std::get_if<ExecutionSourceFailure>(&failure);
+    if (const auto* cancelled = std::get_if<ExecutionCancelled>(&failure)) {
+        return halt(
+            ExecutionEvent {
+                .origin = cancelled->origin,
+                .cause =
+                    ExecutionIssue {
+                        .reason = ExecutionReason::Evaluation,
+                        .message = "cancellation escaped execution without a consumer",
+                        .termination = ExecutionTermination::StopRoot,
+                    },
+                .fields = {},
+                .calls = cancelled->calls,
+                .blocks = cancelled->blocks,
+            }
+        );
+    }
+    const auto* source = std::get_if<ExecutionSourceFailure>(&failure);
     if (!source) {
         return failure;
     }
@@ -972,7 +1097,8 @@ auto SemanticExecutor::escaped(ExecutionFailure failure) noexcept -> ExecutionFa
                     .termination = ExecutionTermination::StopRoot,
                 },
             .fields = std::move(fields),
-            .calls = std::move(source->calls),
+            .calls = source->calls,
+            .blocks = source->blocks,
         }
     );
 }
@@ -996,18 +1122,19 @@ auto SemanticExecutor::read_borrows_storage(ConstructionTypeRef reference) noexc
     return borrows;
 }
 
-auto SemanticExecutor::evaluate_body(ExecutionBody body) noexcept -> ExecutionTask<void> {
+auto SemanticExecutor::root_body(ExecutionBody body) noexcept -> ExecutionTask<ExecutionValue> {
     testing = body.kind() == BodyKind::Test;
     auto frame = ExecutionFrame {
         .body = body,
         .slots = std::vector<ExecutionSlot>(body.binding_count()),
         .caught = {},
-        .temporaries = {}
+        .temporaries = {},
+        .children = {},
     };
     auto result = (co_await region(frame, body.region()));
     release_frame(frame);
     if (!result) {
         co_return std::unexpected(std::move(result.error()));
     }
-    co_return {};
+    co_return ExecutionVoid {};
 }

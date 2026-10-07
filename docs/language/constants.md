@@ -5,9 +5,10 @@
 This page defines constant values, static execution, and result
 freezing. A program has two stages. The static stage executes during
 compilation; the runtime stage is the generated program. `const fn` states that
-a function can execute in the static stage. A `const` declaration, `const if`,
-`const for`, `const { ... }`, and `const test` state that execution happens
-there. A constant is the completed, frozen value such execution produces.
+a function can execute in the static stage. A `const` declaration, `const { ... }`,
+and `const test` execute there. `const if` selects an arm and `const for` expands
+iterations during compilation; their remaining statements execute in the body's
+stage. A constant is a completed, frozen value produced by static execution.
 
 - [Module constants](#module-constants)
 - [Constant expressions](#constant-expressions)
@@ -53,10 +54,13 @@ Fallible calls require explicit `?`; an actual failure escaping the static
 root produces a diagnostic, while successful results may form constants.
 Owning text can be passed between these expressions; only the completed
 initializer freezes its result to `str`. Fixed-array literals, struct
-construction, indexing, and field access also produce constants for the
-aggregate types admitted during static execution. Arrays support equality
-when their element type supports it. Arrays retain `[T; N]`; structs retain their
-nominal type.
+construction, tuple construction, indexing, and field or tuple-element access
+also produce constants for the aggregate types admitted during static execution.
+Arrays and tuples support equality when their component types support it.
+Arrays retain `[T; N]`, tuples retain their arity and ordered component types,
+and structs retain their nominal type. The unit value `()` freezes as `void`;
+a successful `const fn` call with a `void` result can initialize a constant.
+Array `len()` and `is_empty()` queries also produce constants.
 An explicit `[T]` constant annotation or `as_slice()` in a constant initializer
 retains a completed array as a frozen slice. Its `len`, `is_empty`, indexing,
 and `slice` queries can also produce constants. Calls to ordinary `fn` and direct
@@ -197,6 +201,14 @@ Operations after an unconditional return still receive ordinary semantic checks
 but need no executor capability. Paths
 selected by call arguments remain part of the definition's capability check.
 
+A static root can call a parameterized `const fn` once its type and failure-set
+arguments close to concrete contracts. Inferred contracts complete their
+transitive declaration dependencies before execution; an unfinished failure set
+is not an empty set. A body-local `const` initializer inside a checked generic
+definition cannot require an unresolved generic environment. It has no deferred
+parameter-dependent execution at concrete application time. The containing
+`const fn` may still execute ordinary generic calls after its arguments close.
+
 Execution checks budgets and dynamic errors. Completed static roots also
 check result publication. Language arithmetic and effects are the same in
 both stages.
@@ -216,8 +228,9 @@ const decorated = decorate(label(3)); // "[000102]"
 ```
 
 Function signatures follow ordinary rules, including Read, Write, and Take
-parameters. A void result cannot initialize a constant; non-void results must
-be eligible for the consuming constant boundary. Static execution supports
+parameters. Unit values are supported in parameters, results, bindings and
+aggregate components. Every completed result must be eligible for the consuming
+constant boundary. Static execution supports
 scalar arithmetic, comparisons, logical operations and casts; local
 initialization, assignment and Take; `if`, `match`, `while`, C-style loops,
 integer ranges, array and slice loops; `return`, `break`, `continue`, direct
@@ -231,7 +244,7 @@ recursive direct-call graph without proving termination.
 Text operations include `String {}`, `String::from_str`, the owning
 `str as String` conversion, `as_str`, `len`, `is_empty`, `append`, `append_format`,
 `push`, `clear`, byte views and iteration, and interpolation. Constant formatting
-accepts default integer, bool, char and text formatting, including known C string contents,
+accepts default integer, bool, char, unit (`()`) and text formatting, including known C string contents,
 plus integer `b`, `B`, `o`, `d`, `x` and `X` presentations with decimal width and optional zero
 padding. Floating formatting and printing use native standard-library conversion
 for f32/f64. Floating specifications accept alignment, Unicode fill, sign, alternate form,
@@ -244,17 +257,26 @@ instead of deferring them to runtime.
 Fixed arrays support construction, indexing, element assignment, equality,
 independent copies, Read and Write iteration, whole-binding Take, and function
 parameters and results.
+Sequences support empty construction, checked indexing, Read and Write iteration,
+independent copies, whole-owner Take, and `len`, `is_empty`, `push`, `remove`, and
+`clear`. Their elements follow the ordinary ownership rules. Sequences and
+aggregates containing them remain execution-local: a completed constant cannot
+freeze their storage. A computation can consume a sequence and return supported
+text or scalar results.
 Structs support positional and named construction, field access and assignment,
 independent copies, whole-binding Take, and parameters and results.
+Tuples support construction, positional element access, destructuring, equality,
+independent copies, Take, and parameters and results. Their components follow
+the ordinary access and borrowing rules.
 Enums support case construction, payload matching, equality, copies, Take, and
 parameters and results. Fields, elements, and payloads follow the same execution
 type rules recursively; publishing a completed constant also requires each
 component to support freezing. Construction evaluates initializers in source
-order. Freezing preserves nominal identity, array extents, and component types;
+order. Freezing preserves nominal identity, array extents, tuple arity and nesting, and component types;
 it does not convert owning String fields or elements to `str`.
 Empty array literals require an expected element type.
 
-Read arguments containing array or String storage observe their contents after
+Read arguments containing array, Sequence, or String storage observe their contents after
 all arguments have evaluated. Other supported values are snapshotted at their
 argument position. Field and index projections follow the selected value's type.
 Slice operations, including `as_slice().len()`, indexing, and subslicing, can
@@ -294,7 +316,7 @@ storage is assigned again. An ordinary assignment to a live object preserves
 its identity. Non-null local pointers cannot become published constant values.
 
 Native operations, calls through callable values without an executable Carven
-body, text character iteration, and unchecked borrowed text construction remain
+body, and text character iteration remain
 outside the static execution subset. Ordinary type, access, ownership and lifetime
 validation applies throughout execution.
 
@@ -307,8 +329,9 @@ Each evaluated call tree has a budget of 100,000 execution steps and 128 nested
 calls. Text construction is limited to 1 MiB per value and 8 MiB of accumulated
 text construction and copying work. Appending charges the added bytes, and
 queries do not copy their receiver. This is a work budget, not a live-memory limit.
-An aggregate value is limited to 65,536 array-element and struct-field slots
-across its nested aggregates and 64 aggregate levels. A call tree permits
+An aggregate value is limited to 65,536 array and sequence elements, tuple elements,
+struct fields, and enum payload slots across its nested aggregates and 64 aggregate levels.
+A call tree permits
 524,288 accumulated slot constructions and copies. Direct aggregate initializers
 use the same value limits and a bounded construction-work budget.
 Constant format specifications additionally have bounded

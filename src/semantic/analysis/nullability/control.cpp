@@ -66,7 +66,7 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
             },
             [&](const SemRethrow&) noexcept -> ContinuationTask<std::monostate> {
                 if (flow.normal) {
-                    for (const auto type : caught) {
+                    for (const auto& type : caught) {
                         flow.exits.push_back({.payload = type, .state = flow.normal->state});
                     }
                     flow.normal.reset();
@@ -75,7 +75,7 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
             },
             [&](const SemThrow& value) noexcept -> ContinuationTask<std::monostate> {
                 (co_await evaluate(value.value));
-                transfer(value.failure_type);
+                transfer(AnalysisFailureKey(value.failure_type));
                 co_return {};
             },
             [&](const SemExpressionStatement& value) noexcept -> ContinuationTask<std::monostate> {
@@ -100,6 +100,36 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
                 if (flow.normal) {
                     const auto facts = flow.normal->value;
                     store(flow.normal->state, {.root = value.binding, .path = {}}, facts);
+                }
+                co_return {};
+            },
+            [&](const SemAsyncLet& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.initializer));
+                if (flow.normal) {
+                    store(flow.normal->state, {.root = value.child, .path = {}}, {});
+                }
+                co_return {};
+            },
+            [&](const SemDecompose& value) noexcept -> ContinuationTask<std::monostate> {
+                if (value.initializer) {
+                    co_await evaluate(*value.initializer);
+                } else {
+                    flow.normal->value =
+                        value_at(flow.normal->state, {.root = value.owner, .path = {}});
+                }
+                if (flow.normal) {
+                    const auto facts = flow.normal->value;
+                    for (const auto& selected : value.bindings) {
+                        auto projected = facts;
+                        for (const auto index : selected.path) {
+                            projected = project_null_value(projected, index);
+                        }
+                        store(
+                            flow.normal->state,
+                            {.root = selected.binding, .path = {}},
+                            projected
+                        );
+                    }
                 }
                 co_return {};
             },
@@ -180,17 +210,36 @@ auto NullabilityBodyAnalyzer::bind_pattern(
     body.pattern(id).value.visit(
         Overloaded {
             [&](const BindingPattern& pattern) noexcept {
-                store(state, {.root = pattern.binding, .path = {}}, value);
+                // Establishing a binding does not mutate its observed storage.
+                std::erase_if(state.facts, [&](const auto& entry) noexcept {
+                    return entry.first.root == pattern.binding;
+                });
+                for (const auto& [path, fact] : value) {
+                    state.facts.insert_or_assign(
+                        NullPlace {.root = pattern.binding, .path = path},
+                        fact
+                    );
+                }
             },
             [&](const EnumCasePattern& pattern) noexcept {
                 for (const auto [index, child] : std::views::enumerate(pattern.payload)) {
                     bind_pattern(state, child, project_null_value(value, index));
                 }
             },
+            [&](const TuplePattern& pattern) noexcept {
+                for (const auto [index, child] : std::views::enumerate(pattern.elements)) {
+                    bind_pattern(state, child, project_null_value(value, index));
+                }
+            },
             [&](const OrPattern& pattern) noexcept {
-                // Alternative layouts can differ; every bound ptr starts unknown.
+                auto joined = std::optional<NullNormal>();
                 for (const auto child : pattern.alternatives) {
-                    bind_pattern(state, child, {});
+                    auto candidate = state;
+                    bind_pattern(candidate, child, value);
+                    join_null_normal(joined, std::optional(NullNormal {std::move(candidate), {}}));
+                }
+                if (joined) {
+                    state = std::move(joined->state);
                 }
             },
             [](const auto&) static noexcept {},
@@ -237,7 +286,17 @@ auto NullabilityBodyAnalyzer::match(const SemMatch& source, NullState state) noe
         }
         auto selected = *remaining;
         const auto place = source.subject_is_place ? location(*source.subject) : std::nullopt;
+        if (place && std::ranges::any_of(arm.bindings, [&](LocalBindingID binding) noexcept {
+                const auto* access =
+                    std::get_if<AccessBindingStorage>(&body.binding(binding).storage);
+                return access != nullptr && access->access == AccessMode::Write;
+            })) {
+            // Pattern aliases share this owner. Existing exposed-storage
+            // invalidation discards proofs when either name may be written.
+            selected.state.exposed.insert(place->root);
+        }
         bind_pattern(selected.state, arm.pattern, place ? value_at(selected.state, *place) : saved);
+
         auto checked_pattern = (co_await pattern_condition(
             arm.pattern,
             arm.pattern_bounds,
@@ -270,7 +329,7 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
     auto result = NullFlow {.normal = std::move(protected_flow.normal), .exits = {}};
     auto pending = std::vector<NullExit>();
     for (auto& exit : protected_flow.exits) {
-        if (std::holds_alternative<TypeID>(exit.payload)) {
+        if (std::holds_alternative<AnalysisFailureKey>(exit.payload)) {
             pending.push_back(std::move(exit));
         } else {
             result.exits.push_back(std::move(exit));
@@ -278,15 +337,75 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
     }
     for (const auto& arm : source.arms) {
         auto rejected = std::vector<NullExit>();
+        auto candidates = std::vector<NullExit>();
         for (auto& failure : pending) {
-            const auto* type = std::get_if<TypeID>(&failure.payload);
-            if (type == nullptr) {
-                invariant_violation("catch processing received a non-failure exit");
+            const auto& key = std::get<AnalysisFailureKey>(failure.payload);
+            const auto* symbolic = std::get_if<AnalysisSymbolicFailure>(&key.value);
+            if (!symbolic) {
+                candidates.push_back(std::move(failure));
+                continue;
             }
-            if (!std::ranges::contains(
-                    program.failure_sets().failure_set(arm.accepted_failures.resolved()).members,
-                    *type
-                )) {
+            auto split_types = std::vector<TypeID>();
+            auto catch_all = false;
+            for (const auto& alternative : arm.alternatives) {
+                if (!alternative.reachable) {
+                    continue;
+                }
+                if (std::holds_alternative<CatchAllPattern>(alternative.pattern)) {
+                    catch_all = true;
+                } else {
+                    const auto& typed = std::get<SemTypedCatchPattern>(alternative.pattern);
+                    const auto type = analysis.concrete_type(typed.type.construction());
+                    if (type
+                        && failure_mask_contains(symbolic->mask, *type)
+                        && analysis.failure_may_contain(arm.accepted_failures.reference(), *type)
+                        && !std::ranges::contains(split_types, *type)) {
+                        split_types.push_back(*type);
+                        candidates.push_back(
+                            {.payload = AnalysisFailureKey(*type), .state = failure.state}
+                        );
+                    }
+                }
+            }
+            auto remainder = *symbolic;
+            remainder.mask = residual_failure_mask(remainder.mask, std::move(split_types));
+            if (!remainder.mask.complemented && remainder.mask.members.empty()) {
+                continue;
+            }
+            if (!catch_all) {
+                rejected.push_back(
+                    {.payload = AnalysisFailureKey(remainder), .state = std::move(failure.state)}
+                );
+                continue;
+            }
+            auto accepted = std::optional(NullNormal {.state = failure.state, .value = {}});
+            const auto previous = caught;
+            caught = {AnalysisFailureKey(remainder)};
+            if (arm.guard) {
+                auto checked = (co_await condition(*arm.guard, std::move(accepted->state)));
+                accepted = std::move(checked.yes);
+                if (checked.no) {
+                    rejected.push_back(
+                        {.payload = AnalysisFailureKey(remainder),
+                         .state = std::move(checked.no->state)}
+                    );
+                }
+                append_null_exits(result.exits, std::move(checked.exits));
+            }
+            if (accepted) {
+                auto handled = (co_await region(arm.body, std::move(accepted->state)));
+                join_null_normal(result.normal, handled.normal);
+                append_null_exits(result.exits, std::move(handled.exits));
+            }
+            caught = previous;
+        }
+        for (auto& failure : candidates) {
+            const auto& key = std::get<AnalysisFailureKey>(failure.payload);
+            const auto* type = std::get_if<TypeID>(&key.value);
+            if (type == nullptr) {
+                invariant_violation("catch processing received a non-nominal candidate");
+            }
+            if (!analysis.failure_may_contain(arm.accepted_failures.reference(), *type)) {
                 rejected.push_back(std::move(failure));
                 continue;
             }
@@ -300,7 +419,7 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
                     alternatives.push_back(std::nullopt);
                 } else if (const auto* typed =
                                std::get_if<SemTypedCatchPattern>(&alternative.pattern);
-                           typed->type.resolved() == *type) {
+                           analysis.concrete_type(typed->type.construction()) == *type) {
                     alternatives.push_back(typed->inner);
                     bind_pattern(accepted->state, typed->inner, {});
                 }
@@ -308,13 +427,15 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
             const auto arms = std::array {
                 PatternCoverageArm {.alternatives = std::move(alternatives), .guarded = false},
             };
-            const auto exhaustive = patterns_exhaustive(program, body.pattern_table(), *type, arms);
+            const auto exhaustive = body.concrete()
+                ? patterns_exhaustive(program, body.pattern_table(), *type, arms)
+                : patterns_exhaustive(program, body.elaborated_pattern_table(), *type, arms);
             if (!exhaustive) {
                 invariant_violation(exhaustive.error());
             }
             auto remaining = std::optional<NullNormal>();
             const auto previous = caught;
-            caught = {*type};
+            caught = {AnalysisFailureKey(*type)};
             remaining = std::move(accepted);
             accepted.reset();
             for (const auto& alternative : arm.alternatives) {
@@ -327,7 +448,7 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
                     break;
                 }
                 const auto& typed = std::get<SemTypedCatchPattern>(alternative.pattern);
-                if (typed.type.resolved() != *type) {
+                if (analysis.concrete_type(typed.type.construction()) != *type) {
                     continue;
                 }
                 auto checked = (co_await pattern_condition(
@@ -355,7 +476,9 @@ auto NullabilityBodyAnalyzer::attempt(const SemTry& source, NullState state) noe
             }
             caught = previous;
             if (remaining) {
-                rejected.push_back({.payload = *type, .state = std::move(remaining->state)});
+                rejected.push_back(
+                    {.payload = AnalysisFailureKey(*type), .state = std::move(remaining->state)}
+                );
             }
         }
         pending = std::move(rejected);

@@ -146,6 +146,12 @@ template<typename Value>
 inline constexpr bool is_test_text = std::convertible_to<const Value&, std::string_view>;
 
 template<typename Value>
+inline constexpr bool is_test_optional = false;
+
+template<typename Value>
+inline constexpr bool is_test_optional<std::optional<Value>> = true;
+
+template<typename Value>
     requires is_test_text<Value>
 auto test_text_view(const Value& value) noexcept -> std::optional<std::string_view> {
     if constexpr (std::is_pointer_v<Value>) {
@@ -158,7 +164,17 @@ auto test_text_view(const Value& value) noexcept -> std::optional<std::string_vi
 
 template<typename Value>
 auto write_test_value(std::ostream& output, const Value& value) noexcept -> void {
-    if constexpr (is_test_text<Value>) {
+    if constexpr (std::same_as<Value, std::nullopt_t>) {
+        std::print(output, "nullopt");
+    } else if constexpr (is_test_optional<Value>) {
+        if (value) {
+            std::print(output, "optional(");
+            write_test_value(output, *value);
+            std::print(output, ")");
+        } else {
+            std::print(output, "nullopt");
+        }
+    } else if constexpr (is_test_text<Value>) {
         const auto text = test_text_view(value);
         std::print(output, "{}", text ? quote_text(*text) : "<null>");
     } else if constexpr (std::integral<Value>

@@ -180,9 +180,10 @@ enum class FailureContractPolicy {
 };
 
 struct ConstructionCallableContract final {
+    CallableExecutionKind execution;
     std::vector<ConstructionCallableParameter> parameters;
     ConstructionTypeRef result;
-    FailureTermID failures;
+    ConstructionFailureRef failures;
     FailureContractPolicy policy;
 };
 
@@ -317,6 +318,9 @@ public:
     auto define(ModuleConstantID id, ModuleConstantDeclaration declaration) noexcept -> void;
     auto define_callable_contract(CallableID id, ConstructionCallableContract contract) noexcept
         -> void;
+    auto set_enum_equality(EnumID enumeration, bool supported) noexcept -> void;
+    auto append_function_instance(FunctionDeclaration declaration) noexcept -> FunctionID;
+    auto append_nominal_item(ModuleID module, NominalDeclarationRef declaration) noexcept -> void;
     auto finish_heads() noexcept -> DeclarationConstructionView;
     auto construction_view() const noexcept -> DeclarationConstructionView;
     auto append_body_callable(ConstructionCallableContract contract) noexcept -> CallableID;
@@ -328,13 +332,13 @@ public:
 private:
     enum class State {
         Reserving,
-        BuildingCallables,
+        Completing,
         Concrete,
     };
 
     auto require_reserving() const noexcept -> void;
-    auto require_building_callables() const noexcept -> void;
-    auto require_constructing_callables() const noexcept -> void;
+    auto require_completing() const noexcept -> void;
+    auto require_open_construction() const noexcept -> void;
     auto require_concrete() const noexcept -> void;
     auto require_heads_defined() const noexcept -> void;
     auto reserve_callable_pair() noexcept -> CallableID;

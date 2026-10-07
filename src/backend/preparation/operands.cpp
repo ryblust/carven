@@ -3,6 +3,7 @@ module carven:backend.preparation.operands.impl;
 import :backend.preparation.body;
 import :backend.preparation.format;
 import :semantic.semir.body;
+import :semantic.semir.callable;
 import :semantic.semir.children;
 import :semantic.semir.decl;
 import :semantic.semir.delegation;
@@ -29,18 +30,28 @@ auto BodyPreparation::operands(
                 : access == AccessMode::Take ? PreparedUse::NativeTake
                                              : PreparedUse::ConstPlace);
     };
-    // Carven parameters and builtin writers read builtins other than owning
-    // strings and entry arguments as values; C++ calls retain the exact Read borrow.
-    const auto value_read = [&](const SemCallArgument& input) noexcept {
+    // Source Read parameters apply their value-or-borrow policy at argument
+    // evaluation. Direct C++ calls retain their delegated access categories.
+    const auto value_read = [&](const SemCallArgument& input,
+                                bool requires_stable_storage = false) noexcept {
         auto prepared = argument(input);
         const auto* builtin = std::get_if<BuiltinTypeValue>(
             &semantic.types().type(input.expression.type.resolved()).value
         );
+        const auto contents = semantic.type_contents(input.expression.type.resolved());
         if (input.access == AccessMode::Read
-            && builtin != nullptr
-            && builtin->kind != BuiltinType::String
-            && builtin->kind != BuiltinType::EntryArgs) {
+            && (requires_stable_storage
+                || contents.contains_operation_owner
+                || contents.contains_storage_owner
+                || contents.contains_closure_owner)) {
+            prepared.use = PreparedUse::ConstPlace;
+        } else if (input.access == AccessMode::Read
+                   && builtin != nullptr
+                   && builtin->kind != BuiltinType::String
+                   && builtin->kind != BuiltinType::EntryArgs) {
             prepared.use = PreparedUse::OperandValue;
+        } else if (input.access == AccessMode::Read && prepared.use == PreparedUse::ReadBorrow) {
+            prepared.use = PreparedUse::ReadArgument;
         }
         result.push_back(prepared);
     };
@@ -78,6 +89,10 @@ auto BodyPreparation::operands(
                 add(*value.source,
                     value.consumes_source() ? PreparedUse::Consume : PreparedUse::ProjectionPlace);
             },
+            [&](const SemTupleElement& value) noexcept {
+                add(*value.source,
+                    value.consumes_source() ? PreparedUse::Consume : PreparedUse::ProjectionPlace);
+            },
             [&](const SemDereference& value) noexcept {
                 visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
                     add(input, PreparedUse::AddressValue);
@@ -95,7 +110,8 @@ auto BodyPreparation::operands(
                                                             : PreparedUse::ConstPlace);
             },
             [&](const SemIndex& value) noexcept {
-                add(*value.source, PreparedUse::ProjectionPlace);
+                add(*value.source,
+                    value.consumes_source() ? PreparedUse::Consume : PreparedUse::ProjectionPlace);
                 add(*value.index, PreparedUse::OperandValue);
             },
             [](const SemReport&) static noexcept {},
@@ -129,6 +145,11 @@ auto BodyPreparation::operands(
                 add(*value.end, PreparedUse::OperandValue);
             },
             [&](const SemArray& value) noexcept {
+                visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
+                    add(input, PreparedUse::Consume);
+                });
+            },
+            [&](const SemTuple& value) noexcept {
                 visit_semantic_children(value, [&](const SemanticExpression& input) noexcept {
                     add(input, PreparedUse::Consume);
                 });
@@ -205,6 +226,9 @@ auto BodyPreparation::operands(
                     native(input);
                 }
             },
+            [](const SemGenericCall&) static noexcept {
+                invariant_violation("unsubstituted generic call reached backend");
+            },
             [&](const SemCall& value) noexcept {
                 const auto closure = std::holds_alternative<ClosureTypeValue>(
                     semantic.types().type(value.callee->type.resolved()).value
@@ -213,10 +237,41 @@ auto BodyPreparation::operands(
                 if (value.target) {
                     result.back().demand = PreparedDemand::Effects;
                 }
-                for (const auto& input : value.arguments) {
-                    value_read(input);
+                const auto target = value.target
+                    ? value.target
+                    : callable_identity(semantic, value.callee->type.resolved());
+                for (const auto [index, input] : std::views::enumerate(value.arguments)) {
+                    value_read(
+                        input,
+                        target && semantic.read_requires_stable_storage(*target, index)
+                    );
                 }
             },
+            [&](const SemColdCall& value) noexcept {
+                add(*value.callee, PreparedUse::OperandValue);
+                result.back().demand = PreparedDemand::Effects;
+                for (const auto [index, input] : std::views::enumerate(value.arguments)) {
+                    value_read(input, semantic.read_requires_stable_storage(value.target, index));
+                }
+            },
+            [&](const SemColdCompose& value) noexcept {
+                for (const auto& input : value.inputs) {
+                    add(input.expression, PreparedUse::NativeTake);
+                }
+            },
+            [&](const SemColdTimeout& value) noexcept {
+                add(*value.operation, PreparedUse::NativeTake);
+                add(*value.duration_ticks, PreparedUse::OperandValue);
+            },
+            [&](const SemAwait& value) noexcept {
+                add(*value.operand,
+                    value.operand_kind == AsyncAwaitOperandKind::ColdOperation
+                        ? PreparedUse::NativeTake
+                        : PreparedUse::WritePlace);
+            },
+            [](const SemAsyncIntrinsic&) static noexcept {},
+            [](const SemWaitReady&) static noexcept {},
+            [](const SemCloseChild&) static noexcept {},
             [](const SemShortCircuit&) static noexcept {},
             [](const SemIf&) static noexcept {},
             [](const SemMatch&) static noexcept {},

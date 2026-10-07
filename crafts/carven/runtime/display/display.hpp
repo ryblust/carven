@@ -27,7 +27,9 @@ public:
         if (truncate_at_limit(depth)) {
             return;
         }
-        if constexpr (std::is_same_v<T, std::string_view>) {
+        if constexpr (std::is_same_v<T, Void>) {
+            text("()");
+        } else if constexpr (std::is_same_v<T, std::string_view>) {
             quoted(value);
         } else if constexpr (std::is_same_v<T, String>) {
             quoted(value.as_str());

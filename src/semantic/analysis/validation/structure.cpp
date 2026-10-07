@@ -104,6 +104,30 @@ auto BodyContractVerifier::verify_patterns() const noexcept -> void {
                         invariant_violation("binding pattern has another type");
                     }
                 },
+                [&](const TuplePattern& value) noexcept {
+                    const auto& canonical = require_type(pattern.type);
+                    const auto* tuple = std::get_if<TupleTypeValue>(&canonical.value);
+                    const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
+                    if (!tuple) {
+                        if (!builtin
+                            || builtin->kind != BuiltinType::Void
+                            || !value.elements.empty()) {
+                            invariant_violation("tuple pattern does not have a tuple subject");
+                        }
+                        return;
+                    }
+                    if (tuple->elements.size() != value.elements.size()) {
+                        invariant_violation("tuple pattern has another element count");
+                    }
+                    for (const auto [child, type] :
+                         std::views::zip(value.elements, tuple->elements)) {
+                        if (child.index() >= id.index() || body.pattern(child).type != type) {
+                            invariant_violation(
+                                "tuple pattern element has an invalid edge or type"
+                            );
+                        }
+                    }
+                },
                 [&](const EnumCasePattern& value) noexcept {
                     const auto& enum_case = require_enum_case(value.enum_case);
                     const auto& canonical = require_type(pattern.type);
@@ -150,6 +174,17 @@ auto BodyContractVerifier::pattern_bindings(PatternID id) const noexcept
                 std::ranges::sort(result, {}, &LocalBindingID::index);
                 if (std::ranges::adjacent_find(result) != result.end()) {
                     invariant_violation("pattern binds one local more than once");
+                }
+                return result;
+            },
+            [&](const TuplePattern& value) noexcept {
+                auto result = std::vector<LocalBindingID>();
+                for (const auto child : value.elements) {
+                    result.append_range(pattern_bindings(child));
+                }
+                std::ranges::sort(result, {}, &LocalBindingID::index);
+                if (std::ranges::adjacent_find(result) != result.end()) {
+                    invariant_violation("tuple pattern binds one local more than once");
                 }
                 return result;
             },
@@ -230,6 +265,10 @@ auto BodyContractVerifier::verify_pattern_bounds(
             }
         } else if (const auto* enumeration = std::get_if<EnumCasePattern>(&pattern.value)) {
             for (const auto child : enumeration->payload) {
+                self(child);
+            }
+        } else if (const auto* tuple = std::get_if<TuplePattern>(&pattern.value)) {
+            for (const auto child : tuple->elements) {
                 self(child);
             }
         }

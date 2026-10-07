@@ -87,6 +87,18 @@ const TestSuite suite([] static noexcept {
                 .comparisons = 2uz,
             },
             Case {
+                .name = "tuple product complement",
+                .source = "fn select(value: (bool, bool)) -> i32 => match value { "
+                          "(true, _) => 1, (false, true) => 2, (false, false) => 3, };",
+                .comparisons = 3uz,
+            },
+            Case {
+                .name = "whole tuple alternatives retain their joint condition",
+                .source = "fn select(value: (bool, bool)) -> i32 => match value { "
+                          "(true, _) | (_, true) => 1, (false, false) => 2, };",
+                .comparisons = 2uz,
+            },
+            Case {
                 .name = "pure accepting alternatives need no selection",
                 .source = "fn select(value: bool) -> i32 => match value { "
                           "true | false => 1, };",
@@ -352,6 +364,71 @@ const TestSuite suite([] static noexcept {
                     expect_equal(query.mutable_booleans, 0uz);
                 }
             });
+        };
+
+    "Generation: borrowed enum selection uses structured branches and one subject evaluation"_test =
+        [] static noexcept {
+            const auto compilation = PlannedCompilation::build(
+                analyze_test_program(R"(
+                    enum Value { Text(String), Number(usize), Empty, }
+                    fn next(&calls: i32) -> Value {
+                        calls += 1;
+                        return .Text("abc" as String);
+                    }
+                    fn select(&calls: i32, &size: usize) {
+                        match next(&calls) {
+                            .Text(text) => { size = text.len(); },
+                            .Number(number) => { size = number; },
+                            .Empty => { size = 0usize; },
+                        }
+                    }
+                )"),
+                {.test_mode = TestGenerationMode::None,
+                 .linkage_domain = *LinkageDomain::explicit_value("structured_enum_selection")}
+            );
+
+            struct Query final {
+                std::size_t subject_calls;
+                std::size_t alternatives;
+                std::size_t borrowed_bindings;
+
+                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
+                    -> bool {
+                    if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
+                        if (const auto* name = std::get_if<TargetNameExpr>(
+                                &template_primary_expression(*call->callee).value
+                            )) {
+                            subject_calls += name->name.components().back().spelling() == "next";
+                        }
+                    }
+                    return true;
+                }
+
+                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
+                    expect(!std::holds_alternative<TargetGotoStmt>(statement.value));
+                    if (const auto* branch = std::get_if<TargetIfStmt>(&statement.value)) {
+                        alternatives += branch->else_body.has_value();
+                    }
+                    return true;
+                }
+
+                auto visit_variable(const TargetVariableStmt& variable) noexcept -> bool {
+                    borrowed_bindings += variable.binding == TargetVariableBinding::ConstReference;
+                    return true;
+                }
+            };
+
+            auto query =
+                Query {.subject_calls = 0uz, .alternatives = 0uz, .borrowed_bindings = 0uz};
+            for (const auto artifact : compilation.target().artifacts()) {
+                const auto unit = lower_artifact(compilation, artifact.id);
+                if (!expect(traverse_target_unit(unit.sections(), query))) {
+                    return;
+                }
+            }
+            expect_equal(query.subject_calls, 1uz);
+            expect(query.alternatives > 0uz);
+            expect(query.borrowed_bindings > 0uz);
         };
 
     "Generation: unconditional pattern binding uses direct value initialization"_test =

@@ -42,6 +42,17 @@ auto PatternRealizer::subject_expression(const PatternSubject& subject) noexcept
             enum_payload_field_identifier(*subject.payload_index)
         );
     }
+    for (const auto index : subject.tuple_path) {
+        result = template_call_expression(
+            intrinsic_expression(TargetSymbol::RuntimeTupleGet),
+            {TargetIntegerLiteral {
+                .negative = false,
+                .magnitude = index,
+                .suffix = TargetIntegerSuffix::None
+            }},
+            target_expressions(std::move(result))
+        );
+    }
     return result;
 }
 
@@ -237,6 +248,8 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
     }
     auto destination = LoweringStmtBuilder();
     for (const auto binding : joined) {
+        const auto* alias = std::get_if<AccessBindingStorage>(&body.binding(binding).storage);
+        const auto writable = alias != nullptr && alias->access == AccessMode::Write;
         const auto address =
             context.target().add_local(names.fresh(TargetTemporaryNameKind::Operand));
         destination.emit(generated_statement(
@@ -244,20 +257,27 @@ auto PatternRealizer::alternatives(std::vector<PatternSelection> choices) noexce
                 .binding = TargetVariableBinding::MutableValue,
                 .maybe_unused = false,
                 .local = address,
-                .type = context.pointer_type(context.target().intern_type(
-                    {.value =
-                         TargetIntrinsicType {
-                             .symbol = TargetSymbol::StdAddConst,
-                             .type_argument_ids = {context.lower_type(body.binding(binding).type)}
-                         },
-                     .const_qualified = false}
-                )),
+                .type = context.pointer_type(
+                    writable ? context.lower_type(body.binding(binding).type)
+                             : context.target().intern_type(
+                                   {.value =
+                                        TargetIntrinsicType {
+                                            .symbol = TargetSymbol::StdAddConst,
+                                            .type_argument_ids =
+                                                {context.lower_type(body.binding(binding).type)}
+                                        },
+                                    .const_qualified = false}
+                               )
+                ),
                 .initializer = intrinsic_expression(TargetSymbol::StdNullptr)
             }
         ));
-        result.bindings.at(
-            binding
-        ) = {.root = address, .dereference_root = true, .payload_index = std::nullopt};
+        result.bindings.at(binding) = {
+            .root = address,
+            .dereference_root = true,
+            .payload_index = std::nullopt,
+            .tuple_path = {}
+        };
         result.source_locals.insert(address);
     }
     const auto selected = context.target().add_local(names.fresh(TargetTemporaryNameKind::Logic));
@@ -438,6 +458,18 @@ auto PatternRealizer::match(
                 }
                 co_return alternatives(std::move(choices));
             },
+            [&](const TuplePattern& value) noexcept -> ContinuationTask<PatternSelection> {
+                auto result = finish(LoweringKnownBool {true});
+                for (auto index = 0uz; index < value.elements.size() && result.accepted; ++index) {
+                    auto element = subject;
+                    element.tuple_path.push_back(static_cast<std::uint32_t>(index));
+                    result = sequence(
+                        std::move(result),
+                        co_await match(value.elements[index], element, accepts_on_entry)
+                    );
+                }
+                co_return result;
+            },
             [&](const EnumCasePattern& value) noexcept -> ContinuationTask<PatternSelection> {
                 const auto& declaration =
                     context.semantic().declarations().enum_case(value.enum_case);
@@ -466,22 +498,20 @@ auto PatternRealizer::match(
                 );
                 projections.push_back(projection);
                 const auto ordinal = enum_case_index(context.semantic(), value.enum_case);
-                destination.emit(generated_statement(
+                destination.declare(
                     TargetVariableStmt {
                         .binding = TargetVariableBinding::ConstValue,
                         .maybe_unused = false,
                         .local = projection,
-                        .type =
-                            context.pointer_type(context.intrinsic_type(TargetSymbol::Auto, true)),
-                        .initializer = call_member(
-                            subject_expression(subject),
-                            context.payload_enum(declaration.owner)
-                                .cases[ordinal]
-                                .projection_function.spelling(),
-                            {}
+                        .type = context.pointer_type(context.intrinsic_type(TargetSymbol::Auto)),
+                        .initializer = context.enum_payload_projection(
+                            declaration.owner,
+                            ordinal,
+                            subject_expression(subject)
                         )
-                    }
-                ));
+                    },
+                    false
+                );
                 auto predicate = LoweringPredicate(LoweringKnownBool {true});
                 if (!single_case(value.enum_case) && !accepts_on_entry) {
                     predicate = LoweringDynamicBool {binary_expression(
@@ -499,7 +529,8 @@ auto PatternRealizer::match(
                             value.payload[index],
                             {.root = projection,
                              .dereference_root = true,
-                             .payload_index = static_cast<std::uint32_t>(index)},
+                             .payload_index = static_cast<std::uint32_t>(index),
+                             .tuple_path = {}},
                             accepts_on_entry
                         )
                     );

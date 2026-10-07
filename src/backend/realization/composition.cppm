@@ -10,7 +10,16 @@ import std;
 
 struct LoweringCompleted final {};
 
-enum class LoweringExitKind { FunctionReturn, Failure, Break, Continue, Test, Value, Unreachable };
+enum class LoweringExitKind {
+    FunctionReturn,
+    Failure,
+    Cancelled,
+    Break,
+    Continue,
+    Test,
+    Value,
+    Unreachable
+};
 
 // How a consumer receives the result of a value region.
 enum class LoweringRegionDelivery {

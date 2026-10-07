@@ -353,3 +353,26 @@ const test "Static calls: frozen inputs are values and Write arguments retain ca
     check(frozen_slice_call(&trace, values.as_slice(), 5) == 3);
     check(trace == 12);
 }
+
+private const fn indexed_source(&trace: i32) -> [i32; 2] {
+    trace = trace * 10 + 1;
+    return [7, 11];
+}
+
+private const fn specialized_index(&trace: i32, const index: usize) -> i32 {
+    return indexed_source(&trace)[index];
+}
+
+const test "Staged indices: fixed bounds preserve receiver evaluation" {
+    var trace = 0;
+    check(specialized_index(&trace, 0) == 7);
+    check(specialized_index(&trace, 1) == 11);
+    check(trace == 11);
+}
+
+test "Staged indices: native fixed bounds preserve receiver evaluation" {
+    var trace = 0;
+    check(specialized_index(&trace, 0) == 7);
+    check(specialized_index(&trace, 1) == 11);
+    check(trace == 11);
+}

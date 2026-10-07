@@ -106,6 +106,10 @@ auto IterationBindings::pattern(PatternID id) noexcept -> PatternID {
             for (auto& child : value.payload) {
                 child = pattern(child);
             }
+        } else if constexpr (std::same_as<Value, TuplePattern>) {
+            for (auto& child : value.elements) {
+                child = pattern(child);
+            }
         }
     });
     const auto result = patterns.add(std::move(row));
@@ -148,6 +152,11 @@ auto IterationBindings::statement(SemanticStatement& value) noexcept -> void {
         if constexpr (std::same_as<Operation, SemInitialize>
                       || std::same_as<Operation, SemStaticBinding>) {
             operation.binding = binding(operation.binding);
+        } else if constexpr (std::same_as<Operation, SemDecompose>) {
+            operation.owner = binding(operation.owner);
+            for (auto& selected : operation.bindings) {
+                selected.binding = binding(selected.binding);
+            }
         } else if constexpr (std::same_as<Operation, SemRangeLoop>) {
             operation.lifetime = lifetime(operation.lifetime);
             if (operation.binding) {

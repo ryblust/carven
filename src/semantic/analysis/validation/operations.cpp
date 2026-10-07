@@ -5,6 +5,7 @@ import :semantic.analysis.validation.context;
 import :semantic.format;
 import :semantic.semir.format;
 import :semantic.semir.initialization;
+import :semantic.semir.sequence;
 import :support.utf8;
 import std;
 
@@ -22,6 +23,16 @@ auto BodyContractVerifier::verify_expression(
     if (!body.lifetime_regions().contains(source.lifetime)) {
         invariant_violation("semantic expression has foreign lifetime");
     }
+    const auto require_child = [&](LocalBindingID id) noexcept {
+        if (id.owner() != body.identity()) {
+            invariant_violation("child observer has a foreign binding");
+        }
+        const auto& binding = body.binding(id);
+        if (!std::holds_alternative<AsyncChildBindingStorage>(binding.storage)
+            || !std::holds_alternative<OperationTypeValue>(require_type(binding.type).value)) {
+            invariant_violation("child observer requires a lexical child owner");
+        }
+    };
     const auto check_result = [&](const OperatorDecision& decision, TypeID operand) noexcept {
         if (!decision.has_value()) {
             invariant_violation("invalid semantic operator");
@@ -217,6 +228,169 @@ auto BodyContractVerifier::verify_expression(
                     }
                 }
             },
+            [&](const SemColdCall& value) noexcept {
+                const auto& signature = program.callable_signatures().signature(
+                    program.declarations().callable(value.target).signature
+                );
+                const auto* operation =
+                    std::get_if<OperationTypeValue>(&require_type(source.type.resolved()).value);
+                if (signature.execution != CallableExecutionKind::Async
+                    || !operation
+                    || operation->success != signature.result
+                    || operation->failures != signature.failures
+                    || value.arguments.size() != signature.parameters.size()) {
+                    invariant_violation(
+                        "cold construction differs from callee completion contract"
+                    );
+                }
+                for (const auto& [argument, parameter] :
+                     std::views::zip(value.arguments, signature.parameters)) {
+                    if (argument.access != parameter.access
+                        || argument.expression.type.resolved() != parameter.type) {
+                        invariant_violation("cold construction operand differs from parameter");
+                    }
+                }
+            },
+            [&](const SemColdCompose& value) noexcept {
+                const auto* result =
+                    std::get_if<OperationTypeValue>(&require_type(source.type.resolved()).value);
+                if (!result
+                    || result->success != value.success.resolved()
+                    || (value.policy != AsyncCompositionPolicy::WhenAll && value.inputs.empty())) {
+                    invariant_violation("cold composition has an invalid policy or shape");
+                }
+                auto successes = std::vector<TypeID>();
+                auto promised = std::set<TypeID>();
+                for (const auto& input : value.inputs) {
+                    const auto* operation = std::get_if<OperationTypeValue>(
+                        &require_type(input.expression.type.resolved()).value
+                    );
+                    if (!operation || input.access != AccessMode::Take) {
+                        invariant_violation("cold composition requires owning operation inputs");
+                    }
+                    const auto* selected = &input.expression;
+                    if (const auto* take = std::get_if<SemTake>(&selected->value)) {
+                        selected = &*take->place;
+                    }
+                    if (const auto* binding = std::get_if<SemBinding>(&selected->value);
+                        binding
+                        && std::holds_alternative<AsyncChildBindingStorage>(
+                            body.binding(binding->binding).storage
+                        )) {
+                        invariant_violation("cold composition cannot adopt a lexical child");
+                    }
+                    successes.push_back(operation->success);
+                    const auto& members = require_failure_set(operation->failures).members;
+                    promised.insert(members.begin(), members.end());
+                }
+                if (value.policy == AsyncCompositionPolicy::WhenAll) {
+                    const auto* tuple =
+                        std::get_if<TupleTypeValue>(&require_type(result->success).value);
+                    if ((successes.empty()
+                         && require_type(result->success).value
+                             != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}})
+                        || (!successes.empty() && (!tuple || tuple->elements != successes))) {
+                        invariant_violation("join result must preserve ordered tuple shape");
+                    }
+                } else {
+                    const auto* tuple =
+                        std::get_if<TupleTypeValue>(&require_type(result->success).value);
+                    if (!tuple
+                        || tuple->elements.size() != 2uz
+                        || require_type(tuple->elements[0]).value
+                            != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Usize}}
+                        || tuple->elements[1] != successes.front()
+                        || !std::ranges::all_of(successes, [&](TypeID type) noexcept {
+                               return type == successes.front();
+                           })) {
+                        invariant_violation(
+                            "selection result must identify an input with its common success type"
+                        );
+                    }
+                }
+                const auto& members = require_failure_set(result->failures).members;
+                if (promised != std::set<TypeID>(members.begin(), members.end())) {
+                    invariant_violation("composition promise differs from input failures");
+                }
+            },
+            [&](const SemColdTimeout& value) noexcept {
+                const auto* input = std::get_if<OperationTypeValue>(
+                    &require_type(value.operation->type.resolved()).value
+                );
+                const auto* result =
+                    std::get_if<OperationTypeValue>(&require_type(source.type.resolved()).value);
+                if (!input
+                    || !result
+                    || input->success != result->success
+                    || require_type(value.duration_ticks->type.resolved()).value
+                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::I64}}) {
+                    invariant_violation("timeout requires an operation and signed duration ticks");
+                }
+                const auto* selected = &*value.operation;
+                if (const auto* take = std::get_if<SemTake>(&selected->value)) {
+                    selected = &*take->place;
+                }
+                if (const auto* binding = std::get_if<SemBinding>(&selected->value);
+                    binding
+                    && std::holds_alternative<AsyncChildBindingStorage>(
+                        body.binding(binding->binding).storage
+                    )) {
+                    invariant_violation("timeout cannot adopt a lexical child");
+                }
+                const auto& input_members = require_failure_set(input->failures).members;
+                auto promised = std::set<TypeID>(input_members.begin(), input_members.end());
+                for (const auto failure : {value.timeout_failure, value.range_failure}) {
+                    const auto* record = std::get_if<StructTypeValue>(&require_type(failure).value);
+                    if (!record
+                        || !program.declarations().structure(record->structure).fields.empty()) {
+                        invariant_violation("timeout failures require empty payloads");
+                    }
+                    promised.insert(failure);
+                }
+                const auto& actual = require_failure_set(result->failures).members;
+                if (promised != std::set<TypeID>(actual.begin(), actual.end())) {
+                    invariant_violation("timeout promise differs from its completion failures");
+                }
+            },
+            [&](const SemAwait& value) noexcept {
+                const auto* operation = std::get_if<OperationTypeValue>(
+                    &require_type(value.operand->type.resolved()).value
+                );
+                if (!operation || operation->success != source.type.resolved()) {
+                    invariant_violation("await differs from operation success contract");
+                }
+            },
+            [&](const SemWaitReady& value) noexcept {
+                const auto* tuple =
+                    std::get_if<TupleTypeValue>(&require_type(source.type.resolved()).value);
+                if (value.children.empty()
+                    || tuple == nullptr
+                    || tuple->elements.size() != 2uz
+                    || require_type(tuple->elements[0]).value
+                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Usize}}
+                    || require_type(tuple->elements[1]).value
+                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}}
+                    || !require_failure_set(source.failures.resolved()).members.empty()) {
+                    invariant_violation(
+                        "terminal selection differs from its scalar result contract"
+                    );
+                }
+                auto seen = std::set<LocalBindingID>();
+                for (const auto child : value.children) {
+                    require_child(child);
+                    if (!seen.insert(child).second) {
+                        invariant_violation("terminal selection repeats a lexical child");
+                    }
+                }
+            },
+            [&](const SemCloseChild& value) noexcept {
+                require_child(value.child);
+                if (require_type(source.type.resolved()).value
+                        != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}}
+                    || !require_failure_set(source.failures.resolved()).members.empty()) {
+                    invariant_violation("child drain differs from its void result contract");
+                }
+            },
             [&](const SemRange& value) noexcept {
                 const auto& type = require_type(source.type.resolved());
                 const auto* range = std::get_if<RangeTypeValue>(&type.value);
@@ -224,6 +398,33 @@ auto BodyContractVerifier::verify_expression(
                     || value.begin->type.resolved() != range->element
                     || value.end->type.resolved() != range->element) {
                     invariant_violation("range bounds have incompatible types");
+                }
+            },
+            [&](const SemTuple& value) noexcept {
+                const auto& type = require_type(source.type.resolved());
+                const auto* tuple = std::get_if<TupleTypeValue>(&type.value);
+                if (value.elements.empty()) {
+                    if (type.value != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Void}}) {
+                        invariant_violation("empty tuple differs from void");
+                    }
+                    return;
+                }
+                if (!tuple || tuple->elements.size() != value.elements.size()) {
+                    invariant_violation("tuple initialization has wrong shape");
+                }
+                for (const auto [index, element] : std::views::enumerate(value.elements)) {
+                    if (element.type.resolved() != tuple->elements[index]) {
+                        invariant_violation("tuple element type mismatch");
+                    }
+                }
+            },
+            [&](const SemTupleElement& value) noexcept {
+                const auto& type = require_type(value.source->type.resolved());
+                const auto* tuple = std::get_if<TupleTypeValue>(&type.value);
+                if (!tuple
+                    || value.index >= tuple->elements.size()
+                    || tuple->elements[value.index] != source.type.resolved()) {
+                    invariant_violation("tuple projection type mismatch");
                 }
             },
             [&](const SemArray& value) noexcept {
@@ -241,9 +442,9 @@ auto BodyContractVerifier::verify_expression(
             [&](const SemStruct& value) noexcept {
                 const auto& type = require_type(source.type.resolved());
                 const auto* structure = std::get_if<StructTypeValue>(&type.value);
-                const auto& fields = require_structure(value.structure).fields;
+                const auto& fields = require_structure(value.resolved_structure()).fields;
                 if (structure == nullptr
-                    || structure->structure != value.structure
+                    || structure->structure != value.resolved_structure()
                     || fields.size() != value.fields.size()) {
                     invariant_violation("structure initialization has wrong shape");
                 }
@@ -324,8 +525,7 @@ auto BodyContractVerifier::verify_expression(
                     );
                     if (operand.access != AccessMode::Read
                         || (type != nullptr
-                            && (type->kind == BuiltinType::Void
-                                || type->kind == BuiltinType::EntryArgs
+                            && (type->kind == BuiltinType::EntryArgs
                                 || type->kind == BuiltinType::StrCharsView))) {
                         invariant_violation("invalid printing operand");
                     }
@@ -372,6 +572,26 @@ auto BodyContractVerifier::verify_expression(
             [&](const SemIntrinsic& value) noexcept {
                 return value.operation.visit(
                     Overloaded {
+                        [&](const FloatIntrinsic& family) noexcept {
+                            if (family != FloatIntrinsic::IsFinite
+                                || value.operands.size() != 1
+                                || value.operands.front().access != AccessMode::Read) {
+                                invariant_violation("floating query requires one Read operand");
+                            }
+                            const auto& receiver =
+                                require_type(value.operands.front().expression.type.resolved())
+                                    .value;
+                            const auto* builtin = std::get_if<BuiltinTypeValue>(&receiver);
+                            if (builtin == nullptr
+                                || (builtin->kind != BuiltinType::F32
+                                    && builtin->kind != BuiltinType::F64)) {
+                                invariant_violation("floating query receiver mismatch");
+                            }
+                            if (require_type(source.type.resolved()).value
+                                != CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Bool}}) {
+                                invariant_violation("floating query result mismatch");
+                            }
+                        },
                         [&](const SliceIntrinsicOperation& family) noexcept {
                             const auto contract = slice_intrinsic_contract(family.intrinsic);
                             if (value.operands.size() != contract.arguments.size() + 1) {
@@ -387,13 +607,15 @@ auto BodyContractVerifier::verify_expression(
                                     .value;
                             const auto* array = std::get_if<ArrayTypeValue>(&receiver);
                             const auto* slice = std::get_if<SliceTypeValue>(&receiver);
-                            if ((contract.receiver == SliceIntrinsicShape::Array
-                                 && array == nullptr)
-                                || (contract.receiver == SliceIntrinsicShape::Slice
-                                    && slice == nullptr)) {
+                            if ((array == nullptr && slice == nullptr)
+                                || !slice_intrinsic_accepts_receiver(
+                                    contract.receiver,
+                                    array ? SliceIntrinsicShape::Array : SliceIntrinsicShape::Slice
+                                )) {
                                 invariant_violation("slice intrinsic receiver mismatch");
                             }
-                            if (array != nullptr && family.result_extent != array->extent) {
+                            if (family.intrinsic == SliceIntrinsic::FromArray
+                                && family.result_extent != array->extent) {
                                 invariant_violation(
                                     "array slice extent differs from its source type"
                                 );
@@ -423,6 +645,40 @@ auto BodyContractVerifier::verify_expression(
                                 }
                             }
                         },
+                        [&](const SequenceIntrinsicOperation& family) noexcept {
+                            const auto contract = sequence_intrinsic_contract(family.intrinsic);
+                            if (value.operands.size() != 1uz + contract.argument.has_value()
+                                || value.operands.front().access != contract.receiver_access) {
+                                invariant_violation("Sequence intrinsic operand contract mismatch");
+                            }
+                            const auto* sequence = std::get_if<OwnedSequenceTypeValue>(
+                                &require_type(value.operands.front().expression.type.resolved())
+                                     .value
+                            );
+                            if (!sequence
+                                || require_type(source.type.resolved()).value
+                                    != CanonicalTypeValue {BuiltinTypeValue {contract.result}}) {
+                                invariant_violation("Sequence intrinsic type contract mismatch");
+                            }
+                            if (contract.argument) {
+                                const auto& operand = value.operands[1];
+                                if (*contract.argument == SequenceIntrinsicArgument::Element) {
+                                    if (operand.expression.type.resolved() != sequence->element
+                                        || (operand.access != AccessMode::Read
+                                            && operand.access != AccessMode::Take)) {
+                                        invariant_violation(
+                                            "Sequence push element contract mismatch"
+                                        );
+                                    }
+                                } else if (operand.access != AccessMode::Read
+                                           || require_type(operand.expression.type.resolved()).value
+                                               != CanonicalTypeValue {
+                                                   BuiltinTypeValue {BuiltinType::Usize}
+                                               }) {
+                                    invariant_violation("Sequence remove index contract mismatch");
+                                }
+                            }
+                        },
                         [&](const SIMDIntrinsic& family) noexcept {
                             if (value.operands.empty()) {
                                 invariant_violation("SIMD operation requires operands");
@@ -435,7 +691,17 @@ auto BodyContractVerifier::verify_expression(
                                     return require_type(type);
                                 }
                             );
-                            const auto contract = simd_contract(family, owner);
+                            auto indices = std::optional<BuiltinType>();
+                            if (family == SIMDIntrinsic::Lookup) {
+                                const auto* builtin = std::get_if<BuiltinTypeValue>(
+                                    &require_type(source.type.resolved()).value
+                                );
+                                if (!builtin) {
+                                    invariant_violation("SIMD lookup requires a builtin result");
+                                }
+                                indices = builtin->kind;
+                            }
+                            const auto contract = simd_contract(family, owner, indices);
                             if (simd_member(owner, contract.name, simd_is_factory(family))
                                 != family) {
                                 invariant_violation("invalid SIMD owner or operation");
@@ -620,9 +886,9 @@ auto BodyContractVerifier::verify_expression(
             [&](const SemField& value) noexcept {
                 const auto& type = require_type(value.source->type.resolved());
                 const auto* structure = std::get_if<StructTypeValue>(&type.value);
-                const auto& fields = require_structure(value.field.owner).fields;
+                const auto& fields = require_structure(value.field.resolved_owner()).fields;
                 if (structure == nullptr
-                    || structure->structure != value.field.owner
+                    || structure->structure != value.field.resolved_owner()
                     || value.field.field_index >= fields.size()
                     || fields[value.field.field_index].type != source.type.resolved()) {
                     invariant_violation("field projection type mismatch");
@@ -634,8 +900,12 @@ auto BodyContractVerifier::verify_expression(
                 const auto& index = require_type(value.index->type.resolved());
                 const auto* integer = std::get_if<BuiltinTypeValue>(&index.value);
                 const auto* slice = std::get_if<SliceTypeValue>(&type.value);
-                if ((array == nullptr && slice == nullptr)
-                    || (array != nullptr ? array->element : slice->element)
+                const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&type.value);
+                if ((array == nullptr && slice == nullptr && sequence == nullptr)
+                    || value.source_owns_elements != (array != nullptr || sequence != nullptr)
+                    || (array       ? array->element
+                            : slice ? slice->element
+                                    : sequence->element)
                         != source.type.resolved()
                     || integer == nullptr
                     || !builtin_is_integer(integer->kind)) {

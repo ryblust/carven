@@ -1,7 +1,57 @@
 import std::utf.text using { from_utf8, to_string };
 import std::utf.error using UTF8Error;
 
+private const fn copied_text() -> String throw UTF8Error {
+    let bytes = [0xffu8, 0x61, 0, 0xc3, 0xa9, 0xe4, 0xbd, 0xa0, 0xff];
+    let selected = bytes.as_slice().slice(1, 8);
+    let view = from_utf8(selected)?;
+    assert(view.bytes.len() == selected.len());
+    assert(view.bytes[0] == 0x61);
+    assert(view.bytes[1] == 0);
+    assert(from_utf8(selected.slice(2, 2))?.is_empty());
+    return view as String;
+}
+
+private const fn independent_text() -> String throw UTF8Error {
+    var bytes = [0x61u8];
+    let result = to_string(bytes)?;
+    bytes[0] = 0x62;
+    return &&result;
+}
+
+private const fn changed_backing() -> String {
+    var bytes = [97u8, 98];
+    let slot = addressof(&bytes[0]);
+    let view = str::from_utf8_unchecked(bytes);
+    let selected = view.bytes;
+    if slot != nullptr { *slot = 99; }
+    assert(view == "cb");
+    assert(selected[0] == 99);
+    return view as String;
+}
+
+private const copied = copied_text()?;
+private const owned = to_string([0xf0u8, 0x9f, 0x98, 0x80])?;
+private const independent = independent_text()?;
+private const changed = changed_backing();
+
+const test "UTF8: checked byte views and owned results execute at compilation" {
+    check(copied == "a\u{0}é你");
+    check(owned == "😀");
+    check(independent == "a");
+    check(changed == "cb");
+    var rejected = false;
+    let invalid = [0xe2u8, 0x28];
+    try {
+        let _ = from_utf8(invalid)?;
+    } catch {
+        UTF8Error(error) => { rejected = error.kind == .InvalidContinuation && error.offset == 1; },
+    }
+    check(rejected);
+}
+
 test "UTF8: byte slices construct borrowed and owning text" {
+    check(changed_backing() == "cb");
     let bytes: [u8; 7] = [0x61, 0, 0xc3, 0xa9, 0xe4, 0xbd, 0xa0];
     try {
         let text = from_utf8(bytes)?;

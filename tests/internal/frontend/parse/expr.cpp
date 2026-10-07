@@ -12,6 +12,7 @@ import :frontend.ast.tree;
 import :frontend.ast.type;
 import :frontend.literal;
 import :source.text;
+import :support.unique_indirect;
 import :test.harness.framework;
 import :test.internal.frontend.parse.fixture;
 import std;
@@ -35,6 +36,169 @@ auto initializer(const SyntaxTree& tree, std::size_t index) noexcept -> const AS
 }
 
 const TestSuite suite([] static noexcept {
+    "Parser expression: tuple commas distinguish values from groups"_test = [] static noexcept {
+        const auto tree = parse_valid(
+            "fn f() { let unit = (); let grouped = (1); let single = (1,); let nested = (1, (2, ()),); }"
+        );
+        const auto ast = tree.view();
+        expect(get<ASTTupleExpr>(initializer(tree, 0)).elements.empty());
+        expect(is<ASTGroupExpr>(initializer(tree, 1)));
+        expect_equal(get<ASTTupleExpr>(initializer(tree, 2)).elements.size(), 1uz);
+        const auto& outer = get<ASTTupleExpr>(initializer(tree, 3));
+        if (!expect_equal(outer.elements.size(), 2uz)) {
+            return;
+        }
+        const auto& inner = get<ASTTupleExpr>(ast.expression(outer.elements[1]));
+        if (!expect_equal(inner.elements.size(), 2uz)) {
+            return;
+        }
+        expect(get<ASTTupleExpr>(ast.expression(inner.elements[1])).elements.empty());
+        check_invalid("fn f() { let value = (,); }");
+        check_invalid("fn f() { let value = (1,,2); }");
+        check_invalid("fn f() { let value = (1,2; }");
+    };
+
+    "Parser expression: tuple positions are checked decimal components and chain naturally"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "fn f() { pair.0.1; pair.4294967295; 1.0; pair.0.member[2]?; pointer->0.1; }"
+            );
+            const auto tree = parse_valid(text);
+            const auto ast = tree.view();
+            const auto& outer = get<ASTTupleElementExpr>(expression_statement(tree, 0uz));
+            expect_equal(outer.index, 1u);
+            expect_equal(slice(text, outer.index_span), std::string_view("1"));
+            const auto& inner = get<ASTTupleElementExpr>(ast.expression(outer.operand_id));
+            expect_equal(inner.index, 0u);
+            expect(is<ASTNameExpr>(ast.expression(inner.operand_id)));
+            expect_equal(
+                get<ASTTupleElementExpr>(expression_statement(tree, 1uz)).index,
+                std::numeric_limits<std::uint32_t>::max()
+            );
+            expect(
+                std::holds_alternative<FloatingLiteralValue>(
+                    get<ASTLiteral>(expression_statement(tree, 2uz)).value
+                )
+            );
+            const auto& propagated = get<ASTPropagationExpr>(expression_statement(tree, 3uz));
+            const auto& indexed = get<ASTIndexExpr>(ast.expression(propagated.operand_id));
+            const auto& member = get<ASTMemberExpr>(ast.expression(indexed.operand_id));
+            expect(is<ASTTupleElementExpr>(ast.expression(member.operand_id)));
+            const auto& arrow_outer = get<ASTTupleElementExpr>(expression_statement(tree, 4uz));
+            expect_equal(arrow_outer.index, 1u);
+            const auto& arrow_inner =
+                get<ASTTupleElementExpr>(ast.expression(arrow_outer.operand_id));
+            expect_equal(arrow_inner.index, 0u);
+            const auto& dereference = get<ASTPrefixExpr>(ast.expression(arrow_inner.operand_id));
+            expect_equal(dereference.op, ASTPrefixOperator::Dereference);
+            expect_equal(slice(text, dereference.operator_span), std::string_view("->"));
+            expect(is<ASTNameExpr>(ast.expression(dereference.operand_id)));
+            for (const auto index :
+                 {"00",
+                  "01",
+                  "1u32",
+                  "1f32",
+                  "1e2",
+                  "0x1",
+                  "0b1",
+                  "-1",
+                  "4294967296",
+                  "999999999999999999999999999"}) {
+                check_invalid(std::format("fn f() {{ pair.{}; }}", index));
+                check_invalid(std::format("fn f() {{ pair->{}; }}", index));
+            }
+            check_invalid("fn f() { pair::0; }");
+            check_invalid("fn f() { .0; }");
+        };
+
+    "Parser expression: lambda tuple parameters retain recursive targets and access"_test =
+        [] static noexcept {
+            const auto tree = parse_valid(
+                "fn f() { let callback = []((a, (_, b)): (i32, ((), bool)), &(c,): (i32,), &&(): ()) => a; }"
+            );
+            const auto& lambda = get<ASTLambdaExpr>(initializer(tree, 0uz));
+            if (!expect_equal(lambda.parameters.size(), 3uz)) {
+                return;
+            }
+            const auto& target =
+                *get<UniqueIndirect<ASTTupleBindingTarget>>(lambda.parameters[0].target);
+            if (!expect_equal(target.elements.size(), 2uz)) {
+                return;
+            }
+            const auto& nested = *get<UniqueIndirect<ASTTupleBindingTarget>>(target.elements[1]);
+            if (!expect_equal(nested.elements.size(), 2uz)) {
+                return;
+            }
+            expect(is<ASTDiscardBindingTarget>(nested.elements[0]));
+            expect_equal(lambda.parameters[1].access.mode, ASTAccessMode::Write);
+            expect_equal(lambda.parameters[2].access.mode, ASTAccessMode::Take);
+            expect((*get<UniqueIndirect<ASTTupleBindingTarget>>(lambda.parameters[2].target))
+                       .elements.empty());
+            check_invalid("fn f() { let callback = []((a, 1)) => a; }");
+        };
+
+    "Parser async: builtin calls use ordinary names while native roots remain explicit"_test =
+        [] static noexcept {
+            constexpr auto text =
+                std::string_view("fn f() { cancellation_requested(); ::async::when_all(); }");
+            const auto tree = parse_valid(text);
+            const auto ast = tree.view();
+            const auto& call = get<ASTCallExpr>(expression_statement(tree, 0uz));
+            const auto& name = get<ASTNameExpr>(ast.expression(call.callee));
+            expect_equal(slice(text, name.name_span), std::string_view("cancellation_requested"));
+            const auto& native_call = get<ASTCallExpr>(expression_statement(tree, 1uz));
+            expect(is<ASTCppNameExpr>(ast.expression(native_call.callee)));
+            check_invalid("fn f() { async::when_all(); }");
+            check_invalid("fn f() { let value = (async)::when_all(); }");
+            parse_valid(
+                "fn f() { let value = if true { cancellation_requested() } else { false }; for cancellation_requested(); false; {} }"
+            );
+        };
+
+    "Parser async: propagation wraps await and preserves grouped inner propagation"_test =
+        [] static noexcept {
+            const auto tree = parse_valid("async fn f() { await operation?; await (operation?); }");
+            const auto& propagated = get<ASTPropagationExpr>(expression_statement(tree, 0uz));
+            const auto& awaited = get<ASTPrefixExpr>(tree.view().expression(propagated.operand_id));
+            expect_equal(awaited.op, ASTPrefixOperator::Await);
+            expect(is<ASTNameExpr>(tree.view().expression(awaited.operand_id)));
+            const auto& grouped = get<ASTPrefixExpr>(expression_statement(tree, 1uz));
+            expect_equal(grouped.op, ASTPrefixOperator::Await);
+            const auto& group = get<ASTGroupExpr>(tree.view().expression(grouped.operand_id));
+            expect(is<ASTPropagationExpr>(tree.view().expression(group.expression)));
+        };
+
+    "Parser expression: qualified and member names retain keyword spellings"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "fn names() { ::async::await(); value.cancel(); value->match; "
+                "vendor::test(); let value = ::async::match { 7 }; }"
+            );
+            const auto tree = parse_valid(text);
+            const auto ast = tree.view();
+            const auto& global_call = get<ASTCallExpr>(expression_statement(tree, 0uz));
+            const auto& global = get<ASTCppNameExpr>(ast.expression(global_call.callee));
+            if (!expect_equal(global.components.size(), 2uz)) {
+                return;
+            }
+            expect_equal(slice(text, global.components[0]), std::string_view("async"));
+            expect_equal(slice(text, global.components[1]), std::string_view("await"));
+            const auto& member_call = get<ASTCallExpr>(expression_statement(tree, 1uz));
+            const auto& member = get<ASTMemberExpr>(ast.expression(member_call.callee));
+            expect_equal(slice(text, member.name_span), std::string_view("cancel"));
+            const auto& arrow = get<ASTMemberExpr>(expression_statement(tree, 2uz));
+            expect_equal(slice(text, arrow.name_span), std::string_view("match"));
+            expect(is<ASTPrefixExpr>(ast.expression(arrow.operand_id)));
+            const auto& scope_call = get<ASTCallExpr>(expression_statement(tree, 3uz));
+            const auto& scope = get<ASTMemberExpr>(ast.expression(scope_call.callee));
+            expect_equal(scope.op, ASTMemberOperator::Scope);
+            expect_equal(slice(text, scope.name_span), std::string_view("test"));
+            const auto& constructed = get<ASTConstructionExpr>(initializer(tree, 4uz));
+            expect(is<ASTNamedType>(*constructed.type));
+            check_invalid("fn invalid() { let await = 7; }");
+            check_invalid("fn invalid() { ::vendor::7(); }");
+        };
+
     "Parser expression: literals retain typed lexer values"_test = [] static noexcept {
         static constexpr auto text = std::string_view(
             "fn values() { 1; 1f32; 1.0; 0xffu8; 0b10; 0o7; 'x'; \"text\"; true; false; }"
@@ -113,6 +277,18 @@ const TestSuite suite([] static noexcept {
             check_invalid("fn invalid() { let native = #[cpp] ---\nreturn compute();\n---\n; }");
         };
 
+    "Parser expression: array initialization retains one element and its extent"_test =
+        [] static noexcept {
+            const auto result = parse_valid("fn arrays() { let values = [make(); 3]; }");
+            const auto ast = result.view();
+            const auto& repeated = get<ASTArrayRepeatExpr>(initializer(result, 0));
+            expect(is<ASTCallExpr>(ast.expression(repeated.element)));
+            expect(is<ASTLiteral>(ast.expression(repeated.extent)));
+            check_invalid("fn bad() { let values = [1;]; }");
+            check_invalid("fn bad() { let values = [1, 2; 3]; }");
+            check_invalid("fn bad() { let values = [1; 3, 4]; }");
+        };
+
     "Parser expression: precedence is represented by typed expression edges"_test =
         [] static noexcept {
             const auto result = parse_valid(
@@ -131,7 +307,6 @@ const TestSuite suite([] static noexcept {
             expect_equal(comparison.op, ASTBinaryOperator::Equal);
 
             check_invalid("fn expression() { a < b < c; }");
-            check_invalid("fn expression() { (a, b); }");
         };
 
     "Parser expression: as is left associative between prefix and multiplicative expressions"_test =
@@ -150,8 +325,7 @@ const TestSuite suite([] static noexcept {
             if (!expect_equal(call.arguments.size(), 1uz)) {
                 return;
             }
-            const auto& access =
-                get<ASTAccessExpr>(ast.expression(call.arguments.front().expression));
+            const auto& access = get<ASTAccessExpr>(ast.expression(call.arguments.front()));
             expect_equal(access.mode, ASTAccessMode::Write);
             expect(is<ASTNameExpr>(ast.expression(access.operand_id)));
         };
@@ -277,6 +451,55 @@ const TestSuite suite([] static noexcept {
             expect(!empty.type.has_value());
             expect(std::holds_alternative<std::monostate>(empty.initializer.value));
             check_invalid("fn f() { let value: Pair = { 1, 2 }; }");
+        };
+
+    "Parser expression: type applications preserve callee and associated type arguments"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "fn use() { "
+                "relay<Box<i32,>,>(value); "
+                "Owner<Box<i32>>::create(value); "
+                "let box = Box<i32,> { value: 1 }; }"
+            );
+            const auto tree = parse_valid(text);
+            const auto ast = tree.view();
+            const auto& direct = get<ASTCallExpr>(expression_statement(tree, 0));
+            const auto& application = get<ASTTypeApplicationExpr>(ast.expression(direct.callee));
+            if (!expect_equal(application.arguments.size(), 1uz)) {
+                return;
+            }
+            expect(is<ASTNameExpr>(ast.expression(application.operand_id)));
+            expect_equal(slice(text, application.arguments_span), std::string_view("<Box<i32,>,>"));
+            const auto& nested =
+                get<ASTNamedType>(ast.type(std::get<ASTTypeID>(application.arguments[0].value)));
+            expect_equal(nested.arguments.size(), 1uz);
+            const auto& associated = get<ASTCallExpr>(expression_statement(tree, 1));
+            const auto& member = get<ASTMemberExpr>(ast.expression(associated.callee));
+            expect_equal(member.op, ASTMemberOperator::Scope);
+            expect(is<ASTTypeApplicationExpr>(ast.expression(member.operand_id)));
+            const auto& construction = get<ASTConstructionExpr>(initializer(tree, 2));
+            if (!expect(construction.type.has_value())) {
+                return;
+            }
+            const auto& constructed_type = get<ASTNamedType>(*construction.type);
+            expect_equal(constructed_type.arguments.size(), 1uz);
+        };
+
+    "Parser expression: complete type application selects syntax without name lookup"_test =
+        [] static noexcept {
+            const auto tree =
+                parse_valid("fn use() { a < b > (c); (a < b) > c; a < b; value >> amount; }");
+            const auto& call = get<ASTCallExpr>(expression_statement(tree, 0));
+            expect(is<ASTTypeApplicationExpr>(tree.view().expression(call.callee)));
+            const auto& comparison = get<ASTBinaryExpr>(expression_statement(tree, 1));
+            expect_equal(comparison.op, ASTBinaryOperator::Greater);
+            const auto& less = get<ASTBinaryExpr>(expression_statement(tree, 2));
+            expect_equal(less.op, ASTBinaryOperator::Less);
+            const auto& shift = get<ASTBinaryExpr>(expression_statement(tree, 3));
+            expect_equal(shift.op, ASTBinaryOperator::RightShift);
+            check_invalid("fn use() { relay<>(value); }");
+            check_invalid("fn use() { relay<i32,,u8>(value); }");
+            check_invalid("fn use() { relay<4>(value); }");
         };
 });
 

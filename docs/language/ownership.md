@@ -22,6 +22,9 @@ Inside `ptr<&T>`, `&` is the pointer type's explicit target-access parameter.
 - An unmarked range binding has `Read` element access.
 - A range binding marked `&` has `Write` element access when the source permits
   mutation.
+- An unmarked pattern binding has `Read` access to the selected value.
+- A pattern binding marked `&` has `Write` access when the subject permits
+  mutation.
 
 Every binding declaration has an initializer. An optional declared type must be
 compatible with that initializer. The exact target `_` creates no symbol, may
@@ -47,11 +50,23 @@ storage. Contained pointers and Write captures retain their separate target acce
 
 ## Read values and aliases
 
-Read parameters and Read range bindings preserve Carven array, String, and
-closure storage through const references, including storage nested in Carven
-aggregates. Native C++ types and other types use a const value when their C++
-copy construction and destruction are trivial, and a const reference otherwise.
-`import(cpp)` and `export(cpp)` use the same Read policy.
+Read parameters preserve Carven array, Sequence, String, and closure storage
+through const references, including storage nested in aggregates. Pure Carven
+values use const value snapshots. Native-containing values use a const value
+when C++ copy construction and destruction are both trivial, and a const
+reference otherwise. Object size does not affect this choice.
+
+When a callee retains a parameter holder through its result or external state,
+that parameter uses a const reference throughout the call chain, including
+argument temporaries and native wrappers. Async native-containing Read parameters
+retain their holders from cold construction until operation closure.
+`import(cpp)` and `export(cpp)` use the same policy. Callable views use the
+ordinary value-or-reference policy; a target requiring stable native storage
+cannot adapt to a view that lacks that borrowing contract.
+
+Pattern and range Read bindings are non-owning. They snapshot pure Carven
+values and borrow storage-containing values, including native holders, from the
+selected subject or current element.
 
 A by-value Read argument saves its value when that argument is evaluated. A
 by-reference Read argument retains the selected storage, so writes through
@@ -62,11 +77,16 @@ checks.
 
 ## Ownership transfer and mutation
 
-Runtime `let`, `var`, ordinary pattern bindings, and `Take` parameters are
-owners. A `Take` parameter is an immutable owner and may itself be taken.
-`Read` and `Write` parameters, range bindings, closure state, and `const` are
-not Take sources. The initial Take operand must be a complete owner or a
+Runtime `let`, `var`, and `Take` parameters are owners. A `Take` parameter is an
+immutable owner and may itself be taken.
+`Read` and `Write` parameters, pattern and range bindings, closure state, and
+`const` are not Take sources. The initial Take operand must be a complete owner or a
 temporary; taking a member or element of a still-available owner is invalid.
+
+Tuple parameter and loop targets inherit these access rules. Named slots in a
+Take parameter are independent immutable owners; Read and Write targets remain
+projections of the enclosing parameter or current element. Positional fields
+such as `.0` obey the same complete-owner restriction as named fields.
 
 Field selection from an owning value transfers the selected field using the
 ordinary Carven value-delivery policy. `(&&owner).field` first consumes the
@@ -74,7 +94,8 @@ complete owner; the complete source is evaluated once and retained through the
 full expression, with remaining fields cleaned up normally. Nested owning field
 selection follows the same rule. `owner.field` remains an ordinary Read and
 never consumes `owner`. Returning a view into a destroyed temporary is invalid.
-This does not provide simultaneous decomposition into multiple field owners.
+Tuple binding targets provide simultaneous decomposition into independently
+owned element bindings; see [Tuples](aggregates.md#tuples).
 
 `&&expression` is the ownership-transfer expression and has its operand's value
 type. Taking a complete owner makes that binding unavailable, including for a
@@ -92,7 +113,9 @@ a `var` is the only operation that may restore it, and restoration happens only
 after the right-hand side completes normally. Partial assignment, compound
 assignment, and update operators require the prior value. At a control-flow
 join, a binding is available only when it is available on every normally
-continuing path. Loops include their zero-iteration path and all backedges.
+continuing path. Condition effects are checked before proven Boolean results
+select the possible normal paths. Loops include possible zero-iteration paths
+and all normally continuing backedges.
 
 Member and element mutation inherit eligibility from their receiver. Plain
 assignment requires a compatible value and uses the target C++ assignment

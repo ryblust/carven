@@ -78,6 +78,103 @@ const TestSuite suite([] static noexcept {
             expect_diagnostic(duplicate, DiagnosticCode::Catalog);
         };
 
+    "Semantic classes: const operations share static root admission"_test = [] static noexcept {
+        static_cast<void>(analyze_test_program(R"(
+        class C {
+            value: i32,
+            private const fn initial() -> i32 => 3;
+            const fn create() -> C {
+                const value = C { value: C::initial() }.value;
+                return { value: value };
+            }
+            const fn read(self) -> i32 => self.value;
+            const fn consume(&&self) -> i32 => self.value;
+        }
+        const object = C::create();
+        const result = object.read();
+        const taken = C::create().consume();
+        const extent = C::create().read() as usize;
+        fn local() -> i32 {
+            const value = C::create().read();
+            const taken = C::create().consume();
+            return value + taken;
+        }
+        fn array() -> [i32; C::create().read() as usize] => [0; extent];
+    )"));
+        const auto prelude = std::string(R"(
+        class C {
+            value: i32,
+            const fn create() -> C => { value: 3 };
+            fn runtime_create() -> C => { value: 4 };
+            fn runtime_read(self) -> i32 => self.value;
+            private const fn secret() -> i32 => 3;
+            const fn read(self) -> i32 => self.value;
+            const fn update(&self) -> i32 { self.value += 1; return self.value; }
+            const fn consume(&&self) -> i32 => self.value;
+        }
+        const object = C::create();
+    )");
+        const auto cases = std::array {
+            std::pair {"const value = C::runtime_create();", DiagnosticCode::ConstAdmission},
+            std::pair {"const value = object.runtime_read();", DiagnosticCode::ConstAdmission},
+            std::pair {"const value = C::secret();", DiagnosticCode::AccessClassPrivate},
+            std::pair {"const value = C::read();", DiagnosticCode::TypeMethodCall},
+            std::pair {"const value = object.create();", DiagnosticCode::TypeMethodCall},
+            std::pair {"const value = object.update();", DiagnosticCode::AccessWriteArgument},
+            std::pair {"const value = object.consume();", DiagnosticCode::AccessTakeOperand},
+            std::pair {"const value = C { value: 1 };", DiagnosticCode::AccessClassPrivate},
+            std::pair {"const value = object.value;", DiagnosticCode::AccessClassPrivate},
+        };
+        each(
+            cases,
+            [](const auto& item) noexcept { return item.first; },
+            [&](const auto& item) noexcept {
+                expect_diagnostic(analyze_test_errors(prelude + item.first), item.second);
+            }
+        );
+    };
+
+    "Semantic static roots: argument access distinguishes values from constant bindings"_test =
+        [] static noexcept {
+            const auto prelude = std::string(R"(
+        struct V { number: i32 }
+        const fn consume(&&value: V) -> i32 => value.number;
+        const fn relay<T>(&&value: T) -> T => &&value;
+        const async fn consume_async(&&value: V) -> i32 => value.number;
+        const fn update(&value: V) -> i32 { value.number += 1; return value.number; }
+        const original = V { number: 7 };
+        const tuple = (original,);
+        const array = [original];
+        struct Box { value: V }
+        const box = Box { value: original };
+    )");
+            static_cast<void>(analyze_test_program(prelude + R"(
+        const taken = consume(&&V { number: 8 });
+        const relayed = relay(&&V { number: 9 });
+        const awaited = await consume_async(&&V { number: 10 });
+    )"));
+            const auto cases = std::array {
+                "const result = consume(&&original);",
+                "const result = consume(&&(original));",
+                "const result = consume(&&tuple.0);",
+                "const result = consume(&&array[0]);",
+                "const result = consume(&&box.value);",
+                "const result = relay(&&original);",
+                "const result = await consume_async(&&original);",
+                "fn local() { const result = consume(&&original); }",
+            };
+            each(cases, std::identity {}, [&](const auto& source) noexcept {
+                expect_diagnostic(
+                    analyze_test_errors(prelude + source),
+                    DiagnosticCode::AccessTakeOperand
+                );
+            });
+            expect_diagnostic(
+                analyze_test_errors(prelude + "const result = update(&original);"),
+                DiagnosticCode::AccessWriteArgument
+            );
+        };
+
     "Semantic classes: ordinary function definitions have no static execution gate"_test =
         [] static noexcept {
             static_cast<void>(

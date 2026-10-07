@@ -10,6 +10,7 @@ import :frontend.ast.pattern;
 import :frontend.ast.stmt;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
+import :semantic.analysis.async;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.body.context;
 import :semantic.analysis.body.resolve;
@@ -61,9 +62,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             };
         }
         co_return BuiltExpression {
-            .storage = UniqueIndirect {BodyExpressionStorage {
-                active_builder().binding_expression(binding)
-            }},
+            .storage = UniqueIndirect {BodyExpressionStorage {local_place(*local, span)}},
             .pending_failures = {},
             .takeable = local->takeable,
             .completes = true,
@@ -101,6 +100,29 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                 .condition_source = std::nullopt,
                 .operand_sources = std::nullopt
             };
+        }
+        if (const auto async_builtin = find_async_builtin(text)) {
+            auto resolved = co_await resolve_async_builtin(
+                draft(),
+                catalog(),
+                construction_requests(),
+                source_module_id,
+                *async_builtin,
+                span
+            );
+            if (!resolved) {
+                co_return std::unexpected(resolved.error());
+            }
+            if (const auto* intrinsic = std::get_if<AsyncIntrinsic>(&*resolved)) {
+                co_return AsyncIntrinsicSelection {.kind = *intrinsic, .span = span};
+            }
+            if (const auto* policy = std::get_if<AsyncCompositionPolicy>(&*resolved)) {
+                co_return CompositionSelection {.policy = *policy, .span = span};
+            }
+            if (const auto* contract = std::get_if<TimeoutContract>(&*resolved)) {
+                co_return TimeoutSelection {.contract = *contract, .span = span};
+            }
+            invariant_violation("async builtin resolved a source declaration");
         }
         if (name_reference->has_value()) {
             co_return CppSelection {.target = std::move(**name_reference), .span = span};
@@ -154,7 +176,9 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             },
             [&]<typename Form>(const Form&) noexcept -> AnalysisTask<BuiltExpression> {
                 static_assert(
-                    std::same_as<Form, CatalogStructForm> || std::same_as<Form, CatalogEnumForm>,
+                    std::same_as<Form, CatalogStructForm>
+                        || std::same_as<Form, CatalogEnumForm>
+                        || std::same_as<Form, CatalogGenericForm>,
                     "unhandled non-value catalog symbol"
                 );
                 co_return std::unexpected(fail(
@@ -264,7 +288,7 @@ auto BodyElaborator::builtin_operation(
             if (argument.type.construction()
                 == ConstructionTypeRef(draft().builtin_type(BuiltinType::String))) {
                 auto inputs = std::vector<SemCallArgument>();
-                inputs.push_back({AccessMode::Read, std::move(argument)});
+                inputs.push_back({.access = AccessMode::Read, .expression = std::move(argument)});
                 argument = builder.make_expression(
                     draft().builtin_type(BuiltinType::Str),
                     builder.lifetime(),
@@ -343,22 +367,25 @@ auto BodyElaborator::builtin_callable(
             site
         );
         auto input = builder.binding_expression(binding.binding).expression;
-        operands.push_back({parameter.access, std::move(input)});
+        operands.push_back({.access = parameter.access, .expression = std::move(input)});
     }
     const auto result_type = draft().builtin_type(BuiltinType::Void);
     const auto failures = draft().add_empty_failure_term();
     auto operation = builtin_operation(builder, selection, std::move(operands));
     auto statements = std::vector<SemanticStatement>();
-    statements.push_back(
-        {.origin = site,
-         .lifetime = full,
-         .reachable = true,
-         .value = SemExpressionStatement {std::move(operation)}}
-    );
+    statements.push_back({
+        .origin = site,
+        .lifetime = full,
+        .reachable = true,
+        .value = SemExpressionStatement {std::move(operation)},
+    });
     if (selection.function != BuiltinFunction::Fail) {
-        statements.push_back(
-            {.origin = site, .lifetime = full, .reachable = true, .value = SemReturn {std::nullopt}}
-        );
+        statements.push_back({
+            .origin = site,
+            .lifetime = full,
+            .reachable = true,
+            .value = SemReturn {std::nullopt},
+        });
     }
     auto body = std::move(builder).finish(
         SemanticRegion {
@@ -368,11 +395,13 @@ auto BodyElaborator::builtin_callable(
             .result = std::nullopt,
             .result_reachable = false,
             .failures = BodyFailures(failures),
-            .exits_test = false
+            .exits_test = false,
+
         }
     );
     const auto callable = draft().append_body_callable(
         ConstructionCallableContract {
+            .execution = CallableExecutionKind::Synchronous,
             .parameters = std::vector(parameters.begin(), parameters.end()),
             .result = result_type,
             .failures = failures,

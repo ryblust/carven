@@ -1,13 +1,12 @@
 # Proposals
 
 This directory holds unfinished designs and accepted work awaiting implementation.
-Current contracts belong in `docs/`; general mechanisms and research belong in
-`notes/`.
+Current contracts belong in `docs/`.
 
 ## Contents
 
 - [TEMPLATE.md](TEMPLATE.md): proposal structure and field guidance.
-- [roadmap.md](roadmap.md): candidates without standalone proposals, including
+- [design-directions.md](design-directions.md): candidates without standalone proposals, including
   multi-field consuming decomposition, richer failure payloads, and infrastructure.
 - Other Markdown files: one design domain's unfinished work, keeping related
   syntax, semantics, compiler representation, and lowering together.
@@ -16,19 +15,22 @@ Current contracts belong in `docs/`; general mechanisms and research belong in
 
 | Proposal | Decision owned here |
 | --- | --- |
-| [Generics](generics.md) | Type parameters, definition-site checking, canonical static evidence and instances |
-| [Tuples](tuples.md) | Builtin heterogeneous products, element access, decomposition, and ownership |
-| [Operators](operators.md) | Mapping existing tokens to checked operations; consumes generic evidence |
+| [Generic extensions](generic-extensions.md) | Static capabilities, associated types, parameterized class operations, and finite boundary extensions |
+| [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations; consumes generic evidence |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
 | [Constant storage](constant-storage.md) | Constant-execution admission for library storage and retention of completed values and reference graphs |
-| [Execution model](execution-model.md) | Structured static roots, object and literal identity, and address observations during execution |
+| [Semantic execution](semantic-execution.md) | Structured static roots, object and literal identity, and address observations during execution |
 | [Compiler optimization](compiler-optimization.md) | Compiler costs and C++ realization experiments preserving existing source contracts |
-| [Layout](layout.md) | Target field order, pointer-plus-state representation, and native-layout boundaries |
+| [Data representation](data-representation.md) | Record and enum representations, native-layout boundaries, compact handles, and collection-layout experiments |
 | [Uninitialized storage](uninitialized-storage.md) | Construction destinations, partial initialization, cleanup, native object lifetime, and caller validity obligations |
-| [Formatting](formatting.md) | Capacity and composition across text/output observation boundaries |
-| [Async](async.md) | Suspension, cancellation, and structured operation lifetime |
+| [Formatting and output](formatting-and-output.md) | Capacity and composition across text/output observation boundaries |
 | [Concurrency](concurrency.md) | Cross-thread values, memory ordering, threads, and synchronization |
 | [Documentation comments](doc-comments.md) | Source attachment, retained content, and its artifact consumer |
+
+Implemented async operations, tuples, and the parametric generic core are covered
+by the language and compiler references. Undeveloped async extensions belong in
+design directions; product traversal and representation experiments stay with generics
+and compiler optimization respectively.
 
 ## Status
 
@@ -72,7 +74,7 @@ scope is selected separately, with a defined contract and validation criteria.
   measures, and validation; split them when a developed design needs its own owner.
 - Remove a proposal once implementation and permanent documentation are complete.
   For mixed scopes, retain a short implemented foundation and the unfinished work.
-  Consolidate candidates without a developed design into the roadmap, retaining
+  Consolidate candidates without a developed design into design directions, retaining
   relevant constraints, activation conditions, and validation requirements.
   Update inbound links when moving or removing material.
   Keep the remaining document self-contained.
@@ -80,4 +82,3 @@ scope is selected separately, with a defined contract and validation criteria.
 ## References
 
 - [Current contracts](../docs/README.md)
-- [Research notes](../notes/README.md)

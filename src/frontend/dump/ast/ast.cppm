@@ -157,6 +157,20 @@ private:
         std::string_view field
     ) noexcept -> void;
     auto render_expression(
+        const ASTTupleExpr& value,
+        ASTExprID expression,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
+    ) noexcept -> void;
+    auto render_expression(
+        const ASTArrayRepeatExpr& value,
+        ASTExprID expression,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
+    ) noexcept -> void;
+    auto render_expression(
         const ASTConstructionExpr& value,
         ASTExprID expression,
         std::string_view prefix,
@@ -199,6 +213,13 @@ private:
         std::string_view field
     ) noexcept -> void;
     auto render_expression(
+        const ASTTypeApplicationExpr& value,
+        ASTExprID expression,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
+    ) noexcept -> void;
+    auto render_expression(
         const ASTCallExpr& value,
         ASTExprID expression,
         std::string_view prefix,
@@ -207,6 +228,13 @@ private:
     ) noexcept -> void;
     auto render_expression(
         const ASTIndexExpr& value,
+        ASTExprID expression,
+        std::string_view prefix,
+        bool is_last,
+        std::string_view field
+    ) noexcept -> void;
+    auto render_expression(
+        const ASTTupleElementExpr& value,
         ASTExprID expression,
         std::string_view prefix,
         bool is_last,
@@ -282,6 +310,11 @@ private:
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;
+    auto render_binding_target(
+        const ASTBindingTarget& target,
+        std::string_view prefix,
+        bool is_last
+    ) noexcept -> void;
     auto render_variable_declaration(
         const ASTVariableDecl& declaration,
         std::string_view prefix,
@@ -344,6 +377,11 @@ private:
     ) noexcept -> void;
     auto render_throw_clause(
         const std::optional<ASTThrowClause>& clause,
+        std::string_view prefix,
+        bool is_last
+    ) noexcept -> void;
+    auto render_generic_argument(
+        const ASTGenericArgument& argument,
         std::string_view prefix,
         bool is_last
     ) noexcept -> void;

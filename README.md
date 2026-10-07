@@ -199,8 +199,8 @@ dependencies remain ordinary build configuration. See the
 - **Develop the repository:** [Testing](docs/development/testing.md) and
   [C++ Conventions](docs/development/conventions.md), with
   [Xmake support](xmake/README.md)
-- **Explore the design:** [Design Principles](docs/development/principles.md),
-  [Proposals](proposals/README.md), and [Research Notes](notes/README.md)
+- **Explore the design:** [Design Principles](docs/development/principles.md)
+  and [Proposals](proposals/README.md)
 
 The [Documentation Index](docs/README.md) provides the complete guide to language,
 toolchain, and development documentation.
@@ -224,6 +224,17 @@ Format the repository's C++ and Carven sources, or check their formatting:
 These commands use clang-format for C++ and [Graver](tools/graver/README.md)
 for `.cv` files. `format` applies changes; `format-check` reports violations
 without changing files.
+
+### Benchmarks
+
+Workloads and measurement protocols live in [benchmarks/](benchmarks/README.md).
+Run them through the repository wrapper:
+
+```shell
+./xmakew bench compile
+./xmakew bench incremental
+./xmakew bench async
+```
 
 ### Module build troubleshooting
 

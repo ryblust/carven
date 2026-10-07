@@ -21,7 +21,10 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
         };
         if constexpr (std::same_as<std::remove_const_t<Operation>, SemDefault>
                       || std::same_as<std::remove_const_t<Operation>, SemConstant>
-                      || std::same_as<std::remove_const_t<Operation>, SemUnreachable>) {
+                      || std::same_as<std::remove_const_t<Operation>, SemUnreachable>
+                      || std::same_as<std::remove_const_t<Operation>, SemAsyncIntrinsic>
+                      || std::same_as<std::remove_const_t<Operation>, SemWaitReady>
+                      || std::same_as<std::remove_const_t<Operation>, SemCloseChild>) {
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemBinding>) {
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemCallable>) {
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemEnumConstructor>) {
@@ -49,12 +52,14 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemRange>) {
             child(operation.begin);
             child(operation.end);
-        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemArray>) {
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemArray>
+                             || std::same_as<std::remove_const_t<Operation>, SemTuple>) {
             auto& value = operation;
             for (auto& element : value.elements) {
                 child(element);
             }
-        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemArrayAdopt>) {
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemArrayAdopt>
+                             || std::same_as<std::remove_const_t<Operation>, SemTupleElement>) {
             auto& value = operation;
             child(value.source);
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemStruct>) {
@@ -119,12 +124,25 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
             for (auto& operand : operation.operands) {
                 child(operand.expression);
             }
-        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemCall>) {
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemCall>
+                             || std::same_as<std::remove_const_t<Operation>, SemColdCall>) {
             auto& value = operation;
             child(value.callee);
             for (auto& argument : value.arguments) {
                 child(argument.expression);
             }
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemGenericCall>) {
+            for (auto& argument : operation.arguments) {
+                child(argument.expression);
+            }
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemColdCompose>) {
+            for (auto& input : operation.inputs) {
+                child(input.expression);
+            }
+
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemColdTimeout>) {
+            child(operation.operation);
+            child(operation.duration_ticks);
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemClosure>) {
             auto& value = operation;
             for (auto& capture : value.captures) {
@@ -136,7 +154,8 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemTake>) {
             auto& value = operation;
             child(value.place);
-        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemPropagate>) {
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemPropagate>
+                             || std::same_as<std::remove_const_t<Operation>, SemAwait>) {
             auto& value = operation;
             child(value.operand);
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemIf>) {
@@ -200,8 +219,13 @@ auto visit_semantic_edges(Operation& operation, Visitor visitor) noexcept -> voi
             child(operation.value);
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemExpressionStatement>) {
             child(operation.expression);
-        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemInitialize>) {
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemInitialize>
+                             || std::same_as<std::remove_const_t<Operation>, SemAsyncLet>) {
             child(operation.initializer);
+        } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemDecompose>) {
+            if (operation.initializer) {
+                child(*operation.initializer);
+            }
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemStaticBinding>) {
             child(operation.initializer);
         } else if constexpr (std::same_as<std::remove_const_t<Operation>, SemConstBlock>) {

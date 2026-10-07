@@ -5,6 +5,8 @@ import std;
 
 struct ExecutionTypeShape final {
     bool supported;
+    // True when every value has exactly this contained-storage shape.
+    bool exact;
     std::size_t depth;
     // Counts retained slots, saturated at the element limit plus one.
     std::size_t elements;

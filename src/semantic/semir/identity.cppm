@@ -21,7 +21,7 @@ private:
     friend class ProgramDraft;
 };
 
-enum class BodyIdentityDomain { Body, EvaluationRoot };
+enum class BodyIdentityDomain { Body, EvaluationRoot, GenericDefinition };
 
 class BodyIdentity final {
 public:

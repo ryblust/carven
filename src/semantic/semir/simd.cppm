@@ -23,6 +23,7 @@ enum class SIMDIntrinsic {
     Count,
     FirstOr,
     Select,
+    Sum,
 };
 
 struct SIMDShape final {
@@ -50,12 +51,17 @@ struct SIMDContract final {
 };
 
 auto simd_is_factory(SIMDIntrinsic intrinsic) noexcept -> bool;
+auto simd_intrinsic_name(SIMDIntrinsic intrinsic) noexcept -> std::string_view;
 // A reporting operation checks an index or a memory range when it executes.
 auto simd_reports(SIMDIntrinsic intrinsic) noexcept -> bool;
 auto simd_static_input(SIMDIntrinsic intrinsic) noexcept -> std::optional<std::size_t>;
 auto simd_static_limit(SIMDIntrinsic intrinsic, BuiltinType owner) noexcept -> std::uint64_t;
 
-auto simd_contract(SIMDIntrinsic intrinsic, BuiltinType owner) noexcept -> SIMDContract;
+auto simd_contract(
+    SIMDIntrinsic intrinsic,
+    BuiltinType owner,
+    std::optional<BuiltinType> lookup_indices = std::nullopt
+) noexcept -> SIMDContract;
 auto simd_member(BuiltinType type, std::string_view name, bool factory) noexcept
     -> std::optional<SIMDIntrinsic>;
 

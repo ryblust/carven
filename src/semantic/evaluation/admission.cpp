@@ -4,11 +4,8 @@ import :semantic.evaluation.admission;
 import :semantic.semir.simd;
 import std;
 
-auto supported_execution_type(
-    const ExecutionValueAccess& values,
-    ConstructionTypeRef type,
-    bool allow_void
-) noexcept -> bool {
+auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTypeRef type) noexcept
+    -> bool {
     const auto* id = std::get_if<TypeID>(&type);
     if (!id) {
         return false;
@@ -22,8 +19,12 @@ auto supported_execution_type(
             continue;
         }
         const auto canonical = values.type_copy(current);
-        if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
+        if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&canonical.value)) {
+            pending.push_back(sequence->element);
+        } else if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
             pending.push_back(array->element);
+        } else if (const auto* tuple = std::get_if<TupleTypeValue>(&canonical.value)) {
+            pending.insert(pending.end(), tuple->elements.begin(), tuple->elements.end());
         } else if (const auto* structure = std::get_if<StructTypeValue>(&canonical.value)) {
             const auto fields = values.struct_field_types(structure->structure);
             if (!fields) {
@@ -38,6 +39,8 @@ auto supported_execution_type(
             for (const auto& item : *cases) {
                 pending.insert(pending.end(), item.payload_types.begin(), item.payload_types.end());
             }
+        } else if (std::holds_alternative<OperationTypeValue>(canonical.value)) {
+            // Execution-local affine descriptors have no frozen representation.
         } else if (std::holds_alternative<PointerTypeValue>(canonical.value)
                    || std::holds_alternative<SliceTypeValue>(canonical.value)
                    || std::holds_alternative<FunctionTypeValue>(canonical.value)
@@ -55,7 +58,7 @@ auto supported_execution_type(
                 && builtin->kind != BuiltinType::Char
                 && builtin->kind != BuiltinType::Str
                 && builtin->kind != BuiltinType::String
-                && !(allow_void && current == *id && builtin->kind == BuiltinType::Void)) {
+                && builtin->kind != BuiltinType::Void) {
                 return false;
             }
         } else {
@@ -83,6 +86,8 @@ auto unsupported_execution_statement(const SemanticStatement& source) noexcept
                           || std::same_as<Operation, SemBreak>
                           || std::same_as<Operation, SemContinue>
                           || std::same_as<Operation, SemExpressionStatement>
+                          || std::same_as<Operation, SemAsyncLet>
+                          || std::same_as<Operation, SemDecompose>
                           || std::same_as<Operation, SemInitialize>
                           || std::same_as<Operation, SemStaticBinding>
                           || std::same_as<Operation, SemConstBlock>

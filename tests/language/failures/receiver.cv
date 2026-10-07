@@ -306,7 +306,8 @@ private fn guarded(&trace: i32, accepted: bool, reject: bool) -> i32 {
                     error.code
                 },
                 Failure(error) => {
-                    let copy = &&error;
+                    let owned = error;
+                    let copy = &&owned;
                     record(&trace, 7);
                     if copy.code == 1 { rethrow; }
                     -1
@@ -344,7 +345,8 @@ private fn nested_handler(&trace: i32) -> i32 {
                 step(&trace, 1, true)?
             } catch {
                 Failure(error) => {
-                    let copy = &&error;
+                    let owned = error;
+                    let copy = &&owned;
                     let nested = try {
                         other_step(&trace, 2, true)?
                     } catch {

@@ -64,10 +64,10 @@ test "Pointers: recursive Carven targets and shallow aggregate copies preserve m
     };
     let p: ptr<&Node> = ::pointer_values::address(&node);
     if p != nullptr {
-        p -> value = 9;
-        p -> next = p;
-        let next = p -> next;
-        if next != nullptr { next -> value = 12; }
+        p->value = 9;
+        p->next = p;
+        let next = p->next;
+        if next != nullptr { next->value = 12; }
     }
     check(node.value == 12);
     let scene = Scene { mesh: ::pointer_values::get() };

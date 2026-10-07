@@ -102,7 +102,9 @@ auto SemanticExecutor::finish_binary_value(
         evaluate_binary_constant_value(values, operation.operation, *lhs, *rhs, *target),
         source.origin
     );
-    if (compared && condition_observation && condition_observation->condition == &source) {
+    if (compared
+        && current->condition_observation
+        && current->condition_observation->condition == &source) {
         auto truth = boolean(*compared, source.origin);
         if (truth) {
             observe_condition(source, left, &right, *truth);
@@ -121,8 +123,22 @@ auto SemanticExecutor::try_expression(ExecutionFrame& frame, const SemTry& attem
     if (source_failure == nullptr) {
         co_return protected_result;
     }
-    // The original payload remains independent of copied bindings and nested catches.
+    // Keep the original failure separate from writable pattern projections and rethrow.
     const auto failure = *source_failure;
+    auto payload = copy_value(*failure.payload, attempt.body->origin);
+    if (!payload) {
+        co_return std::unexpected(std::move(payload.error()));
+    }
+    const auto payload_place = memory.create(std::move(*payload));
+
+    struct ReleasePayload final {
+        ExecutionMemory& memory;
+        ExecutionPlace place;
+
+        ~ReleasePayload() { memory.release(place); }
+    };
+
+    const auto payload_scope = ReleasePayload {memory, payload_place};
     for (const auto& arm : attempt.arms) {
         const auto reset = [&]() noexcept {
             for (const auto binding : arm.bindings) {
@@ -147,8 +163,13 @@ auto SemanticExecutor::try_expression(ExecutionFrame& frame, const SemTry& attem
                 if (*catch_type != failure.type) {
                     continue;
                 }
-                auto accepted =
-                    (co_await matches(frame, typed->inner, *failure.payload, arm.pattern_bounds));
+                auto accepted = (co_await matches(
+                    frame,
+                    typed->inner,
+                    *memory.resolve(payload_place),
+                    arm.pattern_bounds,
+                    payload_place
+                ));
                 if (!accepted) {
                     release_temporaries(frame, pattern_temporaries);
                     reset();
@@ -237,10 +258,34 @@ auto SemanticExecutor::match_expression(ExecutionFrame& frame, const SemMatch& m
         }
         selected = std::move(*target);
     }
-    auto subject = selected ? ExecutionResult<ExecutionValue>(ExecutionVoid {})
-                            : (co_await this->value(frame, *match.subject));
-    if (!subject) {
-        co_return std::unexpected(std::move(subject.error()));
+    auto owned_subject = std::optional<ExecutionPlace>();
+
+    struct ReleaseSubject final {
+        ExecutionMemory& memory;
+        std::optional<ExecutionPlace>& place;
+
+        ~ReleaseSubject() {
+            if (place) {
+                memory.release(*place);
+            }
+        }
+    };
+
+    const auto subject_scope = ReleaseSubject {memory, owned_subject};
+    if (!selected) {
+        auto subject = co_await this->value(frame, *match.subject);
+        if (!subject) {
+            co_return std::unexpected(std::move(subject.error()));
+        }
+        if (std::holds_alternative<ConstantID>(*subject)
+            && execution_compound_view(values, *subject)) {
+            subject = copy_value(*subject, match.subject->origin);
+            if (!subject) {
+                co_return std::unexpected(std::move(subject.error()));
+            }
+        }
+        owned_subject = memory.create(std::move(*subject));
+        selected = owned_subject;
     }
     for (const auto& arm : match.arms) {
         if (!arm.reachable) {
@@ -252,18 +297,13 @@ auto SemanticExecutor::match_expression(ExecutionFrame& frame, const SemMatch& m
             }
         };
         reset();
-        if (selected) {
-            auto target = located(*selected, match.subject->origin);
-            if (!target) {
-                co_return std::unexpected(std::move(target.error()));
-            }
-            subject = copy_value(**target, match.subject->origin);
-            if (!subject) {
-                co_return std::unexpected(std::move(subject.error()));
-            }
+        auto target = located(*selected, match.subject->origin);
+        if (!target) {
+            co_return std::unexpected(std::move(target.error()));
         }
         const auto pattern_temporaries = frame.temporaries.size();
-        auto accepted = (co_await matches(frame, arm.pattern, *subject, arm.pattern_bounds));
+        auto accepted =
+            (co_await matches(frame, arm.pattern, **target, arm.pattern_bounds, selected));
         release_temporaries(frame, pattern_temporaries);
         if (!accepted) {
             reset();
@@ -435,11 +475,6 @@ auto SemanticExecutor::expression_value(
         if (!local) {
             co_return std::unexpected(std::move(local.error()));
         }
-        if (!selected->path.empty()) {
-            co_return std::unexpected(
-                fail(source.origin, ExecutionReason::Evaluation, "take requires a whole binding")
-            );
-        }
         transfer_owned_text(**local);
         auto result = std::move(**local);
         const auto* binding = std::get_if<SemBinding>(&operation.place->value);
@@ -474,7 +509,10 @@ auto SemanticExecutor::expression_value(
             }
             elements.at(field.declaration_index) = std::move(*evaluated);
         }
-        co_return ExecutionAggregateValue {.type = *result_type, .elements = std::move(elements)};
+        co_return bounded_value(
+            ExecutionAggregateValue {.type = *result_type, .elements = std::move(elements)},
+            source.origin
+        );
     } else if constexpr (std::same_as<Operation, SemField>) {
         if (has_bound_storage(source)) {
             auto selected = (co_await place(frame, source));
@@ -523,12 +561,33 @@ auto SemanticExecutor::expression_value(
             }
             elements.push_back(std::move(*evaluated));
         }
-        co_return ExecutionEnumValue {
-            .type = *target,
-            .enum_case = operation.enum_case,
-            .payload = std::move(elements)
-        };
+        co_return bounded_value(
+            ExecutionEnumValue {
+                .type = *target,
+                .enum_case = operation.enum_case,
+                .payload = std::move(elements)
+            },
+            source.origin
+        );
     } else if constexpr (std::same_as<Operation, SemIntrinsic>) {
+        if (const auto* intrinsic = std::get_if<FloatIntrinsic>(&operation.operation)) {
+            auto input = co_await this->value(frame, operation.operands.front().expression);
+            if (!input) {
+                co_return std::unexpected(std::move(input.error()));
+            }
+            auto fact = read_fact(*input, source.origin);
+            if (!fact) {
+                co_return std::unexpected(std::move(fact.error()));
+            }
+            auto target = type(source.type.construction(), source.origin);
+            if (!target) {
+                co_return std::unexpected(std::move(target.error()));
+            }
+            co_return finish(
+                evaluate_float_intrinsic_constant_value(values, *intrinsic, *fact, *target),
+                source.origin
+            );
+        }
         if (std::holds_alternative<SIMDIntrinsic>(operation.operation)) {
             co_return co_await simd(frame, operation, source);
         }
@@ -538,6 +597,13 @@ auto SemanticExecutor::expression_value(
                 co_return std::unexpected(std::move(target.error()));
             }
             co_return co_await text_intrinsic(frame, operation, *target, source.origin);
+        }
+        if (std::holds_alternative<SequenceIntrinsicOperation>(operation.operation)) {
+            auto target = type(source.type.construction(), source.origin);
+            if (!target) {
+                co_return std::unexpected(std::move(target.error()));
+            }
+            co_return co_await sequence_intrinsic(frame, operation, *target, source.origin);
         }
         const auto intrinsic = std::get<SliceIntrinsicOperation>(operation.operation).intrinsic;
         auto sequence =
@@ -562,6 +628,9 @@ auto SemanticExecutor::expression_value(
                 };
             case SliceIntrinsic::FromArray:
             case SliceIntrinsic::Slice:     {
+                if (intrinsic == SliceIntrinsic::FromArray && sequence->extent == 0uz) {
+                    co_return ExecutionAggregateValue {.type = *target, .elements = {}};
+                }
                 auto begin = 0uz;
                 auto end = sequence->extent;
                 if (intrinsic == SliceIntrinsic::Slice) {
@@ -654,7 +723,12 @@ auto SemanticExecutor::expression_value(
                 }
             }
         );
-    } else if constexpr (std::same_as<Operation, SemArray>) {
+    } else if constexpr (std::same_as<Operation, SemArray> || std::same_as<Operation, SemTuple>) {
+        if constexpr (std::same_as<Operation, SemTuple>) {
+            if (operation.elements.empty()) {
+                co_return ExecutionVoid {};
+            }
+        }
         auto result_type = type(source.type.construction(), source.origin);
         if (!result_type) {
             co_return std::unexpected(std::move(result_type.error()));
@@ -674,10 +748,38 @@ auto SemanticExecutor::expression_value(
             }
             elements.push_back(std::move(*evaluated));
         }
-        co_return ExecutionAggregateValue {
-            .type = *result_type,
-            .elements = std::move(elements),
-        };
+        co_return bounded_value(
+            ExecutionAggregateValue {.type = *result_type, .elements = std::move(elements)},
+            source.origin
+        );
+    } else if constexpr (std::same_as<Operation, SemTupleElement>) {
+        if (has_bound_storage(source)) {
+            auto selected = co_await place(frame, source);
+            if (!selected) {
+                co_return std::unexpected(std::move(selected.error()));
+            }
+            auto target = located(*selected, source.origin);
+            if (!target) {
+                co_return std::unexpected(std::move(target.error()));
+            }
+            co_return copy_value(**target, source.origin);
+        }
+        auto receiver = co_await this->value(frame, *operation.source);
+        if (!receiver) {
+            co_return std::unexpected(std::move(receiver.error()));
+        }
+        const auto product = execution_compound_view(values, *receiver);
+        if (!product || operation.index >= product->size()) {
+            co_return std::unexpected(fail(
+                source.origin,
+                ExecutionReason::Evaluation,
+                "tuple projection requires a product slot"
+            ));
+        }
+        if (const auto* constants = std::get_if<std::span<const ConstantID>>(&product->elements)) {
+            co_return ExecutionValue((*constants)[operation.index]);
+        }
+        co_return std::move(execution_elements(*receiver)[operation.index]);
     } else if constexpr (std::same_as<Operation, SemIndex>) {
         if (has_bound_storage(source)) {
             auto selected = (co_await place(frame, source));
@@ -760,7 +862,7 @@ auto SemanticExecutor::expression_value(
             }
         }
         co_return right;
-    } else if constexpr (std::same_as<Operation, SemCall>) {
+    } else if constexpr (std::same_as<Operation, SemCall> || std::same_as<Operation, SemColdCall>) {
         auto evaluated_callee = (co_await this->value(frame, *operation.callee));
         if (!evaluated_callee) {
             co_return std::unexpected(std::move(evaluated_callee.error()));
@@ -786,7 +888,133 @@ auto SemanticExecutor::expression_value(
             }
             operands.push_back(std::move(*evaluated));
         }
-        co_return (co_await invoke(callee->callable, std::move(operands), source.origin));
+        if constexpr (std::same_as<Operation, SemColdCall>) {
+            auto selected =
+                co_await context.bind_call(callee->callable, operands, *this, source.origin);
+            if (!selected) {
+                if (auto* event = std::get_if<ExecutionEvent>(&selected.error())) {
+                    event->calls = current->calls;
+                    event->blocks = current->blocks;
+                    co_return std::unexpected(halt(std::move(*event)));
+                }
+                co_return std::unexpected(
+                    stop(std::move(std::get<ExecutionFailure>(selected.error())))
+                );
+            }
+            co_return std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
+                .type = source.type.construction(),
+                .action = *selected,
+                .arguments = std::move(operands),
+            });
+        } else {
+            co_return (co_await call(callee->callable, std::move(operands), source.origin));
+        }
+    } else if constexpr (std::same_as<Operation, SemColdCompose>) {
+        auto arguments = std::vector<ExecutionOperand>();
+        arguments.reserve(operation.inputs.size());
+        for (const auto& input : operation.inputs) {
+            auto evaluated = co_await operand(
+                frame,
+                input.expression,
+                argument_use(input.access),
+                source.origin
+            );
+            if (!evaluated) {
+                co_return std::unexpected(std::move(evaluated.error()));
+            }
+            arguments.push_back(std::move(*evaluated));
+        }
+        co_return std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
+            .type = source.type.construction(),
+            .action =
+                ExecutionCompositionAction {
+                    .policy = operation.policy,
+                    .success = operation.success.construction(),
+                },
+            .arguments = std::move(arguments),
+        });
+    } else if constexpr (std::same_as<Operation, SemColdTimeout>) {
+        auto input =
+            co_await operand(frame, *operation.operation, OperandUse::Value, source.origin);
+        if (!input) {
+            co_return std::unexpected(std::move(input.error()));
+        }
+        auto duration =
+            co_await operand(frame, *operation.duration_ticks, OperandUse::Value, source.origin);
+        if (!duration) {
+            co_return std::unexpected(std::move(duration.error()));
+        }
+        auto arguments = std::vector<ExecutionOperand>();
+        arguments.push_back(std::move(*input));
+        arguments.push_back(std::move(*duration));
+        co_return std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
+            .type = source.type.construction(),
+            .action = ExecutionTimeoutAction {.timeout_failure = operation.timeout_failure},
+            .arguments = std::move(arguments),
+        });
+    } else if constexpr (std::same_as<Operation, SemAsyncIntrinsic>) {
+        switch (operation.kind) {
+            case AsyncIntrinsic::CancellationRequested: {
+                auto result_type = type(source.type.construction(), source.origin);
+                if (!result_type) {
+                    co_return std::unexpected(std::move(result_type.error()));
+                }
+                co_return ConstantAtom {
+                    .type = *result_type,
+                    .value = BooleanConstant {.value = cancellation_requested()},
+                };
+            }
+            case AsyncIntrinsic::CancelChild: {
+                const auto* child =
+                    std::get_if<ExecutionChild>(&frame.slots.at(operation.child->index()));
+                if (child == nullptr || !child->task->operation) {
+                    co_return std::unexpected(fail(
+                        source.origin,
+                        ExecutionReason::Evaluation,
+                        "cancel requires an unconsumed lexical child"
+                    ));
+                }
+                request_cancel(*child->task);
+                co_return ExecutionVoid {};
+            }
+            case AsyncIntrinsic::YieldOnce:
+            case AsyncIntrinsic::CancellationPoint:
+                co_return std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
+                    .type = source.type.construction(),
+                    .action = operation.kind,
+                    .arguments = {},
+                });
+            case AsyncIntrinsic::WaitReady:
+            case AsyncIntrinsic::CloseChild:
+                invariant_violation("direct child coordination stored as a cold operation");
+        }
+        std::unreachable();
+    } else if constexpr (std::same_as<Operation, SemAwait>) {
+        if (operation.operand_kind == AsyncAwaitOperandKind::LexicalChild) {
+            const auto* binding = std::get_if<SemBinding>(&operation.operand->value);
+            if (binding == nullptr) {
+                invariant_violation("execution child observation lacks canonical binding");
+            }
+            co_return co_await observe_child(frame, binding->binding, source.origin);
+        }
+        auto evaluated = co_await this->value(frame, *operation.operand);
+        if (!evaluated) {
+            co_return std::unexpected(std::move(evaluated.error()));
+        }
+        auto* descriptor = std::get_if<std::unique_ptr<ExecutionColdOperation>>(&*evaluated);
+        if (descriptor == nullptr || !*descriptor) {
+            co_return std::unexpected(fail(
+                source.origin,
+                ExecutionReason::Evaluation,
+                "await requires an unconsumed cold operation"
+            ));
+        }
+        auto owned = std::move(*descriptor);
+        co_return co_await consume(std::move(*owned), source.origin);
+    } else if constexpr (std::same_as<Operation, SemWaitReady>) {
+        co_return co_await wait_ready(frame, operation, source);
+    } else if constexpr (std::same_as<Operation, SemCloseChild>) {
+        co_return co_await close_child(frame, operation.child, source.origin);
     } else if constexpr (std::same_as<Operation, SemPrint>) {
         co_return (co_await print(frame, operation, source.origin));
     } else if constexpr (std::same_as<Operation, SemReport>) {
@@ -947,7 +1175,8 @@ auto SemanticExecutor::matches(
     ExecutionFrame& frame,
     PatternID id,
     const ExecutionValue& subject,
-    std::span<const SemPatternBounds> pattern_bounds
+    std::span<const SemPatternBounds> pattern_bounds,
+    std::optional<ExecutionPlace> subject_place
 ) noexcept -> ExecutionTask<bool> {
     co_return (co_await frame.body->visit_pattern(
         id,
@@ -961,6 +1190,24 @@ auto SemanticExecutor::matches(
                     if constexpr (std::same_as<Pattern, WildcardPattern>) {
                         co_return true;
                     } else if constexpr (std::same_as<Pattern, BindingPattern>) {
+                        const auto storage = frame.body->binding_storage(pattern_value.binding);
+                        if (const auto* access = std::get_if<AccessBindingStorage>(&storage);
+                            access != nullptr
+                            && (access->access == AccessMode::Write
+                                || read_borrows_storage(
+                                    frame.body->binding_type(pattern_value.binding)
+                                ))) {
+                            if (!subject_place) {
+                                co_return std::unexpected(fail(
+                                    pattern.origin,
+                                    ExecutionReason::Evaluation,
+                                    "pattern access requires live subject storage"
+                                ));
+                            }
+                            release(frame, pattern_value.binding.index());
+                            frame.slots[pattern_value.binding.index()] = *subject_place;
+                            co_return true;
+                        }
                         auto copied = copy_value(subject, pattern.origin);
                         if (!copied) {
                             co_return std::unexpected(std::move(copied.error()));
@@ -977,6 +1224,35 @@ auto SemanticExecutor::matches(
                         }
                         co_return execution_value_type(values, subject)
                             == ConstructionTypeRef(*expected);
+                    } else if constexpr (std::same_as<Pattern, TuplePattern>) {
+                        if (pattern_value.elements.empty()) {
+                            co_return execution_value_type(values, subject)
+                                == ConstructionTypeRef(values.builtin_type(BuiltinType::Void));
+                        }
+                        const auto compound = execution_compound_view(values, subject);
+                        if (!compound
+                            || compound->enum_case
+                            || compound->size() != pattern_value.elements.size()) {
+                            co_return false;
+                        }
+                        co_return (co_await compound->elements.visit(
+                            [&](const auto children) noexcept -> ExecutionTask<bool> {
+                                for (auto index = 0uz; index < children.size(); ++index) {
+                                    auto accepted = (co_await matches(
+                                        frame,
+                                        pattern_value.elements[index],
+                                        children[index],
+                                        pattern_bounds,
+                                        subject_place ? memory.project(*subject_place, index)
+                                                      : std::nullopt
+                                    ));
+                                    if (!accepted || !*accepted) {
+                                        co_return accepted;
+                                    }
+                                }
+                                co_return true;
+                            }
+                        ));
                     } else if constexpr (std::same_as<Pattern, EnumCasePattern>) {
                         const auto compound = execution_compound_view(values, subject);
                         if (!compound) {
@@ -997,7 +1273,9 @@ auto SemanticExecutor::matches(
                                         frame,
                                         pattern_value.payload[index],
                                         children[index],
-                                        pattern_bounds
+                                        pattern_bounds,
+                                        subject_place ? memory.project(*subject_place, index)
+                                                      : std::nullopt
                                     ));
                                     if (!accepted || !*accepted) {
                                         co_return accepted;
@@ -1086,8 +1364,13 @@ auto SemanticExecutor::matches(
                         );
                     } else if constexpr (std::same_as<Pattern, OrPattern>) {
                         for (const auto alternative : pattern_value.alternatives) {
-                            auto accepted =
-                                (co_await matches(frame, alternative, subject, pattern_bounds));
+                            auto accepted = (co_await matches(
+                                frame,
+                                alternative,
+                                subject,
+                                pattern_bounds,
+                                subject_place
+                            ));
                             if (!accepted || *accepted) {
                                 co_return accepted;
                             }

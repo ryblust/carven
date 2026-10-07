@@ -20,7 +20,7 @@ text, and an unavailable-input alternative. Callers adapt their input storage an
 supply a byte budget. Execution translates failures into diagnostics and accounts
 for work; optional preparation uses runtime formatting on failure.
 `execution` defines execution entries and their call context; `executor` owns
-execution state, with `expr`, `control`, and `text` implementation slices.
+execution state, with `expr`, `control`, `text`, and `sequence` implementation slices.
 `memory` owns addressable objects and resolves their projections. `limits`
 names resource bounds.
 
@@ -103,9 +103,9 @@ The executor then calls the context's `bind_call` adapter. Only the analysis
 context identifies static parameters, freezes their values, requests an
 instance, and retains runtime arguments with their original access. The
 executor provides bounded argument detachment without exposing its storage;
-ordinary contexts preserve the callable and arguments. All contexts then use
-`prepare_call` with the selected callable. An ordinary call to a `const fn`
-remains an ordinary runtime call.
+ordinary contexts preserve the callable and arguments. Invocation uses `prepare_call` with the selected callable. Cold construction
+instead retains the selected callable and runtime arguments until await. An
+ordinary call to a `const fn` remains an ordinary runtime call.
 
 Static specialization evaluates local initializer roots while constructing
 residual regions. A body root executes once for its instance; each expanded
@@ -134,11 +134,67 @@ control in a runtime body retains its runtime semantics and static roots.
 bodies, and failed body realization results. `ProgramDraft` owns instance
 reservations and their pending, completed, or failed state. Static roots always
 enter the executor; optional normal-completion facts do not bypass execution.
-Ordinary expression construction uses one operation-folding dispatcher. C++ type
-queries use that dispatcher after type-time static reads to retain scalar witnesses
-without discarding operand effects. Substituting static values into runtime code
-does not eagerly evaluate the resulting arithmetic: a trap behind runtime control
-remains a runtime operation.
+Body expression construction, C++ type queries, and static specialization share
+one operation-folding dispatcher. Type queries refresh facts after type-time
+static reads; specialization refreshes them after substituting child expressions.
+Successful folds record known values on normal completion while retaining operand
+effects. A known in-range index into an array or slice with known extent also
+refreshes its bounds proof. Known slice extents determine `len` and `is_empty`
+independently of element values. Source and index evaluation retain their effects,
+including checks required to construct a slice. Unknown or out-of-range indices
+keep their runtime checks. When folding fails during specialization, the expression
+remains a runtime operation, including its checks and failure timing.
+
+### Cooperative source execution
+
+`const async fn` shares the ordinary instance selection, capability validation,
+and semantic executor. `ExecutionColdOperation` retains its delayed action, acquired
+arguments, and construction type. Construction preserves source order and binds
+static arguments without invoking the delayed body. Await consumes the affine
+descriptor and uses the existing invocation path, typed failures, execution
+memory, and cumulative budget. Stored and dropped cold owners use ordinary local
+storage and cleanup. Private synchronous const factories can return these values;
+an operation cannot be frozen into a `ConstantID`.
+
+The execution domain schedules source tasks on a FIFO queue. Direct cold awaits
+retain the current task. Child startup queues work; explicit yield, observing an
+unfinished child, and lexical close park the active task. Each task owns its call, condition-observation,
+block, and cancellation context. Child close retains borrowed frame storage until
+the children finish. Normal close waits; failure or accepted cancellation requests
+all children before waiting. The source ownership checks still require explicit
+child completion intent. `ExecutionBody` indexes child-owning lifetimes once
+when adapting its selected executable region. Closure queries use this execution
+metadata; inactive source bindings do not add scheduling turns. The index does
+not modify or persist in SemIR.
+
+Terminal waiting subscribes to candidate completion without consuming child
+storage. The first publication detaches peer subscriptions and queues the parent
+once; already terminal candidates select the lowest input position. Explicit
+closing requests cancellation, waits without accepting a parent request, and
+discards child completion. Both controls retain the shared execution limits;
+discarding an outcome does not recover an execution halt.
+
+Compiler-supported composition adds an action to the same cold descriptor.
+Consumption creates a fixed group in the existing task arena. Candidate
+selection uses the same completion receiver and FIFO publication rules; a private
+cancellation subscription can wake a parked composite without changing public
+terminal waiting. Input startup, candidate scans, stop requests, drain, and result
+assembly charge the shared budget. Nonempty group closing includes the native
+scope's pump and owner-wake turns. A committed completion survives drain-only
+cleanup. Fatal teardown detaches selection and cancellation receivers while the
+borrowed child metadata is still alive.
+
+Timeout evaluates its duration before protected startup. Nonpositive intervals
+select the nominal timeout failure. Native clock reads and timer providers retain
+their generated-execution boundary.
+
+Tasks share one memory domain and cumulative resource budget. An execution halt or
+failed semantic dependency stops the whole domain; exhaustion does not promise
+further user cleanup or output. Already written output remains observable.
+Native provider bodies and real I/O are outside static capability. Await is admitted
+in static roots, `const` blocks, and `const test` bodies as well as async bodies;
+a synchronous const function's ordinary body cannot await. Runtime realization
+consumes the same published body and emits its C++ coroutine representation.
 
 ### Execution values and storage
 
@@ -149,7 +205,7 @@ fresh `ExecutionIdentity`, an object index and a projection path. Domain identit
 and object indices are never reused; exhaustion terminates. Local pointers retain
 these coordinates without retaining the target's lifetime. Reads and writes
 resolve coordinates through the same storage operations.
-Array and slice iteration use the same sequence view as indexing and slice
+Array, owning-sequence, and slice iteration use the same sequence view as indexing and slice
 queries. Iteration evaluates its source once, retains temporary owners until loop
 exit, and binds elements using the source Read or Write policy. Scalar Read
 bindings snapshot each element; borrowed aggregate bindings retain its location.
@@ -165,8 +221,9 @@ accounts for aggregate and text work. Atoms, coordinates and immutable text hand
 remain copyable.
 `ExecutionTextStorage` privately holds owned bytes or a borrowed retained spelling.
 The move-only `ExecutionOwnedText` encapsulates String ownership;
-`ExecutionText` either shares immutable content or weakly borrows String storage.
-`as_str` creates the weak borrow without copying bytes or charging text work.
+`ExecutionText` shares immutable content, weakly borrows String storage, or retains
+an `ExecutionSlice` coordinate into byte storage. `as_str` preserves the borrow
+without copying bytes or charging text work.
 String copying creates fresh storage;
 source Take and mutation replace its storage identity, whereas host moves preserve
 it. Releasing that storage expires its weak borrowers. Formatting,
@@ -180,14 +237,21 @@ Byte slices and their copies retain its coordinate and range. `TextBytes` weakly
 borrows the text storage; reads observe `u8` values on demand through
 `ExecutionByteView`, without constructing a complete byte array. Byte projections
 use the same backing identity; resolving a byte pointer locks the weak borrow
-and rejects expired storage.
+and rejects expired storage. Text constructed from a byte slice keeps its original
+coordinate, offset, and extent. Length and byte-view operations use that range
+directly; byte views return the original coordinates. Legal changes to the source
+bytes are visible to subsequent text observations. `ExecutionTextObservation`
+provides contiguous bytes for one text consumer: retained text needs only a view,
+while execution array elements are read into temporary bytes. This observation
+neither becomes text backing nor extends the source lifetime. Freezing materializes
+borrowed text before its execution storage is released.
 
 Execution places identify an object and an already evaluated path through
 fixed-array elements, struct fields, or text bytes. Assignment to a live owner
 preserves its object identity; Take and scope exit end it. Text backing has its
 own lifetime, separate from the String owner slot. Read operands use the
 expression's storage-selection fact. The shared type-contents query selects delayed
-Read observation for array and String storage, including aggregate fields.
+Read observation for array, Sequence, and String storage, including aggregate fields.
 Other admitted values capture their value at the source position. Constant and runtime
 constructors share array shape rules and struct initializer selection in `analysis.operations`.
 
@@ -203,6 +267,8 @@ Text work counts constructed, copied, and appended bytes; formatted append charg
 its completed format result and the destination append. Aggregate work counts
 constructed and copied slots, including nested children. Reads of retained values
 and storage transfers create no additional slots.
+Fixed storage shapes provide exact size checks without walking their values.
+Dynamic shape checks inspect the selected payloads and consume execution steps.
 
 ### Freezing and completion
 
@@ -218,6 +284,10 @@ and `PayloadEnumConstant` children
 without changing element types, nominal identities, or field types. Struct fields
 use declaration order. Publication verifies the type, arity, and exact child
 types; compound constants reference already interned children.
+Owning sequences share execution aggregate storage and ordinary copying, transfer,
+indexing, and mutation. Their actual value trees are bounded during execution;
+recursive type declarations do not imply unbounded retained storage. Sequences
+and aggregates containing them cannot cross the freezing boundary.
 
 At a constant initializer, an explicit slice destination or `as_slice()` can
 produce an execution-local slice and retain it through `analysis.constant.freeze`.
@@ -257,8 +327,10 @@ or an existing execution failure to propagate unchanged.
 `try` matches the actual type and payload, then evaluates one guard and handler.
 Rejected guards proceed to the next arm. Handler and guard failures propagate
 outward. Each frame retains a stack of original caught failures independently of
-pattern bindings, so Take and nested recovery cannot invalidate `rethrow`.
-Binding copies use the normal text and aggregate work budgets. The same machinery
+pattern bindings, so transferring explicit copies and nested recovery cannot
+invalidate `rethrow`. Pattern Read snapshots and Read/Write projections use the
+ordinary access and storage model. Explicit copies use the normal text and
+aggregate work budgets. The same machinery
 serves static roots, static tests and interpretation.
 
 Static roots are constructed before global failure solving. Calls retain their

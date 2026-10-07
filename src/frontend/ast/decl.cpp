@@ -7,8 +7,10 @@ auto binding_target_span(const ASTBindingTarget& target) noexcept -> Span {
     return target.visit([](const auto& value) static noexcept -> Span {
         if constexpr (requires { value.name_span; }) {
             return value.name_span;
-        } else {
+        } else if constexpr (requires { value.underscore_span; }) {
             return value.underscore_span;
+        } else {
+            return value->span;
         }
     });
 }

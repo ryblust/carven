@@ -128,9 +128,10 @@ facts.
 
 ## Ownership and identity
 
-`FunctionRef<R(Args...) noexcept>` copies function pointers and borrows lvalue
-callable objects. Borrowed objects must outlive all invocations, including those
-made after coroutine suspension. Empty views represent optional recipients;
+Compiler callback ports use `FunctionRef<R(Args...) noexcept>` from
+`support.function_ref`. It copies function pointers and borrows lvalue callable
+objects. Borrowed objects must outlive all invocations, including those made after
+coroutine suspension. Empty views represent optional recipients;
 invoking an empty view violates an internal invariant. Exceptions escaping a
 callback terminate at the invocation boundary.
 
@@ -161,8 +162,10 @@ Construction completes declarations and bodies before publication. The gates
 establish the resolved facts and query contracts consumed by later stages.
 
 `ProgramDraft` owns pending function heads. A complete callable contract includes
-its result. Declaration-head completion closes the nominal tables; solving requires
-complete callable contracts and bodies. The catalog and import-use state end before
+its result. Declaration-head completion closes ordinary source reservations.
+Concrete nominal instances can still be formed during body construction; solving
+requires their completed closure, complete callable contracts, and bodies.
+The catalog and import-use state end before
 solving. Final semantic validation checks declaration surfaces, including closure
 captures and solved failure sets.
 
@@ -177,19 +180,28 @@ The `SemIRBody` boundary requires resolved facts in every operation and region,
 including inactive source.
 
 `finish()` constructs a local `SemIRProgram`. Its constructor validates storage
-facts and topology, then computes type contents. After releasing the consumed
-draft, syntax, imports, and construction solutions, `finish()` checks body
-contracts, global semantic contracts, ownership, and local pointer nullability,
-in that order. All checks read `const SemIRProgram&`.
+facts and topology, then computes type contents. After consuming the draft and
+releasing source syntax and import state, `finish()` checks body
+contracts and global semantic contracts. It then creates one `AnalysisModelView`
+over the concrete program and normalized generic snapshot for async admission,
+ownership, and local pointer nullability, in that order. Ownership publishes the
+Read parameter passing facts. The shared model's borrows end before publication
+releases checked source bodies.
 
 Before returning the program, publication records callable/type surfaces and
-closure construction order, then releases checked source regions and static-only
+closure reference order, then releases checked source regions and static-only
 bodies. Surviving bodies keep their IDs and contain one executable region.
 Source-template callables and completed static tests retain declarations and
 provenance without a body reference. No source tree is available to downstream
 planning or execution.
 Source diagnostics use a separate channel. Body contracts establish the parameter
-and binding relations used by global checks. Successful checks deliver the program.
+and binding relations used by global checks. After executable bodies are sealed,
+async completion analysis solves cancellation capability through callable and
+operation-value dependencies. A reverse worklist reaches a least fixed point,
+including recursive calls. Unknown producers remain possibly cancelled.
+`SemIRProgram` owns the resulting callable and await-completion facts; downstream
+consumers query them without reconstructing producer flow. Successful checks and
+fact publication deliver the program.
 
 Backend preparation derives operand uses and execution summaries from published
 operations. Realization preserves their lifetime and control contracts and checks
@@ -205,7 +217,10 @@ support source.
 
 A craft owns its library API and may include C++ implementation support alongside
 its source modules. That support may include runtime headers. Runtime provides
-shared language facilities and does not depend on standard crafts.
+shared language facilities and does not depend on standard crafts. The execution
+component owns operation completion, task scheduling, clock access, and timed
+waiting. Async lowering and the time craft consume its public entry; standard
+crafts do not own driver state or timer registrations.
 
 Standard and user crafts use the same type, ownership, static-execution, and
 publication rules. Library identity comes from resolved declarations. Native C++

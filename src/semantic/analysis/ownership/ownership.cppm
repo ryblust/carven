@@ -1,9 +1,12 @@
 module carven:semantic.analysis.ownership;
 
 import :semantic.analysis.diagnostics;
-import :semantic.semir.program;
-import :semantic.semir.structured;
+import :semantic.analysis.model;
+import :semantic.semir.passing;
 import std;
 
-auto analyze_body_batch(const SemIRProgram& program, AnalysisDiagnostics diagnostics) noexcept
-    -> AnalysisResult<void>;
+auto analyze_body_batch(
+    const AnalysisModelView& model,
+    AnalysisDiagnostics diagnostics,
+    ReadPassingFacts* passing
+) noexcept -> AnalysisResult<void>;

@@ -59,9 +59,38 @@ auto BodyBuilder::add_pattern(ElaboratedPattern pattern) noexcept -> PatternID {
     return patterns.add(std::move(pattern));
 }
 
+auto BodyBuilder::add_access_binding(
+    ProgramSpellingID name,
+    ConstructionTypeRef type,
+    LifetimeRegionID lifetime,
+    AccessMode access,
+    ProgramOriginID origin
+) noexcept -> BoundStorage {
+    if (access == AccessMode::Take) {
+        invariant_violation("an alias binding cannot own a taken value");
+    }
+    return add_binding(name, type, lifetime, AccessBindingStorage {.access = access}, origin);
+}
+
+auto BodyBuilder::binding_copy(LocalBindingID id) const noexcept -> ElaboratedLocalBinding {
+    if (!bindings.contains(id)) {
+        invariant_violation("body builder queried a foreign or invalid binding");
+    }
+    return bindings.copy(id);
+}
+
 auto BodyBuilder::pattern_copy(PatternID id) const noexcept -> ElaboratedPattern {
     if (!patterns.contains(id)) {
         invariant_violation("body builder queried a foreign or invalid pattern");
     }
     return patterns.copy(id);
+}
+
+auto BodyBuilder::add_async_child_binding(
+    ProgramSpellingID name,
+    ConstructionTypeRef type,
+    LifetimeRegionID owner,
+    ProgramOriginID origin
+) noexcept -> BoundStorage {
+    return add_binding(name, type, owner, AsyncChildBindingStorage {}, origin);
 }

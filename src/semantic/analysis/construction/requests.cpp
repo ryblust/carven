@@ -14,6 +14,14 @@ auto ConstructionRequests::ensure_declaration(
     return owner.declarations.ensure_available(id, requester, span);
 }
 
+auto ConstructionRequests::ensure_generic_function(
+    GenericDeclarationID id,
+    ProgramModuleID requester,
+    Span span
+) noexcept -> AnalysisTask<void> {
+    return owner.bodies.ensure_generic_function(id, requester, span);
+}
+
 auto ConstructionRequests::ensure_function_signature(
     FunctionID id,
     ProgramModuleID requester,

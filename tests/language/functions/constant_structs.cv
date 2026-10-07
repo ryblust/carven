@@ -282,3 +282,34 @@ fn check_group_fields(actual: ConstantEntryGroup, expected: ConstantEntryGroup) 
     }
     check(actual.enabled == expected.enabled);
 }
+
+private fn selected_mutation(const initial: ConstantEntry) -> i32 {
+    var entry = initial;
+    var values = [initial.value, initial.key];
+    let address = addressof(&entry.value);
+    for index in 0..3 {
+        entry.value += index;
+        values[0] += entry.value;
+    }
+    if address != nullptr { *address += values[0]; }
+    return entry.value;
+}
+
+private fn static_gate(&calls: i32, const enabled: bool) -> bool {
+    return enabled
+        && if true {
+            calls += 1;
+            true
+        } else {
+            false
+        };
+}
+
+test "Const projections: specialization preserves mutable places loops and conditional execution" {
+    check(selected_mutation(ConstantEntry { 2, 3 }) == 22);
+    var calls = 0;
+    check(static_gate(&calls, false) == false);
+    check(calls == 0);
+    check(static_gate(&calls, true));
+    check(calls == 1);
+}

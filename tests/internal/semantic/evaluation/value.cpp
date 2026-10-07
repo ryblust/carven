@@ -1,6 +1,8 @@
 module carven:test.internal.semantic.evaluation.value;
 
 import :semantic.evaluation.admission;
+import :semantic.evaluation.display;
+import :semantic.evaluation.shape;
 import :semantic.evaluation.value;
 import :semantic.semir.delegation;
 import :semantic.semir.type;
@@ -15,7 +17,7 @@ static_assert(!std::is_copy_constructible_v<ExecutionOwnedText>);
 namespace {
 
 const TestSuite suite([] static noexcept {
-    "Execution type admission: root permissions and views retain their storage boundaries"_test =
+    "Execution type admission: value containment and views retain their storage boundaries"_test =
         [] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& values = fixture.compilation;
@@ -38,65 +40,87 @@ const TestSuite suite([] static noexcept {
             struct Scenario final {
                 std::string_view name;
                 ConstructionTypeRef type;
-                bool allow_void;
                 bool supported;
             };
             const auto scenarios = std::array {
+                Scenario {.name = "void is a value", .type = empty, .supported = true},
                 Scenario {
-                    .name = "void requires root permission",
-                    .type = empty,
-                    .allow_void = false,
-                    .supported = false
-                },
-                Scenario {
-                    .name = "void root permission",
-                    .type = empty,
-                    .allow_void = true,
+                    .name = "tuple containing void",
+                    .type =
+                        values.intern_type({.value = TupleTypeValue {.elements = {empty, empty}}}),
                     .supported = true
                 },
-                Scenario {
-                    .name = "root permission does not reach owned array element",
-                    .type = empty_array,
-                    .allow_void = true,
-                    .supported = false
-                },
-                Scenario {
-                    .name = "unsupported owned root",
-                    .type = opaque,
-                    .allow_void = false,
-                    .supported = false
-                },
+                Scenario {.name = "array containing void", .type = empty_array, .supported = true},
+                Scenario {.name = "unsupported owned root", .type = opaque, .supported = false},
                 Scenario {
                     .name = "unsupported owned array element",
                     .type = opaque_array,
-                    .allow_void = false,
                     .supported = false
                 },
                 Scenario {
                     .name = "pointer does not own target storage",
                     .type = pointer,
-                    .allow_void = false,
                     .supported = true
                 },
                 Scenario {
                     .name = "slice does not own element storage",
                     .type = slice,
-                    .allow_void = false,
                     .supported = true
                 },
                 Scenario {
                     .name = "unresolved construction is not canonical admission",
                     .type = construction,
-                    .allow_void = true,
                     .supported = false
                 },
             };
             each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
-                expect_equal(
-                    supported_execution_type(values, scenario.type, scenario.allow_void),
-                    scenario.supported
-                );
+                expect_equal(supported_execution_type(values, scenario.type), scenario.supported);
             });
+        };
+
+    "Constant values: unit and tuples compare across retained and local representations"_test =
+        [] static noexcept {
+            auto fixture = ConstantEvaluationFixture();
+            auto& values = fixture.compilation;
+            const auto unit = values.builtin_type(BuiltinType::Void);
+            const auto integer = values.builtin_type(BuiltinType::I32);
+            const auto tuple =
+                values.intern_type({.value = TupleTypeValue {.elements = {integer, unit}}});
+            const auto unit_constant =
+                values.intern_constant({.type = unit, .value = VoidConstant {}});
+            const auto number =
+                values.intern_constant({.type = integer, .value = IntegerConstant::from_signed(7)});
+            const auto retained = values.intern_constant(
+                {.type = tuple, .value = TupleConstant {.elements = {number, unit_constant}}}
+            );
+            auto elements = std::vector<ExecutionValue>();
+            elements.push_back(number);
+            elements.push_back(ExecutionVoid {});
+            const auto local = ExecutionValue(
+                ExecutionAggregateValue {.type = tuple, .elements = std::move(elements)}
+            );
+            const auto atom = execution_atom(values, ExecutionVoid {});
+            if (!expect(atom.has_value())) {
+                return;
+            }
+            expect(atom->type == unit);
+            expect(std::holds_alternative<VoidConstant>(atom->value));
+            auto steps = 0uz;
+            expect(execution_equal(values, local, retained, steps, 3uz) == true);
+            expect(steps == 3uz);
+            expect_equal(display_execution_value(values, ExecutionVoid {}), "()");
+            const auto display = display_execution_value(values, local);
+            if (expect(display.has_value())) {
+                expect(display->starts_with("("));
+                expect(display->ends_with(")"));
+                expect(display->contains("()"));
+            }
+            const auto shape = ExecutionTypeShapes(values).get(tuple);
+            if (expect(shape.has_value())) {
+                expect(shape->supported);
+                expect(shape->depth == 1uz);
+                expect(shape->elements == 2uz);
+            }
         };
 
     "Constant values: text observation and equality are independent of storage representation"_test =
@@ -117,10 +141,9 @@ const TestSuite suite([] static noexcept {
             };
             for (auto index = 0uz; index < representations.size(); ++index) {
                 const auto text = execution_text(values, representations[index]);
-                if (!(expect(text.has_value()).note("index = ", index))) {
-                    return;
+                if (expect(text.has_value()).note("index = ", index)) {
+                    expect_equal(text->view(), bytes).note("index = ", index);
                 }
-                expect(*text == bytes).note("index = ", index);
                 auto steps = 0uz;
                 expect(
                     execution_equal(values, representations[index], retained, steps, 1uz) == true
@@ -134,7 +157,7 @@ const TestSuite suite([] static noexcept {
                     .value = IntegerConstant::from_signed(1)
                 }
             );
-            expect(!(execution_text(values, nontext).has_value()));
+            expect(!execution_text(values, nontext).has_value());
             auto steps = 0uz;
             expect(execution_equal(values, nontext, retained, steps, 1uz) == false);
         };
@@ -189,34 +212,36 @@ const TestSuite suite([] static noexcept {
 
     "Execution text: shared content and String borrows have separate lifetimes"_test =
         [] static noexcept {
+            const auto fixture = ConstantEvaluationFixture();
+            const auto& values = fixture.compilation;
             auto owner = ExecutionOwnedText("a");
             const auto borrowed = owner.borrow();
             // Copying the borrow is part of the lifetime contract under test.
             // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
             const auto copied_borrow = borrowed;
-            if (!expect(borrowed.bytes() == "a")) {
+            if (!expect(execution_text(values, borrowed) == "a")) {
                 return;
             }
             auto moved_owner = std::move(owner);
-            expect(copied_borrow.bytes() == "a");
+            expect(execution_text(values, copied_borrow) == "a");
             moved_owner.append("b");
             expect(moved_owner.bytes() == "ab");
-            expect(!(borrowed.bytes().has_value()));
-            expect(!(copied_borrow.bytes().has_value()));
+            expect(!(execution_text(values, borrowed).has_value()));
+            expect(!(execution_text(values, copied_borrow).has_value()));
 
             const auto before_take = moved_owner.borrow();
             moved_owner.transfer();
             expect(moved_owner.bytes() == "ab");
-            expect(!(before_take.bytes().has_value()));
+            expect(!(execution_text(values, before_take).has_value()));
 
             auto text = std::optional(ExecutionText(std::string("shared")));
             auto shared = std::optional(*text);
             const auto view = text->borrow();
             text.reset();
-            expect(shared->bytes() == "shared");
-            expect(view.bytes() == "shared");
+            expect(execution_text(values, *shared) == "shared");
+            expect(execution_text(values, view) == "shared");
             shared.reset();
-            expect(!(view.bytes().has_value()));
+            expect(!(execution_text(values, view).has_value()));
         };
 });
 

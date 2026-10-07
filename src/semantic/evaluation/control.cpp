@@ -3,6 +3,7 @@ module carven:semantic.evaluation.control.impl;
 import :semantic.evaluation.admission;
 import :semantic.evaluation.display;
 import :semantic.evaluation.executor;
+import :semantic.evaluation.operation;
 import :semantic.semir.stage;
 import :support.invariant;
 import std;
@@ -12,22 +13,24 @@ auto SemanticExecutor::region(
     const SemanticRegion& source,
     bool cleanup
 ) noexcept -> ExecutionTask<ExecutionCompletion> {
-    const auto finish = [&](ExecutionResult<ExecutionCompletion> result) noexcept {
+    const auto finish = [&](
+                            ExecutionResult<ExecutionCompletion> result
+                        ) noexcept -> ExecutionTask<ExecutionCompletion> {
         if (cleanup) {
-            release_region(frame, source.lifetime);
+            co_return co_await close_region(frame, source.lifetime, std::move(result));
         }
-        return result;
+        co_return result;
     };
     if (auto checked = step(source.origin); !checked) {
-        co_return finish(std::unexpected(std::move(checked.error())));
+        co_return co_await finish(std::unexpected(std::move(checked.error())));
     }
     for (const auto& child : source.statements) {
-        auto result = (co_await statement(frame, child));
+        auto result = co_await statement(frame, child);
         if (!result || result->flow != ExecutionFlow::Normal) {
-            co_return finish(std::move(result));
+            co_return co_await finish(std::move(result));
         }
     }
-    co_return finish(
+    co_return co_await finish(
         source.result
             ? (co_await expression(frame, *source.result))
             : ExecutionResult<ExecutionCompletion>(
@@ -42,7 +45,7 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
         {.kind = ExecutionTraceKind::Statement,
          .origin = source.origin,
          .function = std::nullopt,
-         .depth = calls.size()}
+         .depth = current->calls.size()}
     );
     if (auto checked = step(source.origin); !checked) {
         co_return std::unexpected(std::move(checked.error()));
@@ -80,7 +83,8 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                         .type = operation.failure_type,
                         .payload = std::make_shared<const ExecutionValue>(std::move(*owned)),
                         .origin = source.origin,
-                        .calls = calls,
+                        .calls = current->calls,
+                        .blocks = current->blocks,
                     }}
                 );
             } else if constexpr (std::same_as<Operation, SemRethrow>) {
@@ -108,6 +112,43 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                     result->value = ExecutionVoid {};
                 }
                 co_return result;
+            } else if constexpr (std::same_as<Operation, SemAsyncLet>) {
+                co_return co_await start_child(frame, operation, source.origin);
+            } else if constexpr (std::same_as<Operation, SemDecompose>) {
+                if (operation.initializer) {
+                    auto evaluated = co_await this->value(frame, *operation.initializer);
+                    if (!evaluated) {
+                        co_return std::unexpected(std::move(evaluated.error()));
+                    }
+                    auto product = own_storage(std::move(*evaluated), source.origin);
+                    if (!product) {
+                        co_return std::unexpected(std::move(product.error()));
+                    }
+                    bind(frame, operation.owner.index(), std::move(*product));
+                }
+                const auto owner =
+                    std::get<ExecutionOwner>(frame.slots[operation.owner.index()]).place;
+                for (const auto& binding : operation.bindings) {
+                    auto element = owner;
+                    for (const auto index : binding.path) {
+                        auto child = memory.project(std::move(element), index);
+                        if (!child) {
+                            co_return std::unexpected(fail(
+                                source.origin,
+                                ExecutionReason::Evaluation,
+                                "tuple decomposition has an invalid product path"
+                            ));
+                        }
+                        element = std::move(*child);
+                    }
+                    release(frame, binding.binding.index());
+                    frame.slots[binding.binding.index()] =
+                        ExecutionOwner {.place = memory.adopt_projection(std::move(element))};
+                }
+                co_return ExecutionCompletion {
+                    .flow = ExecutionFlow::Normal,
+                    .value = ExecutionVoid {}
+                };
             } else if constexpr (std::same_as<Operation, SemInitialize>) {
                 auto result = (co_await this->value(frame, operation.initializer));
                 if (!result) {
@@ -222,18 +263,28 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                         "pointer target is no longer alive"
                     ));
                 }
+                if (target) {
+                    const auto* root = memory.owning_value(*target);
+                    if (root) {
+                        if (auto checked = check_value_size(*root, source.origin); !checked) {
+                            co_return std::unexpected(std::move(checked.error()));
+                        }
+                    }
+                }
                 co_return ExecutionCompletion {
                     .flow = ExecutionFlow::Normal,
                     .value = ExecutionVoid {}
                 };
             } else if constexpr (std::same_as<Operation, SemLoop>) {
                 auto result = (co_await loop(frame, operation, source.origin));
-                release_region(frame, operation.initializer->lifetime);
-                co_return result;
+                co_return co_await close_region(
+                    frame,
+                    operation.initializer->lifetime,
+                    std::move(result)
+                );
             } else if constexpr (std::same_as<Operation, SemRangeLoop>) {
                 auto result = (co_await range_loop(frame, operation, source.origin));
-                release_region(frame, operation.lifetime);
-                co_return result;
+                co_return co_await close_region(frame, operation.lifetime, std::move(result));
             } else if constexpr (std::same_as<Operation, SemExpandedLoop>) {
                 for (const auto& iteration : operation.iterations) {
                     auto result = co_await region(frame, iteration);
@@ -249,12 +300,12 @@ auto SemanticExecutor::statement(ExecutionFrame& frame, const SemanticStatement&
                     .value = ExecutionVoid {}
                 };
             } else if constexpr (std::same_as<Operation, SemConstBlock>) {
-                context.enter_block({.label = operation.label, .origin = operation.source});
+                current->blocks.push_back({.label = operation.label, .origin = operation.source});
                 auto result = co_await region(frame, *operation.region);
                 if (!result) {
                     result = std::unexpected(escaped(std::move(result.error())));
                 }
-                context.leave_block();
+                current->blocks.pop_back();
                 co_return result;
             } else if constexpr (std::same_as<Operation, OwnedSemanticRegion>) {
                 co_return (co_await region(frame, *operation));
@@ -338,14 +389,8 @@ auto SemanticExecutor::range_loop(
         if (!fact) {
             co_return std::unexpected(std::move(fact.error()));
         }
-        const auto range = std::get<RangeConstant>(fact->value);
-        auto current = range.begin;
-        const auto less = [](IntegerConstant a, IntegerConstant b) static noexcept {
-            return a.negative() != b.negative() ? a.negative()
-                : a.negative()                  ? a.magnitude() > b.magnitude()
-                                                : a.magnitude() < b.magnitude();
-        };
-        while (less(current, range.end) || (range.inclusive && current == range.end)) {
+        auto cursor = IntegerRangeCursor(std::get<RangeConstant>(fact->value));
+        while (const auto current = cursor.next()) {
             if (auto checked = step(origin); !checked) {
                 co_return std::unexpected(std::move(checked.error()));
             }
@@ -353,19 +398,16 @@ auto SemanticExecutor::range_loop(
                 bind(
                     frame,
                     source.binding->index(),
-                    ConstantAtom {.type = range_type->element, .value = current}
+                    ConstantAtom {.type = range_type->element, .value = *current}
                 );
             }
             auto body = co_await region(frame, *source.body);
             if (!body || body->flow == ExecutionFlow::Return) {
                 co_return body;
             }
-            if (body->flow == ExecutionFlow::Break || current == range.end) {
+            if (body->flow == ExecutionFlow::Break) {
                 break;
             }
-            current = current.negative()
-                ? IntegerConstant::from_parts(current.magnitude() - 1u, true)
-                : IntegerConstant::from_parts(current.magnitude() + 1u, false);
         }
         co_return ExecutionCompletion {.flow = ExecutionFlow::Normal, .value = ExecutionVoid {}};
     }
@@ -438,16 +480,16 @@ auto SemanticExecutor::report(
     auto passed = false;
     auto explanation = std::string();
     if (operation.condition) {
-        const auto previous = condition_observation;
+        const auto previous = current->condition_observation;
         if (operation.operand_sources) {
-            condition_observation = ConditionObservation {
+            current->condition_observation = ExecutionConditionObservation {
                 .condition = std::addressof(**operation.condition),
                 .sources = *operation.operand_sources,
                 .explanation = &explanation
             };
         }
         auto condition = (co_await this->value(frame, **operation.condition));
-        condition_observation = previous;
+        current->condition_observation = previous;
         if (!condition) {
             co_return std::unexpected(std::move(condition.error()));
         }
@@ -467,14 +509,15 @@ auto SemanticExecutor::report(
         if (!bytes) {
             co_return std::unexpected(std::move(bytes.error()));
         }
-        message = *bytes;
+        message = bytes->view();
     }
     if (!passed) {
         auto event = ExecutionEvent {
             .origin = origin,
             .cause = operation.kind,
             .fields = {},
-            .calls = calls,
+            .calls = current->calls,
+            .blocks = current->blocks,
         };
         if (operation.condition_source) {
             event.fields.push_back({

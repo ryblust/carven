@@ -123,6 +123,12 @@ struct TargetPrefixExpr final {
     UniqueIndirect<TargetExpr> operand;
 };
 
+struct TargetCoAwaitExpr final {
+    UniqueIndirect<TargetExpr> operand;
+
+    static constexpr auto native_symbol() noexcept -> TargetSymbol { return TargetSymbol::CoAwait; }
+};
+
 struct TargetBinaryExpr final {
     UniqueIndirect<TargetExpr> left;
     TargetBinaryOperator op;
@@ -212,6 +218,7 @@ using TargetExprValue = TreeValue<
     TargetIntrinsicNameExpr,
     TargetLiteralExpr,
     TargetPrefixExpr,
+    TargetCoAwaitExpr,
     TargetBinaryExpr,
     TargetConditionalExpr,
     TargetTemplateNameExpr,
@@ -239,6 +246,8 @@ auto binary_expression(TargetExpr left, TargetBinaryOperator operation, TargetEx
     -> TargetExpr;
 
 auto prefix_expression(TargetPrefixOperator operation, TargetExpr operand) noexcept -> TargetExpr;
+
+auto co_await_expression(TargetExpr operand) noexcept -> TargetExpr;
 
 auto template_name_expression(
     TargetExpr operand,

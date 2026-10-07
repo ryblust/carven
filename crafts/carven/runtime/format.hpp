@@ -1,6 +1,7 @@
 #pragma once
 
-#include "string.hpp"
+#include "text/text.hpp"
+#include "void.hpp"
 
 #include <cstddef>
 #include <format>
@@ -27,6 +28,10 @@ inline auto format_argument(char32_t value) noexcept -> String {
     auto result = String();
     result.push(value);
     return result;
+}
+
+inline auto format_argument(Void) noexcept -> std::string_view {
+    return "()";
 }
 
 template<typename T>

@@ -8,6 +8,7 @@ import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
+import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
@@ -107,40 +108,171 @@ const TestSuite suite([] static noexcept {
         }
     };
 
-    "Semantic control: static slice projection preserves index checks"_test = [] static noexcept {
-        const auto program = analyze_test_program(
-            "const values: [i32] = [3, 7]; "
-            "fn valid() -> i32 => values[1]; "
-            "fn checked() -> i32 => values[4];"
-        );
-        const auto callables = test_function_callables(program);
-        if (!expect_equal(callables.size(), 2uz)) {
-            return;
+    "Semantic control: frozen slice bounds distinguish proofs from retained checks"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(
+                "const values: [i32] = [3, 7]; "
+                "fn valid() -> i32 => values[1]; "
+                "fn checked() -> i32 => values[4];"
+            );
+            const auto callables = test_function_callables(program);
+            if (!expect_equal(callables.size(), 2uz)) {
+                return;
+            }
+            for (auto position = 0uz; position < callables.size(); ++position) {
+                scenario(std::format("index {}", position), [&]() noexcept {
+                    const auto body_id =
+                        callable_body_id(program.declarations().callable(callables[position]));
+                    if (!expect(body_id.has_value())) {
+                        return;
+                    }
+                    const auto& body = program.bodies().body(*body_id);
+                    if (!expect_equal(body.region().statements.size(), 1uz)) {
+                        return;
+                    }
+                    const auto* returned =
+                        std::get_if<SemReturn>(&body.region().statements.front().value);
+                    if (!expect(returned != nullptr && returned->value.has_value())) {
+                        return;
+                    }
+                    const auto& expression = *returned->value;
+                    const auto* index = std::get_if<SemIndex>(&expression.value);
+                    if (!expect(index != nullptr)) {
+                        return;
+                    }
+                    expect(
+                        std::holds_alternative<ProvenInBounds>(index->bounds) == (position == 0uz)
+                    );
+                    expect(expression.constant.has_value() == (position == 0uz));
+                });
+            }
+        };
+
+    "Semantic control: specialized sequence bounds distinguish proofs from retained checks"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+                fn select(values: [i32; 2], const index: usize) -> i32 => values[index];
+                fn view(values: [i32; 2], const index: usize) -> i32 => values.as_slice()[index];
+                fn use(values: [i32; 2], index: usize) -> i32 {
+                    return select(values, 0) + select(values, 1) + select(values, 4) + values[index]
+                        + view(values, 0) + view(values, 4) + values.as_slice()[index];
+                }
+                fn mutable_view(values: [i32; 2], replacement: [i32]) -> i32 {
+                    var selected = values.as_slice();
+                    selected = replacement;
+                    return selected[1];
+                }
+                fn expand(&values: [i32; 2]) {
+                    const for index in 0usize..2 { values[index] += 1; }
+                }
+            )");
+            auto proven = false;
+            auto proven_slice = false;
+            auto invalid = false;
+            auto dynamic = false;
+            for (const auto entry : program.declarations().callables()) {
+                const auto body = callable_body_id(entry.value);
+                if (!body) {
+                    continue;
+                }
+                visit_semantic_nodes(
+                    program.bodies().body(*body).realized_region(),
+                    [&](const SemanticExpression& expression) noexcept {
+                        const auto* index = std::get_if<SemIndex>(&expression.value);
+                        if (!index) {
+                            return;
+                        }
+                        if (!index->index->constant) {
+                            dynamic = true;
+                            expect(std::holds_alternative<RuntimeCheckedBounds>(index->bounds));
+                            return;
+                        }
+                        const auto& fact = program.constants().constant(*index->index->constant);
+                        const auto& position = std::get<IntegerConstant>(fact.value);
+                        if (std::holds_alternative<SemBinding>(index->source->value)
+                            && std::holds_alternative<SliceTypeValue>(
+                                program.types().type(index->source->type.resolved()).value
+                            )) {
+                            expect(std::holds_alternative<RuntimeCheckedBounds>(index->bounds));
+                            return;
+                        }
+                        if (position.magnitude() < 2u) {
+                            proven = true;
+                            proven_slice |= std::holds_alternative<SliceTypeValue>(
+                                program.types().type(index->source->type.resolved()).value
+                            );
+                            expect(std::holds_alternative<ProvenInBounds>(index->bounds));
+                        } else {
+                            invalid = true;
+                            expect(std::holds_alternative<RuntimeCheckedBounds>(index->bounds));
+                        }
+                    }
+                );
+            }
+            expect(proven);
+            expect(proven_slice);
+            expect(invalid);
+            expect(dynamic);
+        };
+
+    "Semantic slices: known extent does not require constant elements"_test = [] static noexcept {
+        for (const auto writable : {false, true}) {
+            const auto program = analyze_test_program(
+                std::format(
+                    R"(
+                fn count(values: [i32; 2], replacement: [i32]) -> usize {{
+                    {} view = values.as_slice();
+                    {}
+                    return view.len();
+                }}
+            )",
+                    writable ? "var" : "let",
+                    writable ? "view = replacement;" : ""
+                )
+            );
+            auto queried = false;
+            for (const auto entry : program.bodies().entries()) {
+                visit_semantic_nodes(
+                    entry.value.region(),
+                    [&](const SemanticExpression& value) noexcept {
+                        const auto* intrinsic = std::get_if<SemIntrinsic>(&value.value);
+                        if (!intrinsic
+                            || !std::holds_alternative<SliceIntrinsicOperation>(
+                                intrinsic->operation
+                            )) {
+                            return;
+                        }
+                        if (std::get<SliceIntrinsicOperation>(intrinsic->operation).intrinsic
+                            != SliceIntrinsic::Len) {
+                            return;
+                        }
+                        queried = true;
+                        expect(value.constant.has_value() == !writable);
+                    }
+                );
+            }
+            expect(queried);
         }
-        for (auto position = 0uz; position < callables.size(); ++position) {
-            scenario(std::format("index {}", position), [&]() noexcept {
-                const auto body_id =
-                    callable_body_id(program.declarations().callable(callables[position]));
-                if (!expect(body_id.has_value())) {
-                    return;
-                }
-                const auto& body = program.bodies().body(*body_id);
-                if (!expect_equal(body.region().statements.size(), 1uz)) {
-                    return;
-                }
-                const auto* returned =
-                    std::get_if<SemReturn>(&body.region().statements.front().value);
-                if (!expect(returned != nullptr && returned->value.has_value())) {
-                    return;
-                }
-                const auto& expression = *returned->value;
-                const auto* index = std::get_if<SemIndex>(&expression.value);
-                if (!expect(index != nullptr)) {
-                    return;
-                }
-                expect(std::holds_alternative<RuntimeCheckedBounds>(index->bounds));
-                expect(expression.constant.has_value() == (position == 0uz));
-            });
+        expect_diagnostic(
+            analyze_test_errors("const values: [i32] = [3, 7]; const invalid = values[2];"),
+            DiagnosticCode::ConstIndexBounds
+        );
+        for (const auto query : {".len()", "[1] as usize"}) {
+            expect_diagnostic(
+                analyze_test_errors(
+                    std::format(
+                        R"(
+                    const fn invalid() -> usize {{
+                        let values = [3, 7];
+                        return values.as_slice().slice(0, 3){};
+                    }}
+                    const result = invalid();
+                )",
+                        query
+                    )
+                ),
+                DiagnosticCode::ConstIndexBounds
+            );
         }
     };
 
@@ -186,10 +318,7 @@ const TestSuite suite([] static noexcept {
                     if (!expect(integer != nullptr)) {
                         return;
                     }
-                    const auto position = integer->as_unsigned();
-                    if (expect(position.has_value())) {
-                        expect_equal(*position, 0u);
-                    }
+                    expect_equal(integer->as_unsigned(), 0u);
                 }
             );
             expect_equal(observed_value_index, true);
@@ -209,24 +338,29 @@ const TestSuite suite([] static noexcept {
             );
         };
 
-    "Semantic control: bindings cannot select pointer paths"_test = [] static noexcept {
+    "Semantic control: pointer access follows proven normal paths"_test = [] static noexcept {
+        analyze_test_program(
+            "fn probe() -> i32 { var p: ptr<i32> = nullptr; "
+            "if false { return *p; } return 0; }"
+        );
+        analyze_test_program(
+            "fn probe() -> i32 { var p: ptr<i32> = nullptr; let flag = true; "
+            "if flag && false { return *p; } return 0; }"
+        );
+        analyze_test_program(
+            "const flag = false; fn probe() -> i32 { var p: ptr<i32> = nullptr; "
+            "if flag { return *p; } return 0; }"
+        );
         expect_diagnostic(
             analyze_test_errors(
-                "fn probe() -> i32 { var p: ptr<i32> = nullptr; let flag = false; "
-                "if flag { return *p; } return 0; }"
+                "fn probe() -> i32 { var p: ptr<i32> = nullptr; "
+                "if true { return *p; } return 0; }"
             ),
             DiagnosticCode::PointerNonNull
         );
         expect_diagnostic(
             analyze_test_errors(
-                "fn probe() -> i32 { var p: ptr<i32> = nullptr; let flag = true; "
-                "if flag && false { return *p; } return 0; }"
-            ),
-            DiagnosticCode::PointerNonNull
-        );
-        expect_diagnostic(
-            analyze_test_errors(
-                "fn probe() -> i32 { var p: ptr<i32> = nullptr; const flag = false; "
+                "fn probe(flag: bool) -> i32 { var p: ptr<i32> = nullptr; "
                 "if flag { return *p; } return 0; }"
             ),
             DiagnosticCode::PointerNonNull
@@ -274,39 +408,34 @@ const TestSuite suite([] static noexcept {
         expect_equal(program.bodies().body(*nested_body).kind(), BodyKind::Closure);
     };
 
-    "Semantic source contracts: unreachable operations remain checked"_test = [] static noexcept {
-        expect_diagnostic(
-            analyze_test_errors("fn invalid() { let x = 1; if false { x = 2; } }"),
-            DiagnosticCode::AccessImmutable
-        );
-        expect_diagnostic(
-            analyze_test_errors(
-                "fn set(&x: i32) {} fn invalid() { let x = 1; if false { set(&x); } }"
-            ),
-            DiagnosticCode::AccessImmutable
-        );
-        expect_diagnostic(
-            analyze_test_errors("fn invalid() { var x = 1; if false { x = (&&x); } }"),
-            DiagnosticCode::AccessOperationConflict
-        );
-        expect_diagnostic(
-            analyze_test_errors("fn invalid() { let result = if true { 1 } else { false }; }"),
-            DiagnosticCode::TypeMismatch
-        );
-        expect_diagnostic(
-            analyze_test_errors(
-                "struct E {} fn fail() -> bool throw E { throw E {}; } "
-                "fn invalid() { let value = false && fail(); }"
-            ),
-            DiagnosticCode::EffectUnmarked
-        );
-        expect_diagnostic(
-            analyze_test_errors(
-                "fn invalid() { var x = 1; if false { let moved = &&x; } let result = x; }"
-            ),
-            DiagnosticCode::AccessUnavailable
-        );
-    };
+    "Semantic source contracts: unreachable shapes retain admission checks"_test =
+        [] static noexcept {
+            expect_diagnostic(
+                analyze_test_errors("fn invalid() { let x = 1; if false { x = 2; } }"),
+                DiagnosticCode::AccessImmutable
+            );
+            expect_diagnostic(
+                analyze_test_errors(
+                    "fn set(&x: i32) {} fn invalid() { let x = 1; if false { set(&x); } }"
+                ),
+                DiagnosticCode::AccessImmutable
+            );
+            expect_diagnostic(
+                analyze_test_errors("fn invalid() { var x = 1; if false { x = (&&x); } }"),
+                DiagnosticCode::AccessOperationConflict
+            );
+            expect_diagnostic(
+                analyze_test_errors("fn invalid() { let result = if true { 1 } else { false }; }"),
+                DiagnosticCode::TypeMismatch
+            );
+            expect_diagnostic(
+                analyze_test_errors(
+                    "struct E {} fn fail() -> bool throw E { throw E {}; } "
+                    "fn invalid() { let value = false && fail(); }"
+                ),
+                DiagnosticCode::EffectUnmarked
+            );
+        };
 
     "Semantic control: irrefutable guard rejection retains completed writes"_test =
         [] static noexcept {
@@ -319,6 +448,38 @@ const TestSuite suite([] static noexcept {
                 "E(_) if if true { x = 3; false } else { x = 3; false } => {}, "
                 "E(_) => { let read = x; }, } }"
             ));
+        };
+
+    "Semantic control: unit subjects support wildcard matching and evaluate once"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(R"(
+        fn nothing() {}
+        fn valid() -> i32 {
+            match nothing() { _ => {} }
+            return match () { _ => 7 };
+        }
+        const fn bump(&count: i32) { count += 1; }
+        const fn select() -> i32 {
+            var count = 0;
+            let selected = match bump(&count) { _ => 7 };
+            return selected + count;
+        }
+        const result = select();
+    )");
+            auto result = std::optional<ConstantID>();
+            for (const auto declaration : program.declarations().module_constants()) {
+                if (program.provenance().spelling(declaration.value.name) == "result") {
+                    result = declaration.value.value;
+                }
+            }
+            if (!expect(result.has_value())) {
+                return;
+            }
+            const auto& fact = program.constants().constant(*result);
+            const auto* value = std::get_if<IntegerConstant>(&fact.value);
+            if (expect(value != nullptr)) {
+                expect(*value == IntegerConstant::from_signed(8));
+            }
         };
 
     "Semantic control: every operand is checked after a nonreturning operand"_test =
@@ -347,12 +508,19 @@ const TestSuite suite([] static noexcept {
         }
     )");
             expect_diagnostic(unknown_callee, DiagnosticCode::TypeNotCallable);
-            const auto unknown_subject = analyze_test_errors(prefix + R"(
+            static_cast<void>(analyze_test_program(prefix + R"(
         fn run() -> i32 throw E {
             return match (if true { throw E {}; } else { throw E {}; }) { _ => 1 };
         }
-    )");
-            expect_diagnostic(unknown_subject, DiagnosticCode::TypeValueRequired);
+    )"));
+            expect_diagnostic(
+                analyze_test_errors(prefix + R"(
+        fn run() -> i32 throw E {
+            return match (if true { throw E {}; } else { throw E {}; }) { _ => missing };
+        }
+    )"),
+                DiagnosticCode::NameUnresolved
+            );
         };
 
     "Semantic functions: expression result dependencies are independent of module order"_test =

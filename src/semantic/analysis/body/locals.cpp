@@ -6,6 +6,7 @@ import :diagnostics.suggestion;
 import :frontend.ast.decl;
 import :semantic.analysis.body.context;
 import :semantic.analysis.catalog;
+import :semantic.analysis.types;
 import :semantic.semir.body;
 import :semantic.semir.decl;
 import :support.invariant;
@@ -192,6 +193,27 @@ auto BodyElaborator::add_parameter(
         contract.access,
         origin(target_span)
     );
+    if (std::holds_alternative<UniqueIndirect<ASTTupleBindingTarget>>(source.target)) {
+        const auto owning = contract.access == AccessMode::Take;
+        auto bindings = bind_tuple_target(
+            source.target,
+            storage,
+            contract.type,
+            BodyLocalRole::Parameter,
+            contract.stage == ParameterStage::Static,
+            owning
+        );
+        if (!bindings) {
+            return std::unexpected(bindings.error());
+        }
+        if (owning) {
+            append_statement(
+                SemDecompose {storage.binding, std::nullopt, std::move(*bindings)},
+                origin(target_span)
+            );
+        }
+        return {};
+    }
     if (named == nullptr) {
         return {};
     }
@@ -205,9 +227,103 @@ auto BodyElaborator::add_parameter(
             .static_source = contract.stage == ParameterStage::Static,
             .role = BodyLocalRole::Parameter,
             .unused_candidate = std::nullopt,
+            .projection = {},
         },
         DiagnosticCode::NameDuplicateParameter
     );
+}
+
+auto BodyElaborator::local_place(const BodyLocalStorage& local, Span span) noexcept
+    -> PlaceExpression {
+    auto result = active_builder().binding_expression(local.storage.binding);
+    for (const auto index : local.projection) {
+        const auto elements = tuple_elements(draft(), result.expression.type.construction());
+        if (!elements || index >= elements->size()) {
+            invariant_violation("local projection exceeds its tuple shape");
+        }
+        result = active_builder().make_place(
+            result.root,
+            result.access,
+            (*elements)[index],
+            SemTupleElement {UniqueIndirect(std::move(result.expression)), index},
+            origin(span)
+        );
+    }
+    return result;
+}
+
+auto BodyElaborator::bind_tuple_target(
+    const ASTBindingTarget& target,
+    BoundStorage root,
+    ConstructionTypeRef type,
+    BodyLocalRole role,
+    bool static_source,
+    bool owning
+) noexcept -> AnalysisResult<std::vector<SemDecompositionBinding>> {
+    auto bindings = std::vector<SemDecompositionBinding>();
+    auto path = std::vector<std::uint32_t>();
+    const auto visit = [&](this const auto& self,
+                           const ASTBindingTarget& selected,
+                           ConstructionTypeRef selected_type) noexcept -> AnalysisResult<void> {
+        if (const auto* tuple = std::get_if<UniqueIndirect<ASTTupleBindingTarget>>(&selected)) {
+            const auto elements = tuple_elements(draft(), selected_type);
+            if (!elements || elements->size() != (*tuple)->elements.size()) {
+                return std::unexpected(fail(
+                    binding_target_span(selected),
+                    DiagnosticCode::TypeMismatch,
+                    "tuple binding target differs from its source shape"
+                ));
+            }
+            for (const auto [index, element] : std::views::enumerate((*tuple)->elements)) {
+                path.push_back(static_cast<std::uint32_t>(index));
+                auto result = self(element, (*elements)[index]);
+                path.pop_back();
+                if (!result) {
+                    return result;
+                }
+            }
+            return {};
+        }
+        const auto* named = std::get_if<ASTNamedBindingTarget>(&selected);
+        if (!named) {
+            return {};
+        }
+        const auto storage = owning ? body_builder.add_owner_binding(
+                                          draft().intern_spelling(spelling(named->name_span)),
+                                          selected_type,
+                                          frames.back().lifetime,
+                                          false,
+                                          origin(named->name_span)
+                                      )
+                                    : root;
+        auto result = bind_local(
+            named->name_span,
+            BodyLocalStorage {
+                .storage = storage,
+                .type = selected_type,
+                .used = false,
+                .takeable = owning,
+                .static_source = static_source,
+                .role = role,
+                .unused_candidate = std::nullopt,
+                .projection = owning ? std::vector<std::uint32_t>() : path
+            },
+            role == BodyLocalRole::Parameter ? DiagnosticCode::NameDuplicateParameter
+                                             : DiagnosticCode::NameDuplicateLocal
+        );
+        if (!result) {
+            return result;
+        }
+        if (owning) {
+            bindings.push_back({storage.binding, path});
+        }
+        return {};
+    };
+    auto result = visit(target, type);
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+    return bindings;
 }
 
 auto BodyElaborator::add_capture(
@@ -233,6 +349,7 @@ auto BodyElaborator::add_capture(
             .static_source = false,
             .role = BodyLocalRole::Capture,
             .unused_candidate = std::nullopt,
+            .projection = {},
         },
         DiagnosticCode::LambdaCaptureDuplicate
     );

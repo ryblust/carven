@@ -70,7 +70,7 @@ auto BodyElaborator::build_branch(
     ASTBranchBlockID id,
     bool value_form,
     std::optional<ConstructionTypeRef>& merged_type,
-    BodyPendingFailureTerms& pending,
+    BodyPendingFailures& pending,
     bool allow_pointer_narrowing
 ) noexcept -> AnalysisTask<SemanticRegion> {
     const auto span = ((ast.branch_block(id))).span;
@@ -117,7 +117,8 @@ auto BodyElaborator::build_branch(
             regions.back().result = std::move(*read);
             regions.back().failures = BodyFailures(
                 draft().add_union_failure_term(
-                    {regions.back().failures.term(), regions.back().result->failures.term()}
+                    {regions.back().failures.reference(),
+                     regions.back().result->failures.reference()}
                 )
             );
         } else {
@@ -127,11 +128,15 @@ auto BodyElaborator::build_branch(
             append_expression(value, span);
         }
     } else if (value_form && reachable) {
-        co_return std::unexpected(fail(
-            span,
-            DiagnosticCode::FlowValueBranchResult,
-            "value-control branch requires a result"
-        ));
+        if (merged_type && !is_void_type(draft(), *merged_type)) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::FlowValueBranchResult,
+                "value-control branch requires a result"
+            ));
+        }
+        // Normal completion of a block without a final expression is unit.
+        merged_type = draft().builtin_type(BuiltinType::Void);
     }
     auto region = std::move(regions.back());
     regions.pop_back();
@@ -142,7 +147,7 @@ auto BodyElaborator::build_arm(
     const ASTMatchArmBody& source,
     bool value_form,
     std::optional<ConstructionTypeRef>& type,
-    BodyPendingFailureTerms& pending,
+    BodyPendingFailures& pending,
     bool allow_pointer_narrowing
 ) noexcept -> AnalysisTask<SemanticRegion> {
     if (const auto* branch = std::get_if<ASTBranchBlockID>(&source.value)) {
@@ -195,7 +200,8 @@ auto BodyElaborator::build_arm(
             regions.back().result = std::move(*checked);
             regions.back().failures = BodyFailures(
                 draft().add_union_failure_term(
-                    {regions.back().failures.term(), regions.back().result->failures.term()}
+                    {regions.back().failures.reference(),
+                     regions.back().result->failures.reference()}
                 )
             );
         } else {
@@ -227,7 +233,7 @@ auto BodyElaborator::build_if(
     bool allow_pointer_narrowing
 ) noexcept -> AnalysisTask<BuiltExpression> {
     auto branches = std::vector<SemConditionalBranch>();
-    auto pending = BodyPendingFailureTerms();
+    auto pending = BodyPendingFailures();
     auto merged_type = expected;
     auto remaining = reachable && reference_path_reachable;
     auto normal = false;

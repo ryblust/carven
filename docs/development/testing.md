@@ -53,6 +53,13 @@ values remain valid where the tested contract permits.
 Use comparison assertions for printable values and predicates with context for
 opaque values. Compare text contents and retain explicit lengths for binary data.
 Compute expensive failure context only when needed.
+Compare optional results directly with values or `std::nullopt`; the harness
+prints their state and recursively prints present payloads.
+
+When tests repeat observation or diagnostic boilerplate, improve the shared
+assertion or domain fixture at its owning boundary. Keep helpers focused on
+recurring checks and preserve useful failure values, source locations, and
+explicit control over dependent observations.
 
 Guard premises before indexing, dereferencing, or reading an error. When a premise
 assertion fails, explicitly return from the current case or input before dependent
@@ -103,7 +110,10 @@ limit conclusions to that evidence. Keep raw logs outside reference documents.
 
 Each group owns its `xmake.lua`. Topic directories name the rule under test;
 features and scenarios belong in filenames and case names. Helpers remain with
-their owning domain; harnesses select scenarios.
+their owning domain; harnesses select scenarios. Filenames and local type names
+avoid repeating context already supplied by their directory or module, such as
+`async/failure.cv` and its `Failure` type. Keep qualifiers where a flat directory
+or shared namespace needs them to distinguish responsibilities.
 
 Extend existing targets when entry definitions, compiler settings, linkage, and
 execution requirements match. Use ordinary Xmake targets and assertions for

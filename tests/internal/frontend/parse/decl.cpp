@@ -12,6 +12,7 @@ import :frontend.ast.storage;
 import :frontend.ast.tree;
 import :frontend.ast.type;
 import :source.text;
+import :support.unique_indirect;
 import :test.harness.framework;
 import :test.internal.frontend.parse.fixture;
 import std;
@@ -19,6 +20,102 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Parser declaration: generic parameters distinguish types and failure sets"_test =
+        [] static noexcept {
+            const auto tree = parse_valid("fn forward<T, throw E>() {}");
+            const auto& declaration = function(tree);
+            if (!expect(declaration.type_parameters.has_value())) {
+                return;
+            }
+            const auto& parameters = declaration.type_parameters->parameters;
+            if (!expect_equal(parameters.size(), 2uz)) {
+                return;
+            }
+            expect(parameters[0].kind == ASTGenericParameterKind::Type);
+            expect(parameters[1].kind == ASTGenericParameterKind::FailureSet);
+        };
+
+    "Parser declarations: tuple parameters reuse binding targets and keep parameter markers"_test =
+        [] static noexcept {
+            const auto tree = parse_valid(
+                "fn f(const (a, (_, b)): (i32, ((), bool)), &(c,): (i32,), &&(): ()) {}"
+            );
+            const auto& parameters = function(tree).parameters;
+            if (!expect_equal(parameters.size(), 3uz)) {
+                return;
+            }
+            expect(parameters[0].const_span.has_value());
+            expect_equal(parameters[0].access.mode, ASTAccessMode::Read);
+            const auto& target = *get<UniqueIndirect<ASTTupleBindingTarget>>(parameters[0].target);
+            if (!expect_equal(target.elements.size(), 2uz)) {
+                return;
+            }
+            const auto& nested = *get<UniqueIndirect<ASTTupleBindingTarget>>(target.elements[1]);
+            if (!expect_equal(nested.elements.size(), 2uz)) {
+                return;
+            }
+            expect(is<ASTDiscardBindingTarget>(nested.elements[0]));
+            expect_equal(parameters[1].access.mode, ASTAccessMode::Write);
+            expect_equal(parameters[2].access.mode, ASTAccessMode::Take);
+            expect(
+                (*get<UniqueIndirect<ASTTupleBindingTarget>>(parameters[2].target)).elements.empty()
+            );
+            check_invalid(
+                "fn f(const &(a, b): (i32, i32)) {}",
+                "const parameter cannot have an access marker"
+            );
+            check_invalid("fn f((a, await): (i32, i32)) {}");
+        };
+
+    "Parser async: class operations retain associated and private async modifiers"_test =
+        [] static noexcept {
+            constexpr auto source = std::string_view(
+                "class Worker { async fn run(value: i32) {} private async fn helper() {} }"
+            );
+            const auto tree = parse_valid(source);
+            const auto ast = tree.view();
+            const auto& record = get<ASTRecordDecl>(item(tree, 0));
+            require(record.operations.size() == 2uz);
+            for (const auto operation : record.operations) {
+                const auto& function = get<ASTFunctionDecl>(ast.item(operation));
+                require(function.async_span.has_value());
+                expect_equal(slice(source, *function.async_span), std::string_view("async"));
+            }
+            expect(
+                is<ASTPrivateDeclarationVisibility>(
+                    get<ASTFunctionDecl>(ast.item(record.operations[1])).visibility
+                )
+            );
+            check_invalid("class Worker { async value: i32 }", "expected 'fn'");
+            check_invalid("struct Worker { async fn run() {} }");
+        };
+
+    "Parser async: declaration and lexical child retain their independent markers"_test =
+        [] static noexcept {
+            const auto tree =
+                parse_valid("async fn worker() { async let child = leaf(); await child; }");
+            expect(function(tree).async_span.has_value());
+            expect(!function(tree).const_span.has_value());
+            const auto& block = function_body(tree);
+            const auto& child = get<ASTVariableDecl>(tree.view().statement(block.statements[0]));
+            expect(child.async_span.has_value());
+            expect_equal(child.kind, ASTBindingKind::Let);
+            expect(!child.type.has_value());
+        };
+
+    "Parser async: modifier order is preserved and unsupported heads are rejected"_test =
+        [] static noexcept {
+            for (const auto source : {"async const fn bad() {}", "const async fn bad() {}"}) {
+                const auto tree = parse_valid(source);
+                expect(function(tree).async_span.has_value());
+                expect(function(tree).const_span.has_value());
+            }
+            for (const auto source :
+                 {"async struct Bad {}", "async enum Bad { Value }", "async test {}"}) {
+                check_rejected(source);
+            }
+        };
+
     "Parser declaration: const functions retain their qualifier and ordinary callable bodies"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view(
@@ -41,6 +138,37 @@ const TestSuite suite([] static noexcept {
             expect(is<ASTExportDeclarationVisibility>(function(result, 2).visibility));
             expect(is<ASTConstantDecl>(result.view().item(root(result).items[3])));
             expect(!(function(result, 4).const_span.has_value()));
+        };
+
+    "Parser declaration: class operations retain const qualifiers and private visibility"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "class Counter { value: i32, "
+                "const fn create() -> Counter => { value: 0 }; "
+                "private const fn read(self) -> i32 => self.value; "
+                "fn reset(&self) { self.value = 0; } }"
+            );
+            const auto result = parse_valid(text);
+            const auto ast = result.view();
+            const auto& record = get<ASTRecordDecl>(ast.item(root(result).items[0]));
+            if (!expect_equal(record.operations.size(), 3uz)) {
+                return;
+            }
+            for (const auto index : {0uz, 1uz}) {
+                const auto& operation = get<ASTFunctionDecl>(ast.item(record.operations[index]));
+                if (!expect(operation.const_span.has_value())) {
+                    return;
+                }
+                expect_equal(slice(text, *operation.const_span), std::string_view("const"));
+            }
+            expect(
+                is<ASTPrivateDeclarationVisibility>(
+                    get<ASTFunctionDecl>(ast.item(record.operations[1])).visibility
+                )
+            );
+            expect(!get<ASTFunctionDecl>(ast.item(record.operations[2])).const_span.has_value());
+            check_invalid("class Counter { const private fn read(self) -> i32 => 0; }");
+            check_invalid("class Counter { const value = 0; }");
         };
 
     "Parser declaration: module root separates imports from ordered top-level items"_test =
@@ -621,6 +749,44 @@ const TestSuite suite([] static noexcept {
             );
         };
 
+    "Parser declaration: native selections accept keyword spellings without reserving source names"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "import <future> using std::async;\n"
+                "import \"provider.hpp\" using async::{ await, cancel, match };\n"
+                "import \"provider.hpp\" using async::await::*;\n"
+                "import \"provider.hpp\" using { test, let };\n"
+            );
+            const auto tree = parse_valid(text);
+            const auto& imports = root(tree).cpp_header_imports;
+            if (!expect_equal(imports.size(), 4uz)) {
+                return;
+            }
+            const auto& single = *imports[0].using_clause;
+            expect_equal(
+                slice(text, std::get<ASTCppSingleSelection>(single.selection).name),
+                std::string_view("async")
+            );
+            const auto& list = *imports[1].using_clause;
+            expect_equal(slice(text, list.prefix.front()), std::string_view("async"));
+            expect_equal(std::get<ASTCppListSelection>(list.selection).names.size(), 3uz);
+            const auto& opened = *imports[2].using_clause;
+            expect_equal(opened.prefix.size(), 2uz);
+            expect(std::holds_alternative<ASTCppNamespaceSelection>(opened.selection));
+            expect_equal(
+                std::get<ASTCppListSelection>(imports[3].using_clause->selection).names.size(),
+                2uz
+            );
+            for (const auto invalid : {
+                     "fn await() {}",
+                     "struct match {}",
+                     "import provider using await;",
+                     "import provider using { await };",
+                 }) {
+                check_invalid(invalid);
+            }
+        };
+
     "Parser declaration: module components accept keyword spellings in every reference form"_test =
         [] static noexcept {
             const auto cases = std::to_array<std::string_view>({
@@ -701,6 +867,33 @@ const TestSuite suite([] static noexcept {
                 std::string_view("println(value);")
             );
         };
+    "Parser declaration: top-level static controls belong to the implicit entry"_test =
+        [] static noexcept {
+            static constexpr auto text = std::string_view(
+                "const answer = 2;\n"
+                "const fn twice(value: i32) -> i32 => value * 2;\n"
+                "const test { check(answer == 2); }\n"
+                "const { assert(answer == 2); }\n"
+                "const for value in [answer] { println(value); }\n"
+                "const if true { println(answer); }\n"
+            );
+            const auto result = parse_valid(text);
+            const auto ast = result.view();
+            if (!expect_equal(root(result).items.size(), 5uz)) {
+                return;
+            }
+            expect(is<ASTConstantDecl>(ast.item(root(result).items[0])));
+            expect(function(result, 1).const_span.has_value());
+            expect(is<ASTTestDecl>(ast.item(root(result).items[2])));
+            expect(is<ASTConstBlock>(ast.item(root(result).items[3])));
+            const auto& entry = function(result, 4);
+            require(entry.is_implicit_entry);
+            const auto& implementation = std::get<ASTFunctionBody>(entry.implementation);
+            const auto& body = ast.block(std::get<ASTBlockID>(implementation.body));
+            require(body.statements.size() == 2uz);
+            expect(is<ASTForStmt>(ast.statement(body.statements[0])));
+            expect(is<ASTIfForm>(ast.statement(body.statements[1])));
+        };
     "Parser: named function parameters retain const qualifiers and spans"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view(
@@ -745,6 +938,65 @@ const TestSuite suite([] static noexcept {
                 "fn take(const &&index: i32) {}",
                 "const parameter cannot have an access marker"
             );
+        };
+
+    "Parser declaration: nominal and callable type parameters share a nonempty clause"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "struct Pair<T, U,> { first: T, second: U } "
+                "enum Maybe<T,> { None, Some(T) } "
+                "class Owner<T> { value: T, fn read(self) -> T => self.value; } "
+                "fn relay<T>(&&value: T) -> T => &&value;"
+            );
+            const auto tree = parse_valid(text);
+            const auto& pair = get<ASTRecordDecl>(item(tree, 0));
+            const auto& maybe = get<ASTEnumDecl>(item(tree, 1));
+            const auto& owner = get<ASTRecordDecl>(item(tree, 2));
+            const auto& relay = function(tree, 3);
+            if (!expect(pair.type_parameters.has_value())
+                || !expect(maybe.type_parameters.has_value())
+                || !expect(owner.type_parameters.has_value())
+                || !expect(relay.type_parameters.has_value())) {
+                return;
+            }
+            if (!expect_equal(pair.type_parameters->parameters.size(), 2uz)
+                || !expect_equal(maybe.type_parameters->parameters.size(), 1uz)
+                || !expect_equal(owner.type_parameters->parameters.size(), 1uz)
+                || !expect_equal(relay.type_parameters->parameters.size(), 1uz)
+                || !expect_equal(owner.operations.size(), 1uz)) {
+                return;
+            }
+            expect_equal(slice(text, pair.type_parameters->span), std::string_view("<T, U,>"));
+            expect_equal(
+                slice(text, pair.type_parameters->parameters[0].name_span),
+                std::string_view("T")
+            );
+            expect_equal(
+                slice(text, pair.type_parameters->parameters[1].name_span),
+                std::string_view("U")
+            );
+            const auto& read = get<ASTFunctionDecl>(tree.view().item(owner.operations[0]));
+            expect(!read.type_parameters.has_value());
+            const auto repeated = parse_valid("struct Pair<T, T> { value: T }");
+            const auto& repeated_pair = get<ASTRecordDecl>(item(repeated, 0));
+            if (expect(repeated_pair.type_parameters.has_value())) {
+                expect_equal(repeated_pair.type_parameters->parameters.size(), 2uz);
+            }
+        };
+
+    "Parser declaration: type parameter clauses reject missing names and value arguments"_test =
+        [] static noexcept {
+            constexpr auto inputs = std::array {
+                "struct Box<> { value: i32 }",
+                "class Box<,T> { value: T }",
+                "enum Maybe<T,,U> { None }",
+                "fn relay<4>(value: i32) {}",
+                "fn relay<T(value: T) {}",
+                "struct Box<T: Copy> { value: T }",
+            };
+            for (const auto input : inputs) {
+                check_invalid(input);
+            }
         };
 });
 

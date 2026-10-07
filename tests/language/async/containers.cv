@@ -1,0 +1,50 @@
+import std::json.value using Value;
+import std::json.error using { JSONError, ValueError };
+
+async fn parse_owned(&&text: String) -> Value throw JSONError {
+    await yield_once();
+    return Value::parse(text.as_str())?;
+}
+
+async fn products() -> Sequence<(i32, void)> {
+    var values = Sequence<(i32, void)> {};
+    values.push((41, ()));
+    await yield_once();
+    values.push((42, ()));
+    return &&values;
+}
+
+async fn units() -> Sequence<void> {
+    var values = Sequence<void> {};
+    values.push(());
+    await yield_once();
+    values.push(());
+    return &&values;
+}
+
+async fn exercise() -> bool throw JSONError + ValueError {
+    let text: String = "[41,42]";
+    let (document, values, empty_values) = await when_all(
+        parse_owned(&&text),
+        products(),
+        units()
+    )?;
+    return document.len()?
+        == 2
+        && document.at(1)?.as_i64()? == 42
+        && values.len() == 2
+        && values[0] == (41, ())
+        && values[1] == (42, ())
+        && empty_values.len() == 2
+        && empty_values[1] == ();
+}
+
+async fn main() {
+    let result = try {
+        await exercise()?
+    } catch {
+        JSONError(_) => false,
+        ValueError(_) => false,
+    };
+    println(result);
+}

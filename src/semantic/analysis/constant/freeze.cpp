@@ -17,13 +17,13 @@ auto freeze_value(
         static_cast<void>(draft.constant(*constant));
         return *constant;
     }
-    if (const auto* atom = std::get_if<ConstantAtom>(&value)) {
+    if (const auto atom = execution_atom(draft, value)) {
         return draft.intern_constant(constant_fact(*atom));
     }
     if (const auto text = execution_text(draft, value)) {
         return draft.intern_constant({
             .type = draft.builtin_type(BuiltinType::Str),
-            .value = StringConstant {.value = draft.intern_spelling(*text)},
+            .value = StringConstant {.value = draft.intern_spelling(text->view())},
         });
     }
     const auto* aggregate = std::get_if<ExecutionAggregateValue>(&value);
@@ -41,6 +41,9 @@ auto freeze_value(
             return std::nullopt;
         }
         const auto* array = std::get_if<ArrayTypeValue>(&canonical.value);
+        const auto* tuple = std::get_if<TupleTypeValue>(&canonical.value);
+        const auto unit =
+            canonical.value == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}};
         const auto* slice = std::get_if<SliceTypeValue>(&canonical.value);
         const auto* structure = std::get_if<StructTypeValue>(&canonical.value);
         const auto fields =
@@ -67,7 +70,13 @@ auto freeze_value(
                 || !shape->supported
                 || shape->elements > maximum_constant_aggregate_elements
                 || (array && children.size() != array->extent)
-                || (!array && !enum_case && (!fields || fields->size() != children.size()))) {
+                || (tuple && children.size() != tuple->elements.size())
+                || (unit && !children.empty())
+                || (!array
+                    && !tuple
+                    && !unit
+                    && !enum_case
+                    && (!fields || fields->size() != children.size()))) {
                 return std::nullopt;
             }
         }
@@ -81,6 +90,7 @@ auto freeze_value(
                 return std::nullopt;
             }
             const auto expected = array ? array->element
+                : tuple                 ? tuple->elements[index]
                 : slice                 ? slice->element
                 : fields                ? (*fields)[index]
                 : payload               ? (*payload)[index]
@@ -103,6 +113,12 @@ auto freeze_value(
             }
             if (array) {
                 return ArrayConstant {.elements = std::move(elements)};
+            }
+            if (tuple) {
+                return TupleConstant {.elements = std::move(elements)};
+            }
+            if (unit) {
+                return VoidConstant {};
             }
             if (slice) {
                 return SliceConstant {.elements = std::move(elements)};

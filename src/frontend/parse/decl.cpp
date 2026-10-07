@@ -115,7 +115,7 @@ auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
             expect(TokenKind::LeftBrace, "expected '{' in C++ selection");
             auto names = std::vector<Span>();
             do {
-                names.push_back(expect(TokenKind::Identifier, "expected a simple C++ name").span);
+                names.push_back(expect_name_component("expected a simple C++ name").span);
             } while (!failed && match(TokenKind::Comma) && !check(TokenKind::RightBrace));
             end = expect(TokenKind::RightBrace, "expected '}' after C++ selection").span;
             return {.names = std::move(names)};
@@ -125,7 +125,7 @@ auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
             if (check(TokenKind::LeftBrace)) {
                 return list();
             }
-            auto name = expect(TokenKind::Identifier, "expected a C++ name after 'using'").span;
+            auto name = expect_name_component("expected a C++ name after 'using'").span;
             while (!failed && match(TokenKind::ColonColon)) {
                 prefix.push_back(name);
                 if (check(TokenKind::LeftBrace)) {
@@ -135,7 +135,7 @@ auto Parser::parse_cpp_header_import() noexcept -> ASTCppHeaderImport {
                     end = star->span;
                     return ASTCppNamespaceSelection {.star = star->span};
                 }
-                name = expect(TokenKind::Identifier, "expected a C++ name after '::'").span;
+                name = expect_name_component("expected a C++ name after '::'").span;
             }
             end = name;
             return ASTCppSingleSelection {.name = name};
@@ -250,19 +250,34 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         cpp_import = parse_cpp_declaration_form(*keyword);
     }
     const auto is_bare = std::holds_alternative<ASTBareDeclarationVisibility>(visibility);
+    auto async_span = std::optional<Span>();
+    if (const auto keyword = match(TokenKind::Async)) {
+        async_span = keyword->span;
+    }
     auto const_span = std::optional<Span>();
     if (check(TokenKind::Const)
         && cursor + 1 < tokens.size()
         && (tokens[cursor + 1].kind == TokenKind::Fn
+            || tokens[cursor + 1].kind == TokenKind::Async
             || (is_bare && tokens[cursor + 1].kind == TokenKind::Test))) {
         const_span = consume().span;
     }
 
+    if (!async_span) {
+        if (const auto keyword = match(TokenKind::Async)) {
+            async_span = keyword->span;
+        }
+    }
     if ((cpp_export.has_value() || cpp_import.has_value()) && !check(TokenKind::Fn)) {
         fail_here("import(cpp) and export(cpp) forms must introduce a function");
         if (cpp_import.has_value() && check(TokenKind::Export)) {
             discard_through_semicolon();
         }
+        return std::nullopt;
+    }
+
+    if (async_span && !check(TokenKind::Fn)) {
+        fail("async modifier must introduce a function declaration", *async_span);
         return std::nullopt;
     }
 
@@ -289,7 +304,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         });
     }
     if (check(TokenKind::Fn)) {
-        auto parsed = parse_function(visibility, cpp_export, cpp_import, const_span);
+        auto parsed = parse_function(visibility, cpp_export, cpp_import, const_span, async_span);
         if (!parsed) {
             return std::nullopt;
         }
@@ -376,10 +391,34 @@ auto Parser::parse_block_label() noexcept -> std::optional<ASTBlockLabel> {
     return ASTBlockLabel {.span = literal->span, .text = std::move(literal->value.bytes)};
 }
 
+auto Parser::parse_type_parameters() noexcept -> std::optional<ASTTypeParameterClause> {
+    const auto left = match(TokenKind::Less);
+    if (!left) {
+        return std::nullopt;
+    }
+    auto parameters = std::vector<ASTGenericParameter>();
+    while (!failed) {
+        const auto kind = match(TokenKind::Throw) ? ASTGenericParameterKind::FailureSet
+                                                  : ASTGenericParameterKind::Type;
+        const auto name = expect(TokenKind::Identifier, "expected generic parameter name");
+
+        parameters.push_back({.name_span = name.span, .kind = kind});
+        if (!match(TokenKind::Comma) || check(TokenKind::Greater)) {
+            break;
+        }
+    }
+    const auto right = expect(TokenKind::Greater, "expected '>' after type parameters");
+    return ASTTypeParameterClause {
+        .span = join(left->span, right.span),
+        .parameters = std::move(parameters)
+    };
+}
+
 auto Parser::parse_enum(ASTDeclarationVisibility visibility) noexcept
     -> std::optional<std::pair<Span, ASTEnumDecl>> {
     expect(TokenKind::Enum, "expected 'enum'");
     const auto name = expect(TokenKind::Identifier, "expected enum name");
+    auto type_parameters = parse_type_parameters();
     auto underlying = std::optional<ASTTypeID> {};
     if (match(TokenKind::Colon)) {
         underlying = parse_type();
@@ -444,6 +483,7 @@ auto Parser::parse_enum(ASTDeclarationVisibility visibility) noexcept
             ASTEnumDecl {
                 .visibility = visibility,
                 .name_span = name.span,
+                .type_parameters = std::move(type_parameters),
                 .underlying_type = underlying,
                 .cases = std::move(cases),
             },
@@ -456,18 +496,36 @@ auto Parser::parse_record(ASTDeclarationVisibility visibility) noexcept
     const auto kind =
         consume().kind == TokenKind::Class ? ASTRecordKind::Class : ASTRecordKind::Struct;
     const auto name = expect(TokenKind::Identifier, "expected record name");
+    auto type_parameters = parse_type_parameters();
     expect(TokenKind::LeftBrace, "expected '{' after record name");
 
     auto fields = std::vector<ASTRecordField> {};
     auto operations = std::vector<ASTItemID>();
     while (!failed && !check(TokenKind::RightBrace)) {
-        if (kind == ASTRecordKind::Class && (check(TokenKind::Fn) || check(TokenKind::Private))) {
+        if (kind == ASTRecordKind::Class
+            && (check(TokenKind::Fn)
+                || check(TokenKind::Private)
+                || check(TokenKind::Const)
+                || check(TokenKind::Async))) {
             const auto start = current().span;
             auto access = ASTDeclarationVisibility(ASTBareDeclarationVisibility {});
             if (const auto keyword = match(TokenKind::Private)) {
                 access = ASTPrivateDeclarationVisibility {.keyword_span = keyword->span};
             }
-            auto operation = parse_function(access, std::nullopt, std::nullopt, std::nullopt);
+            auto async_span = match(TokenKind::Async).transform([](const Token& token) static {
+                return token.span;
+            });
+            const auto const_span =
+                match(TokenKind::Const).transform([](const Token& token) static {
+                    return token.span;
+                });
+            if (!async_span) {
+                async_span = match(TokenKind::Async).transform([](const Token& token) static {
+                    return token.span;
+                });
+            }
+            auto operation =
+                parse_function(access, std::nullopt, std::nullopt, const_span, async_span);
             if (!operation) {
                 return std::nullopt;
             }
@@ -505,6 +563,7 @@ auto Parser::parse_record(ASTDeclarationVisibility visibility) noexcept
                 .kind = kind,
                 .visibility = visibility,
                 .name_span = name.span,
+                .type_parameters = std::move(type_parameters),
                 .fields = std::move(fields),
                 .operations = std::move(operations),
             },
@@ -516,10 +575,12 @@ auto Parser::parse_function(
     ASTDeclarationVisibility visibility,
     std::optional<ASTCppExportForm> cpp_export,
     std::optional<Span> cpp_import,
-    std::optional<Span> const_span
+    std::optional<Span> const_span,
+    std::optional<Span> async_span
 ) noexcept -> std::optional<std::pair<Span, ASTFunctionDecl>> {
     expect(TokenKind::Fn, "expected 'fn'");
     const auto name = expect(TokenKind::Identifier, "expected function name");
+    auto type_parameters = parse_type_parameters();
     expect(TokenKind::LeftParen, "expected '(' after function name");
 
     auto parameters = std::vector<ASTFunctionParameter> {};
@@ -531,7 +592,16 @@ auto Parser::parse_function(
         } else if (const auto marker = match(TokenKind::AmpersandAmpersand)) {
             access = {.mode = ASTAccessMode::Take, .marker = marker->span};
         }
-        const auto parameter_name = expect(TokenKind::Identifier, "expected parameter name");
+        if (!check(TokenKind::Identifier) && !check(TokenKind::LeftParen)) {
+            fail_here("expected parameter name");
+            return std::nullopt;
+        }
+        const auto target_start = current().span;
+        auto target = parse_binding_target();
+        if (!target) {
+            return std::nullopt;
+        }
+        const auto target_span = join(target_start, tokens[cursor - 1uz].span);
         if (parameter_const.has_value() && access.marker.has_value()) {
             fail("const parameter cannot have an access marker", parameter_const->span);
         }
@@ -539,22 +609,15 @@ auto Parser::parse_function(
         if (match(TokenKind::Colon)) {
             type = parse_type();
         }
-        const auto start = parameter_const.has_value()
-            ? parameter_const->span
-            : access.marker.value_or(parameter_name.span);
+        const auto end = type ? builder.type(*type).span : target_span;
+        const auto start = parameter_const.has_value() ? parameter_const->span
+                                                       : access.marker.value_or(target_span);
         parameters.push_back({
-            .span = type.has_value() ? join(start, builder.type(*type).span)
-                                     : join(start, parameter_name.span),
+            .span = join(start, end),
             .const_span =
                 parameter_const.transform([](const Token& token) static { return token.span; }),
             .access = access,
-            .target = slice(source, parameter_name.span) == "_"
-                ? ASTBindingTarget {ASTDiscardBindingTarget {
-                      .underscore_span = parameter_name.span,
-                  }}
-                : ASTBindingTarget {ASTNamedBindingTarget {
-                      .name_span = parameter_name.span,
-                  }},
+            .target = std::move(*target),
             .type = type,
         });
         if (!match(TokenKind::Comma)) {
@@ -600,7 +663,9 @@ auto Parser::parse_function(
                 .visibility = visibility,
                 .cpp_export = cpp_export,
                 .const_span = const_span,
+                .async_span = async_span,
                 .name_span = name.span,
+                .type_parameters = std::move(type_parameters),
                 .parameters = std::move(parameters),
                 .result_type = result_type,
                 .throw_clause = std::move(throw_clause),

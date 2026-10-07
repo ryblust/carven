@@ -1,7 +1,7 @@
 module carven:test.internal.frontend.lex.tokens;
 
-import :frontend.lex;
 import :frontend.lex.token;
+import :frontend.lex;
 import :source.text;
 import :test.harness.framework;
 import :test.internal.frontend.lex.fixture;
@@ -16,7 +16,11 @@ const TestSuite suite([] static noexcept {
     "Lexer: every reserved spelling has its grammar token"_test = [] static noexcept {
         static constexpr auto cases = std::to_array<TokenCase>({
             {.spelling = "as", .kind = TokenKind::As},
+            {.spelling = "async", .kind = TokenKind::Async},
+            {.spelling = "await", .kind = TokenKind::Await},
             {.spelling = "break", .kind = TokenKind::Break},
+            {.spelling = "cancel", .kind = TokenKind::Cancel},
+            {.spelling = "class", .kind = TokenKind::Class},
             {.spelling = "const", .kind = TokenKind::Const},
             {.spelling = "continue", .kind = TokenKind::Continue},
             {.spelling = "else", .kind = TokenKind::Else},

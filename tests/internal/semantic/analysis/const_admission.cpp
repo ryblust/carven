@@ -6,7 +6,6 @@ import :frontend.program.parse;
 import :semantic.analyze;
 import :source.batch;
 import :source.manager;
-import :source.module_path;
 import :source.text;
 import :test.harness.diagnostics;
 import :test.harness.framework;
@@ -78,6 +77,153 @@ const TestSuite suite([] static noexcept {
             expect_equal(primary.span.start(), scenario.start);
         });
     };
+
+    "Constant generic admission: unused definitions check their bound call capability"_test =
+        [] static noexcept {
+            const auto rejected = std::to_array<std::string_view>({
+                "private fn ordinary() {} private const fn invalid<T>(&&value: T) -> T { ordinary(); return &&value; }",
+                "private fn forward<T>(&&value: T) -> T => &&value; private const fn invalid<T>(&&value: T) -> T => forward<T>(&&value);",
+                "private import(cpp) fn provider(); private const fn invalid<T>(&&value: T) -> T { provider(); return &&value; }",
+            });
+            each(rejected, std::identity {}, [](const auto& source) noexcept {
+                expect_diagnostic(
+                    analyze_test_errors(std::string(source)),
+                    DiagnosticCode::ConstAdmission
+                );
+            });
+            const auto program = analyze_test_program(
+                "private const fn relay<T>(&&value: T) -> T => &&value; "
+                "private const fn forward<T>(&&value: T) -> T => relay<T>(&&value);"
+            );
+            expect(program.declarations().functions().size() == 0uz);
+        };
+
+    "Constant async admission: cold execution requires supported source capability"_test =
+        [] static noexcept {
+            struct Case final {
+                std::string_view name;
+                std::string_view source;
+                DiagnosticCode diagnostic;
+            };
+            const auto cases = std::array {
+                Case {
+                    .name = "unmarked source cold construction is not statically admitted",
+                    .source = "async fn ordinary() -> i32 => 7; "
+                              "const { let operation = ordinary(); }",
+                    .diagnostic = DiagnosticCode::ConstAdmission
+                },
+                Case {
+                    .name = "native cold construction requires unsupported provider capability",
+                    .source = "private import(cpp) async fn provider() -> i32; "
+                              "const { let operation = provider(); }",
+                    .diagnostic = DiagnosticCode::ConstAdmission
+                },
+                Case {
+                    .name = "an operation cannot be published as a frozen constant",
+                    .source = "const async fn leaf() -> i32 => 7; const operation = leaf();",
+                    .diagnostic = DiagnosticCode::ConstInitializer
+                },
+                Case {
+                    .name = "recursive await shares the existing execution depth limit",
+                    .source = "const async fn depth(value: i32) -> i32 { "
+                              "if value == 0 { return 0; } return await depth(value - 1); } "
+                              "const answer = await depth(256);",
+                    .diagnostic = DiagnosticCode::ConstLimit
+                },
+            };
+            each(cases, &Case::name, [](const Case& input) static noexcept {
+                auto sources = SourceManager();
+                const auto source =
+                    sources.append_virtual("analysis.cv", std::string(input.source));
+                require(source.has_value());
+                const auto modules = std::array {
+                    SourceModuleInput {
+                        .source_id = *source,
+                        .module_path = semantic_test_module_path(),
+                    },
+                };
+                auto parsed = parse_program(sources, SourceBatch {.modules = modules});
+                if (!expect(parsed.has_value()).note("source = ", input.source)) {
+                    return;
+                }
+                const auto analyzed = analyze(std::move(*parsed));
+                if (!expect(!analyzed.has_value()).note("source = ", input.source)) {
+                    return;
+                }
+                expect_diagnostic(analyzed.error(), input.diagnostic);
+            });
+        };
+
+    "Constant async admission: static roots own cooperative source scheduling"_test =
+        [] static noexcept {
+            const auto cases = std::to_array<std::string_view>({
+                " const async fn leaf() { await yield_once(); } const { await leaf(); }",
+                "const async fn leaf() -> i32 => 7; const { async let child = leaf(); assert(await child == 7); }",
+                "const async fn leaf() { await cancellation_point(); } "
+                "const test \"close cancelled child\" { async let child = leaf(); cancel child; }",
+                " const outside = cancellation_requested();",
+            });
+            each(cases, std::identity {}, [](std::string_view text) static noexcept {
+                auto sources = SourceManager();
+                const auto source = sources.append_virtual("analysis.cv", std::string(text));
+                require(source.has_value());
+                const auto modules = std::array {
+                    SourceModuleInput {
+                        .source_id = *source,
+                        .module_path = semantic_test_module_path()
+                    },
+                };
+                auto parsed = parse_program(sources, SourceBatch {.modules = modules});
+                if (!expect(parsed.has_value()).note("source = ", text)) {
+                    return;
+                }
+                const auto analyzed = analyze(std::move(*parsed));
+                expect(analyzed.has_value()).note("source = ", text);
+            });
+        };
+
+    "Constant async cancellation: nominal catch cannot intercept a labelled root exit"_test =
+        [] static noexcept {
+            auto sources = SourceManager();
+            const auto source = sources.append_virtual("analysis.cv", R"(
+            struct Failure {}
+            const async fn leaf() throw Failure { await cancellation_point(); }
+            const "cancelled root" {
+                async let child = leaf();
+                cancel child;
+                try { await child?; }
+                catch { Failure(_) => {}, }
+            }
+        )");
+
+            require(source.has_value());
+            const auto modules = std::array {
+                SourceModuleInput {
+                    .source_id = *source,
+                    .module_path = semantic_test_module_path()
+                },
+            };
+            auto parsed = parse_program(sources, SourceBatch {.modules = modules});
+            require(parsed.has_value());
+            const auto analyzed = analyze(std::move(*parsed));
+            if (!expect(!analyzed.has_value())) {
+                return;
+            }
+            const auto* diagnostic =
+                find_diagnostic(analyzed.error(), DiagnosticCode::ConstEvaluation);
+            if (!expect(diagnostic != nullptr)) {
+                return;
+            }
+            expect(diagnostic->finding.message.contains("cancellation"));
+            expect(
+                std::ranges::any_of(
+                    diagnostic->attachment.related,
+                    [](const auto& label) static noexcept {
+                        return label.message.contains("cancelled root");
+                    }
+                )
+            );
+        };
 
     "Constant function admission: executable bodies are proved at their definitions"_test =
         [] static noexcept {

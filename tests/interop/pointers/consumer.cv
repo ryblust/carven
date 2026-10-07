@@ -8,6 +8,6 @@ test "Pointers: recursive and incomplete types cross generated interfaces" {
     };
     let p: ptr<&Link> = ::pointer_probe::address(&link);
     let reader = identity(p);
-    if reader != nullptr { check(reader -> value == 4); }
+    if reader != nullptr { check(reader->value == 4); }
     check(accept_opaque(opaque()));
 }

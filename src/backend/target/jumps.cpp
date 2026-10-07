@@ -74,7 +74,8 @@ auto JumpVerifier::run() noexcept -> std::expected<void, TargetSealViolation> {
 }
 
 auto JumpVerifier::enter_scope(TargetTraversalScope scope) noexcept -> bool {
-    if (scope.kind == TargetTraversalScopeKind::Callable) {
+    if (scope.kind == TargetTraversalScopeKind::Callable
+        || scope.kind == TargetTraversalScopeKind::CoroutineCallable) {
         callables.emplace_back();
         return true;
     }
@@ -96,7 +97,8 @@ auto JumpVerifier::enter_scope(TargetTraversalScope scope) noexcept -> bool {
 }
 
 auto JumpVerifier::leave_scope(TargetTraversalScope scope) noexcept -> bool {
-    if (scope.kind == TargetTraversalScopeKind::Callable) {
+    if (scope.kind == TargetTraversalScopeKind::Callable
+        || scope.kind == TargetTraversalScopeKind::CoroutineCallable) {
         if (callables.empty()) {
             return fail("target traversal left an unknown callable scope");
         }
@@ -131,6 +133,7 @@ auto JumpVerifier::enter_statement(const TargetStmt& statement) noexcept -> bool
             [](const TargetExprStmt&) static noexcept { return true; },
             [](const TargetDiscardStmt&) static noexcept { return true; },
             [](const TargetReturnStmt&) static noexcept { return true; },
+            [](const TargetCoReturnStmt&) static noexcept { return true; },
             [&](const TargetVariableStmt&) noexcept {
                 state.barriers.push_back(state.next_barrier++);
                 return true;

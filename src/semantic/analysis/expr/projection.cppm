@@ -8,9 +8,39 @@ import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.analysis.types;
 import :semantic.analysis.types.display;
 import :semantic.semir.structured;
 import std;
+
+template<typename Site>
+auto construct_tuple_element_expression(
+    Site& site,
+    const ASTTupleElementExpr& source,
+    Span span
+) noexcept -> ExpressionTask<typename Site::Value> {
+    auto receiver = co_await site.read(source.operand_id, std::nullopt);
+    if (!receiver) {
+        co_return std::unexpected(receiver.error());
+    }
+    const auto elements = tuple_elements(site.draft(), site.type(*receiver));
+    if (!elements) {
+        co_return std::unexpected(site.fail(
+            source.index_span,
+            DiagnosticCode::TypeMemberUnresolved,
+            "positional field access requires a tuple value"
+        ));
+    }
+    if (source.index >= elements->size()) {
+        co_return std::unexpected(site.fail(
+            source.index_span,
+            DiagnosticCode::ConstIndexBounds,
+            "tuple field position is out of bounds"
+        ));
+    }
+    co_return site
+        .finish_tuple_element((*elements)[source.index], source.index, std::move(*receiver), span);
+}
 
 template<typename Site>
 auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span span) noexcept
@@ -38,7 +68,7 @@ auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span spa
         co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeNotIndexable,
-            "indexing requires an array or slice value"
+            "indexing requires an array, slice, or Sequence value"
         ));
     }
     const auto index_type = site.type(*index);
@@ -55,23 +85,26 @@ auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span spa
     }
     auto bounds = IndexBoundsPolicy {RuntimeCheckedBounds {}};
     if constexpr (Site::mode == ExpressionMode::Body) {
-        if (const auto known = site.known(*index); known && shape->extent) {
-            const auto& fact = site.draft().constant(*known);
-            if (const auto* integer = std::get_if<IntegerConstant>(&fact.value)) {
-                if (integer->negative() || integer->magnitude() >= *shape->extent) {
-                    co_return std::unexpected(site.fail(
-                        site.syntax().expression(source.index).span,
-                        DiagnosticCode::ConstIndexBounds,
-                        "constant array index is out of bounds"
-                    ));
-                }
+        if (const auto in_bounds = constant_index_in_bounds(
+                site.draft(),
+                site.known_sequence_extent(*receiver),
+                site.known(*index)
+            )) {
+            if (!*in_bounds && shape->kind == SequenceShapeKind::Array) {
+                co_return std::unexpected(site.fail(
+                    site.syntax().expression(source.index).span,
+                    DiagnosticCode::ConstIndexBounds,
+                    "constant array index is out of bounds"
+                ));
+            }
+            if (*in_bounds) {
                 bounds = ProvenInBounds {};
             }
         }
     }
     co_return site.finish_index(
         shape->element,
-        shape->extent.has_value(),
+        shape->kind != SequenceShapeKind::Slice,
         bounds,
         std::move(*receiver),
         std::move(*index),
@@ -91,17 +124,14 @@ auto construct_member_expression(
         return site.external_member(source, std::move(receiver), span);
     }
     const auto type = site.type(receiver);
-    const auto* concrete = std::get_if<TypeID>(&type);
-    const auto canonical =
-        concrete ? std::optional(site.draft().type_copy(*concrete)) : std::nullopt;
-    const auto* structure = canonical ? std::get_if<StructTypeValue>(&canonical->value) : nullptr;
-    if (structure != nullptr) {
-        if (auto access = site.representation_access(structure->structure, source.name_span);
-            !access) {
-            return std::unexpected(access.error());
+    const auto structure = record_shape(site.draft(), type);
+    if (structure) {
+        if (const auto* concrete = std::get_if<StructID>(&structure->owner)) {
+            if (auto access = site.representation_access(*concrete, source.name_span); !access) {
+                return std::unexpected(access.error());
+            }
         }
-        const auto declaration =
-            site.draft().construction_struct_declaration_copy(structure->structure);
+        const auto& declaration = *structure;
         const auto field =
             std::ranges::find_if(declaration.fields, [&](const auto& field) noexcept {
                 return site.draft().spelling(field.name) == name;
@@ -125,7 +155,7 @@ auto construct_member_expression(
         const auto index = static_cast<std::uint32_t>(field - declaration.fields.begin());
         return site.finish_field(
             field->type,
-            FieldProjection {.owner = structure->structure, .field_index = index},
+            FieldProjection {.owner = structure->owner, .field_index = index},
             std::move(receiver),
             span
         );

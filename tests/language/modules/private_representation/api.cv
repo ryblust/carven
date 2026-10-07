@@ -22,3 +22,37 @@ export class Indirect {
     hidden: ptr<PointerOnly>,
     mode: Mode,
 }
+
+private struct Local {
+    value: i32,
+}
+
+private struct LocalFailure {
+    value: i32,
+}
+
+private fn local_failure() -> i32 throw LocalFailure {
+    throw LocalFailure { value: 7 };
+}
+
+export class Opaque {
+    local: ptr<Local>,
+    callback: ptr<fn() -> i32 throw LocalFailure>,
+
+    fn create() -> Opaque => {
+        local: nullptr,
+        callback: nullptr
+    };
+
+    fn references_local(self) -> bool {
+        let local = Local { value: 7 };
+        return self.local == addressof(local);
+    }
+
+    fn references_callback(self) -> bool {
+        let callback: fn() -> i32 throw LocalFailure = local_failure;
+        return self.callback == addressof(callback);
+    }
+}
+
+export fn opaque() -> Opaque => Opaque::create();

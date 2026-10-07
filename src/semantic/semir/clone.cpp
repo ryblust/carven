@@ -73,7 +73,7 @@ private:
                     .end = copy(node.end),
                     .inclusive = node.inclusive
                 };
-            } else if constexpr (std::same_as<T, SemArray>) {
+            } else if constexpr (std::same_as<T, SemArray> || std::same_as<T, SemTuple>) {
                 return T {.elements = copy(node.elements)};
             } else if constexpr (std::same_as<T, SemStruct>) {
                 return T {.structure = node.structure, .fields = copy(node.fields)};
@@ -93,11 +93,14 @@ private:
                 return T {.source = copy(node.source), .origin = node.origin};
             } else if constexpr (std::same_as<T, SemField>) {
                 return T {.source = copy(node.source), .field = node.field};
+            } else if constexpr (std::same_as<T, SemTupleElement>) {
+                return T {.source = copy(node.source), .index = node.index};
             } else if constexpr (std::same_as<T, SemIndex>) {
                 return T {
                     .source = copy(node.source),
                     .index = copy(node.index),
-                    .bounds = node.bounds
+                    .bounds = node.bounds,
+                    .source_owns_elements = node.source_owns_elements
                 };
             } else if constexpr (std::same_as<T, SemArrayAdopt>
                                  || std::same_as<T, SemAddressOf>
@@ -148,6 +151,34 @@ private:
                     .arguments = copy(node.arguments),
                     .callee_failures = node.callee_failures
                 };
+            } else if constexpr (std::same_as<T, SemGenericCall>) {
+                return T {
+                    .definition = node.definition,
+                    .environment = node.environment,
+                    .arguments = copy(node.arguments),
+                    .callee_failures = node.callee_failures
+                };
+            } else if constexpr (std::same_as<T, SemColdCall>) {
+                return T {
+                    .callee = copy(node.callee),
+                    .target = node.target,
+                    .arguments = copy(node.arguments)
+                };
+            } else if constexpr (std::same_as<T, SemColdCompose>) {
+                return T {
+                    .policy = node.policy,
+                    .success = node.success,
+                    .inputs = copy(node.inputs)
+                };
+            } else if constexpr (std::same_as<T, SemColdTimeout>) {
+                return T {
+                    .operation = copy(node.operation),
+                    .duration_ticks = copy(node.duration_ticks),
+                    .timeout_failure = node.timeout_failure,
+                    .range_failure = node.range_failure,
+                };
+            } else if constexpr (std::same_as<T, SemAwait>) {
+                return T {.operand = copy(node.operand), .operand_kind = node.operand_kind};
             } else if constexpr (std::same_as<T, SemClosure>) {
                 return T {.callable = node.callable, .captures = copy(node.captures)};
             } else if constexpr (std::same_as<T, SemIf>) {
@@ -177,6 +208,14 @@ private:
                 return T {.expression = copy(node.expression)};
             } else if constexpr (std::same_as<T, SemInitialize>) {
                 return T {.binding = node.binding, .initializer = copy(node.initializer)};
+            } else if constexpr (std::same_as<T, SemDecompose>) {
+                return T {
+                    .owner = node.owner,
+                    .initializer = copy(node.initializer),
+                    .bindings = node.bindings
+                };
+            } else if constexpr (std::same_as<T, SemAsyncLet>) {
+                return T {.child = node.child, .initializer = copy(node.initializer)};
             } else if constexpr (std::same_as<T, SemStaticBinding>) {
                 return T {.binding = node.binding, .initializer = copy(node.initializer)};
             } else if constexpr (std::same_as<T, SemConstBlock>) {
@@ -212,6 +251,9 @@ private:
                     std::same_as<T, SemDefault>
                     || std::same_as<T, SemConstant>
                     || std::same_as<T, SemUnreachable>
+                    || std::same_as<T, SemAsyncIntrinsic>
+                    || std::same_as<T, SemWaitReady>
+                    || std::same_as<T, SemCloseChild>
                     || std::same_as<T, SemBinding>
                     || std::same_as<T, SemCallable>
                     || std::same_as<T, SemEnumConstructor>
@@ -242,6 +284,7 @@ auto SemanticClone::Observer::leave(const SemanticExpression& value) noexcept ->
             .operation_reachable = value.operation_reachable,
             .category = value.category,
             .value = clone.operation(value.value),
+
         }
     );
 }
@@ -254,6 +297,7 @@ auto SemanticClone::Observer::leave(const SemanticStatement& value) noexcept -> 
             .lifetime = value.lifetime,
             .reachable = value.reachable,
             .value = clone.operation(value.value),
+
         }
     );
 }
@@ -269,6 +313,7 @@ auto SemanticClone::Observer::leave(const SemanticRegion& value) noexcept -> voi
             .result_reachable = value.result_reachable,
             .failures = value.failures,
             .exits_test = value.exits_test,
+
         }
     );
 }

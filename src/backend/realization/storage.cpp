@@ -25,6 +25,19 @@ import :support.invariant;
 import :support.visit;
 import std;
 
+auto BodyRealizer::ExpressionBuilder::read_conversion_query(
+    const SemanticExpression& expression
+) const noexcept -> TargetTypeID {
+    const auto& value = owner.preparation.operation(expression);
+    if (value.category == SemanticValueCategory::Place || value.selects_storage()) {
+        return owner.context.reference_type(owner.context.lower_type(value.type.resolved()), true);
+    }
+    if (const auto query = native_result_query(owner.context.semantic(), value)) {
+        return owner.context.lower_cpp_query(*query);
+    }
+    return owner.context.lower_type(value.type.resolved());
+}
+
 auto BodyRealizer::ExpressionBuilder::take_statements(bool shared) noexcept -> LoweringStmtBuilder {
     if (shared) {
         return std::move(statements);
@@ -39,7 +52,7 @@ auto BodyRealizer::ExpressionBuilder::borrowed_owner(
 ) const noexcept -> bool {
     // Read value snapshots do not borrow the temporary's storage. Sequencing
     // barriers still materialize values before later effects when required.
-    if (use == PreparedUse::ReadBorrow
+    if ((use == PreparedUse::ReadBorrow || use == PreparedUse::ReadArgument)
         && owner.context.semantic()
                .type_contents(value.operation.type.resolved())
                .read_is_value_snapshot()) {
@@ -54,7 +67,7 @@ auto BodyRealizer::ExpressionBuilder::borrowed_owner(
         && use != PreparedUse::NativeTake;
 }
 
-// Every Read parameter form (const T&, const T, ReadArg<T>) names a const lvalue.
+// Every Read parameter, whether a value snapshot or storage borrow, is a const lvalue.
 auto BodyRealizer::ExpressionBuilder::const_parameter(const Fragment& fragment) const noexcept
     -> bool {
     const auto* binding = std::get_if<LocalBindingID>(&fragment.completion);
@@ -167,11 +180,14 @@ auto BodyRealizer::ExpressionBuilder::emit(
             target_expressions(std::move(result))
         );
     }
-    if ((use == PreparedUse::ReadBorrow || use == PreparedUse::ConstPlace)
+    if ((use == PreparedUse::ReadBorrow
+         || use == PreparedUse::ReadArgument
+         || use == PreparedUse::ConstPlace)
         && const_parameter(fragment)) {
         return result;
     }
     if (use == PreparedUse::ReadBorrow
+        || use == PreparedUse::ReadArgument
         || use == PreparedUse::ConstPlace
         || use == PreparedUse::AddressValue) {
         const auto type = owner.context.lower_type(source(fragment).operation.type.resolved());
@@ -195,6 +211,7 @@ auto BodyRealizer::ExpressionBuilder::value_binding(PreparedUse use) noexcept
     -> TargetVariableBinding {
     switch (use) {
         case PreparedUse::ReadBorrow:
+        case PreparedUse::ReadArgument:
         case PreparedUse::AddressValue:
         case PreparedUse::OperandValue:
         case PreparedUse::ConstPlace:   return TargetVariableBinding::ConstValue;
@@ -259,7 +276,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         && (use == PreparedUse::WritePlace || use == PreparedUse::ConstPlace);
     // Read describes the consumer, not ownership of a newly produced value.
     // A factory cannot extend a prvalue lifetime by returning const T&.
-    const auto read = use == PreparedUse::ReadBorrow
+    const auto read = (use == PreparedUse::ReadBorrow || use == PreparedUse::ReadArgument)
         && (value.operation.category == SemanticValueCategory::Place || names_storage(value));
     // By-value builtin snapshots store the value type, not a const parameter type.
     const auto read_value =
@@ -276,10 +293,18 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                                       || value.operation.category != SemanticValueCategory::Place
                               )
         : read && !read_value
-        ? owner.context.lower_parameter(AccessMode::Read, value.operation.type.resolved())
+        ? (use == PreparedUse::ReadArgument
+               ? owner.context.lower_parameter(AccessMode::Read, value.operation.type.resolved())
+               : owner.context.reference_type(
+                     owner.context.lower_type(value.operation.type.resolved()),
+                     true
+                 ))
         : owner.context.lower_type(value.operation.type.resolved());
     auto storage_type = type;
-    const auto exact_call = std::holds_alternative<SemCppCall>(value.operation.value)
+    const auto native_call =
+        native_result_query(owner.context.semantic(), value.operation).has_value();
+    const auto exact_call = native_call
+        && use != PreparedUse::ReadArgument
         && use != PreparedUse::Consume
         && use != PreparedUse::NativeTake;
     if (exact_call) {
@@ -291,6 +316,47 @@ auto BodyRealizer::ExpressionBuilder::anchor(
             invariant_violation("native call has no result query");
         }
         storage_type = owner.context.lower_cpp_query(value.operation.type.resolved());
+    }
+    if (native_call && use == PreparedUse::ReadArgument) {
+        // A reference query is observed according to ReadArg at this barrier;
+        // a value query owns its backing even when ReadArg itself is a reference.
+        storage_type = owner.context.target().intern_type(
+            {.value =
+                 TargetIntrinsicType {
+                     .symbol = TargetSymbol::RuntimeReadArgumentStorage,
+                     .type_argument_ids =
+                         {owner.context.lower_cpp_query(value.operation.type.resolved())}
+                 },
+             .const_qualified = false}
+        );
+    }
+    const auto* native_conversion = std::get_if<SemCpp>(&value.operation.value);
+    const auto* conversion = native_conversion
+        ? std::get_if<CppConvertOperation>(&native_conversion->operation)
+        : nullptr;
+    const auto read_conversion = conversion != nullptr
+        && !conversion->explicit_cast
+        && (use == PreparedUse::ReadArgument || use == PreparedUse::ConstPlace);
+    if (read_conversion) {
+        storage_type = owner.context.target().intern_type(
+            {.value =
+                 TargetIntrinsicType {
+                     .symbol = TargetSymbol::RuntimeReadConversionStorage,
+                     .type_argument_ids =
+                         {owner.context.lower_parameter(
+                              AccessMode::Read,
+                              value.operation.type.resolved(),
+                              TypeNameScope::Module,
+                              use == PreparedUse::ConstPlace
+                          ),
+                          owner.context.reference_type(
+                              owner.context.lower_type(native_conversion->operands.front()
+                                                           .expression.type.resolved()),
+                              true
+                          )}
+                 },
+             .const_qualified = false}
+        );
     }
     // Exact native result queries may own a value; their category and cleanup
     // remain delegated. Other retained places and Read bindings borrow storage.
@@ -304,24 +370,18 @@ auto BodyRealizer::ExpressionBuilder::anchor(
         ? emit(fragment, use)
         : raw(fragment);
     if (fragment.local_storage) {
-        if (exact_call && value_binding(use) == TargetVariableBinding::ConstValue) {
-            // C++ adds const to values and leaves reference query results intact.
-            storage_type = owner.context.target().intern_type(
-                {.value =
-                     TargetIntrinsicType {
-                         .symbol = TargetSymbol::StdAddConst,
-                         .type_argument_ids = {storage_type}
-                     },
-                 .const_qualified = false}
-            );
-        }
-        // Exact queries, references and ReadArg carry qualification in their
+        // Exact queries and borrowed references carry qualification in their
         // type. Keyword const cannot qualify an opaque reference alias.
-        const auto access_in_type = exact_call || place || (read && !read_value);
+        const auto access_in_type = exact_call
+            || place
+            || (read && !read_value)
+            || (native_call && use == PreparedUse::ReadArgument)
+            || read_conversion;
         fragment.statements.declare(
             TargetVariableStmt {
-                .binding =
-                    access_in_type ? TargetVariableBinding::MutableValue : value_binding(use),
+                .binding = (access_in_type || (!place && !read))
+                    ? TargetVariableBinding::MutableValue
+                    : value_binding(use),
                 .maybe_unused = false,
                 .local = name,
                 .type = storage_type,

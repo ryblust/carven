@@ -24,6 +24,12 @@ auto typed_integer_expression(
 
 auto enum_case_index(const SemIRProgram& semantic, EnumCaseID case_id) noexcept -> std::size_t;
 
+auto tuple_expression(
+    ModuleLowering& context,
+    TypeID type,
+    std::vector<TargetExpr> elements
+) noexcept -> TargetExpr;
+
 auto enum_case_expression(
     ModuleLowering& context,
     EnumCaseID case_id,

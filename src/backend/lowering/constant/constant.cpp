@@ -6,6 +6,7 @@ import :backend.lowering.constant;
 import :backend.lowering.context;
 import :backend.target.expr;
 import :backend.target.symbol;
+import :backend.target.type;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.ids;
@@ -146,6 +147,61 @@ auto enum_case_expression(
     return member;
 }
 
+auto tuple_expression(
+    ModuleLowering& context,
+    TypeID type,
+    std::vector<TargetExpr> elements
+) noexcept -> TargetExpr {
+    if (context.is_void(type)) {
+        if (!elements.empty()) {
+            invariant_violation("void tuple has elements");
+        }
+        return {
+            .value = TargetConstructionExpr {
+                .type = context.lower_type(type),
+                .initializer = std::vector<TargetExpr> {}
+            }
+        };
+    }
+    const auto& tuple = std::get<TupleTypeValue>(context.semantic().types().type(type).value);
+    if (tuple.elements.size() != elements.size()) {
+        invariant_violation("tuple realization differs from its logical arity");
+    }
+    auto suffix = std::vector<TargetTypeID>();
+    auto result = TargetExpr {
+        .value = TargetConstructionExpr {
+            .type = context.target().intern_type(
+                {.value =
+                     TargetIntrinsicType {
+                         .symbol = TargetSymbol::RuntimeTuple,
+                         .type_argument_ids = {}
+                     },
+                 .const_qualified = false}
+            ),
+            .initializer = std::vector<TargetExpr> {}
+        }
+    };
+    for (auto index = elements.size(); index != 0uz;) {
+        --index;
+        suffix.insert(suffix.begin(), context.lower_type(tuple.elements[index]));
+        const auto suffix_type = context.target().intern_type(
+            {.value =
+                 TargetIntrinsicType {
+                     .symbol = TargetSymbol::RuntimeTuple,
+                     .type_argument_ids = suffix
+                 },
+             .const_qualified = false}
+        );
+        result = TargetExpr {
+            .value = TargetConstructionExpr {
+                .type = suffix_type,
+                .initializer = target_expressions(std::move(elements[index]), std::move(result))
+            }
+        };
+    }
+    return result;
+}
+
 auto constant_expression(
     ModuleLowering& context,
     ConstantID id,
@@ -154,6 +210,16 @@ auto constant_expression(
     const auto& fact = context.semantic().constants().constant(id);
     return fact.value.visit(
         Overloaded {
+            [&](const VoidConstant&) noexcept -> TargetExpr {
+                return tuple_expression(context, fact.type, {});
+            },
+            [&](const TupleConstant& value) noexcept -> TargetExpr {
+                auto elements = std::vector<TargetExpr>();
+                for (const auto element : value.elements) {
+                    elements.push_back(constant_expression(context, element));
+                }
+                return tuple_expression(context, fact.type, std::move(elements));
+            },
             [&](const RangeConstant& value) noexcept -> TargetExpr {
                 const auto& range =
                     std::get<RangeTypeValue>(context.semantic().types().type(fact.type).value);
@@ -188,8 +254,14 @@ auto constant_expression(
                         .kind;
                 const auto layout = *simd_layout(owner);
                 const auto mask = owner == layout.mask;
+                // Lane storage is bit-exact, including signed zero and NaN payloads.
+                const auto splat =
+                    !mask && std::ranges::all_of(value.lanes, [&](auto lane) noexcept {
+                        return lane == value.lanes.front();
+                    });
                 auto bits = 0u;
-                for (auto i = 0uz; i < value.lanes.size(); ++i) {
+                const auto input_count = splat ? 1uz : value.lanes.size();
+                for (auto i = 0uz; i < input_count; ++i) {
                     if (mask) {
                         if (value.lanes[i] != 0u) {
                             bits |= 1u << i;
@@ -230,7 +302,11 @@ auto constant_expression(
                 return call_expression(
                     static_member_expression(
                         context.lower_type(fact.type),
-                        TargetIdentifier::from_spelling(mask ? "from_bits" : "from_lanes")
+                        TargetIdentifier::from_spelling(
+                            mask        ? "from_bits"
+                                : splat ? "splat"
+                                        : "from_lanes"
+                        )
                     ),
                     std::move(inputs)
                 );

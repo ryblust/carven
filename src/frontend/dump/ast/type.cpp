@@ -143,6 +143,18 @@ auto ASTDumper::render_cpp_source_fragment(
     );
 }
 
+auto ASTDumper::render_generic_argument(
+    const ASTGenericArgument& argument,
+    std::string_view prefix,
+    bool is_last
+) noexcept -> void {
+    if (const auto* type = std::get_if<ASTTypeID>(&argument.value)) {
+        render_type(*type, prefix, is_last);
+    } else {
+        render_throw_clause(std::get<ASTThrowClause>(argument.value), prefix, is_last);
+    }
+}
+
 auto ASTDumper::render_named_type_children(
     const ASTNamedType& named,
     std::string_view prefix,
@@ -170,8 +182,10 @@ auto ASTDumper::render_named_type_children(
             true,
             "arguments",
             named.arguments,
-            [&](ASTTypeID argument, std::string_view item_prefix, bool item_last) noexcept {
-                render_type(argument, item_prefix, item_last);
+            [&](const ASTGenericArgument& argument,
+                std::string_view item_prefix,
+                bool item_last) noexcept {
+                render_generic_argument(argument, item_prefix, item_last);
             }
         );
     }
@@ -271,6 +285,22 @@ auto ASTDumper::render_type_node(
                 const auto nested_prefix = child_prefix(prefix, is_last);
                 render_type(array.element_type, nested_prefix, false, "element ");
                 render_expression(array.extent, nested_prefix, true, "extent ");
+            },
+            [&](const ASTTupleType& tuple) noexcept {
+                append_line(
+                    prefix,
+                    is_last,
+                    std::format("{}TupleType {}", field, format_dump_span(type.span))
+                );
+                render_list(
+                    child_prefix(prefix, is_last),
+                    true,
+                    "elements",
+                    tuple.elements,
+                    [&](const ASTTypeID& element,
+                        std::string_view item_prefix,
+                        bool item_last) noexcept { render_type(element, item_prefix, item_last); }
+                );
             },
             [&](const ASTFunctionType& function) noexcept {
                 append_line(

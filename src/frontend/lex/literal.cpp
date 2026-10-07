@@ -28,6 +28,10 @@ constexpr auto numeric_suffix_catalog = std::to_array<NumericSuffixInfo>({
     {.spelling = "f64", .suffix = NumericSuffix::F64, .floating = true},
     {.spelling = "i8", .suffix = NumericSuffix::I8, .floating = false},
     {.spelling = "u8", .suffix = NumericSuffix::U8, .floating = false},
+    {.spelling = "ns", .suffix = NumericSuffix::Nanoseconds, .floating = false},
+    {.spelling = "us", .suffix = NumericSuffix::Microseconds, .floating = false},
+    {.spelling = "ms", .suffix = NumericSuffix::Milliseconds, .floating = false},
+    {.spelling = "s", .suffix = NumericSuffix::Seconds, .floating = false},
 });
 
 constexpr auto is_ascii_letter(char value) noexcept -> bool {

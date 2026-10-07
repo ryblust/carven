@@ -226,35 +226,40 @@ select(Value<Bytes> mask, Value<Bytes> yes, Value<Bytes> no) noexcept -> Value<B
     }
 }
 
-template<std::size_t Bytes>
-CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL lookup(Value<Bytes> table, Value<Bytes> indices) noexcept
-    -> Value<Bytes> {
-    if constexpr (Bytes == 16) {
-        const auto valid =
-            _mm_cmpeq_epi8(_mm_and_si128(indices, _mm_set1_epi8(-16)), _mm_setzero_si128());
-        return _mm_and_si128(_mm_shuffle_epi8(table, indices), valid);
-    } else {
-        // VPSHUFB addresses each 128-bit half separately. Broadcast both
-        // tables so every output lane can address the entire logical vector.
-        const auto low = _mm256_permute2x128_si256(table, table, 0x00);
-        const auto high = _mm256_permute2x128_si256(table, table, 0x11);
-        const auto upper = _mm256_cmpeq_epi8(
-            _mm256_and_si256(indices, _mm256_set1_epi8(16)),
-            _mm256_set1_epi8(16)
+template<std::size_t TableBytes, std::size_t IndexBytes>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL
+lookup(Value<TableBytes> table, Value<IndexBytes> indices) noexcept -> Value<IndexBytes> {
+    // Each 128-bit output half addresses the same table.
+    const auto shuffle = [indices](__m128i part) noexcept -> Value<IndexBytes> {
+        if constexpr (IndexBytes == 16) {
+            return _mm_shuffle_epi8(part, indices);
+        } else {
+            return _mm256_shuffle_epi8(_mm256_broadcastsi128_si256(part), indices);
+        }
+    };
+    const auto low = [&]() noexcept {
+        if constexpr (TableBytes == 16) {
+            return table;
+        } else {
+            return _mm256_castsi256_si128(table);
+        }
+    }();
+    auto selected = shuffle(low);
+    if constexpr (TableBytes == 32) {
+        const auto upper = equal_bytes<IndexBytes>(
+            bit_and<IndexBytes>(indices, splat_bytes<IndexBytes>(16)),
+            splat_bytes<IndexBytes>(16)
         );
-        const auto valid = _mm256_cmpeq_epi8(
-            _mm256_and_si256(indices, _mm256_set1_epi8(-32)),
-            _mm256_setzero_si256()
-        );
-        return _mm256_and_si256(
-            select<Bytes>(
-                upper,
-                _mm256_shuffle_epi8(high, indices),
-                _mm256_shuffle_epi8(low, indices)
-            ),
-            valid
-        );
+        selected = select<IndexBytes>(upper, shuffle(_mm256_extracti128_si256(table, 1)), selected);
     }
+    const auto valid = equal_bytes<IndexBytes>(
+        bit_and<IndexBytes>(
+            indices,
+            splat_bytes<IndexBytes>(static_cast<std::uint8_t>(-TableBytes))
+        ),
+        splat_bytes<IndexBytes>(0)
+    );
+    return bit_and<IndexBytes>(selected, valid);
 }
 
 // Word shifts need a per-byte mask to remove bits crossing byte lanes.
@@ -286,6 +291,13 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL bits(Value<Bytes> a) noexcept -> std::u
     }
 }
 
+template<std::size_t Bytes, bool Float>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL first_or(Value<Bytes> a, std::size_t fallback) noexcept
+    -> std::size_t {
+    const auto packed = bits<Bytes, Float>(a);
+    return packed == 0 ? fallback : static_cast<std::size_t>(std::countr_zero(packed));
+}
+
 template<std::size_t Bytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL any(Value<Bytes> a) noexcept -> bool {
     return bits<Bytes, false>(a) != 0;
@@ -299,6 +311,20 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL all(Value<Bytes> a) noexcept -> bool {
 template<std::size_t Bytes, bool Float>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL count(Value<Bytes> a) noexcept -> std::size_t {
     return static_cast<std::size_t>(std::popcount(bits<Bytes, Float>(a)));
+}
+
+template<std::size_t Bytes>
+CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL sum(Value<Bytes> a) noexcept -> std::size_t {
+    auto partial = _mm_setzero_si128();
+    if constexpr (Bytes == 16) {
+        partial = _mm_sad_epu8(a, _mm_setzero_si128());
+    } else {
+        const auto sums = _mm256_sad_epu8(a, _mm256_setzero_si256());
+        partial = _mm_add_epi64(_mm256_castsi256_si128(sums), _mm256_extracti128_si256(sums, 1));
+    }
+    return static_cast<std::size_t>(
+        _mm_cvtsi128_si32(_mm_add_epi64(partial, _mm_srli_si128(partial, 8)))
+    );
 }
 
 // Offset is a byte offset in 1..Bytes-1; the public layer handles both ends.

@@ -96,16 +96,16 @@ private fn native_failure() -> i32 throw PayloadFailure {
     throw PayloadFailure { payload: original };
 }
 
-test "Failure receivers: native failure transport preserves source and catch copies" {
+test "Failure receivers: native failure copies the source and borrows the caught payload" {
     reset();
     try {
         let _ = native_failure()?;
     } catch {
         PayloadFailure(error) => check(error.payload.get() == 6),
     }
-    // The first copy comes from the named source, the last from the catch binding.
-    // The carrier transfer and moved-from cleanup happen before that catch copy.
-    check(matches("c6 p6 m6 s-6 d6 m6 s-6 p6 r6 d6 d6 "));
+    // Failure construction copies the named source. The Read catch binding
+    // borrows the delivered payload through its final observation and cleanup.
+    check(matches("c6 p6 m6 s-6 d6 m6 s-6 r6 d6 "));
 }
 
 private fn self_result() -> Self throw Failure => Self {};

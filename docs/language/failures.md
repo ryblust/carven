@@ -6,6 +6,7 @@ This page defines typed failures, propagation, recovery, and payload lifetime.
 Native exceptions follow the separate [C++ exception boundary](interop.md#native-exception-boundary).
 
 - [Sets and callable contracts](#sets-and-callable-contracts)
+- [Failure-set parameters](#failure-set-parameters)
 - [Propagation and evaluation](#propagation-and-evaluation)
 - [Catch selection and remaining failures](#catch-selection-and-remaining-failures)
 - [Rethrow and payload lifetime](#rethrow-and-payload-lifetime)
@@ -14,11 +15,22 @@ Native exceptions follow the separate [C++ exception boundary](interop.md#native
 
 Carven models recoverable failure as a typed control effect represented to
 source users by callable failure contracts. Failure values are copyable nominal
-structures or enums. A failure contract denotes a closed set of types; member
-spelling order and declaration order do not affect it. An explicit clause may
-name each failure type only once; `throw E + E` is invalid. An explicit `throw`
-clause is an upper bound on a callable body. Module-private non-entry functions,
-implicit entries, and lambdas that omit it infer the least fixed-point failure
+structures or enums. A concrete failure contract denotes a closed set of types;
+member spelling order and declaration order do not affect it. An explicit clause
+may name each nominal failure type only once; `throw Error + Error` is invalid.
+`throw ()` declares the empty set. It is an explicit contract, rather than an
+omitted contract requesting inference. In a value or type position, `()` denotes
+the `void` unit instead; an empty failure set has no payload. `throw void` is
+invalid because `void` is not a nominal failure type. A callable may therefore
+return the unit value while declaring no failures:
+
+```carven
+fn finish() -> void throw () => ();
+```
+
+An explicit `throw` clause is an upper bound on a callable body. Module-private
+non-entry functions, implicit entries, and lambdas that omit it infer the least
+fixed-point failure
 set across forward calls, direct recursion, and mutual recursion. A published
 function—bare or exported—with a nonempty actual set must state an explicit
 `throw` contract;
@@ -28,9 +40,17 @@ declaration visibility. Tests must handle every failure and cannot expose a
 failure contract. Failure types in a published contract must be visible to that
 contract's audience.
 
+The same Copy requirement applies to function and callable failure clauses,
+`Operation<T, throw E>` members, thrown payloads, and typed catch alternatives.
+It is checked after nominal fields are complete, including nested fields and
+enum payloads. A nominal value that owns an `Operation` cannot be a failure
+payload. Empty arrays retain their ordinary Copy rule, and native C++ fields
+retain the existing delegated Copy boundary. Moving a payload into `throw`
+does not remove the requirement that its failure type be copyable.
+
 Calls use the callee's failure contract. An explicit contract determines the
 call's failure set even when the callee's body produces fewer failures:
-`fn source() throw E {}` still makes `source()` fallible with type `E`.
+`fn source() throw Error {}` still makes `source()` fallible with type `Error`.
 
 An immutable local initialized from a known function preserves that target
 through copies and view adaptation. Calling it uses the function's contract,
@@ -38,20 +58,60 @@ including any explicit `throw` clause on the function. A wider view type does
 not add failures to this known call. Calls through parameters, mutable views,
 or unresolved target selections use the view's contract.
 
+## Failure-set parameters
+
+A generic declaration can bind a scalar failure-set parameter with `throw E`.
+It represents a finite set of copyable nominal failure types, including the
+empty set. It is neither a payload type nor a value parameter. Type and
+failure-set arguments occupy distinct positions in the declaration:
+
+```carven
+async fn consume<T, throw E>(&&operation: Operation<T, throw E>) -> T throw E {
+    return (await operation)?;
+}
+```
+
+An explicit application can supply `throw Error + IO` or `throw ()` for `E`.
+A parameter can appear in a callable's `throw` clause or an Operation contract,
+alone or in a union such as `E + Error`. An application normalizes that union as
+a set: a member contributed by both `E` and `Error` appears once. Argument
+inference follows [Parameterized functions](functions.md#parameterized-functions).
+
+The definition must satisfy its failure contract for every admitted set assigned
+to each parameter. It cannot assume that `E` contains a particular type, that two
+independent parameters are equal, or that `E` is nonempty. Unmarked pending
+failures must be provably empty; propagated failures must be provably within the
+enclosing contract. A safe concrete application cannot validate an unsafe
+definition. These safety checks belong to the definition and are not repeated
+as new source checks in each instance.
+
+Typed catches still name nominal payload types. Catching all values of `Error`
+removes that type from the protected failure set, including when the set depends
+on `E`; unhandled members retain their parameter dependency. A payload cannot
+be constructed, thrown, or selected by naming `E` itself. Existing guard,
+rethrow, and payload-lifetime rules apply.
+
+A `?` whose operand has a parameter-dependent failure set is valid when that set
+can be nonempty. If a concrete application makes it empty, the operand still
+evaluates once and propagation has no failure to transfer. This does not admit
+`?` on an operand already proved infallible when the definition is checked.
+
 ## Propagation and evaluation
 
 A value with pending failures cannot be consumed where an ordinary completed
 value is required. Postfix `?` consumes the pending failures of its operand at
 that lexical position and transfers them to the nearest enclosing failure
 target. The operand may be a call or a composite expression whose selected
-evaluation path carries pending failures. Applying `?` to an infallible operand
-is invalid. `throw` transfers the supplied failure and does not complete
+evaluation path carries pending failures. Applying `?` to an operand whose
+failure set is proved empty is invalid, subject to the parameter-dependent rule
+above. `throw` transfers the supplied failure and does not complete
 normally.
 
-The nonempty requirement for `?` is checked against the solved failure set.
-For `private fn source() {}`, `source()?` is invalid because the inferred set
-is empty; the call is written `source()`. This also applies when a body change
-makes a previously fallible private function infallible.
+For an ordinary concrete operand, the nonempty requirement for `?` is checked
+against the solved failure set. For `private fn source() {}`, `source()?` is invalid
+because the inferred set is empty; the call is written `source()`. This also
+applies when a body change makes a previously fallible private function
+infallible.
 
 Pending failures describe static expression composition. Evaluation stops at
 the first failure: in `(first() + second())?`, a failure from `first()` skips

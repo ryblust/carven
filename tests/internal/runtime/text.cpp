@@ -1,5 +1,5 @@
 module;
-#include <carven/runtime/text.hpp>
+#include <carven/runtime/text/text.hpp>
 
 module carven:test.internal.runtime.text;
 

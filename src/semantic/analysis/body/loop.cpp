@@ -177,18 +177,23 @@ auto BodyElaborator::range_for_statement(
             co_return std::unexpected(value.error());
         }
         auto read_only = false;
-        auto integer_range = false;
+        auto static_iterable = false;
         if (const auto* type = std::get_if<TypeID>(&value->type())) {
             const auto canonical = draft().type_copy(*type);
             if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
                 element_type = array->element;
+                static_iterable = true;
+            } else if (const auto* sequence =
+                           std::get_if<OwnedSequenceTypeValue>(&canonical.value)) {
+                element_type = sequence->element;
             } else if (const auto* range = std::get_if<RangeTypeValue>(&canonical.value)) {
                 element_type = range->element;
                 read_only = true;
-                integer_range = true;
+                static_iterable = true;
             } else if (const auto* slice = std::get_if<SliceTypeValue>(&canonical.value)) {
                 element_type = slice->element;
                 read_only = true;
+                static_iterable = true;
             } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value);
                        builtin != nullptr && builtin->kind == BuiltinType::StrCharsView) {
                 read_only = true;
@@ -199,17 +204,26 @@ auto BodyElaborator::range_for_statement(
                 draft().construction_type_copy(std::get<TypeTermID>(value->type()));
             if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
                 element_type = array->element;
+                static_iterable = true;
             } else if (const auto* slice =
                            std::get_if<ConstructionSliceTypeValue>(&construction.value)) {
                 element_type = slice->element;
                 read_only = true;
+                static_iterable = true;
             }
         }
         if (!element_type.has_value()) {
             co_return std::unexpected(fail(
                 ast.expression(id).span,
                 DiagnosticCode::TypeRangeIterable,
-                "range iterable must be an integer range, array, slice, or character view"
+                "range iterable must be an integer range, array, slice, Sequence, or character view"
+            ));
+        }
+        if (source.const_span && (!static_iterable || header.write_marker.has_value())) {
+            co_return std::unexpected(fail(
+                *source.const_span,
+                DiagnosticCode::ConstAdmission,
+                "const for requires a Read integer range, array, or slice"
             ));
         }
         if (header.write_marker.has_value()) {
@@ -226,6 +240,7 @@ auto BodyElaborator::range_for_statement(
                 for (const auto& [name, local] : frame.names) {
                     static_cast<void>(name);
                     stable |= place != nullptr
+                        && place->access == AccessMode::Write
                         && local.storage.binding == place->root
                         && std::holds_alternative<SemBinding>(place->expression.value);
                 }
@@ -234,7 +249,7 @@ auto BodyElaborator::range_for_statement(
                 co_return std::unexpected(fail(
                     ast.expression(id).span,
                     DiagnosticCode::AccessRangeIterable,
-                    "Write array iteration requires a stable whole local array place"
+                    "Write iteration requires a writable stable whole local owner place"
                 ));
             }
         } else {
@@ -246,15 +261,6 @@ auto BodyElaborator::range_for_statement(
         }
         if (header.write_marker.has_value()) {
             iterable = take_built(*value, ast.expression(id).span);
-        }
-        if (source.const_span) {
-            if (!integer_range || header.write_marker.has_value()) {
-                co_return std::unexpected(fail(
-                    *source.const_span,
-                    DiagnosticCode::ConstAdmission,
-                    "const for requires a Read integer range"
-                ));
-            }
         }
     }
     if (declared.has_value() && !compatible(*declared, *element_type)) {
@@ -270,31 +276,47 @@ auto BodyElaborator::range_for_statement(
     const auto type = declared ? *declared : *element_type;
     auto binding = std::optional<LocalBindingID>();
     push_frame(((ast.block(source.body))).span);
-    if (const auto* named = std::get_if<ASTNamedBindingTarget>(&header.target)) {
+    if (!std::holds_alternative<ASTDiscardBindingTarget>(header.target)) {
+        const auto* named = std::get_if<ASTNamedBindingTarget>(&header.target);
         const auto storage = body_builder.add_owner_binding(
-            draft().intern_spelling(spelling(named->name_span)),
+            draft().intern_spelling(named ? spelling(named->name_span) : "$tuple"),
             type,
             frames.back().lifetime,
             header.write_marker.has_value(),
-            origin(named->name_span)
+            origin(binding_target_span(header.target))
         );
         binding = storage.binding;
-        auto bound = bind_local(
-            named->name_span,
-            BodyLocalStorage {
-                .storage = storage,
-                .type = type,
-                .used = false,
-                .takeable = false,
-                .static_source = source.const_span.has_value(),
-                .role = header.write_marker.has_value() ? BodyLocalRole::Local
-                                                        : BodyLocalRole::RangeRead,
-                .unused_candidate = std::nullopt
-            },
-            DiagnosticCode::NameDuplicateLocal
-        );
-        if (!bound.has_value()) {
-            co_return std::unexpected(bound.error());
+        if (!named) {
+            auto bound = bind_tuple_target(
+                header.target,
+                storage,
+                type,
+                header.write_marker ? BodyLocalRole::Local : BodyLocalRole::RangeRead,
+                source.const_span.has_value(),
+                false
+            );
+            if (!bound) {
+                co_return std::unexpected(bound.error());
+            }
+        } else {
+            auto bound = bind_local(
+                named->name_span,
+                BodyLocalStorage {
+                    .storage = storage,
+                    .type = type,
+                    .used = false,
+                    .takeable = false,
+                    .static_source = source.const_span.has_value(),
+                    .role = header.write_marker.has_value() ? BodyLocalRole::Local
+                                                            : BodyLocalRole::RangeRead,
+                    .unused_candidate = std::nullopt,
+                    .projection = {}
+                },
+                DiagnosticCode::NameDuplicateLocal
+            );
+            if (!bound.has_value()) {
+                co_return std::unexpected(bound.error());
+            }
         }
     }
     regions.push_back(empty_region(((ast.block(source.body))).span));
@@ -356,6 +378,7 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisTask<void> {
             [](const ASTAssignment&) static noexcept { return true; },
             [](const ASTUpdate&) static noexcept { return true; },
             [](const ASTExprStatement&) static noexcept { return true; },
+            [](const ASTCancelStmt&) static noexcept { return true; },
             [](const ASTControlTransfer&) static noexcept { return true; },
             [](const ASTMatchForm&) static noexcept { return true; },
             [](const ASTTryForm&) static noexcept { return true; },
@@ -375,6 +398,9 @@ auto BodyElaborator::statement(ASTStmtID id) noexcept -> AnalysisTask<void> {
             [&](const ASTVariableDecl& value) noexcept { return variable_statement(value); },
             [&](const ASTAssignment& value) noexcept { return assignment_statement(value); },
             [&](const ASTUpdate& value) noexcept { return update_statement(value); },
+            [&](const ASTCancelStmt& value) noexcept {
+                return cancel_statement(value, source.span);
+            },
             [&](const ASTExprStatement& value) noexcept -> AnalysisTask<void> {
                 auto built = (co_await expression(value.expression));
                 if (!built.has_value()) {

@@ -15,6 +15,8 @@ auto default_initialization(const SemIRProgram& program, TypeID type) noexcept
             }
             return program.types().type(*concrete);
         },
-        [&](StructID structure) noexcept { return program.declarations().structure(structure); }
+        [&](ConstructionTypeRef, StructTypeValue shape) noexcept {
+            return program.declarations().structure(shape.structure);
+        }
     );
 }

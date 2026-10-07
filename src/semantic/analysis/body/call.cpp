@@ -15,9 +15,11 @@ import :semantic.analysis.body.context;
 import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.coverage;
+import :semantic.analysis.expr.async;
 import :semantic.analysis.expr.interpret;
 import :semantic.analysis.expr.operand;
 import :semantic.analysis.expr.scope;
+import :semantic.analysis.names;
 import :semantic.analysis.operations;
 import :semantic.analysis.types.display;
 import :semantic.analysis.types;
@@ -33,43 +35,8 @@ import std;
 
 auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noexcept
     -> AnalysisResult<ConstructionCallableContract> {
-    if (const auto* concrete = std::get_if<TypeID>(&type)) {
-        const auto canonical = draft().type_copy(*concrete);
-        auto callable = std::optional<CallableID>();
-        canonical.value.visit(
-            Overloaded {
-                [&](const FunctionTypeValue& value) noexcept { callable = value.callable; },
-                [&](const ClosureTypeValue& value) noexcept { callable = value.callable; },
-                []<typename Value>(const Value&) static noexcept {
-                    static_assert(
-                        std::same_as<Value, BuiltinTypeValue>
-                            || std::same_as<Value, StructTypeValue>
-                            || std::same_as<Value, EnumTypeValue>
-                            || std::same_as<Value, ArrayTypeValue>
-                            || std::same_as<Value, CallableViewTypeValue>
-                            || std::same_as<Value, CppTypeValue>
-                            || std::same_as<Value, PointerTypeValue>
-                            || std::same_as<Value, SliceTypeValue>
-                            || std::same_as<Value, RangeTypeValue>,
-                        "unhandled non-owning callable type"
-                    );
-                },
-            }
-        );
-        if (callable.has_value()) {
-            return draft().construction_callable_contract_copy(*callable);
-        }
-    } else {
-        const auto construction = draft().construction_type_copy(std::get<TypeTermID>(type));
-        if (const auto* view =
-                std::get_if<ConstructionCallableViewTypeValue>(&construction.value)) {
-            return ConstructionCallableContract {
-                .parameters = view->parameters,
-                .result = view->result,
-                .failures = view->failures,
-                .policy = FailureContractPolicy::Declared,
-            };
-        }
+    if (auto contract = draft().callable_contract(type)) {
+        return std::move(*contract);
     }
     return std::unexpected(
         fail(span, DiagnosticCode::TypeNotCallable, "expression is not callable")
@@ -167,9 +134,29 @@ auto BodyElaborator::bind_call_argument(
         }
         *built.storage = std::move(*taken);
     }
+    if (access_mode == AccessMode::Read
+        && (built.type() == type || (!is_cpp_type(built.type()) && !is_cpp_type(type)))) {
+        if (auto* place = std::get_if<PlaceExpression>(&*built.storage);
+            place && try_require_invariant_type(built.type(), type, span)) {
+            return BuiltCallArgument {
+                .argument = {AccessMode::Read, std::move(place->expression)},
+                .pending_failures = std::move(pending_failures),
+                .completes = built.completes,
+            };
+        }
+    }
     auto coerced = coerce_to(built, type, span);
     if (!coerced.has_value()) {
         return std::unexpected(coerced.error());
+    }
+    if (access_mode == AccessMode::Read) {
+        if (auto* place = std::get_if<PlaceExpression>(&*built.storage)) {
+            return BuiltCallArgument {
+                .argument = {AccessMode::Read, std::move(place->expression)},
+                .pending_failures = std::move(pending_failures),
+                .completes = built.completes,
+            };
+        }
     }
     auto value = consume_value(built, span, AccessMode::Read);
     if (!value.has_value()) {
@@ -200,6 +187,39 @@ auto BodyElaborator::call_expression(
     std::optional<SelectedExpression> prepared_callee,
     std::optional<BuiltExpression> receiver
 ) noexcept -> AnalysisTask<BuiltExpression> {
+    auto generic_callee = source.callee;
+    while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(generic_callee).value)) {
+        generic_callee = group->expression;
+    }
+    const auto* application =
+        std::get_if<ASTTypeApplicationExpr>(&ast.expression(generic_callee).value);
+    if (application) {
+        generic_callee = application->operand_id;
+    }
+    if (const auto* name = std::get_if<ASTNameExpr>(&ast.expression(generic_callee).value)) {
+        const auto text = spelling(name->name_span);
+        if (!prepared_callee
+            && !receiver
+            && find_local(text) == nullptr
+            && !catalog().lookup(source_module_id, text).empty()) {
+            auto selected = co_await find_global(text, name->name_span);
+            if (!selected) {
+                co_return std::unexpected(selected.error());
+            }
+            if (const auto* generic = std::get_if<CatalogGenericForm>(&(*selected)->form)) {
+                const auto declaration = draft().generic_declaration_copy(generic->definition);
+                if (std::holds_alternative<GenericFunctionDefinition>(declaration)) {
+                    co_return co_await generic_call_expression(
+                        source,
+                        generic->definition,
+                        application ? std::span<const ASTGenericArgument>(application->arguments)
+                                    : std::span<const ASTGenericArgument>(),
+                        span
+                    );
+                }
+            }
+        }
+    }
     const auto& callee_source = ast.expression(source.callee);
     if (const auto* name = std::get_if<ASTNameExpr>(&callee_source.value)) {
         const auto text = spelling(name->name_span);
@@ -236,6 +256,32 @@ auto BodyElaborator::call_expression(
     if (!selected_callee.has_value()) {
         co_return std::unexpected(selected_callee.error());
     }
+    if (const auto* composition = std::get_if<CompositionSelection>(&*selected_callee)) {
+        auto site = BodyExprSite(*this);
+        co_return require_body_expression(
+            co_await construct_async_composition(site, source, composition->policy, span)
+        );
+    }
+    if (const auto* timeout = std::get_if<TimeoutSelection>(&*selected_callee)) {
+        auto site = BodyExprSite(*this);
+        co_return require_body_expression(
+            co_await construct_async_timeout(site, source, timeout->contract, span)
+        );
+    }
+    if (const auto* intrinsic = std::get_if<AsyncIntrinsicSelection>(&*selected_callee)) {
+        if (receiver) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::AsyncAdmission,
+                "async intrinsic requires a resolved direct call"
+            ));
+        }
+        auto site = BodyExprSite(*this);
+        co_return require_body_expression(
+            construct_async_intrinsic(site, source, intrinsic->kind, span)
+        );
+    }
+
     if (auto* builtin = std::get_if<BuiltinSelection>(&*selected_callee)) {
         builtin->span = span;
         if (builtin->function == BuiltinFunction::Addressof) {
@@ -246,7 +292,7 @@ auto BodyElaborator::call_expression(
                     "addressof requires exactly one argument"
                 ));
             }
-            const auto argument_id = source.arguments.front().expression;
+            const auto argument_id = source.arguments.front();
             const auto selected = call_argument_operand(ast, argument_id);
             if (selected.access == AccessMode::Take) {
                 co_return std::unexpected(fail(
@@ -271,23 +317,17 @@ auto BodyElaborator::call_expression(
                     "addressof Write requires writable storage"
                 ));
             }
-            const auto* target = std::get_if<TypeID>(&place->expression.type.construction());
-            if (target == nullptr) {
-                co_return std::unexpected(fail(
-                    ast.expression(argument_id).span,
-                    DiagnosticCode::TypeUnresolved,
-                    "addressof target requires a concrete type"
-                ));
-            }
-            const auto pointer = draft().intern_type(
-                {.value = PointerTypeValue {
-                     .target = *target,
-                     .access = selected.access == AccessMode::Write ? PointerAccess::Write
-                                                                    : PointerAccess::Read
-                 }}
+            const auto pointer = make_pointer_type(
+                draft(),
+                place->expression.type.construction(),
+                selected.access == AccessMode::Write ? PointerAccess::Write : PointerAccess::Read,
+                origin(ast.expression(argument_id).span)
             );
+            if (!pointer) {
+                co_return std::unexpected(pointer.error());
+            }
             auto result = make_built(
-                pointer,
+                *pointer,
                 SemAddressOf {.source = UniqueIndirect(std::move(place->expression))},
                 span,
                 std::move(pending)
@@ -298,7 +338,7 @@ auto BodyElaborator::call_expression(
         auto argument_spans = std::vector<Span>();
         auto arguments = std::vector<SemCallArgument>();
         auto parameters = std::vector<ConstructionCallableParameter>();
-        auto pending = BodyPendingFailureTerms();
+        auto pending = BodyPendingFailures();
         auto completes = true;
         auto report_condition_completes = true;
         const auto conditional_report = builtin->function == BuiltinFunction::Assert
@@ -308,12 +348,9 @@ auto BodyElaborator::call_expression(
             const auto condition = arguments.empty() && conditional_report;
             if (condition) {
                 builtin->condition_source = draft().intern_spelling(
-                    draft().source_slice_copy(
-                        source_module_id,
-                        ast.expression(argument.expression).span
-                    )
+                    draft().source_slice_copy(source_module_id, ast.expression(argument).span)
                 );
-                auto condition_id = argument.expression;
+                auto condition_id = argument;
                 while (const auto* group =
                            std::get_if<ASTGroupExpr>(&ast.expression(condition_id).value)) {
                     condition_id = group->expression;
@@ -329,10 +366,10 @@ auto BodyElaborator::call_expression(
                         std::array {capture(binary->left), capture(binary->right)};
                 }
             }
-            const auto argument_span = ast.expression(argument.expression).span;
+            const auto argument_span = ast.expression(argument).span;
             argument_spans.push_back(argument_span);
             auto built = (co_await build_call_argument(
-                argument.expression,
+                argument,
                 AccessMode::Read,
                 condition
                     ? std::optional<ConstructionTypeRef>(draft().builtin_type(BuiltinType::Bool))
@@ -443,7 +480,7 @@ auto BodyElaborator::call_expression(
     }
     for (auto index = 0uz; index < source.arguments.size(); ++index) {
         auto argument = (co_await build_call_argument(
-            source.arguments[index].expression,
+            source.arguments[index],
             contract->parameters[index + offset].access,
             contract->parameters[index + offset].type,
             std::nullopt,
@@ -471,7 +508,39 @@ auto BodyElaborator::call_expression(
     }
     const auto failures =
         target ? draft().construction_callable_contract_copy(*target).failures : contract->failures;
-    append_pending_failures(pending_failures, BodyPendingFailureTerms {failures});
+    if (contract->execution == CallableExecutionKind::Async) {
+        if (!target || receiver) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::AsyncAdmission,
+                "cold async construction requires a directly resolved async fn"
+            ));
+        }
+        if (static_stage()) {
+            const auto function = draft().function_for_callable(*target);
+            if (!function || !draft().function_declaration_copy(*function).is_const) {
+                co_return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::ConstAdmission,
+                    "compile-time construction requires an explicitly declared const async fn"
+                ));
+            }
+        }
+        const auto operation = make_operation_type(draft(), contract->result, failures);
+        auto result = make_built(
+            operation,
+            SemColdCall {
+                .callee = UniqueIndirect(std::move(*callee_operand)),
+                .target = *target,
+                .arguments = std::move(arguments)
+            },
+            span,
+            std::move(pending_failures)
+        );
+        result.completes = completes;
+        co_return result;
+    }
+    append_pending_failures(pending_failures, BodyPendingFailures {failures});
     auto result = active_builder().make_expression(
         contract->result,
         active_builder().lifetime(),
@@ -498,49 +567,32 @@ auto BodyElaborator::class_operation(
     bool receiver,
     Span span
 ) noexcept -> AnalysisTask<BuiltExpression> {
-    const auto* symbol = catalog().symbol(catalog().struct_symbol(owner));
-    const auto& form = std::get<CatalogStructForm>(symbol->form);
-    for (const auto function : form.operations) {
-        const auto* selected = catalog().symbol(catalog().function_symbol(function));
-        if (selected->name != name) {
-            continue;
-        }
-        const auto operation = *selected->class_operation;
-        if (operation.visibility == MemberVisibility::Private && lexical_class != owner) {
-            co_return std::unexpected(fail(
-                span,
-                DiagnosticCode::AccessClassPrivate,
-                "private operation is accessible only inside its defining class"
-            ));
-        }
-        if (operation.receiver != receiver) {
-            co_return std::unexpected(fail(
-                span,
-                DiagnosticCode::TypeMethodCall,
-                operation.receiver ? "instance operation requires a receiver"
-                                   : "associated operation requires Type::name"
-            ));
-        }
-        auto ready = (co_await batch->ensure_function_signature(function, source_module_id, span));
-        if (!ready) {
-            co_return std::unexpected(ready.error());
-        }
-        const auto declaration = draft().function_declaration_copy(function);
-        auto callee = BuiltExpression {
-            .storage = UniqueIndirect {BodyExpressionStorage {
-                active_builder().callable_expression(declaration.callable, origin(span))
-            }},
-            .pending_failures = {},
-            .takeable = false,
-            .completes = true
-        };
-        co_return callee;
+    const auto function = lookup_class_operation(
+        draft(),
+        catalog(),
+        source_module_id,
+        owner,
+        lexical_class,
+        name,
+        receiver,
+        span
+    );
+    if (!function) {
+        co_return std::unexpected(function.error());
     }
-    co_return std::unexpected(fail(
-        span,
-        DiagnosticCode::TypeMemberUnresolved,
-        std::format("class has no operation named '{}'", name)
-    ));
+    auto ready = co_await batch->ensure_function_signature(*function, source_module_id, span);
+    if (!ready) {
+        co_return std::unexpected(ready.error());
+    }
+    const auto declaration = draft().function_declaration_copy(*function);
+    co_return BuiltExpression {
+        .storage = UniqueIndirect {BodyExpressionStorage {
+            active_builder().callable_expression(declaration.callable, origin(span))
+        }},
+        .pending_failures = {},
+        .takeable = false,
+        .completes = true
+    };
 }
 
 auto BodyElaborator::class_call(
@@ -565,4 +617,230 @@ auto BodyElaborator::class_call(
         SelectedExpression(std::move(*callee)),
         std::move(receiver)
     ));
+}
+
+auto BodyElaborator::generic_call_expression(
+    const ASTCallExpr& source,
+    GenericDeclarationID definition,
+    std::span<const ASTGenericArgument> supplied,
+    Span span
+) noexcept -> AnalysisTask<BuiltExpression> {
+    auto checked = co_await batch->ensure_generic_function(definition, source_module_id, span);
+    if (!checked) {
+        co_return std::unexpected(checked.error());
+    }
+    const auto function =
+        std::get<GenericFunctionDefinition>(draft().generic_declaration_copy(definition));
+    if (source.arguments.size() != function.signature.parameters.size()) {
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::TypeCallArity,
+            "generic call argument count differs from its declaration"
+        ));
+    }
+    const auto count = function.contract.parameters.size();
+    auto inferred = std::vector<std::optional<GenericArgument>>(count);
+    auto explicit_environment = GenericEnvironment();
+    auto explicit_canonical = CanonicalGenericEnvironment();
+    if (!supplied.empty()) {
+        auto site = BodyExprSite(*this);
+        auto resolved =
+            co_await site.resolve_generic_arguments(supplied, function.contract.parameter_kinds);
+        if (!resolved) {
+            co_return std::unexpected(resolved.error());
+        }
+        explicit_environment = std::move(*resolved);
+        for (auto i = 0uz; i < count; ++i) {
+            inferred[i] = explicit_environment[i];
+        }
+        const auto proof = draft().preview_failures();
+        if (!proof) {
+            co_return std::unexpected(proof.error());
+        }
+        if (const auto canonical =
+                draft().normalize_generic_environment(explicit_environment, *proof)) {
+            explicit_canonical = *canonical;
+        }
+    }
+    auto explicit_effects = draft().make_failure_instantiation(definition, explicit_environment);
+    auto built = std::vector<BuiltExpression>();
+    auto spans = std::vector<Span>();
+    for (auto i = 0uz; i < source.arguments.size(); ++i) {
+        const auto id = source.arguments[i];
+        const auto operand = call_argument_operand(ast, id);
+        const auto& parameter = function.signature.parameters[i];
+        if (operand.access != parameter.access) {
+            co_return std::unexpected(fail(
+                ast.expression(id).span,
+                DiagnosticCode::AccessCallMismatch,
+                "argument access marker differs from the generic parameter"
+            ));
+        }
+        auto expected = std::optional<ConstructionTypeRef>();
+        if (!supplied.empty()) {
+            if (explicit_canonical.size() == count) {
+                auto resolved = draft().substitute_function_type(
+                    parameter.type,
+                    definition,
+                    explicit_canonical,
+                    origin(span),
+                    &explicit_effects
+                );
+                if (!resolved) {
+                    co_return std::unexpected(resolved.error());
+                }
+                expected = *resolved;
+            } else {
+                expected = draft().substitute_generic_type(
+                    parameter.type,
+                    definition,
+                    explicit_environment,
+                    &explicit_effects
+                );
+            }
+        } else if (std::holds_alternative<TypeID>(parameter.type)) {
+            expected = parameter.type;
+        }
+        auto value = co_await expression(operand.expression, expected);
+        if (!value) {
+            co_return std::unexpected(value.error());
+        }
+        if (const auto* formal = std::get_if<GenericTypeID>(&parameter.type);
+            formal && supplied.empty()) {
+            if (!draft().infer_generic_argument(
+                    *formal,
+                    value->type(),
+                    definition,
+                    inferred,
+                    origin(ast.expression(id).span)
+                )) {
+                co_return std::unexpected(fail(
+                    ast.expression(id).span,
+                    DiagnosticCode::TypeGenericArguments,
+                    "call arguments do not determine a consistent generic type environment"
+                ));
+            }
+        } else if (supplied.empty()
+                   && !std::holds_alternative<GenericTypeID>(parameter.type)
+                   && !compatible(value->type(), parameter.type)) {
+            co_return std::unexpected(fail(
+                ast.expression(id).span,
+                DiagnosticCode::TypeMismatch,
+                "generic call argument differs from its parameter type"
+            ));
+        }
+        built.push_back(std::move(*value));
+        spans.push_back(ast.expression(id).span);
+    }
+    auto arguments = GenericEnvironment();
+    for (const auto& argument : inferred) {
+        if (!argument) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::TypeGenericArguments,
+                "generic parameter cannot be inferred from this call; supply explicit arguments"
+            ));
+        }
+        arguments.push_back(*argument);
+    }
+    const auto proof = draft().preview_failures();
+    if (!proof) {
+        co_return std::unexpected(proof.error());
+    }
+    const auto canonical = draft().normalize_generic_environment(arguments, *proof);
+    const auto all_concrete = canonical.has_value();
+    const auto concrete = canonical.value_or(CanonicalGenericEnvironment());
+    auto formed = draft().check_generic_type_formations(definition, arguments, origin(span));
+    if (!formed) {
+        co_return std::unexpected(formed.error());
+    }
+    auto effects = draft().make_failure_instantiation(definition, arguments);
+    auto contract = function.signature;
+    for (auto& parameter : contract.parameters) {
+        parameter.type =
+            draft().substitute_generic_type(parameter.type, definition, arguments, &effects);
+    }
+    contract.result =
+        draft().substitute_generic_type(contract.result, definition, arguments, &effects);
+    contract.failures = effects.substitute(contract.failures);
+    auto resolved_target = std::optional<CallableID>();
+    if (all_concrete && !generic_context) {
+        auto target = draft().instantiate_generic_function(definition, concrete, origin(span));
+        if (!target) {
+            co_return std::unexpected(target.error());
+        }
+        resolved_target = *target;
+        contract = draft().construction_callable_contract_copy(*target);
+    }
+    auto operands = std::vector<SemCallArgument>();
+    auto pending = BodyPendingFailures();
+    auto completes = true;
+    for (auto i = 0uz; i < built.size(); ++i) {
+        auto bound = bind_call_argument(
+            std::move(built[i]),
+            contract.parameters[i].access,
+            contract.parameters[i].type,
+            spans[i],
+            std::nullopt
+        );
+        if (!bound) {
+            co_return std::unexpected(bound.error());
+        }
+        append_pending_failures(pending, bound->pending_failures);
+        completes &= bound->completes;
+        operands.push_back(std::move(bound->argument));
+    }
+    if (!resolved_target) {
+        auto result_type = contract.result;
+        auto failures = contract.failures;
+        if (contract.execution == CallableExecutionKind::Async) {
+            result_type = make_operation_type(draft(), contract.result, failures);
+        } else {
+            append_pending_failures(pending, BodyPendingFailures {failures});
+        }
+        auto result = make_built(
+            result_type,
+            SemGenericCall {
+                definition,
+                std::move(arguments),
+                std::move(operands),
+                BodyFailures(
+                    contract.execution == CallableExecutionKind::Async
+                        ? ConstructionFailureRef(draft().intern_failure_set({}))
+                        : failures
+                )
+            },
+            span,
+            std::move(pending)
+        );
+        result.completes = completes;
+        co_return result;
+    }
+    const auto target = resolved_target;
+    auto callee = active_builder().callable_expression(*target, origin(span));
+    if (contract.execution == CallableExecutionKind::Async) {
+        const auto operation = make_operation_type(draft(), contract.result, contract.failures);
+        auto result = make_built(
+            operation,
+            SemColdCall {OwnedSemanticExpression(std::move(callee)), *target, std::move(operands)},
+            span,
+            std::move(pending)
+        );
+        result.completes = completes;
+        co_return result;
+    }
+    append_pending_failures(pending, BodyPendingFailures {contract.failures});
+    auto result = make_built(
+        contract.result,
+        SemCall {
+            OwnedSemanticExpression(std::move(callee)),
+            *target,
+            std::move(operands),
+            BodyFailures(contract.failures)
+        },
+        span,
+        std::move(pending)
+    );
+    result.completes = completes;
+    co_return result;
 }

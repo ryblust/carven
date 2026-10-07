@@ -1,0 +1,34 @@
+import .duration using { Duration, RangeError, checked_add_nanoseconds };
+import "carven/std/time/native.hpp";
+
+private import(cpp) fn carven_time_now_nanoseconds() -> i64;
+private import(cpp) async fn carven_time_wait_until_nanoseconds(deadline_nanoseconds: i64);
+
+export class TimePoint {
+    nanoseconds_since_epoch: i64,
+
+    fn now() -> TimePoint => { nanoseconds_since_epoch: carven_time_now_nanoseconds() };
+
+    fn after(duration: Duration) -> TimePoint throw RangeError => {
+        nanoseconds_since_epoch: checked_add_nanoseconds(
+            carven_time_now_nanoseconds(),
+            duration.nanoseconds
+        )?
+    };
+
+    const fn shifted(self, duration: Duration) -> TimePoint throw RangeError => {
+        nanoseconds_since_epoch: checked_add_nanoseconds(
+            self.nanoseconds_since_epoch,
+            duration.nanoseconds
+        )?
+    };
+
+    const fn is_before(self, other: TimePoint) -> bool => self.nanoseconds_since_epoch
+        < other.nanoseconds_since_epoch;
+
+    fn has_passed(self) -> bool => self.nanoseconds_since_epoch <= carven_time_now_nanoseconds();
+
+    fn wait(self) -> Operation<void> => carven_time_wait_until_nanoseconds(
+        self.nanoseconds_since_epoch
+    );
+}

@@ -4,8 +4,8 @@ import :frontend.ast.tree;
 import :frontend.dump.ast;
 import :frontend.dump.text;
 import :frontend.dump.tokens;
-import :frontend.lex;
 import :frontend.lex.token;
+import :frontend.lex;
 import :frontend.parse;
 import :source.manager;
 import :source.text;
@@ -26,6 +26,55 @@ auto dump_source(std::string origin, std::string text) noexcept -> DumpSource {
 }
 
 const TestSuite suite([] static noexcept {
+    "Syntax dump: tuple access patterns and parameter targets expose their children"_test =
+        [] static noexcept {
+            const auto owned = dump_source(
+                "main.cv",
+                "fn f((a, b): (i32, i32)) { let callback = []((c, d)) => c; for (e, f) in values {} match value.0.1 { (x, ()) => x } }"
+            );
+            const auto lexical = lex(owned.sources.view(owned.source_id));
+            if (!expect(lexical.diagnostics.empty())) {
+                return;
+            }
+            const auto parsed = parse(owned.sources, lexical.value);
+            if (!expect(parsed.has_value())) {
+                return;
+            }
+            const auto output = render_ast_dump(owned.sources, *parsed);
+            expect(output.contains("TupleElementExpression"));
+            expect(output.contains("index 0"));
+            expect(output.contains("index 1"));
+            expect(output.contains("index spelling"));
+            expect(output.contains("TuplePattern"));
+            expect(output.contains("FunctionParameter"));
+            expect(output.contains("LambdaParameter"));
+            expect(output.contains("TupleBindingTarget"));
+            expect(output.contains("elements (0)"));
+        };
+
+    "Syntax dump: tuple types values and bindings expose ordered children"_test =
+        [] static noexcept {
+            const auto owned = dump_source(
+                "main.cv",
+                "fn f() { let (a, (_, b)): (i32, ((), bool)) = (1, ((), true)); }"
+            );
+            const auto lexical = lex(owned.sources.view(owned.source_id));
+            if (!expect(lexical.diagnostics.empty())) {
+                return;
+            }
+            const auto parsed = parse(owned.sources, lexical.value);
+            if (!expect(parsed.has_value())) {
+                return;
+            }
+            const auto output = render_ast_dump(owned.sources, *parsed);
+            expect(output.contains("TupleBindingTarget"));
+            expect(output.contains("TupleType"));
+            expect(output.contains("TupleExpression"));
+            expect(output.contains("discard"));
+            expect(output.find("TupleBindingTarget") < output.find("TupleType"));
+            expect(output.find("TupleType") < output.find("TupleExpression"));
+        };
+
     "Syntax dump: token output exposes ordered tokens and ranges"_test = [] static noexcept {
         const auto owned = dump_source("main.cv", "fn main() {}");
         const auto source = owned.sources.view(owned.source_id);
@@ -203,6 +252,27 @@ const TestSuite suite([] static noexcept {
 )DUMP")
         );
     };
+
+    "Syntax dump: generic parameters and applications retain structural identity"_test =
+        [] static noexcept {
+            const auto owned = dump_source(
+                "main.cv",
+                "struct Box<T> { value: T } fn use() { Box<i32>::create(1); }"
+            );
+            const auto lexical = lex(owned.sources.view(owned.source_id));
+            if (!expect(lexical.diagnostics.empty())) {
+                return;
+            }
+            const auto parsed = parse(owned.sources, lexical.value);
+            if (!expect(parsed.has_value())) {
+                return;
+            }
+            const auto output = render_ast_dump(owned.sources, *parsed);
+            expect(output.contains("type_parameters (1)"));
+            expect(output.contains("TypeApplicationExpression"));
+            expect(output.contains("type_arguments (1)"));
+            expect(output.contains("MemberExpression"));
+        };
 });
 
 } // namespace
