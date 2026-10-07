@@ -1,0 +1,15 @@
+import std::async using { cancellation_requested, yield_once };
+
+private struct EntryFailure {}
+
+private async fn finish_during_close() {
+    await yield_once();
+    eprintln("child cancellation requested:", cancellation_requested());
+    eprintln("child closed");
+}
+
+private async fn main() throw EntryFailure {
+    async let child = finish_during_close();
+    eprintln("root failure selected");
+    throw EntryFailure {};
+}

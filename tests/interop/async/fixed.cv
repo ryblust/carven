@@ -1,0 +1,50 @@
+import "async/fixed.hpp";
+
+// These declarations publish scalar native results to source analysis without
+// inferring a borrowing contract from an opaque C++ expression result.
+import(cpp) fn make_fixed() -> ::Fixed;
+import(cpp) fn fixed_created() -> i32;
+import(cpp) fn fixed_destroyed() -> i32;
+import(cpp) fn fixed_live() -> i32;
+import(cpp) fn fixed_trace() -> i32;
+import(cpp) fn fixed_identity_stable() -> i32;
+
+private struct ParentFailure {}
+
+private async fn fixed() -> ::Fixed => make_fixed();
+
+private async fn forward() -> ::Fixed {
+    return await fixed();
+}
+
+// Different failure sets require success-only carrier adoption, not T movement.
+private async fn parent() -> ::Fixed throw ParentFailure {
+    return await forward();
+}
+
+private async fn main() throw ParentFailure {
+    println(
+        fixed_created(),
+        fixed_destroyed(),
+        fixed_live(),
+        fixed_trace(),
+        fixed_identity_stable()
+    );
+    if true {
+        let held = await parent()?;
+        println(
+            fixed_created(),
+            fixed_destroyed(),
+            fixed_live(),
+            fixed_trace(),
+            fixed_identity_stable()
+        );
+    }
+    println(
+        fixed_created(),
+        fixed_destroyed(),
+        fixed_live(),
+        fixed_trace(),
+        fixed_identity_stable()
+    );
+}

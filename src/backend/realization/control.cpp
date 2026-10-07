@@ -68,7 +68,8 @@ BodyRealizer::FailureSiteQuery::FailureSiteQuery(std::span<FailureEdge> edges) n
 auto BodyRealizer::FailureSiteQuery::enter_scope(TargetTraversalScope scope) noexcept -> bool {
     if (scope.kind == TargetTraversalScopeKind::Loop) {
         ++loop_depth;
-    } else if (scope.kind == TargetTraversalScopeKind::Callable) {
+    } else if (scope.kind == TargetTraversalScopeKind::Callable
+               || scope.kind == TargetTraversalScopeKind::CoroutineCallable) {
         ++callable_depth;
     }
     return true;
@@ -77,7 +78,8 @@ auto BodyRealizer::FailureSiteQuery::enter_scope(TargetTraversalScope scope) noe
 auto BodyRealizer::FailureSiteQuery::leave_scope(TargetTraversalScope scope) noexcept -> bool {
     if (scope.kind == TargetTraversalScopeKind::Loop) {
         --loop_depth;
-    } else if (scope.kind == TargetTraversalScopeKind::Callable) {
+    } else if (scope.kind == TargetTraversalScopeKind::Callable
+               || scope.kind == TargetTraversalScopeKind::CoroutineCallable) {
         --callable_depth;
     }
     return true;
@@ -110,7 +112,7 @@ auto BodyRealizer::structured_expression(
     const LoweringResultDestination& result,
     LoweringStmtBuilder& destination
 ) noexcept -> ContinuationTask<std::monostate> {
-    return preparation.operation(source).value.visit(
+    co_await preparation.operation(source).value.visit(
         Overloaded {
             [&](const SemIf& value) noexcept -> ContinuationTask<std::monostate> {
                 return lower_if(value, result, destination);
@@ -126,6 +128,7 @@ auto BodyRealizer::structured_expression(
             },
         }
     );
+    co_return {};
 }
 
 auto BodyRealizer::guarded_region(
@@ -183,7 +186,9 @@ auto BodyRealizer::lower_if(
             std::size_t index) noexcept -> ContinuationTask<LoweringStmtBuilder> {
         if (index == value.branches.size()) {
             if (value.otherwise.has_value()) {
-                co_return (co_await region(**value.otherwise, result));
+                auto selected = LoweringStmtBuilder();
+                selected.scope((co_await region(**value.otherwise, result)));
+                co_return selected;
             }
             auto completed = LoweringStmtBuilder();
             deliver_result(LoweringCompleted {}, result, completed);
@@ -383,7 +388,7 @@ auto BodyRealizer::lower_try(
 ) noexcept -> ContinuationTask<std::monostate> {
     const auto failures = context.plan().failure_abi().members(value.protected_failures.resolved());
     if (failures.empty()) {
-        destination.append((co_await region(*value.body, result)));
+        destination.scope((co_await region(*value.body, result)));
         co_return {};
     }
     auto done = RegionExit {
@@ -392,7 +397,8 @@ auto BodyRealizer::lower_try(
     };
     const auto receiver = FailureDestination {
         .identity = failure_receivers.size(),
-        .target = exit_target(LoweringExitKind::Failure)
+        .target = exit_target(LoweringExitKind::Failure),
+        .retained_async_scopes = async_scopes.size()
     };
     failure_receivers.push_back({.layout = value.protected_failures.resolved(), .edges = {}});
     const auto outer = std::exchange(current_failure, receiver);
@@ -424,6 +430,7 @@ auto BodyRealizer::lower_try(
     } else {
         const auto direct =
             sites.size() == 1uz
+            && sites.front().edge->closing_scopes.empty()
             && !sites.front().nested_loop
             && !protected_body.exits().crosses_cleanup(receiver.target)
             && std::ranges::all_of(
@@ -468,7 +475,8 @@ auto BodyRealizer::lower_try(
             const auto relay = FailureRelay {
                 .slot = slot,
                 .label = names.fresh(TargetTemporaryNameKind::Try),
-                .target = receiver.target
+                .target = receiver.target,
+                .closing_scopes = {},
             };
             destination.declare(
                 TargetVariableStmt {
@@ -487,10 +495,12 @@ auto BodyRealizer::lower_try(
             );
             for (const auto& site : sites) {
                 auto transfer = LoweringStmtBuilder();
+                auto site_relay = relay;
+                site_relay.closing_scopes = site.edge->closing_scopes;
                 if (site.edge->initializer) {
-                    deliver_failure(std::move(*site.edge->initializer), relay, transfer);
+                    deliver_failure(std::move(*site.edge->initializer), site_relay, transfer);
                 } else {
-                    transfer = dispatch_failure(site.edge->source, site.edge->failures, relay);
+                    transfer = dispatch_failure(site.edge->source, site.edge->failures, site_relay);
                 }
                 site.statement->value =
                     TargetBlockStmt {.statements = std::move(transfer).finish()};

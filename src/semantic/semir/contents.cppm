@@ -7,6 +7,7 @@ import std;
 // Containment facts include the type itself and propagate through
 // struct fields, array elements, and enum payloads; pointers propagate none.
 struct TypeContents final {
+    bool contains_operation_owner;
     bool contains_closure_owner;
     // Also propagates through slice element types and native C++ template arguments.
     bool contains_callable_view;
@@ -18,7 +19,7 @@ struct TypeContents final {
     // Implies contains_storage_owner.
     bool contains_string_storage;
 
-    // Read preserves the identity of owned Array, String, or closure storage.
+    // Read preserves the identity of owned storage, closures, and opaque native values.
     auto read_borrows_storage() const noexcept -> bool;
     // Read is a value snapshot with no owned Carven storage or native value.
     auto read_is_value_snapshot() const noexcept -> bool;

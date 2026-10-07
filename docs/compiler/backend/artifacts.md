@@ -146,17 +146,19 @@ Owned syntax nodes define occurrence identity. `TreeValue` uses an explicit work
 stack to clear descendants, including partially moved trees, statement bodies,
 and namespace items. Child cleanup also bounds the stack depth of variant
 replacement. Traversal preserves scope order through enter/leave events.
-Dependency collection visits the finished tree and referenced types to derive
-standard and runtime header requirements. Target nodes identify their native
-facilities; shared symbol metadata supplies their C++ spelling and header provider
-to rendering and dependency collection. Unused interned types contribute no
-requirements.
+Dependency collection visits the verified tree and referenced types to
+derive standard and runtime header requirements. Target nodes identify their
+native facilities; shared symbol metadata supplies their C++ spelling and optional
+header provider. Async coroutine nodes and runtime symbols use this same query.
+Unused interned types contribute no requirements.
 
-`TargetUnitBuilder::finish` combines these requirements with planned artifact
-references and ordered native imports. Header references retain their delimiter
-and path. Automatic requirements merge by reference; source imports retain their
-order, repetitions, and attribution. The completed unit owns structured include
-and pragma-once directives; emission serializes them.
+`TargetUnitBuilder::finish` plans directives from the collected requirements,
+planned artifact references, and ordered native imports. Header references retain
+their delimiter and path. Automatic requirements merge by exact
+reference; source imports retain their order, repetitions, and attribution.
+Directive planning orders associated headers, source imports, runtime headers,
+generated references, and standard-library headers. The completed unit owns
+structured include and pragma-once directives; emission serializes them.
 
 The renderer builds completed layout tables in postorder for expressions,
 statements, items and the type dependency DAG, including decltype expressions.

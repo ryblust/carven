@@ -1,0 +1,111 @@
+import "async/bridge.hpp" using async_bridge::{ Context, TrivialContext };
+import std::async using { cancel, yield_once };
+
+export struct IoError {
+    code: i32
+}
+
+export(cpp) fn make_io_error(code: i32) -> IoError => IoError { code: code };
+
+#[cpp] ---
+#include <carven/api/tests/interop/async/bridge.hpp>
+using BridgeIoError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
+auto bridge_read_byte(const async_bridge::Context&) noexcept
+    -> carven::runtime::async::Operation<std::int32_t, BridgeIoError>;
+auto bridge_write_byte(const async_bridge::Context&, std::int32_t) noexcept
+    -> carven::runtime::async::Operation<void, BridgeIoError>;
+auto bridge_trivial_byte(const async_bridge::TrivialContext&, std::int32_t) noexcept
+    -> carven::runtime::async::Operation<std::int32_t, BridgeIoError>;
+auto bridge_note(const async_bridge::Context&, std::int32_t) noexcept -> void;
+auto bridge_scalar_character(std::int32_t) noexcept -> char32_t;
+auto bridge_native_character(std::int32_t, bool) noexcept
+    -> carven::runtime::async::Operation<char32_t, BridgeIoError>;
+---
+
+import(cpp) async fn bridge_read_byte(context: Context) -> i32 throw IoError;
+import(cpp) async fn bridge_write_byte(context: Context, value: i32) throw IoError;
+import(cpp) async fn bridge_trivial_byte(context: TrivialContext, marker: i32) -> i32 throw IoError;
+import(cpp) async fn bridge_native_character(value: i32, fail: bool) -> char throw IoError;
+import(cpp) fn bridge_scalar_character(value: i32) -> char;
+import(cpp) fn bridge_note(context: Context, stage: i32);
+
+export(cpp) async fn source_read(context: Context) -> i32 throw IoError {
+    return await bridge_read_byte(context)?;
+}
+
+export(cpp) async fn source_exchange(
+    reader: Context,
+    writer: Context,
+    value: i32
+) -> i32 throw IoError {
+    await bridge_write_byte(writer, value)?;
+    return await bridge_read_byte(reader)?;
+}
+
+export(cpp) async fn source_stored(context: Context) -> i32 throw IoError {
+    bridge_note(context, 1);
+    let operation = bridge_read_byte(context);
+    bridge_note(context, 2);
+    await yield_once();
+    let value = await operation?;
+    bridge_note(context, 3);
+    return value;
+}
+
+export(cpp) async fn source_recover(context: Context) -> i32 {
+    try {
+        return await bridge_read_byte(context)?;
+    } catch {
+        IoError(error) => { return error.code; },
+    }
+}
+
+export(cpp) async fn source_close(context: Context) -> i32 {
+    async let child = bridge_read_byte(context);
+    await yield_once();
+    cancel(child);
+    return 17;
+}
+
+private async fn later_marker() -> i32 {
+    await yield_once();
+    return 23;
+}
+
+private fn trivial_factory(context: TrivialContext, marker: i32) {
+    return bridge_trivial_byte(context, marker);
+}
+
+export(cpp) async fn source_trivial(context: TrivialContext) -> i32 throw IoError {
+    let operation = trivial_factory(context, await later_marker());
+    await yield_once();
+    return await operation?;
+}
+
+export(cpp) async fn source_character(value: i32, fail: bool) -> char throw IoError {
+    return await bridge_native_character(value, fail)?;
+}
+
+export(cpp) async fn source_discard_character(value: i32, fail: bool) throw IoError {
+    await bridge_native_character(value, fail)?;
+}
+
+private async fn scalar_character(value: i32) -> char => bridge_scalar_character(value);
+
+export(cpp) async fn source_fused_character(value: i32) -> char => await scalar_character(value);
+
+export(cpp) async fn source_discard_fused_character(value: i32) {
+    await scalar_character(value);
+}
+
+private fn character_factory(value: i32, unused: i32) => scalar_character(value);
+
+export(cpp) async fn source_discard_factory_character(value: i32) {
+    await character_factory(value, 0);
+}
+
+private async fn scalar_division(value: i32) -> i32 => 1 / value;
+
+export(cpp) async fn source_discard_fused_division(value: i32) {
+    await scalar_division(value);
+}

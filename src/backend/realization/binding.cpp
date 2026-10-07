@@ -21,7 +21,8 @@ import std;
 
 auto BodyRealizer::needs_cleanup(TypeID type) const noexcept -> bool {
     const auto contents = context.semantic().type_contents(type);
-    return contents.contains_native_value
+    return contents.contains_operation_owner
+        || contents.contains_native_value
         || contents.contains_storage_owner
         || contents.contains_closure_owner;
 }
@@ -34,7 +35,10 @@ auto BodyRealizer::binding_expression(LocalBindingID id) noexcept -> TargetExpr 
         return call_member(std::move(result), "get", {});
     }
     if (const auto found = delayed_bindings.find(id); found != delayed_bindings.end()) {
-        return dereference_expression(name_expression(found->second.local));
+        result = dereference_expression(name_expression(found->second.local));
+    }
+    if (success_bindings.contains(id)) {
+        result = call_member(std::move(result), "get", {});
     }
     return result;
 }

@@ -8,7 +8,7 @@
 
 This proposal defines the open rules for a builtin ordered heterogeneous product:
 type identity, construction, element access, decomposition, ownership, and cleanup.
-Its concrete consumer is the async proposal's accepted `ALL-03` decision, which
+Its concrete consumer is the async proposal's selected `when_all` result design, which
 returns an argument-ordered tuple from successful `when_all`.
 
 The general product and multi-element `(a, b, c)` form are established by that
@@ -24,7 +24,7 @@ records, homogeneous arrays, and enums. A struct has declaration identity and
 named fields; a tuple would select elements by position and need its own type
 identity.
 
-Async `ALL-03` requires results in argument order, independently of child
+Async `when_all` requires results in argument order, independently of child
 completion order:
 
 ```text
@@ -136,7 +136,7 @@ the current nominal failure category. Async owns cancellation and sibling outcom
 - **Status:** Active
 - **Question:** Which element types and arities are admitted, and how are tuple
   types, construction, positional selection, and decomposition spelled?
-- **Constraints:** Preserve `ALL-03`'s general ordered product and existing
+- **Constraints:** Preserve `when_all`'s general ordered product and existing
   grouping; distinguish nominal records and homogeneous arrays.
 - **Closure condition:** Accept and reject concrete multi-element, empty,
   single-element, nested, annotated, and out-of-range examples. Record any
@@ -190,6 +190,6 @@ permanent aggregate documentation together for the selected slice.
 ## References
 
 - [Grammar](../docs/language/grammar.md) and [aggregates](../docs/language/aggregates.md): current source forms.
-- [Async `ALL-03`](async.md#all-03--success-returns-an-argument-ordered-heterogeneous-tuple): ordered heterogeneous results.
+- [Async fixed composition](async.md#fixed-composition): ordered heterogeneous results.
 - [Uninitialized storage](uninitialized-storage.md): construction destinations.
 - [Constant storage](constant-storage.md): storage admission and retained results.

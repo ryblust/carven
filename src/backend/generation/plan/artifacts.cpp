@@ -87,8 +87,8 @@ auto target_nominal_order(const SemIRProgram& semantic) noexcept
             return;
         }
         if (!active.insert(nominal).second) {
-            // Storage cycles were rejected by analysis. Type-formation cycles
-            // (for example ReadArg<Self> in a callable target) remain C++ errors.
+            // Storage cycles were rejected by analysis. Recursive callable
+            // type formation remains delegated to C++.
             return;
         }
         auto dependencies = target_nominal_dependencies(semantic, nominal);

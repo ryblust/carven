@@ -47,6 +47,12 @@ auto execution_value_type(const ConstantValueReader& values, const ExecutionValu
     if (const auto* function = std::get_if<ExecutionFunction>(&value)) {
         return function->type;
     }
+    if (const auto* operation = std::get_if<std::unique_ptr<ExecutionColdOperation>>(&value)) {
+        if (!*operation) {
+            invariant_violation("consumed cold operation has no execution value type");
+        }
+        return (*operation)->type;
+    }
     if (std::holds_alternative<ExecutionText>(value)) {
         return values.builtin_type(BuiltinType::Str);
     }

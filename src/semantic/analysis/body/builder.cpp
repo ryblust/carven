@@ -112,6 +112,9 @@ auto BodyBuilder::make_expression(
                              || std::same_as<Operation, SemBorrowCallable>
                              || std::same_as<Operation, SemTake>
                              || std::same_as<Operation, SemPropagate>
+                             || std::same_as<Operation, SemColdCall>
+                             || std::same_as<Operation, SemAwait>
+                             || std::same_as<Operation, SemAsyncIntrinsic>
             { visit_semantic_children(node, add); },
             [&](const SemCall& node) noexcept {
                 visit_semantic_children(node, add);
@@ -155,7 +158,8 @@ auto BodyBuilder::make_expression(
         .exits_test = false,
         .operation_reachable = true,
         .category = SemanticValueCategory::Value,
-        .value = std::move(value)
+        .value = std::move(value),
+
     };
 }
 
@@ -171,6 +175,8 @@ auto BodyBuilder::binding_expression(LocalBindingID id) noexcept -> PlaceExpress
                 return storage.writable ? AccessMode::Write : AccessMode::Read;
             } else if constexpr (std::same_as<Storage, ParameterBindingStorage>) {
                 return storage.access == AccessMode::Write ? AccessMode::Write : AccessMode::Read;
+            } else if constexpr (std::same_as<Storage, AsyncChildBindingStorage>) {
+                return AccessMode::Read;
             } else {
                 return storage.mode == CaptureMode::Write ? AccessMode::Write : AccessMode::Read;
             }

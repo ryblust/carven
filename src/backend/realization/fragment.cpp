@@ -15,6 +15,7 @@ import :backend.target.name;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
+import :semantic.semir.async;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.contents;
@@ -144,7 +145,8 @@ auto BodyRealizer::ExpressionBuilder::build(
         .statements = {},
         .local_storage = local_storage,
         .executes = false,
-        .observes = false
+        .observes = false,
+        .awaited_carrier = std::nullopt
     };
     const auto& value = fragment.preparation;
     if (std::holds_alternative<SemUnreachable>(value.operation.value)) {
@@ -211,6 +213,96 @@ auto BodyRealizer::ExpressionBuilder::build(
         complete(fragment, constant->constant);
         co_return finish_fragment(std::move(fragment));
     }
+    if (const auto* intrinsic = std::get_if<SemAsyncIntrinsic>(&value.operation.value);
+        intrinsic != nullptr && intrinsic->kind == AsyncIntrinsic::CancelChild) {
+        if (!intrinsic->child) {
+            invariant_violation("cancel has no published child binding");
+        }
+        complete(
+            fragment,
+            call_expression(
+                intrinsic_expression(TargetSymbol::RuntimeAsyncCancel),
+                target_expressions(owner.binding_expression(*intrinsic->child))
+            )
+        );
+        fragment.executes = true;
+        fragment.observes = true;
+        co_return finish_fragment(std::move(fragment));
+    }
+    if (const auto* awaited = std::get_if<SemAwait>(&value.operation.value)) {
+        if (awaited->operand_kind == AsyncAwaitOperandKind::ColdOperation) {
+            const auto& operation = BodyPreparation::operation(*awaited->operand);
+            const auto fusion = owner.select_await_producer(operation);
+            if (fusion) {
+                const auto* operation_type = std::get_if<OperationTypeValue>(
+                    &owner.context.semantic().types().type(operation.type.resolved()).value
+                );
+                if (operation_type == nullptr) {
+                    invariant_violation("embedded await lost its operation type");
+                }
+                const auto* builtin = std::get_if<BuiltinTypeValue>(
+                    &owner.context.semantic().types().type(operation_type->success).value
+                );
+                const auto check_character =
+                    builtin != nullptr && builtin->kind == BuiltinType::Char;
+                // Even discarded character success must reach the await validity check.
+                const auto demand =
+                    result_needed || check_character ? ResultDemand::Value : ResultDemand::Discard;
+                auto completed = co_await build(
+                    *awaited->operand,
+                    {.demand = demand,
+                     .use = PreparedUse::OperandValue,
+                     .literal = ConstantLiteralContext::Exact,
+                     .retain_backing = true,
+                     .expression_depth = 0uz,
+                     .await_fusion = fusion}
+                );
+                adopt(completed);
+                if (statements.continues()) {
+                    fragment.executes = true;
+                    fragment.observes = true;
+                    if (!owner.context.is_void(operation_type->success)) {
+                        if (check_character) {
+                            statements.emit(statement_expression(call_expression(
+                                intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
+                                target_expressions(
+                                    raw(completed),
+                                    source_site_expression(owner.context, expression.origin)
+                                )
+                            )));
+                        }
+                        if (result_needed) {
+                            complete(fragment, raw(completed));
+                        }
+                    }
+                }
+                co_return finish_fragment(std::move(fragment));
+            }
+        }
+        if (const auto* intrinsic = native_await_intrinsic(*awaited)) {
+            // These zero-input cold intrinsics have no construction effects.
+            const auto symbol = intrinsic->kind == AsyncIntrinsic::YieldOnce
+                ? TargetSymbol::RuntimeAsyncAwaitYieldOnce
+                : TargetSymbol::RuntimeAsyncAwaitCancellationPoint;
+            fragment.executes = true;
+            fragment.observes = true;
+            auto invocation = call_expression(intrinsic_expression(symbol), {});
+            if (intrinsic->kind == AsyncIntrinsic::YieldOnce
+                && request.demand == ResultDemand::Discard) {
+                statements.emit(statement_expression(co_await_expression(std::move(invocation))));
+                complete(fragment, LoweringCompleted {});
+            } else {
+                complete_await(
+                    fragment,
+                    std::move(invocation),
+                    *awaited,
+                    result_needed && request.demand != ResultDemand::AdoptSuccess,
+                    result_use
+                );
+            }
+            co_return finish_fragment(std::move(fragment));
+        }
+    }
     if (const auto* report = std::get_if<SemReport>(&value.operation.value)) {
         (co_await owner.lower_report(*report, value.operation.origin, statements));
         co_return finish_fragment(std::move(fragment));
@@ -222,7 +314,8 @@ auto BodyRealizer::ExpressionBuilder::build(
         if (!result_needed) {
             (co_await owner
                  .structured_expression(expression, LoweringDiscardResult {}, statements));
-        } else if (!value.operation.exits_test
+        } else if (!value.requires_coroutine_context
+                   && !value.operation.exits_test
                    && owner.context.semantic()
                           .failure_sets()
                           .failure_set(value.operation.failures.resolved())
@@ -611,6 +704,36 @@ auto BodyRealizer::ExpressionBuilder::build(
         fragment.executes |= has_effect(child);
         fragment.observes |= has_storage_read(child);
     }
+    if (const auto* awaited = std::get_if<SemAwait>(&value.operation.value)) {
+        auto& operand = children.front();
+        const auto& operation = source(operand).operation;
+        const auto fresh_operation = awaited->operand_kind == AsyncAwaitOperandKind::ColdOperation
+            && std::holds_alternative<TargetExpr>(operand.completion)
+            && (std::holds_alternative<SemColdCall>(operation.value)
+                || std::holds_alternative<SemCall>(operation.value));
+        const auto child_literal = operand_literal(inputs.front().use);
+        auto invocation = fresh_operation ? raw(operand, child_literal)
+                                          : emit(operand, inputs.front().use, child_literal);
+        if (awaited->operand_kind == AsyncAwaitOperandKind::LexicalChild) {
+            invocation = call_member(std::move(invocation), "observe", {});
+        } else if (!fresh_operation) {
+            // A stored operation moves into the await full-expression's frame owner.
+            invocation = TargetExpr {
+                .value = TargetConstructionExpr {
+                    .type = owner.context.lower_type(operation.type.resolved()),
+                    .initializer = target_expressions(std::move(invocation))
+                }
+            };
+        }
+        complete_await(
+            fragment,
+            std::move(invocation),
+            *awaited,
+            result_needed && request.demand != ResultDemand::AdoptSuccess,
+            result_use
+        );
+        co_return finish_fragment(std::move(fragment));
+    }
     auto operands = std::vector<TargetExpr>();
     operands.reserve(
         static_cast<std::size_t>(
@@ -639,7 +762,37 @@ auto BodyRealizer::ExpressionBuilder::build(
                     )
         );
     }
-    if (std::holds_alternative<SemTake>(value.operation.value)) {
+    if (request.await_fusion) {
+        const auto result = [&]() noexcept -> std::optional<TargetLocalID> {
+            if (request.await_fusion->factory) {
+                const auto* call = std::get_if<SemCall>(&value.operation.value);
+                if (call == nullptr || !call->target) {
+                    invariant_violation("fused factory lost its resolved call identity");
+                }
+                return fuse_factory(
+                    *call,
+                    *request.await_fusion,
+                    std::move(operands),
+                    request.demand
+                );
+            }
+            const auto* call = std::get_if<SemColdCall>(&value.operation.value);
+            if (call == nullptr) {
+                invariant_violation("fused await operand lost its cold call identity");
+            }
+            return fuse_call(
+                *call,
+                request.await_fusion->body,
+                std::move(operands),
+                request.demand
+            );
+        }();
+        if (statements.continues() && result) {
+            complete(fragment, Saved {.local = *result, .kind = SavedKind::Value});
+        } else {
+            complete(fragment, LoweringCompleted {});
+        }
+    } else if (std::holds_alternative<SemTake>(value.operation.value)) {
         const auto contents =
             owner.context.semantic().type_contents(value.operation.type.resolved());
         // A named automatic owner can use native return elision or implicit move.

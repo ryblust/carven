@@ -47,6 +47,7 @@ auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noex
                             || std::same_as<Value, EnumTypeValue>
                             || std::same_as<Value, ArrayTypeValue>
                             || std::same_as<Value, CallableViewTypeValue>
+                            || std::same_as<Value, OperationTypeValue>
                             || std::same_as<Value, CppTypeValue>
                             || std::same_as<Value, PointerTypeValue>
                             || std::same_as<Value, SliceTypeValue>
@@ -64,6 +65,7 @@ auto BodyElaborator::callable_contract(ConstructionTypeRef type, Span span) noex
         if (const auto* view =
                 std::get_if<ConstructionCallableViewTypeValue>(&construction.value)) {
             return ConstructionCallableContract {
+                .execution = CallableExecutionKind::Synchronous,
                 .parameters = view->parameters,
                 .result = view->result,
                 .failures = view->failures,
@@ -235,6 +237,72 @@ auto BodyElaborator::call_expression(
     }();
     if (!selected_callee.has_value()) {
         co_return std::unexpected(selected_callee.error());
+    }
+    if (const auto* intrinsic = std::get_if<AsyncIntrinsicSelection>(&*selected_callee)) {
+        if (receiver) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::AsyncAdmission,
+                "std::async intrinsic requires a resolved direct call"
+            ));
+        }
+        auto child = std::optional<LocalBindingID>();
+        if (intrinsic->kind == AsyncIntrinsic::CancelChild) {
+            if ((!async_body && !static_stage()) || source.arguments.size() != 1uz) {
+                co_return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::AsyncAdmission,
+                    "cancel requires one complete lexical child in an async owner or const execution"
+                ));
+            }
+            const auto operand = call_argument_operand(ast, source.arguments.front().expression);
+            if (operand.access != AccessMode::Read) {
+                co_return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::AsyncOwnership,
+                    "cancel takes an unmarked lexical child binding"
+                ));
+            }
+            auto selected = co_await expression(operand.expression);
+            if (!selected) {
+                co_return std::unexpected(selected.error());
+            }
+            const auto* binding = std::get_if<SemBinding>(&selected->expression().value);
+            if (!binding || !async_child_bindings.contains(binding->binding)) {
+                co_return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::AsyncOwnership,
+                    "cancel requires a complete lexical child binding, not a cold operation"
+                ));
+            }
+            child = binding->binding;
+        } else if (!source.arguments.empty()) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::TypeCallArity,
+                "std::async query and cold leaves accept no arguments"
+            ));
+        }
+        auto type = ConstructionTypeRef(
+            draft().builtin_type(
+                intrinsic->kind == AsyncIntrinsic::CancellationRequested ? BuiltinType::Bool
+                                                                         : BuiltinType::Void
+            )
+        );
+        if (intrinsic->kind == AsyncIntrinsic::CancellationPoint
+            || intrinsic->kind == AsyncIntrinsic::YieldOnce) {
+            type = draft().append_construction_type(
+                {.value = ConstructionOperationTypeValue {
+                     .success = draft().builtin_type(BuiltinType::Void),
+                     .failures = draft().add_empty_failure_term()
+                 }}
+            );
+        }
+        co_return make_built(
+            type,
+            SemAsyncIntrinsic {.kind = intrinsic->kind, .child = child},
+            span
+        );
     }
     if (auto* builtin = std::get_if<BuiltinSelection>(&*selected_callee)) {
         builtin->span = span;
@@ -471,6 +539,41 @@ auto BodyElaborator::call_expression(
     }
     const auto failures =
         target ? draft().construction_callable_contract_copy(*target).failures : contract->failures;
+    if (contract->execution == CallableExecutionKind::Async) {
+        if (!target || receiver) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::AsyncAdmission,
+                "cold async construction requires a directly resolved async fn"
+            ));
+        }
+        if (static_stage()) {
+            const auto function = draft().function_for_callable(*target);
+            if (!function || !draft().function_declaration_copy(*function).is_const) {
+                co_return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::ConstAdmission,
+                    "compile-time construction requires an explicitly declared const async fn"
+                ));
+            }
+        }
+        const auto operation = draft().append_construction_type(
+            {.value =
+                 ConstructionOperationTypeValue {.success = contract->result, .failures = failures}}
+        );
+        auto result = make_built(
+            operation,
+            SemColdCall {
+                .callee = UniqueIndirect(std::move(*callee_operand)),
+                .target = *target,
+                .arguments = std::move(arguments)
+            },
+            span,
+            std::move(pending_failures)
+        );
+        result.completes = completes;
+        co_return result;
+    }
     append_pending_failures(pending_failures, BodyPendingFailureTerms {failures});
     auto result = active_builder().make_expression(
         contract->result,

@@ -69,6 +69,9 @@ constexpr auto unsupported_execution_operation(const Operation& operation) noexc
                          || std::same_as<Operation, SemPrint>
                          || std::same_as<Operation, SemFormat>
                          || std::same_as<Operation, SemCall>
+                         || std::same_as<Operation, SemColdCall>
+                         || std::same_as<Operation, SemAsyncIntrinsic>
+                         || std::same_as<Operation, SemAwait>
                          || std::same_as<Operation, SemBorrowCallable>
                          || std::same_as<Operation, SemTake>
                          || std::same_as<Operation, SemPropagate>

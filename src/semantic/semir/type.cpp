@@ -50,6 +50,9 @@ auto type_key(const CanonicalType& type, ProgramIdentity owner) noexcept -> std:
         } else if constexpr (std::same_as<Value, FunctionTypeValue>
                              || std::same_as<Value, ClosureTypeValue>) {
             child(value.callable, "callable type used a foreign program");
+        } else if constexpr (std::same_as<Value, OperationTypeValue>) {
+            child(value.success, "operation used a foreign success type");
+            child(value.failures, "operation used a foreign failure set");
         } else if constexpr (std::same_as<Value, CallableViewTypeValue>) {
             child(value.signature, "callable view type used a foreign signature");
         } else {
@@ -454,6 +457,13 @@ auto ConstructionTypeStore::append(ConstructionType type) noexcept -> TypeTermID
         if constexpr (std::same_as<Value, ConstructionArrayTypeValue>
                       || std::same_as<Value, ConstructionSliceTypeValue>) {
             validate_ref(value.element);
+        } else if constexpr (std::same_as<Value, ConstructionOperationTypeValue>) {
+            validate_ref(value.success);
+            require_owner(
+                value.failures.owner(),
+                rows.owner(),
+                "construction operation used a foreign failure term"
+            );
         } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
             for (const auto& parameter : value.parameters) {
                 validate_ref(parameter.type);

@@ -32,8 +32,8 @@ Use the repository benchmark commands:
 
 ```sh
 ./xmakew bench compile --list
-./xmakew bench compile --samples=5 --warmups=1 --timings --output=build/bench/compile.json
-./xmakew bench incremental --samples=5 --warmups=1 --timings --output=build/bench/incremental.json
+./xmakew bench compile --samples=5 --warmups=1 --timings --output=build/benchmarks/compile.json
+./xmakew bench incremental --samples=5 --warmups=1 --timings --output=build/benchmarks/incremental.json
 ```
 
 These use the current configuration. Record the source revision, local changes,

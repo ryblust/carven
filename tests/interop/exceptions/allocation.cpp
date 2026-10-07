@@ -8,6 +8,8 @@
 #include <carven/runtime/format.hpp>
 #include <carven/runtime/string.hpp>
 
+#include "async_allocation.hpp"
+
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -19,9 +21,19 @@
 namespace {
 
 bool fail_allocation = false;
+volatile std::sig_atomic_t async_case = 0;
+volatile std::sig_atomic_t allocation_attempted = 0;
+
+auto terminated() noexcept -> void {
+    // Injection must reach a real allocation, including an unelided frame.
+    std::_Exit(!async_case || allocation_attempted ? 73 : 76);
+}
 
 auto aborted(int signal) noexcept -> void {
-    std::_Exit(signal == SIGABRT ? 73 : 74);
+    if (signal == SIGABRT) {
+        terminated();
+    }
+    std::_Exit(74);
 }
 
 } // namespace
@@ -29,6 +41,7 @@ auto aborted(int signal) noexcept -> void {
 // Replacement allocation is confined to this failure-injection executable.
 auto operator new(std::size_t size) -> void* {
     if (fail_allocation) {
+        allocation_attempted = true;
         throw std::bad_alloc();
     }
     if (auto* memory = std::malloc(size == 0 ? 1 : size)) {
@@ -41,21 +54,45 @@ auto operator delete(void* memory) noexcept -> void {
     std::free(memory);
 }
 
+// Sanitizer runtimes can provide a nothrow overload independently of the
+// throwing replacement. Completion payload allocation uses this boundary.
+auto operator new(std::size_t size, const std::nothrow_t&) noexcept -> void* {
+    if (fail_allocation) {
+        allocation_attempted = true;
+        return nullptr;
+    }
+    return std::malloc(size == 0 ? 1 : size);
+}
+
+auto operator delete(void* memory, const std::nothrow_t&) noexcept -> void {
+    std::free(memory);
+}
+
 // NOLINTNEXTLINE(misc-const-correctness): Keep the standard C++ main signature.
 auto main(int argc, char** argv) -> int try {
-    std::set_terminate([]() noexcept { std::_Exit(73); });
+    std::set_terminate(&terminated);
     std::signal(SIGABRT, aborted);
     if (argc != 2) {
         return 1;
     }
     const auto operation = std::string_view(argv[1]);
+    async_case = operation.starts_with("async-");
     if (operation == "print-inner-allocate") {
         // Termination uses _Exit; expose each completed write to the capture file.
         if (std::setvbuf(stdout, nullptr, _IONBF, 0) != 0) {
             return 3;
         }
     }
-    if (operation == "format-allocate") {
+    if (operation == "async-frame-allocate") {
+        fail_allocation = true;
+        static_cast<void>(async_allocation_operation());
+    } else if (operation == "async-success-allocate") {
+        fail_allocation = true;
+        static_cast<void>(async_allocation_success());
+    } else if (operation == "async-failure-allocate") {
+        fail_allocation = true;
+        static_cast<void>(async_allocation_failure());
+    } else if (operation == "format-allocate") {
         fail_allocation = true;
         static_cast<void>(carven::runtime::format("{:4096}", 1));
     } else if (operation == "precomputed-format-allocate") {

@@ -13,6 +13,7 @@ class TargetUnitBuilder;
 enum class TargetSealViolationKind {
     InvalidTypeReference,
     InvalidControl,
+    InvalidCoroutine,
     InvalidLocalReference,
 };
 

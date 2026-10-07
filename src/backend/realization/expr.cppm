@@ -62,6 +62,8 @@ private:
         ConstantLiteralContext literal;
         bool retain_backing;
         std::size_t expression_depth;
+        // Only an immediate await consumes an embedded producer's ordinary result.
+        std::optional<PreparedAwaitProducer> await_fusion = std::nullopt;
     };
 
     struct Saved final {
@@ -71,6 +73,12 @@ private:
 
     // Bindings and completed constant facts can be referenced repeatedly without
     // reconstructing an executed expression. Every other inline tree is moved once.
+    struct AwaitedCarrier final {
+        TargetLocalID local;
+        bool deferred;
+        TypeID operation;
+    };
+
     struct Fragment final {
         PreparedOperation preparation;
         std::variant<LocalBindingID, ConstantID, Saved, TargetExpr, LoweringCompleted> completion;
@@ -79,6 +87,7 @@ private:
         bool local_storage;
         bool executes;
         bool observes;
+        std::optional<AwaitedCarrier> awaited_carrier;
     };
 
     class BuildScope final {
@@ -155,6 +164,38 @@ private:
         ConstantLiteralContext literal = ConstantLiteralContext::Exact
     ) noexcept -> TargetExpr;
     auto anchor(Fragment& value, PreparedUse use, bool force = false) noexcept -> void;
+    static auto native_await_intrinsic(const SemAwait& source) noexcept -> const SemAsyncIntrinsic*;
+    auto complete_await(
+        Fragment& value,
+        TargetExpr invocation,
+        const SemAwait& source,
+        bool project_success,
+        PreparedUse use
+    ) noexcept -> void;
+    auto complete_awaited(
+        Fragment& value,
+        TargetExpr completion,
+        const SemAwait& source,
+        bool project_success,
+        PreparedUse use
+    ) noexcept -> void;
+    auto snapshot_parameters(
+        CallableID callable,
+        BodyID body,
+        std::vector<TargetExpr> operands
+    ) noexcept -> BodyLoweringInputs;
+    auto fuse_call(
+        const SemColdCall& call,
+        BodyID body,
+        std::vector<TargetExpr> operands,
+        ResultDemand demand
+    ) noexcept -> std::optional<TargetLocalID>;
+    auto fuse_factory(
+        const SemCall& call,
+        const PreparedAwaitProducer& producer,
+        std::vector<TargetExpr> operands,
+        ResultDemand demand
+    ) noexcept -> std::optional<TargetLocalID>;
     auto complete_call(
         Fragment& value,
         const FallibleCall& transport,

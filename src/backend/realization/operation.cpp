@@ -719,6 +719,24 @@ auto realize_operation(
                 operands.erase(operands.begin());
                 return call_expression(std::move(callee), std::move(operands));
             },
+            [&](const SemColdCall& value) noexcept -> TargetExpr {
+                return call_expression(
+                    name_expression(context.callable_name(value.target)),
+                    std::move(operands)
+                );
+            },
+            [](const SemAwait&) static noexcept -> TargetExpr {
+                invariant_violation("await requires owning completion body realization");
+            },
+            [&](const SemAsyncIntrinsic& value) noexcept -> TargetExpr {
+                const auto symbol = value.kind == AsyncIntrinsic::CancellationRequested
+                    ? TargetSymbol::RuntimeAsyncCancellationRequested
+                    : value.kind == AsyncIntrinsic::CancellationPoint
+                    ? TargetSymbol::RuntimeAsyncCancellationPoint
+                    : value.kind == AsyncIntrinsic::YieldOnce ? TargetSymbol::RuntimeAsyncYieldOnce
+                                                              : TargetSymbol::RuntimeAsyncCancel;
+                return call_expression(intrinsic_expression(symbol), std::move(operands));
+            },
             [](const SemIf&) static noexcept -> TargetExpr {
                 invariant_violation("structured operation requires body realization");
             },

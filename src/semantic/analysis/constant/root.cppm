@@ -468,14 +468,42 @@ public:
             co_return std::unexpected(ExpressionNotAdmitted {});
         }
         auto selected =
-            (co_await scope.resolve_function(spelling(name->name_span), name->name_span));
+            (co_await scope.resolve_static_callable(spelling(name->name_span), name->name_span));
         if (!selected) {
             co_return std::unexpected(selected.error());
         }
         if (!*selected) {
             co_return std::unexpected(ExpressionNotAdmitted {});
         }
-        const auto declaration = program.function_declaration_copy(**selected);
+        if (const auto* intrinsic = std::get_if<AsyncIntrinsicDeclID>(&**selected)) {
+            const auto kind = program.async_intrinsic_declaration_copy(*intrinsic).kind;
+            if (kind == AsyncIntrinsic::CancelChild) {
+                co_return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::AsyncOwnership,
+                    "cancel requires a complete lexical child binding"
+                ));
+            }
+            if (!source.arguments.empty()) {
+                co_return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::TypeCallArity,
+                    "std::async query and cold leaves accept no arguments"
+                ));
+            }
+            auto type = ConstructionTypeRef(program.builtin_type(BuiltinType::Bool));
+            if (kind != AsyncIntrinsic::CancellationRequested) {
+                type = program.append_construction_type({
+                    .value = ConstructionOperationTypeValue {
+                        .success = program.builtin_type(BuiltinType::Void),
+                        .failures = program.add_empty_failure_term(),
+                    },
+                });
+            }
+            co_return make(type, SemAsyncIntrinsic {.kind = kind, .child = std::nullopt}, span);
+        }
+        const auto function = std::get<FunctionID>(**selected);
+        const auto declaration = program.function_declaration_copy(function);
         if (!declaration.is_const) {
             co_return std::unexpected(fail(
                 span,
@@ -485,7 +513,7 @@ public:
         }
         auto& requests = scope.construction_requests();
         auto completed =
-            (co_await requests.ensure_function_signature(**selected, source_module_id, span));
+            (co_await requests.ensure_function_signature(function, source_module_id, span));
         if (!completed) {
             co_return std::unexpected(completed.error());
         }
@@ -527,6 +555,23 @@ public:
             program.intern_type({.value = FunctionTypeValue {.callable = declaration.callable}});
         auto selected_callee =
             make(callee_type, SemCallable {.callable = declaration.callable}, span);
+        if (contract.execution == CallableExecutionKind::Async) {
+            const auto operation = program.append_construction_type({
+                .value = ConstructionOperationTypeValue {
+                    .success = contract.result,
+                    .failures = contract.failures,
+                },
+            });
+            co_return make(
+                operation,
+                SemColdCall {
+                    .callee = OwnedSemanticExpression(std::move(selected_callee)),
+                    .target = declaration.callable,
+                    .arguments = std::move(arguments),
+                },
+                span
+            );
+        }
         pending_failures.push_back(contract.failures);
         co_return make(
             contract.result,
@@ -535,6 +580,37 @@ public:
                 .target = declaration.callable,
                 .arguments = std::move(arguments),
                 .callee_failures = BodyFailures(contract.failures)
+            },
+            span
+        );
+    }
+
+    auto await_expression(const ASTPrefixExpr& source, Span span) noexcept
+        -> ExpressionTask<Value> {
+        auto operand = co_await read(source.operand_id, std::nullopt);
+        if (!operand) {
+            co_return std::unexpected(operand.error());
+        }
+        const auto operand_type = type(*operand);
+        const auto* term = std::get_if<TypeTermID>(&operand_type);
+        const auto construction =
+            term ? std::optional(program.construction_type_copy(*term)) : std::nullopt;
+        const auto* operation = construction
+            ? std::get_if<ConstructionOperationTypeValue>(&construction->value)
+            : nullptr;
+        if (!operation) {
+            co_return std::unexpected(fail(
+                span,
+                DiagnosticCode::AsyncAdmission,
+                "await requires a cold operation in compile-time execution"
+            ));
+        }
+        pending_failures.push_back(operation->failures);
+        co_return make(
+            operation->success,
+            SemAwait {
+                .operand = OwnedSemanticExpression(std::move(*operand)),
+                .operand_kind = AsyncAwaitOperandKind::ColdOperation,
             },
             span
         );
@@ -628,6 +704,7 @@ private:
             .operation_reachable = true,
             .category = SemanticValueCategory::Value,
             .value = std::move(operation),
+
         };
         return expression;
     }

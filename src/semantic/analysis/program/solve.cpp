@@ -32,6 +32,9 @@ auto ProgramDraft::solve_test_stops(
         const auto& body = *storage.bodies[body_id->index()].definition;
         auto nodes = std::vector<Node> {body.residual ? &*body.residual : &body.region};
         const auto observe = [&](const SemanticExpression& expression) noexcept {
+            if (!expression.operation_reachable) {
+                return;
+            }
             if (const auto* report = std::get_if<SemReport>(&expression.value); report != nullptr
                 && (report->kind == ReportKind::Require || report->kind == ReportKind::Fail)) {
                 mark(entry.id);
@@ -61,8 +64,20 @@ auto ProgramDraft::solve_test_stops(
                     nodes.emplace_back(&child);
                 };
                 if constexpr (std::same_as<Value, SemanticRegion>) {
-                    visit_semantic_children(*node, add);
+                    for (const auto& statement : node->statements) {
+                        if (statement.reachable) {
+                            add(statement);
+                        }
+                    }
+                    if (node->result && node->result_reachable) {
+                        add(*node->result);
+                    }
                 } else {
+                    if constexpr (std::same_as<Value, SemanticStatement>) {
+                        if (!node->reachable) {
+                            return;
+                        }
+                    }
                     if constexpr (std::same_as<Value, SemanticExpression>) {
                         observe(*node);
                     }
@@ -225,6 +240,7 @@ auto ProgramDraft::finalize_callable_signatures(
         }
         const auto signature = storage.callable_signatures.intern(
             CallableSignature {
+                .execution = contract.execution,
                 .parameters = std::move(parameters),
                 .result = types.resolve(contract.result),
                 .failures = failures.failure_set(contract.failures),

@@ -6,6 +6,7 @@ import :semantic.analysis.body.builder;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.ownership;
 import :semantic.analysis.program;
+import :semantic.semir.async;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.contents;
@@ -65,6 +66,7 @@ auto prepare_function(SourceManager& sources, DiagnosticSink& diagnostics) noexc
     builder.define_callable_contract(
         callable,
         ConstructionCallableContract {
+            .execution = CallableExecutionKind::Synchronous,
             .parameters =
                 {
                     ConstructionCallableParameter {
@@ -159,6 +161,8 @@ auto boolean_expression(PreparedFunction& prepared, const BodyFixture& body) noe
                 {.type = prepared.boolean_type, .value = BooleanConstant {.value = true}}
             )
         },
+
+
     };
 }
 
@@ -179,6 +183,8 @@ auto finish_body(
                              .result_reachable = result_reachable,
                              .failures = BodyFailures(body.failures),
                              .exits_test = false,
+
+
                          }
                      );
     const auto id = draft.id;
@@ -201,6 +207,8 @@ auto rejects_expression(std::string_view scenario, MakeExpression make_expressio
             .lifetime = body.lifetime,
             .reachable = true,
             .value = SemExpressionStatement {.expression = std::move(invalid)},
+
+
         }
     );
     auto result = boolean_expression(prepared, body);
@@ -256,11 +264,15 @@ auto check_residual_construction(ResidualConstructionContract contract) noexcept
                         .lifetime = body.lifetime,
                         .reachable = true,
                         .value = SemExpressionStatement {.expression = std::move(construction)},
+
+
                     }},
                     .result = boolean_expression(prepared, body),
                     .result_reachable = true,
                     .failures = BodyFailures(body.failures),
                     .exits_test = false,
+
+
                 }
             );
     auto residual = graph.region;
@@ -489,12 +501,13 @@ const TestSuite suite([] static noexcept {
                 .operand_sources = std::nullopt
             };
             auto statements = std::vector<SemanticStatement>();
-            statements.push_back(
-                {.origin = prepared.origin,
-                 .lifetime = body.lifetime,
-                 .reachable = true,
-                 .value = SemExpressionStatement {std::move(operation)}}
-            );
+            statements.push_back({
+                .origin = prepared.origin,
+                .lifetime = body.lifetime,
+                .reachable = true,
+                .value = SemExpressionStatement {std::move(operation)},
+
+            });
             auto result = boolean_expression(prepared, body);
             [[maybe_unused]] const auto resolved =
                 finish_body(prepared, std::move(body), std::move(statements), std::move(result));
@@ -545,6 +558,8 @@ const TestSuite suite([] static noexcept {
                 .result_reachable = false,
                 .failures = BodyFailures(completed),
                 .exits_test = false,
+
+
             };
             auto attempt = boolean_expression(prepared, body);
             attempt.failures = BodyFailures(completed);
@@ -582,6 +597,8 @@ const TestSuite suite([] static noexcept {
                                      .result_reachable = true,
                                      .failures = BodyFailures(completed),
                                      .exits_test = false,
+
+
                                  }
                              );
             const auto identity = draft.lifetime_regions.owner();
@@ -692,6 +709,7 @@ const TestSuite suite([] static noexcept {
                             .result_reachable = true,
                             .failures = BodyFailures(body.failures),
                             .exits_test = false,
+
                         },
                     .reachable = true,
                     .pattern_may_reject = false,

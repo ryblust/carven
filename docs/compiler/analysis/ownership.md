@@ -54,9 +54,9 @@ relationships, not the source object's identity. Read parameters and range bindi
 use the shared resolved-type storage policy. Guaranteed value Read parameters
 copy contained relationships without retaining the source holder identity;
 borrowing Read parameters retain selected objects, including multiple possible
-backing objects of a slice. Native-containing Read types retain conservative
-storage handling because their ABI depends on C++ traits. The backend consumes
-the same policy.
+backing objects of a slice. Native-containing Read types borrow their source holders under the same policy.
+The backend consumes that policy for parameters, argument storage, and range
+bindings.
 
 Storage loans record known Carven backing separately from callable loans and Write
 captures. Backing can select projected owner storage. Literal storage needs no
@@ -77,6 +77,28 @@ A result's destination lifetime does not change the execution position.
 Lifetime exits check that returned and failed borrowed values retain live backing.
 Catch selection and guards hold the original failure independently of copied
 bindings; rethrow forwards its payload relationships.
+
+### Cold operations and lexical children
+
+Cold operation construction retains source backing without executing the async
+callee. Stored and returned operations carry those relationships through the same
+object state, projection, normalization, and call answers as other owned values.
+Lifetime protection retains the selected place and its owner lifetime. It permits
+storage-preserving scalar mutation and accesses to disjoint sibling places while
+rejecting overlapping Take or replacement of a retained owner. Content protection
+continues to reject backing invalidation for ordinary views and captures.
+
+Await consumes a cold owner or a child's observation right. Observation closes
+active loans while the lexical scope keeps responsibility for closing child state.
+A cancellation request states normal-exit intent and releases no loan. Child intent
+joins conservatively; normal exits require observation or cancellation intent.
+Failure and cancelled exits request cancellation before closure. Pattern rejection,
+guards, handlers, rethrow, and loop backedges use the shared ownership flow.
+
+Native calls use their declared access contract. Known source loans constrain
+native destructive accesses. Native Write is treated as potentially invalidating
+its selected storage; providers remain responsible for hidden native retention and
+validity under the ordinary interoperation contract.
 
 ### Call queries
 
@@ -161,8 +183,10 @@ Equal callable-view copies retain their target relationships rather than borrowi
 the intermediate view storage. Expired callable backing is diagnosed before any
 attempt to interpret its former capture state.
 Loop diagnosis uses the converged loop-entry state.
-All source operations receive contract checks independently of execution-state
-analysis, including unreachable source.
+Source shape and access-form admission check every source operation, including
+unreachable source. Execution-state analysis first evaluates condition effects
+and exits, then uses proven Boolean normal-completion facts to select successors.
+Ownership availability and pointer slot facts follow those successors.
 
 ## Pointer nullability
 

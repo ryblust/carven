@@ -64,6 +64,14 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                 }
                 return concat({text("return "), render_expression(*value.expression), text(";")});
             },
+            [&](const TargetCoReturnStmt& value) noexcept {
+                return concat(
+                    {text(target_symbol_info(value.native_symbol()).spelling),
+                     text(" "),
+                     render_expression(value.expression),
+                     text(";")}
+                );
+            },
             [&](const TargetVariableStmt& value) noexcept {
                 const auto constant = constant_binding(value.binding);
                 auto suffix = std::string {};

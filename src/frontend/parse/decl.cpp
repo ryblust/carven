@@ -250,19 +250,34 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         cpp_import = parse_cpp_declaration_form(*keyword);
     }
     const auto is_bare = std::holds_alternative<ASTBareDeclarationVisibility>(visibility);
+    auto async_span = std::optional<Span>();
+    if (const auto keyword = match(TokenKind::Async)) {
+        async_span = keyword->span;
+    }
     auto const_span = std::optional<Span>();
     if (check(TokenKind::Const)
         && cursor + 1 < tokens.size()
         && (tokens[cursor + 1].kind == TokenKind::Fn
+            || tokens[cursor + 1].kind == TokenKind::Async
             || (is_bare && tokens[cursor + 1].kind == TokenKind::Test))) {
         const_span = consume().span;
     }
 
+    if (!async_span) {
+        if (const auto keyword = match(TokenKind::Async)) {
+            async_span = keyword->span;
+        }
+    }
     if ((cpp_export.has_value() || cpp_import.has_value()) && !check(TokenKind::Fn)) {
         fail_here("import(cpp) and export(cpp) forms must introduce a function");
         if (cpp_import.has_value() && check(TokenKind::Export)) {
             discard_through_semicolon();
         }
+        return std::nullopt;
+    }
+
+    if (async_span && !check(TokenKind::Fn)) {
+        fail("async modifier must introduce a function declaration", *async_span);
         return std::nullopt;
     }
 
@@ -289,7 +304,7 @@ auto Parser::parse_top_level_item() noexcept -> std::optional<ASTItemID> {
         });
     }
     if (check(TokenKind::Fn)) {
-        auto parsed = parse_function(visibility, cpp_export, cpp_import, const_span);
+        auto parsed = parse_function(visibility, cpp_export, cpp_import, const_span, async_span);
         if (!parsed) {
             return std::nullopt;
         }
@@ -467,7 +482,8 @@ auto Parser::parse_record(ASTDeclarationVisibility visibility) noexcept
             if (const auto keyword = match(TokenKind::Private)) {
                 access = ASTPrivateDeclarationVisibility {.keyword_span = keyword->span};
             }
-            auto operation = parse_function(access, std::nullopt, std::nullopt, std::nullopt);
+            auto operation =
+                parse_function(access, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
             if (!operation) {
                 return std::nullopt;
             }
@@ -516,7 +532,8 @@ auto Parser::parse_function(
     ASTDeclarationVisibility visibility,
     std::optional<ASTCppExportForm> cpp_export,
     std::optional<Span> cpp_import,
-    std::optional<Span> const_span
+    std::optional<Span> const_span,
+    std::optional<Span> async_span
 ) noexcept -> std::optional<std::pair<Span, ASTFunctionDecl>> {
     expect(TokenKind::Fn, "expected 'fn'");
     const auto name = expect(TokenKind::Identifier, "expected function name");
@@ -600,6 +617,7 @@ auto Parser::parse_function(
                 .visibility = visibility,
                 .cpp_export = cpp_export,
                 .const_span = const_span,
+                .async_span = async_span,
                 .name_span = name.span,
                 .parameters = std::move(parameters),
                 .result_type = result_type,

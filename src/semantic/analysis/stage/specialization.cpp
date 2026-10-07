@@ -29,6 +29,9 @@ public:
 private:
     auto expression(SemanticExpression& source) noexcept -> AnalysisTask<void>;
     auto statement(SemanticStatement& source) noexcept -> AnalysisTask<void>;
+    template<typename Call>
+    auto specialize_call(Call& call, CallableID target, ProgramOriginID origin) noexcept
+        -> AnalysisTask<bool>;
     auto pattern_bounds(
         std::span<const PatternID> roots,
         std::vector<SemPatternBounds>& bounds
@@ -284,6 +287,46 @@ auto Specializer::pattern(
     co_return {};
 }
 
+template<typename Call>
+auto Specializer::specialize_call(Call& call, CallableID target, ProgramOriginID origin) noexcept
+    -> AnalysisTask<bool> {
+    const auto function = draft.function_for_callable(target);
+    if (!function || !draft.staged_function(*function)) {
+        co_return false;
+    }
+    rewritten = true;
+    const auto contract = draft.construction_callable_contract_copy(target);
+    auto constants = std::vector<ConstantID>();
+    auto runtime = std::vector<SemCallArgument>();
+    for (auto index = 0uz; index < call.arguments.size(); ++index) {
+        auto& argument = call.arguments[index];
+        if (contract.parameters[index].stage == ParameterStage::Static) {
+            auto value = co_await evaluate(argument.expression);
+            if (!value) {
+                co_return std::unexpected(value.error());
+            }
+            constants.push_back(*value);
+        } else {
+            auto value = co_await expression(argument.expression);
+            if (!value) {
+                co_return std::unexpected(value.error());
+            }
+            runtime.push_back(std::move(argument));
+        }
+    }
+    auto instance = co_await stage.instance(*function, std::move(constants), origin);
+    if (!instance) {
+        co_return std::unexpected(instance.error());
+    }
+    // The call retains its execution kind and names the selected instance.
+    call.target = *instance;
+    call.callee->type =
+        BodyType(draft.intern_type({.value = FunctionTypeValue {.callable = *instance}}));
+    call.callee->value = SemCallable {.callable = *instance};
+    call.arguments = std::move(runtime);
+    co_return true;
+}
+
 auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTask<void> {
     if (auto charged = stage.charge(StageResource::Nodes, source.origin); !charged) {
         co_return std::unexpected(charged.error());
@@ -323,40 +366,20 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
         }
         co_return {};
     }
-    if (auto* call = std::get_if<SemCall>(&source.value)) {
-        const auto function =
-            call->target ? draft.function_for_callable(*call->target) : std::nullopt;
-        if (function && draft.staged_function(*function)) {
-            rewritten = true;
-            const auto contract = draft.construction_callable_contract_copy(*call->target);
-            auto constants = std::vector<ConstantID>();
-            auto runtime = std::vector<SemCallArgument>();
-            for (auto index = 0uz; index < call->arguments.size(); ++index) {
-                auto& argument = call->arguments[index];
-                if (contract.parameters[index].stage == ParameterStage::Static) {
-                    auto value = co_await evaluate(argument.expression);
-                    if (!value) {
-                        co_return std::unexpected(value.error());
-                    }
-                    constants.push_back(*value);
-                } else {
-                    auto value = co_await expression(argument.expression);
-                    if (!value) {
-                        co_return std::unexpected(value.error());
-                    }
-                    runtime.push_back(std::move(argument));
-                }
-            }
-            auto instance = co_await stage.instance(*function, std::move(constants), source.origin);
-            if (!instance) {
-                co_return std::unexpected(instance.error());
-            }
-            // The call names the instance as an ordinary callable.
-            call->target = *instance;
-            call->callee->type =
-                BodyType(draft.intern_type({.value = FunctionTypeValue {.callable = *instance}}));
-            call->callee->value = SemCallable {.callable = *instance};
-            call->arguments = std::move(runtime);
+    if (auto* call = std::get_if<SemCall>(&source.value); call && call->target) {
+        auto specialized = co_await specialize_call(*call, *call->target, source.origin);
+        if (!specialized) {
+            co_return std::unexpected(specialized.error());
+        }
+        if (*specialized) {
+            co_return {};
+        }
+    } else if (auto* call = std::get_if<SemColdCall>(&source.value)) {
+        auto specialized = co_await specialize_call(*call, call->target, source.origin);
+        if (!specialized) {
+            co_return std::unexpected(specialized.error());
+        }
+        if (*specialized) {
             co_return {};
         }
     }

@@ -111,6 +111,12 @@ struct CallableViewTypeValue final {
     constexpr auto operator==(const CallableViewTypeValue&) const noexcept -> bool = default;
 };
 
+struct OperationTypeValue final {
+    TypeID success;
+    FailureSetID failures;
+    constexpr auto operator==(const OperationTypeValue&) const noexcept -> bool = default;
+};
+
 using CanonicalTypeValue = std::variant<
     BuiltinTypeValue,
     StructTypeValue,
@@ -122,6 +128,7 @@ using CanonicalTypeValue = std::variant<
     FunctionTypeValue,
     ClosureTypeValue,
     CallableViewTypeValue,
+    OperationTypeValue,
     CppTypeValue>;
 
 struct CanonicalType final {
@@ -143,7 +150,10 @@ struct CallableParameter final {
     constexpr auto operator==(const CallableParameter&) const noexcept -> bool = default;
 };
 
+enum class CallableExecutionKind { Synchronous, Async };
+
 struct CallableSignature final {
+    CallableExecutionKind execution;
     std::vector<CallableParameter> parameters;
     TypeID result;
     FailureSetID failures;
@@ -175,10 +185,16 @@ struct ConstructionCallableViewTypeValue final {
     FailureTermID failures;
 };
 
+struct ConstructionOperationTypeValue final {
+    ConstructionTypeRef success;
+    FailureTermID failures;
+};
+
 using ConstructionTypeValue = std::variant<
     ConstructionArrayTypeValue,
     ConstructionSliceTypeValue,
-    ConstructionCallableViewTypeValue>;
+    ConstructionCallableViewTypeValue,
+    ConstructionOperationTypeValue>;
 
 struct ConstructionType final {
     ConstructionTypeValue value;
@@ -384,6 +400,13 @@ public:
                 return types.intern(
                     {.value = SliceTypeValue {.element = resolve_ref(value.element)}}
                 );
+            } else if constexpr (std::same_as<Value, ConstructionOperationTypeValue>) {
+                return types.intern(
+                    {.value = OperationTypeValue {
+                         .success = resolve_ref(value.success),
+                         .failures = resolve_failure(value.failures),
+                     }}
+                );
             } else if constexpr (std::same_as<Value, ConstructionCallableViewTypeValue>) {
                 auto parameters = std::vector<CallableParameter>();
                 parameters.reserve(value.parameters.size());
@@ -398,6 +421,7 @@ public:
                 }
                 const auto signature = signatures.intern(
                     CallableSignature {
+                        .execution = CallableExecutionKind::Synchronous,
                         .parameters = std::move(parameters),
                         .result = resolve_ref(value.result),
                         .failures = resolve_failure(value.failures),

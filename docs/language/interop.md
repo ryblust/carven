@@ -225,8 +225,8 @@ whether such a spelling is reserved in its downstream C++ context is the
 author/toolchain's responsibility. `main`, `std`, and `carven` are not valid
 provider names.
 
-An `export(cpp)` declaration is an ordinary, complete-compilation-visible
-Carven function with a Carven body. It is also declared in the generated C++
+An `export(cpp)` declaration is a complete-compilation-visible Carven function
+with a Carven body. It may be synchronous or async. It is also declared in the generated C++
 API for its module:
 
 ```carven
@@ -254,7 +254,12 @@ The generated signatures use the same C++ representations as Carven functions:
 | Write parameters | Mutable references |
 | Take parameters | Owned values; exports use ordinary transfer and imports forward native rvalues |
 | Infallible result | The ordinary result type, including `void` |
-| Declared failures | `carven::runtime::Outcome<Result, Failures...>` |
+| Declared synchronous failures | `carven::runtime::Outcome<Result, Failures...>` |
+| Async completion contract | Cold `carven::runtime::async::Operation<Result, Failures...>` |
+
+Async imports and exports use the [async borrowing and host contracts](async.md#native-providers-and-hosts).
+Non-snapshot source Read uses a const reference, including opaque native types;
+the native callee's own signature still controls its C++ parameter initialization.
 
 The generated API header includes the required generated type definitions,
 native header environments, and runtime support. Consumers use that header and

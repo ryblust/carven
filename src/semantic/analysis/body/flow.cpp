@@ -55,7 +55,8 @@ auto BodyElaborator::empty_region(Span span) noexcept -> SemanticRegion {
         .result = std::nullopt,
         .result_reachable = false,
         .failures = BodyFailures(draft().add_empty_failure_term()),
-        .exits_test = false
+        .exits_test = false,
+
     };
 }
 
@@ -147,6 +148,7 @@ auto BodyElaborator::append_statement(
             },
             [&](const SemExpressionStatement& node) noexcept { add(node.expression); },
             [&](const SemInitialize& node) noexcept { add(node.initializer); },
+            [&](const SemAsyncLet& node) noexcept { add(node.initializer); },
             [](const SemStaticBinding&) static noexcept {},
             [](const SemConstBlock&) static noexcept {},
             [&](const SemAssign& node) noexcept {
@@ -174,12 +176,12 @@ auto BodyElaborator::append_statement(
     destination.failures = BodyFailures(
         draft().add_union_failure_term({destination.failures.term(), statement_failures})
     );
-    destination.statements.push_back(
-        {.origin = statement_origin,
-         .lifetime = active_full_expression.value_or(frames.back().lifetime),
-         .reachable = reference_path_reachable,
-         .value = std::move(value)}
-    );
+    destination.statements.push_back({
+        .origin = statement_origin,
+        .lifetime = active_full_expression.value_or(frames.back().lifetime),
+        .reachable = reference_path_reachable,
+        .value = std::move(value),
+    });
 }
 
 auto BodyElaborator::append_expression(BuiltExpression& expression, Span span) noexcept -> void {

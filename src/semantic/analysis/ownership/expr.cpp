@@ -2,6 +2,7 @@ module carven:semantic.analysis.ownership.expr.impl;
 
 import :semantic.analysis.ownership.context;
 import :semantic.semir.callable;
+import :semantic.semir.evaluation;
 import :support.invariant;
 import std;
 
@@ -366,7 +367,14 @@ auto OwnershipBodyAnalyzer::expression(
                     if (!flow.normal.has_value()) {
                         co_return {};
                     }
-                    const auto skipped = flow.normal;
+                    const auto truth = known_boolean(program, *value.left);
+                    const auto runs_right = truth
+                        ? std::optional(*truth == (value.operation == ShortCircuitOperator::And))
+                        : std::nullopt;
+                    if (runs_right == false) {
+                        co_return {};
+                    }
+                    const auto skipped = runs_right ? std::nullopt : flow.normal;
                     static_cast<void>((co_await evaluate(*value.right)));
                     join_normal_ownership(flow.normal, skipped);
                     co_return {};
@@ -487,7 +495,10 @@ auto OwnershipBodyAnalyzer::expression(
                                 == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}) {
                             for (const auto& backing : operand_storage) {
                                 formatting_reads.edit().storage_loans.push_back(
-                                    {{}, backing, operand.expression.origin}
+                                    {{},
+                                     backing,
+                                     operand.expression.origin,
+                                     OwnershipLoanProtection::Contents}
                                 );
                             }
                         }
@@ -527,7 +538,10 @@ auto OwnershipBodyAnalyzer::expression(
                                     relationships = {};
                                     for (const auto& backing : operand_storage) {
                                         relationships.edit().storage_loans.push_back(
-                                            {{}, backing, source.origin}
+                                            {{},
+                                             backing,
+                                             source.origin,
+                                             OwnershipLoanProtection::Contents}
                                         );
                                     }
                                 }
@@ -585,7 +599,10 @@ auto OwnershipBodyAnalyzer::expression(
                                             }) {
                                             for (const auto& backing : operand_storage) {
                                                 relationships.edit().storage_loans.push_back(
-                                                    {{}, backing, source.origin}
+                                                    {{},
+                                                     backing,
+                                                     source.origin,
+                                                     OwnershipLoanProtection::Contents}
                                                 );
                                             }
                                         }
@@ -800,6 +817,115 @@ auto OwnershipBodyAnalyzer::expression(
                 },
                 [&](const SemCppCall& value) noexcept -> ContinuationTask<std::monostate> {
                     (co_await external(value));
+                    co_return {};
+                },
+                [&](const SemColdCall& value) noexcept -> ContinuationTask<std::monostate> {
+                    static_cast<void>((co_await evaluate(*value.callee)));
+                    // Only runtime arguments are retained by the cold activation.
+                    const auto& signature = program.callable_signatures().signature(
+                        program.declarations().callable(value.target).signature
+                    );
+                    for (const auto& [argument, parameter] :
+                         std::views::zip(value.arguments, signature.parameters)) {
+                        auto relationships = co_await evaluate(argument.expression, true);
+                        if (!flow.normal) {
+                            break;
+                        }
+                        if (parameter.stage == ParameterStage::Static) {
+                            continue;
+                        }
+                        const auto borrowed = argument.access == AccessMode::Write
+                            || (argument.access == AccessMode::Read
+                                && !analysis.contents(argument.expression.type.resolved())
+                                        .read_is_value_snapshot());
+                        if (borrowed) {
+                            for (auto backing : operand_storage) {
+                                // Projection identity retains its containing object lifetime.
+                                relationships.edit().storage_loans.push_back(
+                                    {{},
+                                     std::move(backing),
+                                     argument.expression.origin,
+                                     OwnershipLoanProtection::Lifetime}
+                                );
+                            }
+                            if (operand_storage.empty()) {
+                                diagnose(
+                                    DiagnosticCode::AsyncOwnership,
+                                    "cold borrow requires known source backing",
+                                    argument.expression.origin
+                                );
+                            }
+                        }
+                        merge_relationships(flow.normal->value, relationships);
+                    }
+                    co_return {};
+                },
+                [&](const SemAwait& value) noexcept -> ContinuationTask<std::monostate> {
+                    static_cast<void>((co_await evaluate(*value.operand)));
+                    if (!flow.normal) {
+                        co_return {};
+                    }
+                    if (value.operand_kind == AsyncAwaitOperandKind::LexicalChild) {
+                        const auto* binding = std::get_if<SemBinding>(&value.operand->value);
+                        if (binding == nullptr) {
+                            invariant_violation("child observation lacks canonical binding");
+                        }
+                        const auto place = binding_place(binding->binding);
+                        require_available(flow.normal->state, place, source.origin);
+                        auto& child = flow.normal->state.objects[place.object];
+                        child.available = false;
+                        child.modified = true;
+                        if (!child.taken) {
+                            child.taken = source.origin;
+                        }
+                        child.child_intent = true;
+                        child.relationships = {};
+                    } else {
+                        // Await completion closes consumed activation temporaries.
+                        visit_semantic_nodes(
+                            *value.operand,
+                            [&](const SemanticExpression& operand) noexcept {
+                                if (!analysis.contents(operand.type.resolved())
+                                         .contains_operation_owner) {
+                                    return;
+                                }
+                                if (const auto found =
+                                        facts.temporaries.find(std::addressof(operand));
+                                    found != facts.temporaries.end()) {
+                                    auto& temporary =
+                                        flow.normal->state
+                                            .objects[input.objects.size() + found->second];
+                                    temporary.relationships = {};
+                                    temporary.available = false;
+                                }
+                            }
+                        );
+                    }
+                    flow.normal->value = {};
+                    const auto* operation = std::get_if<OperationTypeValue>(
+                        &program.types().type(value.operand->type.resolved()).value
+                    );
+                    if (operation == nullptr) {
+                        invariant_violation("await ownership requires an operation contract");
+                    }
+                    // Operand failures already retain their evaluation states.
+                    for (const auto type :
+                         program.failure_sets().failure_set(operation->failures).members) {
+                        flow.exits.push_back({OwnershipFailure {type, {}}, flow.normal->state});
+                    }
+                    flow.exits.push_back({OwnershipCancelled {}, flow.normal->state});
+                    co_return {};
+                },
+                [&](const SemAsyncIntrinsic& value) noexcept -> ContinuationTask<std::monostate> {
+                    if (value.kind == AsyncIntrinsic::CancelChild) {
+                        if (!value.child) {
+                            invariant_violation("child cancellation lacks canonical binding");
+                        }
+                        const auto place = binding_place(*value.child);
+                        require_available(flow.normal->state, place, source.origin);
+                        // Request alone retains observation and backing.
+                        flow.normal->state.objects[place.object].child_intent = true;
+                    }
                     co_return {};
                 },
                 [&](const SemCall& value) noexcept -> ContinuationTask<std::monostate> {

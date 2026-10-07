@@ -29,17 +29,20 @@ auto BodyPreparation::operands(
                 : access == AccessMode::Take ? PreparedUse::NativeTake
                                              : PreparedUse::ConstPlace);
     };
-    // Carven parameters and builtin writers read builtins other than owning
-    // strings and entry arguments as values; C++ calls retain the exact Read borrow.
+    // Source Read parameters preserve borrowed storage; builtin snapshots are
+    // values. Direct C++ calls retain their delegated access categories.
     const auto value_read = [&](const SemCallArgument& input) noexcept {
         auto prepared = argument(input);
         const auto* builtin = std::get_if<BuiltinTypeValue>(
             &semantic.types().type(input.expression.type.resolved()).value
         );
         if (input.access == AccessMode::Read
-            && builtin != nullptr
-            && builtin->kind != BuiltinType::String
-            && builtin->kind != BuiltinType::EntryArgs) {
+            && semantic.type_contents(input.expression.type.resolved()).read_borrows_storage()) {
+            prepared.use = PreparedUse::ConstPlace;
+        } else if (input.access == AccessMode::Read
+                   && builtin != nullptr
+                   && builtin->kind != BuiltinType::String
+                   && builtin->kind != BuiltinType::EntryArgs) {
             prepared.use = PreparedUse::OperandValue;
         }
         result.push_back(prepared);
@@ -217,6 +220,20 @@ auto BodyPreparation::operands(
                     value_read(input);
                 }
             },
+            [&](const SemColdCall& value) noexcept {
+                add(*value.callee, PreparedUse::OperandValue);
+                result.back().demand = PreparedDemand::Effects;
+                for (const auto& input : value.arguments) {
+                    value_read(input);
+                }
+            },
+            [&](const SemAwait& value) noexcept {
+                add(*value.operand,
+                    value.operand_kind == AsyncAwaitOperandKind::ColdOperation
+                        ? PreparedUse::NativeTake
+                        : PreparedUse::WritePlace);
+            },
+            [](const SemAsyncIntrinsic&) static noexcept {},
             [](const SemShortCircuit&) static noexcept {},
             [](const SemIf&) static noexcept {},
             [](const SemMatch&) static noexcept {},

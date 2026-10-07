@@ -151,6 +151,13 @@ auto OwnershipBodyAnalyzer::check_contracts() noexcept
                                 }
                             }
                         },
+                        [&](const SemColdCall& value) noexcept {
+                            for (const auto& argument : value.arguments) {
+                                if (argument.access == AccessMode::Write) {
+                                    write(argument.expression);
+                                }
+                            }
+                        },
                         [&](const SemClosure& value) noexcept {
                             for (const auto& capture : value.captures) {
                                 if (capture.mode == CaptureMode::Write) {

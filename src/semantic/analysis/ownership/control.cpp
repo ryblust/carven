@@ -2,6 +2,7 @@ module carven:semantic.analysis.ownership.control.impl;
 
 import :semantic.analysis.ownership.context;
 import :semantic.analysis.pattern.control;
+import :semantic.semir.evaluation;
 import std;
 
 auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state) noexcept
@@ -19,10 +20,15 @@ auto OwnershipBodyAnalyzer::conditional(const SemIf& value, OwnershipState state
         if (!remaining.has_value()) {
             break;
         }
-        auto selected = (co_await region(branch.body, remaining->state));
-        join_normal_ownership(result.normal, std::move(selected.normal));
-
-        append_ownership_exits(result, selected);
+        const auto truth = known_boolean(program, branch.condition);
+        if (truth != false) {
+            auto selected = co_await region(branch.body, remaining->state);
+            join_normal_ownership(result.normal, std::move(selected.normal));
+            append_ownership_exits(result, selected);
+        }
+        if (truth == true) {
+            remaining.reset();
+        }
     }
     if (remaining.has_value()) {
         if (value.otherwise.has_value()) {
@@ -145,7 +151,13 @@ auto OwnershipBodyAnalyzer::match(const SemMatch& value, OwnershipState state) n
             accesses.resize(previous);
             accepted = std::move(guard.normal);
             append_ownership_exits(result, guard);
-            join_normal_ownership(remaining, accepted);
+            const auto truth = known_boolean(program, *arm.guard);
+            if (truth != true) {
+                join_normal_ownership(remaining, accepted);
+            }
+            if (truth == false) {
+                accepted.reset();
+            }
         }
         if (accepted.has_value()) {
             auto branch = (co_await region(arm.body, std::move(accepted->state)));
@@ -232,7 +244,13 @@ auto OwnershipBodyAnalyzer::attempt(const SemTry& value, OwnershipState state) n
                 auto guard = (co_await complete_expression(*arm.guard, std::move(accepted->state)));
                 accepted = std::move(guard.normal);
                 append_ownership_exits(result, guard);
-                join_normal_ownership(remaining, accepted);
+                const auto truth = known_boolean(program, *arm.guard);
+                if (truth != true) {
+                    join_normal_ownership(remaining, accepted);
+                }
+                if (truth == false) {
+                    accepted.reset();
+                }
             }
             if (accepted.has_value()) {
                 auto handled = (co_await region(arm.body, std::move(accepted->state)));
@@ -281,8 +299,13 @@ auto OwnershipBodyAnalyzer::loop(const SemLoop& value, OwnershipState state) noe
         if (!pass.normal.has_value()) {
             co_return iteration;
         }
-        if (value.condition.has_value()) {
+        const auto truth =
+            value.condition ? known_boolean(program, *value.condition) : std::optional(true);
+        if (truth != true) {
             iteration.exits.push_back({OwnershipBreak {}, pass.normal->state});
+        }
+        if (truth == false) {
+            co_return iteration;
         }
         auto child = (co_await region(*value.body, std::move(pass.normal->state)));
         auto steps = std::move(child.normal);

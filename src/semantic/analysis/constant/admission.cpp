@@ -31,7 +31,7 @@ private:
     auto supported_type(ConstructionTypeRef type, bool allow_void = false) const noexcept -> bool;
     auto check_function(FunctionID function) noexcept -> void;
     auto check_body(const StructuredBodyDraft& body) noexcept -> void;
-    auto check_call(const SemCall& operation, ProgramOriginID origin) noexcept -> void;
+    auto check_call(std::optional<CallableID> target, ProgramOriginID origin) noexcept -> void;
 
     ProgramDraft& draft;
     std::span<const std::optional<BodyID>> function_bodies;
@@ -98,6 +98,8 @@ auto ConstFunctionValidator::supported_type(
         const auto construction = draft.construction_type_copy(term);
         if (const auto* array = std::get_if<ConstructionArrayTypeValue>(&construction.value)) {
             pending.emplace_back(array->element, false);
+        } else if (std::holds_alternative<ConstructionOperationTypeValue>(construction.value)) {
+            // The descriptor is local to execution; freezing separately rejects it.
         } else if (std::holds_alternative<ConstructionSliceTypeValue>(construction.value)
                    || std::holds_alternative<ConstructionCallableViewTypeValue>(
                        construction.value
@@ -142,9 +144,10 @@ auto ConstFunctionValidator::check_function(FunctionID function) noexcept -> voi
     check_body(draft.body_draft(*function_bodies[function.index()]));
 }
 
-auto ConstFunctionValidator::check_call(const SemCall& operation, ProgramOriginID origin) noexcept
-    -> void {
-    const auto target = operation.target;
+auto ConstFunctionValidator::check_call(
+    std::optional<CallableID> target,
+    ProgramOriginID origin
+) noexcept -> void {
     if (!target) {
         reject(origin, "cannot prove compile-time capability of indirect call target");
         return;
@@ -234,9 +237,10 @@ auto ConstFunctionValidator::check_body(const StructuredBodyDraft& body) noexcep
                             }
                         });
                         using Operation = std::remove_cvref_t<decltype(operation)>;
-                        if constexpr (std::same_as<Operation, SemCall>) {
+                        if constexpr (std::same_as<Operation, SemCall>
+                                      || std::same_as<Operation, SemColdCall>) {
                             if (expression->operation_reachable) {
-                                check_call(operation, expression->origin);
+                                check_call(operation.target, expression->origin);
                             }
                         }
                     });

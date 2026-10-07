@@ -137,6 +137,8 @@ const TestSuite suite([] static noexcept {
                     .lifetime = lifetime,
                     .reachable = true,
                     .value = SemExpressionStatement {.expression = std::move(expression)},
+
+
                 });
                 const auto publish_slice = [&]() noexcept {
                     builder.add_body_draft(
@@ -148,6 +150,8 @@ const TestSuite suite([] static noexcept {
                             .result_reachable = false,
                             .failures = BodyFailures(builder.add_empty_failure_term()),
                             .exits_test = false,
+
+
                         })
                     );
                     return std::move(builder).finish();

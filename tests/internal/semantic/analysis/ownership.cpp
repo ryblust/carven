@@ -29,6 +29,201 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Async ownership: initial source rejection precedes target lowering"_test = [] static noexcept {
+        const auto cases = std::array {
+            std::pair {
+                std::string_view(
+                    "async fn leaf() -> i32 => 1; async fn bad() { let op = leaf(); print(await op); print(await op); }"
+                ),
+                DiagnosticCode::AccessUnavailable
+            },
+            std::pair {
+                std::string_view(
+                    "async fn leaf() -> i32 => 1; async fn bad() { async let child = leaf(); }"
+                ),
+                DiagnosticCode::AsyncChildIntent
+            },
+            std::pair {
+                std::string_view(
+                    "async fn leaf() -> i32 => 1; async fn bad() { var op = leaf(); op = leaf(); }"
+                ),
+                DiagnosticCode::AsyncAdmission
+            },
+            std::pair {
+                std::string_view(
+                    "async fn leaf(&value: i32) -> i32 => value; async fn bad() { var value = 1; let op = leaf(&value); let moved = &&value; print(await op); }"
+                ),
+                DiagnosticCode::AccessBorrowConflict
+            },
+            std::pair {
+                std::string_view("fn helper() { require(false); } async fn bad() { helper(); }"),
+                DiagnosticCode::AsyncAdmission
+            },
+            std::pair {
+                std::string_view(
+                    "async fn leaf() -> i32 => 1; fn bad() { let op = leaf(); let alias = op; }"
+                ),
+                DiagnosticCode::AsyncOwnership
+            },
+            std::pair {
+                std::string_view("async fn leaf() -> i32 => 1; fn bad() { let callable = leaf; }"),
+                DiagnosticCode::AsyncAdmission
+            },
+            std::pair {
+                std::string_view(
+                    "async fn leaf(&value: i32) -> i32 => value; fn bad() { var value = 1; return leaf(&value); }"
+                ),
+                DiagnosticCode::AccessBorrowConflict
+            },
+            std::pair {
+                std::string_view(
+                    "struct Pair { value: i32 } async fn leaf(&value: i32) -> i32 => value; async fn bad() { var pair = Pair { value: 1 }; let op = leaf(&pair.value); pair = Pair { value: 2 }; print(await op); }"
+                ),
+                DiagnosticCode::AccessBorrowConflict
+            },
+            std::pair {
+                std::string_view(
+                    "struct Pair { value: i32 } async fn leaf(&value: i32) -> i32 => value; async fn bad() { var pair = Pair { value: 1 }; let op = leaf(&pair.value); let moved = &&pair.value; print(await op); }"
+                ),
+                DiagnosticCode::AccessTakeOperand
+            },
+            std::pair {
+                std::string_view("async fn bad(values: [i32; 2]) {}"),
+                DiagnosticCode::AsyncOwnership
+            },
+            std::pair {
+                std::string_view("async fn bad(value: u8x32) {}"),
+                DiagnosticCode::AsyncOwnership
+            },
+            std::pair {
+                std::string_view("async fn leaf() -> i32 => 1; fn bad() { await leaf(); }"),
+                DiagnosticCode::AsyncAdmission
+            },
+        };
+        for (const auto& [source, code] : cases) {
+            expect_diagnostic(analyze_test_errors(std::string(source)), code);
+        }
+    };
+    "Async ownership: native Read is a source storage loan"_test = [] static noexcept {
+        const auto program = analyze_test_program(
+            "private import(cpp) async fn native(context: ::Context) -> i32; "
+            "export(cpp) async fn run(context: ::Context) -> i32 => await native(context);"
+        );
+        for (const auto [id, type] : program.types().entries()) {
+            if (std::holds_alternative<CppTypeValue>(type.value)) {
+                expect(program.type_contents(id).contains_native_value);
+                expect(program.type_contents(id).read_borrows_storage());
+                expect(!program.type_contents(id).read_is_value_snapshot());
+            }
+        }
+        expect_diagnostic(
+            analyze_test_errors(
+                "private import(cpp) fn make_context() -> ::Context; "
+                "private import(cpp) async fn native(context: ::Context) -> i32; "
+                "fn factory() { let context = make_context(); return native(context); }"
+            ),
+            DiagnosticCode::AccessBorrowConflict
+        );
+    };
+
+    "Async ownership: private wrappers preserve nonexclusive covered scalar Write"_test =
+        [] static noexcept {
+            const auto program = analyze_test_program(
+                "struct Pair { value: i32 } async fn leaf(&value: i32) -> i32 => value; "
+                "fn wrapped(&pair: Pair) => leaf(&pair.value); async fn main() { "
+                "var pair = Pair { value: 3 }; let first = wrapped(&pair); let second = wrapped(&pair); "
+                "pair.value = 4; print(await first); print(await second); }"
+            );
+            expect(program.bodies().size() > 0uz);
+            expect_diagnostic(
+                analyze_test_errors(
+                    "struct Pair { value: i32 } async fn leaf(&value: i32) -> i32 => value; "
+                    "fn replace(&pair: Pair) { pair = Pair { value: 9 }; } async fn bad() { "
+                    "var pair = Pair { value: 3 }; let op = leaf(&pair.value); replace(&pair); print(await op); }"
+                ),
+                DiagnosticCode::AccessBorrowConflict
+            );
+            const auto native = analyze_test_program(
+                "private import(cpp) fn native_write(&value: i32); fn helper(&value: i32) { native_write(&value); } "
+                "async fn valid() { var value: i32 = 1; helper(&value); }"
+            );
+            expect(native.bodies().size() > 0uz);
+        };
+
+    "Async ownership: completion closes cold and child backing obligations"_test = [] static noexcept {
+        for (const auto child : {false, true}) {
+            const auto source = std::format(
+                "struct Pair {{ value: i32 }} async fn leaf(&value: i32) -> i32 => value; "
+                "async fn main() {{ var pair = Pair {{ value: 3 }}; {} "
+                "let observed = await op; let moved = &&pair; print(observed); print(moved.value); }}",
+                child ? "async let op = leaf(&pair.value);" : "let op = leaf(&pair.value);"
+            );
+            const auto program = analyze_test_program(source);
+            expect(program.bodies().size() > 0uz);
+        }
+    };
+
+    "Async intrinsics: canonical direct calls preserve ordinary local shadowing"_test =
+        [] static noexcept {
+            const auto cases = std::array {
+                std::pair {
+                    std::string_view(
+                        "import std::async using {yield_once, cancellation_requested}; fn query() -> bool => cancellation_requested(); fn shadow() { let yield_once = 7; print(yield_once); } async fn run() { await yield_once(); }"
+                    ),
+                    false
+                },
+                std::pair {
+                    std::string_view(
+                        "import std::async using yield_once; fn bad() { let checkpoint = yield_once; }"
+                    ),
+                    true
+                },
+            };
+            for (const auto& [source, rejected] : cases) {
+                auto sources = SourceManager();
+                const auto application = sources.append_virtual("analysis.cv", std::string(source));
+                const auto standard = sources.append_virtual("async.cv", "");
+                require(application.has_value());
+                require(standard.has_value());
+                const auto inputs = std::array {
+                    SourceModuleInput {
+                        .source_id = *application,
+                        .module_path = semantic_test_module_path()
+                    },
+                    SourceModuleInput {
+                        .source_id = *standard,
+                        .module_path = *CanonicalModulePath::from_value("crafts.carven.std.async")
+                    },
+                };
+                auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
+                require(parsed.has_value());
+                auto result = analyze(std::move(*parsed));
+                if (rejected) {
+                    require(!result.has_value());
+                    expect_diagnostic(result.error(), DiagnosticCode::AsyncAdmission);
+                } else {
+                    require(result.has_value());
+                    auto found_query = false;
+                    auto found_yield = false;
+                    for (const auto entry : result->value.bodies().entries()) {
+                        visit_semantic_nodes(
+                            entry.value.realized_region(),
+                            [&](const SemanticExpression& expression) noexcept {
+                                if (const auto* intrinsic =
+                                        std::get_if<SemAsyncIntrinsic>(&expression.value)) {
+                                    found_query |=
+                                        intrinsic->kind == AsyncIntrinsic::CancellationRequested;
+                                    found_yield |= intrinsic->kind == AsyncIntrinsic::YieldOnce;
+                                }
+                            }
+                        );
+                    }
+                    expect(found_query);
+                    expect(found_yield);
+                }
+            }
+        };
+
     "Semantic ownership: a condition retains both ownership paths"_test = [] static noexcept {
         for (const auto keyword : {"let", "const"}) {
             expect_diagnostic(

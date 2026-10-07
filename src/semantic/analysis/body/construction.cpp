@@ -269,9 +269,19 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
                 }
                 co_return std::nullopt;
             },
+            [&](const CatalogAsyncIntrinsicForm&) noexcept
+                -> AnalysisTask<std::optional<ConstantID>> {
+                co_return std::unexpected(fail(
+                    span,
+                    DiagnosticCode::AsyncAdmission,
+                    "std::async intrinsic is context-sensitive and cannot form a constant value"
+                ));
+            },
             [&]<typename Form>(const Form&) noexcept -> AnalysisTask<std::optional<ConstantID>> {
                 static_assert(
-                    std::same_as<Form, CatalogStructForm> || std::same_as<Form, CatalogEnumForm>,
+                    std::same_as<Form, CatalogStructForm>
+                        || std::same_as<Form, CatalogEnumForm>
+                        || std::same_as<Form, CatalogAsyncIntrinsicForm>,
                     "unhandled non-constant catalog symbol"
                 );
                 co_return std::unexpected(fail(
@@ -288,18 +298,21 @@ auto BodyElaborator::construction_requests() noexcept -> ConstructionRequests& {
     return batch->requests;
 }
 
-auto BodyElaborator::resolve_function(std::string_view name, Span span) noexcept
-    -> AnalysisTask<std::optional<FunctionID>> {
+auto BodyElaborator::resolve_static_callable(std::string_view name, Span span) noexcept
+    -> AnalysisTask<std::optional<ResolvedStaticCallable>> {
     if (use_local(name) != nullptr || catalog().lookup(source_module_id, name).empty()) {
-        co_return std::optional<FunctionID>();
+        co_return std::optional<ResolvedStaticCallable>();
     }
     auto selected = (co_await find_global(name, span));
     if (!selected) {
         co_return std::unexpected(selected.error());
     }
+    if (const auto* intrinsic = std::get_if<CatalogAsyncIntrinsicForm>(&(*selected)->form)) {
+        co_return std::optional<ResolvedStaticCallable>(intrinsic->declaration);
+    }
     const auto* function = std::get_if<CatalogFunctionForm>(&(*selected)->form);
     if (function == nullptr) {
-        co_return std::optional<FunctionID>();
+        co_return std::optional<ResolvedStaticCallable>();
     }
 
     auto completed =
@@ -307,7 +320,7 @@ auto BodyElaborator::resolve_function(std::string_view name, Span span) noexcept
     if (!completed) {
         co_return std::unexpected(completed.error());
     }
-    co_return std::optional(function->function);
+    co_return std::optional<ResolvedStaticCallable>(function->function);
 }
 
 auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept

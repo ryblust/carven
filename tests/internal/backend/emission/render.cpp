@@ -27,9 +27,12 @@ auto attribution() noexcept -> TargetAttribution {
 }
 
 template<typename Statement>
-auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
+auto emitted_statement(
+    Statement statement,
+    TargetCallableExecution execution = TargetCallableExecution::Ordinary
+) noexcept -> GeneratedArtifact {
     auto builder = TargetTestingFixture::unit_builder();
-    const auto result = builder.intern_type({
+    const auto scalar_result = builder.intern_type({
         .value =
             TargetIntrinsicType {
                 .symbol = TargetSymbol::Void,
@@ -37,6 +40,16 @@ auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
             },
         .const_qualified = false,
     });
+    const auto result = execution == TargetCallableExecution::Coroutine
+        ? builder.intern_type(
+              {.value =
+                   TargetIntrinsicType {
+                       .symbol = TargetSymbol::RuntimeAsyncOperation,
+                       .type_argument_ids = {scalar_result},
+                   },
+               .const_qualified = false}
+          )
+        : scalar_result;
     auto body = std::vector<TargetStmt>();
     if constexpr (std::invocable<Statement&, TargetUnitBuilder&>) {
         body.push_back({.value = statement(builder), .attribution = attribution()});
@@ -49,7 +62,7 @@ auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
             .name = TargetName(TargetIdentifier::from_spelling("fixture")),
             .parameters = {},
             .result = result,
-            .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+            .form = TargetFreeFunctionDefinition {.execution = execution, .body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
@@ -70,6 +83,113 @@ auto emitted_statement(Statement statement) noexcept -> GeneratedArtifact {
 }
 
 const TestSuite suite([] static noexcept {
+    "Emission: coroutine await and completion retain runtime dependencies"_test =
+        [] static noexcept {
+            const auto artifact = emitted_statement(
+                [](TargetUnitBuilder& builder) static noexcept {
+                    const auto void_type = builder.intern_type({
+                        .value =
+                            TargetIntrinsicType {
+                                .symbol = TargetSymbol::Void,
+                                .type_argument_ids = {}
+                            },
+                        .const_qualified = false,
+                    });
+                    const auto completion = builder.intern_type({
+                        .value =
+                            TargetIntrinsicType {
+                                .symbol = TargetSymbol::RuntimeAsyncCompletion,
+                                .type_argument_ids = {void_type},
+                            },
+                        .const_qualified = false,
+                    });
+                    auto statements = std::vector<TargetStmt>();
+                    statements.push_back({
+                        .value =
+                            TargetExprStmt {
+                                .expression = co_await_expression(call_expression(
+                                    TargetExpr {
+                                        .value =
+                                            TargetIntrinsicNameExpr {
+                                                .symbol = TargetSymbol::RuntimeAsyncYieldOnce
+                                            }
+                                    },
+                                    {}
+                                ))
+                            },
+                        .attribution = attribution(),
+                    });
+                    statements.push_back({
+                        .value =
+                            TargetCoReturnStmt {
+                                .expression = call_expression(
+                                    TargetExpr {
+                                        .value =
+                                            TargetStaticMemberExpr {
+                                                .owner = completion,
+                                                .name = TargetIdentifier::from_spelling("success"),
+                                            }
+                                    },
+                                    {}
+                                )
+                            },
+                        .attribution = attribution(),
+                    });
+                    return TargetBlockStmt {.statements = std::move(statements)};
+                },
+                TargetCallableExecution::Coroutine
+            );
+            expect(artifact.content.contains("#include <coroutine>"));
+            expect(artifact.content.contains("#include <carven/runtime/async/async.hpp>"));
+            expect(artifact.content.contains("co_await ::carven::runtime::async::yield_once()"));
+            expect(artifact.content.contains(
+                "co_return ::carven::runtime::async::Completion<void>::success()"
+            ));
+            expect(!artifact.content.contains("[&]"));
+        };
+
+    "Emission: completion-only coroutines retain their native facility header"_test =
+        [] static noexcept {
+            const auto artifact = emitted_statement(
+                [](TargetUnitBuilder& builder) static noexcept {
+                    const auto void_type = builder.intern_type({
+                        .value =
+                            TargetIntrinsicType {
+                                .symbol = TargetSymbol::Void,
+                                .type_argument_ids = {},
+                            },
+                        .const_qualified = false,
+                    });
+                    const auto completion = builder.intern_type({
+                        .value =
+                            TargetIntrinsicType {
+                                .symbol = TargetSymbol::RuntimeAsyncCompletion,
+                                .type_argument_ids = {void_type},
+                            },
+                        .const_qualified = false,
+                    });
+                    return TargetCoReturnStmt {
+                        .expression = call_expression(
+                            TargetExpr {
+                                .value =
+                                    TargetStaticMemberExpr {
+                                        .owner = completion,
+                                        .name = TargetIdentifier::from_spelling("success"),
+                                    },
+                            },
+                            {}
+                        )
+                    };
+                },
+                TargetCallableExecution::Coroutine
+            );
+            expect(artifact.content.contains("#include <coroutine>"));
+            expect(artifact.content.contains("#include <carven/runtime/async/async.hpp>"));
+            expect(artifact.content.contains(
+                "co_return ::carven::runtime::async::Completion<void>::success()"
+            ));
+        };
+
     "Emission: variable template references retain type dependencies"_test = [] static noexcept {
         const auto artifact = emitted_statement([](TargetUnitBuilder& builder) static noexcept {
             const auto scalar = builder.intern_type({

@@ -1,5 +1,6 @@
 module carven:semantic.analysis.program.publication.impl;
 
+import :semantic.analysis.async;
 import :semantic.analysis.nullability;
 import :semantic.analysis.ownership;
 import :semantic.analysis.program;
@@ -26,6 +27,10 @@ auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
     if (!checked) {
         return std::unexpected(checked.error());
     }
+    auto async = analyze_async_contracts(program, diagnostics);
+    if (!async) {
+        return std::unexpected(async.error());
+    }
     checked = analyze_body_batch(program, diagnostics);
     if (!checked) {
         return std::unexpected(checked.error());
@@ -36,5 +41,7 @@ auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
     }
     result->publish_surfaces();
     result->publish_bodies();
+    result->cancellation_facts =
+        std::make_unique<const AsyncCancellationFacts>(analyze_async_cancellation(*result));
     return result;
 }

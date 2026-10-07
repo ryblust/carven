@@ -136,6 +136,7 @@ struct ASTFunctionDecl final {
     ASTDeclarationVisibility visibility;
     std::optional<ASTCppExportForm> cpp_export;
     std::optional<Span> const_span;
+    std::optional<Span> async_span;
     Span name_span;
     std::vector<ASTFunctionParameter> parameters;
     std::optional<ASTTypeID> result_type;

@@ -5,6 +5,7 @@
 
 #include <carven/api/tests/interop/exceptions/precomputed.hpp>
 
+#include <carven/runtime/async/async.hpp>
 #include <carven/runtime/callable.hpp>
 #include <carven/runtime/outcome.hpp>
 #include <carven/runtime/string.hpp>
@@ -24,8 +25,21 @@
 
 namespace {
 
+namespace async = carven::runtime::async;
+
+volatile std::sig_atomic_t async_case = 0;
+volatile std::sig_atomic_t async_boundary_reached = 0;
+
+auto terminated() noexcept -> void {
+    // An unrelated early termination cannot establish the async boundary.
+    std::_Exit(!async_case || async_boundary_reached ? 73 : 76);
+}
+
 auto aborted(int signal) noexcept -> void {
-    std::_Exit(signal == SIGABRT ? 73 : 74);
+    if (signal == SIGABRT) {
+        terminated();
+    }
+    std::_Exit(74);
 }
 
 class Foreign final {
@@ -52,6 +66,54 @@ auto foreign_function() -> int {
     throw 3;
 }
 
+auto throw_async_exception() -> void {
+    async_boundary_reached = true;
+    throw 5;
+}
+
+auto async_body() noexcept -> async::Operation<void> {
+    throw_async_exception();
+    co_return async::Completion<void>::success();
+}
+
+class ThrowingAwaiter final {
+public:
+    auto await_ready() const noexcept -> bool { return false; }
+
+    auto await_suspend(std::coroutine_handle<>) const -> void { throw_async_exception(); }
+
+    auto await_resume() const noexcept -> void {}
+};
+
+auto async_awaiter() noexcept -> async::Operation<void> {
+    co_await ThrowingAwaiter();
+    co_return async::Completion<void>::success();
+}
+
+class AsyncPayload final {
+public:
+    bool fail;
+
+    explicit AsyncPayload(bool source)
+        : fail(source) {
+        if (fail) {
+            throw_async_exception();
+        }
+    }
+
+    AsyncPayload(const AsyncPayload&) = delete;
+
+    AsyncPayload(AsyncPayload&& source)
+        : fail(source.fail) {
+        if (fail) {
+            throw_async_exception();
+        }
+    }
+
+    auto operator=(const AsyncPayload&) -> AsyncPayload& = delete;
+    auto operator=(AsyncPayload&&) -> AsyncPayload& = delete;
+};
+
 class InvalidGrouping final : public std::numpunct<char> {
 private:
     auto do_grouping() const -> std::string override { return "\3"; }
@@ -64,12 +126,13 @@ private:
 // This process is built with C++ exceptions enabled to test the protocol boundary.
 // NOLINTNEXTLINE(misc-const-correctness): Keep the standard C++ main signature.
 auto main(int argc, char** argv) -> int try {
-    std::set_terminate([]() noexcept { std::_Exit(73); });
+    std::set_terminate(&terminated);
     std::signal(SIGABRT, aborted);
     if (argc != 2) {
         return 1;
     }
     const auto operation = std::string_view(argv[1]);
+    async_case = operation.starts_with("async-");
     if (operation.starts_with("print-")) {
         // Termination uses _Exit; expose each completed write to the capture file.
         if (std::setvbuf(stdout, nullptr, _IONBF, 0) != 0) {
@@ -77,7 +140,30 @@ auto main(int argc, char** argv) -> int try {
         }
     }
     using Outcome = carven::runtime::Outcome<Foreign, Foreign>;
-    if (operation == "copy") {
+    if (operation == "async-body") {
+        static_cast<void>(async::drive_root(async_body()));
+    } else if (operation == "async-awaiter") {
+        static_cast<void>(async::drive_root(async_awaiter()));
+    } else if (operation == "async-success") {
+        static_cast<void>(async::Completion<AsyncPayload>::success_from([]() {
+            return AsyncPayload(true);
+        }));
+    } else if (operation == "async-failure") {
+        auto source = AsyncPayload(false);
+        source.fail = true;
+        static_cast<void>(async::Completion<void, AsyncPayload>::failure(std::move(source)));
+    } else if (operation == "async-binding") {
+        auto source = async::Completion<AsyncPayload>::success_from([]() noexcept {
+            return AsyncPayload(false);
+        });
+        auto* success = source.success_if();
+        if (success == nullptr) {
+            return 4;
+        }
+        success->value.fail = true;
+        const auto binding = async::SuccessBinding<AsyncPayload>(source);
+        static_cast<void>(binding);
+    } else if (operation == "copy") {
         const auto source = Foreign(false);
         static_cast<void>(Outcome::success_from([&]() { return Foreign(source); }));
     } else if (operation == "move") {

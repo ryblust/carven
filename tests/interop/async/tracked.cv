@@ -1,0 +1,63 @@
+import "async/tracked.hpp";
+import std::async using yield_once;
+
+import(cpp) fn make_tracked() -> ::Tracked;
+import(cpp) fn tracked_created() -> i32;
+import(cpp) fn tracked_copied() -> i32;
+import(cpp) fn tracked_moved() -> i32;
+import(cpp) fn tracked_destroyed() -> i32;
+import(cpp) fn tracked_live() -> i32;
+import(cpp) fn tracked_trace() -> i32;
+
+private async fn tracked() -> ::Tracked => make_tracked();
+
+private async fn local_after_yield(value: i32) -> i32 {
+    let held = make_tracked();
+    if tracked_live() != 1 { return -1; }
+    await yield_once();
+    if tracked_live() != 1 { return -2; }
+    if value < 0 { return value; }
+    return value + 1;
+}
+
+private fn local_factory(value: i32) {
+    let held = make_tracked();
+    return local_after_yield(value);
+}
+
+async fn main() {
+    println(
+        tracked_created(),
+        tracked_copied(),
+        tracked_moved(),
+        tracked_destroyed(),
+        tracked_live(),
+        tracked_trace()
+    );
+    if true {
+        let held = await tracked();
+        // This statement begins after the initializer's full-expression cleanup.
+        println(
+            tracked_created(),
+            tracked_copied(),
+            tracked_moved(),
+            tracked_destroyed(),
+            tracked_live(),
+            tracked_trace()
+        );
+    }
+    println(
+        tracked_created(),
+        tracked_copied(),
+        tracked_moved(),
+        tracked_destroyed(),
+        tracked_live(),
+        tracked_trace()
+    );
+    let destroyed_before = tracked_destroyed();
+    let selected = await local_after_yield(-7);
+    println(selected, tracked_live(), tracked_destroyed() - destroyed_before);
+    let factory_destroyed_before = tracked_destroyed();
+    let factory_selected = await local_factory(-7);
+    println(factory_selected, tracked_live(), tracked_destroyed() - factory_destroyed_before);
+}

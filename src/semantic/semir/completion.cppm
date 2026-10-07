@@ -13,6 +13,7 @@ enum class Exit : std::uint8_t {
     Continue = 8u,
     Failure = 16u,
     Stop = 32u,
+    Cancelled = 64u,
 };
 
 class ExitSet final {

@@ -89,7 +89,8 @@ auto OwnershipCapture::operator==(const OwnershipCapture& other) const noexcept 
 
 auto OwnershipStorageLoan::operator<=>(const OwnershipStorageLoan& other) const noexcept
     -> std::strong_ordering {
-    return std::tie(holder, backing) <=> std::tie(other.holder, other.backing);
+    return std::tie(holder, backing, protection)
+        <=> std::tie(other.holder, other.backing, other.protection);
 }
 
 auto OwnershipStorageLoan::operator==(const OwnershipStorageLoan& other) const noexcept -> bool {
@@ -99,7 +100,8 @@ auto OwnershipStorageLoan::operator==(const OwnershipStorageLoan& other) const n
 auto OwnershipObjectState::operator==(const OwnershipObjectState& other) const noexcept -> bool {
     return available == other.available
         && relationships == other.relationships
-        && modified == other.modified;
+        && modified == other.modified
+        && child_intent == other.child_intent;
 }
 
 auto OwnershipExternalObject::operator==(const OwnershipExternalObject& other) const noexcept

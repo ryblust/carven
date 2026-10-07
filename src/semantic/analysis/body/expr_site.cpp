@@ -29,9 +29,9 @@ auto BodyExprSite::construction_requests() noexcept -> ConstructionRequests& {
     return body.construction_requests();
 }
 
-auto BodyExprSite::resolve_function(std::string_view name, Span span) noexcept
-    -> ExpressionTask<std::optional<FunctionID>> {
-    co_return (co_await body.resolve_function(name, span));
+auto BodyExprSite::resolve_static_callable(std::string_view name, Span span) noexcept
+    -> ExpressionTask<std::optional<ResolvedStaticCallable>> {
+    co_return (co_await body.resolve_static_callable(name, span));
 }
 
 auto BodyExprSite::syntax() const noexcept -> ASTView {
@@ -614,4 +614,68 @@ auto BodyExprSite::associated_call(
 auto BodyExprSite::associated_reference(StructID owner, Span name_span) noexcept
     -> ExpressionTask<Value> {
     co_return (co_await body.class_operation(owner, spelling(name_span), false, name_span));
+}
+
+// Initial source operations retain exact delayed failure terms until canonicalization.
+auto BodyElaborator::operation_shape(ConstructionTypeRef type) const noexcept
+    -> std::optional<ConstructionOperationTypeValue> {
+    if (const auto* term = std::get_if<TypeTermID>(&type)) {
+        const auto value = draft().construction_type_copy(*term);
+        if (const auto* operation = std::get_if<ConstructionOperationTypeValue>(&value.value)) {
+            return *operation;
+        }
+    }
+    return std::nullopt;
+}
+
+auto BodyElaborator::await_expression(const ASTPrefixExpr& source, Span span) noexcept
+    -> AnalysisTask<BuiltExpression> {
+    if (!async_body && !static_stage()) {
+        co_return std::unexpected(fail(
+            source.operator_span,
+            DiagnosticCode::AsyncAdmission,
+            "await requires an async fn body or const execution"
+        ));
+    }
+    auto operand = co_await expression(source.operand_id);
+    if (!operand) {
+        co_return std::unexpected(operand.error());
+    }
+    const auto operation = operation_shape(operand->type());
+    if (!operation) {
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::AsyncAdmission,
+            "await requires a complete cold operation owner or lexical async child"
+        ));
+    }
+    const auto* binding = std::get_if<SemBinding>(&operand->expression().value);
+    const auto child = binding && async_child_bindings.contains(binding->binding);
+    auto pending = take_pending_failures(*operand);
+    auto value = child
+        ? consume_place(*operand, span).transform([](PlaceExpression&& place) static noexcept {
+              return std::move(place.expression);
+          })
+        : consume_value(*operand, span, AccessMode::Take);
+    if (!value) {
+        co_return std::unexpected(value.error());
+    }
+    pending.push_back(operation->failures);
+    auto result = make_built(
+        operation->success,
+        SemAwait {
+            .operand = UniqueIndirect(std::move(*value)),
+            .operand_kind =
+                child ? AsyncAwaitOperandKind::LexicalChild : AsyncAwaitOperandKind::ColdOperation
+        },
+        span,
+        std::move(pending)
+    );
+    result.completes = operand->completes;
+    co_return result;
+}
+
+auto BodyExprSite::await_expression(const ASTPrefixExpr& source, Span span) noexcept
+    -> ExpressionTask<Value> {
+    co_return co_await body.await_expression(source, span);
 }

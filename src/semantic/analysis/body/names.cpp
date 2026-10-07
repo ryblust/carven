@@ -110,6 +110,10 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
     }
+    if (const auto* intrinsic = std::get_if<CatalogAsyncIntrinsicForm>(&(*selected)->form)) {
+        const auto declaration = draft().async_intrinsic_declaration_copy(intrinsic->declaration);
+        co_return AsyncIntrinsicSelection {.kind = declaration.kind, .span = span};
+    }
     co_return (co_await (*selected)->form.visit(
         Overloaded {
             [&](const CatalogFunctionForm& function) noexcept -> AnalysisTask<BuiltExpression> {
@@ -154,7 +158,9 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             },
             [&]<typename Form>(const Form&) noexcept -> AnalysisTask<BuiltExpression> {
                 static_assert(
-                    std::same_as<Form, CatalogStructForm> || std::same_as<Form, CatalogEnumForm>,
+                    std::same_as<Form, CatalogStructForm>
+                        || std::same_as<Form, CatalogEnumForm>
+                        || std::same_as<Form, CatalogAsyncIntrinsicForm>,
                     "unhandled non-value catalog symbol"
                 );
                 co_return std::unexpected(fail(
@@ -349,16 +355,19 @@ auto BodyElaborator::builtin_callable(
     const auto failures = draft().add_empty_failure_term();
     auto operation = builtin_operation(builder, selection, std::move(operands));
     auto statements = std::vector<SemanticStatement>();
-    statements.push_back(
-        {.origin = site,
-         .lifetime = full,
-         .reachable = true,
-         .value = SemExpressionStatement {std::move(operation)}}
-    );
+    statements.push_back({
+        .origin = site,
+        .lifetime = full,
+        .reachable = true,
+        .value = SemExpressionStatement {std::move(operation)},
+    });
     if (selection.function != BuiltinFunction::Fail) {
-        statements.push_back(
-            {.origin = site, .lifetime = full, .reachable = true, .value = SemReturn {std::nullopt}}
-        );
+        statements.push_back({
+            .origin = site,
+            .lifetime = full,
+            .reachable = true,
+            .value = SemReturn {std::nullopt},
+        });
     }
     auto body = std::move(builder).finish(
         SemanticRegion {
@@ -368,11 +377,13 @@ auto BodyElaborator::builtin_callable(
             .result = std::nullopt,
             .result_reachable = false,
             .failures = BodyFailures(failures),
-            .exits_test = false
+            .exits_test = false,
+
         }
     );
     const auto callable = draft().append_body_callable(
         ConstructionCallableContract {
+            .execution = CallableExecutionKind::Synchronous,
             .parameters = std::vector(parameters.begin(), parameters.end()),
             .result = result_type,
             .failures = failures,

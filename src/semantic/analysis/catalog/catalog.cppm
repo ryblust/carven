@@ -47,6 +47,10 @@ struct CatalogConstantForm final {
     ModuleConstantID constant;
 };
 
+struct CatalogAsyncIntrinsicForm final {
+    AsyncIntrinsicDeclID declaration;
+};
+
 enum class MemberVisibility { Public, Private };
 
 struct ClassOperation final {
@@ -60,12 +64,13 @@ using CatalogSymbolForm = std::variant<
     CatalogStructForm,
     CatalogEnumForm,
     CatalogEnumCaseForm,
-    CatalogConstantForm>;
+    CatalogConstantForm,
+    CatalogAsyncIntrinsicForm>;
 
 struct CatalogSymbol final {
     CatalogSymbolID symbol_id;
     ProgramModuleID module_id;
-    ASTItemID item_id;
+    std::optional<ASTItemID> item_id;
     std::string name;
     CatalogSymbolForm form;
     DeclarationVisibility visibility;

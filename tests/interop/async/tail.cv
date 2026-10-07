@@ -1,0 +1,138 @@
+import "async/tail.hpp";
+import std::async using yield_once;
+
+import(cpp) fn tail_reset();
+import(cpp) fn tail_mark(digit: i32);
+import(cpp) fn tail_actual(value: i32, digit: i32) -> i32;
+import(cpp) fn tail_trace() -> i32;
+import(cpp) fn tail_owner(digit: i32) -> ::TailOwner;
+import(cpp) fn tail_address(&value: i32);
+import(cpp) fn tail_addresses() -> i32;
+import(cpp) async fn tail_native() -> i32;
+
+async fn effects(a: i32, b: i32, depth: i32, unused: i32) -> i32 {
+    if depth == 0 { return a * 10 + b; }
+    return await effects(tail_actual(b, 1), tail_actual(a, 2), depth - 1, tail_actual(0, 3));
+}
+
+async fn sibling() {
+    tail_mark(8);
+}
+
+async fn yielding(depth: i32) -> i32 {
+    tail_mark(1);
+    await yield_once();
+    if depth == 0 { return 7; }
+    return await yielding(depth - 1);
+}
+
+async fn owned(depth: i32) -> i32 {
+    let owner = tail_owner(depth + 1);
+    if depth == 0 { return 7; }
+    return await owned(depth - 1);
+}
+
+fn expose(&value: i32) {
+    tail_address(&value);
+}
+
+async fn addressed(depth: i32) -> i32 {
+    var local = depth;
+    expose(&local);
+    if depth == 0 { return tail_addresses(); }
+    return await addressed(depth - 1);
+}
+
+// Await initialization closes the native carrier before the next cold call.
+async fn actual_cleanup(depth: i32) -> i32 {
+    tail_mark(1);
+    if depth == 0 { return tail_trace(); }
+    return await actual_cleanup(depth - await tail_native());
+}
+
+fn combine(a: i32, b: i32) -> i32 => a + b;
+
+async fn outer_cleanup(depth: i32) -> i32 {
+    tail_mark(1);
+    if depth == 0 { return tail_trace(); }
+    return combine(await tail_native(), if depth > 0 { await outer_cleanup(depth - 1) } else { 0 });
+}
+
+async fn skipped_step(depth: i32) -> i32 {
+    if depth == 0 { return tail_trace(); }
+    for var index = 0; index < 1; tail_mark(9), ++index {
+        return await skipped_step(depth - 1);
+    }
+    return -1;
+}
+
+async fn fused_scalar(value: i32) -> i32 {
+    let owner = tail_owner(3);
+    var text: String = "abc";
+    tail_mark(1);
+    if value < 0 { return tail_actual(text.len() as i32, 2); }
+    await yield_once();
+    return tail_actual(value + text.len() as i32, 4);
+}
+
+fn fused_factory(value: i32, unused: i32) => fused_scalar(value);
+
+async fn fused_bool(value: bool) -> bool {
+    let owner = tail_owner(6);
+    await yield_once();
+    return tail_actual(if value { 1 } else { 0 }, 5) > 0;
+}
+
+async fn fused_char(value: bool) -> char {
+    let owner = tail_owner(7);
+    if value { return 'a'; }
+    await yield_once();
+    return 'b';
+}
+
+async fn fused_probe(value: i32) -> i32 {
+    let selected = await fused_factory(tail_actual(value, 8), tail_actual(0, 9));
+    await yield_once();
+    let flag = await fused_bool(selected > 3);
+    let letter = await fused_char(flag);
+    await yield_once();
+    return if letter == 'a' { selected } else { selected * 10 };
+}
+
+async fn fused_discarded() {
+    tail_reset();
+    await fused_factory(tail_actual(2, 8), tail_actual(0, 9));
+    println(tail_trace());
+    tail_reset();
+    await fused_bool(true);
+    await fused_char(false);
+    println(tail_trace());
+}
+
+async fn main() {
+    tail_reset();
+    println(await effects(1, 2, 2, 0), tail_trace());
+    tail_reset();
+    let saved = effects(1, 2, 1, 0);
+    println(await saved, tail_trace());
+    tail_reset();
+    async let queued = sibling();
+    println(await yielding(2));
+    await queued;
+    println(tail_trace());
+    tail_reset();
+    println(await owned(3), tail_trace());
+    tail_reset();
+    println(await addressed(3));
+    tail_reset();
+    println(await actual_cleanup(2), tail_trace());
+    tail_reset();
+    println(await outer_cleanup(2), tail_trace());
+    tail_reset();
+    println(await skipped_step(3), tail_trace());
+    tail_reset();
+    println(await fused_probe(-1), tail_trace());
+    tail_reset();
+    println(await fused_probe(2), tail_trace());
+    await fused_discarded();
+}

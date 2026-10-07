@@ -125,6 +125,13 @@ auto DeclarationSurfaceValidator::validate(TypeID type) noexcept -> void {
             [&](const CallableViewTypeValue& value) noexcept {
                 validate_signature(value.signature);
             },
+            [&](const OperationTypeValue& value) noexcept {
+                validate(value.success);
+                for (const auto member :
+                     program.failure_sets().failure_set(value.failures).members) {
+                    validate(member);
+                }
+            },
             [&](const CppTypeValue& value) noexcept {
                 for (const auto referenced : cpp_type_references(value)) {
                     validate(referenced);

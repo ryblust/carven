@@ -1,6 +1,7 @@
 #pragma once
 
 #include "array.hpp"
+#include "async/async.hpp"
 #include "callable.hpp"
 #include "entry.hpp"
 #include "format.hpp"

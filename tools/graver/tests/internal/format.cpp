@@ -69,6 +69,14 @@ auto check_format(std::string_view input, std::string_view expected) noexcept ->
 }
 
 const TestSuite suite([] static noexcept {
+    "Graver async: keywords stay separate from operands and preserve propagation"_test =
+        [] static noexcept {
+            check_format(
+                "async fn f(){async let child=leaf();await child?;}\n",
+                "async fn f() {\n    async let child = leaf();\n    await child?;\n}\n"
+            );
+        };
+
     "Graver format: examples have exact and stable output"_test = [] static noexcept {
         auto folders = std::vector<std::filesystem::path>();
         auto error = std::error_code();

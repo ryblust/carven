@@ -34,7 +34,7 @@ execution obligation. After required execution is selected,
 runtime callable and result contracts use ordinary expression statements.
 Non-void native calls, opaque result types, and other retained value expressions
 use explicit void conversion. `TargetSymbolInfo` owns each intrinsic's spelling,
-defining header, and call-result discard policy. Emission, dependency
+optional header provider, and call-result discard policy. Emission, dependency
 collection, and realization consume that record. Discard policy does not grant
 permission to omit execution.
 
@@ -514,3 +514,118 @@ Labels carry a control purpose and must respect initialization barriers. The
 label remains local to the source control construct it implements. Region exits
 record use when emitting a jump. Only their owning construct can restore an
 entry.
+
+## Async realization
+
+An async call constructs cold work; the current implementation realizes async
+function bodies with C++20 coroutines. Direct dependency await uses native coroutine
+transfer without an implicit scheduling turn and retains a native continuation.
+Queue storage is owned by actual root/child startup, suspending awaiters, and
+lexical closure work. C++ scopes and coroutine lifetimes retain it through
+dispatch without reserving a queue node in every activation. Native providers
+retain a bound `ResumeContinuation`, query task cancellation through it, and enqueue after
+releasing external reachability. Queue-node state remains private to the runtime.
+Await separates success, nominal failure, and cancelled completion. Published
+producer capability selects whether cancellation propagation is needed at each
+await. Cancellation while evaluating the operand is handled by that operand's
+own operations. A producer that cannot complete cancelled needs no cancellation
+branch, including when reached through a stored operation or private wrapper.
+An ordinary operation await projects nonvoid success independently of operand
+backing retention. Direct returns and whole-await initializers can adopt the
+completed carrier; the latter initializes the existing success binding. Character
+success is validated after failure and cancellation transfer, including when the
+value is discarded. Native async
+imports forward the canonical cold operation through an ordinary function; they
+add no adapter activation.
+The root wrapper similarly reports cancellation only when main can complete that
+way. Represented producers share canonical operation and completion types. Suspending
+operands are sequenced in their owning coroutine. Target verification checks that
+await and coroutine returns belong to that coroutine rather than an ordinary
+function or expression lambda.
+
+Preparation borrows the published executable tree and derives coroutine-context
+requirements and lexical child owner indexes. Await, coroutine completion, and
+escaping failure/cancellation need the owning coroutine; child closure can also
+suspend. A resolved direct await of the yield or cancellation-point intrinsic uses
+its native awaitable in that coroutine. Named cold intrinsic operations retain the
+ordinary operation representation and delayed execution. Realization follows its
+structured region, loop, and failure contexts to close the exited child scopes.
+Continue keeps loop initializer storage; break exits the loop body before the
+initializer's child scope closes. Ownership and child intent were checked by the
+semantic ownership flow before publication. Native support checks protocol
+preconditions using the operation receiver and child-scope lifecycle state. Its
+types and inline definitions are independent of the consumer's build mode.
+Completion publication extracts its receiver and clears it before handing off
+control.
+
+An exit evaluates its operand before cleanup. Pending storage retains the selected
+completion across lexical exits. Each owning C++ block closes its children before
+leaving; C++ destroys that block's local storage before closure in an enclosing
+block can suspend. Exit relays are needed only at blocks that own asynchronous
+closure work. The same placement handles completion, failure delivery, and loop
+transfers. Awaiting a native operation shares cancellation context with its caller
+while owning a distinct activation and child lifetime. Stored source operations move into a
+temporary owner. The awaiter borrows that owner's frame, which is destroyed at the
+native await full-expression boundary.
+Independent completion backing remains valid after frame destruction.
+Activation-local child ownership is selected from the owning coroutine promise;
+the logical task supplies cancellation and the driver context.
+Final suspension can transfer to the direct consumer once body cleanup and child
+closure have finished; no producer code may subsequently access released state.
+Queued child observers and lexical closure retain their own continuations.
+
+A fresh direct await can realize a prepared producer inside the caller's
+coroutine. [Async preparation](preparation.md#async-preparation) checks the
+published signature, body, and optional transparent factory route. Realization
+checks same-module ownership, excludes active recursive edges, and bounds total
+expansion per physical caller. Other producers retain the ordinary operation path.
+
+Fusion borrows the callee body without cloning SemIR. A nested `BodyRealizer` has
+independent binding, loop, handler, and lifetime contexts, and shares target name
+allocation and expansion state with its caller. Arguments evaluate left to right
+and scalar inputs are snapshotted once. The selected callee uses an ordinary
+scalar assignment destination or discards a void result; it needs no intermediate
+Completion carrier or deferred-construction storage. Discarded numeric and Boolean
+success uses the existing discard destination without a result local; character
+success retains its value for the await validity check. Each consumed normal return assigns
+the ordinary scalar local, then leaves the callee's native scope before the caller
+continues, preserving destruction and independent control. A callee
+without normal completion supplies no successor or result read. Actual yields
+remain native suspension points in the caller coroutine. Fused character success
+is checked at await consumption, including discarded results; a void result
+allocates no intermediate result storage.
+
+A transparent factory maps its input snapshots and frozen constants to the
+producer's inputs, then uses the same body realization. Callee evaluation and
+every actual argument execute in source order, including unused inputs. Repeated
+parameter reads reuse their snapshot. Factory and producer expansion share the
+caller's budget and active-callable checks. Stored operations and factories with
+local cleanup retain ordinary execution, so factory cleanup ends before the
+delayed producer starts.
+
+A prepared self tail await becomes a native loop in the same body realizer,
+including a producer fused into its caller. Mutable iteration slots sit outside
+the loop; each iteration establishes fresh const parameter values. Tail actuals
+evaluate left to right into separate scalar snapshots before any slot changes.
+The transfer reaches one outer-loop label after the iteration scope. This
+receiver also exits an enclosing source loop before its step. Ordinary returns
+and explicit yields keep their existing delivery and scheduling. Other recursive edges retain cold operations.
+No semantic body is rewritten and no runtime trampoline is introduced.
+
+Promise storage starts with the completion's empty ownership state and receives
+one selected outcome. Taking the outcome restores that empty state. Frame handles
+belong to the operation, root, or child owner; activation state retains logical task,
+receiver, and child lifetime checks. A child slot is its child's sole frame owner.
+It borrows activation state until the frame is destroyed, then clears that borrow.
+
+Primitive success values can be stored inline. Class payloads retain independent
+backing to preserve in-place construction, destruction, and identity. Completion
+cleanup visits alternatives only when the carrier can own a payload pointer.
+Exact-type adoption preserves immovable success backing between failure layouts.
+A success binding performs an available source transfer into inline storage, or
+retains the original backing for an immovable value. Original carrier cleanup
+remains at the initializer's full-expression boundary and binding cleanup at its
+lexical boundary.
+[Native fixtures](../../../tests/interop/async) observe identity and transfer order.
+The private root wrapper drives a zero-argument async main before reporting its
+outcome.

@@ -23,6 +23,7 @@ struct BodyLoweringInputs final {
 struct LoweredBody final {
     std::vector<TargetStmt> statements;
     std::vector<bool> referenced_parameters;
+    bool continues;
 };
 
 auto lower_body(ModuleLowering& context, BodyID body_id, BodyLoweringInputs inputs) noexcept

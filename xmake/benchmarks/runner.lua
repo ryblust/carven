@@ -1,8 +1,8 @@
 import("core.base.json")
 import("core.project.config")
 import("core.project.project")
-import("xmake.benchmark.report", {rootdir = os.projectdir()})
-import("xmake.benchmark.timings", {rootdir = os.projectdir()})
+import("xmake.benchmarks.report", {rootdir = os.projectdir()})
+import("xmake.benchmarks.timings", {rootdir = os.projectdir()})
 
 function array(values)
     return json.mark_as_array(values or {})
@@ -64,19 +64,6 @@ function setup(session)
     session.compiler_mode = external and "external (unknown)" or config.mode() or "unknown"
 end
 
-function temporary(action)
-    local root = os.tmpfile()
-    os.mkdir(root)
-    local failure
-    local result = table.pack(try {
-        function () return action(root) end,
-        catch {function (errors) failure = errors end},
-        finally {function () os.tryrm(root) end}
-    })
-    if failure then raise(failure) end
-    return table.unpack(result, 1, result.n)
-end
-
 function median(samples)
     if #samples == 0 then return nil end
     local sorted = table.copy(samples)
@@ -131,21 +118,33 @@ local function metadata(compiler, options)
     }
 end
 
+function output_path(topic, options)
+    local output = options.output or path.join(os.projectdir(), "build", "benchmarks", topic,
+        os.date("!%Y%m%dT%H%M%SZ") .. "-" .. path.filename(os.tmpfile()) .. ".json")
+    output = path.absolute(output, os.projectdir())
+    local artifacts = path.join(os.projectdir(), "build", "benchmarks", topic,
+        path.basename(output) .. "-artifacts")
+    assert(not os.isfile(output) and not os.isdir(artifacts),
+        "benchmark output exists; choose a fresh --output path: %s", output)
+    return output, artifacts
+end
+
 function session(topic, options, specification)
     specification = specification or {}
-    local output = options.output
+    local output, artifacts = output_path(topic, options)
     local result = {options = options, samples = options.samples, warmups = options.warmups,
-        description = specification.description or {}, columns = specification.columns or {},
-        output = output and path.absolute(output, os.projectdir()) or nil,
+        description = specification.description or {}, columns = specification.columns or {}, primary = specification.primary,
+        output = output, artifacts = artifacts,
         results = {schema_version = 2, topic = topic, status = "running", cases = array(),
             measurement = {description = array(table.copy(specification.description or {})),
-                columns = array(table.copy(specification.columns or {}))},
+                columns = array(table.copy(specification.columns or {})), primary = specification.primary},
             setup = array()}}
     if output then
         local external = options.compiler
         result.results.metadata = metadata(external and path.absolute(external, os.projectdir()) or nil, options)
         result.results.metadata.sampling = {samples = result.samples, warmups = result.warmups}
     end
+    result.results.metadata.artifacts = artifacts
     checkpoint(result)
     return result
 end
@@ -169,12 +168,17 @@ end
 -- C++ remains discarded even when the benchmark retains its results.
 function command(program, argv, cwd, options)
     options = options or {}
+    if program == os.programfile() and path.absolute(cwd) ~= os.projectdir() then
+        argv = table.copy(argv)
+        table.insert(argv, 2, cwd)
+        table.insert(argv, 2, "-P")
+    end
     local stderr_file = os.tmpfile()
     local stdout_file = options.capture_stdout and os.tmpfile() or nil
     local started = os.mclock()
     local status, errors = os.execv(program, argv, {curdir = cwd,
         stdout = stdout_file or os.nuldev(), stderr = stderr_file,
-        timeout = options.timeout or 60000, try = true})
+        timeout = options.timeout or 60000, envs = options.envs, try = true})
     local elapsed = os.mclock() - started
     local result = {wall_ms = elapsed, exit_code = status == nil and -1 or status,
         stdout_mode = stdout_file and "captured" or "discarded",
@@ -204,24 +208,37 @@ function step(session, case, label, program, argv, cwd, options)
     return result
 end
 
-function measure_case(session, case, action)
+function measure_rounds(session, records, action)
+    local random = 1729
     for ordinal = 1, session.warmups + session.samples do
-        local warmup = ordinal <= session.warmups
-        local result = action(ordinal, warmup)
-        result.ordinal, result.warmup = ordinal, warmup
-        table.insert(case.runs, result)
-        case.summary = summary(case.runs)
-        if result.exit_code ~= 0 or result.validation_error then
-            case.status, session.results.status = "failed", "failed"
+        local order = table.copy(records)
+        for index = #order, 2, -1 do
+            random = (random * 1664525 + 1013904223) % 4294967296
+            local selected = random % index + 1
+            order[index], order[selected] = order[selected], order[index]
         end
-        checkpoint(session)
-        report.sample(session, case, result)
-        if result.validation_error then raise("%s: %s", case.id, result.validation_error) end
-        assert(result.exit_code == 0, "%s: compiler/build failed (exit %d): %s", case.id,
-            result.exit_code, failure_output(result))
+        for position, case in ipairs(order) do
+            local result = action(case, ordinal)
+            result.ordinal, result.order = ordinal, position
+            result.warmup = ordinal <= session.warmups
+            table.insert(case.runs, result)
+            case.summary = summary(case.runs)
+            if result.exit_code ~= 0 or result.validation_error then
+                case.status, session.results.status = "failed", "failed"
+            end
+            checkpoint(session)
+            report.sample(session, case, result)
+            if result.validation_error then raise("%s: %s", case.id, result.validation_error) end
+            assert(result.exit_code == 0, "%s: measured command failed (exit %d): %s", case.id,
+                result.exit_code, failure_output(result))
+        end
     end
-    case.status = "complete"
+    for _, case in ipairs(records) do case.status = "complete" end
     checkpoint(session)
+end
+
+function measure_case(session, case, action)
+    measure_rounds(session, {case}, function (_, ordinal) return action(ordinal) end)
     return case.summary
 end
 
@@ -251,12 +268,13 @@ function run(session, cases, prepare, configure)
             local record = new_case(session, {id = specification.id, label = specification.label,
                 size = specification.size, group = specification.group})
             report.begin_case(record, index, #cases)
-            temporary(function (root)
-                local action = prepare(session, record, specification, root)
-                checkpoint(session)
-                measure_case(session, record, action)
-                report.finish_case(record, session)
-            end)
+            local root = path.join(session.artifacts, specification.id)
+            os.mkdir(root)
+            record.workspace = root
+            local action = prepare(session, record, specification, root)
+            checkpoint(session)
+            measure_case(session, record, action)
+            report.finish_case(record, session)
         end
     end)
 end

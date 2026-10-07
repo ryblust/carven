@@ -36,6 +36,7 @@ struct ASTVariableDecl final {
     Span span;
     ASTBindingKind kind;
     Span keyword_span;
+    std::optional<Span> async_span;
     ASTBindingTarget target;
     std::optional<ASTTypeID> type;
     std::optional<ASTExprID> initializer;

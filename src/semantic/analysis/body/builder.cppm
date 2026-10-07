@@ -53,6 +53,12 @@ public:
         bool,
         ProgramOriginID
     ) noexcept -> BoundStorage;
+    auto add_async_child_binding(
+        ProgramSpellingID name,
+        ConstructionTypeRef type,
+        LifetimeRegionID owner,
+        ProgramOriginID origin
+    ) noexcept -> BoundStorage;
     auto add_pattern(ElaboratedPattern) noexcept -> PatternID;
     auto pattern_copy(PatternID) const noexcept -> ElaboratedPattern;
     auto completion_patterns() const noexcept -> CompletionPatterns;

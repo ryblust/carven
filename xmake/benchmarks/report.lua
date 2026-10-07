@@ -14,7 +14,7 @@ local function print_table(rows, indent)
     io.write(text.table(rows, {plain = not io.isatty()}))
 end
 
-local function milliseconds(value)
+local function decimal(value)
     return value ~= nil and string.format("%.2f", value) or "-"
 end
 
@@ -45,9 +45,10 @@ function header(session)
     print("\n%s benchmark", topic)
     print("  Compiler: %s", session.compiler)
     print("  Mode:     %s", options.compiler and "external (unknown)" or session.compiler_mode)
-    print("  Sampling: %d warmup%s, %d measured sample%s; wall time in ms",
+    print("  Sampling: %d warmup%s, %d measured sample%s; %s",
         session.warmups, session.warmups == 1 and "" or "s",
-        session.samples, session.samples == 1 and "" or "s")
+        session.samples, session.samples == 1 and "" or "s",
+        session.primary and session.primary.unit or "process wall time in ms")
     if options.timings then
         print("  Timings:  %s", options.verbose and "each sample and warmup"
             or "sample nearest the median wall time")
@@ -73,7 +74,7 @@ function sample(session, record, run)
     local progress = ordinal .. "/" .. count
     local suffix = failed and "  " .. failed or ""
     if session.options.verbose then
-        local values = {milliseconds(run.wall_ms) .. " ms"}
+        local values = {decimal(run.wall_ms) .. " ms"}
         for _, column in ipairs(session.columns) do
             local value = run.metrics and run.metrics[column.key]
             table.insert(values, column.label .. ": " .. (value ~= nil and tostring(value) or "-"))
@@ -88,12 +89,18 @@ function sample(session, record, run)
     flush()
 end
 
+local function primary_metric(session, summary)
+    if session.primary then return summary.metrics and summary.metrics[session.primary.key] or {} end
+    return {median = summary.median_wall_ms, minimum = summary.minimum_wall_ms, maximum = summary.maximum_wall_ms}
+end
+
 function finish_case(record, session)
     local summary = record.summary or {}
     local measured = summary.measured_runs or 0
-    print("  Median: %s ms; range: %s-%s ms (%d measured sample%s)",
-        milliseconds(summary.median_wall_ms), milliseconds(summary.minimum_wall_ms),
-        milliseconds(summary.maximum_wall_ms), measured, measured == 1 and "" or "s")
+    local metric = primary_metric(session, summary)
+    print("  %s: median %s %s; range %s-%s (%d measured sample%s)", record.id,
+        decimal(metric.median), session.primary and session.primary.unit or "ms",
+        decimal(metric.minimum), decimal(metric.maximum), measured, measured == 1 and "" or "s")
     if session and session.options.timings and not session.options.verbose and summary.median_wall_ms then
         local selected, distance
         for _, run in ipairs(record.runs or {}) do
@@ -104,7 +111,7 @@ function finish_case(record, session)
         end
         if selected then
             print("  Sample %d/%d nearest median: %s ms wall",
-                selected.ordinal - session.warmups, session.samples, milliseconds(selected.wall_ms))
+                selected.ordinal - session.warmups, session.samples, decimal(selected.wall_ms))
             stage_timings(selected)
         end
     end
@@ -118,19 +125,23 @@ local function range(metric)
 end
 
 function summary(session)
-    local columns = {"Case", "Samples", "Median (ms)", "Min (ms)", "Max (ms)"}
+    local unit = session.primary and session.primary.unit or "ms"
+    local columns = {"Case", "Samples", "Median (" .. unit .. ")", "Min (" .. unit .. ")", "Max (" .. unit .. ")"}
     for _, column in ipairs(session.columns) do table.insert(columns, column.label) end
     local rows, notes = {columns}, {}
     for _, record in ipairs(session.results.cases) do
         local summary = record.summary or {}
         local measured = summary.measured_runs or 0
         local incomplete = record.status ~= "complete" or measured ~= session.samples
+        local metric = primary_metric(session, summary)
         local row = {record.id,
             incomplete and string.format("%d/%d", measured, session.samples) or tostring(measured),
-            milliseconds(summary.median_wall_ms), milliseconds(summary.minimum_wall_ms),
-            milliseconds(summary.maximum_wall_ms)}
+            decimal(metric.median), decimal(metric.minimum), decimal(metric.maximum)}
         for _, column in ipairs(session.columns) do
-            table.insert(row, range(summary.metrics and summary.metrics[column.key]))
+            table.insert(row, column.statistic == "median"
+                and decimal(summary.metrics and summary.metrics[column.key]
+                    and summary.metrics[column.key].median)
+                or range(summary.metrics and summary.metrics[column.key]))
         end
         table.insert(rows, row)
         if incomplete then

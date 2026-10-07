@@ -18,7 +18,10 @@ auto target_parameters(TargetParameter first, TargetParameter second) noexcept
 
 struct TargetFreeFunctionDeclaration final {};
 
+enum class TargetCallableExecution { Ordinary, Coroutine };
+
 struct TargetFreeFunctionDefinition final {
+    TargetCallableExecution execution;
     std::vector<TargetStmt> body;
 };
 

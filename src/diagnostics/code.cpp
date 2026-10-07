@@ -29,6 +29,12 @@ namespace {
     X(AccessNotAssignable, "CV-ACCESS-NOT-ASSIGNABLE", Error, "Non-assignable Update target.")     \
     X(AccessRangeBinding, "CV-ACCESS-RANGE-BINDING", Error, "Invalid Write range binding.")        \
     X(AccessRangeIterable, "CV-ACCESS-RANGE-ITERABLE", Error, "Invalid Write range iterable.")     \
+    X(AsyncAdmission, "CV-ASYNC-ADMISSION", Error, "Unsupported async source contract.")           \
+    X(AsyncOwnership, "CV-ASYNC-OWNERSHIP", Error, "Invalid async ownership contract.")            \
+    X(AsyncChildIntent,                                                                            \
+      "CV-ASYNC-CHILD-INTENT",                                                                     \
+      Error,                                                                                       \
+      "Child needs observation or cancellation intent.")                                           \
     X(Catalog, "CV-CATALOG", Error, "Semantic catalog failure.")                                   \
     X(CompilationInput, "CV-COMPILATION-INPUT", Error, "Invalid closed-compilation input.")        \
     X(CppIdentifier, "CV-CPP-IDENTIFIER", Error, "Invalid C++ boundary identifier.")               \

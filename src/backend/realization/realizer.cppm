@@ -4,6 +4,7 @@ import :backend.generation.names;
 import :backend.lowering.body;
 import :backend.lowering.constant;
 import :backend.lowering.context;
+import :backend.preparation.async;
 import :backend.preparation.body;
 import :backend.realization.composition;
 import :backend.realization.decl;
@@ -20,7 +21,9 @@ public:
     BodyRealizer(
         ModuleLowering& context,
         const BodyPreparation& preparation,
-        BodyLoweringInputs inputs
+        BodyLoweringInputs inputs,
+        BodyRealizer* enclosing = nullptr,
+        std::optional<LoweringResultDestination> local_result = std::nullopt
     ) noexcept;
     auto finish() noexcept -> LoweredBody;
 
@@ -28,6 +31,53 @@ private:
     class ExpressionBuilder;
     class FailureSiteQuery;
     static constexpr auto callable_scope = TargetScopeID {.ordinal = 0};
+
+    auto is_async() const noexcept -> bool;
+    auto completion_type() noexcept -> TargetTypeID;
+
+    auto select_await_producer(const SemanticExpression& source) noexcept
+        -> std::optional<PreparedAwaitProducer>;
+    auto emit_tail_await(const SemAwait& source, LoweringStmtBuilder& destination) noexcept
+        -> ContinuationTask<std::monostate>;
+    auto wrap_tail_loop(LoweringStmtBuilder statements) noexcept -> LoweringStmtBuilder;
+    auto begin_async_region(const SemanticRegion& source, LoweringStmtBuilder& destination) noexcept
+        -> void;
+    auto close_async_scopes(
+        std::size_t retained,
+        bool cancel,
+        LoweringStmtBuilder& destination
+    ) noexcept -> void;
+    auto close_async_locals(
+        std::span<const TargetLocalID> scopes,
+        bool cancel,
+        LoweringStmtBuilder& destination
+    ) noexcept -> void;
+    auto async_closing_locals(std::size_t retained) const noexcept -> std::vector<TargetLocalID>;
+    auto leave_async_scopes(std::size_t retained) noexcept -> void;
+    auto emit_completion(
+        TargetExpr completion,
+        LoweringExitKind kind,
+        LoweringStmtBuilder& destination
+    ) noexcept -> void;
+    auto emit_cancelled(LoweringStmtBuilder& destination) noexcept -> void;
+    auto emit_async_exit(
+        TargetStmt continuation,
+        LoweringExitTarget target,
+        std::vector<TargetLocalID> closing_scopes,
+        bool cancel,
+        LoweringStmtBuilder& destination
+    ) noexcept -> void;
+    auto realize_async_exits(std::vector<TargetStmt>& statements) noexcept -> void;
+
+    struct AsyncExit final {
+        TargetIdentifier label;
+        std::vector<TargetLocalID> closing_scopes;
+        bool cancel;
+        TargetStmt continuation;
+    };
+
+    std::map<std::string, AsyncExit> async_exits;
+    std::optional<LoweringDeferredStorage> pending_completion;
 
     struct FailureSlot final {
         TargetLocalID storage;
@@ -37,12 +87,14 @@ private:
     struct FailureDestination final {
         std::size_t identity;
         LoweringExitTarget target;
+        std::size_t retained_async_scopes;
     };
 
     struct FailureRelay final {
         FailureSlot slot;
         TargetIdentifier label;
         LoweringExitTarget target;
+        std::vector<TargetLocalID> closing_scopes;
     };
 
     struct RegionExit final {
@@ -50,7 +102,7 @@ private:
         LoweringExitTarget target;
     };
 
-    enum class ResultDemand { Value, DirectReturn, Discard, PropagateOutcome };
+    enum class ResultDemand { Value, DirectReturn, Discard, PropagateOutcome, AdoptSuccess };
     auto expression(
         const SemanticExpression& source,
         ConstantLiteralContext literal = ConstantLiteralContext::Exact,
@@ -90,8 +142,11 @@ private:
         -> ContinuationTask<std::monostate>;
     auto statement(const SemanticStatement& source) noexcept
         -> ContinuationTask<Lowered<LoweringCompleted>>;
-    auto region(const SemanticRegion& source, const LoweringResultDestination& result) noexcept
-        -> ContinuationTask<LoweringStmtBuilder>;
+    auto region(
+        const SemanticRegion& source,
+        const LoweringResultDestination& result,
+        bool retain_async_scope = false
+    ) noexcept -> ContinuationTask<LoweringStmtBuilder>;
     auto result_expression(
         const SemanticExpression& source,
         const LoweringResultDestination& result,
@@ -187,6 +242,7 @@ private:
         FailureSetID failures;
         // A throw value remains at its evaluation site until receiver layout is known.
         std::optional<TargetExpr> initializer;
+        std::vector<TargetLocalID> closing_scopes;
     };
 
     struct FailureReceiver final {
@@ -244,13 +300,44 @@ private:
         std::array<ProgramSpellingID, 2> sources;
     };
 
+    struct AsyncScopeStorage final {
+        LifetimeRegionID lifetime;
+        TargetLocalID scope;
+    };
+
+    std::vector<AsyncScopeStorage> async_scopes;
+    std::flat_set<LocalBindingID> success_bindings;
     std::optional<ConditionObservation> condition_observation;
     ExpressionBuilder* active_frame = nullptr;
     ModuleLowering& context;
     const BodyPreparation& preparation;
     const SemIRBody& metadata;
     BodyLoweringInputs inputs;
-    TargetNameAllocator names;
+    TargetNameAllocator owned_names;
+    TargetNameAllocator& names;
+
+    struct FusionState final {
+        std::size_t remaining;
+        std::vector<CallableID> active;
+    };
+
+    FusionState owned_fusion;
+    FusionState& fusion;
+
+    struct LocalResultExit final {
+        LoweringResultDestination result;
+        RegionExit exit;
+    };
+
+    struct TailAwaitLoop final {
+        PreparedTailAwaitLoop selection;
+        std::vector<TargetLocalID> slots;
+        LoweringExitTarget next;
+        TargetIdentifier next_label;
+    };
+
+    std::optional<TailAwaitLoop> tail_loop;
+    std::optional<LocalResultExit> local_result_exit;
     std::flat_map<LocalBindingID, TargetLocalID> binding_locals;
     std::flat_map<LocalBindingID, TargetIdentifier> capture_names;
     std::flat_set<TargetLocalID> mutable_owners;
@@ -280,6 +367,8 @@ private:
         bool expanded;
         LoweringExitTarget target;
         LoweringExitTarget break_target;
+        std::size_t break_async_scopes;
+        std::size_t continue_async_scopes;
     };
 
     std::optional<LoopContinuation> current_loop;

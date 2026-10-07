@@ -68,14 +68,11 @@ public:
     auto report(const ExecutionEvent& event) noexcept -> void override;
     auto failure() const noexcept -> std::optional<AnalysisFailure>;
     auto write(ExecutionOutputStream stream, std::string_view bytes) noexcept -> void override;
-    auto enter_block(BlockSource source) noexcept -> void override;
-    auto leave_block() noexcept -> void override;
 
 private:
     StaticStage& stage;
     ProgramDraft& draft;
-    std::optional<ExecutionRoot> root;
-    std::vector<std::optional<ExecutionRoot>> outer_roots;
+    const std::optional<ExecutionRoot> root;
     ExecutionOutputMode output;
     std::optional<AnalysisFailure> reported_failure;
 };
@@ -89,16 +86,6 @@ StaticExecutionContext::StaticExecutionContext(
       draft(stage.draft()),
       root(root),
       output(output) {}
-
-auto StaticExecutionContext::enter_block(BlockSource source) noexcept -> void {
-    outer_roots.push_back(root);
-    root = ExecutionRoot {.kind = "const block", .source = source};
-}
-
-auto StaticExecutionContext::leave_block() noexcept -> void {
-    root = outer_roots.back();
-    outer_roots.pop_back();
-}
 
 auto StaticExecutionContext::write(ExecutionOutputStream stream, std::string_view bytes) noexcept
     -> void {
@@ -271,12 +258,15 @@ auto StaticExecutionContext::report(const ExecutionEvent& event) noexcept -> voi
             std::format("{} additional call site{} omitted", omitted, omitted == 1 ? "" : "s")
         );
     }
-    if (root) {
-        auto message = std::format("while evaluating this {}", root->kind);
-        if (root->source.label) {
-            message += std::format(" {:?}", draft.spelling(*root->source.label));
+    const auto report_root = event.blocks.empty()
+        ? root
+        : std::optional(ExecutionRoot {.kind = "const block", .source = event.blocks.back()});
+    if (report_root) {
+        auto message = std::format("while evaluating this {}", report_root->kind);
+        if (report_root->source.label) {
+            message += std::format(" {:?}", draft.spelling(*report_root->source.label));
         }
-        diagnostic.related(draft.source_span(root->source.origin), std::move(message));
+        diagnostic.related(draft.source_span(report_root->source.origin), std::move(message));
     }
     reported_failure = draft.diagnostics().error(diagnostic.build());
 }
@@ -427,6 +417,11 @@ auto StaticStage::realize_body(BodyID body) noexcept -> AnalysisTask<void> {
             }
             if (const auto* call = std::get_if<SemCall>(&node.value); call && call->target) {
                 if (const auto function = program.function_for_callable(*call->target)) {
+                    needs_stage |= program.staged_function(*function);
+                }
+            }
+            if (const auto* call = std::get_if<SemColdCall>(&node.value)) {
+                if (const auto function = program.function_for_callable(call->target)) {
                     needs_stage |= program.staged_function(*function);
                 }
             }

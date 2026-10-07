@@ -29,7 +29,8 @@ auto prepare_ownership_body_facts(
         recursion.observe(expression);
         const auto contents = program.type_contents(expression.type.resolved());
         if (!expression.selects_storage()
-            && (contents.contains_closure_owner
+            && (contents.contains_operation_owner
+                || contents.contains_closure_owner
                 || contents.contains_callable_view
                 || contents.contains_storage_owner)) {
             facts.temporaries.emplace(

@@ -119,6 +119,10 @@ using CallableSignatureID = ProgramID<CallableSignatureIDTag>;
 using TypeTermID = ProgramID<TypeTermIDTag>;
 using FailureTermID = ProgramID<FailureTermIDTag>;
 
+struct AsyncIntrinsicDeclIDTag final {};
+
+using AsyncIntrinsicDeclID = ProgramID<AsyncIntrinsicDeclIDTag>;
+
 struct LifetimeRegionIDTag final {};
 
 struct LocalBindingIDTag final {};

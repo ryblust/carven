@@ -98,6 +98,24 @@ Finally, reaching `final_suspend` is not the same as destroying the frame.
 Destruction remains an ownership operation and must not race with a possible
 resume or external callback.
 
+### Frame storage and allocation elision
+
+Coroutine allocation elision depends on visible creation, ownership, and
+destruction. P0981's HALO examples expose the coroutine ramp, return-object
+construction, owner moves, await protocol, and handle destruction to native
+analysis; they do not require inlining the whole coroutine body or executor.
+LLVM describes storing a frame in its caller when the caller creates, uses, and
+destroys it under RAII. An awaiter can borrow the handle while a local owner keeps
+frame destruction at the caller's lifetime exit. Generated artifacts establish
+whether that representation permits elision in a particular build.
+
+Scheduling can obscure the relationship between completion and destruction.
+P2477R3 examines that limit and proposes a `promise_type::must_elide` interface
+for controlling allocation elision from lifetime knowledge supplied by the
+program. This is a proposed interface, not a C++20 guarantee or a mechanism used
+by Carven's current runtime. Source lifetime proofs still need a native
+representation that preserves their ownership boundary.
+
 ## Semantic compilation and library protocols
 
 A semantic compiler can analyze source owners, lifetime exits, failure edges,
@@ -111,6 +129,24 @@ awaiters, completion delivery, handle ownership, and the cancellation and
 execution support its contract requires. These responsibilities can use private
 concrete types, templates, or reusable library abstractions. Generated artifacts
 and workload measurements establish their costs.
+
+Concrete sender types expose fixed composition shape, completion types,
+and cancellation-token properties to templates. P2175 explains both cancellation
+elimination for a statically unstoppable caller and in-place stop storage under
+structured lifetime, avoiding shared-state allocation and reference counting.
+Native C++ optimizers can also reduce live state and elide some coroutine
+allocations. These opportunities are shared with semantic compilation.
+
+Carven's additional source facts are lexical child ownership, all lifetime-exit
+edges, single consumption, retained cold-operation loans, access admission across
+suspension, and nominal failure propagation. It can enforce those facts before
+native generation and specialize a same-thread runtime under an explicit
+execution contract. Generated C++20 coroutines still have native frame and
+allocation constraints; stronger cost guarantees require artifact inspection
+and workload evidence.
+
+Primary references: [P2175R0, section 5.10](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2175r0.html)
+and [P2300R10](https://www9.open-std.org/JTC1/SC22/WG21/docs/papers/2024/p2300r10.html).
 
 ## Closing before destruction
 
@@ -307,31 +343,208 @@ dispatch, and runtime costs depend on the implementation and workload.
 An adapter can make an operation protocol awaitable, while a coroutine-backed
 task can expose an operation protocol to non-coroutine consumers.
 
+### Completion boundaries and coroutine adaptation
+
+The current execution protocol requires child operations to complete before
+their parent. Its async lifetime ends when the completion operation begins;
+the receiver may destroy operation state during that call. The producer cannot
+continue to access invalid operation state after completion. A conforming sender
+therefore cannot leave callbacks that will later access that state. A general
+C++ awaitable or external callback provider may expose a weaker boundary and
+needs explicit closure evidence before being admitted as a Carven operation.
+
+The standard `when_all` starts every child in argument order, including children
+whose start follows an inline error from an earlier child. Error and stopped
+completion request sibling stop; all children complete before the aggregate
+publishes a result. Error takes precedence over stopped, and the first committed
+error is retained. The source-language ordering of argument evaluation remains
+independent of that operation-start order.
+
+The standard task and awaitable adapters illustrate why adaptation is a separate
+contract. `task::promise_type::unhandled_stopped` destroys its coroutine frame
+before reporting stopped, while `with_awaitable_senders` propagates stopped
+without resuming the original coroutine. A Carven owner with active lexical
+children must instead complete its potentially suspending closing epilogue before
+destroying child-reachable storage. Its bridge must route cancellation into that
+epilogue rather than adopt a direct frame-destruction path.
+
+Primary references: [async operations](https://eel.is/c++draft/exec.async.ops),
+[`when_all`](https://eel.is/c++draft/exec.when.all),
+[`task::promise_type`](https://eel.is/c++draft/task.promise), and
+[`with_awaitable_senders`](https://eel.is/c++draft/exec.with.awaitable.senders).
+
+### Execution context and stack behavior
+
+A receiver environment carries execution-time properties; sender attributes
+describe properties of the work, including known completion schedulers. These
+are different query surfaces. The current task obtains its starting scheduler
+from the receiver environment and adapts awaited senders with `affine` unless
+its selected scheduler is inline. `affine` restores completion to the receiver's
+scheduler and can avoid scheduling when the correct affinity is already known.
+This does not supply a language-wide fairness or preemption contract.
+
+The generic sender-awaitable adaptation starts the operation from
+`await_suspend`; value/error receivers resume the continuation directly. Inline
+completion can therefore run on the initiation stack. A coroutine runtime that
+requires bounded stack growth needs a handshake, trampoline, or another safe
+transfer implementation. The generic `void` start/completion interface delegates bounded dispatch to the
+implementation; an internal trampoline can provide it.
+
+Primary references: [`task::state`](https://eel.is/c++draft/task.state),
+[`task::promise_type`](https://eel.is/c++draft/task.promise),
+[`affine`](https://eel.is/c++draft/exec.affine), and
+[`as_awaitable`](https://eel.is/c++draft/exec.as.awaitable).
+
 ## Implementations and libraries
 
-stdexec describes itself as a C++26 reference implementation of `std::execution`.
-It contains three layers:
+stdexec supplies standard-facing facilities under `stdexec::`, generic
+extensions under `exec::`, and GPU facilities under `nvexec::`. The C++26
+[N5015 editors' report](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/n5015.html)
+records adoption of both coroutine task and counting-scope proposals. The current
+NVIDIA `hello_coro` example uses `stdexec::task`; `exec::task`,
+`exec::async_scope`, and Linux `exec::io_uring_context` have their own interfaces.
+Compare the selected namespace, facility contract, and revision when choosing a
+provider. Consumer-library availability remains separate from Carven's generated
+C++20 baseline.
 
-- the standard `std::execution` model and operations;
-- the `stdexec` spelling used by the reference implementation;
-- non-standard `exec::` and `nvexec::` extensions for scopes, tasks, I/O,
-  thread pools, and GPU execution.
+Primary references: [stdexec README](https://github.com/NVIDIA/stdexec/blob/main/README.md),
+[task](https://eel.is/c++draft/exec.task),
+[execution scopes](https://eel.is/c++draft/exec.scope), and
+[spawn](https://eel.is/c++draft/exec.spawn).
 
-Its extensions provide implementation examples for environment propagation,
-operation-state ownership, cancellation, coroutine adapters, and specialization.
+Provider comparison follows construction, start, completion, cancellation, and
+destruction. The linked versions exhibit these relevant choices:
 
-Other libraries provide useful contrasts:
-
-| Project | Useful subject of study |
+| Provider | Mechanism and adaptation concern |
 | --- | --- |
-| async_simple | Lazy coroutines, futures, executors, and cooperative cancellation |
-| libcoro | Coroutine tasks, I/O scheduling, task groups, and thread migration |
-| Boost.Asio | Coroutine adapters over an established I/O and executor model |
-| cppcoro | Coroutine-first tasks, shared tasks, async primitives, and cancellation tokens |
+| Boost.Cobalt | Lazy `task`, eager `promise`, fixed composition, and explicit teardown. `race` can interrupt observation before the underlying operation closes. |
+| Intel bare-metal senders | Interrupt-driven execution, static specialized operation storage, and no-exception completion. `when_any` selects value/error and waits for all candidates to complete. Interrupt delivery requires its own resume-context contract. |
+| async_simple | `collectAny` defaults to leaving losers running. Termination requests and loser closure are separate operations. |
+| libcoro | Coroutine tasks and schedulers. `when_any` retains loser controllers after returning the winner; the caller's borrowed backing still needs lifetime coverage. |
+| Boost.Asio | A single-slot, non-sticky cancellation signal. A bridge supplies retained requests, independent registrations, and safe emit/registration order. |
+| cppcoro | Coroutine-first tasks, shared tasks, async primitives, and cancellation tokens. |
 
-Compare libraries by following one operation through construction, start,
-completion, cancellation, and destruction. Ask who owns each transition and
-which execution context may perform it.
+Sources: Cobalt [task](https://raw.githubusercontent.com/boostorg/cobalt/boost-1.92.0/include/boost/cobalt/detail/task.hpp),
+[race](https://raw.githubusercontent.com/boostorg/cobalt/boost-1.92.0/include/boost/cobalt/detail/race.hpp),
+and [with](https://raw.githubusercontent.com/boostorg/cobalt/boost-1.92.0/include/boost/cobalt/with.hpp);
+Intel [library](https://github.com/intel/cpp-baremetal-senders-and-receivers) and
+[`when_any`](https://intel.github.io/cpp-baremetal-senders-and-receivers/#_when_any);
+async_simple [cancellation](https://alibaba.github.io/async_simple/docs.en/SignalAndCancellation.html)
+and [Collect.h](https://raw.githubusercontent.com/alibaba/async_simple/main/async_simple/coro/Collect.h);
+[libcoro when_any](https://raw.githubusercontent.com/jbaldwin/libcoro/main/include/coro/when_any.hpp);
+[Asio cancellation](https://www.boost.org/doc/libs/latest/doc/html/boost_asio/overview/core/cancellation.html).
+
+A production bridge pins a provider version and verifies completion mapping,
+request propagation, callback quiescence, and backing coverage together.
+
+## Provider examples
+
+Timer and local I/O examples expose registration, event delivery, result storage, and
+resource closure independently of their surface composition API.
+
+| Reference | Relevant mechanism |
+| --- | --- |
+| Cobalt [delay](https://github.com/boostorg/cobalt/blob/develop/example/delay.cpp) and [echo server](https://github.com/boostorg/cobalt/blob/develop/example/echo_server.cpp) | Asio steady timer, socket read/write, and explicit resource closure |
+| NVIDIA [hello_coro](https://github.com/NVIDIA/stdexec/blob/main/examples/hello_coro.cpp) and [io_uring](https://github.com/NVIDIA/stdexec/blob/main/examples/io_uring.cpp) | Await sender completions in a task; timed scheduling and stopped completion through Linux providers on separate event threads |
+| Intel [timer manager](https://github.com/intel/cpp-baremetal-senders-and-receivers/blob/main/include/async/schedulers/timer_manager.hpp) and [scheduler examples](https://intel.github.io/cpp-baremetal-senders-and-receivers/) | Platform timer/interrupt injection and specialized operation storage |
+| async_simple [echo server](https://github.com/alibaba/async_simple/blob/main/demo_example/async_echo_server.cpp) and [Asio adapter](https://github.com/alibaba/async_simple/blob/main/demo_example/asio_coro_util.hpp) | Callback-owned result delivery and coroutine restoration |
+| libcoro [scheduler example](https://github.com/jbaldwin/libcoro/blob/main/examples/coro_scheduler.cpp) | TCP request/response and manual or threaded event processing |
+| cppcoro [I/O and networking examples](https://github.com/lewissbaker/cppcoro/blob/master/README.md#io_service) | Cancellable delay, socket operations, and joining an async scope; documented implementation uses Windows I/O |
+
+The standard [generator contract](https://eel.is/c++draft/coro.generator) and
+[MSVC implementation](https://github.com/microsoft/STL/blob/main/stl/inc/generator)
+show a separate owner and borrowed iterator. Nested generators retain their owner
+in the yielding frame and transfer to the parent at final suspension. The iterator
+resumes the active generator when asked for another element. Ordinary `co_await`
+is disabled. This supplies a useful ownership and native-transfer example;
+external event registrations require their own cancellation and quiescence proof.
+
+Asio's [timer cancellation contract](https://www.boost.org/doc/libs/latest/doc/html/boost_asio/reference/basic_waitable_timer/cancel.html)
+preserves an already queued successful completion. A pending cancelled wait still
+invokes its [completion handler](https://www.boost.org/doc/libs/latest/doc/html/boost_asio/reference/basic_waitable_timer/async_wait.html).
+An adapter therefore retains handler-reachable state until that delivery is safe;
+requesting cancellation alone does not release it. The native fixture below owns
+its registrations directly, so removing one ends its external reachability.
+
+The Carven timer fixture uses a real `steady_clock` timer on the
+existing single-thread driver. An optional native root pump checks registrations
+before queued dispatch and blocks on a pending deadline only when the queue is
+empty. The timer fixes its completion, removes its registration, and enqueues its
+existing continuation node. User execution occurs through the driver after that
+handoff. The awaiter retains a bound `ResumeContinuation` for cancellation queries
+and queued resumption. Cancellation reads the same task ancestry used by source
+operations.
+
+The [native fixture](../tests/interop/async/timer.hpp) owns timer registrations and
+clock waiting. Its [contract cases](../tests/interop/async/timer.cpp) cover cold
+construction, immediate and delayed completion, cancellation, closing, and release
+before resumed execution. This fixture uses native operations and exposes no
+source-level timer. Positive delays must produce a
+representable steady-clock deadline. Zero and negative delays complete inline
+unless cancellation is already requested. Large registration sets, cross-thread
+resume, socket protocols, and external library callback teardown remain separate
+evidence boundaries.
+
+The [pipe fixture](../tests/interop/async/pipe.hpp) adds real POSIX nonblocking
+`read_some` and `write_some` operations under the same root-pump contract. It
+borrows a stable fd
+and nonempty buffer; the native caller retains both until terminal delivery or
+lexical closure. Each operation returns the byte count or a typed errno failure.
+Partial transfers remain ordinary loop work for the caller.
+[Read](https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html) selects
+EOF only after buffered bytes are consumed;
+[poll](https://pubs.opengroup.org/onlinepubs/9799919799/functions/poll.html) readiness
+and hangup authorize another syscall rather than supplying its result.
+[Write](https://pubs.opengroup.org/onlinepubs/9799919799/functions/write.html) retains
+its native partial-transfer and SIGPIPE contract.
+
+The OS accesses the buffer only during a synchronous nonblocking syscall; a
+pending watch observes readiness and has no buffer-accessing completion handler.
+Removing that watch therefore ends external reachability in this fixture.
+EAGAIN retains the registration. Terminal selection removes it before queueing
+the continuation, so later cancellation cannot revise a committed result. The
+[contract cases](../tests/interop/async/pipe.cpp) cover buffered EOF, errors, pending
+read and write, idle event waiting, cancellation closure, and rearming. A writer
+thread in the idle-wait case accesses only the pipe; event collection and user
+continuation remain on the driver thread. The fixture owns readiness snapshots
+and blocking `poll`, without adding event state to Driver or TaskContext. It does
+not by itself establish the source boundary or prove an external callback
+library quiescent.
+
+The [source/native bridge](../tests/interop/async/bridge.cv) exercises a native
+host driving an exported source root that awaits imported native operations. The
+host supplies the context and pump; imports forward the existing cold Operation
+without an adapter activation. Non-snapshot Read borrows its source holder across
+synchronous factories and async calls, including trivial native objects. Source
+ownership checks retain that holder through completion or closure. The provider
+and host remain responsible for hidden fd, buffer, and queue lifetimes. Native
+errno maps to the source-owned IoError failure; cancellation and character
+success use the existing completion consumers. The executable checks actual
+context identity across nested awaits and saved cold operations.
+
+The [source transfer loop](../tests/interop/async/transfer.cv) awaits actual read
+counts, recognizes EOF, and advances its write cursor by each completed count.
+The native host owns the buffers and pipe descriptors. Its contracts cover short
+reads, real EAGAIN backpressure, nominal failure recovery, and cancellation closure.
+The four-byte write requests establish pending writes; they do not establish OS
+partial-write coverage.
+
+A controlled pending measurement starts from an empty nonblocking pipe, reaches
+EAGAIN, and injects one byte at the driver's idle boundary. Generated and native
+Operation roots use the same external provider object and separate translation
+units without LTO. Registration, event injection, wait, commit, and return intervals
+include their clock reads and observation checks. This experiment measures event
+recovery under those conditions; it does not measure blocked OS wakeup latency.
+
+`const async` uses an execution-local cold descriptor in the existing semantic
+executor. Construction acquires arguments; await consumes the descriptor through
+ordinary invocation. The [decimal-code example](../tests/language/async/constant.cv)
+uses the same typed failure and parsing bodies for compile-time fixtures and
+runtime values. The [scheduling fixture](../tests/language/async/scheduling.cv)
+uses the same source bodies for static and runtime FIFO, cancellation, and child
+close contracts. Static tasks share a root budget and memory domain. This execution
+uses no C++ constexpr coroutine support; native providers and real I/O require a
+runtime host.
 
 ## References
 
@@ -345,21 +558,40 @@ which execution context may perform it.
   [`co_await`](https://eel.is/c++draft/expr.await),
   [`coroutine_handle`](https://eel.is/c++draft/coroutine.handle.resumption).
 
+- [P0981R0 — HALO: Coroutine Heap Allocation eLision Optimization](https://open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0981r0.html)
+  (2018): visibility of coroutine creation, ownership, and destruction.
+- [P2477R3 — Allow programmer to control coroutine elision](https://open-std.org/JTC1/SC22/WG21/docs/papers/2022/p2477r3.html)
+  (2022): a proposed interface and the limits of native lifetime inference.
+- [LLVM coroutine allocation elision](https://llvm.org/docs/Coroutines.html#avoiding-heap-allocations):
+  caller-owned frame storage and conditional allocation/deallocation.
+
 ### Completion, composition, and structured lifetime
 
 - C++ working draft: [async operation requirements](https://eel.is/c++draft/exec.async.ops),
   [`when_all`](https://eel.is/c++draft/exec.when.all),
   [schedulers](https://eel.is/c++draft/exec.sched), and
   [async scopes](https://eel.is/c++draft/exec.scope).
-- WG21 papers: [P2175R0](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2175r0.html),
-  [P2300R10](https://www9.open-std.org/JTC1/SC22/WG21/docs/papers/2024/p2300r10.html),
-  [P3149R11](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3149r11.html),
-  [P3552R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3552r3.html), and
-  [P4007R3](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4007r3.pdf).
+Historical papers explain design choices; the working draft supplies current
+wording:
+
+- [P2175R0 — Composable cancellation](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2020/p2175r0.html)
+  (2020): cooperative requests, structured lifetime, in-place stop state, and
+  cancellation-cost specialization.
+- [P2300R10 — `std::execution`](https://www9.open-std.org/JTC1/SC22/WG21/docs/papers/2024/p2300r10.html)
+  (2024): environment, completion, composition, customization, and coroutine interoperation.
+- [P3149R11 — `async_scope`](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3149r11.html)
+  (2025): counting-scope ownership and association/allocator-destruction ordering.
+- [P3552R3 — Coroutine Task](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3552r3.html)
+  (2025): task design, subsequently revised in the working draft.
+- [P4007R3 — Open Issues in `std::execution::task`](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p4007r3.pdf)
+  (2026-05-01): informational discussion of allocation, error-return syntax,
+  symmetric transfer, and fixes to earlier affinity/allocator designs.
 
 ### Implementation examples
 
 - [stdexec reference implementation](https://github.com/NVIDIA/stdexec): standard-facing facilities and extensions.
+- [Boost.Cobalt](https://github.com/boostorg/cobalt): coroutine tasks, promises, composition, and teardown.
+- [Intel bare-metal senders/receivers](https://github.com/intel/cpp-baremetal-senders-and-receivers): embedded static operation and cancellation protocols.
 - [async_simple](https://github.com/alibaba/async_simple): lazy coroutines, futures, executors, and cancellation.
 - [libcoro](https://github.com/jbaldwin/libcoro): coroutine tasks, scheduling, and task groups.
 - [Boost.Asio coroutine adapters](https://www.boost.org/doc/libs/latest/doc/html/boost_asio/overview/composition/cpp20_coroutines.html).

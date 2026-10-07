@@ -1,6 +1,7 @@
 module carven:semantic.semir.decl.impl;
 
 import :semantic.semir.decl;
+import :semantic.semir.async;
 import :source.provenance;
 import :support.invariant;
 import std;
@@ -116,6 +117,11 @@ DeclarationStore::DeclarationStore(
     for (const auto function : function_rows.entries()) {
         callable_functions.emplace(function.value.callable, function.id);
     }
+}
+
+auto DeclarationConstructionView::async_intrinsic(AsyncIntrinsicDeclID id) const noexcept
+    -> AsyncIntrinsicDeclaration {
+    return declaration_builder->async_intrinsics.copy_defined(id);
 }
 
 auto DeclarationStore::owner() const noexcept -> ProgramIdentity {
@@ -369,6 +375,7 @@ DeclarationBuilder::DeclarationBuilder(
       enumerations(owner),
       enum_cases(owner),
       module_constants(owner),
+      async_intrinsics(owner),
       callable_contracts(owner),
       callable_signature_ids(owner),
       callable_implementations(owner),
@@ -406,6 +413,34 @@ auto DeclarationBuilder::reserve_enum_case() noexcept -> EnumCaseID {
 auto DeclarationBuilder::reserve_module_constant() noexcept -> ModuleConstantID {
     require_reserving();
     return module_constants.reserve();
+}
+
+auto DeclarationBuilder::reserve_async_intrinsic() noexcept -> AsyncIntrinsicDeclID {
+    require_reserving();
+    return async_intrinsics.reserve();
+}
+
+auto DeclarationBuilder::define(
+    AsyncIntrinsicDeclID id,
+    AsyncIntrinsicDeclaration declaration
+) noexcept -> void {
+    require_reserving();
+    require_owner(
+        declaration.module_id.owner(),
+        program_identity,
+        "async intrinsic used a foreign module"
+    );
+    require_provenance_owner(
+        declaration.name.owner(),
+        provenance_identity,
+        "async intrinsic used a foreign spelling"
+    );
+    require_provenance_owner(
+        declaration.origin.owner(),
+        provenance_identity,
+        "async intrinsic used a foreign origin"
+    );
+    async_intrinsics.define(id, declaration);
 }
 
 auto DeclarationBuilder::reserve_callable() noexcept -> CallableID {
@@ -839,7 +874,8 @@ auto DeclarationBuilder::require_heads_defined() const noexcept -> void {
         || !structures.all_defined()
         || !enumerations.all_defined()
         || !enum_cases.all_defined()
-        || !module_constants.all_defined()) {
+        || !module_constants.all_defined()
+        || !async_intrinsics.all_defined()) {
         invariant_violation("declaration heads completed with an undefined shell");
     }
 }

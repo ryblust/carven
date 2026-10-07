@@ -104,7 +104,18 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
     if (found == facts.lifetime_objects.end()) {
         return;
     }
-    const auto release = [&](OwnershipState& state) noexcept {
+    const auto release = [&](OwnershipState& state, bool explicit_intent) noexcept {
+        for (const auto object : found->second) {
+            const auto& local = state.objects[input.objects.size() + object];
+            if (explicit_intent && local.child_intent && !*local.child_intent) {
+                diagnose(
+                    DiagnosticCode::AsyncChildIntent,
+                    "normal exit requires child observation or explicit cancellation",
+                    facts.locals[object].origin
+                );
+            }
+        }
+        // Close child loans before backing objects leave their lifetime.
         for (const auto object : found->second) {
             state.objects[input.objects.size() + object] = {};
         }
@@ -123,13 +134,16 @@ auto OwnershipBodyAnalyzer::leave(OwnershipFlow& flow, LifetimeRegionID lifetime
         }
     };
     if (flow.normal.has_value()) {
-        release(flow.normal->state);
+        release(flow.normal->state, true);
         if (diagnosing) {
             check(flow.normal->value, flow.normal->state);
         }
     }
     for (auto& exit : flow.exits) {
-        release(exit.state);
+        const auto explicit_intent = !std::holds_alternative<OwnershipFailure>(exit.payload)
+            && !std::holds_alternative<OwnershipCancelled>(exit.payload)
+            && !std::holds_alternative<OwnershipTestStopped>(exit.payload);
+        release(exit.state, explicit_intent);
         if (diagnosing) {
             exit.payload.visit([&](const auto& payload) noexcept {
                 if constexpr (requires { payload.value; }) {
@@ -151,7 +165,8 @@ auto OwnershipBodyAnalyzer::retain(
             .available = true,
             .taken = std::nullopt,
             .relationships = relationships,
-            .modified = false
+            .modified = false,
+            .child_intent = std::nullopt
         };
     }
 }
@@ -272,17 +287,26 @@ auto OwnershipBodyAnalyzer::use(
     }
 }
 
+auto OwnershipBodyAnalyzer::preserves_backing(TypeID type) const noexcept -> bool {
+    const auto* builtin = std::get_if<BuiltinTypeValue>(&program.types().type(type).value);
+    return builtin
+        && (builtin_is_numeric(builtin->kind)
+            || builtin->kind == BuiltinType::Bool
+            || builtin->kind == BuiltinType::Char);
+}
+
 auto OwnershipBodyAnalyzer::store(
     OwnershipState& state,
     const OwnershipPlace& target,
     const OwnershipRelationships& relationships,
     ProgramOriginID origin,
-    bool definite
+    bool definite,
+    bool preserves_backing
 ) noexcept -> void {
     // Loop convergence still updates storage while diagnostic scans are suspended.
     if (diagnosing) {
         use(relationships, state, origin);
-        check_storage_write(state, target, origin);
+        check_storage_write(state, target, origin, preserves_backing);
         for (const auto& loan : relationships.view().storage_loans) {
             if (loan.backing.object == target.object
                 || !outlives(loan.backing.object, target.object)) {
@@ -324,7 +348,8 @@ auto OwnershipBodyAnalyzer::store(
             .available = true,
             .taken = std::nullopt,
             .relationships = relationships,
-            .modified = true
+            .modified = true,
+            .child_intent = std::nullopt
         };
         return;
     }
@@ -381,6 +406,7 @@ auto OwnershipBodyAnalyzer::is_writable(LocalBindingID id) const noexcept -> boo
             [](const ParameterBindingStorage& value) static noexcept {
                 return value.access == AccessMode::Write;
             },
+            [](const AsyncChildBindingStorage&) static noexcept { return false; },
             [](const CaptureBindingStorage& value) static noexcept {
                 return value.mode == CaptureMode::Write;
             },
@@ -523,13 +549,15 @@ auto OwnershipBodyAnalyzer::take_conflict(
 
 auto OwnershipBodyAnalyzer::storage_write_conflict(
     const OwnershipState& state,
-    const OwnershipPlace& target
+    const OwnershipPlace& target,
+    bool preserves_backing
 ) const noexcept -> std::optional<ProgramOriginID> {
     const auto conflict = [&](
                               std::span<const OwnershipStorageLoan> loans
                           ) noexcept -> std::optional<ProgramOriginID> {
         for (const auto& loan : loans) {
-            if (overlaps(loan.backing, target)) {
+            if (overlaps(loan.backing, target)
+                && (!preserves_backing || loan.protection == OwnershipLoanProtection::Contents)) {
                 return loan.origin;
             }
         }
@@ -549,12 +577,13 @@ auto OwnershipBodyAnalyzer::storage_write_conflict(
 auto OwnershipBodyAnalyzer::check_storage_write(
     const OwnershipState& state,
     const OwnershipPlace& target,
-    ProgramOriginID origin
+    ProgramOriginID origin,
+    bool preserves_backing
 ) noexcept -> void {
     if (!diagnosing) {
         return;
     }
-    if (const auto loan = storage_write_conflict(state, target)) {
+    if (const auto loan = storage_write_conflict(state, target, preserves_backing)) {
         diagnose(
             DiagnosticCode::AccessBorrowConflict,
             "operation conflicts with a live borrowed view",

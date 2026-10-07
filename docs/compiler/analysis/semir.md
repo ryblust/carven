@@ -41,14 +41,45 @@ insertion-order IDs. Floating identity uses bits; numeric equality remains separ
 validation. Containment facts can coexist and propagate according to each
 property's storage and borrowing rules. String storage containment excludes
 zero-length array elements. Read queries derive storage-borrowing
-and value-snapshot guarantees from these facts. Native value containment lets
-the backend preserve C++ copy and destruction behavior within Carven aggregates;
-Read passing for native values without owned Carven storage is resolved through
-C++ traits.
+and value-snapshot guarantees from these facts. Native value containment contributes to the same storage-borrowing query.
+Source Read parameters retain native holders through const references, including
+native values contained in Carven aggregates. C++ still selects native copy and
+destruction operations for owned construction and transfer.
 
 Published-program consumers read these facts through an identity-checked query.
 Static execution during construction queries the draft's type facts, including
 types whose dependencies are still being completed.
+
+## Async operations
+
+Canonical operation identity contains the success type and solved nominal failure
+set, independently of the producing function. Async execution kind belongs to the
+callable contract; its invocation constructs a cold operation. Cold construction,
+await, lexical child startup, and compiler-defined async operations have distinct
+SemIR forms. Cancellation remains outside nominal failure identity.
+
+Ownership analysis checks consumption, retained backing, child intent, and source
+lifetime exits through its existing flow and interprocedural queries. Those proof
+states remain private to analysis. Publication delivers the final executable body
+under the same semantic gates as ordinary source. Backend preparation borrows that
+body to derive coroutine-context and lexical child realization data. The structured
+executable body carries the control and lifetime identities used for realization.
+
+Published cancellation facts are derived from finalized executable bodies.
+Callable queries describe outward cancelled completion;
+await occurrence queries describe the completion of the observed producer.
+Expression evaluation and the capability of a produced cold operation are distinct:
+constructing cold work evaluates its operands without executing the delayed body.
+Bindings, lexical children, and private wrappers retain that producer capability.
+Recursive callables are solved to a fixed point; unknown producers may complete
+cancelled. These facts preserve canonical operation identity and existing source
+ownership and assignment rules. A request or yield alone does not produce
+cancelled completion.
+
+Standard async operations have declaration identities registered for the canonical
+`std::async` module. Import resolution and shadowing select those identities before
+call construction. Resolved operations retain the selected kind; the construction
+declarations end before publication. See [async source rules](../../language/async.md).
 
 ## Structured semantics
 
@@ -292,9 +323,11 @@ execution requirements are checked separately; known results retain required
 operands and effects. Publication checks that every attached normal-completion
 fact belongs to this program and has the expression's exact resolved type.
 
-Constant facts serve folding and generated code. Reachability, failure, ownership,
-nullability, and return analysis never read them: a condition, guard, or match
-subject retains every path whatever its value. A match arm's
+Constant facts serve folding, generated code, and proven normal-completion truth.
+Ownership and pointer nullability evaluate condition effects and exits before
+using an existing Boolean fact to select normal successors. Syntax reachability,
+type, failure, and return admission remain structural and check every source
+shape. A match arm's
 `pattern_may_reject` is instead a structural coverage fact over the subject type
 after preceding unguarded patterns, independent of the subject's constant fact.
 Integer arithmetic wraps in both required and runtime execution.

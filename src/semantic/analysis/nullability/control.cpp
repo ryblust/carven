@@ -103,6 +103,13 @@ auto NullabilityBodyAnalyzer::statement(const SemanticStatement& source, NullSta
                 }
                 co_return {};
             },
+            [&](const SemAsyncLet& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.initializer));
+                if (flow.normal) {
+                    store(flow.normal->state, {.root = value.child, .path = {}}, {});
+                }
+                co_return {};
+            },
             [&](const SemAssign& value) noexcept -> ContinuationTask<std::monostate> {
                 (co_await evaluate(value.target));
                 (co_await evaluate(value.value));

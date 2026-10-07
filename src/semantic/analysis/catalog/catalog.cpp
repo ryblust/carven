@@ -9,6 +9,9 @@ import :frontend.ast.tree;
 import :semantic.analysis.catalog;
 import :semantic.analysis.program;
 import :semantic.analysis.types;
+import :semantic.semir.async;
+import :semantic.semir.decl;
+import :source.module_path;
 import :semantic.visibility;
 import :source.cpp.identifier;
 import :support.invariant;
@@ -414,6 +417,62 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
         auto test_names = std::flat_map<std::string, Span, std::less<>>();
         auto local_candidates =
             std::flat_map<std::string, std::vector<CatalogLookupCandidate>, std::less<>>();
+        if (draft.module_path_copy(module_id).value() == "crafts.carven.std.async") {
+            constexpr auto intrinsics = std::array {
+                std::pair {std::string_view("cancel"), AsyncIntrinsic::CancelChild},
+                std::pair {
+                    std::string_view("cancellation_requested"),
+                    AsyncIntrinsic::CancellationRequested
+                },
+                std::pair {
+                    std::string_view("cancellation_point"),
+                    AsyncIntrinsic::CancellationPoint
+                },
+                std::pair {std::string_view("yield_once"), AsyncIntrinsic::YieldOnce},
+            };
+            for (const auto [name, kind] : intrinsics) {
+                if (result.symbols.size() == std::numeric_limits<std::uint32_t>::max()) {
+                    resource_limit_exceeded(
+                        "catalog symbols exhausted their 32-bit identity space"
+                    );
+                }
+                const auto id = draft.reserve_async_intrinsic();
+                const auto origin =
+                    draft.append_source_origin(draft.module_source(module_id), Span::at(0));
+                draft.define_declaration(
+                    id,
+                    AsyncIntrinsicDeclaration {
+                        .module_id = declaration,
+                        .name = draft.intern_spelling(name),
+                        .origin = origin,
+                        .visibility = DeclarationVisibility::Compilation,
+                        .kind = kind,
+                    }
+                );
+                const auto symbol_id =
+                    CatalogSymbolID::from_index(static_cast<std::uint32_t>(result.symbols.size()));
+                result.symbols.push_back(
+                    CatalogSymbol {
+                        .symbol_id = symbol_id,
+                        .module_id = module_id,
+                        .item_id = std::nullopt,
+                        .name = std::string(name),
+                        .form = CatalogAsyncIntrinsicForm {.declaration = id},
+                        .visibility = DeclarationVisibility::Compilation,
+                        .declaration_span = Span::at(0),
+                        .class_operation = std::nullopt,
+                    }
+                );
+                names.emplace(std::string(name), Span::at(0));
+                catalog_module.symbols.push_back(symbol_id);
+                local_candidates[std::string(name)].push_back(
+                    CatalogLookupCandidate {
+                        .symbol_id = symbol_id,
+                        .import_binding = std::nullopt,
+                    }
+                );
+            }
+        }
         for (const auto item_id : ast_module.items) {
             const auto& item = ast.item(item_id);
             if (const auto* function = std::get_if<ASTFunctionDecl>(&item.value)) {
@@ -608,6 +667,9 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                             .item_id = item_id,
                             .form = value.constant,
                         });
+                    },
+                    [](const CatalogAsyncIntrinsicForm&) static noexcept {
+                        invariant_violation("async intrinsic cannot be a source module item");
                     },
                     [](const CatalogEnumCaseForm&) static noexcept {
                         invariant_violation("enum case cannot be a module declaration item");

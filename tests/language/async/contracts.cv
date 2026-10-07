@@ -1,0 +1,284 @@
+import std::async using { cancel, yield_once };
+
+async fn leaf(value: i32) -> i32 {
+    await yield_once();
+    return value;
+}
+
+async fn rejected_guard(&trace: i32) -> bool {
+    await yield_once();
+    trace += 1;
+    return false;
+}
+
+async fn match_guard() -> i32 {
+    var trace: i32 = 0;
+    let selected = match 4 {
+        _ if await rejected_guard(&trace) => 99,
+        _ => await leaf(7),
+    };
+    return selected + trace * 10;
+}
+
+enum Failure {
+    First,
+    Second
+}
+
+async fn fail(first: bool) throw Failure {
+    await yield_once();
+    if first { throw Failure::First; }
+    throw Failure::Second;
+}
+
+async fn catch_guard(first: bool) -> i32 {
+    var trace: i32 = 0;
+    let selected = try {
+        await fail(first)?;
+        99
+    } catch {
+        Failure(.First) if await rejected_guard(&trace) => 98,
+        Failure(.First) => await leaf(3),
+        Failure(.Second) => await leaf(5),
+    };
+    return selected + trace * 10;
+}
+
+async fn recover_rethrow() -> i32 {
+    var trace: i32 = 0;
+    return try {
+        let selected = try {
+            await fail(true)?;
+            99
+        } catch {
+            Failure(.First) => {
+                trace = await leaf(4);
+                rethrow;
+            },
+            Failure(.Second) => 98,
+        };
+        selected
+    } catch {
+        Failure(_) => trace + await leaf(6),
+    };
+}
+
+async fn header_once() -> i32 {
+    for let operation = leaf(23); true;
+    {
+        return await operation;
+    }
+    return 0;
+}
+
+async fn write_later(&value: i32) -> i32 {
+    await yield_once();
+    return value;
+}
+
+fn wrapped(&used: i32, &discarded: i32) {
+    let unused = write_later(&discarded);
+    return write_later(&used);
+}
+
+async fn wrapper_backing() -> i32 {
+    var used: i32 = 8;
+    var discarded: i32 = 12;
+    let operation = wrapped(&used, &discarded);
+    let moved = &&discarded;
+    return await operation + moved;
+}
+
+fn select_return(&trace: i32) -> i32 {
+    trace = trace * 10 + 1;
+    return trace;
+}
+
+async fn finish_child(&trace: i32) {
+    await yield_once();
+    trace = trace * 10 + 2;
+}
+
+async fn pending_return(&trace: i32) -> i32 {
+    async let child = finish_child(&trace);
+    cancel(child);
+    return select_return(&trace);
+}
+
+async fn header_child_observe() -> i32 {
+    var selected: i32 = 0;
+    for async let child = leaf(25); true;
+    {
+        selected = await child;
+        break;
+    }
+    return selected;
+}
+
+async fn header_child_continue() -> i32 {
+    var trace: i32 = 0;
+    var index: i32 = 0;
+    var before_close: i32 = 0;
+    for async let child = finish_child(&trace);
+        if true {
+            cancel(child);
+            index < 2
+        } else {
+            false
+        };
+        ++index {
+        before_close = trace;
+        cancel(child);
+        continue;
+    }
+    return before_close * 10 + trace;
+}
+
+async fn header_child_break() -> i32 {
+    var trace: i32 = 0;
+    for async let child = finish_child(&trace); true;
+    {
+        cancel(child);
+        trace = 1;
+        break;
+    }
+    return trace;
+}
+
+async fn branch_child_closure(flag: bool) -> i32 {
+    let value = if flag {
+        async let child = leaf(7);
+        cancel(child);
+        9
+    } else {
+        3
+    };
+    return value;
+}
+
+fn capture_argument(&trace: i32, digit: i32, value: i32) -> i32 {
+    trace = trace * 10 + digit;
+    return value;
+}
+
+async fn captured(value: i32, extra: i32, &backing: i32, &bodies: i32) -> i32 {
+    bodies += 1;
+    return value + extra + backing;
+}
+
+async fn cold_capture() -> i32 {
+    var trace: i32 = 0;
+    var backing: i32 = 3;
+    var bodies: i32 = 0;
+    if true {
+        let dropped = captured(0, 0, &backing, &bodies);
+    }
+    let operation = captured(
+        capture_argument(&trace, 1, backing),
+        capture_argument(&trace, 2, 0),
+        &backing,
+        &bodies
+    );
+    backing = 7;
+    let result = await operation;
+    return trace * 1000 + bodies * 100 + result;
+}
+
+async fn record(&trace: i32, digit: i32) {
+    trace = trace * 10 + digit;
+}
+
+async fn ready_dependency(&trace: i32) {
+    await record(&trace, 1);
+    trace = trace * 10 + 2;
+}
+
+async fn direct_dependency() -> i32 {
+    var trace: i32 = 0;
+    async let child = record(&trace, 9);
+    await ready_dependency(&trace);
+    await child;
+    return trace;
+}
+
+async fn yielding_dependency(&trace: i32) {
+    trace = trace * 10 + 1;
+    await record(&trace, 2);
+    let turn = yield_once();
+    trace = trace * 10 + 3;
+    await turn;
+    trace = trace * 10 + 4;
+}
+
+async fn explicit_yield_boundary() -> i32 {
+    var trace: i32 = 0;
+    async let child = record(&trace, 8);
+    await yielding_dependency(&trace);
+    await child;
+    return trace;
+}
+
+async fn forward_yield() {
+    return await yield_once();
+}
+
+async fn return_yield_boundary() -> i32 {
+    var trace: i32 = 0;
+    async let child = record(&trace, 8);
+    trace = 1;
+    await forward_yield();
+    trace = trace * 10 + 2;
+    await child;
+    return trace;
+}
+
+fn first_argument(&trace: i32, reject: bool) -> i32 throw Failure {
+    trace = trace * 10 + 1;
+    if reject { throw Failure::First; }
+    return 3;
+}
+
+async fn argument_owner(&trace: i32) -> i32 {
+    await yield_once();
+    trace = trace * 10 + 2;
+    return 7;
+}
+
+async fn sum_arguments(first: i32, second: i32, &trace: i32) -> i32 {
+    trace = trace * 10 + 3;
+    return first + second;
+}
+
+async fn operand_recovery(reject: bool) -> i32 {
+    var trace: i32 = 0;
+    let operation = argument_owner(&trace);
+    let result = try {
+        await sum_arguments(first_argument(&trace, reject)?, await operation, &trace)
+    } catch {
+        Failure(_) => await operation,
+    };
+    return result * 1000 + trace;
+}
+
+async fn main() {
+    assert((await operand_recovery(true)) == 7012);
+    assert((await operand_recovery(false)) == 10123);
+    println(await match_guard());
+    println(await catch_guard(true));
+    println(await catch_guard(false));
+    println(await recover_rethrow());
+    println(await header_once());
+    println(await wrapper_backing());
+    var trace: i32 = 0;
+    println(await pending_return(&trace));
+    println(trace);
+    println(await header_child_observe());
+    println(await header_child_continue());
+    println(await header_child_break());
+    println(await branch_child_closure(true));
+    println(await branch_child_closure(false));
+    println(await cold_capture());
+    println(await direct_dependency());
+    println(await explicit_yield_boundary());
+    println(await return_yield_boundary());
+}

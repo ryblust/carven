@@ -53,6 +53,13 @@ auto BodyElaborator::materialize_selection(
     if (auto* built = std::get_if<BuiltExpression>(&selected)) {
         return std::move(*built);
     }
+    if (const auto* intrinsic = std::get_if<AsyncIntrinsicSelection>(&selected)) {
+        return std::unexpected(fail(
+            intrinsic->span,
+            DiagnosticCode::AsyncAdmission,
+            "std::async intrinsics require a resolved direct call; first-class values are not admitted"
+        ));
+    }
     if (const auto* builtin = std::get_if<BuiltinSelection>(&selected)) {
         if (expected) {
             if (const auto* term = std::get_if<TypeTermID>(&*expected)) {

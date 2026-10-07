@@ -1,5 +1,3 @@
-import("xmake.benchmark.runner", {alias = "benchmark", rootdir = os.projectdir()})
-
 function workloads()
     local groups = {}
     local cases = {}
@@ -204,44 +202,15 @@ const test { check(table_result.lane(0) == 31 && table_result.lane(31) == 0); }
     return result
 end
 
-function main(options)
-    local selected = benchmark.select(cases(), options)
-    if not selected then return end
-    local session = benchmark.session("compile", options, {
-        description = {
-            "Includes process startup, analysis and C++ generation; excludes native C++ compilation.",
-            "Module batches write fresh artifacts; structured cases send inspection output to the null device.",
-        },
-    })
-    benchmark.run(session, selected, function (session, record, case, root)
-        local inputs, paths = {}, {}
-        if case.count then
-            for module = 0, case.count - 1 do
-                local filename = string.format("module_%03d.cv", module)
-                inputs[filename] = string.format("export struct Value%03d { value: i32, }\n", module)
-                table.insert(paths, filename)
-            end
-        else
-            local filename = case.id .. ".cv"
-            inputs[filename] = case.source
-            table.insert(paths, filename)
+function inputs(case)
+    local sources = {}
+    if case.count then
+        for module = 0, case.count - 1 do
+            sources[string.format("module_%03d.cv", module)] =
+                string.format("export struct Value%03d { value: i32, }\n", module)
         end
-        for filename, source in pairs(inputs) do io.writefile(path.join(root, filename), source) end
-        local domain = "benchmark:compile" .. (case.count and ":" .. case.count or "")
-        record.inputs, record.linkage_domain = inputs, domain
-        record.output_mode = case.count and "fresh-artifacts" or "inspection-to-null"
-        return function (ordinal)
-            local args = {"compile"}
-            if options.timings then table.insert(args, "--timings") end
-            if case.count then
-                table.join2(args, {"--output-dir", "out-" .. ordinal})
-            else
-                table.insert(args, "--stdout")
-            end
-            table.insert(args, "--linkage-domain=" .. domain)
-            table.join2(args, paths)
-            return benchmark.command(session.compiler, args, root,
-                {timings = options.timings, capture_stdout = case.count ~= nil})
-        end
-    end)
+    else
+        sources[case.id .. ".cv"] = case.source
+    end
+    return sources
 end

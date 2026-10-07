@@ -467,7 +467,8 @@ const TestSuite suite([] static noexcept {
             const auto artifacts = compile_modules(
                 std::array {ModuleFixture {
                     "order",
-                    R"(enum Status { Pending, Shipped(i32), }
+                    R"(export async fn load() -> i32 { return 7; }
+enum Status { Pending, Shipped(i32), }
 struct Order { id: i32, code: u32, status: Status, items: [str; 2], }
 let order = Order { id: 7, code: 9u32, status: Status::Shipped(3), items: ["disk", "cable"], };
 println(order);)"
@@ -494,12 +495,21 @@ println(order);)"
             expect(passing < array);
             for (const auto content :
                  {std::string_view(implementation), std::string_view(header)}) {
-                constexpr auto include = std::string_view("#include <cstdint>");
-                const auto first = content.find(include);
-                if (!expect(first != std::string_view::npos)) {
-                    return;
+                expect(
+                    content.find("#include <carven/runtime/async/async.hpp>")
+                    < content.find("#include <array>")
+                );
+                const auto includes = std::array {
+                    std::string_view("#include <carven/runtime/async/async.hpp>"),
+                    std::string_view("#include <cstdint>"),
+                };
+                for (const auto include : includes) {
+                    const auto first = content.find(include);
+                    if (!expect(first != std::string_view::npos)) {
+                        return;
+                    }
+                    expect(content.find(include, first + include.size()) == std::string_view::npos);
                 }
-                expect(content.find(include, first + include.size()) == std::string_view::npos);
             }
         };
 

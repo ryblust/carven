@@ -63,13 +63,17 @@ auto bool_type() noexcept -> TargetType {
     };
 }
 
-auto function(TargetTypeID result, std::vector<TargetStmt> body) noexcept -> TargetItem {
+auto function(
+    TargetTypeID result,
+    std::vector<TargetStmt> body,
+    TargetCallableExecution execution = TargetCallableExecution::Ordinary
+) noexcept -> TargetItem {
     return {
         .value = TargetDecl {TargetFunctionDecl {
             .name = TargetName(identifier("fixture")),
             .parameters = {},
             .result = result,
-            .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+            .form = TargetFreeFunctionDefinition {.execution = execution, .body = std::move(body)},
             .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
@@ -152,6 +156,96 @@ static_assert(std::ranges::range<TargetPlanTableEntries<int, TargetArtifactID>>)
 
 
 const TestSuite suite([] static noexcept {
+    "Target coroutine: metadata alone cannot turn an ordinary body cold"_test = [] static noexcept {
+        const auto owner = TargetTestingFixture::unit_identity();
+        const auto type = TargetTestingFixture::type_id(owner, 0);
+        const auto unit =
+            sections(one_item(function(type, {}, TargetCallableExecution::Coroutine)));
+        const auto types = std::array {bool_type()};
+        const auto result = TargetTestingFixture::validate_unit(owner, types, unit);
+        if (expect(!result.has_value())) {
+            expect(result.error().kind == TargetSealViolationKind::InvalidCoroutine);
+        }
+    };
+
+    "Target coroutine: await and return require the owning coroutine"_test = [] static noexcept {
+        each(
+            std::array {false, true},
+            [](bool coroutine) static noexcept { return coroutine ? "coroutine" : "ordinary"; },
+            [](bool coroutine) static noexcept {
+                const auto owner = TargetTestingFixture::unit_identity();
+                const auto type = TargetTestingFixture::type_id(owner, 0);
+                auto body = one_statement({
+                    .value = TargetExprStmt {.expression = co_await_expression(literal())},
+                    .attribution = attribution(),
+                });
+                body.push_back({
+                    .value = TargetCoReturnStmt {.expression = literal()},
+                    .attribution = attribution(),
+                });
+                const auto unit = sections(one_item(function(
+                    type,
+                    std::move(body),
+                    coroutine ? TargetCallableExecution::Coroutine
+                              : TargetCallableExecution::Ordinary
+                )));
+                const auto types = std::array {bool_type()};
+                const auto result = TargetTestingFixture::validate_unit(owner, types, unit);
+                expect_equal(result.has_value(), coroutine);
+                if (!coroutine && expect(!result.has_value())) {
+                    expect(result.error().kind == TargetSealViolationKind::InvalidCoroutine);
+                }
+            }
+        );
+    };
+    "Target coroutine: ordinary IIFE cannot inherit outer suspension"_test = [] static noexcept {
+        const auto owner = TargetTestingFixture::unit_identity();
+        const auto type = TargetTestingFixture::type_id(owner, 0);
+        auto inner = one_statement({
+            .value = TargetReturnStmt {.expression = co_await_expression(literal())},
+            .attribution = attribution(),
+        });
+        auto body = one_statement({
+            .value =
+                TargetExprStmt {
+                    .expression =
+                        TargetExpr {
+                            .value =
+                                TargetLambdaExpr {
+                                    .parameters = {},
+                                    .result = type,
+                                    .body = std::move(inner),
+                                }
+                        }
+                },
+            .attribution = attribution(),
+        });
+        const auto unit =
+            sections(one_item(function(type, std::move(body), TargetCallableExecution::Coroutine)));
+        const auto types = std::array {bool_type()};
+        const auto result = TargetTestingFixture::validate_unit(owner, types, unit);
+        if (expect(!result.has_value())) {
+            expect(result.error().kind == TargetSealViolationKind::InvalidCoroutine);
+        }
+    };
+    "Target coroutine: ordinary return cannot bypass coroutine completion"_test =
+        [] static noexcept {
+            const auto owner = TargetTestingFixture::unit_identity();
+            const auto type = TargetTestingFixture::type_id(owner, 0);
+            auto body = one_statement({
+                .value = TargetReturnStmt {.expression = literal()},
+                .attribution = attribution(),
+            });
+            const auto unit = sections(
+                one_item(function(type, std::move(body), TargetCallableExecution::Coroutine))
+            );
+            const auto types = std::array {bool_type()};
+            const auto result = TargetTestingFixture::validate_unit(owner, types, unit);
+            if (expect(!result.has_value())) {
+                expect(result.error().kind == TargetSealViolationKind::InvalidCoroutine);
+            }
+        };
+
     "Target traversal: sparse hooks preserve nested order, mutation, and early stop"_test =
         [] static noexcept {
             each(

@@ -65,7 +65,8 @@ auto BodyRealizer::ExpressionBuilder::sequenced_suffix_begin(
 auto BodyRealizer::ExpressionBuilder::first_unsequenced(
     const PreparedOperation& value
 ) const noexcept -> std::size_t {
-    if (std::holds_alternative<SemCall>(value.operation.value)) {
+    if (std::holds_alternative<SemCall>(value.operation.value)
+        || std::holds_alternative<SemColdCall>(value.operation.value)) {
         return 1uz;
     }
     if (const auto* native = std::get_if<SemCppCall>(&value.operation.value)) {

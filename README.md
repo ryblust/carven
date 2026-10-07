@@ -225,6 +225,17 @@ These commands use clang-format for C++ and [Graver](tools/graver/README.md)
 for `.cv` files. `format` applies changes; `format-check` reports violations
 without changing files.
 
+### Benchmarks
+
+Workloads and measurement protocols live in [benchmarks/](benchmarks/README.md).
+Run them through the repository wrapper:
+
+```shell
+./xmakew bench compile
+./xmakew bench incremental
+./xmakew bench async
+```
+
 ### Module build troubleshooting
 
 If an unexpected compiler, module, BMI, dependency-order, or apparently

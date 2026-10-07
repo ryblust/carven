@@ -1,0 +1,2 @@
+// Compiler-defined std::async declarations are registered for this canonical module.
+// Runtime implementation is supplied by the compiler; this source shell has no C++ dependency.

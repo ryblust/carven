@@ -128,9 +128,10 @@ facts.
 
 ## Ownership and identity
 
-`FunctionRef<R(Args...) noexcept>` copies function pointers and borrows lvalue
-callable objects. Borrowed objects must outlive all invocations, including those
-made after coroutine suspension. Empty views represent optional recipients;
+Compiler callback ports use `FunctionRef<R(Args...) noexcept>` from
+`support.function_ref`. It copies function pointers and borrows lvalue callable
+objects. Borrowed objects must outlive all invocations, including those made after
+coroutine suspension. Empty views represent optional recipients;
 invoking an empty view violates an internal invariant. Exceptions escaping a
 callback terminate at the invocation boundary.
 
@@ -189,7 +190,13 @@ Source-template callables and completed static tests retain declarations and
 provenance without a body reference. No source tree is available to downstream
 planning or execution.
 Source diagnostics use a separate channel. Body contracts establish the parameter
-and binding relations used by global checks. Successful checks deliver the program.
+and binding relations used by global checks. After executable bodies are sealed,
+async completion analysis solves cancellation capability through callable and
+operation-value dependencies. A reverse worklist reaches a least fixed point,
+including recursive calls. Unknown producers remain possibly cancelled.
+`SemIRProgram` owns the resulting callable and await-completion facts; downstream
+consumers query them without reconstructing producer flow. Successful checks and
+fact publication deliver the program.
 
 Backend preparation derives operand uses and execution summaries from published
 operations. Realization preserves their lifetime and control contracts and checks

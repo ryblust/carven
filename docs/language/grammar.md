@@ -79,7 +79,7 @@ The following spellings are reserved keywords and are not emitted as
 `IDENTIFIER` tokens:
 
 ```text
-as break catch class const continue else enum export false fn for if import in is let
+as async await break catch class const continue else enum export false fn for if import in is let
 match nullptr private rethrow return struct test throw true try using var while
 ```
 
@@ -438,10 +438,12 @@ function-definition = function-head, function-body;
 
 function-body = ordinary-block | "=>", expression, ";";
 
-function-head = [ "const" ], "fn", IDENTIFIER,
+function-head = [ function-modifier ], "fn", IDENTIFIER,
                 "(", [ function-parameter-list ], ")",
                 [ "->", function-result-type ],
                 [ throw-clause ];
+
+function-modifier = "const", [ "async" ] | "async", [ "const" ];
 
 function-parameter-list = function-parameter,
                           { ",", function-parameter }, [ "," ];
@@ -460,6 +462,10 @@ throw-clause = "throw", named-type, { "+", named-type };
 
 Function definitions are top-level items or class operations. `import(cpp)` uses the same function
 head followed by `;`; `export(cpp)` uses either function-body form.
+Both `const async fn` and `async const fn` apply the same two modifiers.
+`async` must introduce a function rather than another declaration. Async
+execution and admission follow the [async source rules](async.md).
+
 The optional `const` before `fn` declares that the function can execute in the
 static stage. Static execution can call only functions with this modifier, including through
 local callable bindings. A `const fn` may call only other `const fn` dependencies.
@@ -616,7 +622,7 @@ variable-declaration-head = binding-kind, binding-target,
                             [ ":", type ],
                             "=", expression;
 
-binding-kind = "let" | "var" | "const";
+binding-kind = "let" | "var" | "const" | "async", "let";
 
 binding-target = IDENTIFIER;
 ```
@@ -764,8 +770,12 @@ or alternative productions.
 prefix-expression = prefix-operator, prefix-expression
                   | postfix-expression;
 
-prefix-operator = "!" | "-" | "~" | "*";
+prefix-operator = "!" | "-" | "~" | "*" | "await";
 ```
+
+`await action()?` applies propagation to the awaited completion. The `?`
+marker is parsed outside the await operand. Async admission follows
+[Async functions and lexical children](async.md).
 
 ### 7.3 Postfix Expressions
 

@@ -2,10 +2,16 @@
 
 [Language](README.md)
 
-This page defines ordinary calls, closures, and callable views. Calls executed
+This page defines ordinary calls, closures, and callable views.
+[Async functions](async.md) construct cold operations and deliver results on await. Calls executed
 in the static stage additionally follow [Static execution of functions](constants.md#static-execution-of-functions).
 
 ## Functions and calls
+
+Read parameters snapshot pure Carven values. Read values containing owned or
+native storage borrow their source holders; generated parameters are const
+references, including for trivially copyable native types. Write and Take retain
+their mutation and ownership contracts.
 
 Every ordinary function parameter requires an explicit type. A function with a
 body may omit its result type. Block and expression bodies infer it from return
@@ -100,6 +106,13 @@ are static roots in their static environment.
 Functions with static parameters require direct calls and cannot be imported from
 or exported to C++. Lambda parameters and callable-view types do not accept
 `const` parameters.
+
+Async source functions use the same static-parameter instance selection. The
+residual body keeps its async execution identity and only runtime parameters are
+captured by the cold operation. `const async fn` additionally permits cooperative
+static execution through await and lexical children; see
+[static async execution](async.md#static-parameters-and-execution). A synchronous
+`const fn` can return a cold operation without executing it.
 
 ### Static control
 

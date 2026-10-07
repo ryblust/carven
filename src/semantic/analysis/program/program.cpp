@@ -159,6 +159,24 @@ auto ProgramDraft::reserve_module_constant_declaration() noexcept -> ModuleConst
     return storage.declarations.reserve_module_constant();
 }
 
+auto ProgramDraft::reserve_async_intrinsic() noexcept -> AsyncIntrinsicDeclID {
+    require_state(State::Declarations, "reserve async intrinsic");
+    return storage.declarations.reserve_async_intrinsic();
+}
+
+auto ProgramDraft::define_declaration(
+    AsyncIntrinsicDeclID id,
+    AsyncIntrinsicDeclaration declaration
+) noexcept -> void {
+    require_state(State::Declarations, "define async intrinsic");
+    storage.declarations.define(id, declaration);
+}
+
+auto ProgramDraft::async_intrinsic_declaration_copy(AsyncIntrinsicDeclID id) const noexcept
+    -> AsyncIntrinsicDeclaration {
+    return storage.declarations.construction_view().async_intrinsic(id);
+}
+
 auto ProgramDraft::reserve_callable_declaration() noexcept -> CallableID {
     require_state(State::Declarations, "reserve callable declaration");
     return storage.declarations.reserve_callable();
@@ -244,6 +262,7 @@ auto ProgramDraft::complete_function_result(CallableID id, ConstructionTypeRef r
     storage.declarations.define_callable_contract(
         id,
         {
+            .execution = found->second.execution,
             .parameters = std::move(found->second.parameters),
             .result = result,
             .failures = found->second.failures,
@@ -715,6 +734,7 @@ auto ProgramDraft::reserve_static_instance(
     const auto source =
         construction_callable_contract_copy(function_declaration_copy(function).callable);
     auto contract = ConstructionCallableContract {
+        .execution = source.execution,
         .parameters = {},
         .result = source.result,
         .failures = source.failures,
