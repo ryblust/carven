@@ -12,6 +12,7 @@ import std;
 enum class TargetTraversalScopeKind {
     Namespace,
     Callable,
+    CoroutineCallable,
     Block,
     ConditionalBranch,
     Loop,
@@ -234,12 +235,15 @@ template<typename Visitor, typename Range>
 auto traverse_target_callable_body(
     Range& statements,
     Visitor& visitor,
-    std::span<const TargetParameter> parameters = {}
+    std::span<const TargetParameter> parameters = {},
+    TargetCallableExecution execution = TargetCallableExecution::Ordinary
 ) noexcept -> bool {
     return with_target_scope(
         visitor,
         TargetTraversalScope {
-            .kind = TargetTraversalScopeKind::Callable,
+            .kind = execution == TargetCallableExecution::Coroutine
+                ? TargetTraversalScopeKind::CoroutineCallable
+                : TargetTraversalScopeKind::Callable,
             .initialization_barrier = false,
         },
         [&]() noexcept {
@@ -281,6 +285,9 @@ auto traverse_target_expression_impl(
                         ? TargetExpressionRole::MutationTarget
                         : TargetExpressionRole::Operand
                 );
+            },
+            [&](TargetTraversalNode<Node, TargetCoAwaitExpr>& value) noexcept {
+                return traverse_target_owned_expression(value.operand, visitor);
             },
             [&](TargetTraversalNode<Node, TargetBinaryExpr>& value) noexcept {
                 return traverse_target_owned_expression(value.left, visitor)
@@ -417,6 +424,9 @@ auto traverse_target_statement_impl(Node& statement, Visitor& visitor) noexcept 
             [&](TargetTraversalNode<Node, TargetReturnStmt>& value) noexcept {
                 return !value.expression.has_value()
                     || traverse_target_expression(*value.expression, visitor);
+            },
+            [&](TargetTraversalNode<Node, TargetCoReturnStmt>& value) noexcept {
+                return traverse_target_expression(value.expression, visitor);
             },
             [&](TargetTraversalNode<Node, TargetVariableStmt>& value) noexcept {
                 return visit_target_variable(visitor, value)
@@ -665,7 +675,12 @@ auto traverse_target_declaration(const TargetDecl& declaration, Visitor& visitor
                 }
                 const auto* definition = std::get_if<TargetFreeFunctionDefinition>(&value.form);
                 return definition == nullptr
-                    || traverse_target_callable_body(definition->body, visitor, value.parameters);
+                    || traverse_target_callable_body(
+                           definition->body,
+                           visitor,
+                           value.parameters,
+                           definition->execution
+                    );
             },
             [&](const TargetVariableDecl& value) noexcept {
                 return visit_target_type(visitor, value.type)

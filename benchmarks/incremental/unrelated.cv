@@ -1,0 +1,1 @@
+export fn unrelated_value() -> i32 => 7;

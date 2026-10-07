@@ -65,3 +65,12 @@ auto BodyBuilder::pattern_copy(PatternID id) const noexcept -> ElaboratedPattern
     }
     return patterns.copy(id);
 }
+
+auto BodyBuilder::add_async_child_binding(
+    ProgramSpellingID name,
+    ConstructionTypeRef type,
+    LifetimeRegionID owner,
+    ProgramOriginID origin
+) noexcept -> BoundStorage {
+    return add_binding(name, type, owner, AsyncChildBindingStorage {}, origin);
+}

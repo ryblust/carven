@@ -54,7 +54,7 @@ auto BodyRealizer::ExpressionBuilder::borrowed_owner(
         && use != PreparedUse::NativeTake;
 }
 
-// Every Read parameter form (const T&, const T, ReadArg<T>) names a const lvalue.
+// Every Read parameter, whether a value snapshot or storage borrow, is a const lvalue.
 auto BodyRealizer::ExpressionBuilder::const_parameter(const Fragment& fragment) const noexcept
     -> bool {
     const auto* binding = std::get_if<LocalBindingID>(&fragment.completion);
@@ -315,7 +315,7 @@ auto BodyRealizer::ExpressionBuilder::anchor(
                  .const_qualified = false}
             );
         }
-        // Exact queries, references and ReadArg carry qualification in their
+        // Exact queries and borrowed references carry qualification in their
         // type. Keyword const cannot qualify an opaque reference alias.
         const auto access_in_type = exact_call || place || (read && !read_value);
         fragment.statements.declare(

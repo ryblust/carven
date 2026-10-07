@@ -1,6 +1,8 @@
 module carven:backend.preparation.body.impl;
 
 import :backend.preparation.body;
+import :semantic.semir.children;
+import :semantic.semir.decl;
 import :semantic.semir.delegation;
 import :semantic.semir.evaluation;
 import :semantic.semir.ids;
@@ -77,6 +79,10 @@ auto unstable_bindings(const SemIRProgram& semantic, const SemIRBody& body) noex
                     for (const auto& argument : call->arguments) {
                         access(argument.access, argument.expression);
                     }
+                } else if (const auto* cold = std::get_if<SemColdCall>(&source.value)) {
+                    for (const auto& argument : cold->arguments) {
+                        access(argument.access, argument.expression);
+                    }
                 } else if (const auto* intrinsic = std::get_if<SemIntrinsic>(&source.value)) {
                     for (const auto& operand : intrinsic->operands) {
                         access(operand.access, operand.expression);
@@ -128,7 +134,8 @@ auto stable_binding(
                 return parameter.access == AccessMode::Read
                     || (parameter.access == AccessMode::Take && !unstable);
             },
-            [](const CaptureBindingStorage&) static noexcept { return false; }
+            [](const CaptureBindingStorage&) static noexcept { return false; },
+            [](const AsyncChildBindingStorage&) static noexcept { return false; }
         }
     );
 }
@@ -137,7 +144,10 @@ template<typename Operation>
 struct PreparationVisitor final {
     const Operation& operation;
 
-    auto leave(const SemanticExpression& source) const noexcept -> void { operation(source); }
+    template<typename Node>
+    auto leave(const Node& source) const noexcept -> void {
+        operation(source);
+    }
 };
 
 } // namespace
@@ -146,43 +156,101 @@ BodyPreparation::BodyPreparation(const SemIRProgram& semantic, BodyID body) noex
     : semantic(semantic),
       metadata(semantic.bodies().body(body)) {
     const auto unstable = unstable_bindings(semantic, metadata);
-    const auto prepare = [&](const SemanticExpression& source) noexcept {
-        if (std::holds_alternative<SemPropagate>(source.value)) {
-            return;
-        }
-        const auto rule = evaluation_rule(semantic, source);
-        auto execution = rule.action == EvaluationAction::Required;
-        const auto* binding = std::get_if<SemBinding>(&source.value);
-        const auto* index = std::get_if<SemIndex>(&source.value);
-        const auto reads_slice = index != nullptr
-            && std::holds_alternative<SliceTypeValue>(
-                                     semantic.types().type(index->source->type.resolved()).value
-            );
-        auto reads = execution
-            || reads_slice
-            || (binding != nullptr
-                && !stable_binding(
-                    semantic,
-                    metadata.binding(binding->binding),
-                    unstable.contains(binding->binding)
-                ));
-        for (const auto* input : rule.operands) {
-            if (input != nullptr) {
-                const auto& child = summary(*input);
-                execution |= child.requires_execution;
-                reads |= child.reads_storage;
+    const auto callable = semantic.declarations().callable_for_body(metadata.id());
+    const auto async_body = callable
+        && semantic.callable_signatures()
+                .signature(semantic.declarations().callable(*callable).signature)
+                .execution
+            == CallableExecutionKind::Async;
+    const auto index_children = [&](const auto& node) noexcept {
+        using Node = std::remove_cvref_t<decltype(node)>;
+        if constexpr (std::same_as<Node, SemanticStatement>) {
+            if (node.reachable) {
+                if (const auto* child = std::get_if<SemAsyncLet>(&node.value)) {
+                    child_bindings[metadata.binding(child->child).lifetime].push_back(child->child);
+                }
             }
         }
-        summaries.emplace(
-            std::addressof(source),
-            ExpressionSummary {
-                .executes_operation = rule.action == EvaluationAction::Required,
-                .requires_execution = execution,
-                .reads_storage = reads
-            }
-        );
     };
-
+    visit_semantic_nodes(metadata.region(), index_children);
+    auto statement_contexts = std::unordered_map<const SemanticStatement*, bool>();
+    const auto child_context = [&](const auto& node) noexcept -> bool {
+        using Node = std::remove_cvref_t<decltype(node)>;
+        if constexpr (std::same_as<Node, SemanticExpression>) {
+            return summary(node).requires_coroutine_context;
+        } else if constexpr (std::same_as<Node, SemanticRegion>) {
+            return region_contexts.at(std::addressof(node));
+        } else {
+            return statement_contexts.at(std::addressof(node));
+        }
+    };
+    const auto prepare = [&](const auto& source) noexcept {
+        using Node = std::remove_cvref_t<decltype(source)>;
+        if constexpr (std::same_as<Node, SemanticExpression>) {
+            if (std::holds_alternative<SemPropagate>(source.value)) {
+                return;
+            }
+            const auto rule = evaluation_rule(semantic, source);
+            auto execution = rule.action == EvaluationAction::Required;
+            auto coroutine_context = std::holds_alternative<SemAwait>(source.value)
+                || (async_body
+                    && !semantic.failure_sets()
+                            .failure_set(source.failures.resolved())
+                            .members.empty());
+            visit_semantic_children(source.value, [&](const auto& child) noexcept {
+                coroutine_context |= child_context(child);
+            });
+            const auto* binding = std::get_if<SemBinding>(&source.value);
+            const auto* index = std::get_if<SemIndex>(&source.value);
+            const auto reads_slice = index != nullptr
+                && std::holds_alternative<SliceTypeValue>(
+                                         semantic.types().type(index->source->type.resolved()).value
+                );
+            auto reads = execution
+                || reads_slice
+                || (binding != nullptr
+                    && !stable_binding(
+                        semantic,
+                        metadata.binding(binding->binding),
+                        unstable.contains(binding->binding)
+                    ));
+            for (const auto* input : rule.operands) {
+                if (input != nullptr) {
+                    const auto& child = summary(*input);
+                    execution |= child.requires_execution;
+                    reads |= child.reads_storage;
+                }
+            }
+            summaries.emplace(
+                std::addressof(source),
+                ExpressionSummary {
+                    .executes_operation = rule.action == EvaluationAction::Required,
+                    .requires_execution = execution,
+                    .reads_storage = reads,
+                    .requires_coroutine_context = coroutine_context,
+                }
+            );
+        } else {
+            auto coroutine_context = false;
+            if constexpr (std::same_as<Node, SemanticRegion>) {
+                coroutine_context = false;
+                visit_semantic_children(source, [&](const auto& child) noexcept {
+                    coroutine_context |= child_context(child);
+                });
+                region_contexts.emplace(std::addressof(source), coroutine_context);
+            } else {
+                coroutine_context = async_body
+                    && (std::holds_alternative<SemReturn>(source.value)
+                        || std::holds_alternative<SemThrow>(source.value)
+                        || std::holds_alternative<SemRethrow>(source.value)
+                        || std::holds_alternative<SemAsyncLet>(source.value));
+                visit_semantic_children(source.value, [&](const auto& child) noexcept {
+                    coroutine_context |= child_context(child);
+                });
+                statement_contexts.emplace(std::addressof(source), coroutine_context);
+            }
+        }
+    };
     const auto visitor = PreparationVisitor {.operation = prepare};
     visit_semantic_nodes(metadata.region(), visitor);
 }
@@ -238,6 +306,7 @@ auto BodyPreparation::prepare(const SemanticExpression& input) const noexcept ->
         .executes_operation = effect.executes_operation,
         .requires_execution = effect.requires_execution,
         .reads_storage = effect.reads_storage,
+        .requires_coroutine_context = effect.requires_coroutine_context,
         .operands = std::move(inputs),
         .preparation = std::move(preparation)
     };
@@ -260,4 +329,16 @@ auto BodyPreparation::argument(const SemCallArgument& source) const noexcept -> 
         use = PreparedUse::AddressValue;
     }
     return operand(source.expression, use);
+}
+
+auto BodyPreparation::requires_coroutine_context(const SemanticRegion& source) const noexcept
+    -> bool {
+    return region_contexts.at(std::addressof(source));
+}
+
+auto BodyPreparation::children(LifetimeRegionID lifetime) const noexcept
+    -> std::span<const LocalBindingID> {
+    const auto found = child_bindings.find(lifetime);
+    return found == child_bindings.end() ? std::span<const LocalBindingID>()
+                                         : std::span<const LocalBindingID>(found->second);
 }

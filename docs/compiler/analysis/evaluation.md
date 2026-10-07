@@ -103,9 +103,9 @@ The executor then calls the context's `bind_call` adapter. Only the analysis
 context identifies static parameters, freezes their values, requests an
 instance, and retains runtime arguments with their original access. The
 executor provides bounded argument detachment without exposing its storage;
-ordinary contexts preserve the callable and arguments. All contexts then use
-`prepare_call` with the selected callable. An ordinary call to a `const fn`
-remains an ordinary runtime call.
+ordinary contexts preserve the callable and arguments. Invocation uses `prepare_call` with the selected callable. Cold construction
+instead retains the selected callable and runtime arguments until await. An
+ordinary call to a `const fn` remains an ordinary runtime call.
 
 Static specialization evaluates local initializer roots while constructing
 residual regions. A body root executes once for its instance; each expanded
@@ -139,6 +139,36 @@ queries use that dispatcher after type-time static reads to retain scalar witnes
 without discarding operand effects. Substituting static values into runtime code
 does not eagerly evaluate the resulting arithmetic: a trap behind runtime control
 remains a runtime operation.
+
+### Cooperative source execution
+
+`const async fn` shares the ordinary instance selection, capability validation,
+and semantic executor. `ExecutionColdOperation` retains its delayed action, acquired
+arguments, and construction type. Construction preserves source order and binds
+static arguments without invoking the delayed body. Await consumes the affine
+descriptor and uses the existing invocation path, typed failures, execution
+memory, and cumulative budget. Stored and dropped cold owners use ordinary local
+storage and cleanup. Private synchronous const factories can return these values;
+an operation cannot be frozen into a `ConstantID`.
+
+The execution domain schedules source tasks on a FIFO queue. Direct cold awaits
+retain the current task. Child startup queues work; explicit yield, observing an
+unfinished child, and lexical close park the active task. Each task owns its call, condition-observation,
+block, and cancellation context. Child close retains borrowed frame storage until
+the children finish. Normal close waits; failure or accepted cancellation requests
+all children before waiting. The source ownership checks still require explicit
+child completion intent. `ExecutionBody` indexes child-owning lifetimes once
+when adapting its selected executable region. Closure queries use this execution
+metadata; inactive source bindings do not add scheduling turns. The index does
+not modify or persist in SemIR.
+
+Tasks share one memory domain and cumulative resource budget. An execution halt or
+failed semantic dependency stops the whole domain; exhaustion does not promise
+further user cleanup or output. Already written output remains observable.
+Native provider bodies and real I/O are outside static capability. Await is admitted
+in static roots, `const` blocks, and `const test` bodies as well as async bodies;
+a synchronous const function's ordinary body cannot await. Runtime realization
+consumes the same published body and emits its C++ coroutine representation.
 
 ### Execution values and storage
 

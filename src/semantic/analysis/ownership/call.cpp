@@ -12,7 +12,8 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                 .available = false,
                 .taken = std::nullopt,
                 .relationships = {},
-                .modified = false
+                .modified = false,
+                .child_intent = std::nullopt
             }
         )
     };
@@ -23,8 +24,8 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                                 std::span<const OwnershipCallArgument> values) noexcept {
         for (const auto& [id, value] : std::views::zip(bindings, values)) {
             const auto* parameter = std::get_if<ParameterBindingStorage>(&body.binding(id).storage);
-            // A Read may be a value copy. Its snapshot remains a possible holder
-            // independently of whether target traits choose a reference.
+            // Non-snapshot Read preserves source storage identity; value Read
+            // gives its snapshot an independent holder.
             const auto borrowed = parameter != nullptr
                 && parameter->access == AccessMode::Read
                 && analysis.contents(body.binding(id).type).read_borrows_storage();
@@ -36,7 +37,8 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                 .available = true,
                 .taken = std::nullopt,
                 .relationships = copy ? value.value : OwnershipRelationships {},
-                .modified = false
+                .modified = false,
+                .child_intent = std::nullopt
             };
         }
     };
@@ -128,6 +130,10 @@ auto OwnershipBodyAnalyzer::run() noexcept -> OwnershipBodyResult {
                 [&](OwnershipTestStopped&) noexcept {
                     complete(true, std::nullopt, std::move(exit.state), {});
                 },
+                [&](OwnershipCancelled&) noexcept {
+                    // Async source bodies are checked independently. Cold calls
+                    // never request an ordinary synchronous completion query.
+                },
                 [](const auto&) static noexcept {
                     invariant_violation("loop transfer escaped its callable");
                 }
@@ -167,6 +173,19 @@ auto OwnershipBodyAnalyzer::call(
         const auto contract = program.callable_signatures().signature(
             program.declarations().callable(callable).signature
         );
+        // Native Write may replace its selected backing. The provider owns
+        // hidden relationships; source-visible loans still constrain this access.
+        for (const auto& [parameter, argument] : std::views::zip(contract.parameters, arguments)) {
+            if (parameter.access != AccessMode::Write) {
+                continue;
+            }
+            if (argument.alias.has_value()) {
+                check_storage_write(result.normal->state, *argument.alias, origin);
+            }
+            for (const auto& target : argument.storage) {
+                check_storage_write(result.normal->state, target, origin);
+            }
+        }
         for (const auto type : program.failure_sets().failure_set(contract.failures).members) {
             result.exits.push_back({OwnershipFailure {type, {}}, result.normal->state});
         }
@@ -404,7 +423,11 @@ auto OwnershipBodyAnalyzer::call(
         auto object = OwnershipExternalObject {
             object_type(first),
             object_origin(first),
-            {.available = true, .taken = std::nullopt, .relationships = {}, .modified = false},
+            {.available = true,
+             .taken = std::nullopt,
+             .relationships = {},
+             .modified = false,
+             .child_intent = std::nullopt},
             site_for(first),
             group.size() > 1uz
         };

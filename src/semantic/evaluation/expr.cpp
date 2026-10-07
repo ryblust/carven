@@ -102,7 +102,9 @@ auto SemanticExecutor::finish_binary_value(
         evaluate_binary_constant_value(values, operation.operation, *lhs, *rhs, *target),
         source.origin
     );
-    if (compared && condition_observation && condition_observation->condition == &source) {
+    if (compared
+        && current->condition_observation
+        && current->condition_observation->condition == &source) {
         auto truth = boolean(*compared, source.origin);
         if (truth) {
             observe_condition(source, left, &right, *truth);
@@ -760,7 +762,7 @@ auto SemanticExecutor::expression_value(
             }
         }
         co_return right;
-    } else if constexpr (std::same_as<Operation, SemCall>) {
+    } else if constexpr (std::same_as<Operation, SemCall> || std::same_as<Operation, SemColdCall>) {
         auto evaluated_callee = (co_await this->value(frame, *operation.callee));
         if (!evaluated_callee) {
             co_return std::unexpected(std::move(evaluated_callee.error()));
@@ -786,7 +788,83 @@ auto SemanticExecutor::expression_value(
             }
             operands.push_back(std::move(*evaluated));
         }
-        co_return (co_await invoke(callee->callable, std::move(operands), source.origin));
+        if constexpr (std::same_as<Operation, SemColdCall>) {
+            auto selected =
+                co_await context.bind_call(callee->callable, operands, *this, source.origin);
+            if (!selected) {
+                if (auto* event = std::get_if<ExecutionEvent>(&selected.error())) {
+                    event->calls = current->calls;
+                    event->blocks = current->blocks;
+                    co_return std::unexpected(halt(std::move(*event)));
+                }
+                co_return std::unexpected(
+                    stop(std::move(std::get<ExecutionFailure>(selected.error())))
+                );
+            }
+            co_return std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
+                .type = source.type.construction(),
+                .action = *selected,
+                .arguments = std::move(operands),
+            });
+        } else {
+            co_return (co_await call(callee->callable, std::move(operands), source.origin));
+        }
+    } else if constexpr (std::same_as<Operation, SemAsyncIntrinsic>) {
+        switch (operation.kind) {
+            case AsyncIntrinsic::CancellationRequested: {
+                auto result_type = type(source.type.construction(), source.origin);
+                if (!result_type) {
+                    co_return std::unexpected(std::move(result_type.error()));
+                }
+                co_return ConstantAtom {
+                    .type = *result_type,
+                    .value = BooleanConstant {.value = cancellation_requested()},
+                };
+            }
+            case AsyncIntrinsic::CancelChild: {
+                const auto* child =
+                    std::get_if<ExecutionChild>(&frame.slots.at(operation.child->index()));
+                if (child == nullptr || !child->task->operation) {
+                    co_return std::unexpected(fail(
+                        source.origin,
+                        ExecutionReason::Evaluation,
+                        "cancel requires an unconsumed lexical child"
+                    ));
+                }
+                child->task->requested = true;
+                co_return ExecutionVoid {};
+            }
+            case AsyncIntrinsic::YieldOnce:
+            case AsyncIntrinsic::CancellationPoint:
+                co_return std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
+                    .type = source.type.construction(),
+                    .action = operation.kind,
+                    .arguments = {},
+                });
+        }
+        std::unreachable();
+    } else if constexpr (std::same_as<Operation, SemAwait>) {
+        if (operation.operand_kind == AsyncAwaitOperandKind::LexicalChild) {
+            const auto* binding = std::get_if<SemBinding>(&operation.operand->value);
+            if (binding == nullptr) {
+                invariant_violation("execution child observation lacks canonical binding");
+            }
+            co_return co_await observe_child(frame, binding->binding, source.origin);
+        }
+        auto evaluated = co_await this->value(frame, *operation.operand);
+        if (!evaluated) {
+            co_return std::unexpected(std::move(evaluated.error()));
+        }
+        auto* descriptor = std::get_if<std::unique_ptr<ExecutionColdOperation>>(&*evaluated);
+        if (descriptor == nullptr || !*descriptor) {
+            co_return std::unexpected(fail(
+                source.origin,
+                ExecutionReason::Evaluation,
+                "await requires an unconsumed cold operation"
+            ));
+        }
+        auto owned = std::move(*descriptor);
+        co_return co_await consume(std::move(*owned), source.origin);
     } else if constexpr (std::same_as<Operation, SemPrint>) {
         co_return (co_await print(frame, operation, source.origin));
     } else if constexpr (std::same_as<Operation, SemReport>) {

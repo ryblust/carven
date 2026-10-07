@@ -129,6 +129,14 @@ auto DeclResolver::prepare_type_dependencies(
                         visiting,
                         prepared
                     ));
+                } else if constexpr (std::same_as<Value, ConstructionOperationTypeValue>) {
+                    co_return (co_await prepare_type_dependencies(
+                        value.success,
+                        requester,
+                        span,
+                        visiting,
+                        prepared
+                    ));
                 } else {
                     co_return (co_await prepare_type_dependencies(
                         value.element,
@@ -254,6 +262,7 @@ auto DeclResolver::publish_declaration(const CatalogSymbol& symbol) noexcept
             [&](const CatalogEnumCaseForm& form) noexcept {
                 draft.define_declaration(form.enum_case, *enum_cases[form.enum_case.index()]);
             },
+            [](const CatalogAsyncIntrinsicForm&) static noexcept {},
             [&](const CatalogConstantForm& form) noexcept {
                 draft.define_declaration(form.constant, *module_constants[form.constant.index()]);
             },

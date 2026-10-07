@@ -1,0 +1,11 @@
+export struct Value {
+    number: i32,
+    extra: i32,
+}
+
+private fn adjust(number: i32) -> i32 => number + 1;
+
+export fn make_value(number: i32) -> Value => {
+    number: adjust(number),
+    extra: 0
+};

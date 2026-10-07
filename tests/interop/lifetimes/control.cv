@@ -194,3 +194,29 @@ test "Lifetimes: expanded runtime transfers preserve iteration and outer cleanup
     check(expanded_lifetime_return(3, 1) == 1);
     check(matches("9 1 -1 2 -2 -9 "));
 }
+
+test "Lifetimes: structured assignments close selected storage before the next statement" {
+    reset();
+    var selected: i32 = 0;
+    selected = if false {
+        0
+    } else {
+        let owner = Owner { 1 };
+        mark(9);
+        7
+    };
+    mark(8);
+    check(selected == 7);
+    check(matches("1 9 -1 8 "));
+    reset();
+    selected = try {
+        let owner = Owner { 2 };
+        mark(9);
+        7
+    } catch {
+        Failure(_) => 0,
+    };
+    mark(8);
+    check(selected == 7);
+    check(matches("2 9 -2 8 "));
+}

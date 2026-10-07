@@ -234,7 +234,33 @@ auto Parser::parse_cast_expression() noexcept -> std::optional<ASTExprID> {
     return operand;
 }
 
-auto Parser::parse_prefix_expression() noexcept -> std::optional<ASTExprID> {
+auto Parser::parse_prefix_expression(bool allow_propagation) noexcept -> std::optional<ASTExprID> {
+    if (const auto keyword = match(TokenKind::Await)) {
+        const auto nesting = enter_syntax_nesting();
+        if (!nesting) {
+            return std::nullopt;
+        }
+        const auto operand = parse_prefix_expression(false);
+        if (!operand) {
+            return std::nullopt;
+        }
+        auto result = builder.append_expression({
+            .span = join(keyword->span, builder.expression(*operand).span),
+            .value = ASTPrefixExpr {
+                .op = ASTPrefixOperator::Await,
+                .operator_span = keyword->span,
+                .operand_id = *operand,
+            },
+        });
+        while (allow_propagation && check(TokenKind::Question)) {
+            const auto marker = consume();
+            result = builder.append_expression({
+                .span = join(builder.expression(result).span, marker.span),
+                .value = ASTPropagationExpr {.operand_id = result, .operator_span = marker.span},
+            });
+        }
+        return result;
+    }
     if (check(TokenKind::Bang)
         || check(TokenKind::Minus)
         || check(TokenKind::Tilde)
@@ -244,7 +270,7 @@ auto Parser::parse_prefix_expression() noexcept -> std::optional<ASTExprID> {
             return std::nullopt;
         }
         const auto operation = consume();
-        const auto operand = parse_prefix_expression();
+        const auto operand = parse_prefix_expression(allow_propagation);
         if (!operand) {
             return std::nullopt;
         }
@@ -263,10 +289,10 @@ auto Parser::parse_prefix_expression() noexcept -> std::optional<ASTExprID> {
             }
         );
     }
-    return parse_postfix_expression();
+    return parse_postfix_expression(allow_propagation);
 }
 
-auto Parser::parse_postfix_expression() noexcept -> std::optional<ASTExprID> {
+auto Parser::parse_postfix_expression(bool allow_propagation) noexcept -> std::optional<ASTExprID> {
     auto operand = parse_primary_expression();
     if (!operand) {
         return std::nullopt;
@@ -328,6 +354,9 @@ auto Parser::parse_postfix_expression() noexcept -> std::optional<ASTExprID> {
                 }
             );
             continue;
+        }
+        if (!allow_propagation && check(TokenKind::Question)) {
+            break;
         }
         if (const auto operation = match(TokenKind::Question)) {
             operand = builder.append_expression(

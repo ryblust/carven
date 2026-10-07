@@ -71,6 +71,13 @@ auto BodyElaborator::consume_value(
         return std::move(*value);
     }
     if (auto* place = std::get_if<PlaceExpression>(&*built.storage)) {
+        if (operation_shape(built.type()) && access != AccessMode::Take) {
+            return std::unexpected(fail(
+                span,
+                DiagnosticCode::AsyncOwnership,
+                "a named cold operation requires complete-owner await, async let, or explicit && transfer"
+            ));
+        }
         if (access == AccessMode::Write) {
             return std::unexpected(fail(
                 span,
@@ -162,6 +169,21 @@ auto BodyElaborator::require_invariant_type(
                                ConstructionTypeRef left,
                                ConstructionTypeRef right) noexcept -> bool {
         if (left == right) {
+            return true;
+        }
+        const auto left_operation = operation_shape(left);
+        const auto right_operation = operation_shape(right);
+        if (left_operation || right_operation) {
+            if (!left_operation
+                || !right_operation
+                || !self(left_operation->success, right_operation->success)) {
+                return false;
+            }
+            draft().require_equal_failures(
+                left_operation->failures,
+                right_operation->failures,
+                origin(span)
+            );
             return true;
         }
         const auto left_slice = slice_element(draft(), left);
@@ -296,6 +318,13 @@ auto BodyElaborator::coerce_to(
     // Static parameters are bound at a direct call; a callable value has none.
     if (built.is_function_reference()) {
         const auto contract = callable_contract(built.type(), span);
+        if (contract && contract->execution == CallableExecutionKind::Async) {
+            return std::unexpected(fail(
+                span,
+                DiagnosticCode::AsyncAdmission,
+                "async fn requires a resolved direct call; callable values are not admitted"
+            ));
+        }
         if (contract
             && std::ranges::any_of(contract->parameters, [](const auto& parameter) static noexcept {
                    return parameter.stage == ParameterStage::Static;
@@ -338,6 +367,9 @@ auto BodyElaborator::coerce_to(
         std::get<SemanticExpression>(*converted->storage).operation_reachable = operation_reachable;
         built = std::move(*converted);
         return {};
+    }
+    if (operation_shape(built.type()) || operation_shape(target)) {
+        return require_invariant_type(built.type(), target, span);
     }
     if (!compatible(built.type(), target)) {
         return std::unexpected(type_mismatch(built.type(), target, span));

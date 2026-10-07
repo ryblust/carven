@@ -55,6 +55,8 @@ auto make_body_with_closure(
                     SemClosure {.callable = closure_callable, .captures = {}}
                 ),
             },
+
+
         }
     );
     return std::move(body).finish(
@@ -66,6 +68,8 @@ auto make_body_with_closure(
             .result_reachable = false,
             .failures = BodyFailures(program.add_empty_failure_term()),
             .exits_test = false,
+
+
         }
     );
 }
@@ -141,6 +145,8 @@ auto check_unresolved_residual_call() noexcept -> void {
                                       .result_reachable = false,
                                       .failures = BodyFailures(builder.add_empty_failure_term()),
                                       .exits_test = false,
+
+
                                   }
                               );
     const auto constant =
@@ -198,11 +204,15 @@ auto check_unresolved_residual_call() noexcept -> void {
                 .lifetime = lifetime,
                 .reachable = true,
                 .value = SemExpressionStatement {.expression = std::move(expression)},
+
+
             }},
             .result = std::nullopt,
             .result_reachable = false,
             .failures = BodyFailures(builder.add_empty_failure_term()),
             .exits_test = false,
+
+
         }
     );
     graph.residual = graph.region;
@@ -261,6 +271,8 @@ auto check_residual_static_statement(ResidualStaticStatement kind, bool retained
             .result_reachable = false,
             .failures = BodyFailures(builder.add_empty_failure_term()),
             .exits_test = false,
+
+
         };
     };
     const auto statement_value = [&]() noexcept -> SemanticStatementValue {
@@ -348,6 +360,8 @@ auto check_residual_static_statement(ResidualStaticStatement kind, bool retained
             .lifetime = lifetime,
             .reachable = true,
             .value = statement_value(),
+
+
         }
     );
     auto graph = std::move(body).finish(std::move(region));
@@ -499,16 +513,19 @@ const TestSuite suite([] static noexcept {
                     SemanticRegion {
                         .lifetime = lifetime,
                         .origin = module_origin.origin,
-                        .statements =
-                            {{.origin = module_origin.origin,
-                              .lifetime = lifetime,
-                              .reachable = true,
-                              .value =
-                                  SemExpressionStatement {.expression = std::move(expression)}}},
+                        .statements = {{
+                            .origin = module_origin.origin,
+                            .lifetime = lifetime,
+                            .reachable = true,
+                            .value = SemExpressionStatement {.expression = std::move(expression)},
+
+                        }},
                         .result = std::nullopt,
                         .result_reachable = false,
                         .failures = BodyFailures(builder.add_empty_failure_term()),
                         .exits_test = false,
+
+
                     }
                 );
                 auto& residual = scenario.explicit_residual ? graph.residual.emplace(graph.region)

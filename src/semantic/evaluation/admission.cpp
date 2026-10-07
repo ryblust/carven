@@ -38,6 +38,8 @@ auto supported_execution_type(
             for (const auto& item : *cases) {
                 pending.insert(pending.end(), item.payload_types.begin(), item.payload_types.end());
             }
+        } else if (std::holds_alternative<OperationTypeValue>(canonical.value)) {
+            // Execution-local affine descriptors have no frozen representation.
         } else if (std::holds_alternative<PointerTypeValue>(canonical.value)
                    || std::holds_alternative<SliceTypeValue>(canonical.value)
                    || std::holds_alternative<FunctionTypeValue>(canonical.value)
@@ -83,6 +85,7 @@ auto unsupported_execution_statement(const SemanticStatement& source) noexcept
                           || std::same_as<Operation, SemBreak>
                           || std::same_as<Operation, SemContinue>
                           || std::same_as<Operation, SemExpressionStatement>
+                          || std::same_as<Operation, SemAsyncLet>
                           || std::same_as<Operation, SemInitialize>
                           || std::same_as<Operation, SemStaticBinding>
                           || std::same_as<Operation, SemConstBlock>

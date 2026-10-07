@@ -147,6 +147,11 @@ auto join_ownership_state(OwnershipState& destination, const OwnershipState& sou
     for (auto&& [target, incoming] : std::views::zip(destination.objects, source.objects)) {
         target.available &= incoming.available;
         target.modified |= incoming.modified;
+        if (incoming.child_intent) {
+            target.child_intent = target.child_intent
+                ? std::optional(*target.child_intent && *incoming.child_intent)
+                : incoming.child_intent;
+        }
         if (incoming.taken.has_value()
             && (!target.taken.has_value() || *incoming.taken < *target.taken)) {
             target.taken = incoming.taken;

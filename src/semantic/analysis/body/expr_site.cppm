@@ -91,6 +91,7 @@ public:
     auto type(const Value& value) const noexcept -> ConstructionTypeRef;
     auto known(const Value& value) const noexcept -> std::optional<ConstantID>;
     auto external(ConstructionTypeRef type) const noexcept -> bool;
+    auto await_expression(const ASTPrefixExpr& source, Span span) noexcept -> ExpressionTask<Value>;
     auto dereference(const ASTPrefixExpr& source, Span span) noexcept -> ExpressionTask<Value>;
     auto supports_equality(ConstructionTypeRef type) noexcept -> bool;
     auto numeric_enum(ConstructionTypeRef type) noexcept -> bool;
@@ -174,8 +175,8 @@ public:
     auto resolve_name(std::string_view name, Span span) noexcept
         -> ExpressionTask<std::optional<ConstantID>>;
     auto construction_requests() noexcept -> ConstructionRequests&;
-    auto resolve_function(std::string_view name, Span span) noexcept
-        -> ExpressionTask<std::optional<FunctionID>>;
+    auto resolve_static_callable(std::string_view name, Span span) noexcept
+        -> ExpressionTask<std::optional<ResolvedStaticCallable>>;
     auto resolve_type_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>>;
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> ExpressionTask<ResolvedEnumCase>;

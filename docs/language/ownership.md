@@ -47,10 +47,11 @@ storage. Contained pointers and Write captures retain their separate target acce
 
 ## Read values and aliases
 
-Read parameters and Read range bindings preserve Carven array, String, and
-closure storage through const references, including storage nested in Carven
-aggregates. Native C++ types and other types use a const value when their C++
-copy construction and destruction are trivial, and a const reference otherwise.
+Read parameters and Read range bindings preserve Carven array, String, closure,
+and native storage through const references, including storage nested in Carven
+aggregates. Pure Carven values use const value snapshots. Native types borrow
+the source holder even when their C++ copy construction and destruction are
+trivial.
 `import(cpp)` and `export(cpp)` use the same Read policy.
 
 A by-value Read argument saves its value when that argument is evaluated. A
@@ -92,7 +93,9 @@ a `var` is the only operation that may restore it, and restoration happens only
 after the right-hand side completes normally. Partial assignment, compound
 assignment, and update operators require the prior value. At a control-flow
 join, a binding is available only when it is available on every normally
-continuing path. Loops include their zero-iteration path and all backedges.
+continuing path. Condition effects are checked before proven Boolean results
+select the possible normal paths. Loops include possible zero-iteration paths
+and all normally continuing backedges.
 
 Member and element mutation inherit eligibility from their receiver. Plain
 assignment requires a compatible value and uses the target C++ assignment

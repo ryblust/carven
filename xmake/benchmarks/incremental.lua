@@ -1,12 +1,8 @@
 import("core.base.json")
 import("core.project.project")
 import("core.package.repository")
-import("xmake.benchmark.runner", {alias = "benchmark", rootdir = os.projectdir()})
-
-local library = [[export struct Value { number: i32, }
-private fn adjust(number: i32) -> i32 => number + 1;
-export fn make_value(number: i32) -> Value => { number: adjust(number) };
-]]
+import("xmake.benchmarks.runner", {alias = "benchmark", rootdir = os.projectdir()})
+import("benchmarks.incremental.workloads", {rootdir = os.projectdir()})
 
 function rules_repository()
     -- Read the declaration: --compiler can skip rebuilding stale package metadata.
@@ -72,25 +68,6 @@ function wait_for_timestamp(root, before)
     until os.mtime(marker) > latest
 end
 
-function workloads()
-    local extra = "export struct Extra { number: i32 }\n"
-    local public = library:gsub("number: i32,", "number: i32, extra: i32,")
-    public = public:gsub("number: adjust%(number%)", "number: adjust(number), extra: 0")
-    return {
-        {id = "no_changes", size = "4 modules", label = "No changes"},
-        {id = "identical_content_rewrite", size = "4 modules", label = "Identical content rewrite", baseline = {["library.cv"] = library},
-            edits = {["library.cv"] = library}},
-        {id = "private_function_edit", size = "4 modules", label = "Private function edit", baseline = {["library.cv"] = library},
-            edits = {["library.cv"] = (library:gsub("number %+ 1", "number + 2"))}},
-        {id = "public_interface_edit", size = "4 modules", label = "Public interface edit", baseline = {["library.cv"] = library},
-            edits = {["library.cv"] = public}},
-        {id = "add_module", size = "4 -> 5 modules", label = "Add module", baseline = {["extra.cv"] = false},
-            edits = {["extra.cv"] = extra}, artifacts = {extra = 1}},
-        {id = "remove_module", size = "5 -> 4 modules", label = "Remove module", baseline = {["extra.cv"] = extra},
-            edits = {["extra.cv"] = false}, artifacts = {extra = 0}},
-    }
-end
-
 -- False denotes an absent file in a baseline or edit.
 function write_files(root, files)
     for name, source in pairs(files or {}) do
@@ -104,7 +81,7 @@ function write_files(root, files)
 end
 
 function main(options)
-    local selected = benchmark.select(workloads(), options)
+    local selected = benchmark.select(workloads.cases(), options)
     if not selected then return end
     local session = benchmark.session("incremental", options, {
         description = {
@@ -120,16 +97,8 @@ function main(options)
     })
     local rules_repo
     benchmark.run(session, selected, function (session, record, scenario, root)
-        local inputs = {
-            ["library.cv"] = library,
-            ["unrelated.cv"] = "export fn unrelated_value() -> i32 => 7;\n",
-            ["facade.cv"] = [[import library using { Value, make_value, };
-export fn create_value(number: i32) -> Value => make_value(number);
-]],
-            ["app.cv"] = [[import facade using create_value;
-fn main() { let value = create_value(41); }
-]],
-            ["xmake.lua"] = string.format([[set_project("carven-benchmark")
+        local inputs = workloads.inputs()
+        inputs["xmake.lua"] = string.format([[set_project("carven-benchmark")
 add_rules("mode.debug")
 add_repositories(%q)
 add_requires("carven-benchmark@carven", {alias = "carven", system = false, configs = {rules_only = true}})
@@ -141,8 +110,7 @@ target("bench")
     set_values("carven.craftsdir", %q)
     add_files("*.cv")
 ]], "carven-benchmark " .. rules_repo, tostring(options.timings or false),
-                session.compiler, path.join(os.projectdir(), "crafts")),
-        }
+                session.compiler, path.join(os.projectdir(), "crafts"))
         record.inputs = inputs
         record.baseline, record.edits = scenario.baseline or {}, scenario.edits or {}
         record.linkage_domain, record.native_mode, record.language = "benchmark:incremental", "debug", "c++20"

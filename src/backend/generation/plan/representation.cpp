@@ -40,6 +40,7 @@ auto failure_order_key(const SemIRProgram& semantic, TypeID id) noexcept
                 static_assert(
                     std::same_as<Value, BuiltinTypeValue>
                         || std::same_as<Value, ArrayTypeValue>
+                        || std::same_as<Value, OperationTypeValue>
                         || std::same_as<Value, FunctionTypeValue>
                         || std::same_as<Value, ClosureTypeValue>
                         || std::same_as<Value, CallableViewTypeValue>

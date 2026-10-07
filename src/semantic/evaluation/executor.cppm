@@ -14,6 +14,41 @@ struct ExecutionCompletion final {
     ExecutionValue value;
 };
 
+struct ExecutionConditionObservation final {
+    const SemanticExpression* condition;
+    std::array<ProgramSpellingID, 2> sources;
+    std::string* explanation;
+};
+
+struct ExecutionLogicalTask;
+
+struct ExecutionWork final {
+    ExecutionLogicalTask* task;
+    std::coroutine_handle<> continuation;
+};
+
+// Frames are owned here, never by another task or by a lexical child slot.
+struct ExecutionLogicalTask final {
+    ContinuationTaskLoop loop;
+    std::optional<ExecutionTask<ExecutionValue>> operation;
+    std::optional<ExecutionWork> receiver;
+    ExecutionLogicalTask* parent;
+    bool requested;
+    std::vector<ProgramOriginID> calls;
+    std::vector<BlockSource> blocks;
+    std::optional<ExecutionConditionObservation> condition_observation;
+};
+
+struct ExecutionChild final {
+    ExecutionLogicalTask* task;
+};
+
+struct ExecutionChildRegistration final {
+    LifetimeRegionID lifetime;
+    LocalBindingID binding;
+    std::list<ExecutionLogicalTask>::iterator task;
+};
+
 struct ExecutionUninitialized final {};
 
 struct ExecutionTaken final {};
@@ -22,8 +57,8 @@ struct ExecutionOwner final {
     ExecutionPlace place;
 };
 
-using ExecutionSlot =
-    std::variant<ExecutionUninitialized, ExecutionTaken, ExecutionOwner, ExecutionPlace>;
+using ExecutionSlot = std::
+    variant<ExecutionUninitialized, ExecutionTaken, ExecutionOwner, ExecutionPlace, ExecutionChild>;
 
 struct ExecutionFrame final {
     std::optional<ExecutionBody> body;
@@ -31,6 +66,7 @@ struct ExecutionFrame final {
     std::vector<ExecutionSlot> slots;
     std::vector<ExecutionSourceFailure> caught;
     std::vector<ExecutionPlace> temporaries;
+    std::vector<ExecutionChildRegistration> children;
 };
 
 class SemanticExecutor final : private ExecutionArgumentAccess {
@@ -44,7 +80,7 @@ public:
     SemanticExecutor(SemanticExecutor&&) = delete;
     auto operator=(const SemanticExecutor&) -> SemanticExecutor& = delete;
     auto operator=(SemanticExecutor&&) -> SemanticExecutor& = delete;
-    ~SemanticExecutor() = default;
+    ~SemanticExecutor() noexcept;
     auto evaluate_body(ExecutionBody body) noexcept -> ExecutionTask<void>;
     auto evaluate_root(const SemanticExpression& source) noexcept -> ExecutionTask<ExecutionValue>;
     auto detach_result(ExecutionValue value, ProgramOriginID origin) noexcept
@@ -58,6 +94,61 @@ public:
     ) noexcept -> ExecutionTask<ExecutionValue>;
 
 private:
+    // Only these public roots drive the FIFO. Ordinary calls share the active task.
+    auto drive(ExecutionTask<ExecutionValue> operation) noexcept -> ExecutionResult<ExecutionValue>;
+    auto call(
+        CallableID callable,
+        std::vector<ExecutionOperand> arguments,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionTask<ExecutionValue>;
+    auto root_expression(const SemanticExpression& source) noexcept
+        -> ExecutionTask<ExecutionValue>;
+    auto root_body(ExecutionBody body) noexcept -> ExecutionTask<ExecutionValue>;
+    auto consume(ExecutionColdOperation operation, ProgramOriginID origin) noexcept
+        -> ExecutionTask<ExecutionValue>;
+    auto start_child(
+        ExecutionFrame& frame,
+        const SemAsyncLet& child,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionTask<ExecutionCompletion>;
+    auto observe_child(
+        ExecutionFrame& frame,
+        LocalBindingID binding,
+        ProgramOriginID origin
+    ) noexcept -> ExecutionTask<ExecutionValue>;
+    auto close_scope(ExecutionFrame& frame, LifetimeRegionID lifetime, bool cancel) noexcept
+        -> ExecutionTask<void>;
+    auto close_region(
+        ExecutionFrame& frame,
+        LifetimeRegionID lifetime,
+        ExecutionResult<ExecutionCompletion> result
+    ) noexcept -> ExecutionTask<ExecutionCompletion>;
+    auto cancellation_requested() const noexcept -> bool;
+    auto stop(ExecutionFailure failure) noexcept -> ExecutionFailure;
+    static auto fatal(const ExecutionFailure& failure) noexcept -> bool;
+
+    class Parking final {
+    public:
+        Parking(SemanticExecutor& executor, ExecutionLogicalTask* dependency = nullptr) noexcept;
+        auto await_ready() const noexcept -> bool;
+
+        template<typename Promise>
+        auto await_suspend(std::coroutine_handle<Promise> continuation) noexcept -> void {
+            executor.park(continuation.promise().task_loop(), continuation, dependency);
+        }
+
+        auto await_resume() const noexcept -> void;
+
+    private:
+        SemanticExecutor& executor;
+        ExecutionLogicalTask* dependency;
+    };
+
+    auto park(
+        ContinuationTaskLoop& loop,
+        std::coroutine_handle<> continuation,
+        ExecutionLogicalTask* dependency
+    ) noexcept -> void;
     auto detach_argument(ExecutionOperand operand, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue> override;
     auto bind(ExecutionFrame& frame, std::size_t slot, ExecutionValue value) noexcept -> void;
@@ -259,13 +350,6 @@ private:
         ProgramOriginID origin
     ) noexcept -> ExecutionTask<ExecutionValue>;
 
-    struct ConditionObservation final {
-        const SemanticExpression* condition;
-        std::array<ProgramSpellingID, 2> sources;
-        std::string* explanation;
-    };
-
-    std::optional<ConditionObservation> condition_observation;
     auto observe_condition(
         const SemanticExpression& source,
         const ExecutionValue& left,
@@ -280,7 +364,11 @@ private:
     std::map<ConstantID, ExecutionPlace> retained_slice_backings;
     std::map<TypeID, bool> storage_reads;
     std::map<ProgramSpellingID, ExecutionText> retained_text;
-    std::vector<ProgramOriginID> calls;
+    // The arena outlives every slot and frame; source memory outlives arena frames.
+    std::list<ExecutionLogicalTask> tasks;
+    std::deque<ExecutionWork> ready;
+    ExecutionLogicalTask* current = nullptr;
+    std::optional<ExecutionFailure> stopped;
     bool testing = false;
     std::size_t steps = 0;
     std::size_t text_work = 0;

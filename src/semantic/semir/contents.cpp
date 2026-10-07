@@ -14,8 +14,9 @@ constexpr auto callable_content = 2u;
 constexpr auto storage_content = 4u;
 constexpr auto native_content = 8u;
 constexpr auto string_storage_content = 16u;
-constexpr auto all_contents =
-    closure_content | callable_content | storage_content | native_content | string_storage_content;
+constexpr auto operation_content = 32u;
+constexpr auto all_contents = operation_content | closure_content | callable_content
+    | storage_content | native_content | string_storage_content;
 
 struct ContentDependent final {
     std::size_t index;
@@ -66,6 +67,7 @@ auto solve_type_contents(
         }();
         canonical.value.visit(
             Overloaded {
+                [&](const OperationTypeValue&) noexcept { contents[index] = operation_content; },
                 [&](const ClosureTypeValue&) noexcept { contents[index] = closure_content; },
                 [&](const CallableViewTypeValue&) noexcept { contents[index] = callable_content; },
                 [&](const ArrayTypeValue& value) noexcept {
@@ -143,6 +145,7 @@ auto solve_type_contents(
     result.reserve(roots.size());
     for (const auto index : root_indices) {
         result.push_back({
+            .contains_operation_owner = (contents[index] & operation_content) != 0u,
             .contains_closure_owner = (contents[index] & closure_content) != 0u,
             .contains_callable_view = (contents[index] & callable_content) != 0u,
             .contains_storage_owner = (contents[index] & storage_content) != 0u,
@@ -169,11 +172,14 @@ auto compute_type_contents(
 }
 
 auto TypeContents::read_borrows_storage() const noexcept -> bool {
-    return contains_storage_owner || contains_closure_owner;
+    return contains_operation_owner
+        || contains_storage_owner
+        || contains_closure_owner
+        || contains_native_value;
 }
 
 auto TypeContents::read_is_value_snapshot() const noexcept -> bool {
-    return !read_borrows_storage() && !contains_native_value;
+    return !read_borrows_storage();
 }
 
 auto query_type_contents(

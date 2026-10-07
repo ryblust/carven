@@ -95,6 +95,7 @@ auto DeclResolver::resolve_equality_support(std::span<const ConstructionTypeRef>
                             std::same_as<Value, FunctionTypeValue>
                             || std::same_as<Value, ClosureTypeValue>
                             || std::same_as<Value, CallableViewTypeValue>
+                            || std::same_as<Value, OperationTypeValue>
                             || std::same_as<Value, CppTypeValue>
                             || std::same_as<Value, RangeTypeValue>
                             || std::same_as<Value, SliceTypeValue>
@@ -228,6 +229,7 @@ auto DeclResolver::finish_declarations() noexcept -> void {
         symbol.form.visit(
             Overloaded {
                 [](const CatalogFunctionForm&) static noexcept {},
+                [](const CatalogAsyncIntrinsicForm&) static noexcept {},
                 [&](const CatalogStructForm& form) noexcept {
                     if (!structures[form.structure.index()].has_value()) {
                         invariant_violation("resolved struct has no declaration fact");
@@ -404,8 +406,15 @@ auto DeclResolver::resolve_fresh(const CatalogSymbol& symbol) noexcept -> Analys
     if (const auto* form = std::get_if<CatalogEnumCaseForm>(&symbol.form)) {
         co_return (co_await resolve_enum_case(symbol, *form));
     }
+    if (const auto* intrinsic = std::get_if<CatalogAsyncIntrinsicForm>(&symbol.form)) {
+        static_cast<void>(draft.async_intrinsic_declaration_copy(intrinsic->declaration));
+        co_return {};
+    }
+    if (!symbol.item_id) {
+        invariant_violation("source catalog declaration has no syntax identity");
+    }
     const auto syntax = draft.syntax_tree(symbol.module_id).view();
-    const auto& item = syntax.item(symbol.item_id);
+    const auto& item = syntax.item(*symbol.item_id);
     co_return (co_await symbol.form.visit(
         Overloaded {
             [&](const CatalogFunctionForm& form) noexcept -> AnalysisTask<void> {
@@ -437,6 +446,9 @@ auto DeclResolver::resolve_fresh(const CatalogSymbol& symbol) noexcept -> Analys
                 co_return (
                     co_await resolve_module_constant(symbol, form, syntax, *source, item.span)
                 );
+            },
+            [](const CatalogAsyncIntrinsicForm&) static noexcept -> AnalysisTask<void> {
+                invariant_violation("async intrinsic entered source declaration resolution");
             },
             [](const CatalogEnumCaseForm&) static noexcept -> AnalysisTask<void> {
                 invariant_violation("enum case entered top-level declaration resolution");
@@ -497,18 +509,21 @@ auto DeclResolver::ConstantScope::resolve_name(std::string_view name, Span span)
     co_return (co_await resolver.resolve_constant_name(module_id, name, span));
 }
 
-auto DeclResolver::ConstantScope::resolve_function(std::string_view name, Span span) noexcept
-    -> AnalysisTask<std::optional<FunctionID>> {
+auto DeclResolver::ConstantScope::resolve_static_callable(std::string_view name, Span span) noexcept
+    -> AnalysisTask<std::optional<ResolvedStaticCallable>> {
     if (resolver.catalog.lookup(module_id, name).empty()) {
-        co_return std::optional<FunctionID>();
+        co_return std::optional<ResolvedStaticCallable>();
     }
     auto selected = resolver.select_symbol(module_id, name, span);
     if (!selected) {
         co_return std::unexpected(selected.error());
     }
+    if (const auto* intrinsic = std::get_if<CatalogAsyncIntrinsicForm>(&(*selected)->form)) {
+        co_return std::optional<ResolvedStaticCallable>(intrinsic->declaration);
+    }
     const auto* function = std::get_if<CatalogFunctionForm>(&(*selected)->form);
     if (function == nullptr) {
-        co_return std::optional<FunctionID>();
+        co_return std::optional<ResolvedStaticCallable>();
     }
     auto result = (co_await resolver.ensure_available((*selected)->symbol_id, module_id, span));
     if (!result) {
@@ -521,7 +536,7 @@ auto DeclResolver::ConstantScope::resolve_function(std::string_view name, Span s
         co_return std::unexpected(result.error());
     }
 
-    co_return std::optional(function->function);
+    co_return std::optional<ResolvedStaticCallable>(function->function);
 }
 
 auto DeclResolver::ConstantScope::construction_requests() noexcept -> ConstructionRequests& {

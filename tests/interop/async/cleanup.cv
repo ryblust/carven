@@ -1,0 +1,195 @@
+import "async/cleanup.hpp" using async_cleanup_probe::{ Lease, resource_released };
+import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{ Guard, record };
+import std::async using { cancel, yield_once };
+
+import(cpp) async fn cleanup_cancelled();
+
+export enum Failure {
+    Rejected,
+}
+
+private async fn child() {
+    record('c', 2);
+}
+
+export(cpp) async fn nested_return() -> i32 {
+    async let pending = child();
+    cancel(pending);
+    if true {
+        let guard = Guard { 1 };
+        return 7;
+    }
+    return 0;
+}
+
+export(cpp) async fn nested_result() -> Guard {
+    async let pending = child();
+    cancel(pending);
+    if true {
+        let guard = Guard { 1 };
+        return Guard { 7 };
+    }
+    return Guard { 0 };
+}
+
+export(cpp) async fn nested_failure() -> i32 throw Failure {
+    async let pending = child();
+    cancel(pending);
+    if true {
+        let guard = Guard { 1 };
+        throw Failure::Rejected;
+    }
+    return 0;
+}
+
+export(cpp) async fn caught_failure() -> i32 {
+    try {
+        async let pending = child();
+        cancel(pending);
+        if true {
+            let guard = Guard { 1 };
+            throw Failure::Rejected;
+        }
+    } catch {
+        Failure(error) => { return 9; },
+    }
+    return 0;
+}
+
+export(cpp) async fn nested_cancel() {
+    async let pending = child();
+    cancel(pending);
+    if true {
+        let guard = Guard { 1 };
+        await cleanup_cancelled();
+    }
+}
+
+export(cpp) async fn nested_break() -> i32 {
+    for index in 0usize..1 {
+        async let pending = child();
+        cancel(pending);
+        if index == 0 {
+            let guard = Guard { 1 };
+            break;
+        }
+    }
+    return 7;
+}
+
+export(cpp) async fn nested_continue() -> i32 {
+    for index in 0usize..1 {
+        async let pending = child();
+        cancel(pending);
+        if index == 0 {
+            let guard = Guard { 1 };
+            continue;
+        }
+    }
+    return 7;
+}
+
+private async fn wait_for_release() {
+    for index in 0usize..8 {
+        if resource_released() {
+            record('c', 2);
+            return;
+        }
+        await yield_once();
+    }
+    record('c', 9);
+}
+
+export(cpp) async fn release_before_wait() -> i32 {
+    async let pending = wait_for_release();
+    cancel(pending);
+    if true {
+        let lease = Lease {};
+        return 7;
+    }
+    return 0;
+}
+
+export(cpp) async fn initializer_break() -> i32 {
+    var count: i32 = 0;
+    for index in 0usize..2 {
+        for async let pending = child(); true;
+        {
+            cancel(pending);
+            if true {
+                let guard = Guard { 1 };
+                break;
+            }
+        }
+        ++count;
+    }
+    return count;
+}
+
+export(cpp) async fn initializer_continue() -> i32 {
+    var index: i32 = 0;
+    for async let pending = child();
+        if true {
+            cancel(pending);
+            index < 2
+        } else {
+            false
+        };
+        ++index {
+        let guard = Guard { 1 };
+        continue;
+    }
+    return index;
+}
+
+export(cpp) async fn branch_return(flag: bool) -> i32 {
+    async let pending = child();
+    cancel(pending);
+    if flag {
+        let guard = Guard { 1 };
+        return 7;
+    }
+    let later = Guard { 5 };
+    return 8;
+}
+
+private async fn inner_child() {
+    record('c', 3);
+}
+
+export(cpp) async fn layered_exit(kind: i32) -> i32 throw Failure {
+    async let outer = wait_for_release();
+    cancel(outer);
+    if true {
+        let lease = Lease {};
+        async let inner = inner_child();
+        cancel(inner);
+        if kind == 0 { return 7; }
+        if kind == 1 { throw Failure::Rejected; }
+        await cleanup_cancelled();
+    }
+    return 0;
+}
+
+export(cpp) async fn assignment_regions(kind: i32) -> i32 {
+    async let pending = wait_for_release();
+    cancel(pending);
+    var selected: i32 = 0;
+    if kind == 0 {
+        selected = if false {
+            0
+        } else {
+            let lease = Lease {};
+            7
+        };
+    } else {
+        selected = try {
+            let lease = Lease {};
+            7
+        } catch {
+            Failure(_) => 0,
+        };
+    }
+    if !resource_released() { return 0; }
+    return selected;
+}

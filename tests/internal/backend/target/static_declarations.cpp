@@ -65,11 +65,33 @@ const TestSuite suite([] static noexcept {
     "Target static declarations: intrinsic names provide their own headers"_test =
         [] static noexcept {
             const auto symbols = std::array {
-                std::pair(TargetSymbol::StdNullopt, "optional"),
-                std::pair(TargetSymbol::RuntimeAsSlice, "carven/runtime/slice.hpp"),
-                std::pair(TargetSymbol::RuntimeRange, "carven/runtime/range.hpp"),
+                std::tuple(
+                    TargetSymbol::StdNullopt,
+                    "optional",
+                    TargetHeaderGroup::StandardLibrary
+                ),
+                std::tuple(
+                    TargetSymbol::RuntimeAsSlice,
+                    "carven/runtime/slice.hpp",
+                    TargetHeaderGroup::Runtime
+                ),
+                std::tuple(
+                    TargetSymbol::RuntimeRange,
+                    "carven/runtime/range.hpp",
+                    TargetHeaderGroup::Runtime
+                ),
+                std::tuple(
+                    TargetSymbol::RuntimeAsyncOperation,
+                    "carven/runtime/async/async.hpp",
+                    TargetHeaderGroup::Runtime
+                ),
+                std::tuple(
+                    TargetSymbol::RuntimeAsyncDriveRoot,
+                    "carven/runtime/async/async.hpp",
+                    TargetHeaderGroup::Runtime
+                ),
             };
-            for (const auto& [symbol, header] : symbols) {
+            for (const auto& [symbol, header, group] : symbols) {
                 const auto owner = TargetTestingFixture::unit_identity();
                 const auto types = std::array {TargetType {
                     .value =
@@ -97,6 +119,7 @@ const TestSuite suite([] static noexcept {
                     return;
                 }
                 expect(dependencies.front().header.path == header).note("header: ", header);
+                expect(dependencies.front().group == group).note("header: ", header);
             }
         };
 

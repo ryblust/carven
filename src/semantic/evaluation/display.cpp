@@ -343,7 +343,9 @@ auto SemanticExecutor::observe_condition(
     const ExecutionValue* right,
     bool passed
 ) noexcept -> void {
-    if (passed || !condition_observation || condition_observation->condition != &source) {
+    if (passed
+        || !current->condition_observation
+        || current->condition_observation->condition != &source) {
         return;
     }
     auto output = ExecutionDisplayText();
@@ -357,13 +359,13 @@ auto SemanticExecutor::observe_condition(
         }
     };
     observe(
-        condition_observation->sources[0],
+        current->condition_observation->sources[0],
         display_execution_value(values, left, true, &memory).value_or("<opaque>")
     );
     observe(
-        condition_observation->sources[1],
+        current->condition_observation->sources[1],
         right ? display_execution_value(values, *right, true, &memory).value_or("<opaque>")
               : "<not evaluated>"
     );
-    *condition_observation->explanation = std::move(output).take();
+    *current->condition_observation->explanation = std::move(output).take();
 }

@@ -37,6 +37,36 @@ elements stable; indexing still observes backing storage. Stable reads need no
 operand snapshot. Calls and checked operations retain their execution requirements;
 source constant admission remains separate.
 
+## Async preparation
+
+`BodyPreparation` records whether an operation or region requires its owning
+coroutine and indexes lexical children by lifetime. Await, escaping completion,
+and child closure retain that context even when their value is discarded.
+
+`backend.preparation.async` selects candidate producers from published bodies.
+`PreparedAwaitProducer` borrows the producer body and optional transparent factory
+route, with their semantic-node expansion cost. Eligibility requires scalar Read
+inputs, a scalar or void result, no outward nominal failure or cancelled
+completion, no children, and no test stop. A transparent synchronous factory
+returns only a cold call whose arguments are parameter reads or frozen constants;
+residual static selection may leave unconditional structural wrappers.
+
+These queries depend only on the immutable semantic program. Realization decides
+whether module ownership, the active callable chain, and the caller's remaining
+expansion budget permit the candidate. Other operations retain their cold owner
+and ordinary completion protocol.
+
+`PreparedTailAwaitLoop` borrows exact self-await occurrences in return position.
+Selection requires runtime scalar Read parameters, a scalar result other
+than `char`, scalar local bindings, no captures or children, and no outward
+failure, cancelled completion, or test stop. Source calls use resolved Read
+scalar signatures. Address formation and opaque native expressions exclude the
+body; native imports can observe by-value scalar snapshots. Tail actuals contain
+no nested await or operation construction. Operation initialization and cleanup
+remain with ordinary realization. Returns nested in ordinary operands or in
+structured control with pending operation evaluation retain their activation.
+Explicit yields remain eligible.
+
 ## Operation preparation
 
 `backend/preparation` consumes immutable semantic operations and their known

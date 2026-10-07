@@ -404,6 +404,11 @@ auto validate_publication_facts(
                         invariant_violation("closure type used a non-closure callable");
                     }
                 },
+                [&](const OperationTypeValue& value) noexcept {
+                    if (!types.contains(value.success) || !failure_sets.contains(value.failures)) {
+                        invariant_violation("operation used an unpublished completion contract");
+                    }
+                },
                 [&](const CallableViewTypeValue& value) noexcept {
                     if (!callable_signatures.contains(value.signature)) {
                         invariant_violation("callable-view type used an unpublished signature");

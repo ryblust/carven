@@ -1,6 +1,8 @@
 # Carven standard crafts
 
-Standard crafts own library APIs and their implementations. The current
+Standard crafts own library APIs and their implementations.
+The [`std::async` module](../../../docs/language/async.md) selects compiler-defined
+cancellation and yield operations for async source programs. The current
 [UTF craft](utf/README.md) provides encoding, validation, and text APIs.
 The [SIMD craft](simd/README.md) provides byte and floating algorithms and bounded
 block traversal over Carven's built-in vector primitives. Native primitives use

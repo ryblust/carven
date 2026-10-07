@@ -240,7 +240,7 @@ Completion::Completion(const CompletionPatterns& patterns, bool retain_patterns)
 
 namespace {
 
-constexpr auto outward = ExitSet(Exit::Return) | Exit::Failure | Exit::Stop;
+constexpr auto outward = ExitSet(Exit::Return) | Exit::Failure | Exit::Stop | Exit::Cancelled;
 
 } // namespace
 
@@ -523,6 +523,9 @@ auto Completion::leave(const SemanticExpression& expression) noexcept -> void {
             return conditional_exits(operation, facts);
         } else if constexpr (std::same_as<Operation, SemCall>) {
             return call_exits(operation, facts);
+        } else if constexpr (std::same_as<Operation, SemAwait>) {
+            return facts.get(*operation.operand)
+                .then(ExitSet(Exit::Normal) | Exit::Failure | Exit::Cancelled);
         } else if constexpr (std::same_as<Operation, SemTry>) {
             return try_exits(operation, facts);
         } else if constexpr (std::same_as<Operation, SemMatch>) {
@@ -578,7 +581,8 @@ auto Completion::leave(const SemanticStatement& statement) noexcept -> void {
             return facts.get(operation.value).then(Flow::failure(operation.failure_type));
         } else if constexpr (std::same_as<Operation, SemExpressionStatement>) {
             return facts.get(operation.expression);
-        } else if constexpr (std::same_as<Operation, SemInitialize>) {
+        } else if constexpr (std::same_as<Operation, SemInitialize>
+                             || std::same_as<Operation, SemAsyncLet>) {
             return facts.get(operation.initializer);
         } else if constexpr (std::same_as<Operation, SemStaticBinding>
                              || std::same_as<Operation, SemConstBlock>) {

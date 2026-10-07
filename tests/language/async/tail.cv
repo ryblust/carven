@@ -1,0 +1,39 @@
+import std::async using yield_once;
+
+const async fn rotate(a: i32, b: i32, depth: i32) -> i32 {
+    if depth == 0 { return a * 10 + b; }
+    return await rotate(b, a, depth - 1);
+}
+
+async fn nested(depth: i32) -> i32 {
+    if depth == 0 { return 7; }
+    for var index = 0; index < 1; ++index {
+        return await nested(depth - 1);
+    }
+    return 0;
+}
+
+async fn matched(depth: i32) -> i32 {
+    return match depth {
+        0 => 9,
+        _ => await matched(depth - 1),
+    };
+}
+
+async fn yielding(depth: i32) -> i32 {
+    await yield_once();
+    if depth == 0 { return 7; }
+    return await yielding(depth - 1);
+}
+
+const rotated = await rotate(1, 2, 7);
+
+async fn main() {
+    println(await rotate(1, 2, 7) == rotated);
+    let saved = rotate(1, 2, 16384);
+    println(await saved == 12);
+    println(await nested(32) == 7);
+    println(await matched(32) == 9);
+    await yielding(32);
+    println(true);
+}

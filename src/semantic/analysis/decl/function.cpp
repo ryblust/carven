@@ -33,6 +33,15 @@ auto DeclResolver::resolve_function(
     Span item_span
 ) noexcept -> AnalysisTask<void> {
     const auto cpp_import = std::holds_alternative<ASTCppImportForm>(function.implementation);
+    if (function.async_span && symbol.class_operation) {
+        co_return std::unexpected(declaration_failure(
+            draft,
+            symbol.module_id,
+            *function.async_span,
+            DiagnosticCode::AsyncAdmission,
+            "async fn does not admit class receivers"
+        ));
+    }
     const auto entry = !symbol.class_operation && symbol.name == "main" && !cpp_import;
     if (function.const_span && (cpp_import || entry)) {
         co_return std::unexpected(declaration_failure(
@@ -41,6 +50,15 @@ auto DeclResolver::resolve_function(
             *function.const_span,
             DiagnosticCode::ConstAdmission,
             cpp_import ? "const fn requires a Carven body" : "the entry function cannot be const fn"
+        ));
+    }
+    if (entry && function.async_span && !function.parameters.empty()) {
+        co_return std::unexpected(declaration_failure(
+            draft,
+            symbol.module_id,
+            function.name_span,
+            DiagnosticCode::EntryParameters,
+            "async main requires zero parameters"
         ));
     }
     if (entry && function.parameters.size() > 1uz) {
@@ -243,6 +261,8 @@ auto DeclResolver::resolve_function(
         draft.define_callable_contract(
             form.callable,
             ConstructionCallableContract {
+                .execution = function.async_span ? CallableExecutionKind::Async
+                                                 : CallableExecutionKind::Synchronous,
                 .parameters = std::move(parameters),
                 .result = *result,
                 .failures = *failures,
@@ -253,6 +273,8 @@ auto DeclResolver::resolve_function(
         draft.define_pending_function_contract(
             form.callable,
             PendingFunctionContract {
+                .execution = function.async_span ? CallableExecutionKind::Async
+                                                 : CallableExecutionKind::Synchronous,
                 .parameters = std::move(parameters),
                 .failures = *failures,
                 .policy = policy,

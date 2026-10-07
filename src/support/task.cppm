@@ -7,6 +7,8 @@ import std;
 // Awaiting a dependency yields to that loop; it never resumes a child inline.
 struct ContinuationTaskLoop final {
     std::coroutine_handle<> next;
+
+    auto resume_one() noexcept -> void { std::exchange(next, {}).resume(); }
 };
 
 template<typename Value>
@@ -69,12 +71,23 @@ public:
 
     auto operator co_await() && noexcept -> Awaiter { return Awaiter(std::exchange(handle, {})); }
 
+    auto start(ContinuationTaskLoop& loop) noexcept -> void {
+        handle.promise().attach(loop, {});
+        loop.next = handle;
+    }
+
+    auto done() const noexcept -> bool { return handle.done(); }
+
+    auto result() const noexcept -> const Value& { return handle.promise().result_view(); }
+
+    auto take_result() noexcept -> Value { return handle.promise().take_result(); }
+
     // Synchronous entry points drive a root task. Dependencies await their children.
     auto run() && noexcept -> Value {
-        auto loop = ContinuationTaskLoop {.next = handle};
-        handle.promise().attach(loop, {});
+        auto loop = ContinuationTaskLoop {};
+        start(loop);
         while (loop.next) {
-            std::exchange(loop.next, {}).resume();
+            loop.resume_one();
         }
         return handle.promise().take_result();
     }
@@ -121,6 +134,13 @@ public:
                 invariant_violation("continuation task has no continuation loop");
             }
             return *loop;
+        }
+
+        auto result_view() const noexcept -> const Value& {
+            if (!result) {
+                invariant_violation("continuation task has no terminal result");
+            }
+            return *result;
         }
 
         auto take_result() noexcept -> Value {

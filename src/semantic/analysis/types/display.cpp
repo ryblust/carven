@@ -120,6 +120,9 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
                 const auto signature = draft.callable_signature_copy(value.signature);
                 return callable_name(signature.parameters, name(signature.result), name);
             },
+            [&](const OperationTypeValue& value) noexcept {
+                return std::format("async operation<{}>", name(value.success));
+            },
             [](const CppTypeValue& value) static noexcept {
                 const auto* reference = cpp_type_name(value);
                 if (reference == nullptr || reference->components.empty()) {
@@ -156,6 +159,9 @@ auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noex
                 },
                 [&](const ConstructionSliceTypeValue& value) noexcept {
                     return std::format("[{}]", name(value.element));
+                },
+                [&](const ConstructionOperationTypeValue& value) noexcept {
+                    return std::format("async operation<{}>", name(value.success));
                 },
                 [&](const ConstructionCallableViewTypeValue& value) noexcept {
                     return callable_name(value.parameters, name(value.result), name);

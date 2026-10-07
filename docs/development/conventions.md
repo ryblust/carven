@@ -1,6 +1,6 @@
 # C++ Conventions
 
-These rules apply to project-authored C++ in `src/`, `tests/`, `crafts/`, and `tools/`.
+These rules apply to project-authored C++ in `src/`, `tests/`, `crafts/`, `benchmarks/`, and `tools/`.
 Vendored source and fixtures that preserve an external interface follow their
 owning format. Generated artifacts follow the C++ baseline below; the remaining
 source-layout and style rules apply to handwritten code. `.clang-format` owns
@@ -10,7 +10,7 @@ formatting; neighboring code demonstrates local idioms.
 
 - Source in `src/`, `tests/internal/`, and `tools/` may use C++26.
 - Crafts, installed support source, generated code, and baseline consumer
-  fixtures must compile with C++20. Implementations may select newer facilities
+  fixtures and native benchmarks must compile with C++20. Implementations may select newer facilities
   when the consumer's standard and library support them, while preserving the
   Carven operation's semantics and functionality. Prefer library feature
   detection for library capabilities.

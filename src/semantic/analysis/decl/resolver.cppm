@@ -65,8 +65,8 @@ private:
 
         auto resolve_name(std::string_view name, Span span) noexcept
             -> AnalysisTask<std::optional<ConstantID>>;
-        auto resolve_function(std::string_view name, Span span) noexcept
-            -> AnalysisTask<std::optional<FunctionID>>;
+        auto resolve_static_callable(std::string_view name, Span span) noexcept
+            -> AnalysisTask<std::optional<ResolvedStaticCallable>>;
         auto construction_requests() noexcept -> ConstructionRequests&;
         auto resolve_type_qualifier(ASTExprID expression) noexcept
             -> AnalysisTask<std::optional<TypeID>>;

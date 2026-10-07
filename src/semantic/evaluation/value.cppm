@@ -1,5 +1,6 @@
 module carven:semantic.evaluation.value;
 
+import :semantic.semir.async;
 import :semantic.semir.constant;
 import :semantic.semir.constant_access;
 import std;
@@ -146,6 +147,8 @@ struct ExecutionEnumValue final {
     std::vector<ExecutionValue> payload;
 };
 
+struct ExecutionColdOperation;
+
 // IDs borrow retained inputs; newly computed facts and text remain execution-local.
 struct ExecutionValue final : std::variant<
                                   ConstantID,
@@ -156,6 +159,7 @@ struct ExecutionValue final : std::variant<
                                   ExecutionPointer,
                                   ExecutionSlice,
                                   ExecutionFunction,
+                                  std::unique_ptr<ExecutionColdOperation>,
                                   ExecutionAggregateValue,
                                   ExecutionEnumValue> {
     using variant::variant;
@@ -165,6 +169,14 @@ struct ExecutionValue final : std::variant<
     auto operator=(const ExecutionValue&) -> ExecutionValue& = delete;
     auto operator=(ExecutionValue&&) -> ExecutionValue& = default;
     ~ExecutionValue() = default;
+};
+
+// Cold arguments are acquired once in the same execution memory domain.
+// Ownership is affine; the descriptor executes only when consumed by await.
+struct ExecutionColdOperation final {
+    ConstructionTypeRef type;
+    std::variant<CallableID, AsyncIntrinsic> action;
+    std::vector<std::variant<ExecutionValue, ExecutionPlace>> arguments;
 };
 
 auto execution_atom(const ConstantValueReader& values, const ExecutionValue& value) noexcept

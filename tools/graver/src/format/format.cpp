@@ -599,7 +599,13 @@ auto SyntaxFormatter::annotate() noexcept -> void {
         expression.value.visit([&](const auto& value) noexcept {
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::same_as<T, ASTPrefixExpr>) {
-                prefix_operators[token_at(value.operator_span.start())] = true;
+                const auto operation = token_at(value.operator_span.start());
+                if (value.op == ASTPrefixOperator::Await) {
+                    // await is a keyword operand boundary, so keep it separated.
+                    separation_before[operation + 1uz] = Separation::Space;
+                } else {
+                    prefix_operators[operation] = true;
+                }
             } else if constexpr (std::same_as<T, ASTAccessExpr>) {
                 prefix_operators[token_at(value.marker_span.start())] = true;
             } else if constexpr (std::same_as<T, ASTBinaryExpr> || std::same_as<T, ASTCastExpr>) {

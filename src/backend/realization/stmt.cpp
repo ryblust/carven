@@ -32,12 +32,38 @@ auto BodyRealizer::emit_return(
     if (!destination.continues()) {
         return;
     }
+    if (local_result_exit && std::holds_alternative<LoweringReturnResult>(result)) {
+        if (std::holds_alternative<LoweringDiscardResult>(local_result_exit->result)) {
+            if (value) {
+                destination.emit(statement_expression(std::move(*value)));
+            }
+        } else {
+            deliver_result(
+                value ? LoweringResult(LoweringDirectExpression {std::move(*value)})
+                      : LoweringResult(LoweringCompleted {}),
+                local_result_exit->result,
+                destination
+            );
+        }
+        destination.terminate(
+            generated_statement(
+                TargetGotoStmt {
+                    .label = local_result_exit->exit.label,
+                    .role = TargetJumpRole::RegionExit
+                }
+            ),
+            local_result_exit->exit.target
+        );
+        return;
+    }
+    const auto async_return = is_async() && std::holds_alternative<LoweringReturnResult>(result);
     if (std::holds_alternative<LoweringReturnResult>(result)) {
         if (const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit)) {
             const auto& signature = context.semantic().callable_signatures().signature(
                 context.semantic().declarations().callable(callable->callable_id).signature
             );
-            if (!context.plan().failure_abi().members(signature.failures).empty()
+            if (async_return
+                || !context.plan().failure_abi().members(signature.failures).empty()
                 || context.semantic().may_stop_test(callable->callable_id)) {
                 auto arguments = std::vector<TargetExpr>();
                 const auto& type = context.semantic().types().type(signature.result).value;
@@ -69,13 +95,21 @@ auto BodyRealizer::emit_return(
                 }
                 value = call_expression(
                     static_member_expression(
-                        context.callable_result(callable->callable_id),
+                        async_return ? completion_type()
+                                     : context.callable_result(callable->callable_id),
                         TargetIdentifier::from_spelling(direct ? "success" : "success_from")
                     ),
                     std::move(arguments)
                 );
             }
         }
+    }
+    if (async_return) {
+        if (!value) {
+            invariant_violation("async return did not construct Completion");
+        }
+        emit_completion(std::move(*value), LoweringExitKind::FunctionReturn, destination);
+        return;
     }
     destination.terminate(
         generated_statement(TargetReturnStmt {.expression = std::move(value)}),
@@ -130,17 +164,34 @@ auto BodyRealizer::deliver_failure(
             "emplace",
             target_expressions(std::move(value))
         )));
-        destination.terminate(
+        emit_async_exit(
             generated_statement(
                 TargetGotoStmt {.label = relay->label, .role = TargetJumpRole::FailureTransfer}
             ),
-            relay->target
+            relay->target,
+            relay->closing_scopes,
+            true,
+            destination
         );
         return;
     }
     const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
     if (callable == nullptr) {
         invariant_violation("failure escaped a test body");
+    }
+    if (is_async()) {
+        emit_completion(
+            call_expression(
+                static_member_expression(
+                    completion_type(),
+                    TargetIdentifier::from_spelling("failure")
+                ),
+                target_expressions(std::move(value))
+            ),
+            LoweringExitKind::Failure,
+            destination
+        );
+        return;
     }
     destination.terminate(
         generated_statement(
@@ -190,7 +241,8 @@ auto BodyRealizer::register_failure(
         {.label = label,
          .source = source,
          .failures = failures,
-         .initializer = std::move(initializer)}
+         .initializer = std::move(initializer),
+         .closing_scopes = async_closing_locals(receiver.retained_async_scopes)}
     );
     // This registered identity is completed before the protected region leaves lowering.
     destination.terminate(
@@ -317,6 +369,15 @@ auto BodyRealizer::result_expression(
     if (!destination.continues()) {
         co_return {};
     }
+    if (tail_loop && std::holds_alternative<LoweringReturnResult>(result)) {
+        const auto* awaited = std::get_if<SemAwait>(&preparation.operation(source).value);
+        if (awaited != nullptr
+            && std::ranges::find(tail_loop->selection.awaits, awaited)
+                != tail_loop->selection.awaits.end()) {
+            (co_await emit_tail_await(*awaited, destination));
+            co_return {};
+        }
+    }
     if (std::holds_alternative<SemIf>(preparation.operation(source).value)
         || std::holds_alternative<SemMatch>(preparation.operation(source).value)
         || std::holds_alternative<SemTry>(preparation.operation(source).value)) {
@@ -334,11 +395,31 @@ auto BodyRealizer::result_expression(
         }
         co_return {};
     }
+    if (is_async()
+        && !local_result_exit
+        && std::holds_alternative<LoweringReturnResult>(result)
+        && std::holds_alternative<SemAwait>(preparation.operation(source).value)) {
+        auto completion = destination.accept((co_await expression(
+            source,
+            ConstantLiteralContext::Exact,
+            ResultDemand::AdoptSuccess,
+            delivered_region
+        )));
+        if (completion) {
+            emit_completion(
+                require_expression(std::move(*completion)),
+                LoweringExitKind::FunctionReturn,
+                destination
+            );
+        }
+        co_return {};
+    }
     const auto& expression_source = preparation.operation(source);
     const auto* call = std::get_if<SemCall>(&expression_source.value);
     const auto transport = fallible(expression_source);
     const auto* callable = std::get_if<CallableBodyExit>(&inputs.exit);
-    if (std::holds_alternative<LoweringReturnResult>(result)
+    if (!is_async()
+        && std::holds_alternative<LoweringReturnResult>(result)
         && callable != nullptr
         && transport
         && !transport->destination
@@ -385,8 +466,13 @@ auto BodyRealizer::result_expression(
         && (std::holds_alternative<LoweringYieldResult>(result) || native_result)) {
         literal = ConstantLiteralContext::TargetTyped;
     }
-    auto demand = ResultDemand::Value;
-    if (std::holds_alternative<LoweringReturnResult>(result)
+    const auto discarded_local_return = local_result_exit
+        && std::holds_alternative<LoweringReturnResult>(result)
+        && std::holds_alternative<LoweringDiscardResult>(local_result_exit->result);
+    auto demand = discarded_local_return ? ResultDemand::Discard : ResultDemand::Value;
+    if (!discarded_local_return
+        && !is_async()
+        && std::holds_alternative<LoweringReturnResult>(result)
         && callable != nullptr
         && native_result
         && !context.semantic().may_stop_test(callable->callable_id)) {
@@ -423,22 +509,32 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                 if (!current_loop) {
                     invariant_violation("loop transfer has no target");
                 }
+                const auto closing_scopes = async_closing_locals(
+                    std::same_as<Transfer, SemBreak> ? current_loop->break_async_scopes
+                                                     : current_loop->continue_async_scopes
+                );
                 auto& loop = *current_loop;
                 if constexpr (std::same_as<Transfer, SemBreak>) {
                     if (loop.expanded && !loop.break_label) {
                         loop.break_label = names.fresh(TargetTemporaryNameKind::Break);
                     }
                     if (loop.break_label) {
-                        destination.terminate(
+                        emit_async_exit(
                             generated_statement(
                                 TargetGotoStmt {.label = *loop.break_label, .role = loop.jump_role}
                             ),
-                            loop.break_target
+                            loop.break_target,
+                            closing_scopes,
+                            false,
+                            destination
                         );
                     } else {
-                        destination.terminate(
+                        emit_async_exit(
                             generated_statement(TargetBreakStmt {}),
-                            loop.break_target
+                            loop.break_target,
+                            closing_scopes,
+                            false,
+                            destination
                         );
                     }
                 } else {
@@ -446,16 +542,22 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                         loop.step = names.fresh(TargetTemporaryNameKind::Continue);
                     }
                     if (loop.step) {
-                        destination.terminate(
+                        emit_async_exit(
                             generated_statement(
                                 TargetGotoStmt {.label = *loop.step, .role = loop.jump_role}
                             ),
-                            loop.target
+                            loop.target,
+                            closing_scopes,
+                            false,
+                            destination
                         );
                     } else {
-                        destination.terminate(
+                        emit_async_exit(
                             generated_statement(TargetContinueStmt {}),
-                            loop.target
+                            loop.target,
+                            closing_scopes,
+                            false,
+                            destination
                         );
                     }
                 }
@@ -480,6 +582,73 @@ auto BodyRealizer::statement(const SemanticStatement& source) noexcept
                     evaluation
                 ));
                 destination.scope(std::move(evaluation));
+                co_return {};
+            },
+            [&](const SemAsyncLet& value) noexcept -> ContinuationTask<std::monostate> {
+                auto evaluation = LoweringStmtBuilder();
+                auto operation = evaluation.accept((co_await operand({
+                    .expression = std::addressof(value.initializer),
+                    .use = PreparedUse::NativeTake,
+                    .demand = PreparedDemand::Value,
+                })));
+                if (operation) {
+                    const auto scope = std::ranges::find(
+                        async_scopes,
+                        metadata.binding(value.child).lifetime,
+                        &AsyncScopeStorage::lifetime
+                    );
+                    if (scope == async_scopes.end()) {
+                        invariant_violation("child owning region has no native scope");
+                    }
+                    auto start = call_member(
+                        name_expression(scope->scope),
+                        "start",
+                        target_expressions(call_expression(
+                            intrinsic_expression(TargetSymbol::StdMove),
+                            target_expressions(std::move(*operation))
+                        ))
+                    );
+                    if (evaluation.needs_cleanup()) {
+                        const auto* operation_type = std::get_if<OperationTypeValue>(
+                            &context.semantic()
+                                 .types()
+                                 .type(metadata.binding(value.child).type)
+                                 .value
+                        );
+                        if (operation_type == nullptr) {
+                            invariant_violation("child initializer has no canonical operation");
+                        }
+                        const auto storage = LoweringDeferredStorage {
+                            .local = binding_locals.at(value.child),
+                            .value_type = context.async_type(
+                                TargetSymbol::RuntimeAsyncChild,
+                                operation_type->success,
+                                operation_type->failures
+                            ),
+                        };
+                        delayed_bindings.emplace(value.child, storage);
+                        declare_deferred(storage, false, destination, true);
+                        // The nonmoving child is initialized in its lexical
+                        // destination; initializer owners die at this source
+                        // full-expression boundary after start has captured them.
+                        initialize_deferred(storage, std::move(start), evaluation);
+                        destination.scope(std::move(evaluation));
+                    } else {
+                        destination.append(std::move(evaluation));
+                        destination.declare(
+                            TargetVariableStmt {
+                                .binding = TargetVariableBinding::MutableValue,
+                                .maybe_unused = false,
+                                .local = binding_locals.at(value.child),
+                                .type = context.intrinsic_type(TargetSymbol::Auto),
+                                .initializer = std::move(start),
+                            },
+                            true
+                        );
+                    }
+                } else {
+                    destination.scope(std::move(evaluation));
+                }
                 co_return {};
             },
             [&](const SemInitialize& value) noexcept -> ContinuationTask<std::monostate> {

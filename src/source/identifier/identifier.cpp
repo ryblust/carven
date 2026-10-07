@@ -33,6 +33,8 @@ auto classify_identifier(std::string_view spelling) noexcept -> IdentifierClassi
 
     static constexpr auto keywords = std::to_array<std::pair<std::string_view, SourceKeyword>>({
         {"as", SourceKeyword::As},
+        {"async", SourceKeyword::Async},
+        {"await", SourceKeyword::Await},
         {"break", SourceKeyword::Break},
         {"catch", SourceKeyword::Catch},
         {"const", SourceKeyword::Const},

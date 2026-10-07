@@ -1,0 +1,15 @@
+import std::async using { cancel, cancellation_requested, cancellation_point };
+
+private async fn accept_cancellation() {
+    eprintln("child accepts cancellation:", cancellation_requested());
+    await cancellation_point();
+    eprintln("unreachable child");
+}
+
+private async fn main() {
+    async let child = accept_cancellation();
+    cancel(child);
+    eprintln("root requested child cancellation");
+    await child;
+    eprintln("unreachable root");
+}

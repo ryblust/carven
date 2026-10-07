@@ -140,6 +140,20 @@ auto OwnershipBodyAnalyzer::statement(
                 }
                 co_return {};
             },
+            [&](const SemAsyncLet& value) noexcept -> ContinuationTask<std::monostate> {
+                (co_await evaluate(value.initializer));
+                if (result.normal) {
+                    store(
+                        result.normal->state,
+                        binding_place(value.child),
+                        result.normal->value,
+                        source.origin
+                    );
+                    result.normal->state.objects[binding_place(value.child).object].child_intent =
+                        false;
+                }
+                co_return {};
+            },
             [&](const SemAssign& value) noexcept -> ContinuationTask<std::monostate> {
                 result = (co_await place(value.target, std::move(result.normal->state), false));
                 if (!result.normal) {
@@ -172,7 +186,8 @@ auto OwnershipBodyAnalyzer::statement(
                             target,
                             result.normal->value,
                             source.origin,
-                            targets.size() == 1uz
+                            targets.size() == 1uz,
+                            preserves_backing(value.target.type.resolved())
                         );
                     }
                 }

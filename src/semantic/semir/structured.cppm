@@ -1,5 +1,6 @@
 module carven:semantic.semir.structured;
 
+import :semantic.semir.async;
 import :semantic.semir.body;
 import :semantic.semir.format;
 import :semantic.semir.ids;
@@ -195,6 +196,25 @@ struct SemCall final {
     BodyFailures callee_failures;
 };
 
+// Cold construction evaluates operands now and defers the known callee body.
+struct SemColdCall final {
+    OwnedSemanticExpression callee;
+    CallableID target;
+    std::vector<SemCallArgument> arguments;
+};
+
+enum class AsyncAwaitOperandKind { ColdOperation, LexicalChild };
+
+struct SemAwait final {
+    OwnedSemanticExpression operand;
+    AsyncAwaitOperandKind operand_kind;
+};
+
+struct SemAsyncIntrinsic final {
+    AsyncIntrinsic kind;
+    std::optional<LocalBindingID> child;
+};
+
 struct SemClosure final {
     CallableID callable;
     std::vector<SemCapture> captures;
@@ -276,6 +296,9 @@ using SemanticExpressionValue = TreeValue<
     SemReport,
     SemFormat,
     SemCall,
+    SemColdCall,
+    SemAwait,
+    SemAsyncIntrinsic,
     SemClosure,
     SemBorrowCallable,
     SemTake,
@@ -387,6 +410,11 @@ struct SemExpressionStatement final {
     SemanticExpression expression;
 };
 
+struct SemAsyncLet final {
+    LocalBindingID child;
+    SemanticExpression initializer;
+};
+
 struct SemInitialize final {
     LocalBindingID binding;
     SemanticExpression initializer;
@@ -448,6 +476,7 @@ using SemanticStatementValue = TreeValue<
     SemThrow,
     SemExpressionStatement,
     SemInitialize,
+    SemAsyncLet,
     SemStaticBinding,
     SemConstBlock,
     SemAssign,

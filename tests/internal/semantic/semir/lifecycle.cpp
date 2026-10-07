@@ -120,6 +120,7 @@ auto build_program(std::string_view module_name) noexcept -> BuiltProgram {
         }
     );
     const auto contract = ConstructionCallableContract {
+        .execution = CallableExecutionKind::Synchronous,
         .parameters =
             {
                 ConstructionCallableParameter {

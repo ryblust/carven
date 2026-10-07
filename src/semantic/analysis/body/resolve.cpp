@@ -5,6 +5,7 @@ import :diagnostics.code;
 import :semantic.analysis.body.resolve;
 import :semantic.semir.children;
 import :semantic.semir.evaluation;
+import :semantic.semir.table;
 import :semantic.semir.traversal;
 import :support.visit;
 import std;

@@ -337,7 +337,11 @@ auto lower_payload_enumeration(ModuleLowering& context, EnumID id) noexcept
                 .name = member_name,
                 .parameters = std::move(parameters),
                 .result = enum_type,
-                .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+                .form =
+                    TargetFreeFunctionDefinition {
+                        .execution = TargetCallableExecution::Ordinary,
+                        .body = std::move(body)
+                    },
                 .constexpr_specifier = false,
                 .static_specifier = false,
                 .inline_specifier = true,

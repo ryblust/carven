@@ -99,6 +99,59 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             "every binding declaration requires an initializer"
         ));
     }
+    if (source.async_span) {
+        const auto* named = std::get_if<ASTNamedBindingTarget>(&source.target);
+        if ((!async_body && !static_stage())
+            || source.kind != ASTBindingKind::Let
+            || source.type
+            || !named) {
+            co_return std::unexpected(fail(
+                source.span,
+                DiagnosticCode::AsyncAdmission,
+                "async let requires one inferred named let binding in an async fn or const execution"
+            ));
+        }
+        auto built = co_await expression(*source.initializer);
+        if (!built) {
+            co_return std::unexpected(built.error());
+        }
+        const auto type = built->type();
+        if (!operation_shape(type)) {
+            co_return std::unexpected(fail(
+                source.span,
+                DiagnosticCode::AsyncAdmission,
+                "async let initializer requires a complete cold operation"
+            ));
+        }
+        auto value = consume_value(*built, source.span, AccessMode::Take);
+        if (!value) {
+            co_return std::unexpected(value.error());
+        }
+        const auto storage = body_builder.add_async_child_binding(
+            draft().intern_spelling(spelling(named->name_span)),
+            type,
+            frames.back().lifetime,
+            origin(named->name_span)
+        );
+        async_child_bindings.insert(storage.binding);
+        append_statement(
+            SemAsyncLet {.child = storage.binding, .initializer = std::move(*value)},
+            origin(source.span)
+        );
+        co_return bind_local(
+            named->name_span,
+            BodyLocalStorage {
+                .storage = storage,
+                .type = type,
+                .used = false,
+                .takeable = false,
+                .static_source = false,
+                .role = BodyLocalRole::Local,
+                .unused_candidate = std::nullopt
+            },
+            DiagnosticCode::NameDuplicateLocal
+        );
+    }
     auto declared = std::optional<ConstructionTypeRef>();
     if (source.type.has_value()) {
         auto resolved = (co_await resolve_type(*source.type));
@@ -162,6 +215,13 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
     // Keep explicit type selection for the Clang 23 coroutine workaround.
     // Do not replace with value_or; see decl/constant.cpp.
     const auto binding_type = declared ? *declared : value->type.construction();
+    if (operation_shape(binding_type) && (!named || declared)) {
+        co_return std::unexpected(fail(
+            source.span,
+            DiagnosticCode::AsyncAdmission,
+            "operation storage requires one complete inferred named local owner"
+        ));
+    }
     const auto name = named == nullptr ? std::string("_") : spelling(named->name_span);
     const auto writable = source.kind == ASTBindingKind::Var;
     const auto storage = body_builder.add_owner_binding(
@@ -199,6 +259,13 @@ auto BodyElaborator::assignment_statement(const ASTAssignment& source) noexcept
     auto target_expression = (co_await expression(source.target));
     if (!target_expression.has_value()) {
         co_return std::unexpected(target_expression.error());
+    }
+    if (operation_shape(target_expression->type())) {
+        co_return std::unexpected(fail(
+            source.span,
+            DiagnosticCode::AsyncAdmission,
+            "operation assignment is not admitted; transfer an initialized complete owner instead"
+        ));
     }
     auto target = consume_place(*target_expression, ast.expression(source.target).span);
     if (!target.has_value()) {

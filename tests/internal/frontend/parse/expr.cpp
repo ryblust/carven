@@ -35,6 +35,19 @@ auto initializer(const SyntaxTree& tree, std::size_t index) noexcept -> const AS
 }
 
 const TestSuite suite([] static noexcept {
+    "Parser async: propagation wraps await and preserves grouped inner propagation"_test =
+        [] static noexcept {
+            const auto tree = parse_valid("async fn f() { await operation?; await (operation?); }");
+            const auto& propagated = get<ASTPropagationExpr>(expression_statement(tree, 0uz));
+            const auto& awaited = get<ASTPrefixExpr>(tree.view().expression(propagated.operand_id));
+            expect_equal(awaited.op, ASTPrefixOperator::Await);
+            expect(is<ASTNameExpr>(tree.view().expression(awaited.operand_id)));
+            const auto& grouped = get<ASTPrefixExpr>(expression_statement(tree, 1uz));
+            expect_equal(grouped.op, ASTPrefixOperator::Await);
+            const auto& group = get<ASTGroupExpr>(tree.view().expression(grouped.operand_id));
+            expect(is<ASTPropagationExpr>(tree.view().expression(group.expression)));
+        };
+
     "Parser expression: literals retain typed lexer values"_test = [] static noexcept {
         static constexpr auto text = std::string_view(
             "fn values() { 1; 1f32; 1.0; 0xffu8; 0b10; 0o7; 'x'; \"text\"; true; false; }"

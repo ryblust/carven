@@ -152,6 +152,10 @@ auto DeclarationReferenceCollector::collect_type(
             [&](const ArrayTypeValue& value) noexcept {
                 collect_type(value.element, completeness);
             },
+            [&](const OperationTypeValue& value) noexcept {
+                collect_type(value.success, completeness);
+                collect_failure_set(value.failures, completeness);
+            },
             [&](const FunctionTypeValue& value) noexcept { collect_callable(value.callable); },
             [&](const ClosureTypeValue& value) noexcept {
                 result.callables.insert(value.callable);

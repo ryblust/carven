@@ -41,6 +41,7 @@ auto begin_compilation(SourceManager& sources, DiagnosticSink& diagnostics) noex
 auto callable_contract(TypeID result, FailureTermID failures) noexcept
     -> ConstructionCallableContract {
     return {
+        .execution = CallableExecutionKind::Synchronous,
         .parameters = {},
         .result = result,
         .failures = failures,
@@ -104,6 +105,7 @@ const TestSuite suite([] static noexcept {
             compilation.define_callable_contract(
                 staged_callable,
                 ConstructionCallableContract {
+                    .execution = CallableExecutionKind::Synchronous,
                     .parameters =
                         {{.stage = ParameterStage::Static,
                           .access = AccessMode::Read,

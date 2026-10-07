@@ -1,5 +1,6 @@
 module carven:semantic.semir.decl;
 
+import :semantic.semir.async;
 import :semantic.semir.identity;
 import :semantic.semir.ids;
 import :semantic.semir.table;
@@ -180,10 +181,19 @@ enum class FailureContractPolicy {
 };
 
 struct ConstructionCallableContract final {
+    CallableExecutionKind execution;
     std::vector<ConstructionCallableParameter> parameters;
     ConstructionTypeRef result;
     FailureTermID failures;
     FailureContractPolicy policy;
+};
+
+struct AsyncIntrinsicDeclaration final {
+    ModuleID module_id;
+    ProgramSpellingID name;
+    ProgramOriginID origin;
+    DeclarationVisibility visibility;
+    AsyncIntrinsic kind;
 };
 
 class DeclarationStore final {
@@ -264,6 +274,7 @@ public:
     auto enum_cases(EnumID id) const noexcept -> std::span<const EnumCaseID>;
     auto enum_case(EnumCaseID id) const noexcept -> ConstructionEnumCaseDeclaration;
     auto module_constant(ModuleConstantID id) const noexcept -> ModuleConstantDeclaration;
+    auto async_intrinsic(AsyncIntrinsicDeclID id) const noexcept -> AsyncIntrinsicDeclaration;
     auto callable_contract(CallableID id) const noexcept -> ConstructionCallableContract;
     auto callable_signature(CallableID id) const noexcept -> CallableSignatureID;
     auto callable_implementation(CallableID id) const noexcept -> CallableImplementation;
@@ -308,6 +319,8 @@ public:
     auto reserve_enum() noexcept -> EnumID;
     auto reserve_enum_case() noexcept -> EnumCaseID;
     auto reserve_module_constant() noexcept -> ModuleConstantID;
+    auto reserve_async_intrinsic() noexcept -> AsyncIntrinsicDeclID;
+    auto define(AsyncIntrinsicDeclID id, AsyncIntrinsicDeclaration declaration) noexcept -> void;
     auto reserve_callable() noexcept -> CallableID;
     auto define(ModuleID id, ModuleDeclaration declaration) noexcept -> void;
     auto define(FunctionID id, FunctionDeclaration declaration) noexcept -> void;
@@ -348,6 +361,7 @@ private:
     ReservedProgramTable<EnumDeclaration, EnumID> enumerations;
     ReservedProgramTable<ConstructionEnumCaseDeclaration, EnumCaseID> enum_cases;
     ReservedProgramTable<ModuleConstantDeclaration, ModuleConstantID> module_constants;
+    ReservedProgramTable<AsyncIntrinsicDeclaration, AsyncIntrinsicDeclID> async_intrinsics;
     ReservedProgramTable<ConstructionCallableContract, CallableID> callable_contracts;
     ReservedProgramTable<CallableSignatureID, CallableID> callable_signature_ids;
     ReservedProgramTable<CallableImplementation, CallableID> callable_implementations;

@@ -35,6 +35,7 @@ private:
 };
 
 struct PendingFunctionContract final {
+    CallableExecutionKind execution;
     std::vector<ConstructionCallableParameter> parameters;
     FailureTermID failures;
     FailureContractPolicy policy;
@@ -101,6 +102,11 @@ public:
     auto reserve_enum_declaration() noexcept -> EnumID;
     auto reserve_enum_case_declaration() noexcept -> EnumCaseID;
     auto reserve_module_constant_declaration() noexcept -> ModuleConstantID;
+    auto reserve_async_intrinsic() noexcept -> AsyncIntrinsicDeclID;
+    auto define_declaration(AsyncIntrinsicDeclID id, AsyncIntrinsicDeclaration declaration) noexcept
+        -> void;
+    auto async_intrinsic_declaration_copy(AsyncIntrinsicDeclID id) const noexcept
+        -> AsyncIntrinsicDeclaration;
     auto reserve_callable_declaration() noexcept -> CallableID;
     auto define_declaration(ModuleID id, ModuleDeclaration declaration) noexcept -> void;
     auto define_declaration(FunctionID id, FunctionDeclaration declaration) noexcept -> void;

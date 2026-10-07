@@ -74,6 +74,7 @@ NullabilityBodyAnalyzer::NullabilityBodyAnalyzer(
                     return storage.mode == CaptureMode::Write;
                 },
                 [](const OwnerBindingStorage&) static noexcept { return false; },
+                [](const AsyncChildBindingStorage&) static noexcept { return false; },
             }
         );
         if (aliases) {

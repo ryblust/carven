@@ -180,6 +180,9 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                 [&](const ArrayTypeValue& value) noexcept {
                     self(value.element, destination, active_types);
                 },
+                [&](const OperationTypeValue& value) noexcept {
+                    self(value.success, destination, active_types);
+                },
                 [](const FunctionTypeValue&) static noexcept {},
                 [&](const ClosureTypeValue& value) noexcept {
                     destination.push_back(value.callable);

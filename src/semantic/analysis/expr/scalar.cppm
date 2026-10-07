@@ -69,6 +69,17 @@ auto interpret_unary(
     Span span,
     std::optional<ConstructionTypeRef> expected
 ) noexcept -> ExpressionTask<typename Site::Value> {
+    if (source.op == ASTPrefixOperator::Await) {
+        if constexpr (requires { site.await_expression(source, span); }) {
+            co_return (co_await site.await_expression(source, span));
+        } else {
+            co_return std::unexpected(site.fail(
+                span,
+                DiagnosticCode::AsyncAdmission,
+                "await requires an async function body"
+            ));
+        }
+    }
     if (source.op == ASTPrefixOperator::Dereference) {
         co_return (co_await site.dereference(source, span));
     }

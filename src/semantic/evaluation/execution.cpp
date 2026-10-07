@@ -2,6 +2,7 @@ module carven:semantic.evaluation.execution.impl;
 
 import :semantic.evaluation.execution;
 import :semantic.evaluation.executor;
+import :semantic.semir.traversal;
 import :support.invariant;
 import std;
 
@@ -50,10 +51,6 @@ auto ExecutionEvent::termination() const noexcept -> ExecutionTermination {
 
 auto SemanticExecutionContext::trace(const ExecutionTraceEvent&) noexcept -> void {}
 
-auto SemanticExecutionContext::enter_block(BlockSource) noexcept -> void {}
-
-auto SemanticExecutionContext::leave_block() noexcept -> void {}
-
 auto SemanticExecutionContext::bind_call(
     CallableID callable,
     std::vector<ExecutionOperand>&,
@@ -75,11 +72,15 @@ ExecutionBody::ExecutionBody(const SemIRBody& body) noexcept
 
 ExecutionBody::ExecutionBody(const StructuredBodyDraft& body, const SemanticRegion& region) noexcept
     : body(&body),
-      selected_region(&region) {}
+      selected_region(&region) {
+    index_children();
+}
 
 ExecutionBody::ExecutionBody(const SemIRBody& body, const SemanticRegion& region) noexcept
     : body(&body),
-      selected_region(&region) {}
+      selected_region(&region) {
+    index_children();
+}
 
 auto ExecutionBody::kind() const noexcept -> BodyKind {
     if (const auto* draft = std::get_if<const StructuredBodyDraft*>(&body)) {
@@ -195,4 +196,33 @@ auto execute_function(
         result = executor.detach_result(std::move(*result), origin);
     }
     co_return finish_execution(executor, std::move(result));
+}
+
+auto ExecutionBody::binding_lifetime(LocalBindingID binding) const noexcept -> LifetimeRegionID {
+    return body.visit([&](const auto* source) noexcept {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(*source)>, StructuredBodyDraft>) {
+            return source->bindings.get(binding).lifetime;
+        } else {
+            return source->binding(binding).lifetime;
+        }
+    });
+}
+
+auto ExecutionBody::index_children() noexcept -> void {
+    visit_semantic_nodes(*selected_region, [&](const auto& node) noexcept {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(node)>, SemanticStatement>) {
+            if (node.reachable) {
+                if (const auto* child = std::get_if<SemAsyncLet>(&node.value)) {
+                    child_lifetimes.push_back(binding_lifetime(child->child));
+                }
+            }
+        }
+    });
+    std::ranges::sort(child_lifetimes);
+    const auto redundant = std::ranges::unique(child_lifetimes);
+    child_lifetimes.erase(redundant.begin(), redundant.end());
+}
+
+auto ExecutionBody::has_children(LifetimeRegionID lifetime) const noexcept -> bool {
+    return std::ranges::binary_search(child_lifetimes, lifetime);
 }

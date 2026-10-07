@@ -1,5 +1,6 @@
 module carven:semantic.semir.program.impl;
 
+import :semantic.semir.async;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -108,6 +109,33 @@ SemIRProgram::SemIRProgram(
 auto SemIRProgram::type_contents(TypeID type) const noexcept -> const TypeContents& {
     static_cast<void>(type_store.type(type));
     return contents.at(type.index());
+}
+
+auto SemIRProgram::may_complete_cancelled(CallableID callable) const noexcept -> bool {
+    static_cast<void>(declaration_store.callable(callable));
+    if (!cancellation_facts) {
+        invariant_violation("cancellation query requires a published program");
+    }
+    return cancellation_facts->callable_completion.at(callable.index());
+}
+
+auto SemIRProgram::await_completion_may_be_cancelled(
+    BodyID body,
+    const SemAwait& occurrence
+) const noexcept -> bool {
+    static_cast<void>(body_store.body(body));
+    if (!cancellation_facts) {
+        invariant_violation("await cancellation query requires a published program");
+    }
+    const auto found_body = cancellation_facts->await_completion.find(body);
+    if (found_body == cancellation_facts->await_completion.end()) {
+        invariant_violation("await cancellation query has no published body facts");
+    }
+    const auto found = found_body->second.find(&occurrence);
+    if (found == found_body->second.end()) {
+        invariant_violation("await cancellation query used a foreign occurrence");
+    }
+    return found->second;
 }
 
 auto SemIRProgram::may_stop_test(CallableID callable_id) const noexcept -> bool {

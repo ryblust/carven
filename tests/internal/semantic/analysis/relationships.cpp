@@ -22,7 +22,10 @@ const TestSuite suite([] static noexcept {
                             {{{0uz}, backing, std::nullopt, origin, false},
                              {{1uz}, backing, std::nullopt, origin, false}},
                         .captures = {{{0uz}, backing, origin}, {{1uz}, backing, origin}},
-                        .storage_loans = {{{0uz}, backing, origin}, {{1uz}, backing, origin}}
+                        .storage_loans = {
+                            {{0uz}, backing, origin, OwnershipLoanProtection::Contents},
+                            {{1uz}, backing, origin, OwnershipLoanProtection::Contents}
+                        }
                     }
                 );
                 const auto result = project_relationships(source, {std::nullopt});
@@ -65,7 +68,10 @@ const TestSuite suite([] static noexcept {
                         {{{}, backing, std::nullopt, origins[1], true},
                          {{}, backing, std::nullopt, origins[0], false}},
                     .captures = {{{}, backing, origins[1]}, {{}, backing, origins[0]}},
-                    .storage_loans = {{{}, backing, origins[1]}, {{}, backing, origins[0]}}
+                    .storage_loans = {
+                        {{}, backing, origins[1], OwnershipLoanProtection::Contents},
+                        {{}, backing, origins[0], OwnershipLoanProtection::Contents}
+                    }
                 }
             );
             for (auto& loan : first.edit().callable_loans) {

@@ -102,7 +102,13 @@ struct BuiltinSelection final {
     std::optional<std::array<ProgramSpellingID, 2>> operand_sources;
 };
 
-using SelectedExpression = std::variant<BuiltExpression, CppSelection, BuiltinSelection>;
+struct AsyncIntrinsicSelection final {
+    AsyncIntrinsic kind;
+    Span span;
+};
+
+using SelectedExpression =
+    std::variant<BuiltExpression, CppSelection, BuiltinSelection, AsyncIntrinsicSelection>;
 
 struct BuiltCallArgument final {
     SemCallArgument argument;
@@ -249,6 +255,10 @@ public:
     // Inside a const block, a const test or a module const block every local
     // is a static value and control is ordinary execution.
     auto static_stage() const noexcept -> bool;
+    auto await_expression(const ASTPrefixExpr& source, Span span) noexcept
+        -> AnalysisTask<BuiltExpression>;
+    auto operation_shape(ConstructionTypeRef type) const noexcept
+        -> std::optional<ConstructionOperationTypeValue>;
     auto initializer_value(
         const ASTVariableDecl& source,
         std::optional<ConstructionTypeRef> declared
@@ -300,8 +310,8 @@ private:
         -> AnalysisTask<std::optional<SemanticExpression>>;
     auto resolve_constant_name(std::string_view name, Span span) noexcept
         -> AnalysisTask<std::optional<ConstantID>>;
-    auto resolve_function(std::string_view name, Span span) noexcept
-        -> AnalysisTask<std::optional<FunctionID>>;
+    auto resolve_static_callable(std::string_view name, Span span) noexcept
+        -> AnalysisTask<std::optional<ResolvedStaticCallable>>;
     auto construction_requests() noexcept -> ConstructionRequests&;
     auto resolve_type_qualifier(ASTExprID expression) noexcept
         -> AnalysisTask<std::optional<TypeID>>;
@@ -611,6 +621,8 @@ private:
     // The frame count at entry to each enclosing const block. A local of an
     // earlier frame is visible inside the block only when it is static.
     std::vector<std::size_t> const_block_frames;
+    bool async_body = false;
+    std::set<LocalBindingID> async_child_bindings;
     bool static_body = false;
     std::optional<LifetimeRegionID> active_full_expression;
     bool reachable;

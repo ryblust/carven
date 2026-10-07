@@ -137,6 +137,7 @@ auto expression_precedence(const TargetExpr& expression) noexcept -> TargetPrece
                 return TargetPrecedence::Conditional;
             },
             [](const TargetPrefixExpr&) static noexcept { return TargetPrecedence::Prefix; },
+            [](const TargetCoAwaitExpr&) static noexcept { return TargetPrecedence::Prefix; },
             [](const TargetCallExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetTemplateNameExpr&) static noexcept { return TargetPrecedence::Postfix; },
             [](const TargetIndexExpr&) static noexcept { return TargetPrecedence::Postfix; },
@@ -173,6 +174,13 @@ auto TargetRenderer::render_expression_node(const TargetExpr& expression) noexce
             },
             [&](const TargetLiteralExpr& literal) noexcept {
                 return text(literal_spelling(literal.value));
+            },
+            [&](const TargetCoAwaitExpr& value) noexcept {
+                return concat(
+                    {text(target_symbol_info(value.native_symbol()).spelling),
+                     text(" "),
+                     render_expression(*value.operand, TargetPrecedence::Prefix)}
+                );
             },
             [&](const TargetPrefixExpr& prefix) noexcept {
                 auto spelling = std::string(prefix_spelling(prefix.op));

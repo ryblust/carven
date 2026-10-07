@@ -1,0 +1,198 @@
+import std::async using { cancel, cancellation_requested, cancellation_point, yield_once };
+
+const fn mark(&trace: i32, digit: i32) {
+    trace = trace * 10 + digit;
+}
+
+const async fn recorded(&trace: i32, digit: i32) {
+    mark(&trace, digit);
+}
+
+const async fn direct_order() -> i32 {
+    var trace = 0;
+    async let queued = recorded(&trace, 9);
+    await recorded(&trace, 1);
+    mark(&trace, 2);
+    await queued;
+    return trace;
+}
+
+const async fn yield_order() -> i32 {
+    var trace = 1;
+    async let queued = recorded(&trace, 8);
+    let turn = yield_once();
+    await turn;
+    mark(&trace, 2);
+    await queued;
+    return trace;
+}
+
+const async fn completed_order() -> i32 {
+    var trace = 0;
+    async let completed = recorded(&trace, 7);
+    await yield_once();
+    async let queued = recorded(&trace, 9);
+    cancel(completed);
+    await completed;
+    mark(&trace, 1);
+    await queued;
+    return trace;
+}
+
+const async fn ordering() -> i32 {
+    return await direct_order() * 1000000 + await yield_order() * 1000 + await completed_order();
+}
+
+const fn requested() -> bool => cancellation_requested();
+
+const async fn accepting(&trace: i32) {
+    mark(&trace, 1);
+    let checkpoint = cancellation_point();
+    await yield_once();
+    mark(&trace, if requested() { 3 } else { 8 });
+    await checkpoint;
+    mark(&trace, 9);
+}
+
+const async fn cancellation() -> i32 {
+    var trace = 0;
+    async let child = accepting(&trace);
+    await yield_once();
+    mark(&trace, 2);
+    cancel(child);
+    await yield_once();
+    mark(&trace, if requested() { 8 } else { 4 });
+    return trace;
+}
+
+struct Failure {
+    code: i32
+}
+
+const async fn rejected() -> i32 throw Failure {
+    await yield_once();
+    throw Failure { code: 7 };
+}
+
+const async fn child_failure() -> i32 {
+    var trace = 1;
+    async let child = rejected();
+    try {
+        await child?;
+        mark(&trace, 9);
+    } catch {
+        Failure(error) => { mark(&trace, error.code); },
+    }
+    return trace;
+}
+
+const async fn closing_child(&backing: i32, &trace: i32) {
+    mark(&trace, 1);
+    await yield_once();
+    trace = trace * 100 + if requested() { backing } else { 0 };
+    await cancellation_point();
+    mark(&trace, 9);
+}
+
+const async fn failed_scope(&trace: i32) throw Failure {
+    var backing = 41;
+    async let child = closing_child(&backing, &trace);
+    await yield_once();
+    throw Failure { code: 3 };
+}
+
+const async fn backing_close() -> i32 {
+    var trace = 0;
+    try {
+        await failed_scope(&trace)?;
+    } catch {
+        Failure(error) => { mark(&trace, error.code); },
+    }
+    return trace;
+}
+
+const fn select_return(&trace: i32) -> i32 {
+    mark(&trace, 1);
+    return trace;
+}
+
+const async fn finish_child(&trace: i32) {
+    await yield_once();
+    mark(&trace, 2);
+}
+
+const async fn selected_return(&trace: i32) -> i32 {
+    async let child = finish_child(&trace);
+    cancel(child);
+    return select_return(&trace);
+}
+
+const async fn return_before_close() -> i32 {
+    var trace = 0;
+    let result = await selected_return(&trace);
+    return result * 100 + trace;
+}
+
+const async fn chain(depth: i32) -> i32 {
+    if depth == 0 {
+        await yield_once();
+        return 7;
+    }
+    return await chain(depth - 1);
+}
+
+const async fn nested_turn() -> i32 {
+    var trace = 0;
+    async let sibling = recorded(&trace, 8);
+    let result = await chain(12);
+    mark(&trace, result);
+    await sibling;
+    return trace;
+}
+
+const async fn repeated_close() -> i32 {
+    var trace = 0;
+    for var index = 0; index < 4; index += 1 {
+        async let child = recorded(&trace, 1);
+        cancel(child);
+    }
+    return trace;
+}
+
+const recycled = await repeated_close();
+const ordered = await ordering();
+const cancelled = await cancellation();
+const caught = await child_failure();
+const closed = await backing_close();
+const selected = await return_before_close();
+const nested = await nested_turn();
+const outside_request = cancellation_requested();
+
+const {
+    assert(!cancellation_requested());
+    var trace = 0;
+    async let child = recorded(&trace, 7);
+    await child;
+    assert(trace == 7);
+}
+
+const test "Constant scheduler: source execution contracts" {
+    check(recycled == 1111);
+    check(ordered == 129182719);
+    check(cancelled == 1234);
+    check(caught == 17);
+    check(closed == 1413);
+    check(selected == 112);
+    check(nested == 87);
+    check(!outside_request);
+}
+
+async fn main() {
+    println(await ordering() == ordered);
+    println(await cancellation() == cancelled);
+    println(await child_failure() == caught);
+    println(await backing_close() == closed);
+    println(await return_before_close() == selected);
+    println(await nested_turn() == nested);
+    println(await repeated_close() == recycled);
+}

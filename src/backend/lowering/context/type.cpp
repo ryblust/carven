@@ -128,20 +128,10 @@ auto ModuleLowering::lower_parameter(AccessMode access, TypeID type, TypeNameSco
             if (builtin != nullptr) {
                 return intrinsic_type(builtin_symbol(builtin->kind), true);
             }
-            if (semantic().type_contents(type).read_is_value_snapshot()) {
-                return target().intern_type({
-                    .value =
-                        TargetIntrinsicType {
-                            .symbol = TargetSymbol::StdAddConst,
-                            .type_argument_ids = {base},
-                        },
-                    .const_qualified = false,
-                });
-            }
             return target().intern_type({
                 .value =
                     TargetIntrinsicType {
-                        .symbol = TargetSymbol::RuntimeReadArg,
+                        .symbol = TargetSymbol::StdAddConst,
                         .type_argument_ids = {base},
                     },
                 .const_qualified = false,
@@ -173,6 +163,29 @@ auto ModuleLowering::function_type(
     };
 }
 
+auto ModuleLowering::async_type(
+    TargetSymbol symbol,
+    TypeID success,
+    FailureSetID failures,
+    TypeNameScope scope
+) noexcept -> TargetTypeID {
+    auto arguments = std::vector<TargetTypeID> {lower_type(success, scope)};
+    for (const auto member : plan().failure_abi().members(failures)) {
+        arguments.push_back(lower_type(member, scope));
+    }
+    return target().intern_type({
+        .value = TargetIntrinsicType {.symbol = symbol, .type_argument_ids = std::move(arguments)},
+        .const_qualified = false,
+    });
+}
+
+auto ModuleLowering::callable_completion(CallableID callable_id) noexcept -> TargetTypeID {
+    const auto& signature = semantic().callable_signatures().signature(
+        semantic().declarations().callable(callable_id).signature
+    );
+    return async_type(TargetSymbol::RuntimeAsyncCompletion, signature.result, signature.failures);
+}
+
 auto ModuleLowering::lower_signature_result(
     CallableSignatureID id,
     bool stops_test,
@@ -194,6 +207,17 @@ auto ModuleLowering::lower_signature_result(
     const auto& signature = semantic().callable_signatures().signature(id);
     const auto failures = plan().failure_abi().members(signature.failures);
     const auto result = [&]() noexcept -> TargetTypeID {
+        if (signature.execution == CallableExecutionKind::Async) {
+            if (stops_test) {
+                invariant_violation("async callable retained test-stop effects");
+            }
+            return async_type(
+                TargetSymbol::RuntimeAsyncOperation,
+                signature.result,
+                signature.failures,
+                scope
+            );
+        }
         if (failures.empty() && !stops_test) {
             return lower_type(signature.result, scope);
         }
@@ -368,6 +392,20 @@ auto ModuleLowering::lower_type(TypeID id, TypeNameScope scope) noexcept -> Targ
                             .extent = TargetArrayExtent {.magnitude = value.extent},
                         },
                     .const_qualified = false,
+                };
+            },
+            [&](const OperationTypeValue& value) noexcept -> TargetType {
+                auto arguments = std::vector<TargetTypeID> {lower_type(value.success, scope)};
+                for (const auto member : plan().failure_abi().members(value.failures)) {
+                    arguments.push_back(lower_type(member, scope));
+                }
+                return {
+                    .value =
+                        TargetIntrinsicType {
+                            .symbol = TargetSymbol::RuntimeAsyncOperation,
+                            .type_argument_ids = std::move(arguments),
+                        },
+                    .const_qualified = false
                 };
             },
             [&](const FunctionTypeValue& value) noexcept -> TargetType {

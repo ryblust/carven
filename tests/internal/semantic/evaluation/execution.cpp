@@ -1,5 +1,6 @@
 module carven:test.internal.semantic.evaluation.execution;
 
+import :frontend.program.parse;
 import :semantic.analysis.body.builder;
 import :semantic.analysis.catalog;
 import :semantic.analysis.construction;
@@ -10,7 +11,11 @@ import :semantic.evaluation.value;
 import :semantic.semir.constant_access;
 import :semantic.semir.decl;
 import :semantic.semir.program;
+import :semantic.semir.structured;
+import :semantic.semir.type;
 import :source.batch;
+import :source.manager;
+import :source.module_path;
 import :source.text;
 import :support.task;
 import :test.harness.framework;
@@ -161,7 +166,6 @@ auto ExecutionContext::prepare_call(CallableID callable, ProgramOriginID origin)
         draft.source_origin(origin).span
     );
     require(body.has_value());
-    require(draft.body_draft(*body).inputs.parameters.empty());
     const auto realized = co_await requests.stage().realize_body(*body);
     require(realized.has_value());
     co_return ExecutionBody(draft.body_draft(*body));
@@ -178,10 +182,18 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
     if (!expect(source.has_value())) {
         return;
     }
-    const auto inputs = std::array {SourceModuleInput {
-        .source_id = *source,
-        .module_path = constant_test_module_path("execution")
-    }};
+    const auto standard = sources.append_virtual("async.cv", "");
+    require(standard.has_value());
+    const auto inputs = std::array {
+        SourceModuleInput {
+            .source_id = *source,
+            .module_path = constant_test_module_path("execution")
+        },
+        SourceModuleInput {
+            .source_id = *standard,
+            .module_path = *CanonicalModulePath::from_value("crafts.carven.std.async")
+        },
+    };
     auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
     if (!expect(syntax.has_value())) {
         return;
@@ -198,7 +210,11 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
     if (!expect(construction.run().has_value())) {
         return;
     }
-    const auto module_id = view.modules().front().module_id;
+    const auto module = std::ranges::find_if(view.modules(), [&](const auto& entry) noexcept {
+        return draft.module_path_copy(entry.module_id) == constant_test_module_path("execution");
+    });
+    require(module != view.modules().end());
+    const auto module_id = module->module_id;
     const auto origin = draft.append_source_origin(draft.module_source(module_id), Span::at(0u));
     auto context = ExecutionContext(draft, construction.construction_requests(), module_id);
     const auto evaluate = [&](std::string_view name,
@@ -210,22 +226,52 @@ auto with_execution(std::string source_text, Action action) noexcept -> void {
         auto root = BodyBuilder(draft.reserve_body(BodyKind::Test), draft);
         const auto lifetime =
             root.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, origin);
-        const auto expression = root.make_expression(
-            contract.result,
+        auto callee = root.make_expression(
+            draft.intern_type({.value = FunctionTypeValue {.callable = function.callable}}),
             lifetime,
             origin,
-            SemCall {
-                .callee = OwnedSemanticExpression(root.make_expression(
-                    draft.intern_type({.value = FunctionTypeValue {.callable = function.callable}}),
+            SemCallable {.callable = function.callable}
+        );
+        auto expression = [&]() noexcept {
+            if (contract.execution == CallableExecutionKind::Async) {
+                const auto operation = draft.append_construction_type(
+                    {.value = ConstructionOperationTypeValue {
+                         .success = contract.result,
+                         .failures = contract.failures
+                     }}
+                );
+                auto cold = root.make_expression(
+                    operation,
                     lifetime,
                     origin,
-                    SemCallable {.callable = function.callable}
-                )),
-                .target = std::nullopt,
-                .arguments = {},
-                .callee_failures = BodyFailures(draft.add_empty_failure_term())
+                    SemColdCall {
+                        .callee = OwnedSemanticExpression(std::move(callee)),
+                        .target = function.callable,
+                        .arguments = {},
+                    }
+                );
+                return root.make_expression(
+                    contract.result,
+                    lifetime,
+                    origin,
+                    SemAwait {
+                        .operand = OwnedSemanticExpression(std::move(cold)),
+                        .operand_kind = AsyncAwaitOperandKind::ColdOperation,
+                    }
+                );
             }
-        );
+            return root.make_expression(
+                contract.result,
+                lifetime,
+                origin,
+                SemCall {
+                    .callee = OwnedSemanticExpression(std::move(callee)),
+                    .target = std::nullopt,
+                    .arguments = {},
+                    .callee_failures = BodyFailures(draft.add_empty_failure_term()),
+                }
+            );
+        }();
         context.output.clear();
         context.calls.clear();
         context.reports.clear();
@@ -256,6 +302,232 @@ auto check_integer(
 }
 
 const TestSuite suite([] static noexcept {
+    "Constant scheduler: inactive source children do not close selected lifetimes"_test =
+        [] static noexcept {
+            with_execution(
+                R"(
+            import std::async using cancel;
+            const async fn record(&trace: i32, digit: i32) {
+                trace = trace * 10 + digit;
+            }
+            const async fn selected(&trace: i32) {
+                const if false {
+                    async let child = record(&trace, 5);
+                    cancel(child);
+                }
+                trace = trace * 10 + 1;
+            }
+            const async fn run() -> i32 {
+                var trace = 0;
+                async let sibling = record(&trace, 9);
+                await selected(&trace);
+                trace = trace * 10 + 2;
+                await sibling;
+                return trace;
+            }
+        )",
+                [](ProgramDraft& draft,
+                   ExecutionContext& context,
+                   const auto& evaluate) static noexcept {
+                    const auto result = evaluate("run");
+                    if (!expect(result.has_value())) {
+                        return;
+                    }
+                    check_integer(draft, *result, 129);
+                    auto children = 0uz;
+                    for (const auto function : context.calls) {
+                        const auto declaration = draft.function_declaration_copy(function);
+                        if (draft.spelling(declaration.name) != "selected") {
+                            continue;
+                        }
+                        const auto body_id = draft.body_for_callable(declaration.callable);
+                        if (!expect(body_id.has_value())) {
+                            return;
+                        }
+                        const auto& body = draft.body_draft(*body_id);
+                        if (!expect(body.residual.has_value())) {
+                            return;
+                        }
+                        const auto source = ExecutionBody(body, body.region);
+                        const auto selected = ExecutionBody(body);
+                        for (const auto entry : body.bindings.entries()) {
+                            if (!std::holds_alternative<AsyncChildBindingStorage>(
+                                    entry.value.storage
+                                )) {
+                                continue;
+                            }
+                            ++children;
+                            expect(source.has_children(entry.value.lifetime));
+                            expect(!selected.has_children(entry.value.lifetime));
+                        }
+                    }
+                    expect_equal(children, 1uz);
+                    expect(context.reports.empty());
+                }
+            );
+        };
+
+    "Constant scheduler: repeated region closure completes each iteration's child"_test =
+        [] static noexcept {
+            with_execution(
+                R"(
+            import std::async using {cancel, yield_once};
+            const async fn record(&trace: i32, digit: i32) {
+                await yield_once();
+                trace = trace * 10 + digit;
+            }
+            const async fn run() -> i32 {
+                var trace = 0;
+                for var index = 0; index < 2; ++index {
+                    if true {
+                        async let child = record(&trace, index + 1);
+                        cancel(child);
+                    }
+                    trace = trace * 10 + 3;
+                }
+                return trace;
+            }
+        )",
+                [](ProgramDraft& draft,
+                   ExecutionContext& context,
+                   const auto& evaluate) static noexcept {
+                    const auto result = evaluate("run");
+                    if (!expect(result.has_value())) {
+                        return;
+                    }
+                    check_integer(draft, *result, 1323);
+                    expect(context.reports.empty());
+                }
+            );
+        };
+
+    "Constant scheduler: children share the root step budget"_test = [] static noexcept {
+        with_execution(
+            R"(
+            import std::async using yield_once;
+            const async fn work() -> i32 {
+                for var index = 0; index < 4; index += 1 { await yield_once(); }
+                return 1;
+            }
+            const async fn single() -> i32 {
+                async let child = work();
+                return await child;
+            }
+            const async fn pair() -> i32 {
+                async let first = work();
+                async let second = work();
+                return await first + await second;
+            }
+        )",
+            [](ProgramDraft& draft,
+               ExecutionContext& context,
+               const auto& evaluate) static noexcept {
+                auto lower = 0uz;
+                auto upper = 4096uz;
+                auto limits = static_execution_limits();
+                limits.steps = upper;
+                require(evaluate("single", limits).has_value());
+                while (lower + 1uz < upper) {
+                    limits.steps = lower + (upper - lower) / 2uz;
+                    if (evaluate("single", limits)) {
+                        upper = limits.steps;
+                    } else {
+                        lower = limits.steps;
+                    }
+                }
+                limits.steps = upper;
+                const auto one = evaluate("single", limits);
+                require(one.has_value());
+                check_integer(draft, *one, 1);
+                const auto two = evaluate("pair", limits);
+                expect(!two.has_value());
+                check_limit(context, "steps");
+                const auto completed = evaluate("pair");
+                require(completed.has_value());
+                check_integer(draft, *completed, 2);
+            }
+        );
+    };
+
+    "Constant scheduler: a fatal child keeps its call trace and emitted output"_test =
+        [] static noexcept {
+            const auto text = std::string(R"(
+            import std::async using yield_once;
+            const fn division(zero: i32) -> i32 => 10 / zero;
+            const async fn bad() -> i32 { println("before"); return division(0); }
+            const async fn nested(depth: i32) -> void {
+                if depth == 0 { await yield_once(); return; }
+                await nested(depth - 1);
+            }
+            const async fn run() -> i32 {
+                async let child = bad();
+                await nested(4);
+                println("after");
+                return await child;
+            }
+        )");
+            with_execution(
+                text,
+                [&](ProgramDraft& draft, ExecutionContext& context, const auto& evaluate) noexcept {
+                    const auto result = evaluate("run");
+                    expect(!result.has_value());
+                    if (!expect_equal(context.reports.size(), 1uz)) {
+                        return;
+                    }
+                    const auto& report = context.reports.front();
+                    expect(report.reason() == ExecutionReason::DivideByZero);
+                    expect_equal(context.output, std::string("before\n"));
+                    auto division_seen = false;
+                    for (const auto call : report.calls) {
+                        const auto spelling = slice(text, draft.source_origin(call).span);
+                        division_seen = division_seen || spelling.contains("division(0)");
+                        expect(!spelling.contains("nested("));
+                    }
+                    expect(division_seen);
+                }
+            );
+        };
+
+    "Constant scheduler: suspended assertions retain task-local operand observations"_test =
+        [] static noexcept {
+            with_execution(
+                R"(
+            import std::async using yield_once;
+            const async fn value(number: i32) -> i32 { await yield_once(); return number; }
+            const async fn inspect() {
+                let expected = 3;
+                assert((await value(3)) == expected);
+            }
+            const async fn run() {
+                async let child = inspect();
+                let expected = 2;
+                assert((await value(1)) == expected);
+                await child;
+            }
+        )",
+                [](ProgramDraft&, ExecutionContext& context, const auto& evaluate) static noexcept {
+                    const auto result = evaluate("run");
+                    expect(!result.has_value());
+                    if (!expect_equal(context.reports.size(), 1uz)) {
+                        return;
+                    }
+                    const auto& report = context.reports.front();
+                    expect(report.reason() == ExecutionReason::Assertion);
+                    const auto operands = std::ranges::find(
+                        report.fields,
+                        std::string_view("operands:"),
+                        &ExecutionReportField::label
+                    );
+                    if (!expect(operands != report.fields.end())) {
+                        return;
+                    }
+                    expect(operands->text.contains(": 1\n"));
+                    expect(operands->text.contains("expected: 2\n"));
+                    expect(!operands->text.contains(": 3\n"));
+                }
+            );
+        };
+
     "Semantic execution: unsupported operations preserve operand storage and copy costs"_test =
         [] static noexcept {
             struct Scenario final {

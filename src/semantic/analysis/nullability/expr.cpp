@@ -1,7 +1,9 @@
 module carven:semantic.analysis.nullability.expr.impl;
 
 import :semantic.analysis.nullability.context;
+import :semantic.semir.evaluation;
 import :semantic.semir.initialization;
+import :support.invariant;
 import :support.visit;
 import std;
 
@@ -36,6 +38,13 @@ auto NullabilityBodyAnalyzer::condition(const SemanticExpression& source, NullSt
         .no = std::move(evaluated.normal),
         .exits = std::move(evaluated.exits)
     };
+    // A known result selects normal successors after operand effects complete.
+    const auto truth = known_boolean(program, source);
+    if (truth == true) {
+        result.no.reset();
+    } else if (truth == false) {
+        result.yes.reset();
+    }
     if (const auto* comparison = std::get_if<SemBinary>(&source.value); comparison != nullptr
         && (comparison->operation == BinaryOperator::Equal
             || comparison->operation == BinaryOperator::NotEqual)) {
@@ -355,6 +364,33 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
             },
             [&](const SemCppCall& value) noexcept -> ContinuationTask<std::monostate> {
                 (co_await external(value));
+                co_return {};
+            },
+            [&](const SemColdCall& value) noexcept -> ContinuationTask<std::monostate> {
+                static_cast<void>((co_await evaluate(*value.callee)));
+                for (const auto& argument : value.arguments) {
+                    static_cast<void>((co_await evaluate(argument.expression)));
+                }
+                set_value({});
+                co_return {};
+            },
+            [&](const SemAwait& value) noexcept -> ContinuationTask<std::monostate> {
+                static_cast<void>((co_await evaluate(*value.operand)));
+                if (flow.normal) {
+                    invalidate_exposed(flow.normal->state);
+                }
+                set_value({});
+                const auto* operation = std::get_if<OperationTypeValue>(
+                    &program.types().type(value.operand->type.resolved()).value
+                );
+                if (operation == nullptr) {
+                    invariant_violation("await nullability requires an operation contract");
+                }
+                // Operand failures already retain their evaluation states.
+                failures(flow, operation->failures);
+                co_return {};
+            },
+            [](const SemAsyncIntrinsic&) static noexcept -> ContinuationTask<std::monostate> {
                 co_return {};
             },
             [&](const SemCall& value) noexcept -> ContinuationTask<std::monostate> {

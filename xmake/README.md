@@ -13,24 +13,26 @@ configuration.
 | [`clang-module-pipeline/`](clang-module-pipeline/README.md) | Versioned Xmake patch and wrappers for Clang module compilation and incremental dependency checks |
 | [`format.lua`](format.lua) | C++ and Carven formatting and formatting checks |
 | [`generated.clang-tidy`](generated.clang-tidy) | clang-tidy overrides for generated C++ |
-| [`benchmark/incremental.lua`](benchmark/incremental.lua) | Incremental build timings, C++ object changes, and artifact checks |
-| [`benchmark/compile.lua`](benchmark/compile.lua) | Module-batch and structured source-to-C++ compiler timings |
-| [`benchmark/runner.lua`](benchmark/runner.lua) | Shared compiler selection, sampling, medians, and temporary-directory cleanup |
-| [`benchmark/options.lua`](benchmark/options.lua) | Benchmark option parsing and validation |
-| [`benchmark/report.lua`](benchmark/report.lua) | Shared sample progress and result tables |
-| [`benchmark/timings.lua`](benchmark/timings.lua) | Carven timing reports, rounded durations, and bounds |
+| [`benchmarks/incremental.lua`](benchmarks/incremental.lua) | Incremental build timings, C++ object changes, and artifact checks |
+| [`benchmarks/compile.lua`](benchmarks/compile.lua) | Module-batch and structured source-to-C++ compiler timings |
+| [`benchmarks/async.lua`](benchmarks/async.lua) | Generated async programs versus independent C++20 tasks, handwritten orchestration using the same runtime, and optional libcoro |
+| [`benchmarks/runner.lua`](benchmarks/runner.lua) | Shared compiler selection, sampling, medians, and retained build workspaces |
+| [`benchmarks/options.lua`](benchmarks/options.lua) | Benchmark option parsing and validation |
+| [`benchmarks/report.lua`](benchmarks/report.lua) | Shared sample progress and result tables |
+| [`benchmarks/timings.lua`](benchmarks/timings.lua) | Carven timing reports, rounded durations, and bounds |
 
 ## Formatting
 
 `format.lua` implements `format-check` to report formatting violations and
 `format` to apply formatting.
 Both use clang-format for `.cpp`, `.cppm`, `.h`, and `.hpp` files under `src/`,
-`tests/`, `crafts/`, `examples/`, and Graver's source and test directories.
+`tests/`, `crafts/`, `examples/`, `benchmarks/`, and Graver's source and test directories.
 On macOS, the script queries Homebrew's local installation prefix and looks in
 `opt/llvm/bin`, then falls back to PATH. Other platforms use PATH.
 
 Both formatting commands require a built Graver and use it for `.cv` files
-under `crafts/`, `examples/`, and `tests/`, plus Graver's expected-output fixtures.
+under `crafts/`, `examples/`, `tests/`, and `benchmarks/`, plus benchmark
+`.cv.fixture` inputs and Graver's expected-output fixtures.
 Deliberately unformatted Graver inputs and the three lexical/syntax rejection fixtures listed in
 `format.lua` are excluded. Other formatting or parse failures fail the command.
 
@@ -60,8 +62,11 @@ compiler before measuring:
 
 Both benchmarks use the Carven executable selected by Xmake's current project
 configuration. `--compiler` selects an existing executable and skips the build;
-its build mode is reported as unknown. Temporary workloads are removed even
-when a benchmark fails.
+its build mode is reported as unknown. Reports default to a fresh JSON file in
+`build/benchmarks/<topic>/`. Each run retains source workspaces, generated C++, native
+objects and executables in `build/benchmarks/<topic>/<report-name>-artifacts/`,
+including on failure. `--output` selects the report path; code artifacts stay
+under `build/benchmarks/`. Existing report/workspace names are rejected.
 
 | Option | Meaning | Default |
 | --- | --- | --- |
@@ -71,7 +76,7 @@ when a benchmark fails.
 | `--verbose` | Show individual samples, warmups, and changed object paths | Off |
 | `--list` | List stable case identifiers and input sizes without building | Off |
 | `--case=<id>` | Run one exact case identifier | All cases |
-| `--output=<path>` | Save run metadata, inputs, raw samples, and summaries as JSON | No file |
+| `--output=<path>` | Save run metadata, inputs, raw samples, and summaries as JSON | Fresh JSON file under `build/benchmarks/<topic>/` |
 | `--timings` | Include observed Carven stage timings in samples | Off |
 
 For example, `./xmakew bench --samples=2 --warmups=0 incremental` performs two
@@ -82,10 +87,10 @@ selection or building:
 
 ```shell
 ./xmakew bench compile --list
-./xmakew bench compile --case=independent_16 --samples=7 --warmups=2 --verbose
-./xmakew bench compile --case=independent_16 --timings --output=build/bench/compile.json
-./xmakew bench incremental --case=private_function_edit --output=build/bench/incremental.json
-./xmakew bench incremental --case=private_function_edit --timings --output=build/bench/incremental-stages.json
+./xmakew bench compile --case=modules_16 --samples=7 --warmups=2 --verbose
+./xmakew bench compile --case=modules_16 --timings --output=build/benchmarks/compile.json
+./xmakew bench incremental --case=private_function_edit --output=build/benchmarks/incremental.json
+./xmakew bench incremental --case=private_function_edit --timings --output=build/benchmarks/incremental-stages.json
 ```
 
 Output shows case progress and wall-time summaries. The result table lists valid sample
@@ -95,9 +100,27 @@ are identified separately; missing measurements appear as `-`. Verbose output
 includes individual samples, warmup measurements, and case details. Timings have no performance
 pass/fail threshold.
 
+### Async execution
+
+`./xmakew bench async` runs ready, stored, yielding, static and recursive kernels
+against independent handwritten C++20 tasks and handwritten orchestration using
+the actual Carven runtime. `--libcoro=<checkout>` adds libcoro.
+`--cxx=<compiler>` selects the native compile and link driver. Native projects
+use LLVM-MinGW on Windows and LLVM on Unix, with libc++ selected explicitly on
+Windows and Linux. Xmake builds native targets; the shared runner interleaves
+their samples and prints program-internal
+nanoseconds per work item. Allocation and unoptimized stack observations use
+separate builds. Reports and input snapshots are retained under
+`build/benchmarks/async/`; samples default to 7. See the
+[async protocol](../benchmarks/async/README.md) for measurement boundaries.
+
+Root [`benchmarks/`](../benchmarks/README.md) owns workload code, fixtures and
+parameterized source generators. `xmake/benchmarks/` owns build/run scripts,
+sampling and reporting. Commands remain `./xmakew bench <topic>`.
+
 ### Incremental build
 
-`benchmark/incremental.lua` uses a small `library -> facade -> app` dependency chain
+`benchmarks/incremental.lua` runs the fixtures in root `benchmarks/incremental/` through a small `library -> facade -> app` dependency chain
 alongside an unchanged, independent `unrelated` module in the same target:
 
 | Scenario | Operation |
@@ -109,8 +132,8 @@ alongside an unchanged, independent `unrelated` module in the same target:
 | Add module | Add an independent exported structure |
 | Remove module | Remove that independent module |
 
-The temporary native project uses Debug mode and C++20 regardless of the selected
-Carven compiler's build mode. Each scenario has its own temporary project. The
+The benchmark native project uses Debug mode and C++20 regardless of the selected
+Carven compiler's build mode. Each scenario has its own retained project. The
 first run uses the initial build as its baseline. Later edit runs restore and
 build that baseline before applying the operation; no-change runs reuse the
 already built project. Setup, restoration, edits, and filesystem timestamp waits
@@ -136,13 +159,14 @@ also supports local rule repositories used in dual-repository checkouts.
 
 ### Compile
 
-`benchmark/compile.lua` measures source-to-C++ compilation, including process
-startup, parsing, analysis, and generation. Native C++ compilation and linking
+[`benchmarks/compile.lua`](benchmarks/compile.lua) runs the root `benchmarks/compile/` workload generators
+and measures source-to-C++ compilation, including process startup, parsing,
+analysis, and generation. Native C++ compilation and linking
 are excluded.
 
 Module batches compile independent modules into fresh output directories;
 these timings include generated-artifact writes. Structured workloads launch
-the compiler on temporary source files with a fixed linkage domain and send
+the compiler on workload source files with a fixed linkage domain and send
 C++ inspection output to the null device.
 
 | Structured workload | Input distinction |
@@ -165,7 +189,7 @@ sizes to observe timing growth. The payload workload increases both field and ar
 counts; its source size grows quadratically because each arm lists every field.
 
 The output reports input sizes; workload definitions live in
-[`benchmark/compile.lua`](benchmark/compile.lua). Timings include process startup, which
+[`benchmarks/compile/workloads.lua`](../benchmarks/compile/workloads.lua). Timings include process startup, which
 can dominate small inputs.
 
 ### Comparing results

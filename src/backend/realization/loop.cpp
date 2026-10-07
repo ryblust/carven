@@ -67,8 +67,10 @@ auto take_for_step(ModuleLowering& context, LoweringStmtBuilder& steps) noexcept
 
 auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destination) noexcept
     -> ContinuationTask<std::monostate> {
-    auto initializer = (co_await region(*value.initializer, LoweringDiscardResult {}));
+    const auto outer_scopes = async_scopes.size();
+    auto initializer = (co_await region(*value.initializer, LoweringDiscardResult {}, true));
     if (!initializer.continues()) {
+        leave_async_scopes(outer_scopes);
         destination.scope(std::move(initializer));
         co_return {};
     }
@@ -78,31 +80,38 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
         : std::optional<LoweringPredicate>(LoweringKnownBool {true});
     if (!condition_statements.continues()) {
         initializer.append(std::move(condition_statements));
+        leave_async_scopes(outer_scopes);
         destination.scope(std::move(initializer));
         co_return {};
     }
     if (known_predicate(condition) == false) {
         initializer.append(std::move(condition_statements));
+        close_async_scopes(outer_scopes, false, initializer);
+        leave_async_scopes(outer_scopes);
         destination.scope(std::move(initializer));
         co_return {};
     }
     // Lowering chooses syntax before realizing the body, so a native for loop
     // gives continue its C++ step semantics without a separate transfer target.
-    auto steps = (co_await region(*value.steps, LoweringDiscardResult {}));
-    const auto direct_condition = condition_statements.empty();
-    auto for_step = direct_condition ? take_for_step(context, steps) : std::nullopt;
-    const auto step = for_step || steps.empty()
-        ? std::nullopt
-        : std::optional(names.fresh(TargetTemporaryNameKind::Continue));
+    const auto step_label = names.fresh(TargetTemporaryNameKind::Continue);
     const auto continuation = LoopContinuation {
-        .step = step,
+        .step = step_label,
         .break_label = std::nullopt,
         .jump_role = TargetJumpRole::ForLoopContinue,
         .expanded = false,
         .target = exit_target(LoweringExitKind::Continue),
-        .break_target = exit_target(LoweringExitKind::Break)
+        .break_target = exit_target(LoweringExitKind::Break),
+        .break_async_scopes = async_scopes.size(),
+        .continue_async_scopes = async_scopes.size(),
     };
     const auto outer_loop = std::exchange(current_loop, continuation);
+    auto steps = (co_await region(*value.steps, LoweringDiscardResult {}));
+    const auto direct_condition = condition_statements.empty();
+    auto for_step = direct_condition && !preparation.requires_coroutine_context(*value.steps)
+        ? take_for_step(context, steps)
+        : std::nullopt;
+    const auto step = for_step || steps.empty() ? std::nullopt : std::optional(step_label);
+    current_loop->step = step;
     auto body_statements = (co_await region(*value.body, LoweringDiscardResult {}));
     current_loop = outer_loop;
     const auto continued = body_statements.exits().contains(continuation.target);
@@ -169,6 +178,8 @@ auto BodyRealizer::lower_loop(const SemLoop& value, LoweringStmtBuilder& destina
             breaks || conditional
         );
     }
+    close_async_scopes(outer_scopes, false, initializer);
+    leave_async_scopes(outer_scopes);
     destination.scope(std::move(initializer));
     co_return {};
 }
@@ -197,7 +208,9 @@ auto BodyRealizer::lower_range(const SemRangeLoop& value, LoweringStmtBuilder& d
         .jump_role = TargetJumpRole::ForLoopContinue,
         .expanded = false,
         .target = exit_target(LoweringExitKind::Continue),
-        .break_target = exit_target(LoweringExitKind::Break)
+        .break_target = exit_target(LoweringExitKind::Break),
+        .break_async_scopes = async_scopes.size(),
+        .continue_async_scopes = async_scopes.size()
     };
     const auto outer_loop = std::exchange(current_loop, continuation);
     auto iteration = (co_await region(*value.body, LoweringDiscardResult {}));
@@ -244,7 +257,9 @@ auto BodyRealizer::lower_expanded_loop(
             .jump_role = TargetJumpRole::RegionExit,
             .expanded = true,
             .target = exit_target(LoweringExitKind::Continue),
-            .break_target = break_target
+            .break_target = break_target,
+            .break_async_scopes = async_scopes.size(),
+            .continue_async_scopes = async_scopes.size()
         };
         const auto outer_loop = std::exchange(current_loop, continuation);
         auto body = (co_await region(source, LoweringDiscardResult {}));

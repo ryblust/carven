@@ -50,14 +50,19 @@ Conditions and guards require `bool`. Value-form `if` requires an `else` and
 all result branches must be compatible. Statement-form conditionals do not
 produce a value.
 
-The value of a condition does not change analysis. Reachability, failure
-contracts, ownership, pointer proofs, and return analysis consider every branch
-of `if`, `&&`, `||`, `match`, and a loop with a condition, whether the condition
-is a runtime value, a literal, or a `const`: `if false { ... }` and
-`while true { ... }` retain both paths. A loop is known not to end by itself
-only when it has no condition, written `while { ... }`; it then ends through
-`break`. `const if` selects the arm that executes
-and is generated; its arms follow the same analysis.
+Structural reachability, failure contracts, and return analysis consider every
+branch of `if`, `&&`, `||`, `match`, and a loop with a condition, whether the
+condition is a runtime value, a literal, or a `const`: `if false { ... }` and
+`while true { ... }` retain both structural paths. A loop is known not to end by
+itself only when it has no condition, written `while { ... }`; it then ends
+through `break`. `const if` selects the arm that executes and is generated;
+its arms still receive operation, result-compatibility, and failure-consumption
+checks.
+
+Ownership availability and pointer proofs first evaluate condition effects and
+exits, then use proven Boolean normal-completion facts to select successors.
+Unknown conditions merge both possible successors. Every source operation still
+receives access-form admission checks, including in an unselected branch.
 
 `while` evaluates its condition before each iteration; without a condition it
 repeats until `break`. A C-style `for` creates one loop scope, evaluates its

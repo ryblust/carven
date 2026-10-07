@@ -194,6 +194,29 @@ auto shapes_compatible(
         return true;
     }
 
+    const auto operation_success =
+        [&](ConstructionTypeRef type) noexcept -> std::optional<ConstructionTypeRef> {
+        if (const auto* concrete = std::get_if<TypeID>(&type)) {
+            const auto canonical = draft.type_copy(*concrete);
+            if (const auto* operation = std::get_if<OperationTypeValue>(&canonical.value)) {
+                return operation->success;
+            }
+        } else {
+            const auto construction = draft.construction_type_copy(std::get<TypeTermID>(type));
+            if (const auto* operation =
+                    std::get_if<ConstructionOperationTypeValue>(&construction.value)) {
+                return operation->success;
+            }
+        }
+        return std::nullopt;
+    };
+    const auto left_operation = operation_success(left);
+    const auto right_operation = operation_success(right);
+    if (left_operation || right_operation) {
+        return left_operation
+            && right_operation
+            && shapes_compatible(draft, *left_operation, *right_operation, visited);
+    }
     const auto left_array = array_shape(draft, left);
     const auto right_array = array_shape(draft, right);
     if (left_array.has_value() || right_array.has_value()) {
@@ -247,6 +270,8 @@ auto shapes_compatible(
 
 auto semantic_operator(ASTPrefixOperator op) noexcept -> UnaryOperator {
     switch (op) {
+        case ASTPrefixOperator::Await:
+            invariant_violation("await is not an ordinary unary operator");
         case ASTPrefixOperator::Dereference:
             invariant_violation("pointer dereference is not a scalar unary operator");
         case ASTPrefixOperator::LogicalNot: return UnaryOperator::LogicalNot;
@@ -463,6 +488,7 @@ auto supports_equality(
             [](const FunctionTypeValue&) static noexcept { return false; },
             [](const ClosureTypeValue&) static noexcept { return false; },
             [](const CallableViewTypeValue&) static noexcept { return false; },
+            [](const OperationTypeValue&) static noexcept { return false; },
             [](const CppTypeValue&) static noexcept { return false; },
             [](const PointerTypeValue&) static noexcept { return true; },
             [](const RangeTypeValue&) static noexcept { return false; },

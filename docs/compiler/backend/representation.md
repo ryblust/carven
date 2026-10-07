@@ -76,18 +76,15 @@ The qualifier alone supplies no call-result fact or permission to discard a call
 
 ## Parameters and access
 
-Read parameters, Read argument temporaries, and Read range bindings preserve
-Carven array, String, and closure storage, including storage in Carven aggregate
-fields, through const references. Lowering uses the resolved type-contents query
-shared with ownership analysis. Other pure Carven Read parameters use const
-values. Types containing native C++ values by value use
-`runtime::ReadArg<T>`, which selects a const value for trivially copy-constructed
-and destroyed types and a const reference otherwise. The type-contents query
-propagates native value containment through array elements, struct fields,
-and enum payloads; pointer and slice targets do not contribute. Native template
-arguments alone leave the instantiated type's
-storage contents unknown. Interface planning includes complete definitions for
-these trait queries. A pointer representation is complete without completing its
+Read parameters, Read argument storage, and Read range bindings preserve
+Carven array, String, closure, and native value storage through const references,
+including storage in Carven aggregate fields. Lowering uses the resolved
+type-contents query shared with ownership analysis. Pure Carven value Read
+parameters use const values. Native value containment propagates through array
+elements, struct fields, and enum payloads; pointer and slice targets do not
+contribute. Native template arguments alone leave the instantiated type's storage
+contents unknown. Interface planning includes complete definitions where source
+representations require them. A pointer representation is complete without completing its
 target; pointer dependencies request target declarations. Forming that target's
 type expression can still require complete definitions, such as Read parameter
 types in a callable signature. Declaration ordering includes these requirements;

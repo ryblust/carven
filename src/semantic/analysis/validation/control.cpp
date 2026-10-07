@@ -64,6 +64,13 @@ auto BodyContractVerifier::verify_region(const SemanticRegion& source, bool resi
                                 invariant_violation("initializer differs from binding type");
                             }
                         },
+                        [&](const SemAsyncLet& value) noexcept {
+                            const auto& binding = body.binding(value.child);
+                            if (!std::holds_alternative<AsyncChildBindingStorage>(binding.storage)
+                                || binding.type != value.initializer.type.resolved()) {
+                                invariant_violation("async child initializer differs from binding");
+                            }
+                        },
                         [&](const SemStaticBinding& value) noexcept {
                             const auto initializer_type = value.initializer->type.resolved();
                             const auto frozen_text = require_type(initializer_type).value

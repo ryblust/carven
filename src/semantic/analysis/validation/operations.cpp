@@ -217,6 +217,37 @@ auto BodyContractVerifier::verify_expression(
                     }
                 }
             },
+            [&](const SemColdCall& value) noexcept {
+                const auto& signature = program.callable_signatures().signature(
+                    program.declarations().callable(value.target).signature
+                );
+                const auto* operation =
+                    std::get_if<OperationTypeValue>(&require_type(source.type.resolved()).value);
+                if (signature.execution != CallableExecutionKind::Async
+                    || !operation
+                    || operation->success != signature.result
+                    || operation->failures != signature.failures
+                    || value.arguments.size() != signature.parameters.size()) {
+                    invariant_violation(
+                        "cold construction differs from callee completion contract"
+                    );
+                }
+                for (const auto& [argument, parameter] :
+                     std::views::zip(value.arguments, signature.parameters)) {
+                    if (argument.access != parameter.access
+                        || argument.expression.type.resolved() != parameter.type) {
+                        invariant_violation("cold construction operand differs from parameter");
+                    }
+                }
+            },
+            [&](const SemAwait& value) noexcept {
+                const auto* operation = std::get_if<OperationTypeValue>(
+                    &require_type(value.operand->type.resolved()).value
+                );
+                if (!operation || operation->success != source.type.resolved()) {
+                    invariant_violation("await differs from operation success contract");
+                }
+            },
             [&](const SemRange& value) noexcept {
                 const auto& type = require_type(source.type.resolved());
                 const auto* range = std::get_if<RangeTypeValue>(&type.value);

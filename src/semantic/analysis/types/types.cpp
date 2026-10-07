@@ -680,6 +680,7 @@ auto resolve_failure_types(
                                   || std::same_as<Value, FunctionTypeValue>
                                   || std::same_as<Value, ClosureTypeValue>
                                   || std::same_as<Value, CallableViewTypeValue>
+                                  || std::same_as<Value, OperationTypeValue>
                                   || std::same_as<Value, CppTypeValue>
                                   || std::same_as<Value, PointerTypeValue>
                                   || std::same_as<Value, SliceTypeValue>

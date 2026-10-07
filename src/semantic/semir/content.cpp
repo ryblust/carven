@@ -110,6 +110,7 @@ auto ContentWriter::callable(CallableID id) noexcept -> ContentTask {
 
 auto ContentWriter::signature(CallableSignatureID id) noexcept -> ContentTask {
     const auto& value = program.callable_signatures().signature(id);
+    number(static_cast<std::uint64_t>(value.execution));
     number(value.parameters.size());
     for (const auto& parameter : value.parameters) {
         number(static_cast<std::uint64_t>(parameter.stage));
@@ -239,6 +240,13 @@ auto ContentWriter::type(TypeID id) noexcept -> ContentTask {
             } else if constexpr (std::same_as<Value, FunctionTypeValue>
                                  || std::same_as<Value, ClosureTypeValue>) {
                 co_await callable(value.callable);
+            } else if constexpr (std::same_as<Value, OperationTypeValue>) {
+                co_await type(value.success);
+                const auto& failures = program.failure_sets().failure_set(value.failures).members;
+                number(failures.size());
+                for (const auto member : failures) {
+                    co_await type(member);
+                }
             } else if constexpr (std::same_as<Value, CallableViewTypeValue>) {
                 co_await signature(value.signature);
             } else if constexpr (std::same_as<Value, CppTypeValue>) {

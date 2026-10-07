@@ -1,0 +1,47 @@
+import "async/transfer.hpp" using async_transfer::Context;
+import tests.interop.async.bridge using IoError;
+import std::async using { cancel, yield_once };
+
+#[cpp] ---
+#include <carven/api/tests/interop/async/bridge.hpp>
+using TransferIoError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
+auto transfer_read(const async_transfer::Context&) noexcept
+    -> carven::runtime::async::Operation<std::int32_t, TransferIoError>;
+auto transfer_write(const async_transfer::Context&, std::int32_t, std::int32_t) noexcept
+    -> carven::runtime::async::Operation<std::int32_t, TransferIoError>;
+auto transfer_copy_buffer(const async_transfer::Context&, const async_transfer::Context&, std::int32_t) noexcept -> void;
+---
+
+import(cpp) async fn transfer_read(context: Context) -> i32 throw IoError;
+import(cpp) async fn transfer_write(context: Context, offset: i32, count: i32) -> i32 throw IoError;
+import(cpp) fn transfer_copy_buffer(writer: Context, reader: Context, count: i32);
+
+export(cpp) async fn copy(reader: Context, writer: Context) -> u64 throw IoError {
+    var total: u64 = 0;
+    while {
+        let count = await transfer_read(reader)?;
+        if count == 0 { return total; }
+        transfer_copy_buffer(writer, reader, count);
+        for var offset: i32 = 0; offset < count;
+        {
+            offset += await transfer_write(writer, offset, count - offset)?;
+        }
+        total += count as u64;
+    }
+}
+
+export(cpp) async fn recover(reader: Context, writer: Context) -> i32 {
+    try {
+        await copy(reader, writer)?;
+        return 0;
+    } catch {
+        IoError(error) => { return error.code; },
+    }
+}
+
+export(cpp) async fn cancel_copy(reader: Context, writer: Context) -> i32 {
+    async let child = copy(reader, writer);
+    await yield_once();
+    cancel(child);
+    return 17;
+}

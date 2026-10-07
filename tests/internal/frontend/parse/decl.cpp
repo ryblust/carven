@@ -19,6 +19,32 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Parser async: declaration and lexical child retain their independent markers"_test =
+        [] static noexcept {
+            const auto tree =
+                parse_valid("async fn worker() { async let child = leaf(); await child; }");
+            expect(function(tree).async_span.has_value());
+            expect(!function(tree).const_span.has_value());
+            const auto& block = function_body(tree);
+            const auto& child = get<ASTVariableDecl>(tree.view().statement(block.statements[0]));
+            expect(child.async_span.has_value());
+            expect_equal(child.kind, ASTBindingKind::Let);
+            expect(!child.type.has_value());
+        };
+
+    "Parser async: modifier order is preserved and unsupported heads are rejected"_test =
+        [] static noexcept {
+            for (const auto source : {"async const fn bad() {}", "const async fn bad() {}"}) {
+                const auto tree = parse_valid(source);
+                expect(function(tree).async_span.has_value());
+                expect(function(tree).const_span.has_value());
+            }
+            for (const auto source :
+                 {"async struct Bad {}", "async enum Bad { Value }", "async test {}"}) {
+                check_rejected(source);
+            }
+        };
+
     "Parser declaration: const functions retain their qualifier and ordinary callable bodies"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view(

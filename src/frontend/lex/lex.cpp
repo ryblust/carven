@@ -37,6 +37,8 @@ constexpr auto token_kind(SourceKeyword keyword) noexcept -> TokenKind {
     switch (keyword) {
         using enum SourceKeyword;
         case As:       return TokenKind::As;
+        case Async:    return TokenKind::Async;
+        case Await:    return TokenKind::Await;
         case Break:    return TokenKind::Break;
         case Catch:    return TokenKind::Catch;
         case Const:    return TokenKind::Const;

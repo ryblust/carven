@@ -136,7 +136,8 @@ private:
         ASTDeclarationVisibility visibility,
         std::optional<ASTCppExportForm> cpp_export,
         std::optional<Span> cpp_import,
-        std::optional<Span> const_span
+        std::optional<Span> const_span,
+        std::optional<Span> async_span
     ) noexcept -> std::optional<std::pair<Span, ASTFunctionDecl>>;
     auto parse_constant(ASTDeclarationVisibility visibility) noexcept
         -> std::optional<std::pair<Span, ASTConstantDecl>>;
@@ -181,8 +182,10 @@ private:
     auto parse_additive() noexcept -> std::optional<ASTExprID>;
     auto parse_multiplicative() noexcept -> std::optional<ASTExprID>;
     auto parse_cast_expression() noexcept -> std::optional<ASTExprID>;
-    auto parse_prefix_expression() noexcept -> std::optional<ASTExprID>;
-    auto parse_postfix_expression() noexcept -> std::optional<ASTExprID>;
+    auto parse_prefix_expression(bool allow_propagation = true) noexcept
+        -> std::optional<ASTExprID>;
+    auto parse_postfix_expression(bool allow_propagation = true) noexcept
+        -> std::optional<ASTExprID>;
     auto parse_call(ASTExprID callee) noexcept -> std::optional<ASTExprID>;
     auto parse_interpolation_parts(TokenKind closing) noexcept -> std::vector<ASTInterpolationPart>;
     auto parse_primary_expression() noexcept -> std::optional<ASTExprID>;

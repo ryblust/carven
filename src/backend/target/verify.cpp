@@ -159,6 +159,110 @@ auto TargetLocalVerifier::declare(TargetLocalID id) noexcept -> bool {
     return true;
 }
 
+class TargetCoroutineVerifier final {
+public:
+    auto run(const TargetUnitSections& sections) noexcept
+        -> std::expected<void, TargetSealViolation>;
+    auto enter_scope(TargetTraversalScope scope) noexcept -> bool;
+    auto leave_scope(TargetTraversalScope scope) noexcept -> bool;
+    auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
+    auto enter_statement(const TargetStmt& statement) noexcept -> bool;
+    auto enter_declaration(const TargetDecl& declaration) noexcept -> bool;
+
+private:
+    auto fail(std::string message) noexcept -> bool;
+
+    struct CallableFrame final {
+        bool coroutine;
+        bool native_operation;
+    };
+
+    std::vector<CallableFrame> callables;
+    std::string failure;
+};
+
+auto TargetCoroutineVerifier::run(const TargetUnitSections& sections) noexcept
+    -> std::expected<void, TargetSealViolation> {
+    if (!traverse_target_unit(sections, *this)) {
+        return std::unexpected(
+            TargetSealViolation {
+                .kind = TargetSealViolationKind::InvalidCoroutine,
+                .message = std::move(failure),
+            }
+        );
+    }
+    return {};
+}
+
+auto TargetCoroutineVerifier::enter_scope(TargetTraversalScope scope) noexcept -> bool {
+    if (scope.kind == TargetTraversalScopeKind::Callable
+        || scope.kind == TargetTraversalScopeKind::CoroutineCallable) {
+        callables.push_back(
+            {.coroutine = scope.kind == TargetTraversalScopeKind::CoroutineCallable,
+             .native_operation = false}
+        );
+    }
+    return true;
+}
+
+auto TargetCoroutineVerifier::leave_scope(TargetTraversalScope scope) noexcept -> bool {
+    if (scope.kind == TargetTraversalScopeKind::Callable
+        || scope.kind == TargetTraversalScopeKind::CoroutineCallable) {
+        if (callables.back().coroutine && !callables.back().native_operation) {
+            return fail("coroutine body contains no native coroutine operation");
+        }
+        callables.pop_back();
+    }
+    return true;
+}
+
+auto TargetCoroutineVerifier::enter_expression(
+    const TargetExpr& expression,
+    TargetExpressionRole
+) noexcept -> bool {
+    if (!std::holds_alternative<TargetCoAwaitExpr>(expression.value)) {
+        return true;
+    }
+    if (callables.empty() || !callables.back().coroutine) {
+        return fail("co_await is outside a coroutine, including an ordinary generated lambda");
+    }
+    callables.back().native_operation = true;
+    return true;
+}
+
+auto TargetCoroutineVerifier::enter_statement(const TargetStmt& statement) noexcept -> bool {
+    if (std::holds_alternative<TargetCoReturnStmt>(statement.value)) {
+        if (callables.empty() || !callables.back().coroutine) {
+            return fail("co_return is outside a coroutine");
+        }
+        callables.back().native_operation = true;
+        return true;
+    }
+    if (std::holds_alternative<TargetReturnStmt>(statement.value)
+        && !callables.empty()
+        && callables.back().coroutine) {
+        return fail("ordinary return is inside a coroutine");
+    }
+    return true;
+}
+
+auto TargetCoroutineVerifier::enter_declaration(const TargetDecl& declaration) noexcept -> bool {
+    const auto* function = std::get_if<TargetFunctionDecl>(&declaration);
+    if (function == nullptr) {
+        return true;
+    }
+    const auto* definition = std::get_if<TargetFreeFunctionDefinition>(&function->form);
+    return definition == nullptr
+        || definition->execution != TargetCallableExecution::Coroutine
+        || !function->constexpr_specifier
+        || fail("a coroutine cannot be constexpr");
+}
+
+auto TargetCoroutineVerifier::fail(std::string message) noexcept -> bool {
+    failure = std::move(message);
+    return false;
+}
+
 auto validate_target_types(
     TargetUnitIdentity identity,
     std::span<const TargetType> types,
@@ -180,6 +284,10 @@ auto validate_target_unit(const TargetVerificationInput& input) noexcept
         TargetLocalVerifier(input.identity(), input.local_count()).run(input.sections());
     if (!locals.has_value()) {
         return locals;
+    }
+    const auto coroutines = TargetCoroutineVerifier().run(input.sections());
+    if (!coroutines.has_value()) {
+        return coroutines;
     }
     return validate_jumps(input.sections());
 }

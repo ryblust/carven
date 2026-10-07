@@ -184,7 +184,8 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                          {.available = true,
                           .taken = std::nullopt,
                           .relationships = std::move(captured),
-                          .modified = false},
+                          .modified = false,
+                          .child_intent = std::nullopt},
                          {.body = source.id(), .slot = object, .input = true},
                          false}
                     );
@@ -219,11 +220,14 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                  {.available = true,
                   .taken = std::nullopt,
                   .relationships = std::move(elements),
-                  .modified = false},
+                  .modified = false,
+                  .child_intent = std::nullopt},
                  {.body = source.id(), .slot = backing, .input = true},
                  false}
             );
-            relationships.edit().storage_loans.push_back({{}, {backing, {}}, origin});
+            relationships.edit().storage_loans.push_back(
+                {{}, {backing, {}}, origin, OwnershipLoanProtection::Contents}
+            );
         }
         if (const auto* structure = std::get_if<StructTypeValue>(&value)) {
             for (const auto& [index, field] : std::views::enumerate(
@@ -266,6 +270,7 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                         return true;
                     },
                     [](const OwnerBindingStorage&) static noexcept { return false; },
+                    [](const AsyncChildBindingStorage&) static noexcept { return false; },
                 }
             );
             auto alias = std::optional<OwnershipPlace>();
@@ -277,7 +282,8 @@ auto OwnershipBatchAnalyzer::root_input(const SemIRBody& source) const noexcept
                      {.available = true,
                       .taken = std::nullopt,
                       .relationships = relationships,
-                      .modified = false},
+                      .modified = false,
+                      .child_intent = std::nullopt},
                      {.body = source.id(), .slot = result.objects.size(), .input = true},
                      false}
                 );

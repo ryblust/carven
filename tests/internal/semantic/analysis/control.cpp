@@ -209,24 +209,29 @@ const TestSuite suite([] static noexcept {
             );
         };
 
-    "Semantic control: bindings cannot select pointer paths"_test = [] static noexcept {
+    "Semantic control: pointer access follows proven normal paths"_test = [] static noexcept {
+        analyze_test_program(
+            "fn probe() -> i32 { var p: ptr<i32> = nullptr; "
+            "if false { return *p; } return 0; }"
+        );
+        analyze_test_program(
+            "fn probe() -> i32 { var p: ptr<i32> = nullptr; let flag = true; "
+            "if flag && false { return *p; } return 0; }"
+        );
+        analyze_test_program(
+            "const flag = false; fn probe() -> i32 { var p: ptr<i32> = nullptr; "
+            "if flag { return *p; } return 0; }"
+        );
         expect_diagnostic(
             analyze_test_errors(
-                "fn probe() -> i32 { var p: ptr<i32> = nullptr; let flag = false; "
-                "if flag { return *p; } return 0; }"
+                "fn probe() -> i32 { var p: ptr<i32> = nullptr; "
+                "if true { return *p; } return 0; }"
             ),
             DiagnosticCode::PointerNonNull
         );
         expect_diagnostic(
             analyze_test_errors(
-                "fn probe() -> i32 { var p: ptr<i32> = nullptr; let flag = true; "
-                "if flag && false { return *p; } return 0; }"
-            ),
-            DiagnosticCode::PointerNonNull
-        );
-        expect_diagnostic(
-            analyze_test_errors(
-                "fn probe() -> i32 { var p: ptr<i32> = nullptr; const flag = false; "
+                "fn probe(flag: bool) -> i32 { var p: ptr<i32> = nullptr; "
                 "if flag { return *p; } return 0; }"
             ),
             DiagnosticCode::PointerNonNull
@@ -274,39 +279,34 @@ const TestSuite suite([] static noexcept {
         expect_equal(program.bodies().body(*nested_body).kind(), BodyKind::Closure);
     };
 
-    "Semantic source contracts: unreachable operations remain checked"_test = [] static noexcept {
-        expect_diagnostic(
-            analyze_test_errors("fn invalid() { let x = 1; if false { x = 2; } }"),
-            DiagnosticCode::AccessImmutable
-        );
-        expect_diagnostic(
-            analyze_test_errors(
-                "fn set(&x: i32) {} fn invalid() { let x = 1; if false { set(&x); } }"
-            ),
-            DiagnosticCode::AccessImmutable
-        );
-        expect_diagnostic(
-            analyze_test_errors("fn invalid() { var x = 1; if false { x = (&&x); } }"),
-            DiagnosticCode::AccessOperationConflict
-        );
-        expect_diagnostic(
-            analyze_test_errors("fn invalid() { let result = if true { 1 } else { false }; }"),
-            DiagnosticCode::TypeMismatch
-        );
-        expect_diagnostic(
-            analyze_test_errors(
-                "struct E {} fn fail() -> bool throw E { throw E {}; } "
-                "fn invalid() { let value = false && fail(); }"
-            ),
-            DiagnosticCode::EffectUnmarked
-        );
-        expect_diagnostic(
-            analyze_test_errors(
-                "fn invalid() { var x = 1; if false { let moved = &&x; } let result = x; }"
-            ),
-            DiagnosticCode::AccessUnavailable
-        );
-    };
+    "Semantic source contracts: unreachable shapes retain admission checks"_test =
+        [] static noexcept {
+            expect_diagnostic(
+                analyze_test_errors("fn invalid() { let x = 1; if false { x = 2; } }"),
+                DiagnosticCode::AccessImmutable
+            );
+            expect_diagnostic(
+                analyze_test_errors(
+                    "fn set(&x: i32) {} fn invalid() { let x = 1; if false { set(&x); } }"
+                ),
+                DiagnosticCode::AccessImmutable
+            );
+            expect_diagnostic(
+                analyze_test_errors("fn invalid() { var x = 1; if false { x = (&&x); } }"),
+                DiagnosticCode::AccessOperationConflict
+            );
+            expect_diagnostic(
+                analyze_test_errors("fn invalid() { let result = if true { 1 } else { false }; }"),
+                DiagnosticCode::TypeMismatch
+            );
+            expect_diagnostic(
+                analyze_test_errors(
+                    "struct E {} fn fail() -> bool throw E { throw E {}; } "
+                    "fn invalid() { let value = false && fail(); }"
+                ),
+                DiagnosticCode::EffectUnmarked
+            );
+        };
 
     "Semantic control: irrefutable guard rejection retains completed writes"_test =
         [] static noexcept {

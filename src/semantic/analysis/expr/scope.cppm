@@ -11,4 +11,6 @@ struct ResolvedEnumCase final {
     std::optional<ConstantID> constant;
 };
 
+using ResolvedStaticCallable = std::variant<FunctionID, AsyncIntrinsicDeclID>;
+
 enum class ExpressionMode { Body, StaticRoot };

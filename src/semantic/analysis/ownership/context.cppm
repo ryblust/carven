@@ -3,6 +3,7 @@ module carven:semantic.analysis.ownership.context;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :semantic.analysis.ownership;
+import :semantic.semir.async;
 import :semantic.semir.contents;
 import :semantic.semir.program;
 import :semantic.semir.traversal;
@@ -43,10 +44,13 @@ struct OwnershipCapture final {
 
 // Only known Carven backing creates a storage loan. An empty set makes no claim
 // about native storage lifetime. Origins do not participate in solver identity.
+enum class OwnershipLoanProtection { Contents, Lifetime };
+
 struct OwnershipStorageLoan final {
     OwnershipProjectionPath holder;
     OwnershipPlace backing;
     ProgramOriginID origin;
+    OwnershipLoanProtection protection;
 
     auto operator<=>(const OwnershipStorageLoan& other) const noexcept -> std::strong_ordering;
     auto operator==(const OwnershipStorageLoan& other) const noexcept -> bool;
@@ -85,6 +89,8 @@ struct OwnershipObjectState final {
     std::optional<ProgramOriginID> taken;
     OwnershipRelationships relationships;
     bool modified;
+    // Absent before construction/after leave; false requires normal-exit intent.
+    std::optional<bool> child_intent;
 
     auto operator==(const OwnershipObjectState& other) const noexcept -> bool;
 };
@@ -105,6 +111,8 @@ struct OwnershipFailure final {
 
 struct OwnershipTestStopped final {};
 
+struct OwnershipCancelled final {};
+
 struct OwnershipBreak final {};
 
 struct OwnershipContinue final {};
@@ -113,6 +121,7 @@ using OwnershipExitPayload = std::variant<
     OwnershipReturn,
     OwnershipFailure,
     OwnershipTestStopped,
+    OwnershipCancelled,
     OwnershipBreak,
     OwnershipContinue>;
 
@@ -347,12 +356,14 @@ private:
         ProgramOriginID origin,
         bool direct = false
     ) noexcept -> void;
+    auto preserves_backing(TypeID type) const noexcept -> bool;
     auto store(
         OwnershipState& state,
         const OwnershipPlace& target,
         const OwnershipRelationships& relationships,
         ProgramOriginID origin,
-        bool definite = true
+        bool definite = true,
+        bool preserves_backing = false
     ) noexcept -> void;
     // Records whether a returned owner could have been transferred instead of copied.
     auto observe_returned_copy(
@@ -370,12 +381,14 @@ private:
         -> std::optional<TakeConflict>;
     auto storage_write_conflict(
         const OwnershipState& state,
-        const OwnershipPlace& target
+        const OwnershipPlace& target,
+        bool preserves_backing = false
     ) const noexcept -> std::optional<ProgramOriginID>;
     auto check_storage_write(
         const OwnershipState& state,
         const OwnershipPlace& target,
-        ProgramOriginID origin
+        ProgramOriginID origin,
+        bool preserves_backing = false
     ) noexcept -> void;
     auto protect_storage(const OwnershipRelationships& value) noexcept -> void;
     auto restore_storage_readers(std::size_t count) noexcept -> void;

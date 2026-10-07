@@ -53,13 +53,13 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
         case TargetSymbol::StdSize:        return symbol_info("::std::size_t", "cstddef");
         case TargetSymbol::Float:          return symbol_info("float");
         case TargetSymbol::Double:         return symbol_info("double");
+        case TargetSymbol::CoAwait:        return symbol_info("co_await", "coroutine");
+        case TargetSymbol::CoReturn:       return symbol_info("co_return", "coroutine");
         case TargetSymbol::RuntimeDeferredResult:
             return runtime_symbol_info(
                 "::carven::runtime::DeferredResult",
                 "carven/runtime/deferred.hpp"
             );
-        case TargetSymbol::RuntimeReadArg:
-            return runtime_symbol_info("::carven::runtime::ReadArg", "carven/runtime/passing.hpp");
         case TargetSymbol::RuntimeTransfer:
             return runtime_symbol_info(
                 "::carven::runtime::transfer",
@@ -87,6 +87,83 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
             return runtime_symbol_info(
                 "::carven::runtime::report_test_failure",
                 "carven/runtime/testing.hpp",
+                true
+            );
+        case TargetSymbol::RuntimeAsyncOperation:
+            return runtime_symbol_info(
+                "::carven::runtime::async::Operation",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncCompletion:
+            return runtime_symbol_info(
+                "::carven::runtime::async::Completion",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncSuccessBinding:
+            return runtime_symbol_info(
+                "::carven::runtime::async::SuccessBinding",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncChild:
+            return runtime_symbol_info(
+                "::carven::runtime::async::Child",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncChildScope:
+            return runtime_symbol_info(
+                "::carven::runtime::async::ChildScope",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncCurrentActivation:
+            return runtime_symbol_info(
+                "::carven::runtime::async::current_activation",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncClosingPolicy:
+            return runtime_symbol_info(
+                "::carven::runtime::async::ClosingPolicy",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncCancel:
+            return runtime_symbol_info(
+                "::carven::runtime::async::cancel",
+                "carven/runtime/async/async.hpp",
+                true
+            );
+        case TargetSymbol::RuntimeAsyncCancellationRequested:
+            return runtime_symbol_info(
+                "::carven::runtime::async::cancellation_requested",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncCancellationPoint:
+            return runtime_symbol_info(
+                "::carven::runtime::async::cancellation_point",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncYieldOnce:
+            return runtime_symbol_info(
+                "::carven::runtime::async::yield_once",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncAwaitCancellationPoint:
+            return runtime_symbol_info(
+                "::carven::runtime::async::await_cancellation_point",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncAwaitYieldOnce:
+            return runtime_symbol_info(
+                "::carven::runtime::async::await_yield_once",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncDriveRoot:
+            return runtime_symbol_info(
+                "::carven::runtime::async::drive_root",
+                "carven/runtime/async/async.hpp"
+            );
+        case TargetSymbol::RuntimeAsyncReportEntryCancelled:
+            return runtime_symbol_info(
+                "::carven::runtime::async::report_entry_cancelled",
+                "carven/runtime/async/async.hpp",
                 true
             );
         case TargetSymbol::RuntimeOutcome:

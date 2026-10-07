@@ -1,0 +1,211 @@
+import std::async using { cancel, cancellation_requested, cancellation_point, yield_once };
+
+async fn leaf(value: i32) -> i32 => value + 1;
+async fn other(value: i32) -> i32 => value + 2;
+fn cold(value: i32) => leaf(value);
+
+async fn write_later(&trace: i32, value: i32) -> i32 {
+    await yield_once();
+    trace = value;
+    return value;
+}
+
+struct Failure {
+    value: i32
+}
+
+async fn fallible(value: i32) -> i32 throw Failure {
+    await yield_once();
+    if value < 0 { throw Failure { value: value }; }
+    return value;
+}
+
+async fn recover() -> i32 {
+    try {
+        return await fallible(-7)?;
+    } catch {
+        Failure(error) => { return -error.value; },
+    }
+}
+
+fn synchronous_failure() -> i32 throw Failure {
+    throw Failure { value: 7 };
+}
+
+async fn catch_synchronous() -> i32 {
+    try {
+        return synchronous_failure()?;
+    } catch {
+        Failure(error) => {
+            await yield_once();
+            return error.value;
+        },
+    }
+}
+
+async fn finish_before_catch(&trace: i32) {
+    await yield_once();
+    trace = trace * 10 + 1;
+}
+
+async fn catch_after_close() -> i32 {
+    var trace: i32 = 0;
+    try {
+        async let child = finish_before_catch(&trace);
+        throw Failure { value: 7 };
+    } catch {
+        Failure(error) => {
+            trace = trace * 10 + 2;
+            await yield_once();
+            return trace + error.value;
+        },
+    }
+}
+
+async fn delayed(&finished: i32) {
+    for var step: i32 = 0; step < 16; ++step {
+        await yield_once();
+        await cancellation_point();
+    }
+    finished = 1;
+}
+
+async fn structured(flag: bool) -> i32 {
+    return if flag {
+        async let nested = leaf(20);
+        await nested
+    } else {
+        await other(20)
+    };
+}
+
+async fn stepped() -> i32 {
+    var iterations: i32 = 0;
+    for var step: i32 = 0; step < 2; step += await leaf(0) {
+        ++iterations;
+        continue;
+    }
+    return iterations;
+}
+
+async fn early_leaf(value: i32) -> i32 {
+    var selected: i32 = value + 1;
+    if value < 0 { return selected; }
+    selected += 10;
+    return selected;
+}
+
+async fn alternate_leaf(value: i32) -> i32 {
+    let selected = value * 2;
+    return selected;
+}
+
+async fn repeated_returns() -> i32 {
+    var selected: i32 = 40;
+    selected += await early_leaf(-2);
+    selected += await early_leaf(2);
+    selected += await alternate_leaf(3);
+    return selected;
+}
+
+fn argument(&trace: i32, digit: i32, value: i32) -> i32 {
+    trace = trace * 10 + digit;
+    return value;
+}
+
+fn replace_argument(&trace: i32, &backing: i32) -> i32 {
+    trace = trace * 10 + 3;
+    backing = 9;
+    return 5;
+}
+
+async fn arguments(snapshot: i32, first: i32, second: i32) -> i32 {
+    return snapshot * 100 + first * 10 + second;
+}
+
+fn argument_factory(snapshot: i32, unused: i32, second: i32) {
+    return arguments(second, snapshot, snapshot);
+}
+
+async fn fresh_capture() -> i32 {
+    var trace: i32 = 0;
+    var backing: i32 = 3;
+    let result = await argument_factory(
+        argument(&trace, 1, backing),
+        argument(&trace, 2, await yielding_leaf(3)),
+        replace_argument(&trace, &backing)
+    );
+    return trace * 1000 + backing * 100 + result;
+}
+
+async fn mark_child(&trace: i32) -> i32 {
+    trace = trace * 10 + 8;
+    return 0;
+}
+
+async fn yielding_leaf(value: i32) -> i32 {
+    await yield_once();
+    if cancellation_requested() { return 99; }
+    return value + 1;
+}
+
+fn selected(value: i32, const deferred: bool) {
+    const if deferred { return yielding_leaf(value); } else { return leaf(value); }
+}
+
+async fn stored_factory() -> i32 {
+    var trace: i32 = 1;
+    var value: i32 = 3;
+    async let child = mark_child(&trace);
+    let operation = selected(value, true);
+    value = 9;
+    trace = trace * 10 + 2;
+    let result = await operation;
+    trace = trace * 10 + result;
+    await child;
+    return trace;
+}
+
+async fn fresh_turn_boundary() -> i32 {
+    var trace: i32 = 1;
+    async let child = mark_child(&trace);
+    let ready = await selected(2, false);
+    trace = trace * 10 + ready;
+    let yielded = await selected(3, true);
+    trace = trace * 10 + yielded;
+    await child;
+    return trace;
+}
+
+async fn main() -> i32 {
+    var trace: i32 = 0;
+    let operation = write_later(&trace, 9);
+    println(trace);
+    println(await operation);
+    println(trace);
+    println(await cold(3));
+    let selected = if true { leaf(4) } else { other(4) };
+    println(await selected);
+    println(if await leaf(0) == 1 { await leaf(5) } else { await other(5) });
+    println(await recover());
+    println(await catch_synchronous());
+    println(await catch_after_close());
+    async let child = leaf(10);
+    println(await child);
+    async let constructed = leaf(await leaf(12));
+    println(await constructed);
+    println(await structured(true));
+    println(await structured(false));
+    println(await stepped());
+    var finished: i32 = 0;
+    async let sibling = delayed(&finished);
+    println(await leaf(11));
+    println(finished);
+    cancel(sibling);
+    println(cancellation_requested());
+    println(await repeated_returns());
+    println(await fresh_capture());
+    println(await fresh_turn_boundary());
+    println(await stored_factory());
+    return 19;
+}

@@ -375,7 +375,10 @@ auto BodyBatchElaborator::complete_function(FunctionID id) noexcept -> AnalysisT
 auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> AnalysisTask<void> {
     const auto& symbol = *functions.at(id.index());
     const auto ast = draft->syntax_tree(symbol.module_id).view();
-    const auto& item = ast.item(symbol.item_id);
+    if (!symbol.item_id) {
+        invariant_violation("source function has no AST item");
+    }
+    const auto& item = ast.item(*symbol.item_id);
     const auto& function = std::get<ASTFunctionDecl>(item.value);
     const auto* implementation = std::get_if<ASTFunctionBody>(&function.implementation);
     if (implementation == nullptr) {
@@ -422,6 +425,7 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
         policy != FailureContractPolicy::UndeclaredExplicit,
         false
     );
+    elaborator.async_body = function.async_span.has_value();
     elaborator.lexical_class =
         symbol.class_operation ? std::optional(symbol.class_operation->owner) : std::nullopt;
     for (auto index = 0uz; index < function.parameters.size(); ++index) {

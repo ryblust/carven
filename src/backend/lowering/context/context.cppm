@@ -106,6 +106,13 @@ public:
     auto pointer_type(TargetTypeID pointee, bool constant = false) noexcept -> TargetTypeID;
     auto optional_type(TargetTypeID value) noexcept -> TargetTypeID;
     auto variant_type(std::span<const TypeID> members) noexcept -> TargetTypeID;
+    auto async_type(
+        TargetSymbol symbol,
+        TypeID success,
+        FailureSetID failures,
+        TypeNameScope scope = TypeNameScope::Module
+    ) noexcept -> TargetTypeID;
+    auto callable_completion(CallableID callable_id) noexcept -> TargetTypeID;
     auto callable_result(CallableID callable_id) noexcept -> TargetTypeID;
     auto call_result(const SemCall& call) noexcept -> TargetTypeID;
     auto lower_type(TypeID id, TypeNameScope scope = TypeNameScope::Module) noexcept

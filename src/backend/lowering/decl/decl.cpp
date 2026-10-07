@@ -238,7 +238,11 @@ auto lower_cpp_export_facade(ModuleLowering& context, FunctionID function) noexc
                 false,
                 TypeNameScope::Global
             ),
-            .form = TargetFreeFunctionDefinition {.body = std::move(body)},
+            .form =
+                TargetFreeFunctionDefinition {
+                    .execution = TargetCallableExecution::Ordinary,
+                    .body = std::move(body)
+                },
             .constexpr_specifier = false,
             .static_specifier = false,
             .inline_specifier = false,
@@ -481,8 +485,21 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
     );
     const auto& callable = context.semantic().declarations().callable(function.callable);
     const auto& signature = context.semantic().callable_signatures().signature(callable.signature);
+    const auto asynchronous = signature.execution == CallableExecutionKind::Async;
+    const auto may_complete_cancelled =
+        asynchronous && context.semantic().may_complete_cancelled(function.callable);
+    if (asynchronous) {
+        if (with_arguments) {
+            invariant_violation("async entry retained process arguments");
+        }
+        call = call_expression(
+            intrinsic_expression(TargetSymbol::RuntimeAsyncDriveRoot),
+            target_expressions(std::move(call))
+        );
+    }
     auto status = integer_expression(0);
-    if (context.plan().failure_abi().members(signature.failures).empty()
+    if (!may_complete_cancelled
+        && context.plan().failure_abi().members(signature.failures).empty()
         && !context.semantic().may_stop_test(function.callable)) {
         body.push_back(generated_statement(TargetExprStmt {.expression = std::move(call)}));
     } else {
@@ -542,6 +559,25 @@ auto lower_entry_wrapper(ModuleLowering& context, FunctionID function_id) noexce
                         std::move(report)
                     )
                 }
+            ));
+        }
+        if (may_complete_cancelled) {
+            auto report = std::vector<TargetStmt>();
+            report.push_back(generated_statement(
+                TargetExprStmt {
+                    .expression = call_expression(
+                        intrinsic_expression(TargetSymbol::RuntimeAsyncReportEntryCancelled),
+                        target_expressions(source_site_expression(context, function.origin))
+                    )
+                }
+            ));
+            auto branches = std::vector<TargetIfBranch>();
+            branches.push_back(
+                {.condition = call_member(name_expression(outcome), "is_cancelled", {}),
+                 .body = std::move(report)}
+            );
+            body.push_back(generated_statement(
+                TargetIfStmt {.branches = std::move(branches), .else_body = std::nullopt}
             ));
         }
         status = TargetExpr {

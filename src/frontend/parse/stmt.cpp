@@ -98,7 +98,8 @@ auto Parser::parse_branch_block() noexcept -> std::optional<ASTBranchBlockID> {
 }
 
 auto Parser::starts_unambiguous_statement() const noexcept -> bool {
-    return check(TokenKind::Let)
+    return check(TokenKind::Async)
+        || check(TokenKind::Let)
         || check(TokenKind::Var)
         || check(TokenKind::Const)
         || check(TokenKind::Return)
@@ -146,7 +147,10 @@ auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
             .value = std::move(*form),
         });
     }
-    if (check(TokenKind::Let) || check(TokenKind::Var) || check(TokenKind::Const)) {
+    if (check(TokenKind::Async)
+        || check(TokenKind::Let)
+        || check(TokenKind::Var)
+        || check(TokenKind::Const)) {
         const auto declaration = parse_variable_declaration_head();
         if (!declaration) {
             return std::nullopt;
@@ -229,6 +233,14 @@ auto Parser::parse_statement() noexcept -> std::optional<ASTStmtID> {
 }
 
 auto Parser::parse_variable_declaration_head() noexcept -> std::optional<ASTVariableDecl> {
+    auto async_span = std::optional<Span>();
+    if (const auto keyword = match(TokenKind::Async)) {
+        async_span = keyword->span;
+        if (!check(TokenKind::Let)) {
+            fail_here("expected let after async");
+            return std::nullopt;
+        }
+    }
     const auto keyword = consume();
     const auto kind = keyword.kind == TokenKind::Var ? ASTBindingKind::Var
         : keyword.kind == TokenKind::Const           ? ASTBindingKind::Const
@@ -244,9 +256,10 @@ auto Parser::parse_variable_declaration_head() noexcept -> std::optional<ASTVari
         return std::nullopt;
     }
     return ASTVariableDecl {
-        .span = join(keyword.span, builder.expression(*initializer).span),
+        .span = join(async_span.value_or(keyword.span), builder.expression(*initializer).span),
         .kind = kind,
         .keyword_span = keyword.span,
+        .async_span = async_span,
         .target = slice(source, name.span) == "_" ? ASTBindingTarget {ASTDiscardBindingTarget {
                                                         .underscore_span = name.span,
                                                     }}
@@ -441,7 +454,10 @@ auto Parser::parse_for_header(std::optional<Span> const_span) noexcept
         .value = std::monostate {},
     };
     if (!check(TokenKind::Semicolon)) {
-        if (check(TokenKind::Let) || check(TokenKind::Var) || check(TokenKind::Const)) {
+        if (check(TokenKind::Async)
+            || check(TokenKind::Let)
+            || check(TokenKind::Var)
+            || check(TokenKind::Const)) {
             const auto declaration = parse_variable_declaration_head();
             if (!declaration) {
                 return std::nullopt;

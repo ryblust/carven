@@ -293,6 +293,7 @@ auto BodyElaborator::lambda_expression(
     }
     const auto callable = draft().append_body_callable(
         ConstructionCallableContract {
+            .execution = CallableExecutionKind::Synchronous,
             .parameters = std::move(parameters),
             .result = resolved_result,
             .failures = signature_failures,

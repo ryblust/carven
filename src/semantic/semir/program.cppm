@@ -1,5 +1,6 @@
 module carven:semantic.semir.program;
 
+import :semantic.semir.async;
 import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.contents;
@@ -125,6 +126,11 @@ public:
         FunctionID function,
         std::span<const ConstantID> arguments
     ) const noexcept -> std::optional<CallableID>;
+    // Outward cancellation of execution, independent of nominal failures.
+    auto may_complete_cancelled(CallableID callable) const noexcept -> bool;
+    // Completion observed by this await, excluding evaluation of its operand.
+    auto await_completion_may_be_cancelled(BodyID body, const SemAwait& occurrence) const noexcept
+        -> bool;
     auto may_stop_test(CallableID callable_id) const noexcept -> bool;
     auto may_stop_test(TypeID type) const noexcept -> bool;
     auto may_stop_test(const SemCall& call) const noexcept -> bool;
@@ -162,6 +168,7 @@ private:
     std::map<CallableID, std::size_t> instance_callables;
     std::vector<bool> executed_bodies;
     std::vector<bool> test_stops;
+    std::unique_ptr<const AsyncCancellationFacts> cancellation_facts;
     std::vector<TypeContents> contents;
     std::vector<CallableSurface> callable_surfaces;
 

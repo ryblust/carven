@@ -199,3 +199,103 @@ PrintedPair {
         end)
     target_end()
 end
+
+-- Async entry programs have their own root driver.
+for _, scenario in ipairs({
+    {
+        target = "carven-test-language-async-tail",
+        source = "tail.cv",
+        output = "true\ntrue\ntrue\ntrue\ntrue\n",
+    },
+    {
+        target = "carven-test-language-async-scheduling",
+        source = "scheduling.cv",
+        output = "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n",
+    },
+    {
+        target = "carven-test-language-async-constant",
+        source = "constant.cv",
+        output = "true\ntrue\ntrue\n1234\n10065\n1241\ntrue\n",
+    },
+    {
+        target = "carven-test-language-async",
+        source = "core.cv",
+        output = "0\n9\n9\n4\n5\n6\n7\n7\n19\n11\n14\n21\n22\n2\n12\n0\nfalse\n58\n124433\n1384\n1284\n",
+    },
+    {
+        target = "carven-test-language-async-contracts",
+        source = "contracts.cv",
+        output = "17\n13\n5\n10\n23\n20\n1\n12\n25\n2\n12\n9\n3\n12110\n129\n12384\n182\n",
+    },
+}) do
+    target(scenario.target)
+        set_default(false)
+        add_rules("@carven/carven", {tests = "external"})
+        set_languages("c++20")
+        add_files(path.join(language_dir, "async", scenario.source))
+        add_tests("behavior", {group = "language", run_timeout = 30000})
+        on_test(function (target)
+            local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
+            assert(output:gsub("\r\n", "\n") == scenario.output,
+                "async source behavior differs: " .. output)
+            assert(errors == "", "unexpected async entry report: " .. errors)
+            return true
+        end)
+    target_end()
+end
+
+for _, scenario in ipairs({
+    {
+        name = "failure",
+        ordered = {
+            "root failure selected\n",
+            "child cancellation requested: true\n",
+            "child closed\n",
+            "error: failure 'tests.language.async.entry_failure.EntryFailure' escaped the program entry\n",
+            "  failure: EntryFailure {}\n",
+            "  note: program exited with a failure status\n\n",
+        },
+        absent = {"cancellation escaped the program entry"},
+    },
+    {
+        name = "cancelled",
+        ordered = {
+            "root requested child cancellation\n",
+            "child accepts cancellation: true\n",
+            "error: cancellation escaped the program entry\n",
+            "  note: program exited with a failure status\n\n",
+        },
+        absent = {"unreachable child", "unreachable root", "error: failure '", "  failure:"},
+    },
+}) do
+    target("carven-test-language-async-entry-" .. scenario.name)
+        set_default(false)
+        add_rules("@carven/carven", {tests = "external"})
+        set_languages("c++20")
+        add_files(path.join(language_dir, "async", "entry_" .. scenario.name .. ".cv"))
+        add_tests("entry", {group = "language", run_timeout = 30000})
+        on_test(function (target)
+            local stdout_file, stderr_file = os.tmpfile(), os.tmpfile()
+            local status = os.execv(target:targetfile(), {}, {
+                try = true, timeout = 30000, stdout = stdout_file, stderr = stderr_file,
+            })
+            local stdout = (io.readfile(stdout_file) or ""):gsub("\r\n", "\n")
+            local stderr = (io.readfile(stderr_file) or ""):gsub("\r\n", "\n")
+            os.tryrm(stdout_file)
+            os.tryrm(stderr_file)
+            assert(status == 1, "async entry exit status differs: " .. tostring(status))
+            assert(stdout == "", "unexpected async entry stdout: " .. stdout)
+            local next_position = 1
+            for _, expected in ipairs(scenario.ordered) do
+                local first, last = stderr:find(expected, next_position, true)
+                assert(first, "async entry report omits or reorders: " .. expected .. "\n" .. stderr)
+                next_position = last + 1
+            end
+            for _, forbidden in ipairs(scenario.absent) do
+                assert(not stderr:find(forbidden, 1, true),
+                    "unexpected async entry report: " .. forbidden .. "\n" .. stderr)
+            end
+            return true
+        end)
+    target_end()
+end
