@@ -17,7 +17,6 @@ infrastructure contracts that product suites do not establish.
 | `cli` | Compiler processes, interpreted execution, and build integration | Arguments, reports, exit status, files, scheduling, and generation policy |
 | `formatter` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
 | `workspace` | Document snapshots and cached source queries | Source observations, result ownership, versions, and invalidation |
-| `analyzer` | Resident analysis sessions and process messages | Atomic requests, owning responses, message encoding, transport, and process lifetime |
 
 Place each case in the group that owns the tested boundary. Reuse fixtures and
 assertions across applicable configurations. Merge cases that repeat the same

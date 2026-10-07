@@ -18,22 +18,25 @@ auto ProgramDraft::begin(
     SyntaxProgram&& syntax,
     DiagnosticSink& sink,
     ExecutionOutput output,
-    SourceAnalysisBuilder* source_analysis
+    SourceAnalysisBuilder* source_analysis,
+    TimingOutput timings
 ) noexcept -> ProgramDraft {
-    return ProgramDraft(std::move(syntax).decompose(), sink, output, source_analysis);
+    return ProgramDraft(std::move(syntax).decompose(), sink, output, source_analysis, timings);
 }
 
 ProgramDraft::ProgramDraft(
     SyntaxProgramParts parts,
     DiagnosticSink& sink,
     ExecutionOutput output,
-    SourceAnalysisBuilder* source_analysis
+    SourceAnalysisBuilder* source_analysis,
+    TimingOutput timings
 ) noexcept
     : program_identity(ProgramIdentity::fresh()),
       provenance_appender(std::move(parts.provenance)),
       analysis_diagnostics(sink),
       output(output),
       source_observer(source_analysis),
+      analysis_timings(timings),
       state(State::Declarations),
       storage(
           program_identity,
@@ -41,6 +44,10 @@ ProgramDraft::ProgramDraft(
           std::move(parts.syntax_by_module),
           std::move(parts.resolved_import_graph)
       ) {}
+
+auto ProgramDraft::timings() const noexcept -> TimingOutput {
+    return analysis_timings;
+}
 
 auto ProgramDraft::source_analysis() const noexcept -> SourceAnalysisBuilder* {
     return source_observer;

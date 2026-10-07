@@ -21,6 +21,7 @@ import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
 import :semantic.analysis.types;
 import :semantic.analysis.types.display;
 import :semantic.analysis.validation;
@@ -44,7 +45,8 @@ BodyElaborator::BodyElaborator(
     std::optional<ConstructionTypeRef> result,
     FailureTermID outward_failure_term_id,
     bool accepts_catch_residual,
-    bool test_body
+    bool test_body,
+    bool observe_source
 ) noexcept
     : batch(std::addressof(owner)),
       source_module_id(source_module_id),
@@ -56,6 +58,7 @@ BodyElaborator::BodyElaborator(
       outward_failure_term_id(outward_failure_term_id),
       is_test(test_body),
       dead_failure_context {owner.draft->add_empty_failure_term(), true},
+      observe_sources(owner.draft->source_analysis() != nullptr && observe_source),
       reachable(true),
       reference_path_reachable(true),
       reported_unreachable(false) {
@@ -81,21 +84,7 @@ auto BodyElaborator::observe_source(
     if (!observe_sources || location.empty()) {
         return;
     }
-    auto builtin = std::optional<BuiltinType>();
-    if (type) {
-        if (const auto* concrete = std::get_if<TypeID>(&*type)) {
-            const auto canonical = draft().type_copy(*concrete);
-            if (const auto* value = std::get_if<BuiltinTypeValue>(&canonical.value)) {
-                builtin = value->kind;
-            }
-        }
-    }
-    source_occurrences.push_back(
-        {.location = locate(ast.source_id(), location),
-         .definition = definition,
-         .type = type,
-         .builtin_type = builtin}
-    );
+    source_occurrences.record(draft(), locate(ast.source_id(), location), definition, type);
 }
 
 auto BodyElaborator::draft() const noexcept -> ProgramDraft& {
@@ -265,7 +254,7 @@ auto BodyElaborator::compute_static_binding(LocalBindingID binding) noexcept
 auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noexcept
     -> AnalysisTask<std::optional<ConstantID>> {
     if (const auto* local = use_local(name)) {
-        observe_binding(span, local->storage.binding, local->type);
+        observe_binding(span, *local);
         co_return co_await compute_static_binding(local->storage.binding);
     }
     auto selected = (co_await find_global(name, span));
@@ -426,7 +415,8 @@ auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisTask<Const
         source_module_id,
         ast,
         type,
-        resolve_extent
+        resolve_extent,
+        observe_sources ? &source_occurrences : nullptr
     ));
     if (result) {
         auto prepared =
@@ -450,7 +440,8 @@ auto BodyElaborator::resolve_construction_type(const ASTConstructionType& type) 
         source_module_id,
         ast,
         type,
-        resolve_extent
+        resolve_extent,
+        observe_sources ? &source_occurrences : nullptr
     ));
     if (result) {
         auto prepared =

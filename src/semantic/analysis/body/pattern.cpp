@@ -279,6 +279,7 @@ auto BodyElaborator::build_pattern(
                             .static_source = false,
                             .role = BodyLocalRole::Local,
                             .unused_candidate = std::nullopt,
+                            .definition = std::nullopt,
                         },
                         DiagnosticCode::MatchBindingMismatch
                     );
@@ -298,11 +299,7 @@ auto BodyElaborator::build_pattern(
                         "or-pattern binding has a different type in another alternative"
                     ));
                 } else {
-                    observe_binding(
-                        binding.name_span,
-                        found->second.storage.binding,
-                        found->second.type
-                    );
+                    observe_binding(binding.name_span, *find_local(name));
                 }
                 co_return BuiltPattern {
                     .pattern = add(BindingPattern {.binding = found->second.storage.binding}),
@@ -504,7 +501,8 @@ auto BodyElaborator::resolve_pattern_constraint(const ASTConstraintOperand& oper
         source_module_id,
         ast,
         operand,
-        resolve_extent
+        resolve_extent,
+        observe_sources ? &source_occurrences : nullptr
     ));
 }
 

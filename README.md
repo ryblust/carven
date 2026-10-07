@@ -221,7 +221,7 @@ Format the repository's C++ and Carven sources, or check their formatting:
 ./xmakew format-check
 ```
 
-These commands use clang-format for C++ and [Formatter](tools/formatter/README.md)
+These commands use clang-format for C++ and [`carven-format`](tools/formatter/README.md)
 for `.cv` files. `format` applies changes; `format-check` reports violations
 without changing files.
 

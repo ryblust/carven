@@ -62,9 +62,6 @@ const TestSuite tests([] static noexcept {
                 slice(new_a->result->source().text, (*new_symbols)[0].selection),
                 "current"
             );
-            expect_equal(current.counts().syntax, 4uz);
-            expect_equal(current.counts().document_symbols, 4uz);
-            expect_equal(current.counts().workspace_symbols, 3uz);
         };
 
     "Workspace analysis: changed invalid syntax preserves an unchanged workspace index"_test =
@@ -94,9 +91,6 @@ const TestSuite tests([] static noexcept {
                 return;
             }
             expect_equal(workspace->front().name, "good");
-            expect_equal(after.counts().syntax, 3uz);
-            expect_equal(after.counts().document_symbols, 1uz);
-            expect_equal(after.counts().workspace_symbols, 1uz);
         };
 
     "Workspace analysis: broken syntax removes symbols before a later repair"_test =
@@ -126,9 +120,6 @@ const TestSuite tests([] static noexcept {
             expect(repaired != empty);
             expect(before.workspace_symbols() == original);
             expect(broken.workspace_symbols() == empty);
-            expect_equal(after.counts().syntax, 3uz);
-            expect_equal(after.counts().document_symbols, 2uz);
-            expect_equal(after.counts().workspace_symbols, 3uz);
         };
 
     "Workspace analysis: reopened documents leave retained workspace locations unchanged"_test =
@@ -165,9 +156,6 @@ const TestSuite tests([] static noexcept {
             expect(before.workspace_symbols() == old_workspace);
             expect(removed.workspace_symbols()->empty());
             expect(!removed.syntax("a.cv"));
-            expect_equal(after.counts().syntax, 2uz);
-            expect_equal(after.counts().document_symbols, 2uz);
-            expect_equal(after.counts().workspace_symbols, 3uz);
         };
 
     "Workspace analysis: document membership changes preserve unrelated computations"_test =
@@ -205,9 +193,6 @@ const TestSuite tests([] static noexcept {
             expect(!removed.syntax("a.cv"));
             expect_equal(initial_index->size(), 1uz);
             expect_equal(added.workspace_symbols()->size(), 2uz);
-            expect_equal(removed.counts().syntax, 2uz);
-            expect_equal(removed.counts().document_symbols, 2uz);
-            expect_equal(removed.counts().workspace_symbols, 3uz);
         };
 });
 

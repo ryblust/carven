@@ -32,11 +32,14 @@ auto analyze(
             std::move(syntax),
             diagnostics,
             output,
-            observations ? std::addressof(*observations) : nullptr
+            observations ? std::addressof(*observations) : nullptr,
+            timings
         );
 
         {
+            auto catalog_scope = TimingScope(timings, TimingStage::SemanticCatalog);
             auto catalog_result = build_analysis_catalog(draft);
+            catalog_scope.stop();
             if (!catalog_result.has_value()) {
                 return std::unexpected(std::move(catalog_result.error()));
             }
@@ -63,7 +66,8 @@ auto analyze(
         };
     }();
     if (observations) {
-        const auto occurrences = observations->finish(result.has_value());
+        const auto source_scope = TimingScope(timings, TimingStage::SourceObservations);
+        const auto occurrences = std::move(*observations).finish(result.has_value());
         source_output(occurrences);
     }
     return result;

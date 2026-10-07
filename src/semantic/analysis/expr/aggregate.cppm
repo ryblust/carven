@@ -206,6 +206,16 @@ auto construct_structure_expression(
     for (const auto& initializer : *initializers) {
         const auto execution = site.enter_operand_execution(state.completes);
         const auto& field = declaration.fields[initializer.declaration_index];
+        if (initializer.name) {
+            site.observe_field(
+                FieldProjection {
+                    .owner = structure->structure,
+                    .field_index = initializer.declaration_index
+                },
+                *initializer.name,
+                field.type
+            );
+        }
         const auto field_span = site.syntax().expression(initializer.expression).span;
         auto value = (co_await site.read_argument(initializer.expression, field.type));
         if (!value) {

@@ -32,7 +32,8 @@ auto select_structure_initializers(
         for (auto index = 0uz; index < positional->values.size(); ++index) {
             result.push_back(
                 {.declaration_index = static_cast<std::uint32_t>(index),
-                 .expression = positional->values[index]}
+                 .expression = positional->values[index],
+                 .name = std::nullopt}
             );
         }
         return result;
@@ -69,7 +70,9 @@ auto select_structure_initializers(
             }
             initialized[index] = true;
             result.push_back(
-                {.declaration_index = static_cast<std::uint32_t>(index), .expression = field.value}
+                {.declaration_index = static_cast<std::uint32_t>(index),
+                 .expression = field.value,
+                 .name = field.name_span}
             );
         }
         for (auto index = 0uz; index < fields.size(); ++index) {

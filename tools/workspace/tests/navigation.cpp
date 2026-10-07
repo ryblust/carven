@@ -90,6 +90,267 @@ auto expect_references(
 }
 
 const TestSuite tests([] static noexcept {
+    "Workspace analysis: scoped navigation reexecutes changed static dependencies"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto modules = std::array {
+                project_module("lib", "lib"),
+                project_module("app", "app"),
+                project_module("other", "other")
+            };
+            constexpr auto app = std::string_view(
+                "import lib using seed; const { println(seed()); } "
+                "fn f() -> i32 { const result = seed(); return result; }"
+            );
+            update(host, "lib", 1, "export const fn seed() -> i32 => 1;");
+            update(host, "app", 1, app);
+            update(host, "other", 1, "const { println(99); }");
+            const auto original = host.snapshot().hover(modules, "app", offset(app, "result"));
+            expect_type(original, BuiltinType::I32);
+            const auto output = [](const WorkspaceSemanticQuery& query) static noexcept {
+                auto text = std::string();
+                for (const auto& chunk : query.result->output()) {
+                    text += chunk.bytes;
+                }
+                return text;
+            };
+            expect_equal(output(original.analysis), "1\n");
+            update(host, "lib", 2, "export const fn seed() -> i32 => 2;");
+            const auto changed = host.snapshot().hover(modules, "app", offset(app, "result"));
+            expect_type(changed, BuiltinType::I32);
+            expect_equal(output(changed.analysis), "2\n");
+            expect_equal(output(original.analysis), "1\n");
+            expect_equal(host.snapshot().counts().semantic, 2uz);
+            const auto complete = host.snapshot().semantic(modules);
+            expect(complete.result->program() != nullptr);
+            expect_equal(output(complete), "2\n99\n");
+            const auto computations = host.snapshot().counts().semantic;
+            const auto after_check = host.snapshot().hover(modules, "app", offset(app, "result"));
+            expect_equal(output(after_check.analysis), "2\n");
+            expect_equal(after_check.analysis.documents.size(), 2uz);
+            expect_equal(host.snapshot().counts().semantic, computations);
+        };
+
+    "Workspace analysis: scoped navigation follows cyclic module imports once"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto modules = std::array {
+                project_module("a", "a"),
+                project_module("b", "b"),
+                project_module("other", "other")
+            };
+            constexpr auto text = std::string_view(
+                "import b using second; export fn first() -> i32 => 1; "
+                "fn probe() -> i32 { let result = second(); return result; }"
+            );
+            update(host, "a", 1, text);
+            update(host, "b", 1, "import a using first; export fn second() -> i32 => first();");
+            update(host, "other", 1, "broken input");
+            const auto query = host.snapshot().hover(modules, "a", offset(text, "result"));
+            expect_type(query, BuiltinType::I32);
+            expect_equal(query.analysis.documents.size(), 2uz);
+            expect_equal(host.snapshot().counts().syntax, 2uz);
+        };
+
+    "Workspace analysis: navigation keeps a closed dependency scope across unrelated edits"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto modules = std::array {
+                project_module("lib", "lib"),
+                project_module("middle", "middle"),
+                project_module("app", "app"),
+                project_module("other", "other")
+            };
+            constexpr auto app = std::string_view(
+                "import middle using answer; fn f() { let result = answer(); return result; }"
+            );
+            update(host, "lib", 1, "export const seed: i32 = 1;");
+            update(host, "middle", 1, "import lib using seed; export fn answer() => seed;");
+            update(host, "app", 1, app);
+            update(host, "other", 1, "fn broken() { let x = ; }");
+            const auto before = host.snapshot();
+            const auto original = before.hover(modules, "app", offset(app, "result"));
+            expect_type(original, BuiltinType::I32);
+            expect_equal(original.analysis.documents.size(), 3uz);
+            expect(!original.analysis.result->source("other"));
+            expect_equal(before.counts().semantic, 1uz);
+            expect_equal(before.counts().syntax, 3uz);
+            expect_target(
+                before.definition(modules, "app", offset(app, "answer()")),
+                "middle",
+                1,
+                offset("import lib using seed; export fn answer() => seed;", "answer"),
+                "answer"
+            );
+            update(host, "other", 2, "fn another_broken() { let x = ; }");
+            auto current = host.snapshot().hover(modules, "app", offset(app, "result"));
+            expect(current.analysis.result == original.analysis.result);
+            expect_equal(host.snapshot().counts().semantic, 1uz);
+            update(host, "lib", 2, "export const seed: i64 = 2;");
+            current = host.snapshot().hover(modules, "app", offset(app, "result"));
+            expect_type(current, BuiltinType::I64);
+            expect(current.analysis.result != original.analysis.result);
+            expect_type(original, BuiltinType::I32);
+            expect_type(before.hover(modules, "app", offset(app, "result")), BuiltinType::I32);
+            expect_equal(host.snapshot().counts().semantic, 2uz);
+            const auto complete = host.snapshot().semantic(modules);
+            expect(complete.result->program() == nullptr);
+            expect_equal(complete.documents.size(), 4uz);
+            expect(
+                host.snapshot().hover(modules, "app", offset(app, "result")).analysis.result
+                == current.analysis.result
+            );
+            expect(host.remove("lib"));
+            const auto missing = host.snapshot().hover(modules, "app", offset(app, "result"));
+            expect(missing.analysis.result->program() == nullptr);
+            expect(
+                find_diagnostic(
+                    missing.analysis.result->diagnostics(),
+                    DiagnosticCode::CompilationInput
+                )
+                != nullptr
+            );
+            update(host, "lib", 1, "export const seed: i32 = 3;");
+            expect_type(
+                host.snapshot().hover(modules, "app", offset(app, "result")),
+                BuiltinType::I32
+            );
+        };
+
+    "Workspace analysis: navigation scope stays stable across complete queries"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto modules = std::array {
+                project_module("lib", "lib"),
+                project_module("app", "app"),
+                project_module("other", "other")
+            };
+            constexpr auto app =
+                std::string_view("import lib using answer; fn f() -> i32 { return answer(); }");
+            constexpr auto other =
+                std::string_view("import lib using answer; fn g() -> i32 { return answer(); }");
+            update(host, "lib", 1, "export fn answer() -> i32 => 1;");
+            update(host, "app", 1, app);
+            update(host, "other", 1, other);
+            const auto snapshot = host.snapshot();
+            const auto use = offset(app, "answer()", true);
+            const auto focused = snapshot.definition(modules, "app", use);
+            if (!expect(focused.result.has_value())) {
+                return;
+            }
+            expect_equal(focused.analysis.documents.size(), 2uz);
+            const auto references = snapshot.references(modules, "app", use);
+            if (!expect(references.result.has_value())) {
+                return;
+            }
+            expect_equal(references.result->size(), 3uz);
+            expect_equal(references.analysis.documents.size(), 3uz);
+            expect_equal(snapshot.counts().semantic, 2uz);
+            const auto complete = snapshot.semantic(modules);
+            expect(complete.result == references.analysis.result);
+            const auto after_check = snapshot.definition(modules, "app", use);
+            expect(after_check.analysis.result == focused.analysis.result);
+            expect_equal(after_check.analysis.documents.size(), 2uz);
+            expect(!after_check.analysis.result->source("other"));
+            expect_equal(snapshot.counts().semantic, 2uz);
+            update(
+                host,
+                "other",
+                2,
+                "import lib using answer; fn changed() -> i32 { return answer(); }"
+            );
+            const auto after = host.snapshot();
+            expect(
+                after.definition(modules, "app", use).analysis.result == focused.analysis.result
+            );
+            expect_equal(after.counts().semantic, 2uz);
+            const auto fresh = after.semantic(modules);
+            expect(fresh.result != complete.result);
+            expect_equal(after.counts().semantic, 3uz);
+            // Reordering the project must preserve dependency scope and cache identity.
+            const auto reversed = std::array {modules[2], modules[1], modules[0]};
+            const auto reordered = after.definition(reversed, "app", use);
+            expect(reordered.analysis.result == focused.analysis.result);
+            expect_equal(reordered.analysis.documents.size(), 2uz);
+        };
+
+    "Workspace analysis: navigation resolves relative and craft imports and tracks graph changes"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto modules = std::array {
+                project_module("app", "pkg.app"),
+                project_module("lib", "pkg.lib"),
+                project_module("std", "crafts.carven.std.math"),
+                project_module("other", "other")
+            };
+            constexpr auto app = std::string_view(
+                "import .lib using answer; fn f() { let result = answer(); return result; }"
+            );
+            update(host, "app", 1, app);
+            update(host, "lib", 1, "import std::math using seed; export fn answer() => seed;");
+            update(host, "std", 1, "export const seed: i32 = 1;");
+            update(host, "other", 1, "export fn extra() -> i64 => 2;");
+            auto query = host.snapshot().hover(modules, "app", offset(app, "result"));
+            expect_type(query, BuiltinType::I32);
+            expect_equal(query.analysis.documents.size(), 3uz);
+            constexpr auto changed = std::string_view(
+                "import other using *; fn f() { let result = extra(); return result; }"
+            );
+            update(host, "app", 2, changed);
+            query = host.snapshot().hover(modules, "app", offset(changed, "result"));
+            expect_type(query, BuiltinType::I64);
+            expect_equal(query.analysis.documents.size(), 2uz);
+            const auto remapped = std::array {
+                modules[0],
+                modules[1],
+                modules[2],
+                project_module("other", "elsewhere")
+            };
+            const auto missing = host.snapshot().hover(remapped, "app", offset(changed, "result"));
+            expect(missing.analysis.result->program() == nullptr);
+            expect(
+                find_diagnostic(
+                    missing.analysis.result->diagnostics(),
+                    DiagnosticCode::ImportResolution
+                )
+                != nullptr
+            );
+            const auto duplicate =
+                std::array {modules[0], modules[1], project_module("other", "pkg.app")};
+            const auto invalid = host.snapshot().hover(duplicate, "app", offset(changed, "result"));
+            expect(
+                find_diagnostic(
+                    invalid.analysis.result->diagnostics(),
+                    DiagnosticCode::CompilationInput
+                )
+                != nullptr
+            );
+        };
+
+    "Workspace analysis: reachable syntax failure retains its scope and compiler diagnostic"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto modules = std::array {
+                project_module("app", "app"),
+                project_module("broken", "broken"),
+                project_module("other", "other")
+            };
+            constexpr auto app =
+                std::string_view("import broken using answer; fn probe() => answer();");
+            update(host, "app", 1, app);
+            update(host, "broken", 1, "fn answer(");
+            update(host, "other", 1, "fn unrelated() => missing;");
+            const auto query = host.snapshot().definition(modules, "app", offset(app, "answer()"));
+            expect(!query.result);
+            if (!expect(query.analysis.result != nullptr)) {
+                return;
+            }
+            expect(query.analysis.result->program() == nullptr);
+            expect_diagnostic(query.analysis.result->diagnostics(), DiagnosticCode::Syntax);
+            expect_equal(query.analysis.documents.size(), 2uz);
+            expect(!query.analysis.result->source("other"));
+        };
+
     "Workspace analysis: callable tokens retain checked reference types across call paths"_test =
         [] static noexcept {
             constexpr auto text = std::string_view(
@@ -258,6 +519,7 @@ const TestSuite tests([] static noexcept {
                             .occurrences =
                                 {
                                     offset(text, "answer: i32"),
+                                    offset(text, "derived: i32 = answer") + 15u,
                                     offset(text, "a = answer") + 4u,
                                 },
                         },
@@ -287,6 +549,7 @@ const TestSuite tests([] static noexcept {
                             .occurrences =
                                 {
                                     offset(text, "value: i32"),
+                                    offset(text, "value: b"),
                                     offset(text, "options.value") + 8u,
                                 },
                         },
@@ -296,6 +559,7 @@ const TestSuite tests([] static noexcept {
                             .occurrences =
                                 {
                                     offset(text, "enabled: bool"),
+                                    offset(text, "enabled: true"),
                                     offset(text, "options.enabled") + 8u,
                                 },
                         },
@@ -347,9 +611,6 @@ const TestSuite tests([] static noexcept {
                             BuiltinType::Usize
                         );
                     }
-                    const auto initializer = offset(text, "derived: i32 = answer") + 15u;
-                    expect(!snapshot.definition(modules, "a.cv", initializer).result);
-                    expect(!snapshot.hover(modules, "a.cv", initializer).result);
                     if (failed) {
                         const auto discarded = offset(text, "lost = answer") + 7u;
                         expect(!snapshot.definition(modules, "a.cv", discarded).result);
@@ -439,70 +700,93 @@ const TestSuite tests([] static noexcept {
                 std::string_view name;
                 std::uint32_t declaration;
                 std::vector<std::uint32_t> uses;
+                std::vector<std::uint32_t> library_uses;
             };
             const auto targets = std::array {
                 Target {
                     .name = "answer",
                     .declaration = offset(library, "answer"),
                     .uses =
-                        {offset(caller, "Value(answer)") + 6u, offset(caller, "return answer") + 7u}
+                        {offset(caller, "Value(answer)") + 6u,
+                         offset(caller, "return answer") + 7u},
+                    .library_uses = {}
                 },
                 Target {
                     .name = "State",
                     .declaration = offset(library, "State"),
-                    .uses = {offset(caller, "State::Ready")}
+                    .uses = {offset(caller, "State::Ready")},
+                    .library_uses = {}
                 },
                 Target {
                     .name = "Ready",
                     .declaration = offset(library, "Ready"),
-                    .uses = {offset(caller, "State::Ready") + 7u}
+                    .uses = {offset(caller, "State::Ready") + 7u},
+                    .library_uses = {}
                 },
                 Target {
                     .name = "Ready",
                     .declaration = offset(library, "Ready", true),
-                    .uses = {offset(caller, "Other::Ready") + 7u}
+                    .uses = {offset(caller, "Other::Ready") + 7u},
+                    .library_uses = {}
                 },
                 Target {
                     .name = "Choice",
                     .declaration = offset(library, "Choice"),
-                    .uses = {offset(caller, "Choice::Value"), offset(caller, "Choice::Value", true)}
+                    .uses =
+                        {offset(caller, "Choice::Value"),
+                         offset(caller, "empty: Choice") + 7u,
+                         offset(caller, "Choice::Value", true)},
+                    .library_uses = {}
                 },
                 Target {
                     .name = "Value",
                     .declaration = offset(library, "Value"),
                     .uses =
                         {offset(caller, "Choice::Value") + 8u,
-                         offset(caller, "Choice::Value", true) + 8u}
+                         offset(caller, "Choice::Value", true) + 8u},
+                    .library_uses = {}
                 },
                 Target {
                     .name = "Empty",
                     .declaration = offset(library, "Empty"),
-                    .uses = {offset(caller, ".Empty") + 1u, offset(caller, ".Empty", true) + 1u}
+                    .uses = {offset(caller, ".Empty") + 1u, offset(caller, ".Empty", true) + 1u},
+                    .library_uses = {}
+                },
+                Target {
+                    .name = "Record",
+                    .declaration = offset(library, "Record"),
+                    .uses = {offset(caller, "record: Record") + 8u},
+                    .library_uses = {}
                 },
                 Target {
                     .name = "Counter",
                     .declaration = offset(library, "Counter"),
-                    .uses = {offset(caller, "Counter::create")}
+                    .uses = {offset(caller, "Counter::create")},
+                    .library_uses = {offset(library, "-> Counter") + 3u}
                 },
                 Target {
                     .name = "create",
                     .declaration = offset(library, "create"),
-                    .uses = {offset(caller, "Counter::create") + 9u}
+                    .uses = {offset(caller, "Counter::create") + 9u},
+                    .library_uses = {}
                 },
                 Target {
                     .name = "read",
                     .declaration = offset(library, "read"),
-                    .uses = {offset(caller, "counter.read") + 8u}
+                    .uses = {offset(caller, "counter.read") + 8u},
+                    .library_uses = {}
                 },
                 Target {
                     .name = "identity",
                     .declaration = offset(library, "identity"),
-                    .uses = {offset(caller, "identity(record")}
+                    .uses = {offset(caller, "identity(record")},
+                    .library_uses = {}
                 },
                 Target {
                     .name = "value",
                     .declaration = offset(library, "value"),
-                    .uses = {offset(caller, "record.value") + 7u}
+                    .uses = {offset(caller, "record.value") + 7u},
+                    .library_uses = {}
                 },
             };
             each(targets, &Target::name, [&](const Target& target) noexcept {
@@ -524,7 +808,10 @@ const TestSuite tests([] static noexcept {
                 }
                 const auto references = snapshot.references(modules, "lib.cv", target.declaration);
                 if (!expect(references.result.has_value())
-                    || !expect_equal(references.result->size(), target.uses.size() + 1uz)) {
+                    || !expect_equal(
+                        references.result->size(),
+                        target.uses.size() + target.library_uses.size() + 1uz
+                    )) {
                     return;
                 }
                 for (auto index = 0uz; index < target.uses.size(); ++index) {
@@ -534,21 +821,17 @@ const TestSuite tests([] static noexcept {
                     expect_equal(location.range.start(), target.uses[index]);
                     expect_equal(slice(caller, location.range), target.name);
                 }
-                const auto& declaration = references.result->back();
-                expect_equal(declaration.document, "lib.cv");
-                expect_equal(declaration.version, 3ll);
-                expect_equal(declaration.range.start(), target.declaration);
-                expect_equal(slice(library, declaration.range), target.name);
+                auto library_references = target.library_uses;
+                library_references.push_back(target.declaration);
+                std::ranges::sort(library_references);
+                for (auto index = 0uz; index < library_references.size(); ++index) {
+                    const auto& location = (*references.result)[target.uses.size() + index];
+                    expect_equal(location.document, "lib.cv");
+                    expect_equal(location.version, 3ll);
+                    expect_equal(location.range.start(), library_references[index]);
+                    expect_equal(slice(library, location.range), target.name);
+                }
             });
-            expect_target(
-                snapshot.definition(modules, "lib.cv", offset(library, "Record")),
-                "lib.cv",
-                3,
-                offset(library, "Record"),
-                "Record"
-            );
-            expect(!snapshot.definition(modules, "app.cv", offset(caller, "record: Record") + 8u)
-                        .result);
         };
 
     "Workspace analysis: declaration navigation survives failed bodies without admitting their uses"_test =
@@ -886,7 +1169,19 @@ const TestSuite tests([] static noexcept {
                 std::string_view("fn f() -> i32 { let value = 1; return value; }");
             update(host, "a.cv", 2, text);
             const auto repaired = host.snapshot();
-            expect(!repaired.hover(modules, "absent.cv", 0u).result);
+            update(host, "outside.cv", 1, "fn outside() {}");
+            const auto computations = host.snapshot().counts().semantic;
+            for (const auto document : std::array {"absent.cv", "outside.cv"}) {
+                const auto hover = host.snapshot().hover(modules, document, 0u);
+                const auto definition = host.snapshot().definition(modules, document, 0u);
+                expect(!hover.result);
+                expect(!definition.result);
+                expect(!hover.analysis.result);
+                expect(!definition.analysis.result);
+                expect(hover.analysis.documents.empty());
+                expect(definition.analysis.documents.empty());
+            }
+            expect_equal(host.snapshot().counts().semantic, computations);
             expect(
                 !repaired.hover(modules, "a.cv", static_cast<std::uint32_t>(text.size())).result
             );

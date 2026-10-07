@@ -1,6 +1,7 @@
 module carven:workspace.analysis;
 
 import :source.text;
+import :support.timing;
 import :workspace.document;
 import :workspace.semantic;
 import :workspace.symbols;
@@ -34,6 +35,7 @@ struct WorkspaceDocumentVersion final {
 
 struct WorkspaceSemanticQuery final {
     // Semantic IDs and source spans belong to this owning result.
+    // Only hover/definition targets outside the project have no analysis owner.
     std::shared_ptr<const WorkspaceSemanticAnalysis> result;
     // Content results can be reused while client versions advance.
     std::vector<WorkspaceDocumentVersion> documents;
@@ -61,19 +63,27 @@ struct WorkspaceReferencesQuery final {
 };
 
 // Snapshots retain their input versions, source owners, and lazily cached results.
-// Host updates and queries are serialized; this prototype has no thread safety.
+// Host updates and lazy queries must be serialized.
 class WorkspaceAnalysisSnapshot final {
 public:
     auto syntax(std::string_view document) const noexcept -> std::optional<WorkspaceSyntaxQuery>;
     auto document_symbols(std::string_view document) const noexcept
         -> std::optional<WorkspaceSymbolsQuery>;
     auto workspace_symbols() const noexcept -> std::shared_ptr<const WorkspaceSymbolList>;
-    // The explicit module set is the semantic dependency boundary. Its provider
-    // currently performs full analysis when any selected input changes.
-    auto semantic(std::span<const WorkspaceProjectModule> project) const noexcept
-        -> WorkspaceSemanticQuery;
+    // The explicit module set is the semantic dependency boundary.
+    // An uncached selection runs full compiler analysis.
+    // Timings are delivered only for a new computation and borrowed for this call.
+    auto semantic(
+        std::span<const WorkspaceProjectModule> project,
+        TimingOutput timings = {}
+    ) const noexcept -> WorkspaceSemanticQuery;
     // Source types and resolved references share one occurrence index. Failed
-    // analysis can retain builtin types and definitions from completed bodies.
+    // analysis can retain builtin types and definitions from admitted declarations
+    // and successfully constructed bodies.
+    // Hover and definition analyze the document's transitive import closure.
+    // Invalid project mappings are rejected by the compiler input boundary.
+    // Targets outside the project return no information or analysis owner.
+    // Returned document versions describe the actual analyzed module selection.
     // Offsets and ranges are UTF-8 byte positions; queries use half-open ranges.
     auto hover(
         std::span<const WorkspaceProjectModule> project,

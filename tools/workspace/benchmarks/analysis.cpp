@@ -3,6 +3,8 @@ module;
 
 module carven:workspace.benchmark.analysis;
 
+import :semantic.semir.program;
+import :semantic.semir.type;
 import :source.module_path;
 import :workspace.analysis;
 import :workspace.document;
@@ -100,8 +102,24 @@ auto query(const WorkspaceAnalysisHost& host, const Project& project) noexcept -
         project.modules.front().document,
         static_cast<std::uint32_t>(project.texts.front().find("return") + 7)
     );
-    require(hover.result.has_value(), "generated literal has no hover result");
-    require(hover.analysis.result == result.result, "hover did not share the semantic query");
+    const auto full = result.result->hover(
+        project.modules.front().document,
+        static_cast<std::uint32_t>(project.texts.front().find("return") + 7)
+    );
+    require(hover.result.has_value() && full.has_value(), "generated literal has no hover result");
+    require(
+        hover.result->location.document == full->location.document
+            && hover.result->location.range == full->location.range,
+        "scoped and complete hover locations differ"
+    );
+    const auto scoped_type = std::get<TypeID>(hover.result->type);
+    const auto full_type = std::get<TypeID>(full->type);
+    const auto& scoped = hover.analysis.result->program()->types().type(scoped_type).value;
+    const auto& complete = result.result->program()->types().type(full_type).value;
+    require(
+        std::get<BuiltinTypeValue>(scoped).kind == std::get<BuiltinTypeValue>(complete).kind,
+        "scoped and complete hover types differ"
+    );
 }
 
 auto run_round(const Project& project, Timings& timings) noexcept -> void {

@@ -310,7 +310,7 @@ auto BodyExprSite::resolve_static_name(std::string_view name, Span span) noexcep
     if (!*value) {
         co_return std::unexpected(ExpressionNotAdmitted {});
     }
-    body.observe_binding(span, local->storage.binding, local->type);
+    body.observe_binding(span, *local);
     co_return std::move(**value);
 }
 

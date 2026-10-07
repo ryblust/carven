@@ -77,11 +77,16 @@ a successful result.
 `semantic.analysis.source` defines `SourceOccurrence` and the optional recipient
 `SourceAnalysisOutput`, a `FunctionRef` borrowed for the analysis call. An empty
 recipient skips recording. Analysis records source occurrences at identity
-resolution sites, using direct AST token spans. Declaration selections derive
-from catalog symbols, local binding origins, and selected field metadata.
-Declaration and nominal gates admit declaration observations; each successfully
-constructed body contributes its own observations. Locations and definitions
-survive an unrelated body error.
+resolution sites, using direct AST token spans. Shared name and type resolution
+records declarations, annotations, module constant expressions, captures, and
+field selections. Declaration selections derive from catalog symbols, local
+binding origins, and field metadata. Declaration observations are collected through
+analysis and admitted after declaration and nominal checks. Each non-staged source
+body uses a construction transaction; successful nested closures merge into their
+parent, and a parent failure discards the combined observations. Completed bodies
+retain observations through an unrelated body error. Staged bodies and their
+nested closures are excluded; specialization consumes SemIR without adding
+instance-specific source-token types.
 Successful publication supplies `TypeID` values owned by the delivered program;
 failed analysis retains only known `BuiltinType` values. Analysis delivers one
 batch before returning. The recipient copies retained records from the borrowed
@@ -249,3 +254,15 @@ syntax; SemIR owns data, storage, and structural contracts without depending on
 AST or analysis. Post-solve analysis consumes final operations. The backend
 consumes published semantics. Runtime support implements native operations;
 build orchestration supplies source batches and native build inputs.
+
+## Analysis timing
+
+An optional `TimingOutput` recipient receives synchronous analysis intervals.
+Lexing and parsing accumulate across modules. The semantic total contains catalog,
+declaration completion, remaining body-batch construction, solving, validation,
+and source-observation detail intervals. Declaration completion can demand typed
+bodies and static execution; the body interval covers work remaining after that
+phase. Validation includes ownership, nullability, and publication. Detail times
+are included in the semantic total. Source-observation intervals cover declaration
+seeding and final delivery; body recording and type resolution belong to body
+construction and solving. Empty recipients perform no clock reads.

@@ -289,7 +289,8 @@ auto BodyElaborator::range_for_statement(
                 .static_source = source.const_span.has_value(),
                 .role = header.write_marker.has_value() ? BodyLocalRole::Local
                                                         : BodyLocalRole::RangeRead,
-                .unused_candidate = std::nullopt
+                .unused_candidate = std::nullopt,
+                .definition = std::nullopt,
             },
             DiagnosticCode::NameDuplicateLocal
         );

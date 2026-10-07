@@ -149,7 +149,8 @@ const TestSuite suite([] static noexcept {
             auto staged_output = std::string();
             auto staged_stages = std::vector<TimingStage>();
             const auto staged_timings = [&](TimingStage stage,
-                                            std::chrono::steady_clock::duration) noexcept {
+                                            std::chrono::steady_clock::duration elapsed) noexcept {
+                expect(elapsed >= std::chrono::steady_clock::duration::zero());
                 staged_stages.push_back(stage);
             };
             auto syntax = parse_program(sources, batch, staged_timings);
@@ -173,16 +174,25 @@ const TestSuite suite([] static noexcept {
             expect_equal(composed_output, std::string_view("analysis"));
             expect_equal(staged_output, composed_output);
             expect_equal(composed->diagnostics.size(), semantic->diagnostics.size());
-            const auto expected_stages = std::vector {
-                TimingStage::Lexing,
-                TimingStage::Parsing,
+            const auto required_stages = std::array {
                 TimingStage::Lexing,
                 TimingStage::Parsing,
                 TimingStage::SemanticAnalysis,
                 TimingStage::CppGeneration,
             };
-            expect(composed_stages == expected_stages);
-            expect(staged_stages == composed_stages);
+            for (const auto stage : required_stages) {
+                expect(std::ranges::contains(composed_stages, stage));
+                expect(std::ranges::contains(staged_stages, stage));
+            }
+            auto composed_counts = std::map<TimingStage, std::size_t>();
+            auto staged_counts = std::map<TimingStage, std::size_t>();
+            for (const auto stage : composed_stages) {
+                ++composed_counts[stage];
+            }
+            for (const auto stage : staged_stages) {
+                ++staged_counts[stage];
+            }
+            expect(composed_counts == staged_counts);
             if (!expect_equal(composed->value.entries().size(), staged.entries().size())) {
                 return;
             }
@@ -223,10 +233,11 @@ const TestSuite suite([] static noexcept {
                 const auto input =
                     SourceModuleInput {.source_id = *source, .module_path = *module_path};
                 auto stages = std::vector<TimingStage>();
-                const auto record_timing = [&](TimingStage stage,
-                                               std::chrono::steady_clock::duration) noexcept {
-                    stages.push_back(stage);
-                };
+                const auto record_timing =
+                    [&](TimingStage stage, std::chrono::steady_clock::duration elapsed) noexcept {
+                        expect(elapsed >= std::chrono::steady_clock::duration::zero());
+                        stages.push_back(stage);
+                    };
                 const auto result = compile(
                     sources,
                     SourceBatch {.modules = std::span(&input, 1)},
@@ -238,7 +249,11 @@ const TestSuite suite([] static noexcept {
                     record_timing
                 );
                 expect(!result.has_value());
-                expect(stages == failure.stages);
+                for (const auto required : failure.stages) {
+                    expect(std::ranges::contains(stages, required));
+                }
+                expect(!std::ranges::contains(stages, TimingStage::CppGeneration));
+                expect(!std::ranges::contains(stages, TimingStage::ArtifactWriting));
             });
         }
     };

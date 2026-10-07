@@ -10,6 +10,7 @@ import :semantic.semir.program;
 import :source.batch;
 import :source.manager;
 import :source.text;
+import :support.timing;
 import :workspace.document;
 import :workspace.semantic;
 import std;
@@ -162,8 +163,11 @@ auto WorkspaceSemanticAnalysis::source(std::string_view document) const noexcept
     return source_manager.view(found->second);
 }
 
-auto analyze_workspace_project(std::span<const WorkspaceSemanticInput> inputs) noexcept
-    -> std::shared_ptr<const WorkspaceSemanticAnalysis> {
+auto analyze_workspace_project(
+    std::span<const WorkspaceSemanticInput> inputs,
+    TimingOutput timings
+) noexcept -> std::shared_ptr<const WorkspaceSemanticAnalysis> {
+    auto preparation_scope = TimingScope(timings, TimingStage::SourceLoading);
     auto sources = SourceManager();
     auto source_ids = std::map<std::string, SourceID, std::less<>>();
     auto modules = std::vector<SourceModuleInput>();
@@ -205,6 +209,7 @@ auto analyze_workspace_project(std::span<const WorkspaceSemanticInput> inputs) n
         // than silently collapsing two modules onto the same source snapshot.
         modules.push_back({.source_id = found->second, .module_path = input.module.module_path});
     }
+    preparation_scope.stop();
     if (diagnostics.empty()) {
         const auto capture = [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
             output.push_back({.stream = stream, .bytes = std::string(bytes)});
@@ -212,8 +217,13 @@ auto analyze_workspace_project(std::span<const WorkspaceSemanticInput> inputs) n
         const auto collect = [&](std::span<const SourceOccurrence> facts) noexcept {
             occurrences.assign(facts.begin(), facts.end());
         };
-        auto analyzed =
-            analyze_compilation(sources, SourceBatch {.modules = modules}, capture, {}, collect);
+        auto analyzed = analyze_compilation(
+            sources,
+            SourceBatch {.modules = modules},
+            capture,
+            timings,
+            collect
+        );
         if (analyzed) {
             program.emplace(std::move(analyzed->value));
             diagnostics = std::move(analyzed->diagnostics);
@@ -221,6 +231,7 @@ auto analyze_workspace_project(std::span<const WorkspaceSemanticInput> inputs) n
             diagnostics = std::move(analyzed.error());
         }
     }
+    const auto index_scope = TimingScope(timings, TimingStage::SourceIndex);
     return std::shared_ptr<const WorkspaceSemanticAnalysis>(new WorkspaceSemanticAnalysis(
         std::move(sources),
         std::move(source_ids),

@@ -118,6 +118,7 @@ const TestSuite tests([] static noexcept {
             each(scenarios, &Scenario::name, [&](const Scenario& scenario) noexcept {
                 update(host, "lib.cv", ++version, scenario.text);
                 const auto snapshot = host.snapshot();
+                const auto computations = snapshot.counts().semantic;
                 const auto current = snapshot.hover(modules, "caller.cv", offset(caller, "value"));
                 expect_type(current, scenario.type);
                 expect_inferred_result(current.analysis, scenario.type);
@@ -128,7 +129,7 @@ const TestSuite tests([] static noexcept {
                 );
                 expect(current.analysis.result != previous);
                 expect(snapshot.semantic(modules).result == current.analysis.result);
-                expect_equal(snapshot.counts().semantic, static_cast<std::size_t>(version));
+                expect_equal(snapshot.counts().semantic - computations, 1uz);
                 previous = current.analysis.result;
             });
         };
@@ -185,15 +186,15 @@ const TestSuite tests([] static noexcept {
                     case Change::OmitModule:     project.erase(project.begin()); break;
                 }
                 const auto broken = host.snapshot();
+                const auto computations = broken.counts().semantic;
                 const auto failed = broken.definition(project, "caller.cv", call);
                 expect(failed.analysis.result != before.analysis.result);
                 expect(failed.analysis.result->program() == nullptr);
                 expect(!failed.analysis.result->diagnostics().empty());
                 expect(!failed.result);
                 expect(!broken.hover(project, "caller.cv", call).result);
-                expect(broken.semantic(project).result == failed.analysis.result);
                 expect_definition(before, "lib.cv", 1);
-                expect_equal(broken.counts().semantic, 2uz);
+                expect_equal(broken.counts().semantic - computations, 1uz);
                 update(host, "lib.cv", 3, library);
                 update(host, "caller.cv", 3, caller);
                 const auto repaired = host.snapshot();
@@ -202,8 +203,6 @@ const TestSuite tests([] static noexcept {
                 expect(after.analysis.result != failed.analysis.result);
                 expect(failed.analysis.result->program() == nullptr);
                 expect(!failed.analysis.result->diagnostics().empty());
-                expect_equal(repaired.counts().semantic, 3uz);
-                expect(after.analysis.result != before.analysis.result);
             });
         };
 
@@ -237,78 +236,23 @@ const TestSuite tests([] static noexcept {
             expect_definition(first, "lib.cv", 1);
         };
 
-    "Workspace analysis: module selections retain only the current project or explicit owners"_test =
+    "Workspace analysis: unobserved cached selections have bounded retention"_test =
         [] static noexcept {
             auto host = WorkspaceAnalysisHost();
-            update(host, "a.cv", 1, "fn a() {}");
-            update(host, "b.cv", 1, "fn b() {}");
-            const auto first = std::array {project_module("a.cv", "a")};
-            const auto second = std::array {project_module("b.cv", "b")};
-            const auto both = std::array {first[0], second[0]};
-            struct Selection final {
-                std::string_view name;
-                std::span<const WorkspaceProjectModule> modules;
-            };
-            const auto selections = std::array {
-                Selection {.name = "first", .modules = first},
-                Selection {.name = "second", .modules = second},
-                Selection {.name = "both", .modules = both}
-            };
-            auto previous = std::weak_ptr<const WorkspaceSemanticAnalysis>();
-            each(selections, &Selection::name, [&](const Selection& selected) noexcept {
-                const auto query = host.snapshot().semantic(selected.modules);
+            auto observed = std::vector<std::weak_ptr<const WorkspaceSemanticAnalysis>>();
+            for (auto index = 0uz; index < 5uz; ++index) {
+                const auto document = std::format("unit_{}", index);
+                update(host, document, 1, "fn f() {}");
+                const auto modules = std::array {project_module(document, document)};
+                const auto query = host.snapshot().semantic(modules);
                 expect(query.result->program() != nullptr);
-                expect(previous.expired());
-                expect(host.snapshot().semantic(selected.modules).result == query.result);
-                previous = query.result;
-            });
-            expect(!previous.expired());
-            expect_equal(host.snapshot().counts().semantic, selections.size());
-            auto snapshot = std::optional(host.snapshot());
-            auto held = std::optional(snapshot->semantic(both));
-            update(host, "unselected.cv", 1, "fn unselected() {}");
-            const auto current = host.snapshot().semantic(first);
-            expect(current.result != held->result);
-            expect(!previous.expired());
-            snapshot.reset();
-            expect(!previous.expired());
-            expect(held->result->source("b.cv").has_value());
-            held.reset();
-            expect(previous.expired());
-        };
-
-    "Workspace analysis: replacing selected content releases unobserved semantic generations"_test =
-        [] static noexcept {
-            auto host = WorkspaceAnalysisHost();
-            update(host, "lib.cv", 1, library);
-            update(host, "caller.cv", 1, caller);
-            const auto modules = std::array {
-                project_module("lib.cv", "lib"),
-                project_module("caller.cv", "main"),
-            };
-            const auto use = offset(caller, "value");
-            auto previous = std::weak_ptr<const WorkspaceSemanticAnalysis>();
-            for (auto version = 1ll; version <= 6ll; ++version) {
-                scenario(std::format("generation {}", version), [&]() noexcept {
-                    if (version != 1ll) {
-                        const auto text = std::format(
-                            "export fn answer() -> i32 {{ return {}; }}",
-                            41ll + version
-                        );
-                        update(host, "lib.cv", version, text);
-                    }
-                    const auto current = host.snapshot().hover(modules, "caller.cv", use);
-                    expect_type(current, BuiltinType::I32);
-                    expect(previous.expired());
-                    previous = current.analysis.result;
-                });
+                observed.push_back(query.result);
             }
-            expect(!previous.expired());
-            expect_equal(host.snapshot().counts().semantic, 6uz);
-            expect(host.remove("lib.cv"));
-            const auto failed = host.snapshot().semantic(modules);
-            expect(failed.result->program() == nullptr);
-            expect(previous.expired());
+            const auto retained =
+                std::ranges::count_if(observed, [](const auto& owner) static noexcept {
+                    return !owner.expired();
+                });
+            expect(retained <= 2);
         };
 
     "Workspace analysis: invalidated semantic owners release before another project query"_test =

@@ -42,7 +42,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
         }
         const auto binding = local->storage.binding;
         const auto foreign = binding.owner() != active_builder().identity();
-        observe_binding(name.name_span, binding, local->type);
+        observe_binding(name.name_span, *local);
         if (foreign || local->static_source || local->role == BodyLocalRole::RangeRead) {
             auto value = co_await read_local(*local, span);
             if (!value) {

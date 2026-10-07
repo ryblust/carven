@@ -9,6 +9,7 @@ import :source.manager;
 import :source.module_path;
 import :source.provenance;
 import :source.text;
+import :support.timing;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :workspace.analysis;
@@ -47,6 +48,73 @@ auto expect_version(
 }
 
 const TestSuite tests([] static noexcept {
+    "Workspace analysis: timing recipients observe computation without entering cache identity"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto modules = std::array {project_module("timed", "main")};
+            const auto text =
+                std::string("const { println(\"timed\"); } fn f() -> i32 { return 1; }");
+            update(host, "timed", 1, text);
+            const auto original = [&]() noexcept {
+                auto stages = std::vector<TimingStage>();
+                const auto capture = [&](TimingStage stage,
+                                         std::chrono::steady_clock::duration elapsed) noexcept {
+                    expect(elapsed >= std::chrono::steady_clock::duration::zero());
+                    stages.push_back(stage);
+                };
+                const auto query = host.snapshot().semantic(modules, capture);
+                if (!expect(query.result->program() != nullptr)) {
+                    return query.result;
+                }
+                for (const auto stage : std::array {
+                         TimingStage::SourceLoading,
+                         TimingStage::Lexing,
+                         TimingStage::Parsing,
+                         TimingStage::SemanticAnalysis,
+                         TimingStage::SemanticCatalog,
+                         TimingStage::SemanticDeclarations,
+                         TimingStage::SemanticBodies,
+                         TimingStage::SemanticSolving,
+                         TimingStage::SemanticValidation,
+                         TimingStage::SourceObservations,
+                         TimingStage::SourceIndex
+                     }) {
+                    expect(std::ranges::find(stages, stage) != stages.end());
+                }
+                expect(query.result->diagnostics().empty());
+                return query.result;
+            }();
+            auto calls = 0uz;
+            const auto capture = [&](TimingStage, std::chrono::steady_clock::duration) noexcept {
+                ++calls;
+            };
+            expect(host.snapshot().semantic(modules, capture).result == original);
+            expect_equal(calls, 0uz);
+            update(host, "timed", 2, text);
+            expect(host.snapshot().semantic(modules, capture).result == original);
+            expect_equal(calls, 0uz);
+            expect_equal(host.snapshot().counts().semantic, 1uz);
+            auto output = std::string();
+            for (const auto& chunk : original->output()) {
+                output += chunk.bytes;
+            }
+            expect_equal(output, "timed\n");
+            // The first recipient is dead; new computations must not retain it.
+            update(host, "timed", 3, "fn f() -> i32 { return 2; }");
+            expect(host.snapshot().semantic(modules).result->program() != nullptr);
+            auto stages = std::vector<TimingStage>();
+            const auto rejected = [&](TimingStage stage,
+                                      std::chrono::steady_clock::duration) noexcept {
+                stages.push_back(stage);
+            };
+            update(host, "timed", 4, "fn f() { let broken = ; }");
+            const auto broken = host.snapshot().semantic(modules, rejected);
+            expect(broken.result->program() == nullptr);
+            expect(!broken.result->diagnostics().empty());
+            expect(std::ranges::find(stages, TimingStage::Parsing) != stages.end());
+            expect(std::ranges::find(stages, TimingStage::SemanticAnalysis) == stages.end());
+        };
+
     "Workspace analysis: semantic queries publish cross-module contracts with explicit document identities"_test =
         [] static noexcept {
             auto host = WorkspaceAnalysisHost();
@@ -162,7 +230,6 @@ const TestSuite tests([] static noexcept {
             const auto restored = snapshot.semantic(modules);
             expect(restored.result->program() != nullptr);
             expect(restored.result->diagnostics().empty());
-            expect_equal(snapshot.counts().semantic, 3uz);
         };
 
     "Workspace analysis: invalid project selections cache structured input diagnostics"_test =

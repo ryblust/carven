@@ -5,6 +5,7 @@ import :diagnostics.code;
 import :diagnostics.suggestion;
 import :semantic.analysis.names;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
 import :semantic.analysis.types;
 import :support.invariant;
 import :support.visit;
@@ -68,7 +69,8 @@ auto select_global_symbol(
     ImportUsage& import_usage,
     ProgramModuleID module_id,
     std::string_view name,
-    Span origin
+    Span origin,
+    SourceObservation* observations
 ) noexcept -> AnalysisResult<const CatalogSymbol*> {
     const auto candidates = catalog.lookup(module_id, name);
     if (candidates.empty()) {
@@ -113,10 +115,18 @@ auto select_global_symbol(
     if (symbol == nullptr) {
         invariant_violation("catalog lookup returned an invalid symbol identity");
     }
+    if (observations) {
+        observations->record(
+            draft,
+            locate(source_id(draft, module_id), origin),
+            catalog.declaration_location(draft, selected.symbol_id),
+            std::nullopt
+        );
+    }
     return symbol;
 }
 
-auto resolve_named(
+auto resolve_named_value(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
@@ -124,6 +134,7 @@ auto resolve_named(
     const ASTNamedType& named,
     ASTView syntax,
     ArrayExtentResolver resolve_extent,
+    SourceObservation* observations,
     Span origin
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
@@ -144,7 +155,8 @@ auto resolve_named(
             module_id,
             syntax,
             named.arguments.front(),
-            resolve_extent
+            resolve_extent,
+            observations
         ));
         if (!element) {
             co_return std::unexpected(element.error());
@@ -194,7 +206,8 @@ auto resolve_named(
                     module_id,
                     syntax,
                     argument,
-                    resolve_extent
+                    resolve_extent,
+                    observations
                 ));
                 if (!resolved.has_value()) {
                     co_return std::unexpected(resolved.error());
@@ -243,8 +256,15 @@ auto resolve_named(
     if (const auto builtin = source_builtin_type(name)) {
         co_return ConstructionTypeRef {draft.builtin_type(*builtin)};
     }
-    const auto selected =
-        select_global_symbol(draft, catalog, import_usage, module_id, name, component);
+    const auto selected = select_global_symbol(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        name,
+        component,
+        observations
+    );
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
     }
@@ -271,6 +291,39 @@ auto resolve_named(
     ));
 }
 
+auto resolve_named(
+    ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ImportUsage& import_usage,
+    ProgramModuleID module_id,
+    const ASTNamedType& named,
+    ASTView syntax,
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations,
+    Span origin
+) noexcept -> AnalysisTask<ConstructionTypeRef> {
+    auto result = co_await resolve_named_value(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        named,
+        syntax,
+        resolve_extent,
+        observations,
+        origin
+    );
+    if (result && observations) {
+        observations->record(
+            draft,
+            locate(syntax.source_id(), named.components.back().name_span),
+            std::nullopt,
+            *result
+        );
+    }
+    co_return result;
+}
+
 auto resolve_function_type(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
@@ -278,7 +331,8 @@ auto resolve_function_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTFunctionType& function,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     auto parameters = std::vector<ConstructionCallableParameter>();
     parameters.reserve(function.parameters.size());
@@ -290,7 +344,8 @@ auto resolve_function_type(
             module_id,
             syntax,
             parameter.type,
-            resolve_extent
+            resolve_extent,
+            observations
         ));
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
@@ -318,7 +373,8 @@ auto resolve_function_type(
         module_id,
         syntax,
         function.result_type,
-        resolve_extent
+        resolve_extent,
+        observations
     ));
     if (!result.has_value()) {
         co_return std::unexpected(result.error());
@@ -332,7 +388,8 @@ auto resolve_function_type(
             module_id,
             syntax,
             *function.throw_clause,
-            resolve_extent
+            resolve_extent,
+            observations
         ));
         if (!resolved.has_value()) {
             co_return std::unexpected(resolved.error());
@@ -358,7 +415,8 @@ auto resolve_type_value(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTType& source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -371,6 +429,7 @@ auto resolve_type_value(
                     named,
                     syntax,
                     resolve_extent,
+                    observations,
                     source_type.span
                 ));
             },
@@ -382,7 +441,8 @@ auto resolve_type_value(
                     module_id,
                     syntax,
                     pointer.target,
-                    resolve_extent
+                    resolve_extent,
+                    observations
                 ));
                 if (!target) {
                     co_return std::unexpected(target.error());
@@ -414,7 +474,8 @@ auto resolve_type_value(
                     module_id,
                     syntax,
                     view.element_type,
-                    resolve_extent
+                    resolve_extent,
+                    observations
                 ));
                 if (!element) {
                     co_return std::unexpected(element.error());
@@ -446,7 +507,8 @@ auto resolve_type_value(
                     module_id,
                     syntax,
                     array.element_type,
-                    resolve_extent
+                    resolve_extent,
+                    observations
                 ));
                 if (!element.has_value()) {
                     co_return std::unexpected(element.error());
@@ -489,7 +551,8 @@ auto resolve_type_value(
                     module_id,
                     syntax,
                     function,
-                    resolve_extent
+                    resolve_extent,
+                    observations
                 ));
             },
         }
@@ -514,7 +577,8 @@ auto resolve_source_type(
     ProgramModuleID module_id,
     ASTView syntax,
     ASTTypeID source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await resolve_type_value(
         draft,
@@ -523,7 +587,8 @@ auto resolve_source_type(
         module_id,
         syntax,
         syntax.type(source_type),
-        resolve_extent
+        resolve_extent,
+        observations
     ));
 }
 
@@ -534,7 +599,8 @@ auto resolve_source_construction_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstructionType& source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -547,6 +613,7 @@ auto resolve_source_construction_type(
                     named,
                     syntax,
                     resolve_extent,
+                    observations,
                     source_type.span
                 ));
             },
@@ -558,7 +625,8 @@ auto resolve_source_construction_type(
                     module_id,
                     syntax,
                     function,
-                    resolve_extent
+                    resolve_extent,
+                    observations
                 ));
             },
         }
@@ -572,7 +640,8 @@ auto resolve_source_constraint_type(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTConstraintOperand& source_type,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -594,6 +663,7 @@ auto resolve_source_constraint_type(
                     },
                     syntax,
                     resolve_extent,
+                    observations,
                     source_type.span
                 ));
             },
@@ -608,7 +678,8 @@ auto resolve_source_constraint_type(
                         .span = source_type.span,
                         .value = array,
                     },
-                    resolve_extent
+                    resolve_extent,
+                    observations
                 ));
             },
         }
@@ -648,7 +719,8 @@ auto resolve_failure_types(
     ProgramModuleID module_id,
     ASTView syntax,
     const ASTThrowClause& clause,
-    ArrayExtentResolver resolve_extent
+    ArrayExtentResolver resolve_extent,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<std::vector<TypeID>> {
     auto failures = std::vector<TypeID>();
     auto first_seen = std::flat_map<TypeID, Span>();
@@ -661,7 +733,8 @@ auto resolve_failure_types(
             module_id,
             syntax,
             source_failure,
-            resolve_extent
+            resolve_extent,
+            observations
         ));
         if (!built.has_value()) {
             co_return std::unexpected(built.error());

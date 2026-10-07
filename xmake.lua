@@ -89,7 +89,6 @@ includes("tests/internal")
 includes("tests/language")
 includes("tools/formatter")
 includes("tools/workspace")
-includes("tools/analyzer")
 
 task("bench")
     set_menu({

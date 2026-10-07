@@ -82,6 +82,9 @@ auto BodyBatchElaborator::build_const_block(
     if (!body) {
         co_return std::unexpected(body.error());
     }
+    if (elaborator.observe_sources) {
+        draft->source_analysis()->add_body(std::move(elaborator.source_occurrences));
+    }
     draft->add_body_draft(std::move(*body));
     static_body_roots.push_back({
         .body = id,
@@ -156,9 +159,6 @@ auto BodyElaborator::run(const ASTCallableBody& source_body) noexcept
     }
     collect_unused_locals(frames.front());
     regions.front().failures = BodyFailures(outward_failure_term_id);
-    if (observe_sources) {
-        draft().source_analysis()->add_body(source_occurrences);
-    }
     co_return std::move(body_builder).finish(std::move(regions.front()));
 }
 
@@ -214,6 +214,9 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
             }
             if (test.is_const) {
                 static_body_roots.push_back({.body = body_id, .source = source});
+            }
+            if (elaborator.observe_sources) {
+                draft->source_analysis()->add_body(std::move(elaborator.source_occurrences));
             }
             draft->add_body_draft(std::move(*body));
         }
@@ -423,9 +426,9 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
         result_type,
         actual_failures,
         policy != FailureContractPolicy::UndeclaredExplicit,
-        false
+        false,
+        !draft->staged_function(id)
     );
-    elaborator.observe_sources = draft->source_analysis() != nullptr && !draft->staged_function(id);
     elaborator.lexical_class =
         symbol.class_operation ? std::optional(symbol.class_operation->owner) : std::nullopt;
     for (auto index = 0uz; index < function.parameters.size(); ++index) {
@@ -441,6 +444,9 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
     if (pending.has_value()) {
         const auto result = elaborator.inferred_result_type();
         draft->complete_function_result(declaration.callable, result);
+    }
+    if (elaborator.observe_sources) {
+        draft->source_analysis()->add_body(std::move(elaborator.source_occurrences));
     }
     draft->add_body_draft(std::move(*body));
     co_return {};

@@ -18,6 +18,7 @@ import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
 import :semantic.analysis.stage.session;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
@@ -47,6 +48,7 @@ struct BodyLocalStorage final {
     bool static_source;
     BodyLocalRole role;
     std::optional<Span> unused_candidate;
+    std::optional<SourceSpan> definition;
 };
 
 using BodyLocalNames = std::flat_map<std::string, BodyLocalStorage, std::less<>>;
@@ -244,7 +246,8 @@ public:
         std::optional<ConstructionTypeRef> result,
         FailureTermID outward_failure_term_id,
         bool accepts_catch_residual,
-        bool test_body
+        bool test_body,
+        bool observe_source = true
     ) noexcept;
     // Inside a const block, a const test or a module const block every local
     // is a static value and control is ordinary execution.
@@ -265,8 +268,12 @@ public:
         const ASTFunctionParameter& source,
         const ConstructionCallableParameter& contract
     ) noexcept -> AnalysisResult<void>;
-    auto add_capture(Span name, ConstructionTypeRef type, CaptureMode mode) noexcept
-        -> AnalysisResult<void>;
+    auto add_capture(
+        Span name,
+        ConstructionTypeRef type,
+        CaptureMode mode,
+        std::optional<SourceSpan> definition
+    ) noexcept -> AnalysisResult<void>;
     auto inferred_result_type() const noexcept -> ConstructionTypeRef;
     auto local_was_used(std::string_view name) const noexcept -> bool;
     auto run(const ASTCallableBody& source_body) noexcept -> AnalysisTask<StructuredBodyDraft>;
@@ -279,8 +286,7 @@ private:
         std::optional<SourceSpan> definition,
         std::optional<ConstructionTypeRef> type
     ) noexcept -> void;
-    auto observe_binding(Span location, LocalBindingID binding, ConstructionTypeRef type) noexcept
-        -> void;
+    auto observe_binding(Span location, const BodyLocalStorage& local) noexcept -> void;
     auto catalog() const noexcept -> AnalysisCatalogView;
     auto import_usage() const noexcept -> ImportUsage&;
     auto origin(Span span) noexcept -> ProgramOriginID;
@@ -621,8 +627,8 @@ private:
     // The frame count at entry to each enclosing const block. A local of an
     // earlier frame is visible inside the block only when it is static.
     std::vector<std::size_t> const_block_frames;
-    bool observe_sources = false;
-    std::vector<SourceOccurrenceDraft> source_occurrences;
+    bool observe_sources;
+    SourceObservation source_occurrences;
     bool static_body = false;
     std::optional<LifetimeRegionID> active_full_expression;
     bool reachable;

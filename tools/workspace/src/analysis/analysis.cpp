@@ -1,6 +1,8 @@
 module carven:workspace.analysis.impl;
 
+import :frontend.program.parse;
 import :source.text;
+import :support.timing;
 import :workspace.analysis;
 import :workspace.document;
 import :workspace.semantic;
@@ -45,15 +47,15 @@ struct WorkspaceIndex final {
     std::shared_ptr<const WorkspaceSymbolList> result;
 };
 
-class CachedProject final {
+class CachedAnalysis final {
 public:
-    CachedProject(
+    CachedAnalysis(
         std::vector<WorkspaceSemanticInput> inputs,
         std::shared_ptr<WorkspaceQueryCounts> counts
     ) noexcept;
     auto matches_documents(const DocumentMap& documents) const noexcept -> bool;
     auto matches_modules(std::span<const WorkspaceProjectModule> modules) const noexcept -> bool;
-    auto result() noexcept -> std::shared_ptr<const WorkspaceSemanticAnalysis>;
+    auto result(TimingOutput timings) noexcept -> std::shared_ptr<const WorkspaceSemanticAnalysis>;
 
 private:
     std::vector<WorkspaceSemanticInput> inputs;
@@ -64,13 +66,8 @@ private:
 } // namespace
 
 class WorkspaceQueries final {
-    struct ResolvedProject final {
-        std::shared_ptr<CachedProject> node;
-        std::vector<WorkspaceDocumentVersion> versions;
-    };
-
-    struct RecentRequest final {
-        std::vector<WorkspaceProjectModule> modules;
+    struct ResolvedSelection final {
+        std::shared_ptr<CachedAnalysis> node;
         std::vector<WorkspaceDocumentVersion> versions;
     };
 
@@ -79,24 +76,30 @@ public:
         DocumentMap inputs,
         std::shared_ptr<WorkspaceQueryCounts> counts,
         std::shared_ptr<const WorkspaceIndex> previous_index,
-        std::shared_ptr<CachedProject> cached_project
+        std::vector<std::shared_ptr<CachedAnalysis>> cached_selections
     ) noexcept;
     auto document(std::string_view key) const noexcept -> std::optional<DocumentEntry>;
     auto documents() const noexcept -> DocumentMap;
     auto counts() const noexcept -> std::shared_ptr<WorkspaceQueryCounts>;
     auto index_baseline() const noexcept -> std::shared_ptr<const WorkspaceIndex>;
     auto symbols() noexcept -> std::shared_ptr<const WorkspaceSymbolList>;
-    auto semantic(std::span<const WorkspaceProjectModule> project) noexcept -> ResolvedProject;
-    auto project_baseline() const noexcept -> std::shared_ptr<CachedProject>;
+    auto resolve(std::span<const WorkspaceProjectModule> project) noexcept -> ResolvedSelection;
+    auto selections() const noexcept -> std::vector<std::shared_ptr<CachedAnalysis>>;
+    auto navigation(
+        std::span<const WorkspaceProjectModule> project,
+        std::string_view document
+    ) noexcept -> std::optional<ResolvedSelection>;
+    auto navigation_modules(
+        std::span<const WorkspaceProjectModule> project,
+        std::string_view document
+    ) noexcept -> std::optional<std::vector<WorkspaceProjectModule>>;
 
 private:
     DocumentMap inputs;
     std::shared_ptr<WorkspaceQueryCounts> work_counts;
     std::shared_ptr<const WorkspaceIndex> previous_index;
     std::shared_ptr<const WorkspaceIndex> cached_index;
-    std::shared_ptr<CachedProject> cached_project;
-    // A single recent request avoids canonical sorting on repeated UI queries.
-    std::optional<RecentRequest> recent;
+    std::vector<std::shared_ptr<CachedAnalysis>> cached_selections;
 };
 
 DocumentQueries::DocumentQueries(
@@ -153,16 +156,15 @@ WorkspaceQueries::WorkspaceQueries(
     DocumentMap inputs,
     std::shared_ptr<WorkspaceQueryCounts> counts,
     std::shared_ptr<const WorkspaceIndex> previous_index,
-    std::shared_ptr<CachedProject> cached_project
+    std::vector<std::shared_ptr<CachedAnalysis>> cached_selections
 ) noexcept
     : inputs(std::move(inputs)),
       work_counts(std::move(counts)),
       previous_index(std::move(previous_index)),
-      cached_project(std::move(cached_project)) {
-    // Old snapshots keep their nodes; this snapshot inherits only valid inputs.
-    if (this->cached_project && !this->cached_project->matches_documents(this->inputs)) {
-        this->cached_project.reset();
-    }
+      cached_selections(std::move(cached_selections)) {
+    std::erase_if(this->cached_selections, [&](const auto& selection) noexcept {
+        return !selection->matches_documents(this->inputs);
+    });
 }
 
 auto WorkspaceQueries::document(std::string_view key) const noexcept
@@ -224,14 +226,14 @@ auto WorkspaceQueries::symbols() noexcept -> std::shared_ptr<const WorkspaceSymb
     return cached_index->result;
 }
 
-CachedProject::CachedProject(
+CachedAnalysis::CachedAnalysis(
     std::vector<WorkspaceSemanticInput> inputs,
     std::shared_ptr<WorkspaceQueryCounts> counts
 ) noexcept
     : inputs(std::move(inputs)),
       work_counts(std::move(counts)) {}
 
-auto CachedProject::matches_documents(const DocumentMap& documents) const noexcept -> bool {
+auto CachedAnalysis::matches_documents(const DocumentMap& documents) const noexcept -> bool {
     return std::ranges::all_of(inputs, [&](const WorkspaceSemanticInput& input) noexcept {
         const auto found = documents.find(input.module.document);
         const auto source =
@@ -240,7 +242,7 @@ auto CachedProject::matches_documents(const DocumentMap& documents) const noexce
     });
 }
 
-auto CachedProject::matches_modules(std::span<const WorkspaceProjectModule> modules) const noexcept
+auto CachedAnalysis::matches_modules(std::span<const WorkspaceProjectModule> modules) const noexcept
     -> bool {
     return std::ranges::equal(
         inputs,
@@ -250,29 +252,17 @@ auto CachedProject::matches_modules(std::span<const WorkspaceProjectModule> modu
     );
 }
 
-auto CachedProject::result() noexcept -> std::shared_ptr<const WorkspaceSemanticAnalysis> {
+auto CachedAnalysis::result(TimingOutput timings) noexcept
+    -> std::shared_ptr<const WorkspaceSemanticAnalysis> {
     if (!cached_result) {
         ++work_counts->semantic;
-        cached_result = analyze_workspace_project(inputs);
+        cached_result = analyze_workspace_project(inputs, timings);
     }
     return cached_result;
 }
 
-auto WorkspaceQueries::semantic(std::span<const WorkspaceProjectModule> project) noexcept
-    -> ResolvedProject {
-    if (recent && std::ranges::equal(project, recent->modules)) {
-        return {.node = cached_project, .versions = recent->versions};
-    }
-    auto versions = std::map<std::string, std::int64_t>();
-    for (const auto& module : project) {
-        if (const auto entry = document(module.document)) {
-            versions.emplace(module.document, entry->version);
-        }
-    }
-    auto document_versions = std::vector<WorkspaceDocumentVersion>();
-    for (const auto& [document, version] : versions) {
-        document_versions.push_back({.document = document, .version = version});
-    }
+auto WorkspaceQueries::resolve(std::span<const WorkspaceProjectModule> project) noexcept
+    -> ResolvedSelection {
     auto modules = std::vector<WorkspaceProjectModule>(project.begin(), project.end());
     std::ranges::sort(
         modules,
@@ -282,7 +272,14 @@ auto WorkspaceQueries::semantic(std::span<const WorkspaceProjectModule> project)
                 < std::pair(right.module_path.value(), std::string_view(right.document));
         }
     );
-    if (!cached_project || !cached_project->matches_modules(modules)) {
+    const auto found = std::ranges::find_if(cached_selections, [&](const auto& selection) noexcept {
+        return selection->matches_modules(modules);
+    });
+    auto node = std::shared_ptr<CachedAnalysis>();
+    if (found != cached_selections.end()) {
+        node = *found;
+        cached_selections.erase(found);
+    } else {
         auto resolved = std::vector<WorkspaceSemanticInput>();
         for (const auto& module : modules) {
             const auto entry = document(module.document);
@@ -290,19 +287,95 @@ auto WorkspaceQueries::semantic(std::span<const WorkspaceProjectModule> project)
                 {.module = module, .source = entry ? entry->queries->source_owner() : nullptr}
             );
         }
-        cached_project = std::make_shared<CachedProject>(std::move(resolved), work_counts);
-    }
-    recent.emplace(
-        RecentRequest {
-            .modules = std::vector<WorkspaceProjectModule>(project.begin(), project.end()),
-            .versions = std::move(document_versions)
+        node = std::make_shared<CachedAnalysis>(std::move(resolved), work_counts);
+        if (cached_selections.size() == 2uz) {
+            cached_selections.erase(cached_selections.begin());
         }
-    );
-    return {.node = cached_project, .versions = recent->versions};
+    }
+    cached_selections.push_back(node);
+    auto versions = std::map<std::string_view, std::int64_t>();
+    for (const auto& module : modules) {
+        if (const auto entry = document(module.document)) {
+            versions.emplace(module.document, entry->version);
+        }
+    }
+    auto document_versions = std::vector<WorkspaceDocumentVersion>();
+    for (const auto& [document, version] : versions) {
+        document_versions.push_back({.document = std::string(document), .version = version});
+    }
+    return {.node = std::move(node), .versions = std::move(document_versions)};
 }
 
-auto WorkspaceQueries::project_baseline() const noexcept -> std::shared_ptr<CachedProject> {
-    return cached_project;
+auto WorkspaceQueries::selections() const noexcept -> std::vector<std::shared_ptr<CachedAnalysis>> {
+    return cached_selections;
+}
+
+auto WorkspaceQueries::navigation_modules(
+    std::span<const WorkspaceProjectModule> project,
+    std::string_view document
+) noexcept -> std::optional<std::vector<WorkspaceProjectModule>> {
+    auto by_path = std::map<std::string_view, const WorkspaceProjectModule*, std::less<>>();
+    auto documents = std::set<std::string_view>();
+    const auto* root = static_cast<const WorkspaceProjectModule*>(nullptr);
+    auto valid_project = true;
+    for (const auto& module : project) {
+        if (!by_path.emplace(module.module_path.value(), &module).second
+            || !documents.insert(module.document).second) {
+            valid_project = false;
+        }
+        if (module.document == document) {
+            root = &module;
+        }
+    }
+    if (root == nullptr) {
+        return std::nullopt;
+    }
+    if (!valid_project) {
+        return std::vector<WorkspaceProjectModule>(project.begin(), project.end());
+    }
+    auto pending = std::vector<const WorkspaceProjectModule*> {root};
+    auto selected = std::set<std::string_view>();
+    auto modules = std::vector<WorkspaceProjectModule>();
+    for (auto index = 0uz; index < pending.size(); ++index) {
+        const auto& module = *pending[index];
+        if (!selected.insert(module.module_path.value()).second) {
+            continue;
+        }
+        modules.push_back(module);
+        const auto entry = this->document(module.document);
+        if (!entry) {
+            continue;
+        }
+        const auto parsed = entry->queries->syntax();
+        const auto ast = parsed->recovered_syntax();
+        if (!ast) {
+            continue;
+        }
+        for (const auto& import : ast->module_imports()) {
+            const auto path = resolve_import_path(
+                parsed->source().text,
+                module.module_path,
+                import.module_reference
+            );
+            if (!path) {
+                continue;
+            }
+            const auto found = by_path.find(path->value());
+            if (found == by_path.end()) {
+                continue;
+            }
+            pending.push_back(found->second);
+        }
+    }
+    return modules;
+}
+
+auto WorkspaceQueries::navigation(
+    std::span<const WorkspaceProjectModule> project,
+    std::string_view document
+) noexcept -> std::optional<ResolvedSelection> {
+    const auto modules = navigation_modules(project, document);
+    return modules ? std::optional(resolve(*modules)) : std::nullopt;
 }
 
 WorkspaceAnalysisSnapshot::WorkspaceAnalysisSnapshot(
@@ -338,11 +411,12 @@ auto WorkspaceAnalysisSnapshot::workspace_symbols() const noexcept
 }
 
 auto WorkspaceAnalysisSnapshot::semantic(
-    std::span<const WorkspaceProjectModule> project
+    std::span<const WorkspaceProjectModule> project,
+    TimingOutput timings
 ) const noexcept -> WorkspaceSemanticQuery {
-    auto resolved = queries->semantic(project);
+    auto resolved = queries->resolve(project);
     return WorkspaceSemanticQuery {
-        .result = resolved.node->result(),
+        .result = resolved.node->result(timings),
         .documents = std::move(resolved.versions)
     };
 }
@@ -352,7 +426,14 @@ auto WorkspaceAnalysisSnapshot::hover(
     std::string_view document,
     std::uint32_t offset
 ) const noexcept -> WorkspaceHoverQuery {
-    auto analysis = semantic(project);
+    auto resolved = queries->navigation(project, document);
+    if (!resolved) {
+        return {.analysis = {.result = nullptr, .documents = {}}, .result = std::nullopt};
+    }
+    auto analysis = WorkspaceSemanticQuery {
+        .result = resolved->node->result({}),
+        .documents = std::move(resolved->versions)
+    };
     const auto result = analysis.result->hover(document, offset);
     return WorkspaceHoverQuery {.analysis = std::move(analysis), .result = result};
 }
@@ -362,7 +443,14 @@ auto WorkspaceAnalysisSnapshot::definition(
     std::string_view document,
     std::uint32_t offset
 ) const noexcept -> WorkspaceDefinitionQuery {
-    auto analysis = semantic(project);
+    auto resolved = queries->navigation(project, document);
+    if (!resolved) {
+        return {.analysis = {.result = nullptr, .documents = {}}, .result = std::nullopt};
+    }
+    auto analysis = WorkspaceSemanticQuery {
+        .result = resolved->node->result({}),
+        .documents = std::move(resolved->versions)
+    };
     const auto target = analysis.result->definition(document, offset);
     auto result = std::optional<WorkspaceVersionedLocation>();
     if (target) {
@@ -417,7 +505,7 @@ WorkspaceAnalysisHost::WorkspaceAnalysisHost() noexcept
                   .semantic = 0uz
               }),
               nullptr,
-              nullptr
+              std::vector<std::shared_ptr<CachedAnalysis>>()
           )
       ) {}
 
@@ -462,7 +550,7 @@ auto WorkspaceAnalysisHost::update(
         std::move(inputs),
         queries->counts(),
         queries->index_baseline(),
-        queries->project_baseline()
+        queries->selections()
     );
     return change;
 }
@@ -477,7 +565,7 @@ auto WorkspaceAnalysisHost::remove(std::string_view document) noexcept -> bool {
         std::move(inputs),
         queries->counts(),
         queries->index_baseline(),
-        queries->project_baseline()
+        queries->selections()
     );
     return true;
 }

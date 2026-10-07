@@ -12,6 +12,7 @@ import :semantic.semir.program;
 import :semantic.semir.stage;
 import :semantic.semir.structured;
 import :semantic.semir.type;
+import :support.timing;
 import std;
 
 class BodyReservation final {
@@ -43,13 +44,14 @@ struct PendingFunctionContract final {
 
 class ProgramDraft final : public ExecutionValueAccess {
 public:
-    // The output callable and source observer are borrowed until the draft is
+    // The output and timing callables and source observer are borrowed until the draft is
     // destroyed or consumed.
     static auto begin(
         SyntaxProgram&& syntax,
         DiagnosticSink& sink,
         ExecutionOutput output = {},
-        SourceAnalysisBuilder* source_analysis = nullptr
+        SourceAnalysisBuilder* source_analysis = nullptr,
+        TimingOutput timings = {}
     ) noexcept -> ProgramDraft;
     ProgramDraft(const ProgramDraft&) = delete;
     ProgramDraft(ProgramDraft&&) = default;
@@ -58,6 +60,7 @@ public:
     auto operator=(ProgramDraft&&) -> ProgramDraft& = delete;
     auto identity() const noexcept -> ProgramIdentity override;
     auto source_analysis() const noexcept -> SourceAnalysisBuilder*;
+    auto timings() const noexcept -> TimingOutput;
     auto provenance_identity() const noexcept -> ProvenanceIdentity;
     auto diagnostics() const noexcept -> AnalysisDiagnostics;
     auto write_output(ExecutionOutputStream stream, std::string_view bytes) const noexcept -> void;
@@ -238,7 +241,8 @@ private:
         SyntaxProgramParts parts,
         DiagnosticSink& sink,
         ExecutionOutput output,
-        SourceAnalysisBuilder* source_analysis
+        SourceAnalysisBuilder* source_analysis,
+        TimingOutput timings
     ) noexcept;
     auto resolve() && noexcept -> AnalysisResult<SemIRProgram>;
     auto finalize_callable_signatures(
@@ -260,6 +264,7 @@ private:
     AnalysisDiagnostics analysis_diagnostics;
     ExecutionOutput output;
     SourceAnalysisBuilder* source_observer;
+    TimingOutput analysis_timings;
     State state;
 
     struct ConstructionStorage final {

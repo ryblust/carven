@@ -8,6 +8,7 @@ import :semantic.semir.type;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :support.timing;
 import :workspace.document;
 import std;
 
@@ -49,7 +50,8 @@ public:
     auto diagnostics() const noexcept -> std::span<const Diagnostic>;
     auto output() const noexcept -> std::span<const WorkspaceSemanticOutput>;
     // Published TypeIDs belong to program(); failed analysis retains only
-    // concrete builtin construction types from completed source bodies.
+    // concrete builtin construction types from admitted declarations and
+    // successfully constructed bodies.
     auto hover(std::string_view document, std::uint32_t offset) const noexcept
         -> std::optional<WorkspaceHoverInformation>;
     auto definition(std::string_view document, std::uint32_t offset) const noexcept
@@ -81,11 +83,15 @@ private:
     std::vector<WorkspaceSemanticOutput> execution_output;
     std::map<SourceID, std::vector<SourceOccurrence>> source_occurrences;
 
-    friend auto analyze_workspace_project(std::span<const WorkspaceSemanticInput> inputs) noexcept
-        -> std::shared_ptr<const WorkspaceSemanticAnalysis>;
+    friend auto analyze_workspace_project(
+        std::span<const WorkspaceSemanticInput> inputs,
+        TimingOutput timings
+    ) noexcept -> std::shared_ptr<const WorkspaceSemanticAnalysis>;
 };
 
-// Uses the compiler's full analysis as a coarse query provider. Explicit module
-// paths define imports; document identities are never interpreted as file paths.
-auto analyze_workspace_project(std::span<const WorkspaceSemanticInput> inputs) noexcept
-    -> std::shared_ptr<const WorkspaceSemanticAnalysis>;
+// Runs full compiler analysis of the selected inputs. Explicit module paths
+// define imports; document identities are never interpreted as file paths.
+auto analyze_workspace_project(
+    std::span<const WorkspaceSemanticInput> inputs,
+    TimingOutput timings = {}
+) noexcept -> std::shared_ptr<const WorkspaceSemanticAnalysis>;

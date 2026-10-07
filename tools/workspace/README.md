@@ -1,106 +1,111 @@
 # Workspace analysis
 
-`tools/workspace` owns document revisions, snapshots, and cached source queries.
-It depends on compiler analysis, which analyzes each supplied source batch in full.
-The [analyzer](../analyzer/README.md) consumes these queries in a resident process.
+`tools/workspace` owns document revisions, retained snapshots, and cached source
+queries. It calls compiler analysis with a closed source batch and retains the
+result's source and semantic owners.
 
 ## Inputs and ownership
 
-`WorkspaceAnalysisHost::update(document, version, text)` owns a document's source bytes.
-Equal or older versions are rejected. Identical bytes advance the version while
-reusing the content owner. Removing a document permits reopening it with a new
-version sequence.
+`WorkspaceAnalysisHost::update(document, version, text)` owns source bytes. Equal
+or older versions are rejected. Identical bytes advance the version and reuse the
+content owner. Removing a document permits reopening with a new version sequence.
+Document keys may be URIs or untitled buffers; the host performs no filesystem I/O.
 
-`WorkspaceProjectModule` maps document identities to canonical module paths. Document keys
-may be URIs or untitled buffers; they are never interpreted as filesystem paths.
-The caller supplies the closed module set, including imported Carven modules.
+`WorkspaceProjectModule` maps document keys to canonical module paths. The caller
+supplies the closed project, including imported Carven modules. Duplicate document
+or module mappings are compilation-input errors.
 
-`WorkspaceAnalysisSnapshot` retains document versions and input owners. Syntax and
-semantic query results retain the owners needed to interpret source locations and
-types. Workspace symbols copy names and ranges; their source versions belong to
-the snapshot. Client versions are separate from cached content.
-Definition and reference locations carry the destination document's version.
-Offsets and half-open ranges use UTF-8 bytes. Updates and lazy queries must be
-serialized; the library does not synchronize shared caches.
+Snapshots retain their document versions and input owners. Query results retain
+source locations, diagnostics, static output, and semantic IDs through their owning
+analysis. Client versions are attached to each query separately from cached
+content. Definition and reference locations carry the destination version.
+Offsets and half-open ranges use UTF-8 bytes. Host updates and lazy queries must
+be serialized; shared caches are not synchronized.
 
 ## Queries
 
-| Query | Contract |
+| Query | Result |
 | --- | --- |
-| `syntax` | Source and diagnostics. `syntax()` returns a complete AST without errors; `recovered_syntax()` also returns complete top-level items retained after recoverable errors. |
-| `document_symbols`, `workspace_symbols` | Parsed declarations, including recovered items. Workspace symbols list top-level declarations. These queries do not resolve names. |
-| `semantic` | Full analysis of the selected module set, including diagnostics and captured static output. `program()` is available only after semantic publication succeeds. |
-| `hover` | Type information at recorded source tokens. Published type IDs belong to the returned program owner; failed analysis can retain concrete builtin types from completed bodies. |
-| `definition` | The source declaration identified by name resolution, independently of whether its type is available. |
-| `references` | Recorded occurrences identifying the same declaration, including the declaration itself. |
+| `syntax` | Source and diagnostics; `syntax()` exposes an error-free AST and `recovered_syntax()` exposes retained complete top-level items. |
+| `document_symbols`, `workspace_symbols` | Parsed declarations, including recovered items. Workspace symbols contain top-level declarations. Names are not resolved. |
+| `semantic` | Full analysis of the selected project, with diagnostics and captured static output. `program()` is available after publication succeeds. |
+| `hover` | Types at recorded source tokens in the target document and its transitive imports. |
+| `definition` | A resolved source declaration in the target document and its transitive imports. |
+| `references` | Recorded occurrences with the same resolved declaration across the selected project, including its declaration. |
 
-Hover, definition, and references consume one source occurrence index. Semantic
-construction records source locations and resolved identities; the query layer
-indexes these observations.
-Declaration selections derive from catalog symbols, local binding origins, and
-the selected record field's syntax. The same metadata supplies declaration
-occurrences and resolved uses, including constants, enum cases, and class operations.
-Types are attached to direct source tokens: binding and reference names, literals,
-operators, access markers, and control keywords. Queries match these token ranges.
-Published composite values without their own token anchor expose their types at
-binding names; their observed children remain queryable.
+Hover and definition select the target document's transitive import closure. The
+compiler import resolver supplies relative, domain-root, and craft paths, including
+the `std` craft alias. Cycles are visited once. Every selected declaration, body,
+static computation, and publication gate runs. Versions, diagnostics, and captured
+output describe this selection. An unrelated project source does not enter the
+query. A target outside the project returns no information or analysis owner,
+performs no analysis, and has an empty version list. A mapped but missing source
+is a compilation-input error. Reachable syntax and import errors are reported by
+the compiler within the query selection. Semantic and reference queries analyze
+the complete caller-selected project.
 
-Declaration occurrences are available after the declaration and nominal gates
-succeed. A body's observations are committed only after its construction succeeds;
-another body's failure does not remove them. Parse and import failures prevent
-semantic observation. Static-parameter template bodies, specialized instances,
-closure signatures and interiors, and module-level const/test bodies are outside
-the body observer. Type annotation syntax is not indexed. Ordinary functions
-retain observations from constructed source expressions before executable
-residualization, including local constant initializers, checked static conditions,
-and fields selected within those expressions. Module constant initializer
-expressions are outside the observer.
+## Source observations
 
-`SourceOccurrence` carries a location, an optional resolved definition, and an
-optional `SourceType`. Successful publication provides `TypeID` values belonging
-to that program; failed analysis retains only known `BuiltinType` values.
-Definition availability is independent of type availability. These observations
-do not certify solved effects, ownership, or program validity. Compilation
-requires the complete semantic publication gates.
+Semantic construction records source locations, resolved declarations, and types;
+queries index these observations. Declaration selections come from catalog
+symbols, local binding origins, and field metadata. Types attach to direct tokens
+such as names, literals, operators, access markers, and control keywords. Shared
+name and type resolution also records type annotations, module constant
+initializers, closure captures, and named-construction field labels. Composite
+values expose their types at binding names when they have no direct token anchor.
 
-Syntax recovery discards failed items atomically and retains complete independent
-items. Synchronization respects parentheses, brackets, braces, and interpolation
-boundaries, so nested declarations cannot become module items. Lexical failures,
-initial import failures, and delimiter preflight failures provide no recovered
-tree. Per-item recursive syntax depth failures can be recovered; unmatched or
-excessively nested delimiters fail preflight. Recovery neither retains partial
-declarations nor repairs a broken function internally.
+`SourceOccurrence` has a location, an optional definition, and an optional
+`SourceType`. Published `TypeID` values belong to the returned program owner.
+Failed analysis can retain known builtin types and definitions from completed
+construction. Definition availability is independent of type availability.
+Observation availability does not establish program validity; compilation requires
+all publication checks. References report recorded occurrences in the analysis.
 
-## Cache and invalidation
+Declaration observations are admitted after the declaration and nominal checks.
+Non-staged functions, closures, `const` blocks, and runtime and static tests
+contribute observations after successful construction. A nested closure merges
+into its parent transaction; a parent failure discards both. An unrelated body
+failure does not remove completed observations. Parse and import errors prevent
+semantic observation.
 
-Syntax and symbols are lazy per document. Equal symbol values, including source
-ranges, reuse the derived result and workspace index. Each snapshot caches its
-most recently queried semantic module selection with order-independent mappings.
-Repeated requests avoid sorting the selection again. Version-only and unselected
-edits reuse content results while attaching current snapshot versions.
+Bodies requiring static specialization and their nested closures are not
+source-observed. Declaration annotations, constants, and type extents are observed
+in their original declaration context. Specialized instances do not supply token
+types for that source. Reference results follow these observation boundaries.
 
-A query with a different selection replaces the cached project. Changing or
-removing selected content drops the invalid project from the new snapshot before
-another query. Retained snapshots and returned query owners keep their earlier
-results alive. The next uncached semantic query analyzes the whole selected module
-set. Host updates copy document maps and inherit the current project when its
-inputs remain valid.
+Syntax recovery discards failed top-level items and retains complete independent
+items. Synchronization respects nested delimiters and interpolation boundaries.
+Lexical errors, initial import errors, and delimiter preflight failures provide no
+recovered tree. Recovery does not repair partial function bodies.
 
-## Validation and measurement
+## Caching
+
+Syntax and symbols are lazy per document. Equal symbol names and source ranges
+reuse their derived result and workspace index. Navigation populates reachable
+syntax caches while discovering imports.
+
+Semantic selections use a canonical key containing module mappings and source
+content owners. Each snapshot retains at most two distinct semantic results.
+Query scope determines the selected inputs independently of cache contents.
+Identical selections share their analysis, regardless of module order.
+
+Changing or removing a selected document drops its cached result from the new
+snapshot. Version-only updates reuse content analysis with current query versions.
+Import edits and project remapping determine a new selection. Snapshots and returned
+results retain their old sources, IDs, diagnostics, and output. Host updates copy
+document maps and inherit valid cached results.
+
+An uncached selection runs the full compiler pipeline, including parsing. Syntax
+used for import discovery is retained for source queries and is parsed again by
+compiler analysis. Dense import graphs can add discovery work without reducing the
+selected analysis. Timing recipients are borrowed during the semantic call and
+receive events only for a new computation.
+
+## Validation
 
 ```shell
 ./xmakew build
 ./xmakew test -g workspace
-./xmakew test
-./xmakew build workspace-benchmark-analysis
-./xmakew run workspace-benchmark-analysis --samples 5 > /tmp/carven-workspace-cost.csv
 ```
 
-The non-default benchmark generates 10, 100, and 500 independent modules, each
-with one explicitly typed literal-returning function, plus an unselected document.
-It reports median host-update and query times, computation-count deltas, and
-weak-owner lifetime observations. `warm_semantic_hover` reports time per pair of
-queries over 20 repetitions; count deltas cover the repetition group. `cold_hover`
-queries an already computed semantic result. Edit queries exclude the separately
-measured update. Weak owners measure retention, not allocated bytes. The workload
-provides no latency threshold for other module graphs or compiler workloads.
+See [benchmarks](benchmarks/README.md) for workload commands and measurement boundaries.

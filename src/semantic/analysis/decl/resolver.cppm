@@ -63,6 +63,9 @@ private:
         ProgramModuleID module_id;
         ASTView syntax;
 
+        auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
+        auto observe_field(FieldProjection field, Span name, ConstructionTypeRef type) noexcept
+            -> void;
         auto resolve_name(std::string_view name, Span span) noexcept
             -> AnalysisTask<std::optional<ConstantID>>;
         auto resolve_function(std::string_view name, Span span) noexcept

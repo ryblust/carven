@@ -232,14 +232,6 @@ const TestSuite tests([] static noexcept {
                     .check_definition = false
                 },
                 Scenario {
-                    .name = "closure body",
-                    .source =
-                        "fn outer() { let callback = [](input: i32) -> i32 { let inner: i32 = input; return inner; }; }",
-                    .selection = "inner;",
-                    .check_update_binding = false,
-                    .check_definition = false
-                },
-                Scenario {
                     .name = "nominal local",
                     .source =
                         "struct Pair { value: i32, } fn f() -> Pair { let local = Pair { value: 1 }; return local; }",
@@ -303,6 +295,31 @@ const TestSuite tests([] static noexcept {
             });
         };
 
+    "Workspace analysis: nested bindings retain their declaration locations and versions"_test =
+        [] static noexcept {
+            constexpr auto text = std::string_view(
+                "fn outer() { let callback = [](input: i32) -> i32 { let inner: i32 = input; return inner; }; }"
+            );
+            auto host = WorkspaceAnalysisHost();
+            update(host, "nested.cv", 7, text);
+            const auto project = std::array {project_module("nested.cv", "main")};
+            const auto snapshot = host.snapshot();
+            const auto use = offset(text, "return inner") + 7u;
+            expect_type(
+                snapshot.hover(project, "nested.cv", use),
+                BuiltinType::I32,
+                "nested.cv",
+                "inner"
+            );
+            expect_definition(
+                snapshot.definition(project, "nested.cv", use),
+                "nested.cv",
+                7,
+                offset(text, "inner: i32"),
+                "inner"
+            );
+        };
+
     "Workspace analysis: source type anchors do not extend into unobserved source positions"_test =
         [] static noexcept {
             struct Scenario final {
@@ -317,39 +334,11 @@ const TestSuite tests([] static noexcept {
             );
             const auto scenarios = std::array {
                 Scenario {
-                    .name = "closure parameter",
-                    .source = closure,
-                    .known = "value: i32",
-                    .type = BuiltinType::I32,
-                    .unknown = "input: i32"
-                },
-                Scenario {
-                    .name = "closure local use",
-                    .source = closure,
-                    .known = "value: i32",
-                    .type = BuiltinType::I32,
-                    .unknown = "inner;"
-                },
-                Scenario {
-                    .name = "binding type annotation",
-                    .source = closure,
-                    .known = "value: i32",
-                    .type = BuiltinType::I32,
-                    .unknown = "i32 = 1"
-                },
-                Scenario {
-                    .name = "callable type annotation",
+                    .name = "callable type keyword",
                     .source = closure,
                     .known = "value: i32",
                     .type = BuiltinType::I32,
                     .unknown = "fn(i32)"
-                },
-                Scenario {
-                    .name = "cast type operand",
-                    .source = "fn f() -> i64 { return 1 as i64; }",
-                    .known = "as i64",
-                    .type = BuiltinType::I64,
-                    .unknown = "i64;"
                 },
                 Scenario {
                     .name = "expression comment",

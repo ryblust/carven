@@ -162,10 +162,8 @@ public:
         aggregate_depth += aggregate;
         const auto depth = AggregateDepth {.depth = aggregate_depth, .entered = aggregate};
         auto result = co_await interpret_expression(*this, id, expected);
-        if constexpr (requires { scope.observe_expression(id, type(*result)); }) {
-            if (result) {
-                scope.observe_expression(id, type(*result));
-            }
+        if (result) {
+            scope.observe_expression(id, type(*result));
         }
         co_return result;
     }
@@ -342,9 +340,7 @@ public:
 
     auto observe_field(FieldProjection field, Span name, ConstructionTypeRef type) noexcept
         -> void {
-        if constexpr (requires { scope.observe_field(field, name, type); }) {
-            scope.observe_field(field, name, type);
-        }
+        scope.observe_field(field, name, type);
     }
 
     auto spelling(Span span) const noexcept -> std::string {
@@ -540,9 +536,7 @@ public:
             program.intern_type({.value = FunctionTypeValue {.callable = declaration.callable}});
         auto selected_callee =
             make(callee_type, SemCallable {.callable = declaration.callable}, span);
-        if constexpr (requires { scope.observe_expression(callee, callee_type); }) {
-            scope.observe_expression(callee, callee_type);
-        }
+        scope.observe_expression(callee, callee_type);
         pending_failures.push_back(contract.failures);
         co_return make(
             contract.result,
