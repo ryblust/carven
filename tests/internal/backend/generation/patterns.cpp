@@ -106,8 +106,9 @@ const TestSuite suite([] static noexcept {
             },
         };
         each(cases, &Case::name, [](const Case& input) static noexcept {
+            const auto semantic_owner = analyze_test_program(std::string(input.source));
             const auto compilation = PlannedCompilation::build(
-                analyze_test_program(std::string(input.source)),
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("pattern_selection"),
                  .library = std::nullopt}
@@ -125,14 +126,15 @@ const TestSuite suite([] static noexcept {
     };
 
     "Generation: exhaustive selection retains dynamic bound evaluation"_test = [] static noexcept {
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(R"(
+        const auto semantic_owner = analyze_test_program(R"(
                 fn bound(&calls: i32) -> i32 { calls += 1; return 0; }
                 fn select(value: i32, &calls: i32) -> i32 => match value {
                     (bound(&calls))..10 => 1,
                     _ => 2,
                 };
-            )"),
+            )");
+        const auto compilation = PlannedCompilation::build(
+            semantic_owner,
             {.test_mode = TestGenerationMode::None,
              .linkage_domain = *LinkageDomain::explicit_value("pattern_bound"),
              .library = std::nullopt}
@@ -162,16 +164,17 @@ const TestSuite suite([] static noexcept {
                     fields += "i32";
                     patterns += "0 | 1";
                 }
+                const auto semantic_owner = analyze_test_program(
+                    std::format(
+                        "enum Choices {{ Fields({}), }} "
+                        "fn select(value: Choices) -> i32 {{ return match value {{ "
+                        ".Fields({}) => 1, _ => 0, }}; }}",
+                        fields,
+                        patterns
+                    )
+                );
                 const auto compilation = PlannedCompilation::build(
-                    analyze_test_program(
-                        std::format(
-                            "enum Choices {{ Fields({}), }} "
-                            "fn select(value: Choices) -> i32 {{ return match value {{ "
-                            ".Fields({}) => 1, _ => 0, }}; }}",
-                            fields,
-                            patterns
-                        )
-                    ),
+                    semantic_owner,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value("pattern_size"),
                      .library = std::nullopt}
@@ -211,8 +214,7 @@ const TestSuite suite([] static noexcept {
 
     "Generation: simple patterns use predicates without mutable match state"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+            const auto semantic_owner = analyze_test_program(R"(
             fn classify(value: i32) -> i32 => match value {
                 0 | 1 => 3,
                 2..=4 => 5,
@@ -221,7 +223,9 @@ const TestSuite suite([] static noexcept {
             struct Failure {}
             fn failing() -> i32 throw Failure { throw Failure {}; }
             fn recover() -> i32 => try { failing()? } catch { _ => 7, };
-        )"),
+        )");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("pattern_predicates"),
                  .library = std::nullopt}
@@ -310,8 +314,9 @@ const TestSuite suite([] static noexcept {
         )"},
             };
             each(cases, &Case::name, [](const Case& input) static noexcept {
+                const auto semantic_owner = analyze_test_program(std::string(input.source));
                 const auto compilation = PlannedCompilation::build(
-                    analyze_test_program(std::string(input.source)),
+                    semantic_owner,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value("fixed_payload_binding"),
                      .library = std::nullopt}
@@ -373,8 +378,7 @@ const TestSuite suite([] static noexcept {
 
     "Generation: borrowed enum selection uses structured branches and one subject evaluation"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+            const auto semantic_owner = analyze_test_program(R"(
                     enum Value { Text(String), Number(usize), Empty, }
                     fn next(&calls: i32) -> Value {
                         calls += 1;
@@ -387,7 +391,9 @@ const TestSuite suite([] static noexcept {
                             .Empty => { size = 0usize; },
                         }
                     }
-                )"),
+                )");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("structured_enum_selection"),
                  .library = std::nullopt}
@@ -439,10 +445,11 @@ const TestSuite suite([] static noexcept {
 
     "Generation: unconditional pattern binding uses direct value initialization"_test =
         [] static noexcept {
+            const auto semantic_owner = analyze_test_program(
+                "fn copy(value: i32) -> i32 => match value { bound => bound, };"
+            );
             const auto compilation = PlannedCompilation::build(
-                analyze_test_program(
-                    "fn copy(value: i32) -> i32 => match value { bound => bound, };"
-                ),
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("direct_pattern_binding"),
                  .library = std::nullopt}
@@ -473,15 +480,16 @@ const TestSuite suite([] static noexcept {
         };
 
     "Generation: runtime match predicates retain required calls"_test = [] static noexcept {
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(R"(
+        const auto semantic_owner = analyze_test_program(R"(
             fn effect() -> bool => true;
             fn choose() -> i32 => match effect() && false {
                 true => 0,
                 false if effect() && false => 1,
                 false => 2,
             };
-        )"),
+        )");
+        const auto compilation = PlannedCompilation::build(
+            semantic_owner,
             {.test_mode = TestGenerationMode::None,
              .linkage_domain = *LinkageDomain::explicit_value("known_match"),
              .library = std::nullopt}

@@ -49,8 +49,9 @@ auto DisplayQuery::enter_statement(const TargetStmt& statement) noexcept -> bool
 }
 
 auto inspect(std::string source) noexcept -> DisplayQuery {
+    const auto semantic_owner = analyze_test_program(std::move(source));
     const auto compilation = PlannedCompilation::build(
-        analyze_test_program(std::move(source)),
+        semantic_owner,
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("display"),
          .library = std::nullopt}

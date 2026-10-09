@@ -25,8 +25,12 @@ behavior.
 `source.batch` defines `SourceBatch` and its `SourceModuleInput` records using
 source identities and canonical module paths.
 `compiler.analysis` sequences parsing and semantic analysis through
-`analyze_compilation`, returning a published program and structured diagnostics.
-`compiler.compile` calls this entry and then `generate_artifacts` to consume the
+`analyze_compilation`, returning a `CompilationAnalysis` owner for source snapshots,
+structured diagnostics, optional source observations and captured output, and a
+published program on success. Failed analysis retains the sources needed to
+interpret its diagnostics. Output capture and source observations are requested
+independently; CLI output can be forwarded without retaining a copy.
+`compiler.compile` calls this entry and then `generate_artifacts` to borrow the
 published program and produce C++ artifacts. CLI compile and native-run commands
 use the same stages. Execution output is delivered synchronously to the supplied
 recipient.
@@ -43,6 +47,9 @@ C++ generation, and execution. Module imports resolve within that batch.
 Crafts discovery. The direct-run driver compiles native sources and executes the
 result. Project builds use `carven-xmake-repo` for toolchain selection, native
 compilation, linking, and execution.
+`compile --artifact-manifest=<file>` publishes source identities and the actual
+generated artifact inventory through `compiler.manifest`. It reuses the completed generation;
+the compiler does not own build-cache validity or native dependency scheduling.
 `load_and_analyze_sources` prepares the batch, calls `analyze_compilation`, and
 renders diagnostics. `diagnostics.report` renders source diagnostics from their
 codes and source spans; the driver owns terminal styling and output transport.
@@ -61,8 +68,11 @@ follows command-resource cleanup.
 SourceBatch → SyntaxProgram → ProgramDraft → SemIRProgram
 ```
 
-`frontend.ast.tree` owns the syntax tree and its root. `frontend.ast.storage`
-provides node storage and read-only views. `frontend.ast.topology` supplies
+`source.document` owns immutable source text and its line index through shared
+source records. `frontend.document` retains a `ParsedDocument` with syntax and
+diagnostics. `frontend.ast.tree` shares immutable tree storage and binds its
+source identity for each compilation. `frontend.ast.storage` provides node
+storage and read-only views. `frontend.ast.topology` supplies
 structural traversal for syntax construction and validation.
 
 `parse_recovering` retains complete top-level items around recoverable syntax
@@ -70,7 +80,9 @@ errors for source queries. Lexical errors, delimiter preflight failures, and
 invalid initial imports provide no tree. The ordinary `parse` entry rejects
 results with diagnostics; recovered syntax does not enter compilation.
 
-`parse_program` parses the closed source batch and resolves module imports.
+`parse_program` accepts retained parsed documents or parses missing inputs through
+the same frontend entry. It validates their source bindings, rebinds diagnostics,
+and constructs fresh provenance and resolved imports for the closed batch.
 `analyze` constructs declarations and typed structured bodies, solves types and
 failure sets, validates contracts, checks ownership and callable loans, and
 publishes an immutable semantic program. Errors prevent delivery; warnings accompany
@@ -84,12 +96,17 @@ admitted declarations and completed bodies. Observations do not establish progra
 validity. The recipient borrows one batch during delivery and copies retained
 records. An empty recipient performs no recording.
 
-`tools/workspace` owns document revisions, source snapshots, query selections,
-and bounded caches of complete analysis results. Navigation selects a document's
+`tools/workspace` is the analyzer and LSP session layer. It owns document revisions,
+snapshots, query selections, navigation indexes, and bounded caches of complete
+analysis results. Bulk document updates validate and publish together, copying
+the document table once. Navigation selects a document's
 transitive import closure; semantic and reference queries use the explicit
-project selection. Every uncached selection runs the complete compiler pipeline
-and publication checks. Snapshots retain source revisions and query results
+project selection. Every uncached selection reuses retained parsing and runs the
+complete semantic transaction and publication checks. Snapshots retain source
+revisions and query results
 independently of later document edits.
+The workspace API owns neither LSP transport nor Xmake build targets. CLI and
+workspace share the lower-level source, parsing, and analysis owners.
 
 `SourceLibrary` assigns a closed source library a generated linkage identity.
 Its owning build emits library implementations; consumers emit their own
@@ -163,7 +180,9 @@ coroutine suspension. Empty views represent optional recipients;
 invoking an empty view violates an internal invariant. Exceptions escaping a
 callback terminate at the invocation boundary.
 
-`SyntaxProgram` owns source provenance, syntax trees, and resolved imports.
+`SyntaxProgram` owns independent provenance and resolved imports, with immutable
+syntax storage shared by retained documents when available. Source bytes and
+line indexes remain shared without sharing mutable construction state.
 `ProgramDraft` consumes it and owns mutable declarations, canonical interning,
 construction types, failure constraints, and body construction. Canonical type
 interning compares complete values before reusing an ID. Published types retain
@@ -181,7 +200,8 @@ construction boundaries check unique definitions and structure.
 
 Within the pipeline, `draft` names mutable `ProgramDraft` state, `semantic` names
 published `SemIRProgram` data, and `compilation` names a `PlannedCompilation`
-owner. Source-module and semantic-module identities remain distinct. Failure
+that owns its target plan and borrows the published program. Source-module and
+semantic-module identities remain distinct. Failure
 terms, solved failure sets, and control-flow completion name separate facts.
 
 ## Publication gates

@@ -1,15 +1,17 @@
 module carven:workspace.semantic;
 
+import :compiler.analysis;
 import :diagnostics.diagnostic;
+import :frontend.document;
 import :semantic.analysis.source;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :semantic.semir.type;
+import :source.document;
 import :source.manager;
 import :source.module_path;
 import :source.text;
 import :support.timing;
-import :workspace.document;
 import std;
 
 struct WorkspaceProjectModule final {
@@ -22,12 +24,8 @@ struct WorkspaceProjectModule final {
 struct WorkspaceSemanticInput final {
     WorkspaceProjectModule module;
     // A missing document remains an explicit input error.
-    std::shared_ptr<const WorkspaceDocumentSource> source;
-};
-
-struct WorkspaceSemanticOutput final {
-    ExecutionOutputStream stream;
-    std::string bytes;
+    std::shared_ptr<const SourceDocument> source;
+    std::shared_ptr<const ParsedDocument> parsed;
 };
 
 struct WorkspaceDocumentLocation final {
@@ -48,7 +46,7 @@ public:
     auto program() const noexcept -> const SemIRProgram*;
     auto sources() const noexcept -> const SourceManager&;
     auto diagnostics() const noexcept -> std::span<const Diagnostic>;
-    auto output() const noexcept -> std::span<const WorkspaceSemanticOutput>;
+    auto output() const noexcept -> std::span<const CompilationOutput>;
     // Published TypeIDs belong to program(); failed analysis retains only
     // concrete builtin construction types from admitted declarations and
     // successfully constructed bodies.
@@ -63,12 +61,8 @@ public:
 
 private:
     WorkspaceSemanticAnalysis(
-        SourceManager sources,
-        std::map<std::string, SourceID, std::less<>> document_sources,
-        std::optional<SemIRProgram> program,
-        Diagnostics diagnostics,
-        std::vector<WorkspaceSemanticOutput> output,
-        std::span<const SourceOccurrence> occurrences
+        CompilationAnalysis analysis,
+        std::map<std::string, SourceID, std::less<>> document_sources
     ) noexcept;
 
     auto select(std::string_view document, std::uint32_t offset) const noexcept
@@ -76,11 +70,8 @@ private:
     auto locate_source(SourceSpan location) const noexcept
         -> std::optional<WorkspaceDocumentLocation>;
 
-    SourceManager source_manager;
+    CompilationAnalysis analysis;
     std::map<std::string, SourceID, std::less<>> source_ids;
-    std::optional<SemIRProgram> semantic_program;
-    Diagnostics findings;
-    std::vector<WorkspaceSemanticOutput> execution_output;
     std::map<SourceID, std::vector<SourceOccurrence>> source_occurrences;
 
     friend auto analyze_workspace_project(

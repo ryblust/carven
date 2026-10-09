@@ -52,8 +52,9 @@ const TestSuite suite([] static noexcept {
                         suffix ? initializers : "",
                         arguments
                     );
+                    const auto semantic_owner = analyze_test_program(source);
                     const auto compilation = PlannedCompilation::build(
-                        analyze_test_program(source),
+                        semantic_owner,
                         {.test_mode = TestGenerationMode::None,
                          .linkage_domain = *LinkageDomain::explicit_value("linear_composition"),
                          .library = std::nullopt}

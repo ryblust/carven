@@ -30,17 +30,19 @@ const TestSuite suite([] static noexcept {
             const auto build = [](bool reverse) noexcept {
                 const auto parameters =
                     reverse ? "a: Box<u32>, b: Box<i32>" : "a: Box<i32>, b: Box<u32>";
-                return PlannedCompilation::build(
-                    analyze_test_program(
-                        std::format("struct Box<T> {{ value: T }}\nfn hold({}) {{}}\n", parameters)
-                    ),
-                    {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("generic_content"),
-                     .library = std::nullopt}
+                return analyze_test_program(
+                    std::format("struct Box<T> {{ value: T }}\nfn hold({}) {{}}\n", parameters)
                 );
             };
-            const auto first = build(false);
-            const auto second = build(true);
+            const auto first_program = build(false);
+            const auto second_program = build(true);
+            const auto request = TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = *LinkageDomain::explicit_value("generic_content"),
+                .library = std::nullopt,
+            };
+            const auto first = PlannedCompilation::build(first_program, request);
+            const auto second = PlannedCompilation::build(second_program, request);
             const auto names = [](const PlannedCompilation& compilation) noexcept {
                 auto result = std::map<std::string, std::string>();
                 const auto& semantic = compilation.semantic();
@@ -74,20 +76,14 @@ const TestSuite suite([] static noexcept {
     "Failure content: generic arguments determine stable transport order"_test =
         [] static noexcept {
             const auto build = [](bool reverse) noexcept {
-                return PlannedCompilation::build(
-                    analyze_test_program(
-                        std::format(
-                            "struct Error<T> {{ value: T }} struct Box<T> {{ value: T }} "
-                            "enum Failure<T> {{ Item(T) }} "
-                            "fn fail() throw {} {{}}",
-                            reverse
-                                ? "Failure<Box<u32>> + Failure<Box<i32>> + Error<u32> + Error<i32>"
+                return analyze_test_program(
+                    std::format(
+                        "struct Error<T> {{ value: T }} struct Box<T> {{ value: T }} "
+                        "enum Failure<T> {{ Item(T) }} "
+                        "fn fail() throw {} {{}}",
+                        reverse ? "Failure<Box<u32>> + Failure<Box<i32>> + Error<u32> + Error<i32>"
                                 : "Error<i32> + Error<u32> + Failure<Box<i32>> + Failure<Box<u32>>"
-                        )
-                    ),
-                    {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("failure_content"),
-                     .library = std::nullopt}
+                    )
                 );
             };
             const auto keys = [](const PlannedCompilation& compilation) noexcept {
@@ -102,8 +98,15 @@ const TestSuite suite([] static noexcept {
                 }
                 return result;
             };
-            const auto first = build(false);
-            const auto second = build(true);
+            const auto first_program = build(false);
+            const auto second_program = build(true);
+            const auto request = TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = *LinkageDomain::explicit_value("failure_content"),
+                .library = std::nullopt,
+            };
+            const auto first = PlannedCompilation::build(first_program, request);
+            const auto second = PlannedCompilation::build(second_program, request);
             const auto identities = keys(first);
             expect_equal(identities.size(), 4uz);
             expect(std::ranges::is_sorted(identities));
@@ -166,8 +169,9 @@ const TestSuite suite([] static noexcept {
                 source += std::format("let x{} = x{} + x{};\n", index, index - 1, index - 1);
             }
             source += std::format("return x{}; }}\n", depth);
+            const auto semantic_owner = analyze_test_program(std::move(source));
             const auto compilation = PlannedCompilation::build(
-                analyze_test_program(std::move(source)),
+                semantic_owner,
                 {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = *LinkageDomain::explicit_value("query_graph"),

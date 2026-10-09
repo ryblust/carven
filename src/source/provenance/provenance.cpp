@@ -1,5 +1,7 @@
 module carven:source.provenance.impl;
 
+import :source.document;
+import :source.manager;
 import :source.provenance.ids;
 import :source.provenance.verify;
 import :source.provenance;
@@ -7,34 +9,32 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-ProgramSourceSnapshot::ProgramSourceSnapshot(SourceView source) noexcept
-    : source_manager_id(source.source_id),
-      display_origin_text(source.origin),
-      source_text(source.text),
-      line_index(source_text) {}
+ProgramSourceSnapshot::ProgramSourceSnapshot(const SourceManager& sources, SourceID source) noexcept
+    : source_manager_id(source),
+      input(SourceDocument::retain(sources, source)) {}
 
 auto ProgramSourceSnapshot::manager_source_id() const noexcept -> SourceID {
     return source_manager_id;
 }
 
 auto ProgramSourceSnapshot::display_origin() const noexcept -> std::string_view {
-    return display_origin_text;
+    return input->source().origin;
 }
 
 auto ProgramSourceSnapshot::text() const noexcept -> std::string_view {
-    return source_text;
+    return input->source().text;
 }
 
 auto ProgramSourceSnapshot::size() const noexcept -> std::size_t {
-    return source_text.size();
+    return text().size();
 }
 
 auto ProgramSourceSnapshot::slice(Span span) const noexcept -> std::string_view {
-    return ::slice(source_text, span);
+    return ::slice(text(), span);
 }
 
 auto ProgramSourceSnapshot::location(Span span) const noexcept -> SourceLocation {
-    return line_index.location(span.start());
+    return input->sources().location(locate(input->source().source_id, span));
 }
 
 CompilationProvenanceStorage::CompilationProvenanceStorage() noexcept
@@ -501,8 +501,11 @@ auto CompilationProvenanceBuilder::append_module(ProgramModule program_module) n
     return module_id;
 }
 
-auto CompilationProvenanceBuilder::intern_source_snapshot(SourceView source) noexcept
-    -> ProgramSourceID {
+auto CompilationProvenanceBuilder::intern_source_snapshot(
+    const SourceManager& sources,
+    SourceID source_identity
+) noexcept -> ProgramSourceID {
+    const auto source = sources.view(source_identity);
     if (source.text.size() > std::numeric_limits<std::uint32_t>::max()) {
         resource_limit_exceeded("program source snapshot exceeds the 4 GiB span limit");
     }
@@ -518,7 +521,7 @@ auto CompilationProvenanceBuilder::intern_source_snapshot(SourceView source) noe
         return found->second;
     }
 
-    const auto source_id = storage.append_source(ProgramSourceSnapshot(source));
+    const auto source_id = storage.append_source(ProgramSourceSnapshot(sources, source_identity));
     program_source_ids_by_source_id.emplace(source.source_id, source_id);
     return source_id;
 }

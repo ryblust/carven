@@ -47,8 +47,8 @@ const TestSuite suite([] static noexcept {
         }
 
         auto builder = CompilationProvenanceBuilder();
-        const auto program_source_id = builder.intern_source_snapshot(sources.view(*source_id));
-        expect((builder.intern_source_snapshot(sources.view(*source_id)) == program_source_id));
+        const auto program_source_id = builder.intern_source_snapshot(sources, *source_id);
+        expect((builder.intern_source_snapshot(sources, *source_id) == program_source_id));
         const auto module_id = builder.append_module({
             .source_id = program_source_id,
             .path = path("sample"),
@@ -136,8 +136,7 @@ const TestSuite suite([] static noexcept {
         );
 
         auto foreign_builder = CompilationProvenanceBuilder();
-        const auto foreign_source_id =
-            foreign_builder.intern_source_snapshot(sources.view(*source_id));
+        const auto foreign_source_id = foreign_builder.intern_source_snapshot(sources, *source_id);
         expect(!(extended_view.contains(foreign_source_id)));
         expect((foreign_source_id.owner() != program_source_id.owner()));
     };
@@ -149,7 +148,7 @@ const TestSuite suite([] static noexcept {
             return;
         }
         auto builder = CompilationProvenanceBuilder();
-        const auto source = builder.intern_source_snapshot(sources.view(*source_id));
+        const auto source = builder.intern_source_snapshot(sources, *source_id);
         const auto identity = builder.identity();
         auto moved = CompilationProvenanceBuilder(std::move(builder));
         auto program = std::move(moved).finish();

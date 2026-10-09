@@ -35,6 +35,9 @@ helper names, or enumeration-to-enumeration mappings.
 Internal C++ tests use the compiler configuration. Generated-source and consumer
 tests use the C++20 baseline, with additional standard modes for native capability
 branches. Shared semantic cases use shared sources across these modes.
+Compiler processes for isolated language or native-boundary fixtures use
+`--explicit-inputs` and name their complete source set. Source-discovery and
+installed-toolchain tests use normal discovery and establish Crafts integration.
 
 Static execution, interpreted execution, and generated native C++ are separate
 boundaries. Keep representative cases at each applicable boundary. Static tests
@@ -150,6 +153,12 @@ source preservation, expected output, idempotence, and stability under irrelevan
 whitespace changes. Corpus tests establish formatting, parsing, and idempotence
 for repository programs.
 
+Independent CLI invocations register separate named Xmake tests even when they
+share fixture bytes. Each receives a fresh working directory. Keep sequential
+steps when later observations depend on earlier files or process effects.
+Xmake's test job limit controls concurrent invocations; avoid an internal serial
+case list becoming the critical path of the whole group.
+
 Native rejection fixtures establish successful Carven generation before checking
 the expected diagnostic, subject, and source attribution. Accepted counterparts
 use the normal interop build. Rejections compile on each run and retain artifacts
@@ -187,6 +196,21 @@ are built. `./xmakew build` supplies an up-to-date compiler before testing.
 Formatting tasks require a built `carven-format`. Applying formatting changes sources;
 subsequent builds and tests use those changes. A clean followed by a build recreates
 module build state.
+
+Measure compiler build, generated-source preparation and native compilation,
+warm incremental checks, and test execution separately. Xmake's test report
+records execution time per registered case; CLI native-run cases include their
+own compiler subprocesses in that time. Repeated warm runs retain those native
+compilations and expected native rejections. A no-op build is a separate
+measurement, not a test result.
+
+For internal case costs, build `carven-test-internal`, then run
+`./xmakew run carven-test-internal --timings`. The report lists case execution
+durations from slowest to fastest. Combine it with `--filter`, `--exclude`, or
+`--test` to reproduce a selected workload; `--list-tests` lists names without
+running them. These timings include each case's fixtures and assertions but
+exclude process startup, test registration, and reporting. Normal runs do not
+collect timings. Keep machine-specific timing logs outside reference documents.
 
 Static analysis is available through `./xmakew check clang.tidy` for handwritten
 and generated C++. `.clang-tidy` configures handwritten checks;

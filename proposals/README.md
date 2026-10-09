@@ -21,6 +21,8 @@ Current contracts belong in `docs/`.
 | [Dynamic ownership](dynamic-ownership.md) | Unique/shared object owners, allocator policy, and factory construction in owned storage |
 | [Semantic execution](semantic-execution.md) | Structured static roots, text traversal, address observations, and retained reference graphs |
 | [Compiler optimization](compiler-optimization.md) | Compiler costs, C++ realization, and formatting/output experiments preserving source contracts |
+| [Frontend analysis](frontend-analysis.md) | Recovering syntax, partial semantics, diagnostic ownership, query coordination, publication, and analysis fault isolation |
+| [Workspace compilation](workspace-compilation.md) | Evidence for further reuse, computation granularity, request lifetime, and build integration |
 | [Data representation](data-representation.md) | Record, tuple, and enum representations, native-layout boundaries, compact handles, and collection layouts |
 | [Uninitialized storage](uninitialized-storage.md) | Construction destinations, partial initialization, native lifetime, and library storage in constant execution |
 | [Concurrency](concurrency.md) | Cross-thread values, memory ordering, threads, and synchronization |

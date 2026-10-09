@@ -106,7 +106,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         return emit_missing_entry_error();
     }
     const auto artifacts = generate_artifacts(
-        std::move(*semantic),
+        *semantic,
         TargetPlanningRequest {
             .test_mode = tests ? TestGenerationMode::RunnerEntryPoint : TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("carven.run"),

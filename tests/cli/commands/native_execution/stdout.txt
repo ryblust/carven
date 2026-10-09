@@ -2,6 +2,8 @@ compiled
 static test
 const block
 running 1
+ok
+42
 --timings
 --help
 space argument

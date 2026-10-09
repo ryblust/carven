@@ -1,4 +1,7 @@
 import "arguments.hpp";
+import std::utf.text using from_utf8;
+import std::utf.error using UTF8Error;
+import demo::api using answer;
 
 const fn prepare() {
     println("compiled");
@@ -21,8 +24,11 @@ test "unselected test entry" {
 
 struct Failure {}
 
-fn main(args) throw Failure {
+fn main(args) throw Failure + UTF8Error {
     println("running", prepared);
+    let bytes: [u8; 2] = [0x6f, 0x6b];
+    println(from_utf8(bytes)?);
+    println(answer());
     ::show_args(args);
     throw Failure {};
 }

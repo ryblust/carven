@@ -42,7 +42,7 @@ auto SourceManager::append_file(std::string_view path) noexcept
         );
     }
     const auto source_id = SourceID::from_index(static_cast<std::uint32_t>(entries.size()));
-    entries.emplace_back(std::string(path), std::move(*file));
+    entries.push_back(std::make_shared<const SourceRecord>(std::string(path), std::move(*file)));
     return source_id;
 }
 
@@ -60,8 +60,27 @@ auto SourceManager::append_virtual(std::string origin, std::string text) noexcep
         );
     }
     const auto source_id = SourceID::from_index(static_cast<std::uint32_t>(entries.size()));
-    entries.emplace_back(std::move(origin), std::move(text));
+    entries.push_back(std::make_shared<const SourceRecord>(std::move(origin), std::move(text)));
     return source_id;
+}
+
+auto SourceManager::snapshot() const noexcept -> SourceManager {
+    auto result = SourceManager();
+    result.entries = entries;
+    return result;
+}
+
+auto SourceManager::append_shared(const SourceManager& sources, SourceID source_id) noexcept
+    -> SourceID {
+    if (!sources.contains(source_id)) {
+        invariant_violation("source sharing used an invalid identity");
+    }
+    if (entries.size() == std::numeric_limits<std::uint32_t>::max()) {
+        resource_limit_exceeded("source manager exhausted its 32-bit identity space");
+    }
+    const auto identity = SourceID::from_index(static_cast<std::uint32_t>(entries.size()));
+    entries.push_back(sources.entries[source_id.index()]);
+    return identity;
 }
 
 auto SourceManager::contains(SourceID source_id) const noexcept -> bool {
@@ -73,7 +92,7 @@ auto SourceManager::try_view(SourceID source_id) const noexcept -> std::optional
         return std::nullopt;
     }
 
-    const auto& entry = entries[source_id.index()];
+    const auto& entry = *entries[source_id.index()];
     return SourceView {
         .source_id = source_id,
         .text = entry.source_text(),
@@ -97,7 +116,7 @@ auto SourceManager::location(SourceSpan span) const noexcept -> SourceLocation {
     if (!contains(span.source_id)) {
         invariant_violation("source location used an invalid source identity");
     }
-    return entries[span.source_id.index()].location(span.span);
+    return entries[span.source_id.index()]->location(span.span);
 }
 
 auto SourceManager::SourceRecord::line_span(std::uint32_t line) const noexcept -> Span {
@@ -108,5 +127,5 @@ auto SourceManager::line_span(SourceID source_id, std::uint32_t line) const noex
     if (!contains(source_id)) {
         invariant_violation("source line lookup used an invalid source identity");
     }
-    return entries[source_id.index()].line_span(line);
+    return entries[source_id.index()]->line_span(line);
 }

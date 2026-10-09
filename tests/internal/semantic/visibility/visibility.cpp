@@ -34,11 +34,11 @@ const TestSuite suite([] static noexcept {
 
             auto builder = CompilationProvenanceBuilder();
             const auto alpha_api_snapshot =
-                builder.intern_source_snapshot(sources.view(*alpha_api_source));
+                builder.intern_source_snapshot(sources, *alpha_api_source);
             const auto alpha_main_snapshot =
-                builder.intern_source_snapshot(sources.view(*alpha_main_source));
+                builder.intern_source_snapshot(sources, *alpha_main_source);
             const auto beta_api_snapshot =
-                builder.intern_source_snapshot(sources.view(*beta_api_source));
+                builder.intern_source_snapshot(sources, *beta_api_source);
             const auto alpha_api = builder.append_module({
                 .source_id = alpha_api_snapshot,
                 .path = path("crafts.alpha.api"),

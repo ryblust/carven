@@ -4,9 +4,9 @@ import :frontend.ast.decl;
 import :frontend.ast.ids;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
+import :frontend.document;
 import :source.text;
 import :support.visit;
-import :workspace.document;
 import :workspace.symbols;
 import std;
 
@@ -109,7 +109,7 @@ auto SymbolCollector::collect() const noexcept -> WorkspaceDocumentSymbolList {
 
 } // namespace
 
-auto collect_workspace_document_symbols(const WorkspaceDocumentSyntax& document) noexcept
+auto collect_workspace_document_symbols(const ParsedDocument& document) noexcept
     -> WorkspaceDocumentSymbolList {
     const auto syntax = document.recovered_syntax();
     if (!syntax) {

@@ -6,10 +6,21 @@ import :source.text;
 import std;
 
 SyntaxTree::SyntaxTree(ASTStorage storage, ASTModule ast_module, SourceID source) noexcept
-    : ast_storage(std::move(storage)),
-      source_module(std::move(ast_module)),
+    : storage(
+          std::make_shared<const Storage>(
+              Storage {.ast = std::move(storage), .module = std::move(ast_module)}
+          )
+      ),
       source_identity(source) {}
 
 auto SyntaxTree::view() const noexcept -> ASTView {
-    return ASTView(ast_storage, source_module, source_identity);
+    return ASTView(storage->ast, storage->module, source_identity);
+}
+
+SyntaxTree::SyntaxTree(std::shared_ptr<const Storage> storage, SourceID source) noexcept
+    : storage(std::move(storage)),
+      source_identity(source) {}
+
+auto SyntaxTree::bind(SourceID source) const noexcept -> SyntaxTree {
+    return SyntaxTree(storage, source);
 }

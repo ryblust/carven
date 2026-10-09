@@ -94,14 +94,20 @@ and directly required standard-library headers. Compiler-generated dependencies
 are merged and sorted within their groups; explicit native occurrences remain
 independent and retain their repetitions. Generated headers begin with pragma-once.
 
-Test generation emits the runner header. Default test generation also emits a
-main source; external test generation supplies the runner to a caller-provided
+Test generation emits the runner header. `--tests=main` also emits a
+main source; `--tests=runner` supplies the runner to a caller-provided
 entry. Both use the same direct test functions and reporting protocol. The generated
 runner invokes modules in canonical path order and tests within each module in
 source order.
 
 Logical paths are relative to the output destination. The build system owns
 stale artifact removal, installation, and native dependency scheduling.
+`compile --artifact-manifest=<file>` publishes the workspace root, generation request,
+actual input identities, and artifact paths, roles, and source-mapping policies
+as versioned JSON projected from the existing generated artifact set. Build integration
+uses this inventory instead of recovering artifact roles from generated source
+bytes or recursively discovering output files. Native compiler dependency files
+remain authoritative for C++ header dependencies.
 
 ## Build integration
 
@@ -135,15 +141,17 @@ and both `crafts/` directories as native include roots. A missing project
 added explicitly by test targets. Inline tests follow the target's test emission
 mode.
 
-Application targets list their own sources. Toolchain paths and module mappings
-require no user configuration. Native provider dependencies and optional test
-modes use ordinary target configuration.
+Application targets list their own sources. Module names follow project-relative
+source paths. Toolchain paths require no user configuration. Native provider
+dependencies and optional test modes use ordinary target configuration.
 
 The rule passes the complete `.cv` batch to Carven before native dependency
 scanning, supplies a target-private output root and linkage domain, and registers
 generated implementations as C++ sources. Installed source paths preserve their
-`crafts/carven/` hierarchy. The compiler derives module identities from the supplied
-filenames, deduplicates canonical file paths, and rejects conflicting module
+`crafts/carven/` hierarchy. The rule derives C++ registration from the source
+paths and checks the
+actual implementation inventory against that registration before promotion.
+The compiler deduplicates canonical file paths and rejects duplicate module
 identities. The rule uses `--explicit-inputs`, so the CLI adds no other source roots. Imports
 resolve within the supplied batch; `std::` selects modules under `crafts/carven/std/`.
 

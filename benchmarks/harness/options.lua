@@ -16,6 +16,8 @@ local specifications = {
     {name = "case", kind = "kv", description = "Run one case by its exact identifier"},
     {name = "output", kind = "kv", description = "Save metadata and raw samples to a JSON file"},
     {name = "timings", kind = "k", description = "Collect Carven stage timings", topics = {compile = true, incremental = true}},
+    {name = "command", kind = "kv", description = "Compiler command to measure", default = "compile",
+        values = {"check", "compile"}, topics = {compile = true}},
     {name = "cxx", kind = "kv", description = "Native C++ compiler for execution benchmarks", topics = {async = true, simd = true, json = true}},
     {name = "portable", kind = "k", description = "Force the portable SIMD backend", topics = {simd = true, json = true}},
     {name = "libcoro", kind = "kv", description = "Optional libcoro checkout for async comparison", topics = {async = true}},
@@ -63,7 +65,8 @@ function definitions(name)
                 for _, item in ipairs(topic_settings) do table.insert(defaults, item.name .. "=" .. item.samples) end
                 description = description .. " (defaults: " .. table.concat(defaults, ", ") .. ")"
             end
-            table.insert(definitions, {nil, specification.name, specification.kind, nil, description})
+            table.insert(definitions, {nil, specification.name, specification.kind, nil, description,
+                values = specification.values})
         end
     end
     return definitions
@@ -98,8 +101,16 @@ function normalize(name, provided, arguments)
                 and number == math.floor(number) and (not specification.maximum or number <= specification.maximum),
                 "--%s must be an integer in [%s, %s]", key, specification.minimum, specification.maximum or "unbounded")
             settings[key] = number
-        elseif specification.kind == "kv" and value ~= nil then
-            assert(type(value) == "string" and #value > 0, "--%s must not be empty", key)
+        elseif specification.kind == "kv" then
+            if value == nil then value = default_value(specification, topic) end
+            if value ~= nil then
+                assert(type(value) == "string" and #value > 0, "--%s must not be empty", key)
+                if specification.values then
+                    assert(table.contains(specification.values, value), "--%s must be one of: %s",
+                        key, table.concat(specification.values, ", "))
+                end
+                settings[key] = value
+            end
         end
     end
     return settings

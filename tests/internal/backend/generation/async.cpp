@@ -201,8 +201,10 @@ const TestSuite suite([] static noexcept {
                 },
             };
             each(cases, &Case::name, [](const Case& input) static noexcept {
+                const auto semantic_owner =
+                    analyze_async_generation_source(std::string(input.source));
                 const auto compilation = PlannedCompilation::build(
-                    analyze_async_generation_source(std::string(input.source)),
+                    semantic_owner,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value("async_generation"),
                      .library = std::nullopt}
@@ -316,8 +318,10 @@ const TestSuite suite([] static noexcept {
                 },
             };
             each(cases, &Case::name, [](const Case& input) static noexcept {
+                const auto semantic_owner =
+                    analyze_async_generation_source(std::string(input.source));
                 const auto compilation = PlannedCompilation::build(
-                    analyze_async_generation_source(std::string(input.source)),
+                    semantic_owner,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value("async_fusion"),
                      .library = std::nullopt}
@@ -363,8 +367,7 @@ const TestSuite suite([] static noexcept {
 
     "Generation async: fused scalar storage survives cleanup and suspension without ownership state"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_async_generation_source(R"(
+            const auto semantic_owner = analyze_async_generation_source(R"(
 
 async fn leaf(value: i32) -> i32 {
     var text: String = "abc";
@@ -384,7 +387,9 @@ async fn probe(value: i32) -> i32 {
     if letter == 'a' { return selected; }
     return 0;
 }
-)"),
+)");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("async_scalar_storage"),
                  .library = std::nullopt}
@@ -472,8 +477,10 @@ async fn probe() { await leaf(); after(); }
                 },
             };
             for (const auto& input : cases) {
+                const auto semantic_owner =
+                    analyze_async_generation_source(std::string(input.source));
                 const auto compilation = PlannedCompilation::build(
-                    analyze_async_generation_source(std::string(input.source)),
+                    semantic_owner,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value("async_discarded_success"),
                      .library = std::nullopt}
@@ -505,15 +512,16 @@ async fn probe() { await leaf(); after(); }
 
     "Generation async: static instances publish runtime inputs and residual cancellation"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_async_generation_source(R"(
+            const auto semantic_owner = analyze_async_generation_source(R"(
 private async fn leaf(value: i32, const checked: bool) -> i32 {
     const if checked { await cancellation_point(); } return value;
 }
 async fn probe(value: i32) -> i32 {
     let ready = leaf(value, false); let checked = leaf(value, true);
     return (await ready) + (await checked);
-})"),
+})");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("async_static_instance"),
                  .library = std::nullopt}
@@ -569,8 +577,10 @@ async fn probe(value: i32) -> i32 {
                 },
             };
             each(cases, &Case::name, [](const Case& input) static noexcept {
+                const auto semantic_owner =
+                    analyze_async_generation_source(std::string(input.source));
                 const auto compilation = PlannedCompilation::build(
-                    analyze_async_generation_source(std::string(input.source)),
+                    semantic_owner,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value("async_cancellation"),
                      .library = std::nullopt}
@@ -642,8 +652,10 @@ async fn probe(value: i32) -> i32 {
                 },
             };
             each(cases, &Case::name, [](const Case& input) static noexcept {
+                const auto semantic_owner =
+                    analyze_async_generation_source(std::string(input.source));
                 const auto compilation = PlannedCompilation::build(
-                    analyze_async_generation_source(std::string(input.source)),
+                    semantic_owner,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value("async_operand_value"),
                      .library = std::nullopt}
@@ -696,15 +708,16 @@ async fn probe(value: i32) -> i32 {
 
     "Generation async: native boundaries retain source borrowing and cold carriers"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_async_generation_source(R"(import "context.hpp";
+            const auto semantic_owner = analyze_async_generation_source(R"(import "context.hpp";
 export struct IoError { code: i32 }
 import(cpp) async fn native_read(context: ::Context) -> i32 throw IoError;
 fn factory(context: ::Context) => native_read(context);
 export(cpp) async fn probe(context: ::Context) -> i32 throw IoError {
     let operation = factory(context);
     return await operation?;
-})"),
+})");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("async_native_boundary"),
                  .library = std::nullopt}
@@ -797,8 +810,10 @@ export(cpp) async fn probe(context: ::Context) -> i32 throw IoError {
                 },
             };
             each(cases, &Case::name, [](const Case& input) static noexcept {
+                const auto semantic_owner =
+                    analyze_async_generation_source(std::string(input.source));
                 const auto compilation = PlannedCompilation::build(
-                    analyze_async_generation_source(std::string(input.source)),
+                    semantic_owner,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value("async_tail"),
                      .library = std::nullopt}

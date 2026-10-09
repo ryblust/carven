@@ -30,13 +30,14 @@ namespace {
 const TestSuite suite([] static noexcept {
     "Generation: known slice results retain their range check"_test = [] static noexcept {
         for (const auto query : {".length()", "[1] as usize"}) {
+            const auto semantic_owner = analyze_test_program(
+                std::format(
+                    "fn probe(values: [i32; 2]) -> usize => values.as_slice().slice(0, 3){};",
+                    query
+                )
+            );
             const auto compilation = PlannedCompilation::build(
-                analyze_test_program(
-                    std::format(
-                        "fn probe(values: [i32; 2]) -> usize => values.as_slice().slice(0, 3){};",
-                        query
-                    )
-                ),
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("slice_range"),
                  .library = std::nullopt}
@@ -64,8 +65,7 @@ const TestSuite suite([] static noexcept {
 
     "Generation: static projections publish values without rebuilding their aggregate"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+            const auto semantic_owner = analyze_test_program(R"(
                     struct Plan { lanes: u8x16, nested: (i32, [i32; 2]) }
                     fn vector() -> u8x16 {
                         const plan = Plan { u8x16::splat(7), (1, [3, 9]) };
@@ -75,7 +75,9 @@ const TestSuite suite([] static noexcept {
                         const plan = Plan { u8x16::splat(7), (1, [3, 9]) };
                         return plan.nested.1[1];
                     }
-                )"),
+                )");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("static_projection"),
                  .library = std::nullopt}
@@ -228,8 +230,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Generation: discarded results retain calls and checked arithmetic"_test = [] static noexcept {
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(R"(
+        const auto semantic_owner = analyze_test_program(R"(
             struct Record { value: i32, }
             enum Tag { First, Second, }
             fn scalar() -> i32 => 1;
@@ -245,7 +246,9 @@ const TestSuite suite([] static noexcept {
                 if effect() && false { scalar(); }
                 if false && effect() { scalar(); }
             }
-        )"),
+        )");
+        const auto compilation = PlannedCompilation::build(
+            semantic_owner,
             {.test_mode = TestGenerationMode::None,
              .linkage_domain = *LinkageDomain::explicit_value("discarded_operations"),
              .library = std::nullopt}
@@ -298,8 +301,9 @@ const TestSuite suite([] static noexcept {
             source += "operand(n)";
         }
         source += "; }";
+        const auto semantic_owner = analyze_test_program(std::move(source));
         const auto compilation = PlannedCompilation::build(
-            analyze_test_program(std::move(source)),
+            semantic_owner,
             {.test_mode = TestGenerationMode::None,
              .linkage_domain = *LinkageDomain::explicit_value("long_expression"),
              .library = std::nullopt}
@@ -331,15 +335,16 @@ const TestSuite suite([] static noexcept {
 
     "Generation: integer facts select direct operations and preserve required operands"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+            const auto semantic_owner = analyze_test_program(R"(
             fn effect() -> i32 => 8;
             fn quotient(value: i32) -> i32 => value / 2;
             fn remainder(value: u8) -> u8 => value % 3;
             fn shift(value: i16) -> i16 => value >> 2;
             fn wrap(value: u32) -> u32 => value * 3 + 1;
             fn discard() { effect() / 2; effect() / -1; effect() >> 2; }
-        )"),
+        )");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("integer_facts"),
                  .library = std::nullopt}

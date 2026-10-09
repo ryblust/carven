@@ -39,14 +39,18 @@ auto load_and_analyze_sources(
         return std::nullopt;
     }
 
-    auto result =
-        analyze_compilation(sources, SourceBatch {.modules = module_inputs}, output, timings);
-    if (!result) {
-        emit_source_diagnostics(result.error(), sources);
-        return std::nullopt;
+    auto result = analyze_compilation(
+        std::move(sources),
+        SourceBatch {.modules = module_inputs},
+        CompilationAnalysisOptions {
+            .output = output,
+            .timings = timings,
+            .collect_source_observations = false,
+            .capture_output = false,
+        }
+    );
+    if (!result.diagnostics().empty()) {
+        emit_source_diagnostics(result.diagnostics(), result.sources());
     }
-    if (!result->diagnostics.empty()) {
-        emit_source_diagnostics(result->diagnostics, sources);
-    }
-    return std::move(result->value);
+    return std::move(result).take_program();
 }

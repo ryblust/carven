@@ -1,0 +1,7 @@
+export(cpp) fn value() -> i32 {
+    return 42;
+}
+
+test "value" {
+    check(value() == 42);
+}

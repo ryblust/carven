@@ -3,11 +3,14 @@ module carven:test.internal.compiler.generation.artifact_contracts;
 import :artifacts;
 import :backend.generate;
 import :backend.generation.request;
+import :compiler.analysis;
 import :compiler.compile;
+import :compiler.manifest;
 import :diagnostics.report;
+import :frontend.document;
 import :frontend.program.parse;
-import :semantic.analyze;
 import :source.batch;
+import :source.document;
 import :source.manager;
 import :source.module_path;
 import :source.text;
@@ -111,6 +114,28 @@ auto occurrence_count(std::string_view text, std::string_view needle) noexcept -
 }
 
 const TestSuite suite([] static noexcept {
+    "Compiler manifest: JSON strings preserve Unicode and escape control bytes"_test =
+        [] static noexcept {
+            const auto inputs = std::array {
+                CompilationManifestInput {
+                    .path = "directory/雪\t\"\\.cv",
+                    .module = "nested.source"
+                },
+            };
+            const auto request = TargetPlanningRequest {
+                .test_mode = TestGenerationMode::None,
+                .linkage_domain = *LinkageDomain::explicit_value("test:manifest"),
+                .library = std::nullopt,
+            };
+            const auto manifest = format_compilation_manifest(
+                "/workspace",
+                inputs,
+                request,
+                GeneratedArtifactSet(std::vector<GeneratedArtifact> {})
+            );
+            expect(manifest.contains("\"directory/雪\\u0009\\\"\\\\.cv\""));
+        };
+
     "Compiler pipeline: composed and staged compilation preserve artifacts and output"_test =
         [] static noexcept {
             auto sources = SourceManager();
@@ -155,30 +180,57 @@ const TestSuite suite([] static noexcept {
                                             std::chrono::steady_clock::duration) noexcept {
                 staged_stages.push_back(stage);
             };
-            auto syntax = parse_program(sources, batch, staged_timings);
-            if (!expect(composed.has_value()) || !expect(syntax.has_value())) {
+            auto parsed = std::vector<ParsedSourceInput>();
+            for (const auto& input : inputs) {
+                parsed.push_back({
+                    .source_id = input.source_id,
+                    .document = parse_document(
+                        SourceDocument::retain(sources, input.source_id),
+                        staged_timings
+                    ),
+                });
+            }
+            if (!expect(composed.has_value())) {
                 return;
             }
             const auto write_staged_output = [&](ExecutionOutputStream,
                                                  std::string_view bytes) noexcept {
                 staged_output += bytes;
             };
-            auto semantic = analyze(std::move(*syntax), write_staged_output, staged_timings);
-            if (!expect(semantic.has_value())) {
+            auto semantic = analyze_compilation(
+                sources.snapshot(),
+                batch,
+                {
+                    .output = write_staged_output,
+                    .timings = staged_timings,
+                    .collect_source_observations = false,
+                    .capture_output = false,
+                },
+                parsed
+            );
+            if (!expect(semantic.program() != nullptr)) {
                 return;
             }
-            const auto staged = generate_artifacts(
-                std::move(semantic->value),
-                request,
-                std::nullopt,
-                staged_timings
-            );
+            const auto staged =
+                generate_artifacts(*semantic.program(), request, std::nullopt, staged_timings);
             if (!expect(staged.has_value())) {
                 return;
             }
+            // Generation borrows the retained result after the source/parse
+            // request owners have gone away, without replaying static execution.
+            parsed.clear();
+            sources = SourceManager();
+            const auto repeated = generate_artifacts(*semantic.program(), request);
+            require(repeated.has_value());
+            require(repeated->entries().size() == staged->entries().size());
+            for (const auto& [left, right] :
+                 std::views::zip(staged->entries(), repeated->entries())) {
+                expect_equal(left.logical_path, right.logical_path);
+                expect_equal(left.content, right.content);
+            }
             expect_equal(composed_output, std::string_view("analysis"));
             expect_equal(staged_output, composed_output);
-            expect_equal(composed->diagnostics.size(), semantic->diagnostics.size());
+            expect_equal(composed->diagnostics.size(), semantic.diagnostics().size());
             const auto required_stages = std::array {
                 TimingStage::Lexing,
                 TimingStage::Parsing,

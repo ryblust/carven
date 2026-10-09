@@ -3,6 +3,7 @@ module carven:driver.options.impl;
 import :backend.generation.request;
 import :driver.options;
 import :source.module_path;
+import :support.path;
 import std;
 
 namespace {
@@ -28,6 +29,7 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
     -> std::expected<CompileCommandOptions, CompileOptionError> {
     auto request = CompileCommandOptions {
         .destination = DirectoryArtifactDestination {.root = "."},
+        .artifact_manifest = std::nullopt,
         .test_mode = TestGenerationMode::None,
         .linkage_domain = std::nullopt,
         .library = std::nullopt,
@@ -88,14 +90,27 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
             request.timings = true;
         } else if (arg == "--explicit-inputs") {
             request.explicit_inputs = true;
-        } else if (arg == "--tests" || arg == "--tests=default" || arg == "--tests=external") {
+        } else if (arg.starts_with("--artifact-manifest=")) {
+            if (request.artifact_manifest) {
+                return std::unexpected(
+                    compile_option_error(CompileOptionErrorKind::ManifestSpecifiedMoreThanOnce)
+                );
+            }
+            const auto value = arg.substr(std::string_view("--artifact-manifest=").size());
+            if (value.empty()) {
+                return std::unexpected(
+                    compile_option_error(CompileOptionErrorKind::EmptyManifestPath)
+                );
+            }
+            request.artifact_manifest = path_from_utf8(value);
+        } else if (arg == "--tests=main" || arg == "--tests=runner") {
             if (has_test_option) {
                 return std::unexpected(
                     compile_option_error(CompileOptionErrorKind::TestModeSpecifiedMoreThanOnce)
                 );
             }
-            request.test_mode = arg == "--tests=external" ? TestGenerationMode::RunnerHeader
-                                                          : TestGenerationMode::RunnerEntryPoint;
+            request.test_mode = arg == "--tests=runner" ? TestGenerationMode::RunnerHeader
+                                                        : TestGenerationMode::RunnerEntryPoint;
             has_test_option = true;
         } else if (arg == "-o" || arg == "--output-dir") {
             auto path = next_output_path(index, arg);
@@ -192,6 +207,9 @@ auto format_compile_option_error(const CompileOptionError& error) noexcept -> st
         case CompileOptionErrorKind::MissingOutputPath:
             return std::format("missing output path after '{}'", *error.option);
         case CompileOptionErrorKind::EmptyOutputPath: return "output directory is empty";
+        case CompileOptionErrorKind::ManifestSpecifiedMoreThanOnce:
+            return "artifact manifest was specified more than once";
+        case CompileOptionErrorKind::EmptyManifestPath: return "artifact manifest path is empty";
         case CompileOptionErrorKind::LinkageDomainSpecifiedMoreThanOnce:
             return "linkage domain was specified more than once";
         case CompileOptionErrorKind::EmptyLinkageDomain: return "linkage domain is empty";

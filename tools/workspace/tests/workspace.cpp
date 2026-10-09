@@ -1,12 +1,12 @@
 module carven:test.workspace;
 
+import :frontend.document;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :source.module_path;
 import :source.text;
 import :test.harness.framework;
 import :workspace.analysis;
-import :workspace.document;
 import :workspace.semantic;
 import :workspace.symbols;
 import std;
@@ -55,9 +55,12 @@ const TestSuite tests([] static noexcept {
             constexpr auto app = std::string_view(
                 "import .lib using answer; fn read() { let result = answer(); return result; }"
             );
-            update(host, "lib.cv", 1, "export fn answer() -> i32 => 1;");
-            update(host, "app.cv", 1, std::string(app));
-            update(host, "other.cv", 1, "fn unfinished(");
+            const auto loaded = host.update({
+                {.document = "lib.cv", .version = 1, .text = "export fn answer() -> i32 => 1;"},
+                {.document = "app.cv", .version = 1, .text = std::string(app)},
+                {.document = "other.cv", .version = 1, .text = "fn unfinished("},
+            });
+            require(loaded.has_value());
             const auto before = host.snapshot();
             const auto old_hover = before.hover(project, "app.cv", offset(app, "result"));
             expect_type(old_hover, BuiltinType::I32);
@@ -74,8 +77,28 @@ const TestSuite tests([] static noexcept {
             expect(failed.result->program() == nullptr);
             expect(!failed.result->diagnostics().empty());
 
-            update(host, "lib.cv", 2, "export fn answer() -> i64 => 2;");
-            update(host, "other.cv", 2, "import pkg.lib using answer; fn other() => answer();");
+            const auto rejected = host.update({
+                {.document = "lib.cv", .version = 2, .text = "export fn answer() -> i64 => 2;"},
+                {.document = "other.cv", .version = 1, .text = "stale edit"},
+            });
+            require(!rejected.has_value());
+            expect_equal(rejected.error().document, "other.cv");
+            const auto unchanged = host.snapshot().syntax("lib.cv");
+            require(unchanged.has_value());
+            expect_equal(unchanged->version, 1ll);
+            expect_equal(unchanged->result->source().text, original->text);
+
+            const auto changed = host.update({
+                {.document = "lib.cv", .version = 2, .text = "export fn answer() -> i64 => 2;"},
+                {
+                    .document = "other.cv",
+                    .version = 2,
+                    .text = "import pkg.lib using answer; fn other() => answer();",
+                },
+                {.document = "app.cv", .version = 2, .text = std::string(app)},
+            });
+            require(changed.has_value());
+            expect(changed->back() == WorkspaceDocumentChange::VersionOnly);
             const auto after = host.snapshot();
             expect_type(after.hover(project, "app.cv", offset(app, "result")), BuiltinType::I64);
             const auto references = after.references(project, "app.cv", offset(app, "answer()"));
@@ -86,13 +109,12 @@ const TestSuite tests([] static noexcept {
                 const auto source = references.analysis.result->source(location.document);
                 require(source.has_value());
                 expect_equal(slice(source->text, location.range), "answer");
-                expect_equal(location.version, location.document == "app.cv" ? 1ll : 2ll);
+                expect_equal(location.version, 2ll);
             }
             const auto expected = std::vector<std::string> {"app.cv", "lib.cv", "other.cv"};
             expect(locations == expected);
             expect_type(old_hover, BuiltinType::I32);
             expect_type(before.hover(project, "app.cv", offset(app, "result")), BuiltinType::I32);
-            expect(!host.update("lib.cv", 1, "stale edit").has_value());
             require(host.remove("lib.cv"));
             const auto missing =
                 host.snapshot().definition(project, "app.cv", offset(app, "answer()"));

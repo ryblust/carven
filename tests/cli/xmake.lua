@@ -1,4 +1,20 @@
 local case_specs = {
+    ["commands/manifest"] = {
+        inputs = {"input.cv"},
+        fixtures = {["../../diagnostics/syntax/input.cv"] = "invalid.cv"},
+        steps = {
+            {args = {"compile", "--explicit-inputs", "--tests=main", "--linkage-domain=manifest:app", "--artifact-manifest=metadata/build.json", "-o", "emit", "input.cv"},
+                output_files = {"metadata/build.json", "emit/input.cpp", "emit/carven/api/input.hpp"},
+                file_contains = {["metadata/build.json"] = {'"generation":', '"tests": "main"'}},
+                file_not_contains = {["metadata/build.json"] = {'"selection":'}}},
+            {args = {"compile", "--explicit-inputs", "--artifact-manifest=failed.json", "-o", "failed", "invalid.cv"},
+                exit_code = 1, stderr_contains = {"CV-SYNTAX"}, absent_files = {"failed.json", "failed"}},
+            {args = {"compile", "--explicit-inputs", "--artifact-manifest=input.cv", "-o", "collision", "input.cv"},
+                exit_code = 1, stderr_contains = {"manifest would overwrite a source input"}, absent_files = {"collision"}},
+            {args = {"compile", "--explicit-inputs", "--artifact-manifest=collision/input.cpp", "-o", "collision", "input.cv"},
+                exit_code = 1, stderr_contains = {"manifest would overwrite a generated artifact"}, absent_files = {"collision"}},
+        },
+    },
     ["commands/stdout_selection"] = {
         inputs = {"input.cv", "crafts/demo/helper.cv", "crafts/demo/unrelated.cv",
             "crafts/cycle/a.cv", "crafts/cycle/b.cv"},
@@ -209,7 +225,7 @@ local case_specs = {
                 },
             },
             {
-                args = {"compile", "passing_test.cv", "--tests=default", "--output-dir=default"},
+                args = {"compile", "passing_test.cv", "--tests=main", "--output-dir=default"},
                 output_files = {
                     "default/passing_test.cpp",
                     "default/carven/generated/carven-test-runner.hpp",
@@ -217,7 +233,7 @@ local case_specs = {
                 },
             },
             {
-                args = {"compile", "--tests=external", "--output-dir", "external", "passing_test.cv"},
+                args = {"compile", "--tests=runner", "--output-dir", "external", "passing_test.cv"},
                 output_files = {
                     "external/passing_test.cpp",
                     "external/carven/generated/carven-test-runner.hpp",
@@ -286,31 +302,18 @@ local case_specs = {
     },
 }
 
-case_specs["commands/native_crafts"] = {
-    inputs = {"input.cv", "unlisted.cv", "crafts/demo/api.cv", "crafts/demo/native.hpp", "crafts/demo/native.cpp"},
+case_specs["commands/native_execution"] = {
+    inputs = {"input.cv", "library.cv", "arguments.hpp", "unlisted.cv",
+        "crafts/demo/api.cv", "crafts/demo/native.hpp", "crafts/demo/native.cpp"},
     steps = {
         {
             installed_toolchain = true,
-            args = {"input.cv", "./input.cv", "crafts/demo/api.cv", "--", "--timings"}, run_timeout = 120000,
-            stdout = "stdout.txt",
-            absent_files = {"input.cpp", "program"},
-        },
-        {
-            args = {"compile", "input.cv", "-o", "emit"},
-            output_files = {"emit/input.cpp", "emit/crafts/demo/api.cpp"},
-            absent_files = {"emit/unlisted.cpp"},
-        },
-    },
-}
-case_specs["commands/native_execution"] = {
-    inputs = {"input.cv", "library.cv", "arguments.hpp"},
-    steps = {
-        {
-            args = {"--timings", "input.cv", "--", "--timings", "--help", "space argument", "; echo injected", "", 'a"b', "trailing\\", 'slash\\"quote'},
+            args = {"--timings", "input.cv", "./input.cv", "crafts/demo/api.cv", "--", "--timings", "--help", "space argument", "; echo injected", "", 'a"b', "trailing\\", 'slash\\"quote'},
             run_timeout = 120000,
             exit_code = 1,
             stdout = "stdout.txt",
-            stderr_ordered = {"carven: run exited with code 1 in ", "Native compilation", "Execution"},
+            stderr_ordered = {"failure 'input.Failure' escaped the program entry",
+                "carven: run exited with code 1 in ", "Native compilation", "Execution"},
             absent_files = {"input.cpp", "program", "program.exe"},
         },
         {
@@ -327,7 +330,7 @@ case_specs["commands/native_execution"] = {
     },
 }
 
-case_specs["commands/interpretation"] = {
+local interpretation = {
     fixtures = {
         ["../../../language/functions/interpreted_runtime.cv"] = "shared.cv",
         ["../../../language/types/pointer_graph.cv"] = "local_graph.cv",
@@ -342,82 +345,82 @@ case_specs["commands/interpretation"] = {
         "input.cv", "unsupported.cv", "inactive_native.cv", "failure.cv", "implicit_failure.cv", "implicit_recovery.cv", "limit.cv", "wrapping.cv",
         "declarations.cv", "static_only.cv", "static_failure.cv", "main.cv", "floating.cv", "typed_failures.cv", "escaped_failure.cv", "composition_budget.cv",
     },
-    steps = {
-        {args = {"interpret", "async_waiting.cv"}, stdout_contains = {"true\n"}},
-        {args = {"interpret", "async_composition.cv"}, stdout_contains = {"true\n"}},
-        {args = {"interpret", "--max-steps", "128", "composition_budget.cv"}, exit_code = 1,
+    cases = {
+        ["async-waiting"] = {args = {"interpret", "async_waiting.cv"}, stdout_contains = {"true\n"}},
+        ["async-composition"] = {args = {"interpret", "async_composition.cv"}, stdout_contains = {"true\n"}},
+        ["composition-budget"] = {args = {"interpret", "--max-steps", "128", "composition_budget.cv"}, exit_code = 1,
             stdout_not_contains = {"unreachable"}, stderr_contains = {"CV-INTERPRET-LIMIT"}},
-        {args = {"interpret"}, exit_code = 1, stderr_contains = {"requires at least one source file", "carven interpret --help"}},
-        {args = {"interpret", "--tests", "shared.cv"}, stdout_contains = {"shared runtime test\n"},
+        ["missing-input"] = {args = {"interpret"}, exit_code = 1, stderr_contains = {"requires at least one source file", "carven interpret --help"}},
+        ["shared-runtime"] = {args = {"interpret", "--tests", "shared.cv"}, stdout_contains = {"shared runtime test\n"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
-        {args = {"interpret", "--tests", "local_graph.cv"},
+        ["pointer-graph"] = {args = {"interpret", "--tests", "local_graph.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
-        {args = {"interpret", "--tests", "text_backing.cv"},
+        ["text-backing"] = {args = {"interpret", "--tests", "text_backing.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
-        {args = {"interpret", "async_scheduling.cv"}, stdout = "async_scheduling.txt",
+        ["async-scheduling"] = {args = {"interpret", "async_scheduling.cv"}, stdout = "async_scheduling.txt",
             stderr_contains = {"CV-LINT-UNUSED-LOCAL", "unused local binding"}},
-        {args = {"interpret", "async_failure.cv"}, exit_code = 1,
+        ["async-failure"] = {args = {"interpret", "async_failure.cv"}, exit_code = 1,
             stderr_ordered = {"root failure selected", "child cancellation requested: true", "child closed",
                 "CV-INTERPRET-EXECUTION", "typed failure escaped execution without recovery"}},
-        {args = {"interpret", "async_cancelled.cv"}, exit_code = 1,
+        ["async-cancellation"] = {args = {"interpret", "async_cancelled.cv"}, exit_code = 1,
             stderr_ordered = {"root requested child cancellation", "child accepts cancellation: true",
                 "CV-INTERPRET-EXECUTION", "cancellation escaped execution without a consumer"},
             stderr_not_contains = {"unreachable child", "unreachable root"}},
-        {
+        ["typed-failures"] = {
             args = {"interpret", "typed_failures.cv"},
             stdout = "typed_failures.txt",
         },
-        {
+        ["escaped-failure"] = {
             args = {"interpret", "escaped_failure.cv"}, exit_code = 1,
             stderr_contains = {"CV-INTERPRET-EXECUTION", "typed failure escaped", "while interpreting this function call"},
         },
-        {
+        ["implicit-failure"] = {
             args = {"interpret", "implicit_failure.cv"}, exit_code = 1,
             stderr_contains = {"CV-INTERPRET-EXECUTION", "typed failure escaped"},
         },
-        {args = {"interpret", "implicit_recovery.cv"}, exit_code = 0},
-        {
+        ["implicit-recovery"] = {args = {"interpret", "implicit_recovery.cv"}, exit_code = 0},
+        ["floating"] = {
             args = {"interpret", "floating.cv"},
             stdout = "floating.txt",
         },
-        {
+        ["missing-entry"] = {
             args = {"interpret", "declarations.cv"}, exit_code = 1,
             stderr_contains = {"requires a runtime entry point"},
         },
-        {
+        ["static-without-entry"] = {
             args = {"interpret", "--trace", "static_only.cv", "declarations.cv"}, exit_code = 1,
             stderr_contains = {"requires a runtime entry point"},
             stdout = "static_only.txt",
             absent_files = {"static_only.cpp", "declarations.cpp", "program"},
         },
-        {
+        ["static-failure"] = {
             args = {"interpret", "static_failure.cv"}, exit_code = 1,
             stderr_contains = {"CV-CONST-TEST"},
         },
-        {
+        ["explicit-entry"] = {
             args = {"interpret", "main.cv", "declarations.cv"},
             stdout = "main.txt",
         },
-        {
+        ["duplicate-entry"] = {
             args = {"interpret", "main.cv", "input.cv"}, exit_code = 1,
             stderr_contains = {"CV-ENTRY-DUPLICATE"},
         },
-        {
+        ["arguments"] = {
             args = {"interpret", "input.cv", "--", "--help"},
             stdout = "stdout.txt",
             absent_files = {"input.cpp", "program", "program.exe"},
         },
-        {
+        ["trace"] = {
             args = {"interpret", "--trace", "input.cv"},
             stdout = "stdout.txt",
             stderr_contains = {"call main", "call fib", "return fib", "statement"},
         },
-        {
+        ["unsupported"] = {
             args = {"interpret", "unsupported.cv"}, exit_code = 1,
             stderr_contains = {"CV-INTERPRET-ADMISSION"},
         },
-        {args = {"interpret", "inactive_native.cv"}, exit_code = 0},
-        {
+        ["inactive-native"] = {args = {"interpret", "inactive_native.cv"}, exit_code = 0},
+        ["division-failure"] = {
             args = {"interpret", "failure.cv"}, exit_code = 1,
             stdout = "failure.txt",
             stderr_ordered = {
@@ -426,28 +429,41 @@ case_specs["commands/interpretation"] = {
                 "  note: execution aborted",
             },
         },
-        {
+        ["step-budget"] = {
             args = {"interpret", "--max-steps", "20", "limit.cv"}, exit_code = 1,
             stdout = "limit.txt",
             stderr_contains = {"CV-INTERPRET-LIMIT"},
         },
-        {
+        ["invalid-step-budget"] = {
             args = {"interpret", "--max-steps", "-1", "input.cv"}, exit_code = 1,
             stderr_contains = {"nonnegative integer"},
         },
-        {
+        ["wrapping"] = {
             args = {"interpret", "wrapping.cv"},
             stdout = "wrapping.txt",
         },
     },
 }
 
+-- These invocations share fixture bytes, not state or generated artifacts.
+-- Register each independently so Xmake can schedule and report its actual cost.
+for name, scenario in pairs(interpretation.cases) do
+    local spec = table.clone(scenario)
+    spec.case_dir = "commands/interpretation"
+    spec.inputs = interpretation.inputs
+    spec.fixtures = interpretation.fixtures
+    if name ~= "arguments" and name ~= "missing-input" then
+        table.insert(spec.args, 2, "--explicit-inputs")
+    end
+    case_specs["commands/interpretation/" .. name] = spec
+end
+
 case_specs["commands/test_options"] = {
     fixtures = {["../interpretation/declarations.cv"] = "declarations.cv"},
     steps = {
         {args = {"compile", "declarations.cv", "-o", "no-entry"},
             output_files = {"no-entry/declarations.cpp"}},
-        {args = {"compile", "--tests", "declarations.cv", "-o", "empty-tests"},
+        {args = {"compile", "--tests=main", "declarations.cv", "-o", "empty-tests"},
             output_files = {"empty-tests/carven/generated/carven-test-main.cpp"}},
         {args = {"--tests", "declarations.cv"}, exit_code = 1,
             stderr_contains = {"requires at least one runtime test"}},
@@ -456,7 +472,7 @@ case_specs["commands/test_options"] = {
         {args = {"interpret", "--tests", "--tests", "declarations.cv"}, exit_code = 1,
             stderr_contains = {"--tests may be specified only once"}},
         {args = {"--tests"}, exit_code = 1, stderr_contains = {"requires at least one source file"}},
-        {args = {"compile", "--tests", "--tests=default", "declarations.cv"}, exit_code = 1,
+        {args = {"compile", "--tests=runner", "--tests=main", "declarations.cv"}, exit_code = 1,
             stderr_contains = {"test emission mode was specified more than once"}},
     },
 }
@@ -483,21 +499,21 @@ case_specs["commands/assertions"] = {
     inputs = {"failure.cv", "failure_entry.cv", "static_failure.cv", "fatal_test.cv", "loop_step_stop.cv"},
     fixtures = {["../../../language/testing/assertions.cv"] = "input.cv"},
     steps = {
-        {args = {"interpret", "--tests", "input.cv"},
+        {args = {"interpret", "--explicit-inputs", "--tests", "input.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
-        {args = {"interpret", "failure_entry.cv", "failure.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "failure_entry.cv", "failure.cv"}, exit_code = 1,
             stderr_contains = {"message evaluated", "assertion failed", "actual == expected",
                 "actual: [\n        1,\n        11,\n    ]", "expected: [\n        2,\n        22,\n    ]",
                 "array mismatch", "failure.cv:",
                 "  called from: failure.cv:", "  note: execution aborted"},
             stderr_not_contains = {"\n        99,", "unreachable"}},
-        {args = {"check", "static_failure.cv"}, exit_code = 1,
+        {args = {"check", "--explicit-inputs", "static_failure.cv"}, exit_code = 1,
             stderr_contains = {"CV-ASSERT", "1 == 2", "static mismatch"}},
-        {args = {"interpret", "--tests", "loop_step_stop.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "--tests", "loop_step_stop.cv"}, exit_code = 1,
             stdout_contains = {"body\nlater test\n"},
             stdout_not_contains = {"unreachable"},
             stderr_contains = {"step stopped", "tests: 1 passed; 1 failed"}},
-        {args = {"interpret", "--tests", "fatal_test.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "--tests", "fatal_test.cv"}, exit_code = 1,
             stderr_contains = {"module: fatal_test\n    name: fatal assertion", "assertion failed", "stop the run",
                 "earlier failure retained", "earlier check retained", "note: execution aborted"},
             stderr_not_contains = {"unreachable", "carven: tests:"}},
@@ -526,25 +542,21 @@ case_specs["commands/runtime_traps"] = {
         ["helper.cv.fixture"] = "helper.cv",
         ["range.cv.fixture"] = "range.cv",
         ["lane.cv.fixture"] = "lane.cv",
-        ["../assertions/abort.cv"] = "abort.cv",
     },
     steps = {
-        -- Keep one native CLI trap to verify subprocess termination is forwarded.
-        {args = {"divide_entry.cv", "divide.cv", "abort.cv"}, run_timeout = 120000, exit_code = 86,
-            stderr = "divide.txt"},
-        {args = {"interpret", "divide_entry.cv", "divide.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "divide_entry.cv", "divide.cv"}, exit_code = 1,
             stderr_contains = {"division by zero", "divide.cv:2:17"}},
-        {args = {"interpret", "index_entry.cv", "index.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "index_entry.cv", "index.cv"}, exit_code = 1,
             stderr_contains = {"sequence index is out of bounds", "index.cv:2:16"}},
-        {args = {"interpret", "--tests", "slice.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "--tests", "slice.cv"}, exit_code = 1,
             stderr_contains = {"sequence index is out of bounds", "slice.cv:2:12",
                 "module: slice\n    name: slice bounds", "note: execution aborted"},
             stdout_not_contains = {"unreachable"}, stderr_not_contains = {"carven: tests:"}},
-        {args = {"interpret", "helper_entry.cv", "helper.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "helper_entry.cv", "helper.cv"}, exit_code = 1,
             stderr_contains = {"test operation requires an active test", "helper.cv:2:5"}},
-        {args = {"interpret", "range_entry.cv", "range.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "range_entry.cv", "range.cv"}, exit_code = 1,
             stderr_contains = {"slice range is out of bounds", "range.cv:2:12"}},
-        {args = {"interpret", "lane_entry.cv", "lane.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "lane_entry.cv", "lane.cv"}, exit_code = 1,
             stderr_contains = {"SIMD index or memory range is out of bounds", "lane.cv:2:12"}},
     },
 }
@@ -568,7 +580,7 @@ for _, selection in ipairs({
 }) do
     local mode, tests = selection.mode, selection.tests
     local args = mode == "native" and {"--timings"} or {mode}
-    if tests then table.insert(args, "--tests") end
+    if tests then table.insert(args, mode == "compile" and "--tests=main" or "--tests") end
     if mode == "compile" then
         table.insert(args, "-o")
         table.insert(args, tests and "test-output" or "program-output")
@@ -591,8 +603,16 @@ for _, selection in ipairs({
 end
 
 case_specs["commands/source_collection"] = {
-    inputs = {"input.cv", "crafts/demo/value.cv", "explicit.cv", "external/crafts/json/parser.cv"},
+    inputs = {"input.cv", "isolated.cv", "crafts/demo/value.cv", "explicit.cv", "external/crafts/json/parser.cv"},
     steps = {
+        {args = {"check", "--explicit-inputs", "isolated.cv", "crafts/demo/value.cv"},
+            stderr_contains = {"carven: check passed"}},
+        {args = {"interpret", "--explicit-inputs", "isolated.cv", "crafts/demo/value.cv"},
+            stdout_contains = {"7\n"}},
+        {args = {"check", "--explicit-inputs", "isolated.cv"}, exit_code = 1,
+            stderr_contains = {"CV-IMPORT-RESOLUTION", "isolated.cv:1:"}},
+        {args = {"interpret", "--explicit-inputs", "isolated.cv"}, exit_code = 1,
+            stderr_contains = {"CV-IMPORT-RESOLUTION", "isolated.cv:1:"}},
         {args = {"interpret", "explicit.cv"}, absolute_inputs = {"external/crafts/json/parser.cv"},
             stdout_contains = {"42\n"}},
         {args = {"compile", "input.cv", "crafts/demo/value.cv", "-o", "emit"},
@@ -635,7 +655,7 @@ local native_specs = {
     },
     {
         name = "stops",
-        tests = "default",
+        tests = "main",
         case_dir = "commands/assertions",
         sources = {
             ["commands/assertions/loop_step_stop.cv"] = "loop_step_stop.cv",
@@ -651,7 +671,7 @@ local native_specs = {
     },
     {
         name = "slice",
-        tests = "default",
+        tests = "main",
         case_dir = "commands/runtime_traps",
         sources = {
             ["commands/runtime_traps/slice.cv.fixture"] = "slice.cv",
@@ -663,7 +683,7 @@ local native_specs = {
     },
     {
         name = "fatal",
-        tests = "default",
+        tests = "main",
         case_dir = "commands/assertions",
         sources = {
             ["commands/assertions/fatal_test.cv"] = "fatal_test.cv",

@@ -51,5 +51,11 @@ compilation settings and prerequisite targets share the installed library's
 objects. Target settings
 select the configuration automatically; project-local Crafts remain target inputs.
 
+The Xmake project directory is the workspace root. Each target supplies its
+selected sources and compilation identity; the compiler's manifest reports that
+selection and its generated artifacts. The packaged rule owns source discovery,
+generation reuse and artifact promotion. Xmake's ordinary C++ rules own native
+dependencies, compilation, linking and their caches.
+
 Compiler, formatter, and workspace modules use `moduleonly` and reuse their BMIs.
 Workspace scenarios share the compiler's internal test executable.

@@ -20,8 +20,9 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
             "  carven check [options] <source-file>...\n"
             "\n"
             "Options:\n"
-            "      --timings Show total and stage timings on stderr\n"
-            "  -h, --help    Show this help\n"
+            "      --explicit-inputs Use exactly the supplied source files\n"
+            "      --timings         Show total and stage timings on stderr\n"
+            "  -h, --help            Show this help\n"
             "\n"
             "Sources include the fixed toolchain and working-directory Crafts roots.\n"
             "No entry point is required.\n"
@@ -31,11 +32,16 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
         return 0;
     }
     auto show_timings = false;
+    auto explicit_inputs = false;
     auto paths = std::vector<std::string_view>();
     for (const auto argument : args) {
         const auto arg = std::string_view(argument);
         if (arg == "--timings") {
             show_timings = true;
+            continue;
+        }
+        if (arg == "--explicit-inputs") {
+            explicit_inputs = true;
             continue;
         }
         if (arg.starts_with('-')) {
@@ -47,7 +53,8 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
         return emit_driver_error("check requires at least one source file", "carven check");
     }
     auto timings = CommandTimings(show_timings, "check");
-    const auto sources = collect_command_sources(executable, paths, timings.output());
+    const auto sources =
+        collect_command_sources(executable, paths, timings.output(), explicit_inputs);
     if (!sources) {
         return emit_driver_error(sources.error());
     }

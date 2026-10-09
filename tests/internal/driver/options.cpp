@@ -23,6 +23,7 @@ const TestSuite suite([] static noexcept {
         expect_equal(destination->root, std::filesystem::path("."));
         expect_equal(result->test_mode, TestGenerationMode::None);
         expect(!(result->linkage_domain.has_value()));
+        expect(!result->artifact_manifest.has_value());
         if (!expect_equal(result->input_paths.size(), 2uz)) {
             return;
         }
@@ -32,9 +33,10 @@ const TestSuite suite([] static noexcept {
 
     "Compile options: explicit modes retain their selected values"_test = [] static noexcept {
         const auto output_args = std::to_array<const char*>({
-            "--tests=external",
+            "--tests=runner",
             "--output-dir=emit",
             "--linkage-domain=-domain=value",
+            "--artifact-manifest=metadata/build.json",
             "main.cv",
         });
         const auto output = parse_compile_command_options(output_args);
@@ -48,13 +50,15 @@ const TestSuite suite([] static noexcept {
         }
         expect_equal(destination->root, std::filesystem::path("emit"));
         expect_equal(output->test_mode, TestGenerationMode::RunnerHeader);
+        expect_equal(output->artifact_manifest, std::filesystem::path("metadata/build.json"));
         if (!expect(output->linkage_domain.has_value())) {
             return;
         }
         expect_equal(output->linkage_domain->kind(), LinkageDomainKind::Explicit);
         expect_equal(output->linkage_domain->value(), std::string_view("-domain=value"));
 
-        const auto stdout_args = std::to_array<const char*>({"--stdout", "--tests", "main.cv"});
+        const auto stdout_args =
+            std::to_array<const char*>({"--stdout", "--tests=main", "main.cv"});
         const auto stdout = parse_compile_command_options(stdout_args);
 
         if (!expect(stdout.has_value())) {
@@ -75,7 +79,7 @@ const TestSuite suite([] static noexcept {
         const auto cases = std::array {
             InvalidCase {
                 .name = "repeated test mode",
-                .args = {"--tests", "--tests=default", "main.cv"},
+                .args = {"--tests=runner", "--tests=main", "main.cv"},
                 .kind = CompileOptionErrorKind::TestModeSpecifiedMoreThanOnce,
                 .option = std::nullopt,
             },
@@ -95,6 +99,21 @@ const TestSuite suite([] static noexcept {
                 .name = "empty output path",
                 .args = {"--output-dir=", "main.cv"},
                 .kind = CompileOptionErrorKind::EmptyOutputPath,
+                .option = std::nullopt,
+            },
+            InvalidCase {
+                .name = "empty manifest path",
+                .args = {"--artifact-manifest=", "main.cv"},
+                .kind = CompileOptionErrorKind::EmptyManifestPath,
+                .option = std::nullopt,
+            },
+            InvalidCase {
+                .name = "repeated manifest",
+                .args =
+                    {"--artifact-manifest=first.json",
+                     "--artifact-manifest=second.json",
+                     "main.cv"},
+                .kind = CompileOptionErrorKind::ManifestSpecifiedMoreThanOnce,
                 .option = std::nullopt,
             },
             InvalidCase {
@@ -134,8 +153,14 @@ const TestSuite suite([] static noexcept {
                 .option = "../math",
             },
             InvalidCase {
+                .name = "bare compile test mode",
+                .args = {"--tests", "main.cv"},
+                .kind = CompileOptionErrorKind::UnknownOption,
+                .option = "--tests",
+            },
+            InvalidCase {
                 .name = "missing source input",
-                .args = {"--tests=default"},
+                .args = {"--tests=main"},
                 .kind = CompileOptionErrorKind::NoSourceInput,
                 .option = std::nullopt,
             },
@@ -157,7 +182,7 @@ const TestSuite suite([] static noexcept {
                 "--library-domain=installed-toolchain",
                 "--library-module=crafts.carven.std.math",
                 "--library-module=crafts.carven.std.time.clock",
-                "--tests=external",
+                "--tests=runner",
                 "main.cv",
             };
             const auto consumer = parse_compile_command_options(args);

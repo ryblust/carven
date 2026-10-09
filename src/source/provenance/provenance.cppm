@@ -1,6 +1,8 @@
 module carven:source.provenance;
 
+import :source.document;
 import :source.location;
+import :source.manager;
 import :source.module_path;
 import :source.provenance.ids;
 import :source.text;
@@ -21,12 +23,10 @@ public:
     auto location(Span span) const noexcept -> SourceLocation;
 
 private:
-    explicit ProgramSourceSnapshot(SourceView source) noexcept;
+    ProgramSourceSnapshot(const SourceManager& sources, SourceID source) noexcept;
 
     SourceID source_manager_id;
-    std::string display_origin_text;
-    std::string source_text;
-    LineIndex line_index;
+    std::shared_ptr<const SourceDocument> input;
 
     friend class CompilationProvenanceBuilder;
 };
@@ -228,7 +228,8 @@ public:
     ~CompilationProvenanceBuilder() = default;
     auto operator=(const CompilationProvenanceBuilder&) -> CompilationProvenanceBuilder& = delete;
     auto operator=(CompilationProvenanceBuilder&&) -> CompilationProvenanceBuilder& = delete;
-    auto intern_source_snapshot(SourceView source) noexcept -> ProgramSourceID;
+    auto intern_source_snapshot(const SourceManager& sources, SourceID source) noexcept
+        -> ProgramSourceID;
     auto append_module(ProgramModule program_module) noexcept -> ProgramModuleID;
     auto intern_spelling(std::string_view spelling) noexcept -> ProgramSpellingID;
     auto append_origin(ProgramOrigin origin) noexcept -> ProgramOriginID;

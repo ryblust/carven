@@ -22,13 +22,20 @@ public:
     SyntaxTree(SyntaxTree&&) = default;
     auto operator=(const SyntaxTree&) -> SyntaxTree& = delete;
     auto operator=(SyntaxTree&&) -> SyntaxTree& = default;
+    auto bind(SourceID source) const noexcept -> SyntaxTree;
     auto view() const noexcept -> ASTView;
 
 private:
     SyntaxTree(ASTStorage storage, ASTModule ast_module, SourceID source) noexcept;
 
-    ASTStorage ast_storage;
-    ASTModule source_module;
+    struct Storage final {
+        ASTStorage ast;
+        ASTModule module;
+    };
+
+    SyntaxTree(std::shared_ptr<const Storage> storage, SourceID source) noexcept;
+
+    std::shared_ptr<const Storage> storage;
     SourceID source_identity;
 
     friend class ASTBuilder;

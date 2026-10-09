@@ -1,10 +1,11 @@
 module carven:workspace.analysis.impl;
 
+import :frontend.document;
 import :frontend.program.parse;
+import :source.document;
 import :source.text;
 import :support.timing;
 import :workspace.analysis;
-import :workspace.document;
 import :workspace.semantic;
 import :workspace.symbols;
 import std;
@@ -13,15 +14,15 @@ namespace {
 
 class DocumentQueries final {
 public:
-    explicit DocumentQueries(std::shared_ptr<const WorkspaceDocumentSource> source) noexcept;
+    explicit DocumentQueries(std::shared_ptr<const SourceDocument> source) noexcept;
     auto source() const noexcept -> SourceView;
-    auto source_owner() const noexcept -> std::shared_ptr<const WorkspaceDocumentSource>;
-    auto syntax() noexcept -> std::shared_ptr<const WorkspaceDocumentSyntax>;
+    auto source_owner() const noexcept -> std::shared_ptr<const SourceDocument>;
+    auto syntax(TimingOutput timings = {}) noexcept -> std::shared_ptr<const ParsedDocument>;
     auto symbols() noexcept -> std::shared_ptr<const WorkspaceDocumentSymbolList>;
 
 private:
-    std::shared_ptr<const WorkspaceDocumentSource> input;
-    std::shared_ptr<const WorkspaceDocumentSyntax> cached_syntax;
+    std::shared_ptr<const SourceDocument> input;
+    std::shared_ptr<const ParsedDocument> cached_syntax;
     std::shared_ptr<const WorkspaceDocumentSymbolList> cached_symbols;
 };
 
@@ -61,7 +62,10 @@ public:
     auto document(std::string_view key) const noexcept -> std::optional<DocumentEntry>;
     auto documents() const noexcept -> DocumentMap;
     auto symbols() noexcept -> std::shared_ptr<const WorkspaceSymbolList>;
-    auto resolve(std::span<const WorkspaceProjectModule> project) noexcept -> ResolvedSelection;
+    auto resolve(
+        std::span<const WorkspaceProjectModule> project,
+        TimingOutput timings = {}
+    ) noexcept -> ResolvedSelection;
     auto selections() const noexcept -> std::vector<std::shared_ptr<CachedAnalysis>>;
     auto capacity() const noexcept -> std::size_t;
     auto navigation(
@@ -80,21 +84,21 @@ private:
     std::size_t semantic_cache_capacity;
 };
 
-DocumentQueries::DocumentQueries(std::shared_ptr<const WorkspaceDocumentSource> source) noexcept
+DocumentQueries::DocumentQueries(std::shared_ptr<const SourceDocument> source) noexcept
     : input(std::move(source)) {}
 
 auto DocumentQueries::source() const noexcept -> SourceView {
     return input->source();
 }
 
-auto DocumentQueries::source_owner() const noexcept
-    -> std::shared_ptr<const WorkspaceDocumentSource> {
+auto DocumentQueries::source_owner() const noexcept -> std::shared_ptr<const SourceDocument> {
     return input;
 }
 
-auto DocumentQueries::syntax() noexcept -> std::shared_ptr<const WorkspaceDocumentSyntax> {
+auto DocumentQueries::syntax(TimingOutput timings) noexcept
+    -> std::shared_ptr<const ParsedDocument> {
     if (!cached_syntax) {
-        cached_syntax = parse_workspace_document(input);
+        cached_syntax = parse_document(input, timings);
     }
     return cached_syntax;
 }
@@ -192,8 +196,10 @@ auto CachedAnalysis::result(TimingOutput timings) noexcept
     return cached_result;
 }
 
-auto WorkspaceQueries::resolve(std::span<const WorkspaceProjectModule> project) noexcept
-    -> ResolvedSelection {
+auto WorkspaceQueries::resolve(
+    std::span<const WorkspaceProjectModule> project,
+    TimingOutput timings
+) noexcept -> ResolvedSelection {
     auto modules = std::vector<WorkspaceProjectModule>(project.begin(), project.end());
     std::ranges::sort(
         modules,
@@ -214,9 +220,11 @@ auto WorkspaceQueries::resolve(std::span<const WorkspaceProjectModule> project) 
         auto resolved = std::vector<WorkspaceSemanticInput>();
         for (const auto& module : modules) {
             const auto entry = document(module.document);
-            resolved.push_back(
-                {.module = module, .source = entry ? entry->queries->source_owner() : nullptr}
-            );
+            resolved.push_back({
+                .module = module,
+                .source = entry ? entry->queries->source_owner() : nullptr,
+                .parsed = entry ? entry->queries->syntax(timings) : nullptr,
+            });
         }
         node = std::make_shared<CachedAnalysis>(std::move(resolved));
         if (semantic_cache_capacity != 0uz && cached_selections.size() == semantic_cache_capacity) {
@@ -351,7 +359,7 @@ auto WorkspaceAnalysisSnapshot::semantic(
     std::span<const WorkspaceProjectModule> project,
     TimingOutput timings
 ) const noexcept -> WorkspaceSemanticQuery {
-    auto resolved = queries->resolve(project);
+    auto resolved = queries->resolve(project, timings);
     return WorkspaceSemanticQuery {
         .result = resolved.node->result(timings),
         .documents = std::move(resolved.versions)
@@ -441,40 +449,77 @@ auto WorkspaceAnalysisHost::update(
     std::int64_t version,
     std::string text
 ) noexcept -> std::expected<WorkspaceDocumentChange, WorkspaceDocumentUpdateFailure> {
-    const auto previous = queries->document(document);
-    if (previous && version <= previous->version) {
-        return std::unexpected(WorkspaceDocumentUpdateFailure(
-            WorkspaceStaleDocumentVersion {
-                .current = previous->version,
-                .received = version,
-            }
-        ));
+    auto updates = std::vector<WorkspaceDocumentUpdate>();
+    updates.push_back(
+        {.document = std::move(document), .version = version, .text = std::move(text)}
+    );
+    auto result = update(std::move(updates));
+    if (!result) {
+        return std::unexpected(std::move(result.error().reason));
+    }
+    return result->front();
+}
+
+auto WorkspaceAnalysisHost::update(std::vector<WorkspaceDocumentUpdate> updates) noexcept
+    -> std::expected<std::vector<WorkspaceDocumentChange>, WorkspaceDocumentBatchUpdateFailure> {
+    if (updates.empty()) {
+        return std::vector<WorkspaceDocumentChange>();
+    }
+    auto documents = std::set<std::string_view>();
+    for (const auto& update : updates) {
+        if (!documents.insert(update.document).second) {
+            return std::unexpected(
+                WorkspaceDocumentBatchUpdateFailure {
+                    .document = update.document,
+                    .reason = WorkspaceDuplicateDocumentUpdate {},
+                }
+            );
+        }
+        const auto previous = queries->document(update.document);
+        if (previous && update.version <= previous->version) {
+            return std::unexpected(
+                WorkspaceDocumentBatchUpdateFailure {
+                    .document = update.document,
+                    .reason = WorkspaceStaleDocumentVersion {
+                        .current = previous->version,
+                        .received = update.version,
+                    },
+                }
+            );
+        }
     }
     auto inputs = queries->documents();
-    auto change = WorkspaceDocumentChange::VersionOnly;
-    if (previous && previous->queries->source().text == text) {
-        inputs.insert_or_assign(
-            std::move(document),
-            DocumentEntry {.version = version, .queries = previous->queries}
-        );
-    } else {
-        auto source = WorkspaceDocumentSource::create(document, std::move(text));
-        if (!source) {
-            return std::unexpected(WorkspaceDocumentUpdateFailure(std::move(source.error())));
+    auto changes = std::vector<WorkspaceDocumentChange>();
+    changes.reserve(updates.size());
+    for (auto& update : updates) {
+        const auto previous = queries->document(update.document);
+        auto change = WorkspaceDocumentChange::VersionOnly;
+        auto next = previous ? previous->queries : nullptr;
+        if (!previous || previous->queries->source().text != update.text) {
+            auto source = SourceDocument::create(update.document, std::move(update.text));
+            if (!source) {
+                return std::unexpected(
+                    WorkspaceDocumentBatchUpdateFailure {
+                        .document = std::move(update.document),
+                        .reason = std::move(source.error()),
+                    }
+                );
+            }
+            next = std::make_shared<DocumentQueries>(std::move(*source));
+            change = previous ? WorkspaceDocumentChange::Changed : WorkspaceDocumentChange::Added;
         }
-        auto next = std::make_shared<DocumentQueries>(std::move(*source));
         inputs.insert_or_assign(
-            std::move(document),
-            DocumentEntry {.version = version, .queries = std::move(next)}
+            std::move(update.document),
+            DocumentEntry {.version = update.version, .queries = std::move(next)}
         );
-        change = previous ? WorkspaceDocumentChange::Changed : WorkspaceDocumentChange::Added;
+        changes.push_back(change);
     }
     queries = std::make_shared<WorkspaceQueries>(
         std::move(inputs),
         queries->selections(),
         queries->capacity()
     );
-    return change;
+    return changes;
 }
 
 auto WorkspaceAnalysisHost::remove(std::string_view document) noexcept -> bool {

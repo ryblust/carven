@@ -108,8 +108,9 @@ auto AppendQuery::enter_expression(const TargetExpr& expression, TargetExpressio
 }
 
 auto inspect_append(std::string source) noexcept -> AppendQuery {
+    const auto semantic_owner = analyze_test_program(std::move(source));
     const auto compilation = PlannedCompilation::build(
-        analyze_test_program(std::move(source)),
+        semantic_owner,
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("formatted_append"),
          .library = std::nullopt}
@@ -153,13 +154,14 @@ const TestSuite suite([] static noexcept {
                     return scenario.expression;
                 },
                 [](const Scenario& scenario) static noexcept {
+                    const auto semantic_owner = analyze_test_program(
+                        std::format(
+                            "import \"probe.hpp\"; fn discarded(number: i32, text: str) {{ {}; }}",
+                            scenario.expression
+                        )
+                    );
                     const auto compilation = PlannedCompilation::build(
-                        analyze_test_program(
-                            std::format(
-                                "import \"probe.hpp\"; fn discarded(number: i32, text: str) {{ {}; }}",
-                                scenario.expression
-                            )
-                        ),
+                        semantic_owner,
                         {.test_mode = TestGenerationMode::None,
                          .linkage_domain = *LinkageDomain::explicit_value("format_encoding"),
                          .library = std::nullopt}
@@ -190,12 +192,13 @@ const TestSuite suite([] static noexcept {
         };
 
     "Generation: precomputed formatting retains effects"_test = [] static noexcept {
+        const auto semantic_owner = analyze_test_program(
+            "fn touch() -> bool { return true; }\n"
+            "fn known() -> String { const version = 42; return f\"build-{version:04}\"; }\n"
+            "fn effects() { f\"{touch() && false}\"; }\n"
+        );
         const auto compilation = PlannedCompilation::build(
-            analyze_test_program(
-                "fn touch() -> bool { return true; }\n"
-                "fn known() -> String { const version = 42; return f\"build-{version:04}\"; }\n"
-                "fn effects() { f\"{touch() && false}\"; }\n"
-            ),
+            semantic_owner,
             {.test_mode = TestGenerationMode::None,
              .linkage_domain = *LinkageDomain::explicit_value("precomputed_format"),
              .library = std::nullopt}
@@ -233,12 +236,13 @@ const TestSuite suite([] static noexcept {
 
     "Generation: mixed formatting passes only residual values after required effects"_test =
         [] static noexcept {
+            const auto semantic_owner = analyze_test_program(
+                "fn touch() -> bool { return true; } "
+                "fn format(value: f64, width: i32, precision: i32) -> String { "
+                "return f\"{42:04}/{touch() && false}/{value:{width}.{precision}f}/{7}\"; }"
+            );
             const auto compilation = PlannedCompilation::build(
-                analyze_test_program(
-                    "fn touch() -> bool { return true; } "
-                    "fn format(value: f64, width: i32, precision: i32) -> String { "
-                    "return f\"{42:04}/{touch() && false}/{value:{width}.{precision}f}/{7}\"; }"
-                ),
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("mixed_format"),
                  .library = std::nullopt}

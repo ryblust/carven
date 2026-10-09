@@ -20,22 +20,29 @@ auto compile(
     ExecutionOutput output,
     TimingOutput timings
 ) noexcept -> std::expected<Diagnosed<GeneratedArtifactSet>, Diagnostics> {
-    auto semantic = analyze_compilation(sources, batch, output, timings);
-    if (!semantic.has_value()) {
-        return std::unexpected(std::move(semantic.error()));
+    auto semantic = analyze_compilation(
+        sources.snapshot(),
+        batch,
+        {.output = output,
+         .timings = timings,
+         .collect_source_observations = false,
+         .capture_output = false}
+    );
+    auto diagnostics = Diagnostics(semantic.diagnostics().begin(), semantic.diagnostics().end());
+    if (semantic.program() == nullptr) {
+        return std::unexpected(std::move(diagnostics));
     }
-    auto artifacts =
-        generate_artifacts(std::move(semantic->value), generation, std::nullopt, timings);
+    auto artifacts = generate_artifacts(*semantic.program(), generation, std::nullopt, timings);
     if (!artifacts) {
-        semantic->diagnostics.push_back(
+        diagnostics.push_back(
             DiagnosticBuilder(DiagnosticCode::CompilationInput, std::move(artifacts.error()))
                 .build()
         );
-        return std::unexpected(std::move(semantic->diagnostics));
+        return std::unexpected(std::move(diagnostics));
     }
 
     return Diagnosed<GeneratedArtifactSet> {
         .value = std::move(*artifacts),
-        .diagnostics = std::move(semantic->diagnostics),
+        .diagnostics = std::move(diagnostics),
     };
 }

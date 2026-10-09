@@ -178,8 +178,10 @@ struct StagedDefinitions final {
 const TestSuite suite([] static noexcept {
     "Generation: callers realize cross-module instances in their own artifact"_test =
         [] static noexcept {
+            const auto semantic_owner =
+                analyze_modules(provider_source, "add(value, 3) + add(value, 4)");
             const auto compilation = PlannedCompilation::build(
-                analyze_modules(provider_source, "add(value, 3) + add(value, 4)"),
+                semantic_owner,
                 {.test_mode = TestGenerationMode::RunnerHeader,
                  .linkage_domain = *LinkageDomain::explicit_value("cross_module_stages"),
                  .library = SourceLibrary {
@@ -272,9 +274,8 @@ const TestSuite suite([] static noexcept {
         };
 
     "Generation: shared bodies retain identical module references"_test = [] static noexcept {
-        const auto compilation = PlannedCompilation::build(
-            analyze_modules(
-                R"(
+        const auto semantic_owner = analyze_modules(
+            R"(
                 import <vector> using std::vector;
                 private struct Record { value: i32 }
                 export fn add(value: i32, const offset: i32) -> i32 {
@@ -285,8 +286,10 @@ const TestSuite suite([] static noexcept {
                 }
                 export fn local(value: i32) -> i32 => add(value, 5);
             )",
-                "add(value, 5)"
-            ),
+            "add(value, 5)"
+        );
+        const auto compilation = PlannedCompilation::build(
+            semantic_owner,
             {.test_mode = TestGenerationMode::None,
              .linkage_domain = *LinkageDomain::explicit_value("shared_body_references"),
              .library = std::nullopt}
@@ -361,12 +364,13 @@ const TestSuite suite([] static noexcept {
 
     "Generation: static arguments select deduplicated native instances with runtime-only ABI"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+            const auto semantic_owner = analyze_test_program(R"(
             const fn index_value() -> i32 => 3;
             fn add(value: i32, const control: i32) -> i32 => value + control;
             fn use(value: i32) -> i32 => add(value, index_value()) + add(value, 3) + add(value, 4);
-        )"),
+        )");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("staged_calls"),
                  .library = std::nullopt}
@@ -389,8 +393,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Generation: const for expands with outward loop exits"_test = [] static noexcept {
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(R"(
+        const auto semantic_owner = analyze_test_program(R"(
             fn add(value: i32, const control: i32) -> i32 => value + control;
             fn accumulate(value: i32) -> i32 {
                 var total: i32 = 0;
@@ -402,7 +405,9 @@ const TestSuite suite([] static noexcept {
                 }
                 return total;
             }
-        )"),
+        )");
+        const auto compilation = PlannedCompilation::build(
+            semantic_owner,
             {.test_mode = TestGenerationMode::None,
              .linkage_domain = *LinkageDomain::explicit_value("expanded_range"),
              .library = std::nullopt}
@@ -447,14 +452,15 @@ const TestSuite suite([] static noexcept {
 
     "Generation: empty const for emits no native iteration or keyed callee"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+            const auto semantic_owner = analyze_test_program(R"(
             fn add(value: i32, const control: i32) -> i32 => value + control;
             fn probe(value: i32) -> i32 {
                 const for index in 3..3 { add(value, index); }
                 return value;
             }
-        )"),
+        )");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("empty_expanded_range"),
                  .library = std::nullopt}
@@ -493,12 +499,13 @@ const TestSuite suite([] static noexcept {
         };
 
     "Generation: omitted native calls introduce no definition edges"_test = [] static noexcept {
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(R"(
+        const auto semantic_owner = analyze_test_program(R"(
                 fn lane(const index: i32) -> i32 => index;
                 fn use(const amount: i32) -> bool => false && (lane(amount) == 7);
                 fn caller() -> bool => use(7);
-            )"),
+            )");
+        const auto compilation = PlannedCompilation::build(
+            semantic_owner,
             {.test_mode = TestGenerationMode::None,
              .linkage_domain = *LinkageDomain::explicit_value("omitted_native_edges"),
              .library = std::nullopt}
@@ -523,14 +530,15 @@ const TestSuite suite([] static noexcept {
     };
 
     "Generation: selected returns terminate recursive static expansion"_test = [] static noexcept {
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(R"(
+        const auto semantic_owner = analyze_test_program(R"(
             fn countdown(const remaining: i32) -> i32 {
                 const if remaining == 0 { return 0; }
                 return countdown(remaining - 1);
             }
             fn use() -> i32 => countdown(3);
-        )"),
+        )");
+        const auto compilation = PlannedCompilation::build(
+            semantic_owner,
             {.test_mode = TestGenerationMode::None,
              .linkage_domain = *LinkageDomain::explicit_value("terminating_static_recursion"),
              .library = std::nullopt}
@@ -579,8 +587,9 @@ const TestSuite suite([] static noexcept {
         )"},
         });
         each(cases, &Input::name, [](const auto& input) static noexcept {
+            const auto semantic_owner = analyze_test_program(std::string(input.source));
             const auto compilation = PlannedCompilation::build(
-                analyze_test_program(std::string(input.source)),
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("unselected_static_arm"),
                  .library = std::nullopt}

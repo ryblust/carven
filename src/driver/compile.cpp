@@ -4,6 +4,7 @@ import :artifacts;
 import :artifacts.materialize;
 import :backend.generate;
 import :backend.generation.request;
+import :compiler.manifest;
 import :driver.analysis;
 import :driver.compile;
 import :driver.diagnostic;
@@ -13,6 +14,7 @@ import :driver.timings;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :source.module_path;
+import :support.file;
 import :support.invariant;
 import :support.path;
 import :support.timing;
@@ -64,6 +66,132 @@ auto print_artifacts(const GeneratedArtifactSet& artifacts) noexcept -> void {
     }
 }
 
+auto validate_manifest_destination(
+    const std::filesystem::path& path,
+    const CommandSources& sources,
+    const ArtifactDestination& destination,
+    const GeneratedArtifactSet& artifacts
+) noexcept -> std::expected<void, std::string> {
+    const auto resolve = [](const std::filesystem::path& candidate) static noexcept
+        -> std::expected<std::filesystem::path, std::error_code> {
+        auto error = std::error_code();
+        const auto absolute = std::filesystem::absolute(candidate, error);
+        if (error) {
+            return std::unexpected(error);
+        }
+        const auto resolved = std::filesystem::weakly_canonical(absolute, error);
+        if (error) {
+            return std::unexpected(error);
+        }
+        return resolved;
+    };
+    const auto manifest = resolve(path);
+    if (!manifest) {
+        return std::unexpected(
+            std::format(
+                "cannot resolve artifact manifest '{}': {}",
+                path.string(),
+                manifest.error().message()
+            )
+        );
+    }
+    const auto collides = [&](const std::filesystem::path& candidate) noexcept {
+        const auto resolved = resolve(candidate);
+        if (resolved && *resolved == *manifest) {
+            return true;
+        }
+        auto error = std::error_code();
+        return std::filesystem::equivalent(path, candidate, error) && !error;
+    };
+    for (const auto& input : sources.carven) {
+        if (collides(path_from_utf8(input.path))) {
+            return std::unexpected("artifact manifest would overwrite a source input");
+        }
+    }
+    for (const auto& input : sources.native) {
+        if (collides(path_from_utf8(input))) {
+            return std::unexpected("artifact manifest would overwrite a source input");
+        }
+    }
+    if (const auto* directory = std::get_if<DirectoryArtifactDestination>(&destination)) {
+        for (const auto& artifact : artifacts.entries()) {
+            if (collides(directory->root / path_from_utf8(artifact.logical_path))) {
+                return std::unexpected("artifact manifest would overwrite a generated artifact");
+            }
+        }
+    }
+    return {};
+}
+
+auto write_manifest(
+    const std::filesystem::path& path,
+    std::span<const SourceInput> sources,
+    const TargetPlanningRequest& request,
+    const GeneratedArtifactSet& artifacts
+) noexcept -> std::expected<void, std::string> {
+    auto error = std::error_code();
+    const auto current = std::filesystem::current_path(error);
+    if (error) {
+        return std::unexpected(
+            std::format("cannot resolve workspace directory: {}", error.message())
+        );
+    }
+    const auto workspace_root = std::filesystem::canonical(current, error);
+    if (error) {
+        return std::unexpected(
+            std::format("cannot resolve workspace directory: {}", error.message())
+        );
+    }
+    auto paths = std::vector<std::string>();
+    paths.reserve(sources.size());
+    auto inputs = std::vector<CompilationManifestInput>();
+    inputs.reserve(sources.size());
+    for (const auto& source : sources) {
+        const auto absolute =
+            std::filesystem::absolute(path_from_utf8(source.path), error).lexically_normal();
+        if (error) {
+            return std::unexpected(
+                std::format("cannot resolve manifest input '{}': {}", source.path, error.message())
+            );
+        }
+        const auto relative = absolute.lexically_relative(workspace_root);
+        const auto inside = !relative.empty() && *relative.begin() != "..";
+        paths.push_back(path_to_generic_utf8(inside ? relative : absolute));
+        inputs.push_back({.path = paths.back(), .module = source.module_path.value()});
+    }
+    if (path.has_parent_path()) {
+        std::filesystem::create_directories(path.parent_path(), error);
+    }
+    if (error) {
+        return std::unexpected(
+            std::format(
+                "cannot create artifact manifest directory '{}': {}",
+                path.parent_path().string(),
+                error.message()
+            )
+        );
+    }
+    if (const auto written = write_file(
+            path,
+            format_compilation_manifest(
+                path_to_generic_utf8(workspace_root),
+                inputs,
+                request,
+                artifacts
+            )
+        );
+        !written) {
+        return std::unexpected(
+            std::format(
+                "cannot write artifact manifest '{}': {}",
+                path.string(),
+                written.error().code.message()
+            )
+        );
+    }
+    return {};
+}
+
 } // namespace
 
 auto run_compile_command(std::string_view executable, std::span<const char* const> args) noexcept
@@ -79,6 +207,7 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
             "Output options:\n"
             "  -o, --output-dir <dir>    Write files below <dir> (default: .)\n"
             "      --stdout              Print explicit inputs with path headings\n"
+            "      --artifact-manifest=<file>     Write versioned JSON input and artifact facts\n"
             "      --linkage-domain=<id> Set the private namespace identity\n"
             "                            (default: derived from the output directory)\n"
             "      --library-domain=<id> Set the identity of a fixed source library\n"
@@ -87,9 +216,8 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
             "                            (default: emit only consumer implementations)\n"
             "\n"
             "Test options:\n"
-            "      --tests               Emit runtime tests, runner, and test entry\n"
-            "      --tests=default       Alias for --tests\n"
-            "      --tests=external      Emit runtime tests and runner without test entry\n"
+            "      --tests=main          Emit runtime tests, runner, and test entry\n"
+            "      --tests=runner        Emit runtime tests and runner without test entry\n"
             "                            (default: no runtime test artifacts)\n"
             "\n"
             "Options:\n"
@@ -154,10 +282,20 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
         .linkage_domain = std::move(*linkage_domain),
         .library = std::move(request->library),
     };
-    const auto artifacts =
-        generate_artifacts(std::move(*semantic), generation, selection, timings.output());
+    const auto artifacts = generate_artifacts(*semantic, generation, selection, timings.output());
     if (!artifacts) {
         return emit_driver_error(artifacts.error());
+    }
+    if (request->artifact_manifest) {
+        if (const auto valid = validate_manifest_destination(
+                *request->artifact_manifest,
+                *sources,
+                request->destination,
+                *artifacts
+            );
+            !valid) {
+            return emit_driver_error(valid.error());
+        }
     }
 
     auto writing = TimingScope(timings.output(), TimingStage::ArtifactWriting);
@@ -173,10 +311,32 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
             },
         }
     );
-    writing.stop();
     if (!written) {
         return emit_driver_error(written.error());
     }
+    if (request->artifact_manifest) {
+        // Newly materialized paths can reveal filesystem aliases that did not
+        // exist when the destination was first checked.
+        if (const auto valid = validate_manifest_destination(
+                *request->artifact_manifest,
+                *sources,
+                request->destination,
+                *artifacts
+            );
+            !valid) {
+            return emit_driver_error(valid.error());
+        }
+        if (const auto manifest = write_manifest(
+                *request->artifact_manifest,
+                sources->carven,
+                generation,
+                *artifacts
+            );
+            !manifest) {
+            return emit_driver_error(manifest.error());
+        }
+    }
+    writing.stop();
     timings.set_outcome("finished");
     return 0;
 }

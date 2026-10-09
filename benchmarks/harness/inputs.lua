@@ -15,7 +15,8 @@ function crafts_root(compiler)
     raise("cannot locate the selected compiler's crafts")
 end
 
-function capture(session)
+function capture(session, options)
+    options = options or {}
     local root = path.join(session.artifacts, "inputs")
     local manifest = {}
     local function copy(file, relative)
@@ -29,7 +30,9 @@ function capture(session)
             copy(file, path.join(relative, path.relative(file, source)))
         end
     end
-    directory(path.join(session.results.metadata.crafts_root, "carven"), "crafts/carven")
+    if options.crafts ~= false then
+        directory(path.join(session.results.metadata.crafts_root, "carven"), "crafts/carven")
+    end
     local topic = path.join("benchmarks", session.results.topic)
     directory(path.join(os.projectdir(), topic), topic)
     directory(path.join(os.projectdir(), "benchmarks/harness"), "benchmarks/harness")

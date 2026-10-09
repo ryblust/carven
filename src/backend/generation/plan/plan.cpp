@@ -551,18 +551,20 @@ auto TargetPlan::module_schedule(ModuleID id) const noexcept -> const TargetModu
     return std::get<TargetModuleImplementationArtifact>(artifact(found->second)).schedule;
 }
 
-PlannedCompilation::PlannedCompilation(SemIRProgram semantic, TargetPlan target) noexcept
-    : semantic_program(std::move(semantic)),
+PlannedCompilation::PlannedCompilation(const SemIRProgram& semantic, TargetPlan target) noexcept
+    : semantic_program(semantic),
       target_plan(std::move(target)) {
     if (semantic_program.identity() != target_plan.semantic_identity()) {
         invariant_violation("planned compilation paired a target plan with a different SemIR");
     }
 }
 
-auto PlannedCompilation::build(SemIRProgram semantic, const TargetPlanningRequest& request) noexcept
-    -> PlannedCompilation {
+auto PlannedCompilation::build(
+    const SemIRProgram& semantic,
+    const TargetPlanningRequest& request
+) noexcept -> PlannedCompilation {
     auto target = TargetPlan::build(semantic, request);
-    return PlannedCompilation(std::move(semantic), std::move(target));
+    return PlannedCompilation(semantic, std::move(target));
 }
 
 auto PlannedCompilation::semantic() const noexcept -> const SemIRProgram& {

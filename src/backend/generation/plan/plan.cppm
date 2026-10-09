@@ -254,8 +254,11 @@ private:
 
 class PlannedCompilation final {
 public:
-    static auto build(SemIRProgram semantic, const TargetPlanningRequest& request) noexcept
+    // The program must remain alive and unmoved while the plan or its views are used.
+    static auto build(const SemIRProgram& semantic, const TargetPlanningRequest& request) noexcept
         -> PlannedCompilation;
+    static auto build(const SemIRProgram&&, const TargetPlanningRequest&) noexcept
+        -> PlannedCompilation = delete;
     PlannedCompilation(const PlannedCompilation&) = delete;
     PlannedCompilation(PlannedCompilation&& other) noexcept = default;
     ~PlannedCompilation() = default;
@@ -265,9 +268,9 @@ public:
     auto target() const noexcept -> const TargetPlan&;
 
 private:
-    PlannedCompilation(SemIRProgram semantic, TargetPlan target) noexcept;
+    PlannedCompilation(const SemIRProgram& semantic, TargetPlan target) noexcept;
 
-    SemIRProgram semantic_program;
+    const SemIRProgram& semantic_program;
     TargetPlan target_plan;
 };
 

@@ -9,7 +9,7 @@ for _, variant in ipairs({
         if variant.portable then
             add_defines("CARVEN_SIMD_FORCE_PORTABLE")
         end
-        add_rules("@carven/carven", {tests = variant.portable and "default" or "external"})
+        add_rules("@carven/carven", {tests = variant.portable and "main" or "runner"})
         if variant.portable then
             add_files("carven/std/utf/validation.cv", "carven/std/simd/scan.cv",
                 "carven/std/json/validation.cv")

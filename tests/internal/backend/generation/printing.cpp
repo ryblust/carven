@@ -19,12 +19,13 @@ namespace {
 const TestSuite suite([] static noexcept {
     "Generation: mixed printing arguments retain runtime effects and inner String construction"_test =
         [] static noexcept {
+            const auto semantic_owner = analyze_test_program(
+                "fn touch() -> bool { return true; } "
+                "fn known() { println(42, touch() && false, f\"{7}\"); } "
+                "fn dynamic(value: i32) { println(value); }"
+            );
             const auto compilation = PlannedCompilation::build(
-                analyze_test_program(
-                    "fn touch() -> bool { return true; } "
-                    "fn known() { println(42, touch() && false, f\"{7}\"); } "
-                    "fn dynamic(value: i32) { println(value); }"
-                ),
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("known_printing"),
                  .library = std::nullopt}

@@ -77,11 +77,12 @@ auto TupleGenerationQuery::visit_variable(const TargetVariableStmt& variable) no
 const TestSuite suite([] static noexcept {
     "Generation: static decomposition delivers scalar facts without product storage"_test =
         [] static noexcept {
+            const auto semantic_owner = analyze_test_program(
+                "export(cpp) fn answer() -> i32 { "
+                "const (left, _, (right,)) = (20, (), (22,)); return left + right; }"
+            );
             const auto compilation = PlannedCompilation::build(
-                analyze_test_program(
-                    "export(cpp) fn answer() -> i32 { "
-                    "const (left, _, (right,)) = (20, (), (22,)); return left + right; }"
-                ),
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("static_tuple_values"),
                  .library = std::nullopt}
@@ -95,13 +96,14 @@ const TestSuite suite([] static noexcept {
         };
     "Generation: void values preserve tuple positions and native return ABI"_test =
         [] static noexcept {
+            const auto semantic_owner = analyze_test_program(
+                "export(cpp) fn nothing(value: void) -> void => value; "
+                "export(cpp) fn product() -> (i32, void, i32) => (3, nothing(()), 4); "
+                "fn probe() -> i32 { let (first, empty, last) = product(); "
+                "nothing(empty); return first + last; }"
+            );
             const auto compilation = PlannedCompilation::build(
-                analyze_test_program(
-                    "export(cpp) fn nothing(value: void) -> void => value; "
-                    "export(cpp) fn product() -> (i32, void, i32) => (3, nothing(()), 4); "
-                    "fn probe() -> i32 { let (first, empty, last) = product(); "
-                    "nothing(empty); return first + last; }"
-                ),
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("tuple_values"),
                  .library = std::nullopt}

@@ -43,6 +43,7 @@ under `build/benchmarks/`. Existing report/workspace names are rejected.
 | `--case=<id>` | Run one exact case identifier | All cases |
 | `--output=<path>` | Save run metadata, inputs, raw samples, and summaries as JSON | Fresh JSON file under `build/benchmarks/<topic>/` |
 | `--timings` | Include Carven stage timings for compile/incremental | Off |
+| `--command=check\|compile` | Select the compiler boundary for `compile` workloads | `compile` |
 
 For example, `./xmakew bench --samples=2 --warmups=0 incremental` performs two
 measured runs per scenario. `./xmakew bench --help` lists the available options.
@@ -55,13 +56,15 @@ selection or building:
 ./xmakew bench compile --list
 ./xmakew bench compile --case=modules_16 --samples=7 --warmups=2 --verbose
 ./xmakew bench compile --case=modules_16 --timings --output=build/benchmarks/compile.json
+./xmakew bench compile --case=modules_16 --command=check --timings
 ./xmakew bench incremental --case=private_function_edit --output=build/benchmarks/incremental.json
 ./xmakew bench incremental --case=private_function_edit --timings --output=build/benchmarks/incremental-stages.json
 ```
 
 Output shows case progress and wall-time summaries. The result table lists valid sample
 counts, medians, minima, and maxima, with command timings in milliseconds and native kernel timings in nanoseconds. Incremental
-cases also report changed and unrelated object counts. Failed or incomplete cases
+cases also report observed Carven invocations, generated-file changes, and native
+object changes. Failed or incomplete cases
 are identified separately; missing measurements appear as `-`. Verbose output
 includes individual samples, warmup measurements, and case details. Timings have no performance
 pass/fail threshold.
@@ -129,11 +132,13 @@ alongside an unchanged, independent `unrelated` module in the same target:
 | Remove module | Remove that independent module |
 
 The benchmark native project uses Debug mode and C++20 regardless of the selected
-Carven compiler's build mode. Each scenario has its own retained project. The
+Carven compiler's build mode. Fixtures and the selected compiler's Crafts are
+captured through the shared input snapshot. The Xmake project uses that captured
+Crafts tree. Each scenario has its own retained project. The
 first run uses the initial build as its baseline. Later edit runs restore and
 build that baseline before applying the operation; no-change runs reuse the
-already built project. Setup, restoration, edits, and filesystem timestamp waits
-are outside the timed region. Timings include Xmake startup, Carven generation,
+already built project. Setup, restoration, edits, snapshot hashing, executable
+validation, and filesystem timestamp waits are outside the timed region. Timings include Xmake startup, Carven generation,
 native compilation, and linking as required by that build.
 
 Each row reports the median build time and the number of new or timestamp-changed
@@ -149,21 +154,37 @@ The `Unrelated objects` column reports changed objects for the independent modul
 Counts have no pass/fail threshold. Identical rewrites change the source timestamp
 while preserving content and source locations.
 
+`Artifact changes` counts generated `.cpp` and `.hpp` additions, content changes,
+and removals. `Unchanged touched` counts unchanged bytes whose timestamps changed.
+JSON retains the separate path lists and before/after hashes and timestamps.
+`Carven runs` counts captured timing reports when `--timings` is enabled; the
+fresh initial build must establish that instrumentation is present. Without it,
+the count is missing, displayed as `-`. Zero changed objects alone does not
+establish that Carven generation was skipped.
+
+After a successful measured build, the executable reported by Xmake must print
+`42`, or `43` after the private function edit. An incorrect result fails the
+sample. These are single-target source edits; the independent module does not
+establish isolation between separate native targets.
+
 The fixture uses the selected Carven compiler, the rule repository associated
 with Xmake's selected Carven package, and the running Xmake executable. This
 also supports local rule repositories used in dual-repository checkouts.
 
 ### Compile
 
-`compile/run.lua` runs the root `benchmarks/compile/` workload generators
-and measures source-to-C++ compilation, including process startup, parsing,
-analysis, and generation. Native C++ compilation and linking
-are excluded.
+`compile/run.lua` runs the root `benchmarks/compile/` workload generators with
+`--explicit-inputs`. These self-contained inputs use builtins and native C++
+declarations; automatic Crafts discovery is excluded. Reports retain each case's
+source bytes, source count, command, input mode, and output mode.
 
-Module batches compile independent modules into fresh output directories;
-these timings include generated-artifact writes. Structured workloads launch
-the compiler on workload source files with a fixed linkage domain and send
-C++ inspection output to the null device.
+The default `--command=compile` measures process startup, parsing, complete
+semantic analysis, C++ generation, and writes to a fresh output directory for
+every sample. All workloads use this same boundary and a fixed linkage domain.
+`--command=check` runs the same inputs through complete semantic analysis,
+including compile-time execution, without C++ generation or artifact writes.
+Select the command per run; cases are not multiplied into another matrix.
+Native C++ compilation and linking are excluded from both commands.
 
 | Structured workload | Input distinction |
 | --- | --- |
@@ -188,6 +209,13 @@ The output reports input sizes; workload definitions live in
 `compile/workloads.lua`. Timings include process startup, which
 can dominate small inputs.
 
+Each sample starts a new compiler process. Warmups warm process and filesystem
+resources; they do not retain Workspace syntax or semantic results. Complete
+analysis remains the baseline. Workspace document updates, retained parsing and
+query-cache hits require a separate in-process measurement. Results from this
+protocol are not directly comparable to older runs that implicitly included
+Crafts or sent structured-workload inspection output to the null device.
+
 ### Comparing results
 
 Use the same machine, compiler build mode, inputs, linkage domain, and flags.
@@ -201,6 +229,13 @@ and stderr. Warmups and failed samples are excluded from summary statistics;
 caught failures retain completed samples and the failure status. Serialization
 happens outside the measured intervals. External compiler build modes are
 reported as unknown.
+
+Compile and incremental cases run sequentially, with each case's warmups followed
+by its samples; the JSON records this order. Their workload and harness sources
+are captured and checked using the shared input snapshot. Incremental builds
+also consume captured Crafts. The compiler executable's hash is checked again
+before completion. Keep the selected rules package unchanged during a run;
+its repository revision and local changes are recorded separately.
 
 `--timings` shows the valid sample closest to each case's median wall time,
 identified by sample number. Its Carven invocations appear separately, with stage

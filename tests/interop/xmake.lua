@@ -40,7 +40,7 @@ local rejection_cases = {
 
 target("carven-test-interop")
     set_default(false)
-    add_rules("@carven/carven", {tests = "external"})
+    add_rules("@carven/carven", {tests = "runner"})
 
     set_languages("c++20")
     add_includedirs(interop_dir)
@@ -81,7 +81,7 @@ for _, variant in ipairs({
 }) do
     target(variant.name)
         set_default(false)
-        add_rules("@carven/carven", {tests = "external"})
+        add_rules("@carven/carven", {tests = "runner"})
         set_languages("c++20")
         add_includedirs(interop_dir)
         if variant.portable then
@@ -158,7 +158,7 @@ end
 
 target("carven-test-interop-print")
     set_default(false)
-    add_rules("@carven/carven", {tests = "default"})
+    add_rules("@carven/carven", {tests = "main"})
 
     set_languages("c++23")
     add_files(path.join(interop_dir, "printing", "print.cv"))

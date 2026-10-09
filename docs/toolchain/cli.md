@@ -9,8 +9,8 @@ document defines invocation, input paths, output writes, and process behavior.
 ```text
 carven [--tests] [--timings] <source-file>... [-- <arguments>...]
 carven compile [options...] <source-file>...
-carven check [--timings] <source-file>...
-carven interpret [--tests] [--timings] [--trace] [--max-steps N] <source-file>... [-- <arguments>...]
+carven check [--explicit-inputs] [--timings] <source-file>...
+carven interpret [--explicit-inputs] [--tests] [--timings] [--trace] [--max-steps N] <source-file>... [-- <arguments>...]
 carven dump [tokens|ast] [--timings] <source-file>
 ```
 
@@ -29,6 +29,13 @@ files must be named explicitly. The collector assigns module identities relative
 to each Crafts root, deduplicates files by canonical path, and sorts the batch by
 path spelling. Distinct files with conflicting module identities are errors.
 Directory symlinks are not recursively followed.
+
+`check`, `compile`, and `interpret` accept `--explicit-inputs` for callers that
+already own source selection. This mode reads exactly the named `.cv` files,
+without finding an installed toolchain or collecting either Crafts root. Supply
+every imported Carven module explicitly. All selected modules still undergo
+ordinary analysis and compile-time execution. Build integrations and focused
+tests can reuse this boundary without repeating unrelated package analysis.
 
 The installed layout is `<prefix>/bin/carven` with matching resources in
 `<prefix>/crafts/carven/`. Development binaries locate Crafts in their containing
@@ -63,7 +70,7 @@ for example in `thirdparty/`. Supply selected `.cv` files explicitly to Carven.
 Supply C++ sources, include paths, defines, compiler options, and libraries to the
 native build through its ordinary target configuration. Explicit `.cv` inputs
 follow the ordinary module-path rules and are combined with the automatically
-collected Crafts.
+collected Crafts unless `--explicit-inputs` is present.
 
 ## Native execution
 
@@ -139,11 +146,11 @@ The command completes after semantic analysis and produces no artifacts. Native
 overload resolution, template instantiation, and native type properties are
 checked by the C++ compiler.
 
-`check` requires at least one source file. It accepts `--timings` and standalone
-`--help` and `-h`. Invocation, input, and analysis errors return status 1;
-success returns 0, including when warnings are reported. Successful checks print
-`carven: check passed` on stderr. With `--timings`, the timing report adds the
-duration to this success message instead of printing it twice.
+`check` requires at least one source file. It accepts `--explicit-inputs`,
+`--timings`, and standalone `--help` and `-h`. Invocation, input, and analysis
+errors return status 1; success returns 0, including when warnings are reported.
+Successful checks print `carven: check passed` on stderr. With `--timings`, the
+timing report adds the duration to this success message instead of printing it twice.
 
 ## Interpretation
 
@@ -292,20 +299,77 @@ The caller supplies the complete `.cv` batch, including every source dependency.
 Build systems use this mode to own source selection and keep library builds
 independent of unrelated files in the working directory.
 
+`--artifact-manifest=<file>` writes versioned JSON facts after all selected artifacts have
+been written successfully. Parent directories are created. The file records the
+complete analyzed input batch and the actual generated artifact inventory:
+
+```json
+{
+  "version": 1,
+  "workspace": {"root": "/projects/example"},
+  "generation": {
+    "linkage_domain": {"kind": "explicit", "value": "example:app"},
+    "tests": "none",
+    "library": null
+  },
+  "inputs": [{"path": "src/main.cv", "module": "src.main"}],
+  "artifacts": [
+    {"path": "src/main.cpp", "role": "module-implementation", "source_mapping": "source-attributed"}
+  ]
+}
+```
+
+The workspace is the invocation's working directory, recorded as an absolute
+physical path. Input paths inside it are normalized workspace-relative spellings;
+external inputs retain absolute spellings. Filesystem aliases retain their input
+spelling while source collection deduplicates their canonical file identity.
+Module identities are canonical.
+
+A workspace can contain several source selections. `generation` describes
+the artifact-generation request, independent of native target settings:
+`linkage_domain` records its `explicit` or `artifact-root` kind and value;
+`tests` is `none`, `main`, or `runner`. `library` is null or records the
+library's `linkage_domain`, canonical `modules`, and `emit_implementations` flag.
+These identify ownership of generated definitions. Xmake owns project targets,
+their source selections, native configuration, dependency graph, and lifecycle.
+
+Artifact paths are normalized relative paths below the output directory, ordered
+by logical path. Roles are `interface`, `cpp-api-header`, `module-implementation`,
+`test-runner-header`, and `test-entry`; source mapping is `stable-interface` or
+`source-attributed`. With `--stdout`, the inventory describes the displayed selection
+while inputs still describe the complete analyzed batch.
+
+The manifest serializes the compiler's existing actual artifact set; it is not a
+second artifact planner or inventory. It requires no second analysis and does not
+decide cache validity or imply partial semantic compilation. Consumers check
+the command's exit status and schema version before using it. A failed command may
+leave an older or incomplete manifest in place; build systems should use a fresh staging path.
+The manifest cannot overwrite a source input or a generated artifact. Place it
+outside the artifact tree when using directory-based promotion.
+
+The compiler owns source identities, analysis, and artifact facts. The build system
+owns source selection, change detection, persistent dependency records, content
+comparison, stale output removal, native object reuse, scheduling, and linking.
+Source-level incrementality can skip an unchanged complete generation; changing a
+member of the batch still invokes complete semantic analysis. Imported modules
+are not a sufficient pruning rule because other selected modules can contain
+static effects and tests.
+
 ## Test emission
 
 Test emission is omitted by default. One explicit mode may be selected:
 
 | Option | Generated test artifacts |
 | --- | --- |
-| `--tests`, `--tests=default` | Module test functions, the generated runner header, and the default test entry |
-| `--tests=external` | Module test functions and the generated runner header, without a generated entry |
+| `--tests=main` | Module test functions, the generated runner header, and the generated test entry |
+| `--tests=runner` | Module test functions and the generated runner header, without a generated entry |
 
-Test mode options are mutually exclusive and cannot be repeated, including aliases.
-Default test mode suppresses the program entry wrapper so all generated sources
+Test mode options are mutually exclusive and cannot be repeated. `compile`
+requires an explicit value; bare `--tests` remains the test-execution switch for
+native execution and `interpret`. Main mode suppresses the program entry wrapper so all generated sources
 can be linked into one test executable. Compilation permits an empty test suite;
-commands that run tests require at least one runtime test. External mode retains
-the program entry wrapper; the consuming build owns entry selection. External mode
+commands that run tests require at least one runtime test. Runner mode retains
+the program entry wrapper; the consuming build owns entry selection. Runner mode
 supplies the generated runner function through
 `carven/generated/carven-test-runner.hpp`; its consumer owns the process entry
 point and may pass a custom reporter.

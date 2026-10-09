@@ -2,4 +2,5 @@ import facade using create_value;
 
 fn main() {
     let value = create_value(41);
+    println(value.number);
 }

@@ -44,7 +44,13 @@ struct RunOptions final {
     std::string_view exclude_pattern;
     std::string_view test_name;
     bool list_tests;
+    bool timings;
     bool show_help;
+};
+
+struct TestTiming final {
+    std::string_view name;
+    std::chrono::steady_clock::duration elapsed;
 };
 
 auto matches_pattern(std::string_view text, std::string_view pattern) noexcept -> bool {
@@ -85,12 +91,15 @@ auto parse_options(int argc, const char* const* argv) noexcept -> std::optional<
         .exclude_pattern = {},
         .test_name = {},
         .list_tests = false,
+        .timings = false,
         .show_help = false,
     };
     for (auto index = 1; index < argc; ++index) {
         const auto argument = std::string_view(argv[index]);
-        if (argument == "--list-tests" || argument == "--help") {
-            auto& flag = argument == "--list-tests" ? options.list_tests : options.show_help;
+        if (argument == "--list-tests" || argument == "--timings" || argument == "--help") {
+            auto& flag = argument == "--list-tests" ? options.list_tests
+                : argument == "--timings"           ? options.timings
+                                                    : options.show_help;
             if (flag) {
                 std::print(std::cerr, "Invalid test option: {}\n", argument);
                 return std::nullopt;
@@ -280,8 +289,10 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
     if (options->show_help) {
         std::print(
             std::cout,
-            "Usage: {} [--filter PATTERN] [--exclude PATTERN] [--test NAME] [--list-tests]\n"
-            "Patterns support * and ?. An empty selection fails.\n",
+            "Usage: {} [--filter PATTERN] [--exclude PATTERN] [--test NAME] [--list-tests] "
+            "[--timings]\n"
+            "Patterns support * and ?. An empty selection fails.\n"
+            "Timings report case execution durations, slowest first.\n",
             argv[0]
         );
         return 0;
@@ -299,6 +310,7 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
     auto selected_count = 0uz;
     auto passed_count = 0uz;
     auto failed_count = 0uz;
+    auto timings = std::vector<TestTiming>();
     for (const auto& entry : runner.tests) {
         if (!is_selected(entry.name, *options)) {
             continue;
@@ -312,7 +324,16 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
         const auto passed_before = runner.assertions_passed;
         const auto failed_before = runner.assertions_failed;
         const auto errors_before = runner.harness_errors;
-        entry.body();
+        if (options->timings) {
+            const auto started = std::chrono::steady_clock::now();
+            entry.body();
+            timings.push_back({
+                .name = entry.name,
+                .elapsed = std::chrono::steady_clock::now() - started,
+            });
+        } else {
+            entry.body();
+        }
         runner.current_test_name = {};
         if (runner.assertions_passed == passed_before
             && runner.assertions_failed == failed_before) {
@@ -354,6 +375,17 @@ auto run_tests(int argc, const char* const* argv) noexcept -> int {
             runner.assertions_passed,
             runner.assertions_failed
         );
+        if (options->timings) {
+            std::ranges::stable_sort(timings, std::greater(), &TestTiming::elapsed);
+            for (const auto& timing : timings) {
+                std::print(
+                    std::cerr,
+                    "Test time: {:9.3f} ms  {}\n",
+                    std::chrono::duration<double, std::milli>(timing.elapsed).count(),
+                    timing.name
+                );
+            }
+        }
     }
     return failed_count != 0uz || runner.harness_errors != 0uz ? 1 : 0;
 }

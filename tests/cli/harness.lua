@@ -19,7 +19,7 @@ local step_fields = {
     stderr_not_contains = true, output_files = true, absent_files = true,
     file_contains = true, file_not_contains = true,
 }
-local case_fields = {inputs = true, fixtures = true, project = true, steps = true}
+local case_fields = {inputs = true, fixtures = true, project = true, steps = true, case_dir = true}
 for field in pairs(step_fields) do case_fields[field] = true end
 
 local function check_fields(value, allowed, label)
@@ -106,7 +106,7 @@ function main(target, opt, case_specs, execution)
             label .. " ignores installed inputs without an installed toolchain")
     end
     local case_dir = execution and execution.case_dir
-        or path.join(os.projectdir(), "tests", "cli", case_name)
+        or path.join(os.projectdir(), "tests", "cli", case_spec.case_dir or case_name)
     local work_dir = os.tmpfile() .. ".dir"
     local function case_path(relative)
         return path.normalize(path.absolute(relative, case_dir))

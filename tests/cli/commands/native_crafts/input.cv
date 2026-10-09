@@ -1,9 +1,0 @@
-import std::utf.text using from_utf8;
-import std::utf.error using UTF8Error;
-import demo::api using answer;
-
-fn main() throw UTF8Error {
-    let bytes: [u8; 2] = [0x6f, 0x6b];
-    println(from_utf8(bytes)?);
-    println(answer());
-}

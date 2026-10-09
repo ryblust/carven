@@ -2,9 +2,12 @@ module carven:test.internal.frontend.program.parse;
 
 import :diagnostics.code;
 import :diagnostics.diagnostic;
+import :diagnostics.report;
+import :frontend.document;
 import :frontend.program.parse;
 import :frontend.program.verify;
 import :source.batch;
+import :source.document;
 import :source.manager;
 import :source.module_path;
 import :test.harness.framework;
@@ -47,6 +50,30 @@ const TestSuite suite([] static noexcept {
                     .path.value(),
                 std::string_view("app.main")
             );
+        };
+
+    "Syntax program: reused document diagnostics bind to the selected source owner"_test =
+        [] static noexcept {
+            const auto document = SourceDocument::create("broken.cv", "fn broken( {");
+            require(document.has_value());
+            const auto parsed_document = parse_document(*document);
+            auto sources = SourceManager();
+            require(sources.append_virtual("unrelated.cv", "const other: i32 = 1;").has_value());
+            const auto source =
+                sources.append_shared((*document)->sources(), (*document)->source().source_id);
+            const auto inputs =
+                std::array {SourceModuleInput {.source_id = source, .module_path = path("broken")}};
+            const auto retained =
+                std::array {ParsedSourceInput {.source_id = source, .document = parsed_document}};
+            const auto fresh = parse_program(sources, SourceBatch {.modules = inputs});
+            const auto reused =
+                parse_program(sources, SourceBatch {.modules = inputs}, {}, retained);
+            require(!fresh.has_value());
+            require(!reused.has_value());
+            const auto rendered = render_diagnostics(reused.error(), sources);
+            expect_equal(rendered, render_diagnostics(fresh.error(), sources));
+            expect(rendered.contains("broken.cv"));
+            expect(!rendered.contains("unrelated.cv"));
         };
 
     "Syntax program: closed compilation rejects an empty input batch"_test = [] static noexcept {

@@ -62,7 +62,9 @@ function setup(session)
     session.results.metadata.compiler = compiler_identity(session.compiler, external)
     checkpoint(session)
     assert(os.isfile(session.compiler), "Carven compiler does not exist: %s; build it first", session.compiler)
-    session.results.metadata.crafts_root = inputs.crafts_root(session.compiler)
+    if session.results.topic ~= "compile" then
+        session.results.metadata.crafts_root = inputs.crafts_root(session.compiler)
+    end
     session.results.metadata.compiler.sha256 = hash.sha256(session.compiler):lower()
     session.compiler_mode = external and "external (unknown)" or config.mode() or "unknown"
 end
@@ -240,16 +242,27 @@ function measure_case(session, case, action)
 end
 
 function perform(session, action)
-    local failure
+    local failure, measured
     try {function ()
         action()
+        measured = true
         if session.results.metadata.inputs then inputs.finish(session) end
+        assert(hash.sha256(session.compiler):lower() == session.results.metadata.compiler.sha256,
+            "compiler executable changed during measurement: %s", session.compiler)
     end, catch {function (errors) failure = errors end}}
     session.results.status = failure and "failed" or "complete"
     if failure then
         session.results.error = tostring(failure)
         for _, case in ipairs(session.results.cases) do
-            if case.status == "running" then case.status = "failed" end
+            if measured then
+                case.status = "failed"
+                for _, run in ipairs(case.runs) do
+                    run.validation_error = run.validation_error or "benchmark inputs failed final validation"
+                end
+                case.summary = summary(case.runs)
+            elseif case.status == "running" then
+                case.status = "failed"
+            end
         end
     end
     checkpoint(session)
@@ -260,6 +273,7 @@ end
 -- Workloads supply setup and the measured action. Sampling, persistence and
 -- reporting have one lifecycle regardless of the command being measured.
 function run(session, cases, prepare, configure)
+    session.results.metadata.sampling.order = "case-sequential"
     perform(session, function ()
         setup(session)
         if configure then configure(session) end

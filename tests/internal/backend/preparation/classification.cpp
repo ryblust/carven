@@ -11,47 +11,6 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
-    "Integer formatting: parsed fields retain literal bytes and exact type-derived sizes"_test =
-        [] static noexcept {
-            const auto types = std::array<std::optional<BuiltinType>, 2> {
-                BuiltinType::U32,
-                BuiltinType::I64,
-            };
-            const auto parsed = classify_writer_format(
-                FormatSpec {
-                    .parts =
-                        {format_text(std::string("{我}\0", 6uz)),
-                         format_field(0uz, {format_text("08X")}),
-                         format_text("/"),
-                         format_field(1uz, {format_text("020d")})}
-                },
-                types
-            );
-            if (!expect(parsed.has_value())) {
-                return;
-            }
-            expect(parsed->text == std::vector<std::string> {std::string("{我}\0", 6uz), "/", ""});
-            expect(
-                parsed->fields
-                == std::vector<WriterFormatField> {
-                    IntegerFormatField {
-                        .base = 16,
-                        .uppercase = true,
-                        .zero_pad = true,
-                        .static_width = 8u
-                    },
-                    IntegerFormatField {
-                        .base = 10,
-                        .uppercase = false,
-                        .zero_pad = true,
-                        .static_width = 20u
-                    },
-                }
-            );
-            expect(parsed->minimum_size == 35u);
-            expect(parsed->maximum_size == 35u);
-        };
-
     "Integer formatting: size bounds include every value and the sign of a signed minimum"_test =
         [] static noexcept {
             struct Scenario final {

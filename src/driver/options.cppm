@@ -14,6 +14,7 @@ using ArtifactDestination =
 
 struct CompileCommandOptions final {
     ArtifactDestination destination;
+    std::optional<std::filesystem::path> artifact_manifest;
     TestGenerationMode test_mode;
     std::optional<LinkageDomain> linkage_domain;
     std::optional<SourceLibrary> library;
@@ -27,6 +28,8 @@ enum class CompileOptionErrorKind {
     TestModeSpecifiedMoreThanOnce,
     MissingOutputPath,
     EmptyOutputPath,
+    ManifestSpecifiedMoreThanOnce,
+    EmptyManifestPath,
     LinkageDomainSpecifiedMoreThanOnce,
     EmptyLinkageDomain,
     LibraryDomainSpecifiedMoreThanOnce,

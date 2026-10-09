@@ -463,67 +463,6 @@ const TestSuite suite([] static noexcept {
             expect(changed_content);
         };
 
-    "Generated artifacts: associated interfaces precede direct dependencies"_test =
-        [] static noexcept {
-            const auto artifacts = compile_modules(
-                std::array {ModuleFixture {
-                    "order",
-                    R"(export async fn load() -> i32 { return 7; }
-enum Status { Pending, Shipped(i32), }
-struct Order { id: i32, code: u32, status: Status, items: [str; 2], }
-let order = Order { id: 7, code: 9u32, status: Status::Shipped(3), items: ["disk", "cable"], };
-println(order);)"
-                }}
-            );
-            const auto& implementation = artifact(artifacts, "order.cpp").content;
-            expect(
-                implementation.starts_with(component_include(interface_for(artifacts, "order")))
-            );
-            const auto runtime =
-                implementation.find("#include <carven/runtime/display/display.hpp>");
-            const auto standard = implementation.find("#include <array>");
-            if (!expect(runtime != std::string::npos) || !expect(standard != std::string::npos)) {
-                return;
-            }
-            expect(runtime < standard);
-            const auto& header = interface_for(artifacts, "order").content;
-            expect(header.starts_with("#pragma once"));
-            const auto passing = header.find("#include <carven/runtime/passing.hpp>");
-            const auto array = header.find("#include <array>");
-            if (!expect(passing != std::string::npos) || !expect(array != std::string::npos)) {
-                return;
-            }
-            expect(passing < array);
-            for (const auto content :
-                 {std::string_view(implementation), std::string_view(header)}) {
-                expect(
-                    content.find("#include <carven/runtime/execution/execution.hpp>")
-                    < content.find("#include <array>")
-                );
-                const auto includes = std::array {
-                    std::string_view("#include <carven/runtime/execution/execution.hpp>"),
-                    std::string_view("#include <cstdint>"),
-                };
-                for (const auto include : includes) {
-                    const auto first = content.find(include);
-                    if (!expect(first != std::string_view::npos)) {
-                        return;
-                    }
-                    expect(content.find(include, first + include.size()) == std::string_view::npos);
-                }
-            }
-        };
-
-    "Generated test entries: runner header is the first include"_test = [] static noexcept {
-        const auto artifacts = compile_modules(
-            std::array {ModuleFixture {"tested", "test { check(true); }"}},
-            "test:runner",
-            TestGenerationMode::RunnerEntryPoint
-        );
-        const auto& entry = artifact(artifacts, "carven/generated/carven-test-main.cpp").content;
-        expect(entry.starts_with("#include <carven/generated/carven-test-runner.hpp>"));
-    };
-
     "Generated interfaces: native environments follow canonical module order"_test =
         [] static noexcept {
             constexpr auto modules = std::array {

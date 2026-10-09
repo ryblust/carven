@@ -36,8 +36,7 @@ const TestSuite suite([] static noexcept {
             const auto modes =
                 std::array {TestGenerationMode::None, TestGenerationMode::RunnerHeader};
             for (const auto mode : modes) {
-                const auto compilation = PlannedCompilation::build(
-                    analyze_test_program(R"(
+                const auto semantic_owner = analyze_test_program(R"(
                 private const fn compile_only(value: i32) -> i32 => value + 1;
                 const answer = compile_only(40);
                 private fn dead_left(value: i32) -> i32 {
@@ -68,7 +67,9 @@ const TestSuite suite([] static noexcept {
                 fn folded() -> i32 => if true { answer } else { inactive() };
                 test "selected root" { check(test_leaf() == 5); }
                 const test "analysis root" { check(compile_only(1) == 2); }
-            )"),
+            )");
+                const auto compilation = PlannedCompilation::build(
+                    semantic_owner,
                     {.test_mode = mode,
                      .linkage_domain = *LinkageDomain::explicit_value("definition_selection"),
                      .library = std::nullopt}

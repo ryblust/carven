@@ -112,8 +112,7 @@ struct StaticSliceFacts final {
 const TestSuite suite([] static noexcept {
     "Generation: frozen slices reference deduplicated static array declarations"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+            const auto semantic_owner = analyze_test_program(R"(
             const numbers: [i32] = make();
             const empty: [i32] = [];
             const nested: [[i32; 2]] = [[1, 2], [3, 4]];
@@ -125,7 +124,9 @@ const TestSuite suite([] static noexcept {
             fn nested_view() -> [[i32; 2]] => nested;
             fn text_view() -> [str] => text;
             fn ordinary(value: [i32; 2]) -> [i32] => value;
-        )"),
+        )");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("constant_slices"),
                  .library = std::nullopt}
@@ -193,7 +194,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             const auto compilation = PlannedCompilation::build(
-                std::move(analyzed->value),
+                analyzed->value,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("cross_artifact_slices"),
                  .library = std::nullopt}

@@ -55,7 +55,7 @@ auto library_modules(const SemIRProgram& semantic, const TargetPlanningRequest& 
 } // namespace
 
 auto generate_artifacts(
-    SemIRProgram semantic,
+    const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
     std::optional<std::span<const CanonicalModulePath>> selected_modules,
     TimingOutput timings
@@ -65,7 +65,7 @@ auto generate_artifacts(
     if (!library) {
         return std::unexpected(library.error());
     }
-    const auto compilation = PlannedCompilation::build(std::move(semantic), request);
+    const auto compilation = PlannedCompilation::build(semantic, request);
     for (const auto entry : compilation.target().artifacts()) {
         if (const auto* interface = std::get_if<TargetInterfaceArtifact>(&entry.value)) {
             const auto count =

@@ -1,7 +1,7 @@
 module carven:workspace.symbols;
 
+import :frontend.document;
 import :source.text;
-import :workspace.document;
 import std;
 
 enum class WorkspaceSymbolKind {
@@ -25,7 +25,7 @@ struct WorkspaceDocumentSymbol final {
 using WorkspaceDocumentSymbolList = std::vector<WorkspaceDocumentSymbol>;
 
 // Syntax declarations only; this query does not resolve names, imports, or types.
-auto collect_workspace_document_symbols(const WorkspaceDocumentSyntax& document) noexcept
+auto collect_workspace_document_symbols(const ParsedDocument& document) noexcept
     -> WorkspaceDocumentSymbolList;
 
 struct WorkspaceSymbol final {

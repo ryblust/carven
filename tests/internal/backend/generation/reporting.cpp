@@ -56,12 +56,13 @@ auto ReportQuery::enter_statement(const TargetStmt& statement) noexcept -> bool 
 const TestSuite suite([] static noexcept {
     "Generation: static reports disappear while runtime conditions retain report work"_test =
         [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
+            const auto semantic_owner = analyze_test_program(R"(
             fn touch() -> bool { return false; }
             fn successful() { assert(touch() || true, "skipped"); assert(1 == 1); }
             fn fatal() { assert(false); touch(); }
-        )"),
+        )");
+            const auto compilation = PlannedCompilation::build(
+                semantic_owner,
                 {.test_mode = TestGenerationMode::None,
                  .linkage_domain = *LinkageDomain::explicit_value("reporting"),
                  .library = std::nullopt}
@@ -115,13 +116,14 @@ const TestSuite suite([] static noexcept {
                 },
             };
             each(cases, &Case::name, [](const Case& input) static noexcept {
+                const auto semantic_owner = analyze_test_program(
+                    std::format(
+                        "fn probe(v: u8x16, index: usize) -> u8 {{ return {}; }}",
+                        input.expression
+                    )
+                );
                 const auto compilation = PlannedCompilation::build(
-                    analyze_test_program(
-                        std::format(
-                            "fn probe(v: u8x16, index: usize) -> u8 {{ return {}; }}",
-                            input.expression
-                        )
-                    ),
+                    semantic_owner,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value("simd_sites"),
                      .library = std::nullopt}
@@ -149,8 +151,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Generation: callable results use executable test-stop effects"_test = [] static noexcept {
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(R"(
+        const auto semantic_owner = analyze_test_program(R"(
                     fn selected() -> i32 {
                         return const if false { require(false); 1 } else { 2 };
                     }
@@ -158,7 +159,9 @@ const TestSuite suite([] static noexcept {
                     fn ordinary() -> i32 {
                         return if false { require(false); 1 } else { 2 };
                     }
-                )"),
+                )");
+        const auto compilation = PlannedCompilation::build(
+            semantic_owner,
             {.test_mode = TestGenerationMode::None,
              .linkage_domain = *LinkageDomain::explicit_value("executable_effects"),
              .library = std::nullopt}

@@ -4,12 +4,12 @@ import :diagnostics.builder;
 import :diagnostics.sink;
 import :frontend.ast.decl;
 import :frontend.ast.storage;
-import :frontend.lex;
-import :frontend.parse;
+import :frontend.document;
 import :frontend.program;
 import :frontend.program.parse;
 import :frontend.program.verify;
 import :source.batch;
+import :source.document;
 import :source.provenance;
 import :support.invariant;
 import :support.timing;
@@ -245,10 +245,45 @@ auto validate_inputs(
 
 } // namespace
 
-auto parse_program(const SourceManager& sources, SourceBatch batch, TimingOutput timings) noexcept
-    -> std::expected<SyntaxProgram, Diagnostics> {
+auto parse_program(
+    const SourceManager& sources,
+    SourceBatch batch,
+    TimingOutput timings,
+    std::span<const ParsedSourceInput> parsed
+) noexcept -> std::expected<SyntaxProgram, Diagnostics> {
     const auto inputs = batch.modules;
     auto input_diagnostics = validate_inputs(sources, inputs);
+    if (!input_diagnostics.empty()) {
+        return std::unexpected(std::move(input_diagnostics));
+    }
+
+    auto selected_sources = std::set<SourceID>();
+    for (const auto& input : inputs) {
+        selected_sources.insert(input.source_id);
+    }
+    auto retained = std::map<SourceID, std::shared_ptr<const ParsedDocument>>();
+    for (const auto& input : parsed) {
+        if (!input.document
+            || !sources.contains(input.source_id)
+            || !selected_sources.contains(input.source_id)) {
+            input_diagnostics.push_back(
+                compilation_input_error("retained syntax is not bound to a selected source")
+            );
+            continue;
+        }
+        const auto source = sources.view(input.source_id);
+        const auto original = input.document->source();
+        if (source.text != original.text || source.origin != original.origin) {
+            input_diagnostics.push_back(compilation_input_error(
+                "retained syntax does not match its selected source snapshot"
+            ));
+        }
+        if (!retained.emplace(input.source_id, input.document).second) {
+            input_diagnostics.push_back(
+                compilation_input_error("retained syntax is supplied more than once for a source")
+            );
+        }
+    }
     if (!input_diagnostics.empty()) {
         return std::unexpected(std::move(input_diagnostics));
     }
@@ -271,7 +306,7 @@ auto parse_program(const SourceManager& sources, SourceBatch batch, TimingOutput
     program_module_ids.reserve(ordered_inputs.size());
     for (const auto* input : ordered_inputs) {
         const auto program_source_id =
-            provenance_construction.intern_source_snapshot(sources.view(input->source_id));
+            provenance_construction.intern_source_snapshot(sources, input->source_id);
         program_module_ids.push_back(provenance_construction.append_module({
             .source_id = program_source_id,
             .path = input->module_path,
@@ -282,23 +317,31 @@ auto parse_program(const SourceManager& sources, SourceBatch batch, TimingOutput
     auto syntax_trees = std::vector<SyntaxTree>();
     syntax_trees.reserve(ordered_inputs.size());
     for (const auto* input : ordered_inputs) {
-        auto lexical = lex(sources.view(input->source_id), timings);
-        const auto lexical_has_errors = has_errors(lexical);
-        for (auto& diagnostic : lexical.diagnostics) {
+        const auto found = retained.find(input->source_id);
+        const auto document = found == retained.end()
+            ? parse_document(SourceDocument::retain(sources, input->source_id), timings)
+            : found->second;
+        for (auto diagnostic : document->diagnostics()) {
+            const auto rebind = [&](SourceSpan& span) noexcept {
+                span.source_id = input->source_id;
+            };
+            if (diagnostic.attachment.primary) {
+                rebind(diagnostic.attachment.primary->span);
+            }
+            for (auto& label : diagnostic.attachment.related) {
+                rebind(label.span);
+            }
+            for (auto& note : diagnostic.attachment.notes) {
+                if (note.span) {
+                    rebind(*note.span);
+                }
+            }
             diagnostics.emit(std::move(diagnostic));
         }
-        if (lexical_has_errors) {
-            continue;
+        auto syntax_tree = document->bind(input->source_id);
+        if (syntax_tree) {
+            syntax_trees.push_back(std::move(*syntax_tree));
         }
-
-        auto syntax_tree = ::parse(sources, lexical.value, timings);
-        if (!syntax_tree.has_value()) {
-            for (auto& diagnostic : syntax_tree.error()) {
-                diagnostics.emit(std::move(diagnostic));
-            }
-            continue;
-        }
-        syntax_trees.push_back(std::move(*syntax_tree));
     }
     if (!diagnostics.empty()) {
         return std::unexpected(diagnostics.take());

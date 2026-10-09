@@ -4,50 +4,44 @@ import :compiler.analysis;
 import :diagnostics.builder;
 import :diagnostics.code;
 import :diagnostics.diagnostic;
+import :frontend.document;
+import :frontend.program.parse;
 import :semantic.analysis.source;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :source.batch;
+import :source.document;
 import :source.manager;
 import :source.text;
 import :support.timing;
-import :workspace.document;
 import :workspace.semantic;
 import std;
 
 WorkspaceSemanticAnalysis::WorkspaceSemanticAnalysis(
-    SourceManager sources,
-    std::map<std::string, SourceID, std::less<>> document_sources,
-    std::optional<SemIRProgram> program,
-    Diagnostics diagnostics,
-    std::vector<WorkspaceSemanticOutput> output,
-    std::span<const SourceOccurrence> occurrences
+    CompilationAnalysis result,
+    std::map<std::string, SourceID, std::less<>> document_sources
 ) noexcept
-    : source_manager(std::move(sources)),
-      source_ids(std::move(document_sources)),
-      semantic_program(std::move(program)),
-      findings(std::move(diagnostics)),
-      execution_output(std::move(output)) {
-    for (const auto& occurrence : occurrences) {
+    : analysis(std::move(result)),
+      source_ids(std::move(document_sources)) {
+    for (const auto& occurrence : analysis.source_occurrences()) {
         source_occurrences[occurrence.location.source_id].push_back(occurrence);
     }
 }
 
 auto WorkspaceSemanticAnalysis::program() const noexcept -> const SemIRProgram* {
-    return semantic_program ? std::addressof(*semantic_program) : nullptr;
+    return analysis.program();
 }
 
 auto WorkspaceSemanticAnalysis::sources() const noexcept -> const SourceManager& {
-    return source_manager;
+    return analysis.sources();
 }
 
 auto WorkspaceSemanticAnalysis::diagnostics() const noexcept -> std::span<const Diagnostic> {
-    return findings;
+    return analysis.diagnostics();
 }
 
-auto WorkspaceSemanticAnalysis::output() const noexcept
-    -> std::span<const WorkspaceSemanticOutput> {
-    return execution_output;
+auto WorkspaceSemanticAnalysis::output() const noexcept -> std::span<const CompilationOutput> {
+    return analysis.output();
 }
 
 auto WorkspaceSemanticAnalysis::select(
@@ -79,7 +73,7 @@ auto WorkspaceSemanticAnalysis::select(
 
 auto WorkspaceSemanticAnalysis::locate_source(SourceSpan location) const noexcept
     -> std::optional<WorkspaceDocumentLocation> {
-    const auto source = source_manager.try_view(location.source_id);
+    const auto source = sources().try_view(location.source_id);
     if (!source || !try_slice(source->text, location.span)) {
         return std::nullopt;
     }
@@ -160,7 +154,7 @@ auto WorkspaceSemanticAnalysis::source(std::string_view document) const noexcept
     if (found == source_ids.end()) {
         return std::nullopt;
     }
-    return source_manager.view(found->second);
+    return sources().view(found->second);
 }
 
 auto analyze_workspace_project(
@@ -171,11 +165,10 @@ auto analyze_workspace_project(
     auto sources = SourceManager();
     auto source_ids = std::map<std::string, SourceID, std::less<>>();
     auto modules = std::vector<SourceModuleInput>();
+    auto parsed = std::vector<ParsedSourceInput>();
     auto diagnostics = Diagnostics();
-    auto output = std::vector<WorkspaceSemanticOutput>();
-    auto program = std::optional<SemIRProgram>();
-    auto occurrences = std::vector<SourceOccurrence>();
     modules.reserve(inputs.size());
+    parsed.reserve(inputs.size());
     for (const auto& input : inputs) {
         if (!input.source) {
             diagnostics.push_back(
@@ -190,54 +183,29 @@ auto analyze_workspace_project(
         auto found = source_ids.find(input.module.document);
         if (found == source_ids.end()) {
             const auto source = input.source->source();
-            const auto id = sources.append_virtual(input.module.document, std::string(source.text));
-            if (!id) {
-                diagnostics.push_back(DiagnosticBuilder(
-                                          DiagnosticCode::CompilationInput,
-                                          std::format(
-                                              "cannot load project document '{}': {}",
-                                              input.module.document,
-                                              id.error().message
-                                          )
-                )
-                                          .build());
-                continue;
+            const auto id = sources.append_shared(input.source->sources(), source.source_id);
+            found = source_ids.emplace(input.module.document, id).first;
+            if (input.parsed) {
+                parsed.push_back({.source_id = id, .document = input.parsed});
             }
-            found = source_ids.emplace(input.module.document, *id).first;
         }
-        // Preserve repeated mappings for the compiler's input validation rather
-        // than silently collapsing two modules onto the same source snapshot.
+        // Repeated mappings are diagnosed by the compiler, not collapsed here.
         modules.push_back({.source_id = found->second, .module_path = input.module.module_path});
     }
     preparation_scope.stop();
-    if (diagnostics.empty()) {
-        const auto capture = [&](ExecutionOutputStream stream, std::string_view bytes) noexcept {
-            output.push_back({.stream = stream, .bytes = std::string(bytes)});
-        };
-        const auto collect = [&](std::span<const SourceOccurrence> facts) noexcept {
-            occurrences.assign(facts.begin(), facts.end());
-        };
-        auto analyzed = analyze_compilation(
-            sources,
-            SourceBatch {.modules = modules},
-            capture,
-            timings,
-            collect
-        );
-        if (analyzed) {
-            program.emplace(std::move(analyzed->value));
-            diagnostics = std::move(analyzed->diagnostics);
-        } else {
-            diagnostics = std::move(analyzed.error());
-        }
-    }
+    auto analyzed = diagnostics.empty()
+        ? analyze_compilation(
+              std::move(sources),
+              SourceBatch {.modules = modules},
+              {.output = {},
+               .timings = timings,
+               .collect_source_observations = true,
+               .capture_output = true},
+              parsed
+          )
+        : CompilationAnalysis::failed(std::move(sources), std::move(diagnostics));
     const auto index_scope = TimingScope(timings, TimingStage::SourceIndex);
-    return std::shared_ptr<const WorkspaceSemanticAnalysis>(new WorkspaceSemanticAnalysis(
-        std::move(sources),
-        std::move(source_ids),
-        std::move(program),
-        std::move(diagnostics),
-        std::move(output),
-        occurrences
-    ));
+    return std::shared_ptr<const WorkspaceSemanticAnalysis>(
+        new WorkspaceSemanticAnalysis(std::move(analyzed), std::move(source_ids))
+    );
 }

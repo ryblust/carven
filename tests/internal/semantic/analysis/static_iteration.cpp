@@ -28,10 +28,16 @@ auto with_iteration(std::string_view text, Check check) noexcept -> void {
         require(stream == ExecutionOutputStream::Standard);
         output.append(bytes);
     };
-    auto result =
-        analyze_compilation(sources, SourceBatch {.modules = std::span(&input, 1uz)}, write_output);
-    require(result.has_value()).note("source = ", text);
-    check(result->value, output);
+    auto result = analyze_compilation(
+        std::move(sources),
+        SourceBatch {.modules = std::span(&input, 1uz)},
+        {.output = write_output,
+         .timings = {},
+         .collect_source_observations = false,
+         .capture_output = false}
+    );
+    require(result.program() != nullptr).note("source = ", text);
+    check(*result.program(), output);
 }
 
 const TestSuite suite([] static noexcept {

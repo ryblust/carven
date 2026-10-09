@@ -187,7 +187,7 @@ const TestSuite suite([] static noexcept {
             const auto source = sources.append_virtual("generic-failure.cv", "?");
             require(source.has_value());
             auto provenance = CompilationProvenanceBuilder();
-            const auto snapshot = provenance.intern_source_snapshot(sources.view(*source));
+            const auto snapshot = provenance.intern_source_snapshot(sources, *source);
             const auto origin = provenance.append_origin({
                 .value = ProgramSourceOrigin {.source_id = snapshot, .span = Span::at(0u)},
             });

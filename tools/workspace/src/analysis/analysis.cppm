@@ -1,8 +1,8 @@
 module carven:workspace.analysis;
 
+import :frontend.document;
 import :source.text;
 import :support.timing;
-import :workspace.document;
 import :workspace.semantic;
 import :workspace.symbols;
 import std;
@@ -11,7 +11,7 @@ class WorkspaceQueries;
 
 struct WorkspaceSyntaxQuery final {
     std::int64_t version;
-    std::shared_ptr<const WorkspaceDocumentSyntax> result;
+    std::shared_ptr<const ParsedDocument> result;
 };
 
 struct WorkspaceSymbolsQuery final {
@@ -105,12 +105,26 @@ private:
 
 enum class WorkspaceDocumentChange { Added, Changed, VersionOnly };
 
+struct WorkspaceDocumentUpdate final {
+    std::string document;
+    std::int64_t version;
+    std::string text;
+};
+
 struct WorkspaceStaleDocumentVersion final {
     std::int64_t current;
     std::int64_t received;
 };
 
-using WorkspaceDocumentUpdateFailure = std::variant<WorkspaceStaleDocumentVersion, SourceLoadError>;
+struct WorkspaceDuplicateDocumentUpdate final {};
+
+using WorkspaceDocumentUpdateFailure =
+    std::variant<WorkspaceStaleDocumentVersion, SourceLoadError, WorkspaceDuplicateDocumentUpdate>;
+
+struct WorkspaceDocumentBatchUpdateFailure final {
+    std::string document;
+    WorkspaceDocumentUpdateFailure reason;
+};
 
 class WorkspaceAnalysisHost final {
 public:
@@ -123,6 +137,10 @@ public:
     // Document keys are caller-supplied identities; the host performs no filesystem IO.
     auto update(std::string document, std::int64_t version, std::string text) noexcept
         -> std::expected<WorkspaceDocumentChange, WorkspaceDocumentUpdateFailure>;
+    // Publish all updates together. Duplicate keys and stale versions reject the
+    // entire batch; successful changes follow input order. Empty batches do nothing.
+    auto update(std::vector<WorkspaceDocumentUpdate> updates) noexcept
+        -> std::expected<std::vector<WorkspaceDocumentChange>, WorkspaceDocumentBatchUpdateFailure>;
     auto remove(std::string_view document) noexcept -> bool;
     auto snapshot() const noexcept -> WorkspaceAnalysisSnapshot;
 

@@ -15,6 +15,9 @@ public:
     auto append_file(std::string_view path) noexcept -> std::expected<SourceID, SourceLoadError>;
     auto append_virtual(std::string origin, std::string text) noexcept
         -> std::expected<SourceID, SourceLoadError>;
+    auto snapshot() const noexcept -> SourceManager;
+    // Shares immutable bytes and line indexing while assigning a local source identity.
+    auto append_shared(const SourceManager& sources, SourceID source_id) noexcept -> SourceID;
     auto contains(SourceID source_id) const noexcept -> bool;
     auto try_view(SourceID source_id) const noexcept -> std::optional<SourceView>;
     auto view(SourceID source_id) const noexcept -> SourceView;
@@ -37,5 +40,5 @@ private:
         LineIndex lines;
     };
 
-    std::deque<SourceRecord> entries;
+    std::deque<std::shared_ptr<const SourceRecord>> entries;
 };

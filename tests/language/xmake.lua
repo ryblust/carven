@@ -23,7 +23,7 @@ local reporting_source = path.join(language_dir, "testing", "reporting.cv")
 
 target("carven-test-language")
     set_default(false)
-    add_rules("@carven/carven", {tests = "default"})
+    add_rules("@carven/carven", {tests = "main"})
 
     set_languages("c++20")
     add_includedirs(language_dir)
@@ -39,7 +39,7 @@ target_end()
 
 target("carven-test-language-entry")
     set_default(false)
-    add_rules("@carven/carven", {tests = "external"})
+    add_rules("@carven/carven", {tests = "runner"})
 
     set_languages("c++20")
     add_includedirs(language_dir)
@@ -64,7 +64,7 @@ for _, scenario in ipairs({
 }) do
     target("carven-test-language-implicit-entry-" .. scenario.name)
         set_default(false)
-        add_rules("@carven/carven", {tests = "external"})
+        add_rules("@carven/carven", {tests = "runner"})
         set_languages("c++20")
         add_files(path.join(language_dir, "entry", "implicit_" .. scenario.name .. ".cv"))
         add_tests(scenario.name, {group = "language"})
@@ -91,7 +91,7 @@ end
 
 target("carven-test-language-reporting")
     set_default(false)
-    add_rules("@carven/carven", {tests = "external"})
+    add_rules("@carven/carven", {tests = "runner"})
 
     set_languages("c++20")
     add_includedirs(language_dir)
@@ -107,7 +107,7 @@ target_end()
 
 target("carven-test-language-runner-failure")
     set_default(false)
-    add_rules("@carven/carven", {tests = "default"})
+    add_rules("@carven/carven", {tests = "main"})
     set_languages("c++20")
     add_files(path.join(language_dir, "testing", "runner_failure.cv"))
     add_tests("failure", {group = "language"})
@@ -232,7 +232,7 @@ for _, scenario in ipairs({
 }) do
     target(scenario.target)
         set_default(false)
-        add_rules("@carven/carven", {tests = "external"})
+        add_rules("@carven/carven", {tests = "runner"})
         set_languages("c++20")
         for _, source in ipairs(scenario.sources or {scenario.source}) do
             add_files(path.join(language_dir, "async", source))
@@ -274,7 +274,7 @@ for _, scenario in ipairs({
 }) do
     target("carven-test-language-async-" .. scenario.name)
         set_default(false)
-        add_rules("@carven/carven", {tests = "external"})
+        add_rules("@carven/carven", {tests = "runner"})
         set_languages("c++20")
         add_files(path.join(language_dir, "async", scenario.name .. ".cv"))
         add_tests("entry", {group = "language", run_timeout = 30000})
