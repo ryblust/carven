@@ -2,7 +2,7 @@ compiled
 static test
 const block
 running 1
-ok
+A
 42
 --timings
 --help

@@ -19,6 +19,8 @@ struct GeneratedArtifact final {
     std::string logical_path;
     GeneratedArtifactRole role;
     ArtifactSourceMappingPolicy source_mapping;
+    // The source that owns a generated implementation; synthetic artifacts have none.
+    std::optional<std::string> source_path;
     std::string content;
 };
 

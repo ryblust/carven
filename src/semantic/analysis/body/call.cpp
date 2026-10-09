@@ -16,7 +16,6 @@ import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.async;
-import :semantic.analysis.expr.interpret;
 import :semantic.analysis.expr.operand;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.names;
@@ -176,9 +175,9 @@ auto BodyElaborator::enum_case_reference(
     Span case_span
 ) noexcept -> AnalysisTask<BuiltExpression> {
     auto site = BodyExprSite(*this);
-    co_return require_body_expression((
-        co_await interpret_enum_case(site, enumeration_type, case_name, case_span, {}, span, false)
-    ));
+    co_return require_body_expression(
+        (co_await site.interpret_enum_case(enumeration_type, case_name, case_span, {}, span, false))
+    );
 }
 
 auto BodyElaborator::call_expression(
@@ -235,8 +234,7 @@ auto BodyElaborator::call_expression(
                     }
                 );
                 auto site = BodyExprSite(*this);
-                co_return require_body_expression((co_await interpret_enum_case(
-                    site,
+                co_return require_body_expression((co_await site.interpret_enum_case(
                     type,
                     text,
                     name->name_span,

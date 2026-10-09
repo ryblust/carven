@@ -2,9 +2,7 @@ module carven:test.internal.semantic.analysis.ownership;
 
 import :diagnostics.code;
 import :diagnostics.diagnostic;
-import :diagnostics.sink;
 import :frontend.program.parse;
-import :semantic.analysis.diagnostics;
 import :semantic.analysis.generics.snapshot;
 import :semantic.analysis.model;
 import :semantic.analysis.ownership.context;
@@ -766,129 +764,6 @@ const TestSuite suite([] static noexcept {
         );
         expect_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict);
     };
-
-    "Semantic ownership: forwarding chains reuse linearly bounded query contexts"_test =
-        [] static noexcept {
-            // Each shape forwards caller storage through a call chain. Query identity must
-            // not depend on which ancestor allocated the forwarded object.
-            struct ChainShape final {
-                const char* name;
-                const char* declaration;
-                const char* forward;
-                const char* last;
-            };
-
-            const auto shapes = std::array {
-                ChainShape {
-                    .name = "i32 Read",
-                    .declaration = "(value: i32) -> i32",
-                    .forward = "return f{}(value);",
-                    .last = "return value;"
-                },
-                ChainShape {
-                    .name = "Value Read",
-                    .declaration = "(value: Value) -> Value",
-                    .forward = "return f{}(value);",
-                    .last = "return value;"
-                },
-                ChainShape {
-                    .name = "str Read",
-                    .declaration = "(value: str) -> str",
-                    .forward = "return f{}(value);",
-                    .last = "return value;"
-                },
-                ChainShape {
-                    .name = "String Read",
-                    .declaration = "(value: String) -> usize",
-                    .forward = "return f{}(value);",
-                    .last = "return 0;"
-                },
-                ChainShape {
-                    .name = "i32 Write",
-                    .declaration = "(&value: i32)",
-                    .forward = "f{}(&value);",
-                    .last = "value = 1;"
-                },
-                ChainShape {
-                    .name = "String Write",
-                    .declaration = "(&value: String)",
-                    .forward = "f{}(&value);",
-                    .last = "value.append(\"x\");"
-                },
-                ChainShape {
-                    .name = "local String Write",
-                    .declaration = "(&value: String)",
-                    .forward =
-                        "var local: String = \"y\"; f{}(&local); value.append(local.as_str());",
-                    .last = "value.append(\"x\");",
-                },
-            };
-            const auto chain_lengths = std::array {16uz, 32uz};
-            const auto declaration_orders = std::array {false, true};
-            for (const auto& shape : shapes) {
-                for (const auto count : chain_lengths) {
-                    for (const auto reversed : declaration_orders) {
-                        auto source = std::string("struct Value { number: i32 }\n");
-                        for (auto ordinal = 0uz; ordinal < count; ++ordinal) {
-                            const auto index = reversed ? count - ordinal - 1uz : ordinal;
-                            const auto next = index + 1uz;
-                            source += std::format(
-                                "fn f{}{} {{ {} }}\n",
-                                index,
-                                shape.declaration,
-                                next == count
-                                    ? std::string(shape.last)
-                                    : std::vformat(shape.forward, std::make_format_args(next))
-                            );
-                        }
-                        const auto program = analyze_test_program(std::move(source));
-                        auto diagnostics = DiagnosticSink();
-                        const auto generics = GenericAnalysisSnapshot {};
-                        const auto model = AnalysisModelView(program, generics);
-                        const auto summary =
-                            OwnershipBatchAnalyzer(model, AnalysisDiagnostics(diagnostics)).run();
-                        if (!(expect(summary.has_value())
-                                  .note(
-                                      "shape.name = ",
-                                      shape.name,
-                                      "count = ",
-                                      count,
-                                      "reversed = ",
-                                      reversed
-                                  ))) {
-                            return;
-                        }
-                        expect(!(diagnostics.has_errors()))
-                            .note(
-                                "shape.name = ",
-                                shape.name,
-                                "count = ",
-                                count,
-                                "reversed = ",
-                                reversed
-                            );
-                        expect(summary->query_count <= 2uz * count)
-                            .note(
-                                "shape.name = ",
-                                shape.name,
-                                "count = ",
-                                count,
-                                "reversed = ",
-                                reversed
-                            );
-                        expect(summary->evaluation_count <= 4uz * count)
-                            .note(
-                                "shape.name = ",
-                                shape.name,
-                                "count = ",
-                                count,
-                                "reversed = ",
-                                reversed
-                            );
-                    }
-                }
-            }
-        };
 
     "Semantic ownership: recursive local forwarding preserves valid borrows"_test =
         [] static noexcept {

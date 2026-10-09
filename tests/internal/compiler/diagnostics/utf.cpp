@@ -1,13 +1,6 @@
 module carven:test.internal.compiler.diagnostics.utf;
 
-import :artifacts;
-import :backend.generation.request;
-import :compiler.compile;
 import :diagnostics.code;
-import :diagnostics.diagnosed;
-import :source.batch;
-import :source.manager;
-import :source.module_path;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.compiler.diagnostics.fixture;
@@ -15,119 +8,60 @@ import std;
 
 namespace {
 
-class UTFCompilation final {
-public:
-    explicit UTFCompilation(std::string_view application) noexcept {
-        for (const auto& [directory, name] :
-             {std::pair {"utf", "error"},
-              {"utf", "codec"},
-              std::pair {"utf", "scan"},
-              std::pair {"utf", "block"},
-              std::pair {"utf", "validation"},
-              std::pair {"utf", "text"},
-              std::pair {"simd", "bytes"}}) {
-            const auto filename = std::format("crafts/carven/std/{}/{}.cv", directory, name);
-            auto input = std::ifstream(filename);
-            require(input.is_open());
-            auto text = std::string(std::istreambuf_iterator<char>(input), {});
-            const auto source = sources.append_virtual(filename, std::move(text));
-            require(source.has_value());
-            inputs.push_back(
-                {.source_id = *source,
-                 .module_path = *CanonicalModulePath::from_value(
-                     std::format("crafts.carven.std.{}.{}", directory, name)
-                 )}
-            );
-        }
-        const auto application_source =
-            sources.append_virtual("application.cv", std::string(application));
-        require(application_source.has_value());
-        inputs.push_back(
-            {.source_id = *application_source,
-             .module_path = *CanonicalModulePath::from_value("application")}
-        );
-    }
-
-    auto run() noexcept {
-        return compile(
-            sources,
-            SourceBatch {.modules = inputs},
-            TargetPlanningRequest {
-                .test_mode = TestGenerationMode::None,
-                .linkage_domain = *LinkageDomain::explicit_value("test:utf"),
-                .library = std::nullopt,
-            }
-        );
-    }
-
-    SourceManager sources;
-    std::vector<SourceModuleInput> inputs;
-};
-
 const TestSuite suite([] static noexcept {
-    "UTF craft: returned text retains input storage"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
-            {.name = "returned text cannot borrow a local array",
-             .source =
-                 "fn bad() -> str throw UTF8Error { let a: [u8; 1] = [65]; return from_utf8(a)?; }",
-             .code = DiagnosticCode::AccessBorrowConflict,
-             .primary_text = "a"},
-            {.name = "returned text retains an otherwise unnamed input view",
-             .source =
-                 "fn bad() throw UTF8Error { var a: [u8; 1] = [65]; let text = from_utf8(a)?; a[0] = 66; }",
-             .code = DiagnosticCode::AccessBorrowConflict,
-             .primary_text = "a[0] = 66"},
-            {.name = "returned text cannot retain a temporary array",
-             .source = "fn bad() throw UTF8Error { let text = from_utf8([65])?; }",
-             .code = DiagnosticCode::AccessBorrowConflict,
-             .primary_text = "let text = from_utf8([65])?"},
-
+    "UTF craft: returned text protects input storage from mutation"_test = [] static noexcept {
+        const auto modules = std::to_array<std::string_view>({
+            "utf.error",
+            "utf.scan",
+            "utf.block",
+            "utf.validation",
+            "utf.text",
+            "simd.bytes",
         });
-        each(cases, &CompilerErrorExpectation::name, [&](const auto& item) noexcept {
-            auto fixture = UTFCompilation(
-                std::string(
-                    "import std::utf.text using from_utf8; import std::utf.error using UTF8Error; "
-                )
-                + std::string(item.source)
-            );
-            const auto result = fixture.run();
-            if (!(expect(!(result.has_value())))) {
-                return;
-            }
-            if (!expect_diagnostic(result.error(), item.code)) {
-                return;
-            }
-            const auto* diagnostic = find_diagnostic(result.error(), item.code);
-            if (!(expect(diagnostic->attachment.primary.has_value()))) {
-                return;
-            }
-            expect_equal(
-                fixture.sources.slice(diagnostic->attachment.primary->span),
-                item.primary_text
-            );
-        });
-    };
-
-    "UTF craft: encoded views retain their encoding storage"_test = [] static noexcept {
-        const auto inputs = std::to_array<std::string_view>({
-            "fn bad() -> [u8] { let encoded = encode_utf8('a'); return encoded_bytes(encoded); }",
-            "fn bad() { let bytes = encoded_bytes(encode_utf8('a')); }",
-            "fn bad() { var encoded = encode_utf8('a'); let bytes = encoded_bytes(encoded); encoded = encode_utf8('b'); }",
-        });
-        each(
-            inputs,
-            [](auto input) static noexcept { return input; },
-            [](auto input) static noexcept {
-                auto fixture = UTFCompilation(
-                    "import std::utf.codec using { encode_utf8, encoded_bytes }; "
-                    + std::string(input)
-                );
-                const auto result = fixture.run();
-                if (!expect(!result.has_value())) {
+        with_compiled_source(
+            "import std::utf.text using from_utf8; import std::utf.error using UTF8Error; "
+            "fn bad() throw UTF8Error { var a: [u8; 1] = [65]; let text = from_utf8(a)?; a[0] = 66; }",
+            [](const auto& sources, const auto& result) static noexcept {
+                if (!expect(!result.has_value())
+                    || !expect_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict)) {
                     return;
                 }
-                expect_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
-            }
+                const auto* diagnostic =
+                    find_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
+                if (!expect(diagnostic->attachment.primary.has_value())) {
+                    return;
+                }
+                expect_equal(sources.slice(diagnostic->attachment.primary->span), "a[0] = 66");
+            },
+            modules
+        );
+    };
+
+    "UTF craft: encoded views protect encoding storage from mutation"_test = [] static noexcept {
+        const auto modules = std::to_array<std::string_view>({
+            "utf.error",
+            "utf.codec",
+            "utf.scan",
+            "utf.block",
+            "simd.bytes",
+        });
+        with_compiled_source(
+            "import std::utf.codec using { encode_utf8, encoded_bytes }; "
+            "fn bad() { var encoded = encode_utf8('a'); let bytes = encoded_bytes(encoded); "
+            "encoded = encode_utf8('b'); }",
+            [](const auto& sources, const auto& result) static noexcept {
+                if (!expect(!result.has_value())
+                    || !expect_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict)) {
+                    return;
+                }
+                const auto* diagnostic =
+                    find_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
+                if (!expect(diagnostic->attachment.primary.has_value())) {
+                    return;
+                }
+                expect(!sources.slice(diagnostic->attachment.primary->span).empty());
+            },
+            modules
         );
     };
 

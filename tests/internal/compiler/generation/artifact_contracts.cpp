@@ -122,18 +122,61 @@ const TestSuite suite([] static noexcept {
                     .module = "nested.source"
                 },
             };
-            const auto request = TargetPlanningRequest {
-                .test_mode = TestGenerationMode::None,
-                .linkage_domain = *LinkageDomain::explicit_value("test:manifest"),
-                .library = std::nullopt,
-            };
             const auto manifest = format_compilation_manifest(
                 "/workspace",
                 inputs,
-                request,
-                GeneratedArtifactSet(std::vector<GeneratedArtifact> {})
+                GeneratedArtifactSet({GeneratedArtifact {
+                    .logical_path = "nested/source.cpp",
+                    .role = GeneratedArtifactRole::ModuleImplementation,
+                    .source_mapping = ArtifactSourceMappingPolicy::SourceAttributed,
+                    .source_path = std::string(inputs.front().path),
+                    .content = {},
+                }})
             );
             expect(manifest.contains("\"directory/雪\\u0009\\\"\\\\.cv\""));
+            expect(manifest.contains("\"source\": \"directory/雪\\u0009\\\"\\\\.cv\""));
+        };
+
+    "Compiler generation: source libraries reject invalid selections and declarations"_test =
+        [] static noexcept {
+            const auto module = *CanonicalModulePath::from_value("library");
+            const auto check = [&](std::string_view source,
+                                   std::vector<CanonicalModulePath> modules,
+                                   std::string_view error) noexcept {
+                auto sources = SourceManager();
+                const auto source_id = sources.append_virtual("library.cv", std::string(source));
+                require(source_id.has_value());
+                const auto input =
+                    SourceModuleInput {.source_id = *source_id, .module_path = module};
+                const auto semantic = analyze_compilation(
+                    std::move(sources),
+                    SourceBatch {.modules = std::span(&input, 1)}
+                );
+                require(semantic.program() != nullptr);
+                const auto generated = generate_artifacts(
+                    *semantic.program(),
+                    TargetPlanningRequest {
+                        .test_mode = TestGenerationMode::None,
+                        .linkage_domain = *LinkageDomain::explicit_value("application"),
+                        .library = SourceLibrary {
+                            .modules = std::move(modules),
+                            .linkage_domain = *LinkageDomain::explicit_value("library"),
+                            .emit_implementations = false,
+                        },
+                    }
+                );
+                if (expect(!generated.has_value())) {
+                    expect(generated.error().contains(error));
+                }
+            };
+            check(
+                "fn value() -> i32 => 1;",
+                {*CanonicalModulePath::from_value("absent")},
+                "unknown"
+            );
+            check("fn value() -> i32 => 1;", {module, module}, "duplicate");
+            check("struct Box<T> { value: T }", {module}, "generic");
+            check("fn main() {}", {module}, "entry point");
         };
 
     "Compiler pipeline: composed and staged compilation preserve artifacts and output"_test =
@@ -249,6 +292,7 @@ const TestSuite suite([] static noexcept {
                 expect_equal(left.logical_path, right.logical_path);
                 expect_equal(left.role, right.role);
                 expect(left.source_mapping == right.source_mapping);
+                expect_equal(left.source_path, right.source_path);
                 expect_equal(left.content, right.content);
             }
         };

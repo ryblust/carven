@@ -97,6 +97,10 @@ public:
     auto syntax() const noexcept -> ASTView;
     auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
     auto fail(Span span, DiagnosticCode code, std::string message) noexcept -> AnalysisFailure;
+    auto build_static_expression(
+        ASTExprID expression,
+        std::optional<ConstructionTypeRef> expected
+    ) noexcept -> ExpressionTask<SemanticExpression>;
     auto read(ASTExprID id, std::optional<ConstructionTypeRef> expected) noexcept
         -> ExpressionTask<Value>;
     auto read_aggregate_element(
@@ -236,6 +240,14 @@ public:
         -> ExpressionTask<std::optional<ConstructionTypeRef>>;
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> ExpressionTask<ResolvedEnumCase>;
+    auto interpret_enum_case(
+        TypeID type,
+        std::string_view name,
+        Span name_span,
+        std::span<const ASTExprID> arguments,
+        Span span,
+        bool called
+    ) noexcept -> ExpressionTask<Value>;
     auto is_numeric_enum(TypeID type) noexcept -> bool;
     auto admits(const ASTExpr&) const noexcept -> bool;
     auto spelling(Span span) const noexcept -> std::string;

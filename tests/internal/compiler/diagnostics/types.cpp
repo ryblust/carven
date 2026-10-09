@@ -466,6 +466,25 @@ const TestSuite suite([] static noexcept {
         });
         check_compiler_errors(cases);
     };
+    "Compiler diagnostics: shared enum payloads propagate equality through deep dependencies"_test =
+        [] static noexcept {
+            for (const auto supported : {true, false}) {
+                auto source = std::string(
+                    supported ? "enum N0 { Value(i32) }\n"
+                              : "struct Record { value: i32 } enum N0 { Value(Record) }\n"
+                );
+                for (auto index = 1uz; index < 28uz; ++index) {
+                    source +=
+                        std::format("enum N{} {{ Pair(N{}, N{}) }}\n", index, index - 1, index - 1);
+                }
+                source += "fn compare(left: N27, right: N27) -> bool => left == right;";
+                if (supported) {
+                    check_compiler_accepts(source);
+                } else {
+                    check_compiler_error(source, DiagnosticCode::TypeEqualityUnsupported, "==");
+                }
+            }
+        };
 });
 
 } // namespace

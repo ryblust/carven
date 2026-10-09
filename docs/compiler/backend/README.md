@@ -21,8 +21,10 @@ SemIRProgram + TargetPlanningRequest
 immutable `TargetPlan`. The program remains alive and unmoved through planning
 and lowering. Semantic type contents remain owned by `SemIRProgram`.
 `generate_artifacts` borrows the program synchronously and returns artifacts
-that own their paths and bytes. One published program can serve multiple
-generation requests without repeating semantic analysis or static execution.
+that own their paths, bytes, and optional implementation source origins. Source
+ownership comes from the implementation's semantic module provenance. One
+published program can serve multiple generation requests without repeating
+semantic analysis or static execution.
 Planning selects names, interfaces, failure representation, and
 artifact schedules. Each artifact is lowered into a fresh `ArtifactLowering`
 and target-unit identity. Repeated lowering produces independent units. Type and

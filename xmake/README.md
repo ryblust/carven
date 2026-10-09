@@ -20,8 +20,8 @@ configuration.
 `format` to apply formatting.
 Both use clang-format for `.cpp`, `.cppm`, `.h`, and `.hpp` files under `src/`,
 `tests/`, `crafts/`, `examples/`, `benchmarks/`, `tools/format/`, and `tools/workspace/`.
-On macOS, the script queries Homebrew's local installation prefix and looks in
-`opt/llvm/bin`, then falls back to PATH. Other platforms use PATH.
+Both require clang-format 23 or newer. Xmake detects it through PATH, with a
+Homebrew LLVM fallback on macOS when it is absent from PATH.
 
 Both formatting commands require a built `carven-format` and use it for `.cv` files
 under `crafts/`, `examples/`, `tests/`, and `benchmarks/`, plus benchmark
@@ -42,6 +42,9 @@ for generated C++.
 compilation and incremental dependency checks. The root `xmakew` and `xmakew.ps1`
 entry points launch its wrappers.
 
+The overlay prunes BMIs only for ordinary implementation leaves. Module source
+files retain their BMIs for downstream targets.
+
 ## Standard-library compilation
 
 Repository tests and examples attach the packaged `@carven/carven` rule. The
@@ -58,4 +61,5 @@ generation reuse and artifact promotion. Xmake's ordinary C++ rules own native
 dependencies, compilation, linking and their caches.
 
 Compiler, formatter, and workspace modules use `moduleonly` and reuse their BMIs.
-Workspace scenarios share the compiler's internal test executable.
+Internal tests use domain targets with shared fixtures. Workspace scenarios have
+a separate test executable.

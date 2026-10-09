@@ -16,6 +16,7 @@ auto generated(const std::string& logical_path, const std::string& content) noex
         .logical_path = logical_path,
         .role = GeneratedArtifactRole::ModuleImplementation,
         .source_mapping = ArtifactSourceMappingPolicy::SourceAttributed,
+        .source_path = std::nullopt,
         .content = content,
     };
 }

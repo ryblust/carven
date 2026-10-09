@@ -16,7 +16,6 @@ import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.constant.freeze;
 import :semantic.analysis.constant.literal;
-import :semantic.analysis.constant.root;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
@@ -100,14 +99,7 @@ auto BodyElaborator::constant_initializer(
         co_return value;
     }
     auto scope = BodyExprSite(*this);
-    auto result = co_await build_static_expression(
-        draft(),
-        source_module_id,
-        ast,
-        scope,
-        *source.initializer,
-        declared
-    );
+    auto result = co_await scope.build_static_expression(*source.initializer, declared);
     if (result) {
         co_return std::move(*result);
     }

@@ -1,9 +1,7 @@
 module carven:compiler.manifest.impl;
 
 import :artifacts;
-import :backend.generation.request;
 import :compiler.manifest;
-import :source.module_path;
 import std;
 
 namespace {
@@ -44,57 +42,17 @@ auto mapping_name(ArtifactSourceMappingPolicy policy) noexcept -> std::string_vi
     std::unreachable();
 }
 
-auto test_mode_name(TestGenerationMode mode) noexcept -> std::string_view {
-    switch (mode) {
-        case TestGenerationMode::None:             return "none";
-        case TestGenerationMode::RunnerHeader:     return "runner";
-        case TestGenerationMode::RunnerEntryPoint: return "main";
-    }
-    std::unreachable();
-}
-
-auto domain_json(const LinkageDomain& domain) noexcept -> std::string {
-    return std::format(
-        "{{\"kind\": \"{}\", \"value\": {}}}",
-        domain.kind() == LinkageDomainKind::Explicit ? "explicit" : "artifact-root",
-        json_string(domain.value())
-    );
-}
-
-auto library_json(const std::optional<SourceLibrary>& library) noexcept -> std::string {
-    if (!library) {
-        return "null";
-    }
-    auto result = std::format(
-        "{{\"linkage_domain\": {}, \"modules\": [",
-        domain_json(library->linkage_domain)
-    );
-    auto separator = std::string_view();
-    for (const auto& module : library->modules) {
-        result += separator;
-        result += json_string(module.value());
-        separator = ", ";
-    }
-    result += std::format("], \"emit_implementations\": {}}}", library->emit_implementations);
-    return result;
-}
-
 } // namespace
 
 auto format_compilation_manifest(
     std::string_view workspace_root,
     std::span<const CompilationManifestInput> inputs,
-    const TargetPlanningRequest& request,
     const GeneratedArtifactSet& artifacts
 ) noexcept -> std::string {
     auto result = std::format(
-        "{{\n  \"version\": 1,\n  \"workspace\": {{\"root\": {}}},\n"
-        "  \"generation\": {{\"linkage_domain\": {}, \"tests\": \"{}\", \"library\": {}}},\n"
+        "{{\n  \"workspace\": {{\"root\": {}}},\n"
         "  \"inputs\": [",
-        json_string(workspace_root),
-        domain_json(request.linkage_domain),
-        test_mode_name(request.test_mode),
-        library_json(request.library)
+        json_string(workspace_root)
     );
     auto separator = std::string_view();
     for (const auto& input : inputs) {
@@ -110,11 +68,12 @@ auto format_compilation_manifest(
     separator = {};
     for (const auto& artifact : artifacts.entries()) {
         result += std::format(
-            "{}\n    {{\"path\": {}, \"role\": \"{}\", \"source_mapping\": \"{}\"}}",
+            "{}\n    {{\"path\": {}, \"role\": \"{}\", \"source_mapping\": \"{}\", \"source\": {}}}",
             separator,
             json_string(artifact.logical_path),
             role_name(artifact.role),
-            mapping_name(artifact.source_mapping)
+            mapping_name(artifact.source_mapping),
+            artifact.source_path ? json_string(*artifact.source_path) : std::string("null")
         );
         separator = ",";
     }

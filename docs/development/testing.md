@@ -13,6 +13,22 @@ complex algorithm, cheaply exercise a difficult boundary, or establish a contrac
 that broader tests cannot adequately expose. Avoid mirroring private data layouts,
 helper call sequences, or standard-library behavior.
 
+Native program tests are ordinary consumer targets using the packaged
+`@carven/carven` rule. Their source selection, per-file C++ options, generation,
+native compilation, linking, and reuse follow the same path as user projects.
+Use these targets to establish language values, effects, lifetimes, and native
+ABI behavior. A compiler-process case establishes a CLI contract; it does not
+repeat native behavior already covered by a consumer target. Keep one
+representative direct-run case for its argument, process, and installed-toolchain
+boundary.
+
+Generation tests observe artifact paths, source attribution, raw bytes, and
+interface stability across edits. Exact target-node counts, temporary names,
+selected runtime helpers, and optimization-specific storage layouts are not
+contracts. Focused scale cases may bound growth for deep or shared input graphs
+without fixing the generated representation. Source rejection tests exercise
+the public compilation boundary instead of reproducing semantic helper decisions.
+
 ## Test responsibilities
 
 | Group | Boundary | Evidence |
@@ -35,9 +51,16 @@ helper names, or enumeration-to-enumeration mappings.
 Internal C++ tests use the compiler configuration. Generated-source and consumer
 tests use the C++20 baseline, with additional standard modes for native capability
 branches. Shared semantic cases use shared sources across these modes.
-Compiler processes for isolated language or native-boundary fixtures use
-`--explicit-inputs` and name their complete source set. Source-discovery and
-installed-toolchain tests use normal discovery and establish Crafts integration.
+Compiler processes for self-contained language, diagnostic, reporting, and
+artifact fixtures use `--explicit-inputs` and name their complete source set.
+This keeps their analysis cost proportional to the fixture. Source-discovery,
+installed-toolchain, and representative ordinary-command tests use normal
+discovery and establish Crafts integration.
+
+CLI installation fixtures use the production runtime headers and an independent
+public source module. They establish installed-path discovery, source identity,
+native providers, and process behavior without rebuilding the entire standard
+library. Ordinary Crafts and example targets establish the complete library APIs.
 
 Static execution, interpreted execution, and generated native C++ are separate
 boundaries. Keep representative cases at each applicable boundary. Static tests
@@ -125,7 +148,9 @@ limit conclusions to that evidence. Keep raw logs outside reference documents.
 
 ## Organization and fixtures
 
-Each group owns its `xmake.lua`. Topic directories name the rule under test;
+Each group owns its `xmake.lua`, including its integration targets. The project
+root includes groups; it does not register their internal scenarios or subdirectories.
+Topic directories name the rule under test;
 features and scenarios belong in filenames and case names. Helpers remain with
 their owning domain; harnesses select scenarios. Filenames and local type names
 avoid repeating context already supplied by their directory or module, such as
@@ -204,13 +229,35 @@ own compiler subprocesses in that time. Repeated warm runs retain those native
 compilations and expected native rejections. A no-op build is a separate
 measurement, not a test result.
 
-For internal case costs, build `carven-test-internal`, then run
-`./xmakew run carven-test-internal --timings`. The report lists case execution
-durations from slowest to fastest. Combine it with `--filter`, `--exclude`, or
+For internal case costs, build a domain target,
+for example `./xmakew build carven-test-analysis`, then run
+`./xmakew run carven-test-analysis --timings`.
+The report lists case execution durations from slowest to fastest.
+Combine it with `--filter`, `--exclude`, or
 `--test` to reproduce a selected workload; `--list-tests` lists names without
 running them. These timings include each case's fixtures and assertions but
 exclude process startup, test registration, and reporting. Normal runs do not
 collect timings. Keep machine-specific timing logs outside reference documents.
+
+The `internal` group uses six ordinary executable targets. Their source directories
+define their coverage; each executable registers and runs its complete domain.
+| Target | Source directories under `tests/internal` |
+| --- | --- |
+| `carven-test-analysis` | `semantic/analysis` |
+| `carven-test-compiler` | `compiler` |
+| `carven-test-semir` | `semantic/semir`, `semantic/visibility` |
+| `carven-test-backend` | `backend`, `artifacts` |
+| `carven-test-execution` | `semantic/evaluation`, `semantic/format`, `interpreter`, `runtime` |
+| `carven-test-foundation` | `frontend`, `source`, `driver`, `diagnostics`, `support`, harness assertions |
+
+The domain targets have no dependencies on each other. Compiler modules, test
+support, and `carven-test-internal-fixtures` are shared producers; each compiles
+its sources once. The fixture target contains modules and the death-test helper
+without registering cases. Each domain compiles its own cases and links its own
+executable. Use `./xmakew build -g tests/internal` to build all domains and
+`./xmakew test -g internal` to run them. Xmake's test job
+limit controls their independent processes. Workspace owns `carven-test-workspace` in
+`tools/workspace/xmake.lua`; `./xmakew test -g workspace` runs its separate cases.
 
 Static analysis is available through `./xmakew check clang.tidy` for handwritten
 and generated C++. `.clang-tidy` configures handwritten checks;

@@ -5,9 +5,9 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
-import :semantic.analysis.constant.root;
 import :semantic.analysis.construction.requests;
 import :semantic.analysis.decl.context;
+import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.program;
 import :semantic.analysis.types;
@@ -64,6 +64,11 @@ private:
         ASTView syntax;
         const GenericTypeContext* generic_context = nullptr;
 
+        auto evaluate_constant_expression(
+            ASTExprID expression,
+            std::optional<ConstructionTypeRef> expected = std::nullopt
+        ) noexcept -> ExpressionTask<ConstantID>;
+        auto evaluate_array_extent(ASTExprID expression) noexcept -> AnalysisTask<std::uint64_t>;
         auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
         auto observe_field(ProgramOriginID definition, Span name, ConstructionTypeRef type) noexcept
             -> void;

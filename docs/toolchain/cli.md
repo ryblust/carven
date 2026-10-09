@@ -299,22 +299,16 @@ The caller supplies the complete `.cv` batch, including every source dependency.
 Build systems use this mode to own source selection and keep library builds
 independent of unrelated files in the working directory.
 
-`--artifact-manifest=<file>` writes versioned JSON facts after all selected artifacts have
-been written successfully. Parent directories are created. The file records the
+`--artifact-manifest=<file>` writes JSON facts after all selected artifacts
+have been written successfully. Parent directories are created. The file records the
 complete analyzed input batch and the actual generated artifact inventory:
 
 ```json
 {
-  "version": 1,
   "workspace": {"root": "/projects/example"},
-  "generation": {
-    "linkage_domain": {"kind": "explicit", "value": "example:app"},
-    "tests": "none",
-    "library": null
-  },
   "inputs": [{"path": "src/main.cv", "module": "src.main"}],
   "artifacts": [
-    {"path": "src/main.cpp", "role": "module-implementation", "source_mapping": "source-attributed"}
+    {"path": "src/main.cpp", "role": "module-implementation", "source_mapping": "source-attributed", "source": "src/main.cv"}
   ]
 }
 ```
@@ -325,25 +319,27 @@ external inputs retain absolute spellings. Filesystem aliases retain their input
 spelling while source collection deduplicates their canonical file identity.
 Module identities are canonical.
 
-A workspace can contain several source selections. `generation` describes
-the artifact-generation request, independent of native target settings:
-`linkage_domain` records its `explicit` or `artifact-root` kind and value;
-`tests` is `none`, `main`, or `runner`. `library` is null or records the
-library's `linkage_domain`, canonical `modules`, and `emit_implementations` flag.
-These identify ownership of generated definitions. Xmake owns project targets,
-their source selections, native configuration, dependency graph, and lifecycle.
+Xmake owns project targets, their source selections, native configuration,
+dependency graph, generation commands, and lifecycle.
 
 Artifact paths are normalized relative paths below the output directory, ordered
 by logical path. Roles are `interface`, `cpp-api-header`, `module-implementation`,
 `test-runner-header`, and `test-entry`; source mapping is `stable-interface` or
-`source-attributed`. With `--stdout`, the inventory describes the displayed selection
+`source-attributed`. Each module implementation's `source` records its original
+source path spelling, interpreted relative to the workspace root. It can contain
+aliases such as `./` and differ from the normalized `inputs.path`; consumers
+normalize paths to associate native per-file settings with their originating
+source. Headers and the synthetic test entry have `source: null`.
+With `--stdout`, the inventory describes the displayed selection
 while inputs still describe the complete analyzed batch.
 
 The manifest serializes the compiler's existing actual artifact set; it is not a
 second artifact planner or inventory. It requires no second analysis and does not
-decide cache validity or imply partial semantic compilation. Consumers check
-the command's exit status and schema version before using it. A failed command may
-leave an older or incomplete manifest in place; build systems should use a fresh staging path.
+decide cache validity or imply partial semantic compilation. The compiler and
+package rule evolve together without format-version negotiation. Consumers check
+the command's exit status and the artifact facts they require before using it.
+A failed command may leave an older or incomplete manifest in place; build systems
+should use a fresh staging path.
 The manifest cannot overwrite a source input or a generated artifact. Place it
 outside the artifact tree when using directory-based promotion.
 

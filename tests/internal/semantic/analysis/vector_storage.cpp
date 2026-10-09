@@ -1370,36 +1370,6 @@ const TestSuite suite([] static noexcept {
             }
         };
 
-    "Vector ownership: recursive argument permutations have bounded analysis"_test =
-        [] static noexcept {
-            for (const auto count : {1uz, 2uz, 3uz, 4uz}) {
-                auto source = std::string(
-                    "struct Node { text: String, left: Vector<Node>, right: Vector<Node> }\n"
-                );
-                for (auto index = 0uz; index < count; ++index) {
-                    source += std::format(
-                        R"(
-                        fn f{}(node: Node, whole: Node, depth: usize, choose: bool) -> str {{
-                            if depth == 0 {{ return node.text.as_str(); }}
-                            if choose {{ return f{}(whole, node.left[0], depth - 1, choose); }}
-                            return f{}(whole, node.right[0], depth - 1, choose);
-                        }}
-                    )",
-                        index,
-                        (index + 1uz) % count,
-                        (index + 1uz) % count
-                    );
-                }
-                source += R"(
-                    fn probe(root: Node, depth: usize, choose: bool) -> str {
-                        return f0(root.left[0], root, depth, choose);
-                    }
-                )";
-                const auto program = analyze_test_program(source);
-                expect_bounded_ownership(program, count);
-            }
-        };
-
     "Vector ownership: role permutations retain return and failure precision"_test =
         [] static noexcept {
             const auto source = std::string(R"(

@@ -136,6 +136,13 @@ auto BodyElaborator::resolve_array_extent(ASTExprID id) noexcept -> AnalysisTask
     co_return (co_await evaluate_array_extent(draft(), source_module_id, ast, scope, id));
 }
 
+auto BodyExprSite::build_static_expression(
+    ASTExprID expression,
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> ExpressionTask<SemanticExpression> {
+    return ::build_static_expression(draft(), module_id(), syntax(), *this, expression, expected);
+}
+
 auto BodyElaborator::static_expression(
     ASTExprID expression,
     std::optional<ConstructionTypeRef> expected
@@ -144,14 +151,7 @@ auto BodyElaborator::static_expression(
         co_return co_await this->expression(expression, expected);
     }
     auto scope = BodyExprSite(*this);
-    auto result = co_await build_static_expression(
-        draft(),
-        source_module_id,
-        ast,
-        scope,
-        expression,
-        expected
-    );
+    auto result = co_await scope.build_static_expression(expression, expected);
     if (!result) {
         if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
             co_return std::unexpected(*diagnostic);

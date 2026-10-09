@@ -22,7 +22,6 @@ local config = import("core.project.config")
 local project = import("core.project.project")
 local json = import("core.base.json")
 local find_tool = import("lib.detect.find_tool")
-local compiler = import("core.tool.compiler")
 local linker = import("core.tool.linker")
 config.load()
 local result = {}
@@ -31,7 +30,7 @@ for name, target in pairs(project.targets()) do
     local tool = find_tool(kind, {program = program, version = true})
     local ld_program, ld_kind = target:tool("ld")
     local ld_tool = find_tool(ld_kind, {program = ld_program, version = true})
-    local cxx = compiler.load("cxx", {target = target})
+    local cxx = target:compiler("cxx")
     local ld = linker.load(target:kind(), {"cxx"}, {target = target})
     result[name] = {executable = path.absolute(target:targetfile()), cxx = program,
         cxx_kind = kind, cxx_version = tool and tool.version or "unobserved",

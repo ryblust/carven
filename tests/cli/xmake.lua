@@ -5,8 +5,11 @@ local case_specs = {
         steps = {
             {args = {"compile", "--explicit-inputs", "--tests=main", "--linkage-domain=manifest:app", "--artifact-manifest=metadata/build.json", "-o", "emit", "input.cv"},
                 output_files = {"metadata/build.json", "emit/input.cpp", "emit/carven/api/input.hpp"},
-                file_contains = {["metadata/build.json"] = {'"generation":', '"tests": "main"'}},
-                file_not_contains = {["metadata/build.json"] = {'"selection":'}}},
+                file_contains = {["metadata/build.json"] = {
+                    '"path": "input.cpp", "role": "module-implementation", "source_mapping": "source-attributed", "source": "input.cv"',
+                    '"path": "carven/generated/carven-test-main.cpp", "role": "test-entry", "source_mapping": "source-attributed", "source": null',
+                }},
+                file_not_contains = {["metadata/build.json"] = {'"generation":', '"selection":'}}},
             {args = {"compile", "--explicit-inputs", "--artifact-manifest=failed.json", "-o", "failed", "invalid.cv"},
                 exit_code = 1, stderr_contains = {"CV-SYNTAX"}, absent_files = {"failed.json", "failed"}},
             {args = {"compile", "--explicit-inputs", "--artifact-manifest=input.cv", "-o", "collision", "input.cv"},
@@ -19,28 +22,28 @@ local case_specs = {
         inputs = {"input.cv", "crafts/demo/helper.cv", "crafts/demo/unrelated.cv",
             "crafts/cycle/a.cv", "crafts/cycle/b.cv"},
         steps = {
-            {args = {"compile", "input.cv", "--stdout"},
+            {installed_toolchain = true, args = {"compile", "input.cv", "--stdout"},
                 stdout_contains = {"==> input.cpp <==", "#include <carven/generated/crafts/demo/helper.hpp>"},
                 stdout_not_contains = {"==> crafts/", "==> carven/generated/crafts/", "unrelated"}},
-            {args = {"compile", "input.cv", "crafts/demo/helper.cv", "--stdout"},
+            {installed_toolchain = true, args = {"compile", "input.cv", "crafts/demo/helper.cv", "--stdout"},
                 stdout_contains = {"==> input.cpp <==", "==> crafts/demo/helper.cpp <==", "==> carven/generated/crafts/demo/helper.hpp <=="},
                 stdout_not_contains = {"unrelated", "==> crafts/carven/"}},
-            {args = {"compile", "crafts/cycle/b.cv", "--stdout"},
+            {installed_toolchain = true, args = {"compile", "crafts/cycle/b.cv", "--stdout"},
                 stdout_contains = {"==> crafts/cycle/b.cpp <==", "==> carven/generated/crafts/cycle/a.hpp <==", "ATag", "BTag"},
                 stdout_not_contains = {"==> crafts/cycle/a.cpp <==", "==> carven/generated/crafts/cycle/b.hpp <==", "==> input.cpp <=="}},
-            {args = {"compile", "input.cv", "-o", "emit"},
+            {installed_toolchain = true, args = {"compile", "input.cv", "-o", "emit"},
                 output_files = {"emit/input.cpp", "emit/crafts/demo/helper.cpp", "emit/crafts/demo/unrelated.cpp"}},
         },
     },
     ["commands/cstring_text"] = {
         inputs = {"input.cv"},
-        args = {"interpret", "input.cv"}, stdout = "stdout.txt", stderr = "stderr.txt",
+        args = {"interpret", "--explicit-inputs", "input.cv"}, stdout = "stdout.txt", stderr = "stderr.txt",
     },
     ["commands/structural_display"] = {
         inputs = {"input.cv", "failure.cv", "helper.cv"},
         steps = {
-            {args = {"interpret", "input.cv", "helper.cv"}, stdout = "stdout.txt"},
-            {args = {"check", "failure.cv"}, exit_code = 1,
+            {args = {"interpret", "--explicit-inputs", "input.cv", "helper.cv"}, stdout = "stdout.txt"},
+            {args = {"check", "--explicit-inputs", "failure.cv"}, exit_code = 1,
                 stderr_contains = {'actual: [\n        12,\n    ]', 'expected: [\n        15,\n    ]',
                     'true: <not evaluated>', 'condition: 1 > 2'},
                 stderr_not_contains = {'1: 1', '2: 2', 'false: false'}},
@@ -56,11 +59,13 @@ local case_specs = {
         steps = {
             {args = {"check"}, exit_code = 1, stderr_contains = {"requires at least one source file", "carven check --help"}},
             {args = {"check", "input.cv", "--stdout"}, exit_code = 1, stderr_contains = {"unknown check option", "carven check --help"}},
-            {args = {"check", "syntax.cv"}, exit_code = 1, stderr_contains = {"CV-SYNTAX", "syntax.cv:1:12"}},
-            {args = {"check", "warning.cv"}, stderr_ordered = {"CV-LINT-UNUSED-LOCAL", "carven: check passed\n"}},
-            {args = {"check", "static_failure.cv"}, exit_code = 1, stderr_contains = {"CV-CONST-TEST"}},
-            {args = {"check", "invalid_test.cv"}, exit_code = 1, stderr_contains = {"CV-TYPE-MISMATCH", "invalid_test.cv:2:"}},
+            {args = {"check", "--explicit-inputs", "syntax.cv"}, exit_code = 1, stderr_contains = {"CV-SYNTAX", "syntax.cv:1:12"}},
+            {args = {"check", "--explicit-inputs", "warning.cv"}, stderr_ordered = {"CV-LINT-UNUSED-LOCAL", "carven: check passed\n"}},
+            {args = {"check", "--explicit-inputs", "static_failure.cv"}, exit_code = 1, stderr_contains = {"CV-CONST-TEST"}},
+            {args = {"check", "--explicit-inputs", "invalid_test.cv"}, exit_code = 1, stderr_contains = {"CV-TYPE-MISMATCH", "invalid_test.cv:2:"}},
             {
+                -- Keep one ordinary check with installed and project Crafts discovery.
+                installed_toolchain = true,
                 args = {"check", "input.cv", "crafts/demo/dependency.cv"},
                 stdout = "stdout.txt", stderr = "stderr.txt",
                 absent_files = {"input.cpp", "crafts/demo/dependency.cpp", "warning.cpp", "carven", "program", "program.exe"},
@@ -74,48 +79,48 @@ local case_specs = {
         },
         steps = {
             {
-                args = {"check", "--timings", "input.cv"}, stdout = "compile.txt",
+                args = {"check", "--explicit-inputs", "--timings", "input.cv"}, stdout = "compile.txt",
                 stderr_contains = {"carven: check passed in ", "Semantic analysis"},
                 stderr_not_contains = {"C++ generation", "Execution"},
             },
             {
-                args = {"compile", "input.cv", "--stdout", "--timings"},
+                args = {"compile", "--explicit-inputs", "input.cv", "--stdout", "--timings"},
                 stdout_contains = {"==> input.cpp <=="},
                 stdout_not_contains = {"carven: compilation finished in "},
                 stderr_contains = {"carven: compilation finished in ", "C++ generation"},
             },
             {
-                args = {"interpret", "--timings", "--trace", "input.cv"}, stdout = "run.txt",
+                args = {"interpret", "--explicit-inputs", "--timings", "--trace", "input.cv"}, stdout = "run.txt",
                 stderr_ordered = {"statement", "carven: interpretation finished in ", "Execution"},
                 stderr_not_contains = {"C++ generation", "Native compilation"},
             },
             {
-                args = {"check", "--timings", "missing.cv"}, exit_code = 1,
+                args = {"check", "--explicit-inputs", "--timings", "missing.cv"}, exit_code = 1,
                 stderr_ordered = {"cannot read source file", "carven: check failed in "},
                 stderr_not_contains = {"Semantic analysis"},
             },
             {
-                args = {"interpret", "--timings", "failure.cv"}, exit_code = 1,
+                args = {"interpret", "--explicit-inputs", "--timings", "failure.cv"}, exit_code = 1,
                 stderr_ordered = {"CV-INTERPRET-EXECUTION", "carven: interpretation failed in ", "Execution"},
             },
         },
     },
     ["commands/default_initialization"] = {
         inputs = {"input.cv"},
-        args = {"interpret", "input.cv"}, stdout = "run.txt",
+        args = {"interpret", "--explicit-inputs", "input.cv"}, stdout = "run.txt",
     },
     ["commands/const_blocks"] = {
         inputs = {"input.cv", "helper.cv"},
         steps = {
-            {args = {"check", "input.cv", "helper.cv"}, stderr = "../check/passed.txt", stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
-            {args = {"interpret", "input.cv", "helper.cv"}, stdout = "run.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n", "runtime\nruntime\n"}},
+            {args = {"check", "--explicit-inputs", "input.cv", "helper.cv"}, stderr = "../check/passed.txt", stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
+            {args = {"interpret", "--explicit-inputs", "input.cv", "helper.cv"}, stdout = "run.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n", "runtime\nruntime\n"}},
         },
     },
     ["commands/static_execution"] = {
         inputs = {"input.cv"},
         steps = {
-            {args = {"compile", "input.cv", "-o", "emit"}, stdout = "stdout.txt", stderr = "stderr.txt"},
-            {args = {"compile", "input.cv", "--stdout"}, stderr = "combined.txt", stdout_contains = {"==> input.cpp <=="}},
+            {args = {"compile", "--explicit-inputs", "input.cv", "-o", "emit"}, stdout = "stdout.txt", stderr = "stderr.txt"},
+            {args = {"compile", "--explicit-inputs", "input.cv", "--stdout"}, stderr = "combined.txt", stdout_contains = {"==> input.cpp <=="}},
         },
     },
     ["commands/dump"] = {
@@ -168,20 +173,20 @@ local case_specs = {
     },
     ["diagnostics/syntax"] = {
         inputs = {"input.cv"},
-        args = {"compile", "input.cv"},
+        args = {"compile", "--explicit-inputs", "input.cv"},
         exit_code = 1,
         stderr_contains = {"CV-SYNTAX", "expected parameter name", "input.cv:1:12"},
     },
     ["diagnostics/warning"] = {
         inputs = {"input.cv"},
-        args = {"compile", "input.cv"},
+        args = {"compile", "--explicit-inputs", "input.cv"},
         stderr_contains = {"CV-LINT-UNUSED-LOCAL", "input.cv"},
         output_files = {"input.cpp"},
         absent_files = {"carven/generated/input.hpp"},
     },
     ["output/default"] = {
         fixtures = {["../fixtures/bare_structure.cv"] = "bare_structure.cv"},
-        args = {"compile", "bare_structure.cv"},
+        args = {"compile", "--explicit-inputs", "bare_structure.cv"},
         output_files = {"bare_structure.cpp", "carven/generated/bare_structure.hpp"},
     },
     ["output/destination"] = {
@@ -190,7 +195,7 @@ local case_specs = {
             ["../state/preexisting.fixture"] = "emit/bare_structure.cpp",
             ["../state/stale.fixture"] = "emit/stale.txt",
         },
-        args = {"compile", "--output-dir=emit", "bare_structure.cv"},
+        args = {"compile", "--explicit-inputs", "--output-dir=emit", "bare_structure.cv"},
         output_files = {
             "emit/bare_structure.cpp",
             "emit/carven/generated/bare_structure.hpp",
@@ -202,7 +207,7 @@ local case_specs = {
     },
     ["output/stdout"] = {
         fixtures = {["../fixtures/bare_structure.cv"] = "bare_structure.cv"},
-        args = {"compile", "bare_structure.cv", "--stdout"},
+        args = {"compile", "--explicit-inputs", "bare_structure.cv", "--stdout"},
         stdout_ordered = {
             "==> bare_structure.cpp <==",
             "==> carven/generated/bare_structure.hpp <==",
@@ -216,7 +221,7 @@ local case_specs = {
         fixtures = {["../fixtures/passing_test.cv"] = "passing_test.cv"},
         steps = {
             {
-                args = {"compile", "-o", "none", "passing_test.cv"},
+                args = {"compile", "--explicit-inputs", "-o", "none", "passing_test.cv"},
                 output_files = {"none/passing_test.cpp"},
                 absent_files = {
                     "none/carven/generated/passing_test.hpp",
@@ -225,7 +230,7 @@ local case_specs = {
                 },
             },
             {
-                args = {"compile", "passing_test.cv", "--tests=main", "--output-dir=default"},
+                args = {"compile", "--explicit-inputs", "passing_test.cv", "--tests=main", "--output-dir=default"},
                 output_files = {
                     "default/passing_test.cpp",
                     "default/carven/generated/carven-test-runner.hpp",
@@ -233,7 +238,7 @@ local case_specs = {
                 },
             },
             {
-                args = {"compile", "--tests=runner", "--output-dir", "external", "passing_test.cv"},
+                args = {"compile", "--explicit-inputs", "--tests=runner", "--output-dir", "external", "passing_test.cv"},
                 output_files = {
                     "external/passing_test.cpp",
                     "external/carven/generated/carven-test-runner.hpp",
@@ -250,7 +255,7 @@ local case_specs = {
             ["../fixtures/bare_structure.cv"] = "bare_structure.cv",
             ["../state/preexisting.fixture"] = "blocked",
         },
-        args = {"compile", "bare_structure.cv", "--output-dir=blocked"},
+        args = {"compile", "--explicit-inputs", "bare_structure.cv", "--output-dir=blocked"},
         exit_code = 1,
         stderr_contains = {"carven: error: cannot create directory 'blocked':"},
         output_files = {"blocked"},
@@ -269,7 +274,7 @@ local case_specs = {
     },
     ["module_layout/deduplication"] = {
         project = "../project",
-        args = {"compile", "nested/local.cv", "./nested/local.cv", "-o", "emit"},
+        args = {"compile", "--explicit-inputs", "nested/local.cv", "./nested/local.cv", "-o", "emit"},
         output_files = {"emit/nested/local.cpp"},
         absent_files = {"emit/main.cpp"},
     },
@@ -277,6 +282,7 @@ local case_specs = {
         project = "../project",
         args = {
             "compile",
+            "--explicit-inputs",
             "--output-dir=emit",
             "main.cv",
             "sibling.cv",
@@ -317,6 +323,7 @@ case_specs["commands/native_execution"] = {
             absent_files = {"input.cpp", "program", "program.exe"},
         },
         {
+            installed_toolchain = true,
             args = {"library.cv"},
             exit_code = 1,
             stderr_contains = {"running a program requires a runtime entry point"},
@@ -452,7 +459,7 @@ for name, scenario in pairs(interpretation.cases) do
     spec.case_dir = "commands/interpretation"
     spec.inputs = interpretation.inputs
     spec.fixtures = interpretation.fixtures
-    if name ~= "arguments" and name ~= "missing-input" then
+    if name ~= "missing-input" then
         table.insert(spec.args, 2, "--explicit-inputs")
     end
     case_specs["commands/interpretation/" .. name] = spec
@@ -461,13 +468,13 @@ end
 case_specs["commands/test_options"] = {
     fixtures = {["../interpretation/declarations.cv"] = "declarations.cv"},
     steps = {
-        {args = {"compile", "declarations.cv", "-o", "no-entry"},
+        {args = {"compile", "--explicit-inputs", "declarations.cv", "-o", "no-entry"},
             output_files = {"no-entry/declarations.cpp"}},
-        {args = {"compile", "--tests=main", "declarations.cv", "-o", "empty-tests"},
+        {args = {"compile", "--explicit-inputs", "--tests=main", "declarations.cv", "-o", "empty-tests"},
             output_files = {"empty-tests/carven/generated/carven-test-main.cpp"}},
-        {args = {"--tests", "declarations.cv"}, exit_code = 1,
+        {installed_toolchain = true, args = {"--tests", "declarations.cv"}, exit_code = 1,
             stderr_contains = {"requires at least one runtime test"}},
-        {args = {"interpret", "--tests", "declarations.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "--tests", "declarations.cv"}, exit_code = 1,
             stderr_contains = {"requires at least one runtime test"}},
         {args = {"interpret", "--tests", "--tests", "declarations.cv"}, exit_code = 1,
             stderr_contains = {"--tests may be specified only once"}},
@@ -480,7 +487,7 @@ case_specs["commands/test_options"] = {
 case_specs["commands/test_report"] = {
     fixtures = {["input.cv.fixture"] = "input.cv"},
     steps = {
-        {args = {"interpret", "--tests", "input.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "--tests", "input.cv"}, exit_code = 1,
             stdout = "stdout.txt", stderr = "stderr.txt"},
     },
 }
@@ -488,9 +495,9 @@ case_specs["commands/test_report"] = {
 case_specs["commands/anonymous_tests"] = {
     inputs = {"duplicate_label.cv", "reserved_label.cv"},
     steps = {
-        {args = {"check", "duplicate_label.cv"}, exit_code = 1,
+        {args = {"check", "--explicit-inputs", "duplicate_label.cv"}, exit_code = 1,
             stderr_contains = {"CV-TEST-DUPLICATE-NAME", "duplicate_label.cv:4:6"}},
-        {args = {"check", "reserved_label.cv"}, exit_code = 1,
+        {args = {"check", "--explicit-inputs", "reserved_label.cv"}, exit_code = 1,
             stderr_contains = {"CV-TEST-MAIN-NAME", "reserved_label.cv:2:6"}},
     },
 }
@@ -526,9 +533,9 @@ case_specs["commands/entry_failure"] = {
         ["implicit.cv.fixture"] = "implicit.cv",
     },
     steps = {
-        {args = {"interpret", "explicit.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "explicit.cv"}, exit_code = 1,
             stdout_contains = {"before"}, stderr = "explicit.interpret.txt"},
-        {args = {"interpret", "implicit.cv"}, exit_code = 1,
+        {args = {"interpret", "--explicit-inputs", "implicit.cv"}, exit_code = 1,
             stderr = "implicit.interpret.txt"},
     },
 }
@@ -563,7 +570,7 @@ case_specs["commands/runtime_traps"] = {
 
 case_specs["commands/test_order"] = {
     inputs = {"a.cv", "z.cv"},
-    args = {"interpret", "--tests", "z.cv", "a.cv"},
+    args = {"interpret", "--explicit-inputs", "--tests", "z.cv", "a.cv"},
     stdout_contains = {"a1\na2\nz\n"}, stderr_contains = {"tests: 3 passed; 0 failed"},
 }
 
@@ -576,10 +583,9 @@ for _, selection in ipairs({
     {mode = "interpret", tests = true},
     {mode = "compile", tests = false},
     {mode = "compile", tests = true},
-    {mode = "native", tests = true},
 }) do
     local mode, tests = selection.mode, selection.tests
-    local args = mode == "native" and {"--timings"} or {mode}
+    local args = {mode, "--explicit-inputs"}
     if tests then table.insert(args, mode == "compile" and "--tests=main" or "--tests") end
     if mode == "compile" then
         table.insert(args, "-o")
@@ -592,13 +598,10 @@ for _, selection in ipairs({
     end
     table.insert(case_specs["commands/execution_modes"].steps, {
         args = args,
-        run_timeout = mode == "native" and 120000 or nil,
         stdout_ordered = output,
         stdout_not_contains = mode == "compile" and {"runtime test", "runtime output"}
             or {tests and "runtime output" or "runtime test"},
         stderr_contains = mode ~= "compile" and tests and {"tests: 1 passed; 0 failed"} or nil,
-        stderr_ordered = mode == "native" and {"carven: run exited with code 0 in ",
-            "Native compilation", "Execution"} or nil,
     })
 end
 
@@ -613,19 +616,19 @@ case_specs["commands/source_collection"] = {
             stderr_contains = {"CV-IMPORT-RESOLUTION", "isolated.cv:1:"}},
         {args = {"interpret", "--explicit-inputs", "isolated.cv"}, exit_code = 1,
             stderr_contains = {"CV-IMPORT-RESOLUTION", "isolated.cv:1:"}},
-        {args = {"interpret", "explicit.cv"}, absolute_inputs = {"external/crafts/json/parser.cv"},
+        {installed_toolchain = true, args = {"interpret", "explicit.cv"}, absolute_inputs = {"external/crafts/json/parser.cv"},
             stdout_contains = {"42\n"}},
-        {args = {"compile", "input.cv", "crafts/demo/value.cv", "-o", "emit"},
+        {installed_toolchain = true, args = {"compile", "input.cv", "crafts/demo/value.cv", "-o", "emit"},
             output_files = {"emit/input.cpp", "emit/crafts/demo/value.cpp", "emit/crafts/carven/std/utf/scalar.cpp"}},
         {args = {"compile", "input.cv", "-o", "installed"}, installed_toolchain = true,
             installed_inputs = {"carven/std/utf/scalar.cv"},
             output_files = {"installed/input.cpp", "installed/crafts/carven/std/utf/scalar.cpp"}},
-        {args = {"interpret", "input.cv"}, stdout_contains = {"65 7\n"}},
+        {installed_toolchain = true, args = {"interpret", "input.cv"}, stdout_contains = {"65 7\n"}},
     },
 }
 
-local xmake_rule_dir = path.join(os.projectdir(), "tests", "cli", "xmake_rule")
 local cli_dir = path.join(os.projectdir(), "tests", "cli")
+local xmake_rule_dir = path.join(cli_dir, "xmake_rule")
 
 local native_specs = {
     {
@@ -773,3 +776,30 @@ target("carven-test-cli-default-domain-isolation")
     )
     add_files(path.join(xmake_rule_dir, "main.cpp"))
     add_tests("default-domain-isolation", {group = "cli", run_timeout = 30000})
+target_end()
+
+-- Ordinary consumers select the same sources with independent native settings.
+-- Keep package-rule integration targets owned by the CLI test collection.
+for _, configuration in ipairs({
+    {name = "a", value = 17, offset = 25},
+    {name = "b", value = 19, offset = 23},
+}) do
+    target("carven-test-cli-native-config-" .. configuration.name)
+        set_default(false)
+        set_kind("binary")
+        set_languages("c++20")
+        add_rules("@carven/carven")
+        add_files(path.join(xmake_rule_dir, "configuration.cv"), {
+            includedirs = path.join(xmake_rule_dir, "native"),
+            defines = "CARVEN_FILE_VALUE=" .. configuration.value,
+        })
+        add_files(path.join(xmake_rule_dir, "configuration.cpp"), {
+            defines = "CARVEN_NATIVE_OFFSET=" .. configuration.offset,
+        })
+        local output = configuration.value .. " " .. configuration.offset .. "\n"
+        add_tests("native-per-file-config", {
+            group = "cli", run_timeout = 30000, plain = true,
+            pass_outputs = {output, (output:gsub("\n", "\r\n"))},
+        })
+    target_end()
+end

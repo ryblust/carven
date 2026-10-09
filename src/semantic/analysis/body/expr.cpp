@@ -16,6 +16,7 @@ import :semantic.analysis.body.expr_site;
 import :semantic.analysis.body.resolve;
 import :semantic.analysis.coverage;
 import :semantic.analysis.expr.interpret;
+import :semantic.analysis.expr.member;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.types;
@@ -373,6 +374,17 @@ auto BodyElaborator::lambda_expression(
 
     lambda_callables.emplace(span, callable);
     co_return finish(callable);
+}
+
+auto BodyExprSite::interpret_enum_case(
+    TypeID type,
+    std::string_view name,
+    Span name_span,
+    std::span<const ASTExprID> arguments,
+    Span span,
+    bool called
+) noexcept -> ExpressionTask<Value> {
+    return ::interpret_enum_case(*this, type, name, name_span, arguments, span, called);
 }
 
 auto BodyElaborator::select_expression(

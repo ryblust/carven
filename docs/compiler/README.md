@@ -48,7 +48,9 @@ Crafts discovery. The direct-run driver compiles native sources and executes the
 result. Project builds use `carven-xmake-repo` for toolchain selection, native
 compilation, linking, and execution.
 `compile --artifact-manifest=<file>` publishes source identities and the actual
-generated artifact inventory through `compiler.manifest`. It reuses the completed generation;
+generated artifact inventory through `compiler.manifest`. Module implementations
+record their actual provenance source; synthetic artifacts have no source owner.
+It reuses the completed generation;
 the compiler does not own build-cache validity or native dependency scheduling.
 `load_and_analyze_sources` prepares the batch, calls `analyze_compilation`, and
 renders diagnostics. `diagnostics.report` renders source diagnostics from their

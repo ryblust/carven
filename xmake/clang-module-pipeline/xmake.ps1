@@ -26,6 +26,7 @@ $patchedPaths = @(
     "rules/c++/modules/clang/builder.lua"
     "rules/c++/modules/clang/scanner.lua"
     "rules/c++/modules/builder.lua"
+    "rules/c++/modules/mapper.lua"
     "rules/c++/modules/scanner.lua"
     "rules/c++/modules/support.lua"
     "rules/c++/modules/xmake.lua"

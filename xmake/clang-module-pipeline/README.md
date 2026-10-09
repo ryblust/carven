@@ -20,10 +20,10 @@ avoid producing an implicit BMI. Ordinary `.cpp` units use their inferred
 language.
 
 The leaf pass uses reverse imports from Xmake's P1689 graph. It omits the BMI
-for a named, non-interface unit that produces an object and has no importer in
-that graph. Interface units, header units, imported units, and BMI-only units
-retain their BMIs. Build preparation removes existing BMIs for pruned leaves.
-The graph must include all importers for this classification to be valid.
+for an ordinary named, non-interface implementation unit that produces an object
+and has no importer in that graph. Module source files, interface units, header
+units, imported units, and BMI-only units retain their BMIs. Build preparation
+removes existing BMIs for pruned leaves.
 
 Compilation databases describe separate BMI and object commands for retained
 module units and source-to-object commands for pruned leaves. Project generation
@@ -70,12 +70,29 @@ their records include an invocation token. Changes to these configurations can
 affect compilation while leaving the reported file list and module facts
 unchanged.
 
-Each target parses its complete current record set in one task, after its own
-scan and the scans of reused providers. Decoded P1689 facts are shared in memory;
-target-specific module paths are derived separately. The module DAG and build
-jobs are reconstructed on each invocation, with a module-name index for edge
-lookup. Provider graph publication precedes consumer graph construction. Disk
-records also serve project generation.
+Each target processes its complete current record set in one task, after its own
+scan and publication of reused providers. Consumers share their providers'
+parsed module facts within the invocation. Units with header-unit dependencies
+keep their target-specific parsing path. The content-based path reconstructs
+the module mapper, DAG, and build jobs from the current configuration on every
+invocation; derived mappers and build-artifact lists stay in the existing memory
+cache. Module facts remain in the persistent `c++.modules` cache for installation
+and uninstallation. Compilation-database generation follows the same preparation
+path and reuses valid scan records.
+
+Derived-cache selection uses Xmake's existing target memory cache and its
+configuration invalidation. Old persistent derived fields are cleared when that
+selection is first made, rather than on every mapper lookup. Reading a current
+provider scan record does not compute a fallback dependency-file path.
+
+Module reuse checks read the current compiler flags on each comparison. Their
+filtered and sorted forms are shared within the invocation, keyed by the full
+flag list, compiler backend, and define-filtering mode. Consumer configuration
+remains independent. Reused non-header units from content-based providers use
+the object paths in the provider's validated current scan facts.
+
+Reused ordinary module implementation files are compiled by their provider.
+Consumers link the provider's objects without compiling those files again.
 
 Module DAG inputs and isolated modules use sorted source keys. Together with
 sorted dependency names, this gives equivalent module graphs a stable topological
@@ -131,34 +148,23 @@ rebuild before diagnosing the implementation:
 ./xmakew build
 ```
 
-Clean the build tree before changing the compiler, toolchain, or build pipeline.
-When switching from the wrapper to stock Xmake while the wrapper is usable:
+Before changing the native compiler, toolchain, or build pipeline, run
+`./xmakew clean -a` to reset build outputs and Xmake caches. If the wrapper
+cannot apply its patch, use `xmake clean -a`. Rebuild with the selected entry:
+`./xmakew build` or `xmake build`.
 
-```sh
-./xmakew clean -a
-xmake build
-```
-
-If the wrapper cannot apply its patch, use stock Xmake to clean and rebuild:
-
-```sh
-xmake clean -a
-xmake build
-```
-
-## Overlay and compatibility
+## Wrapper
 
 The patch targets Xmake `v3.1.1+20260827`; CI pins Xmake 3.1.1 on every platform.
 The wrapper creates an overlay of the installed Xmake program directory under
 the platform temporary directory and selects it through `XMAKE_PROGRAM_DIR`.
-Its cache key includes the program
-directory, Xmake version, patched Lua files, and patch contents. A patch
+Its cache key includes the program directory, Xmake version, patched Lua files,
+and patch contents. A patch
 application failure stops the wrapper.
 
-The overlay also corrects Xmake 3.1.1 sanitizer detection for LLVM-MinGW on
-the Windows platform: GNU-driver sanitizer linking bypasses the MSVC-only
-MD/MT runtime check. Other Windows toolchains keep the stock runtime handling.
-The project continues to use Xmake sanitizer policies on every platform.
+The overlay uses GNU-driver sanitizer linking for LLVM-MinGW on Windows.
+Other Windows toolchains use Xmake's MD/MT runtime handling. The project enables
+sanitizers through Xmake policies.
 
 The POSIX wrapper attempts an APFS clone on macOS or a reflink on Linux, with a
 regular copy as fallback. Windows uses `robocopy`. Each wrapper prepares a

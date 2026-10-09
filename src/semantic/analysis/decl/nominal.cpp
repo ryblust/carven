@@ -7,7 +7,6 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
-import :semantic.analysis.constant.root;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
 import :semantic.analysis.expr.scope;
@@ -273,11 +272,7 @@ auto DeclResolver::resolve_enum_case(
     auto value = IntegerConstant::zero();
     if (source_case.initializer.has_value()) {
         auto scope = ConstantScope {*this, symbol.module_id, syntax};
-        auto result = (co_await evaluate_constant_expression(
-            draft,
-            symbol.module_id,
-            syntax,
-            scope,
+        auto result = (co_await scope.evaluate_constant_expression(
             *source_case.initializer,
             numeric->underlying_type
         ));

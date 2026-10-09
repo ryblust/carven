@@ -126,7 +126,6 @@ auto validate_manifest_destination(
 auto write_manifest(
     const std::filesystem::path& path,
     std::span<const SourceInput> sources,
-    const TargetPlanningRequest& request,
     const GeneratedArtifactSet& artifacts
 ) noexcept -> std::expected<void, std::string> {
     auto error = std::error_code();
@@ -173,12 +172,7 @@ auto write_manifest(
     }
     if (const auto written = write_file(
             path,
-            format_compilation_manifest(
-                path_to_generic_utf8(workspace_root),
-                inputs,
-                request,
-                artifacts
-            )
+            format_compilation_manifest(path_to_generic_utf8(workspace_root), inputs, artifacts)
         );
         !written) {
         return std::unexpected(
@@ -207,7 +201,7 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
             "Output options:\n"
             "  -o, --output-dir <dir>    Write files below <dir> (default: .)\n"
             "      --stdout              Print explicit inputs with path headings\n"
-            "      --artifact-manifest=<file>     Write versioned JSON input and artifact facts\n"
+            "      --artifact-manifest=<file>     Write JSON input and artifact facts\n"
             "      --linkage-domain=<id> Set the private namespace identity\n"
             "                            (default: derived from the output directory)\n"
             "      --library-domain=<id> Set the identity of a fixed source library\n"
@@ -326,12 +320,8 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
             !valid) {
             return emit_driver_error(valid.error());
         }
-        if (const auto manifest = write_manifest(
-                *request->artifact_manifest,
-                sources->carven,
-                generation,
-                *artifacts
-            );
+        if (const auto manifest =
+                write_manifest(*request->artifact_manifest, sources->carven, *artifacts);
             !manifest) {
             return emit_driver_error(manifest.error());
         }

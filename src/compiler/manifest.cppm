@@ -1,7 +1,6 @@
 module carven:compiler.manifest;
 
 import :artifacts;
-import :backend.generation.request;
 import std;
 
 struct CompilationManifestInput final {
@@ -16,6 +15,5 @@ struct CompilationManifestInput final {
 auto format_compilation_manifest(
     std::string_view workspace_root,
     std::span<const CompilationManifestInput> inputs,
-    const TargetPlanningRequest& request,
     const GeneratedArtifactSet& artifacts
 ) noexcept -> std::string;

@@ -1,4 +1,4 @@
-import("lib.detect.find_program")
+import("lib.detect.find_tool")
 import("core.project.config")
 import("core.project.project")
 import("private.action.run.runenvs")
@@ -8,22 +8,8 @@ function main(check)
     local target = project.target("carven-format")
     local formatter = path.absolute(target:targetfile(), os.projectdir())
     local addenvs, setenvs = runenvs.make(target)
-    local program
-    if os.host() == "macosx" then
-        local brew = find_program("brew")
-        if brew then
-            -- A formula query may fetch package metadata; the installation prefix is local.
-            local prefix = try {function () return os.iorunv(brew, {"--prefix"}) end}
-            if prefix then
-                local candidate = path.join(prefix:trim(), "opt", "llvm", "bin", "clang-format")
-                if os.isfile(candidate) then
-                    program = candidate
-                end
-            end
-        end
-    end
-    program = program or find_program("clang-format")
-    assert(program, "clang-format is required; install llvm on macOS or add clang-format to PATH")
+    local tool = find_tool("clang-format", {require_version = ">=23.0"})
+    assert(tool, "clang-format 23 or newer is required; install LLVM 23 or add it to PATH")
 
     local files = {}
     for _, root in ipairs({"src", "tests", "crafts", "examples", "benchmarks", "tools/format/src", "tools/format/tests", "tools/workspace"}) do
@@ -37,7 +23,7 @@ function main(check)
         table.insert(args, path.relative(file, os.projectdir()))
     end
     if #files > 0 then
-        os.vrunv(program, args, {curdir = os.projectdir()})
+        os.vrunv(tool.program, args, {curdir = os.projectdir()})
     end
     -- These fixtures intentionally fail lexing or parsing.
     local rejected = {

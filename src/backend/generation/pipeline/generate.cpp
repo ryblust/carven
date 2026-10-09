@@ -123,7 +123,17 @@ auto generate_artifacts(
             ? EmissionPolicy {StableInterfaceEmission {}}
             : EmissionPolicy {SourceAttributedEmission {.generated_origin = logical_path}};
         auto unit = lower_artifact(compilation, artifact_id);
-        artifacts.push_back(emit(std::move(unit), logical_path, artifact_role(artifact), policy));
+        auto emitted = emit(std::move(unit), logical_path, artifact_role(artifact), policy);
+        if (const auto* implementation =
+                std::get_if<TargetModuleImplementationArtifact>(&artifact)) {
+            const auto& module =
+                semantic.declarations().module_decl(implementation->schedule.module_id);
+            const auto& provenance_module =
+                semantic.provenance().module_record(module.provenance_module);
+            emitted.source_path =
+                semantic.provenance().source_snapshot(provenance_module.source_id).display_origin();
+        }
+        artifacts.push_back(std::move(emitted));
     }
     return GeneratedArtifactSet(std::move(artifacts));
 }

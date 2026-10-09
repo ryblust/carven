@@ -118,6 +118,10 @@ native consumer tests include runtime component entries.
   Private helper classes in `.cpp` follow the same rule in that file.
 - Keep template and `constexpr`/`consteval` definitions visible where needed.
   Keep `= default` and `= delete` in the class declaration.
+- Use compiler time traces to identify repeated heavy template instantiations.
+  When several implementation files use the same concrete context, place its
+  calls behind an ordinary entry in an existing implementation file that already
+  instantiates that context.
 - Keep consecutive member function declarations together without blank lines.
   Separate access sections, documented groups, and data members as needed.
 - Named functions use trailing return types where C++ permits. Constructors,
@@ -158,6 +162,8 @@ native consumer tests include runtime component entries.
 - Borrowed storage remains alive and valid throughout every use. State borrow
   lifetimes and invalidating operations at the owning interface. Do not return
   borrows into temporaries or local storage that dies on return.
+- Ordinary task forwarders return the existing task directly. Callers retain
+  borrowed contexts until the task completes, including across `co_await`.
 - Treat moving or consuming an owner as ending its outstanding borrows.
 - Construction-time readers return values when subsequent container growth
   could invalidate an exposed borrow.

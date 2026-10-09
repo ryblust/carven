@@ -21,7 +21,5 @@ function format_text_difference(actual, expected)
 end
 
 function format_command(program, args)
-    local words = {quote(program)}
-    for _, arg in ipairs(args) do table.insert(words, quote(arg)) end
-    return table.concat(words, " ")
+    return os.args(table.join(program, args))
 end

@@ -22,6 +22,7 @@ auto emit(
         .logical_path = std::move(logical_path),
         .role = role,
         .source_mapping = source_mapping,
+        .source_path = std::nullopt,
         .content = std::move(content),
     };
 }

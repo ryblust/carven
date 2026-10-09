@@ -5,7 +5,6 @@ import :diagnostics.code;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.storage;
-import :semantic.analysis.constant.root;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
 import :semantic.analysis.operations;
@@ -80,7 +79,7 @@ auto DeclResolver::resolve_generic_declaration(
     };
     auto scope = ConstantScope {*this, symbol.module_id, syntax, &context};
     const auto extent = [&](ASTExprID expression) noexcept {
-        return evaluate_array_extent(draft, symbol.module_id, syntax, scope, expression);
+        return scope.evaluate_array_extent(expression);
     };
     auto contract = GenericDeclarationContract {
         .module_id = module_declaration(symbol.module_id),

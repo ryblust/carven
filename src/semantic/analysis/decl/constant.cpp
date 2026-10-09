@@ -8,7 +8,6 @@ import :frontend.ast.expr;
 import :frontend.ast.interop;
 import :frontend.ast.storage;
 import :frontend.ast.tree;
-import :semantic.analysis.constant.root;
 import :semantic.analysis.decl.context;
 import :semantic.analysis.decl.resolver;
 import :semantic.analysis.expr.scope;
@@ -53,14 +52,8 @@ auto DeclResolver::resolve_module_constant(
         declared_type = *resolved;
     }
     auto scope = ConstantScope {*this, symbol.module_id, syntax};
-    auto result = (co_await evaluate_constant_expression(
-        draft,
-        symbol.module_id,
-        syntax,
-        scope,
-        declaration.initializer,
-        declared_type
-    ));
+    auto result =
+        (co_await scope.evaluate_constant_expression(declaration.initializer, declared_type));
     if (!result) {
         if (const auto* diagnostic = std::get_if<AnalysisFailure>(&result.error())) {
             co_return std::unexpected(*diagnostic);
@@ -157,7 +150,7 @@ auto DeclResolver::resolve_type_qualifier(
             std::get_if<ASTTypeApplicationExpr>(&syntax.expression(current).value)) {
         auto scope = ConstantScope {*this, module_id, syntax, generic_context};
         const auto extent = [&](ASTExprID expression) noexcept {
-            return evaluate_array_extent(draft, module_id, syntax, scope, expression);
+            return scope.evaluate_array_extent(expression);
         };
         auto type = (co_await resolve_source_type_application(
             draft,

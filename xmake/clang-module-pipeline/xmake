@@ -40,6 +40,7 @@ source_key=$(
             "$source_program_dir/rules/c++/modules/clang/builder.lua" \
             "$source_program_dir/rules/c++/modules/clang/scanner.lua" \
             "$source_program_dir/rules/c++/modules/builder.lua" \
+            "$source_program_dir/rules/c++/modules/mapper.lua" \
             "$source_program_dir/rules/c++/modules/scanner.lua" \
             "$source_program_dir/rules/c++/modules/support.lua" \
             "$source_program_dir/rules/c++/modules/xmake.lua" \

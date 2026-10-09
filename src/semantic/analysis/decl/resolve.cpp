@@ -418,6 +418,25 @@ auto DeclResolver::select_symbol(
     return std::addressof(require_catalog_symbol(catalog, selected.symbol_id));
 }
 
+auto DeclResolver::ConstantScope::evaluate_constant_expression(
+    ASTExprID expression,
+    std::optional<ConstructionTypeRef> expected
+) noexcept -> ExpressionTask<ConstantID> {
+    return ::evaluate_constant_expression(
+        resolver.draft,
+        module_id,
+        syntax,
+        *this,
+        expression,
+        expected
+    );
+}
+
+auto DeclResolver::ConstantScope::evaluate_array_extent(ASTExprID expression) noexcept
+    -> AnalysisTask<std::uint64_t> {
+    return ::evaluate_array_extent(resolver.draft, module_id, syntax, *this, expression);
+}
+
 auto DeclResolver::ConstantScope::resolve_name(std::string_view name, Span span) noexcept
     -> AnalysisTask<std::optional<ConstantID>> {
     co_return (co_await resolver.resolve_constant_name(module_id, name, span));
@@ -548,7 +567,7 @@ auto DeclResolver::ConstantScope::resolve_construction_type(
     const ASTConstructionType& type
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     const auto extent = [&](ASTExprID expression) noexcept {
-        return evaluate_array_extent(resolver.draft, module_id, syntax, *this, expression);
+        return evaluate_array_extent(expression);
     };
     auto result = (co_await resolve_source_construction_type(
         resolver.draft,
@@ -575,7 +594,7 @@ auto DeclResolver::ConstantScope::resolve_construction_type(
 auto DeclResolver::ConstantScope::resolve_type(ASTTypeID type) noexcept
     -> AnalysisTask<ConstructionTypeRef> {
     const auto extent = [&](ASTExprID expression) noexcept {
-        return evaluate_array_extent(resolver.draft, module_id, syntax, *this, expression);
+        return evaluate_array_extent(expression);
     };
     co_return (co_await resolve_source_type(
         resolver.draft,
@@ -600,7 +619,7 @@ auto DeclResolver::ConstantScope::resolve_generic_arguments(
     std::span<const GenericParameterKind> policies
 ) noexcept -> AnalysisTask<GenericEnvironment> {
     const auto extent = [&](ASTExprID expression) noexcept {
-        return evaluate_array_extent(resolver.draft, module_id, syntax, *this, expression);
+        return evaluate_array_extent(expression);
     };
     co_return co_await resolve_generic_source_arguments(
         resolver.draft,
@@ -635,7 +654,7 @@ auto DeclResolver::resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTy
     -> AnalysisTask<ConstructionTypeRef> {
     auto scope = ConstantScope {*this, module_id, syntax};
     const auto extent = [&](ASTExprID expression) noexcept {
-        return evaluate_array_extent(draft, module_id, syntax, scope, expression);
+        return scope.evaluate_array_extent(expression);
     };
     co_return (co_await resolve_source_type(
         draft,
@@ -672,7 +691,7 @@ auto DeclResolver::resolve_failures(
 ) noexcept -> AnalysisTask<ConstructionFailureRef> {
     auto scope = ConstantScope {*this, module_id, syntax, generic_context};
     const auto extent = [&](ASTExprID expression) noexcept {
-        return evaluate_array_extent(draft, module_id, syntax, scope, expression);
+        return scope.evaluate_array_extent(expression);
     };
     co_return (co_await resolve_failure_types(
         draft,

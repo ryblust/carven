@@ -102,9 +102,10 @@ source order.
 
 Logical paths are relative to the output destination. The build system owns
 stale artifact removal, installation, and native dependency scheduling.
-`compile --artifact-manifest=<file>` publishes the workspace root, generation request,
-actual input identities, and artifact paths, roles, and source-mapping policies
-as versioned JSON projected from the existing generated artifact set. Build integration
+`compile --artifact-manifest=<file>` publishes the workspace root,
+actual input identities, and artifact paths, roles, source-mapping policies, and
+implementation source ownership
+as JSON projected from the existing generated artifact set. Build integration
 uses this inventory instead of recovering artifact roles from generated source
 bytes or recursively discovering output files. Native compiler dependency files
 remain authoritative for C++ header dependencies.
@@ -148,9 +149,11 @@ dependencies and optional test modes use ordinary target configuration.
 The rule passes the complete `.cv` batch to Carven before native dependency
 scanning, supplies a target-private output root and linkage domain, and registers
 generated implementations as C++ sources. Installed source paths preserve their
-`crafts/carven/` hierarchy. The rule derives C++ registration from the source
-paths and checks the
-actual implementation inventory against that registration before promotion.
+`crafts/carven/` hierarchy. Xmake registers generated implementations before
+native dependency scanning using the stable module-path-to-`.cpp` contract.
+The manifest validates that registration and supplies the actual files to
+promote and track. Implementation source ownership associates native per-file
+settings with the originating `.cv` input.
 The compiler deduplicates canonical file paths and rejects duplicate module
 identities. The rule uses `--explicit-inputs`, so the CLI adds no other source roots. Imports
 resolve within the supplied batch; `std::` selects modules under `crafts/carven/std/`.
