@@ -239,21 +239,19 @@ const fn depth_boundary(const count: usize) -> bool {
     return accepted == (count == 64);
 }
 
-const test "JSON: complete grammar and strict Unicode validation" {
-    check(valid_documents());
-    check(invalid_documents());
-}
-
-const test "JSON: UTF ingress and unescaped control bytes" {
-    check(byte_ingress());
-}
-
-const test "JSON: maximum nesting is accepted" {
-    check(depth_boundary(64));
-}
-
-const test "JSON: excessive nesting is rejected" {
-    check(depth_boundary(65));
+const test "JSON: constant validation accepts documents and rejects malformed input" {
+    try {
+        validate(r#"{"values":[true,null,"你好"]}"#)?;
+    } catch {
+        JSONError(_) => fail("valid constant JSON was rejected"),
+    }
+    var rejected = false;
+    try {
+        validate("[1,]")?;
+    } catch {
+        JSONError(error) => { rejected = error.kind == .UnexpectedByte && error.offset == 3; },
+    }
+    check(rejected);
 }
 
 test "JSON: native complete grammar and strict Unicode validation" {

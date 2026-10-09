@@ -1,3 +1,5 @@
+import <functional>;
+
 import "bindings/provider.hpp" using native::{
     record,
     observed,
@@ -89,4 +91,16 @@ test "C++ lifetimes: condition temporaries end before the selected branch" {
     check(live() == 0);
     let _ = ((Owner { 4 }.read() as i32) == 4) && false;
     check(live() == 0);
+}
+
+private class NativeCallback {
+    callback: ::std::identity,
+
+    fn new() -> NativeCallback => { callback: ::std::identity {} };
+    fn invoke(self, value: i32) -> i32 => self.callback(value);
+}
+
+test "Classes: a private native callable field uses ordinary C++ invocation" {
+    let callback = NativeCallback::new();
+    check(callback.invoke(17) == 17);
 }

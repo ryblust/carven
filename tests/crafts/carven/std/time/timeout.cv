@@ -25,7 +25,7 @@ async fn protected(&started: i32, &closed: i32) -> i32 throw Timeout + RangeErro
     return await timeout(cooperative(&started, &closed), 1s)?;
 }
 
-async fn main() throw RangeError {
+async fn run_timeout() throw RangeError {
     var started = 0;
     let zero = try {
         let _ = await timeout(touch(&started), 0ns)?;

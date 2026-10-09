@@ -26,7 +26,7 @@ async fn yielding(depth: i32) -> i32 {
 
 const rotated = await rotate(1, 2, 7);
 
-async fn main() {
+async fn run_tail() {
     println(await rotate(1, 2, 7) == rotated);
     let saved = rotate(1, 2, 16384);
     println(await saved == 12);

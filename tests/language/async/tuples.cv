@@ -15,7 +15,7 @@ async fn collect() -> (void, i32) {
     return (await empty, await number);
 }
 
-async fn main() {
+async fn run_tuples() {
     let (empty, number) = await collect();
     assert(empty == ());
     assert(number == 42);

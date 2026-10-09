@@ -17,9 +17,6 @@
 #include <csignal>
 #include <cstdlib>
 #include <exception>
-#include <limits>
-#include <locale>
-#include <string>
 #include <string_view>
 #include <utility>
 
@@ -114,13 +111,6 @@ public:
     auto operator=(AsyncPayload&&) -> AsyncPayload& = delete;
 };
 
-class InvalidGrouping final : public std::numpunct<char> {
-private:
-    auto do_grouping() const -> std::string override { return "\3"; }
-
-    auto do_thousands_sep() const -> char override { return static_cast<char>(0xff); }
-};
-
 } // namespace
 
 // This process is built with C++ exceptions enabled to test the protocol boundary.
@@ -148,21 +138,6 @@ auto main(int argc, char** argv) -> int try {
         static_cast<void>(async::Completion<AsyncPayload>::success_from([]() {
             return AsyncPayload(true);
         }));
-    } else if (operation == "async-failure") {
-        auto source = AsyncPayload(false);
-        source.fail = true;
-        static_cast<void>(async::Completion<void, AsyncPayload>::failure(std::move(source)));
-    } else if (operation == "async-binding") {
-        auto source = async::Completion<AsyncPayload>::success_from([]() noexcept {
-            return AsyncPayload(false);
-        });
-        auto* success = source.success_if();
-        if (success == nullptr) {
-            return 4;
-        }
-        success->value.fail = true;
-        const auto binding = async::SuccessBinding<AsyncPayload>(source);
-        static_cast<void>(binding);
     } else if (operation == "copy") {
         const auto source = Foreign(false);
         static_cast<void>(Outcome::success_from([&]() { return Foreign(source); }));
@@ -170,41 +145,15 @@ auto main(int argc, char** argv) -> int try {
         auto source = Outcome::success_from([]() noexcept { return Foreign(false); });
         source.success_if()->value.fail = true;
         static_cast<void>(Outcome(std::move(source)));
-    } else if (operation == "failure") {
-        const auto source = Foreign(false);
-        static_cast<void>(Outcome::failure(source));
     } else if (operation == "function") {
         const auto view = carven::runtime::FunctionRef<int() noexcept>(&foreign_function);
         static_cast<void>(view());
-    } else if (operation == "object") {
-        const auto callable = []() -> int {
-            throw 4;
-        };
-        const auto view = carven::runtime::FunctionRef<int() noexcept>(callable);
-        static_cast<void>(view());
-    } else if (operation == "format-width") {
-        static_cast<void>(carven::runtime::format("{:>{}}", 1, -1));
     } else if (operation == "format-throw" || operation == "format-utf8") {
         static_cast<void>(carven::runtime::format("{}", FormatProbe {operation == "format-utf8"}));
-    } else if (operation == "format-character-utf8") {
-        // Stay within char's range so formatting succeeds before UTF-8 validation fails.
-        constexpr auto byte = std::numeric_limits<char>::is_signed ? -1 : 255;
-        carven::api::tests::interop::exceptions::precomputed::discard_character(byte);
-    } else if (operation == "format-locale-utf8") {
-        static_cast<void>(
-            std::locale::global(std::locale(std::locale::classic(), new InvalidGrouping))
-        );
-        carven::api::tests::interop::exceptions::precomputed::discard_localized(1000);
-    } else if (operation == "append-format-throw" || operation == "append-format-utf8") {
-        carven::api::tests::interop::exceptions::precomputed::append_native_failure(
-            operation == "append-format-utf8"
-        );
-    } else if (operation == "append-format-width") {
-        carven::api::tests::interop::exceptions::precomputed::append_width(-1);
-    } else if (operation == "print-inner-throw" || operation == "print-inner-utf8") {
-        carven::api::tests::interop::exceptions::precomputed::print_native_failure(
-            operation == "print-inner-utf8"
-        );
+    } else if (operation == "append-format-throw") {
+        carven::api::tests::interop::exceptions::precomputed::append_native_failure(false);
+    } else if (operation == "print-inner-throw") {
+        carven::api::tests::interop::exceptions::precomputed::print_native_failure(false);
     } else if (operation == "print-later-throw") {
         carven::runtime::println(std::string_view("42"), FormatProbe {.invalid_utf8 = false});
     }

@@ -128,6 +128,7 @@ for _, case in ipairs(cases) do
         set_default(false)
         set_kind("binary")
         set_languages("c++20")
+        add_rules("repository-crafts")
         add_rules("@carven/carven")
 
         add_includedirs(path.join(examples_dir, case.dir))

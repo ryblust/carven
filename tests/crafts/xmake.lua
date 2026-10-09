@@ -9,12 +9,13 @@ for _, variant in ipairs({
         if variant.portable then
             add_defines("CARVEN_SIMD_FORCE_PORTABLE")
         end
-        add_rules("@carven/carven", {tests = "default"})
+        add_rules("repository-crafts")
+        add_rules("@carven/carven", {tests = variant.portable and "default" or "external"})
         if variant.portable then
-            add_files("carven/std/utf/blocks.cv", "carven/std/utf/validation.cv",
-                "carven/std/simd/**.cv", "carven/std/json/**.cv")
+            add_files("carven/std/utf/validation.cv", "carven/std/simd/scan.cv",
+                "carven/std/json/validation.cv")
         else
-            add_files("carven/**.cv|std/time/sleep.cv|std/time/timeout.cv")
+            add_files("carven/**.cv", "main.cv")
         end
         add_tests(variant.test, {group = "crafts", run_timeout = 30000})
         on_test(function (target)
@@ -25,18 +26,4 @@ for _, variant in ipairs({
     target_end()
 end
 
-for _, scenario in ipairs({"sleep", "timeout"}) do
-    target("carven-test-crafts-time-" .. scenario)
-        set_default(false)
-        add_rules("@carven/carven", {tests = "external"})
-        set_languages("c++20")
-        add_files("carven/std/time/" .. scenario .. ".cv")
-        add_tests("behavior", {group = "crafts", run_timeout = 30000})
-        on_test(function (target)
-            local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-            assert(output:gsub("\r\n", "\n") == "true\n", "time contracts differ: " .. output)
-            assert(errors == "", "unexpected time entry report: " .. errors)
-            return true
-        end)
-    target_end()
-end
+includes("carven/runtime")

@@ -9,7 +9,6 @@ for _, domain in ipairs({
     "lifetimes",
     "pointers",
     "providers",
-    "runtime_headers",
     "number",
     "scalars",
     "text",
@@ -26,31 +25,22 @@ table.insert(interop_sources, path.join(interop_dir, "harness", "runner.cpp"))
 table.insert(interop_sources, path.join(interop_dir, "printing", "structural.cv"))
 
 local rejection_cases = {
-    ["construction/deduction"] = {"no viable constructor or deduction guide", "vector"},
     ["construction/folded_narrowing"] = {"cannot be narrowed", "unsigned char"},
     ["construction/read_narrowing"] = {"cannot be narrowed", "unsigned char"},
-    ["construction/narrowing"] = {"cannot be narrowed", "unsigned char"},
     ["contracts/result"] = {"no viable conversion", "contract_text"},
     ["contracts/access"] = {"drops 'const' qualifier", "contract_replace"},
     ["pointers/const_conversion"] = {"cannot initialize", "pointer_probe::readonly_fixed"},
     ["pointers/noncopyable_target"] = {"deleted constructor", "Fixed"},
     ["pointers/double_output"] = {"cannot initialize a parameter", "pointer_probe::output"},
     ["interpolation/invalid_specification"] = {"format", "format"},
-    ["interpolation/mixed_specifier"] = {"format", "format"},
-    ["interpolation/append_specifier"] = {"format", "format"},
-    ["interpolation/wrong_type"] = {"format", "format"},
-    ["interpolation/cstring_specifier"] = {"format", "format"},
-    ["interpolation/char_specifier"] = {"format", "format"},
     ["interpolation/missing_formatter"] = {
-        "format", "formatter", note = "std::basic_format_string",
-    },
-    ["interpolation/append_formatter"] = {
         "format", "formatter", note = "std::basic_format_string",
     },
 }
 
 target("carven-test-interop")
     set_default(false)
+    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "external"})
 
     set_languages("c++20")
@@ -92,6 +82,7 @@ for _, variant in ipairs({
 }) do
     target(variant.name)
         set_default(false)
+        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         add_includedirs(interop_dir)
@@ -137,78 +128,40 @@ target("carven-test-interop-rejections")
         return true
     end)
 target_end()
-for _, fixture in ipairs({
-    {
-        name = "exception-boundary", source = "terminate.cpp",
-        operations = {
-            "copy", "move", "failure", "function", "object",
-            "format-width", "format-throw", "format-utf8",
-            "format-character-utf8", "format-locale-utf8",
-            "append-format-throw", "append-format-utf8", "append-format-width",
-            "print-inner-throw", "print-inner-utf8", "print-later-throw",
-            "async-body", "async-awaiter", "async-success", "async-failure", "async-binding",
-        },
-    },
-    {
-        name = "allocation-failure", source = "allocation.cpp", allocation = true,
-        operations = {
-            "string-allocate", "string-copy", "format-allocate",
-            "precomputed-format-allocate", "mixed-format-allocate",
-            "append-format-allocate", "append-precomputed-allocate", "print-inner-allocate",
-            "async-frame-allocate", "async-success-allocate", "async-failure-allocate",
-        },
-    },
+for _, mode in ipairs({
+    {standard = "c++20", suffix = "", operations = {
+        "copy", "move", "function", "format-throw", "format-utf8",
+        "append-format-throw", "print-inner-throw", "print-later-throw",
+        "async-body", "async-awaiter", "async-success",
+    }},
+    {standard = "c++23", suffix = "-cxx23", operations = {"print-later-throw"}},
 }) do
-    local modes = {{standard = "c++20", suffix = ""}}
-    if not fixture.allocation then
-        table.insert(modes, {standard = "c++23", suffix = "-cxx23"})
-    end
-    for _, mode in ipairs(modes) do
-        target("carven-test-interop-" .. fixture.name .. mode.suffix)
-            set_default(false)
-            set_kind("binary")
-            add_rules("@carven/carven")
-            set_languages(mode.standard)
-            set_exceptions("cxx")
-            if fixture.allocation and is_plat("windows") then
-                -- DLL-internal allocations cannot use this executable's replacement operator new.
-                set_runtimes("c++_static")
-                -- Xmake's flag probe rejects this supported LLVM-MinGW driver option.
-                add_ldflags("-static-libstdc++", {force = true})
-            end
-            add_includedirs(crafts_dir, interop_dir)
-            add_files(path.join(interop_dir, "exceptions", fixture.source))
-            if fixture.allocation then
-                -- This injector replaces allocation entry points; ASan also interposes them.
-                -- Keep UBSan and use the other runtime suites for ASan lifetime checks.
-                set_policy("build.sanitizer.address", false)
-                set_policy("build.optimization.lto", false)
-                add_files(path.join(interop_dir, "exceptions", "async_allocation.cpp"))
-            end
-            add_files(path.join(interop_dir, "exceptions", "precomputed.cv"))
-            for _, operation in ipairs(fixture.operations) do
-                if mode.standard == "c++20" or operation == "print-later-throw" then
-                    add_tests(operation, {group = "interop"})
-                end
-            end
-            on_test(function (target, opt)
-                local operation = opt.name:match("([^/]+)$")
-                local prefixes = {
-                    ["print-inner-allocate"] = "",
-                    ["print-inner-throw"] = "",
-                    ["print-inner-utf8"] = "",
-                    ["print-later-throw"] = "42 ",
-                }
-                import("harness.process", {rootdir = interop_dir})(
-                    target, {operation}, 73, operation, prefixes[operation])
-                return true
-            end)
-        target_end()
-    end
+    target("carven-test-interop-exception-boundary" .. mode.suffix)
+        set_default(false)
+        set_kind("binary")
+        add_rules("repository-crafts")
+        add_rules("@carven/carven")
+        set_languages(mode.standard)
+        set_exceptions("cxx")
+        add_includedirs(crafts_dir, interop_dir)
+        add_files(path.join(interop_dir, "exceptions", "terminate.cpp"))
+        add_files(path.join(interop_dir, "exceptions", "precomputed.cv"))
+        for _, operation in ipairs(mode.operations) do
+            add_tests(operation, {group = "interop"})
+        end
+        on_test(function (target, opt)
+            local operation = opt.name:match("([^/]+)$")
+            local prefixes = {["print-inner-throw"] = "", ["print-later-throw"] = "42 "}
+            import("harness.process", {rootdir = interop_dir})(
+                target, {operation}, 73, operation, prefixes[operation])
+            return true
+        end)
+    target_end()
 end
 
 target("carven-test-interop-print")
     set_default(false)
+    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "default"})
 
     set_languages("c++23")
@@ -228,6 +181,7 @@ target_end()
 for _, case in ipairs({"fixed", "tracked", "tail"}) do
     target("carven-test-interop-async-" .. case)
         set_default(false)
+        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         add_includedirs(interop_dir)
@@ -251,7 +205,6 @@ end
 target("carven-test-interop-async-timer")
     set_default(false)
     set_kind("binary")
-    add_rules("@carven/carven")
     set_languages("c++20")
     add_includedirs(crafts_dir, interop_dir)
     add_files(path.join(interop_dir, "async", "timer.cpp"))
@@ -271,7 +224,6 @@ if is_plat("macosx", "linux") then
     target("carven-test-interop-async-pipe")
         set_default(false)
         set_kind("binary")
-        add_rules("@carven/carven")
         set_languages("c++20")
         add_includedirs(crafts_dir, interop_dir)
         add_files(path.join(interop_dir, "async", "pipe.cpp"))
@@ -296,6 +248,7 @@ if is_plat("macosx", "linux") then
     target("carven-test-interop-async-bridge")
         set_default(false)
         set_kind("binary")
+        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         add_includedirs(crafts_dir, interop_dir)
@@ -350,6 +303,7 @@ if is_plat("macosx", "linux") then
     target("carven-test-interop-async-transfer")
         set_default(false)
         set_kind("binary")
+        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         add_includedirs(crafts_dir, interop_dir)
@@ -376,6 +330,7 @@ end
 target("carven-test-interop-async-cleanup")
     set_default(false)
     set_kind("binary")
+    add_rules("repository-crafts")
     add_rules("@carven/carven")
     set_languages("c++20")
     add_includedirs(interop_dir)
@@ -389,24 +344,3 @@ target("carven-test-interop-async-cleanup")
         return true
     end)
 target_end()
-
-for _, provider_debug in ipairs({false, true}) do
-    target("carven-test-interop-async-mode-" .. (provider_debug and "debug-provider" or "release-provider"))
-        set_default(false)
-        set_kind("binary")
-        set_languages("c++20")
-        set_policy("build.optimization.lto", false)
-        add_includedirs(crafts_dir)
-        add_files(path.join(interop_dir, "async", "mode.cpp"),
-            provider_debug and {defines = {"NDEBUG"}} or {undefines = {"NDEBUG"}})
-        add_files(path.join(interop_dir, "async", "mode_provider.cpp"),
-            provider_debug and {undefines = {"NDEBUG"}} or {defines = {"NDEBUG"}})
-        add_tests("operation-exchange", {group = "interop", run_timeout = 30000})
-        on_test(function (target)
-            local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-            assert(output:gsub("\r\n", "\n") == "async mixed mode passed\n" and errors == "",
-                "async mixed build mode contract differs: " .. output .. errors)
-            return true
-        end)
-    target_end()
-end

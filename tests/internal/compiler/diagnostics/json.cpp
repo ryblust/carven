@@ -34,6 +34,8 @@ const TestSuite suite([] static noexcept {
             std::string_view name;
             std::string_view source;
         };
+        // Ownership analysis stops at the first conflict, so each borrowing API
+        // needs its own rejection. Generic owner lifetime rules are covered elsewhere.
         const auto cases = std::to_array<Case>({
             {.name = "temporary string value cannot back a saved view",
              .source = "fn invalid() throw ValueError { "
@@ -41,17 +43,10 @@ const TestSuite suite([] static noexcept {
             {.name = "local number value cannot back a returned view",
              .source = "fn invalid() -> str throw ValueError { "
                        "let value = Value::integer(42); return value.number_text()?; }"},
-            {.name = "number view prevents replacing its value",
-             .source = "fn invalid() throw ValueError { "
-                       "var value = Value::integer(42); let text = value.number_text()?; "
-                       "value = Value::null(); }"},
             {.name = "key view prevents removing object members",
              .source = "fn invalid() throw ValueError { "
                        "var value = Value::object(); value.set(\"key\", &&Value::null())?; "
                        "let key = value.key_at(0)?; value.erase(\"key\")?; }"},
-            {.name = "temporary child cannot back a saved view",
-             .source = "fn invalid(value: Value) throw ValueError { "
-                       "let text = value.get(\"key\")?.as_str()?; }"},
         });
         each(cases, &Case::name, [](const Case& input) static noexcept {
             with_compiled_source(

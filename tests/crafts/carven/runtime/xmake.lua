@@ -1,0 +1,8 @@
+target("carven-test-runtime")
+    set_default(false)
+    set_kind("binary")
+    set_languages("c++20")
+    add_includedirs(path.join(os.projectdir(), "crafts"))
+    add_files("*.cpp")
+    add_tests("runtime", {group = "crafts"})
+target_end()

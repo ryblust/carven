@@ -1,0 +1,18 @@
+import .containers using run_containers;
+import .tuples using run_tuples;
+import .tail using run_tail;
+import .constant using run_constant;
+import .contracts using run_contracts;
+
+async fn main() {
+    println("containers");
+    await run_containers();
+    println("tuples");
+    await run_tuples();
+    println("tail");
+    await run_tail();
+    println("constant");
+    await run_constant();
+    println("contracts");
+    await run_contracts();
+}

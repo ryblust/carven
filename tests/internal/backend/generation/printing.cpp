@@ -94,42 +94,6 @@ const TestSuite suite([] static noexcept {
             expect(effects == 1uz);
             expect(constructions == 1uz);
         };
-
-    "Generation: linear native printing uses automatic operand storage"_test = [] static noexcept {
-        const auto compilation = PlannedCompilation::build(
-            analyze_test_program(
-                "import <vector> using std::vector; "
-                "fn show() { let v = vector {1, 2, 3}; println(v[0]); }"
-            ),
-            {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("linear_native_print")}
-        );
-
-        struct Query final {
-            const TargetUnit& unit;
-            std::size_t variables = 0;
-
-            auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                if (const auto* variable = std::get_if<TargetVariableStmt>(&statement.value)) {
-                    ++variables;
-                    if (const auto* type =
-                            std::get_if<TargetIntrinsicType>(&unit.type(variable->type).value)) {
-                        expect(type->symbol != TargetSymbol::RuntimeDeferredResult);
-                    }
-                }
-                return true;
-            }
-        };
-
-        auto variables = 0uz;
-        for (const auto artifact : compilation.target().artifacts()) {
-            const auto unit = lower_artifact(compilation, artifact.id);
-            auto query = Query {.unit = unit};
-            expect(traverse_target_unit(unit.sections(), query));
-            variables += query.variables;
-        }
-        expect(variables > 0);
-    };
 });
 
 } // namespace

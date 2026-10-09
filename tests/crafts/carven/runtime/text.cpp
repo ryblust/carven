@@ -29,3 +29,19 @@ auto owning_text_header_contract(const carven::runtime::String& text) noexcept -
     const auto characters = carven::runtime::text_chars(text);
     return characters.begin() != characters.end() ? bytes.size() : 0;
 }
+
+auto string_header_contract() noexcept -> bool {
+    auto text = carven::runtime::String::from_str("text");
+    text.push(U'!');
+    return text.as_str() == "text!";
+}
+
+static_assert([]() noexcept {
+    auto text = carven::runtime::String::from_utf8("a");
+    text.push(U'我');
+    return text.as_str() == "a我";
+}());
+
+static_assert(carven::runtime::encode_valid_utf8(U'\U0001f600').width == 4);
+static_assert(carven::runtime::decode_valid_utf8(std::span<const char>("A", 1)).scalar == U'A');
+static_assert(!carven::runtime::utf8_is_valid("\xc0\x80"));

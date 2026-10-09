@@ -39,7 +39,7 @@ async fn exercise() -> bool throw JSONError + ValueError {
         && empty_values[1] == ();
 }
 
-async fn main() {
+async fn run_containers() {
     let result = try {
         await exercise()?
     } catch {

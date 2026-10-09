@@ -44,7 +44,7 @@ fn local_constant() -> u32 {
     return value;
 }
 
-async fn main() {
+async fn run_constant() {
     var bytes = [49u8, 50u8, 51u8, 52u8];
     let operation = recover(&&bytes);
     let value = await operation;

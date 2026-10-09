@@ -135,3 +135,8 @@ struct NativeCaptureReceiver final {
 
     auto call(std::int32_t) const noexcept -> std::int32_t { return value; }
 };
+
+inline auto native_write_scalar(std::int32_t* value) noexcept -> std::int32_t {
+    *value = 9;
+    return 2;
+}

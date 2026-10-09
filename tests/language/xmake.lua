@@ -23,6 +23,7 @@ local reporting_source = path.join(language_dir, "testing", "reporting.cv")
 
 target("carven-test-language")
     set_default(false)
+    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "default"})
 
     set_languages("c++20")
@@ -39,6 +40,7 @@ target_end()
 
 target("carven-test-language-entry")
     set_default(false)
+    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "external"})
 
     set_languages("c++20")
@@ -64,6 +66,7 @@ for _, scenario in ipairs({
 }) do
     target("carven-test-language-implicit-entry-" .. scenario.name)
         set_default(false)
+        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         add_files(path.join(language_dir, "entry", "implicit_" .. scenario.name .. ".cv"))
@@ -91,6 +94,7 @@ end
 
 target("carven-test-language-reporting")
     set_default(false)
+    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "external"})
 
     set_languages("c++20")
@@ -107,6 +111,7 @@ target_end()
 
 target("carven-test-language-runner-failure")
     set_default(false)
+    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "default"})
     set_languages("c++20")
     add_files(path.join(language_dir, "testing", "runner_failure.cv"))
@@ -138,6 +143,7 @@ for _, mode in ipairs({
 }) do
     target("carven-test-language-printing" .. mode.suffix)
         set_default(false)
+        add_rules("repository-crafts")
         add_rules("@carven/carven")
         set_languages(mode.standard)
         add_files(path.join(language_dir, "printing", "core.cv"))
@@ -200,16 +206,18 @@ PrintedPair {
     target_end()
 end
 
--- Async entry programs have their own root driver.
+-- Entry failure and cancellation keep separate processes; ordinary async cases share a driver.
 for _, scenario in ipairs({
+    {
+        target = "carven-test-language-async-behavior",
+        sources = {"behavior.cv", "containers.cv", "tuples.cv", "tail.cv", "constant.cv", "contracts.cv"},
+        output = "containers\ntrue\ntuples\n42\ntail\ntrue\ntrue\ntrue\ntrue\ntrue\n"
+            .. "constant\ntrue\ntrue\ntrue\n1234\n10065\n1241\ntrue\n"
+            .. "contracts\n17\n13\n5\n10\n23\n20\n1\n12\n25\n2\n12\n9\n3\n12110\n129\n12384\n182\n",
+    },
     {
         target = "carven-test-language-async-composition",
         source = "composition.cv",
-        output = "true\n",
-    },
-    {
-        target = "carven-test-language-async-containers",
-        source = "containers.cv",
         output = "true\n",
     },
     {
@@ -218,41 +226,24 @@ for _, scenario in ipairs({
         output = "true\n",
     },
     {
-        target = "carven-test-language-async-tuples",
-        source = "tuples.cv",
-        output = "42\n",
-    },
-    {
-        target = "carven-test-language-async-tail",
-        source = "tail.cv",
-        output = "true\ntrue\ntrue\ntrue\ntrue\n",
-    },
-    {
         target = "carven-test-language-async-scheduling",
         source = "scheduling.cv",
         output = "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n",
-    },
-    {
-        target = "carven-test-language-async-constant",
-        source = "constant.cv",
-        output = "true\ntrue\ntrue\n1234\n10065\n1241\ntrue\n",
     },
     {
         target = "carven-test-language-async",
         source = "core.cv",
         output = "0\n9\n9\n4\n5\n6\n7\n7\n19\n11\n14\n21\n22\n2\n12\n0\nfalse\n58\n124433\n1384\n1284\n",
     },
-    {
-        target = "carven-test-language-async-contracts",
-        source = "contracts.cv",
-        output = "17\n13\n5\n10\n23\n20\n1\n12\n25\n2\n12\n9\n3\n12110\n129\n12384\n182\n",
-    },
 }) do
     target(scenario.target)
         set_default(false)
+        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
-        add_files(path.join(language_dir, "async", scenario.source))
+        for _, source in ipairs(scenario.sources or {scenario.source}) do
+            add_files(path.join(language_dir, "async", source))
+        end
         add_tests("behavior", {group = "language", run_timeout = 30000})
         on_test(function (target)
             local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
@@ -290,6 +281,7 @@ for _, scenario in ipairs({
 }) do
     target("carven-test-language-async-" .. scenario.name)
         set_default(false)
+        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         add_files(path.join(language_dir, "async", scenario.name .. ".cv"))

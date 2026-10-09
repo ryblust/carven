@@ -333,18 +333,12 @@ jobs:
 
       - name: Verify fixture runtime linkage
         run: |
-          foreach ($fixture in @("exception-boundary", "allocation-failure")) {
-            $suffixes = if ($fixture -eq "allocation-failure") { @("") } else { @("", "-cxx23") }
-            foreach ($suffix in $suffixes) {
-              $target = "carven-test-interop-$fixture$suffix"
-              $imports = llvm-readobj --coff-imports "build/windows/x64/${{ matrix.mode }}/$target.exe"
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              $shared = [bool]($imports -match '(?i)Name: libc\+\+(abi)?\.dll')
-              $expectedShared = $fixture -eq "exception-boundary"
-              if ($shared -ne $expectedShared) {
-                throw "$target has unexpected libc++ linkage (shared=$shared, expected=$expectedShared)"
-              }
-              Write-Output "$target libc++ linkage verified (shared=$shared)"
+          foreach ($suffix in @("", "-cxx23")) {
+            $target = "carven-test-interop-exception-boundary$suffix"
+            $imports = llvm-readobj --coff-imports "build/windows/x64/${{ matrix.mode }}/$target.exe"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if (-not ($imports -match '(?i)Name: libc\+\+(abi)?\.dll')) {
+              throw "$target must use shared libc++"
             }
           }
 

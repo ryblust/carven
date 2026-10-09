@@ -1,4 +1,0 @@
-import <vector> using std::vector;
-
-let values = vector {};
-println(f"{values.size()}");

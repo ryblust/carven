@@ -11,6 +11,7 @@ configuration.
 | Path | Responsibility |
 | --- | --- |
 | [`clang-module-pipeline/`](clang-module-pipeline/README.md) | Versioned Xmake patch and wrappers for Clang module compilation and incremental dependency checks |
+| [`crafts.lua`](crafts.lua) | Shared public Crafts objects for repository tests and examples |
 | [`format.lua`](format.lua) | C++ and Carven formatting and formatting checks |
 | [`generated.clang-tidy`](generated.clang-tidy) | clang-tidy overrides for generated C++ |
 
@@ -41,3 +42,20 @@ for generated C++.
 `clang-module-pipeline/` supplies the versioned Xmake overlay for Clang module
 compilation and incremental dependency checks. The root `xmakew` and `xmakew.ps1`
 entry points launch its wrappers.
+
+## Shared Crafts compilation
+
+Repository test and example targets opt into `repository-crafts` explicitly.
+`crafts.lua` defines object providers for their C++ standard, test-runner mode,
+SIMD backend, exception, RTTI, and assertion configurations. Only required
+providers are built. Targets that test private linkage domains keep the package
+rule's ordinary independent compilation.
+
+Each consumer still performs Carven analysis and generation. Matching consumers
+reuse the provider's native objects for public Crafts sources; generated headers,
+shared source contents, and native compiler settings must agree before reuse.
+`std/json/syntax` and `std/utf/block` remain consumer-local because static
+specialization ordering can change their generated definitions. This is a
+repository build optimization, not a separately distributed Crafts ABI.
+
+Compiler and Graver modules remain `moduleonly` targets and reuse their BMIs.

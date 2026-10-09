@@ -9,7 +9,7 @@ fn local_wait() -> AsyncOperation<void> throw RangeError {
 
 fn temporary_wait() -> AsyncOperation<void> throw RangeError => TimePoint::after(-1ns)?.wait();
 
-async fn main() throw RangeError {
+async fn run_sleep() throw RangeError {
     await sleep(0ns)?;
     await sleep(-1ns)?;
     await sleep(-9223372036854775808ns)?;

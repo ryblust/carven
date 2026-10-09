@@ -1,51 +1,59 @@
 module carven:test.internal.semantic.analysis.interpolation;
 
+import :semantic.analysis.expr.interpolation;
 import :semantic.format;
-import :semantic.semir.traversal;
 import :test.harness.framework;
-import :test.internal.semantic.analysis.fixture;
+import :test.internal.frontend.parse.fixture;
 import std;
 
 namespace {
 
 const TestSuite suite([] static noexcept {
-    "Semantic interpolation: holes normalize to ordered explicit format arguments"_test =
+    "Semantic interpolation: normalization preserves text and depth-first operand order"_test =
         [] static noexcept {
-            const auto program = analyze_test_program(
-                R"(fn format(value: f64, width: i32, precision: i32) -> String {
-        return f"{{value}}={value:{width}.{precision}f}\0";
-    })"
-            );
-            const auto callable = test_function_callables(program).front();
-            const auto body_id = program.declarations().body_for_callable(callable);
-            if (!expect(body_id.has_value())) {
-                return;
-            }
-            auto count = 0uz;
-            visit_semantic_nodes(
-                program.bodies().body(*body_id).region(),
-                [&](const SemanticExpression& expression) noexcept {
-                    if (const auto* format = std::get_if<SemFormat>(&expression.value)) {
-                        ++count;
-                        if (!expect(format->operands.size() == 3uz)) {
-                            return;
-                        }
-                        expect(
-                            std::ranges::all_of(
-                                format->operands,
-                                [](const SemCallArgument& operand) static noexcept {
-                                    return operand.access == AccessMode::Read;
-                                }
-                            )
-                        );
-                        expect(
-                            serialize_format(format->specification)
-                            == std::string_view("{{value}}={0:{1}.{2}f}\0", 23)
-                        );
-                    }
+            struct Scenario final {
+                std::string_view expression;
+                std::string format;
+                std::vector<std::string_view> operands;
+            };
+
+            const auto scenarios = std::to_array<Scenario>({
+                {.expression = R"(f"")", .format = "", .operands = {}},
+                {
+                    .expression = R"(f"{{start}}\0我{value:0{width}.{precision}f}|{next:}")",
+                    .format = std::string("{{start}}") + '\0' + "我{0:0{1}.{2}f}|{3:}",
+                    .operands = {"value", "width", "precision", "next"},
+                },
+                {
+                    .expression = R"(f"{value:{width:{precision}}}/{last}")",
+                    .format = "{0:{1:{2}}}/{3}",
+                    .operands = {"value", "width", "precision", "last"},
+                },
+            });
+            each(scenarios, &Scenario::expression, [&](const auto& scenario) noexcept {
+                const auto source =
+                    std::format("fn source() {{ let text = {}; }}", scenario.expression);
+                const auto tree = parse_valid(source);
+                const auto ast = tree.view();
+                const auto& statement = ast.statement(function_body(tree).statements.front());
+                const auto& binding = get<ASTVariableDecl>(statement);
+                if (!(expect(binding.initializer.has_value()))) {
+                    return;
                 }
-            );
-            expect(count == 1uz);
+                const auto& interpolation =
+                    get<ASTInterpolationExpr>(ast.expression(*binding.initializer));
+                const auto normalized = normalize_interpolation(interpolation);
+                expect(serialize_format(normalized.specification) == scenario.format);
+                if (!(expect(normalized.operands.size() == scenario.operands.size()))) {
+                    return;
+                }
+                for (auto index = 0uz; index < normalized.operands.size(); ++index) {
+                    expect(
+                        slice(source, ast.expression(normalized.operands[index]).span)
+                        == scenario.operands[index]
+                    );
+                }
+            });
         };
 });
 

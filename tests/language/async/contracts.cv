@@ -370,7 +370,7 @@ async fn typed_owners() {
     assert(result == 47);
 }
 
-async fn main() {
+async fn run_contracts() {
     await generic_owners();
     await typed_owners();
     assert((await operand_recovery(true)) == 7012);

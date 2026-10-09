@@ -80,6 +80,8 @@ target("carven")
     end
 target_end()
 
+includes("xmake/crafts.lua")
+
 includes("examples")
 includes("tests/harness")
 includes("tests/crafts")

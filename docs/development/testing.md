@@ -1,25 +1,34 @@
 # Testing
 
-Test current contracts: accepted behavior, rejected inputs, and invariants at
-their owning boundaries. Assertions admit equivalent implementations that
-preserve the observed property. Add cases for missing evidence, including test
-infrastructure contracts that product suites do not establish.
+Tests protect language and toolchain behavior against meaningful regressions.
+Choose cases by the failure they can detect, rather than by the number of files,
+classes, or internal components they exercise. An internal component does not
+need its own suite when existing behavioral tests establish its responsibility.
+
+Each case should identify an observable contract, a plausible failure, and the
+evidence it adds beyond existing cases. Assertions admit equivalent implementations
+that preserve that contract. Keep focused internal tests when they isolate a
+complex algorithm, cheaply exercise a difficult boundary, or diagnose a regression
+that broader tests cannot adequately expose. Avoid mirroring private data layouts,
+helper call sequences, or standard-library behavior.
 
 ## Test responsibilities
 
 | Group | Boundary | Evidence |
 | --- | --- | --- |
-| `internal` | Compiler modules and runtime support | Semantic rules, diagnostics, representation invariants, planning, serialization, and runtime operations |
+| `internal` | Focused compiler and runtime boundaries | Algorithmic edge cases, diagnostics, and regressions not adequately established by program-level tests |
 | `language` | Compiled and executed Carven programs | Values, access, ownership, control, failure, modules, closures, and testing behavior |
-| `crafts` | Public source-package APIs | Library results, errors, state transitions, and algorithms |
-| `interop` | C++ providers, consumers, and support headers | Boundary signatures, native calls, source fragments, and header self-containment |
+| `crafts` | Public source-package APIs and runtime headers | Library behavior and runtime header self-containment |
+| `interop` | C++ providers and consumers | Boundary signatures, native calls, and source fragments |
 | `examples` | User-facing programs | Documented output from actual example executables |
 | `cli` | Compiler processes, interpreted execution, and build integration | Arguments, reports, exit status, files, scheduling, and generation policy |
 | `graver` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
 
 Place each case in the group that owns the tested boundary. Reuse fixtures and
 assertions across applicable configurations. Merge cases that repeat the same
-input class, execution path, and observation.
+input class, execution path, and observation. Prefer one behavioral regression at
+the owning boundary over assertions on intermediate node kinds, temporary storage,
+helper names, or enumeration-to-enumeration mappings.
 
 Internal C++ tests use the compiler configuration. Generated-source and consumer
 tests use the C++20 baseline, with additional standard modes for native capability
@@ -27,7 +36,8 @@ branches. Shared semantic cases use shared sources across these modes.
 
 Static execution, interpreted execution, and generated native C++ are separate
 boundaries. Keep representative cases at each applicable boundary. Static tests
-establish compile-time contracts; native tests observe storage, lifetimes, and
+establish representative compile-time contracts. Keep broad value tables and
+offset matrices in native tests. Native tests observe storage, lifetimes, and
 runtime state. Interpreter cases cover admission, failure propagation, and budgets.
 
 Language tests use local Carven state for counters and traces. A native provider
@@ -37,7 +47,9 @@ diagnostic and termination cases belong to test suites.
 
 Crafts tests mirror public package APIs. Portable and accelerated implementations
 establish the same functional contracts. Consumer targets select instruction-set
-options for accelerated tests on machines that support them.
+options for accelerated tests on machines that support them. The portable matrix
+covers APIs with a distinct portable implementation; ordinary library behavior
+runs once.
 
 ## Evidence and assertions
 
@@ -89,11 +101,11 @@ the complete emitted form.
 Execution-selection tests use valid, terminating operands and observe call counts
 or traces. Invalid inputs and resource limits have separate diagnostic cases.
 Resource accounting exercises actual operations at accepted and rejected limits;
-small configured limits establish accounting, and production defaults establish
-source diagnostics and traces. Large inputs serve a stated scale-dependent
-property. Semantic limit cases stop at analysis and publication; backend cases
-cover generated operations. Independent expensive contracts have separate results
-and timeouts.
+small configured limits establish accounting. Representative recursion limits
+establish source diagnostics and traces. Large inputs serve a stated
+scale-dependent property; routine tests do not exhaust production iteration,
+instance, or expanded-node budgets. Semantic limit cases stop at analysis and
+publication; backend cases cover generated operations.
 
 Lifecycle tests observe construction, transfer, execution, and destruction,
 including conditional paths and failure cleanup. Cover interactions among copying,
@@ -116,8 +128,11 @@ avoid repeating context already supplied by their directory or module, such as
 or shared namespace needs them to distinguish responsibilities.
 
 Extend existing targets when entry definitions, compiler settings, linkage, and
-execution requirements match. Use ordinary Xmake targets and assertions for
-execution and output checks. Custom harnesses supply additional process,
+execution requirements match. Source files are not target boundaries: ordinary
+async scenarios share a driver, while entry failures and cancellation retain
+independent processes. Use ordinary Xmake targets and assertions for
+execution and output checks. Pure C++ consumers include runtime headers directly
+and do not attach the Carven source-generation rule. Custom harnesses supply additional process,
 diagnostic, or artifact observations.
 
 Cases initialize their own observable state. Temporary directories and captured
@@ -138,8 +153,8 @@ the expected diagnostic, subject, and source attribution. Accepted counterparts
 use the normal interop build. Rejections compile on each run and retain artifacts
 on failure.
 
-Header self-containment checks use one translation unit per header within its
-consumer target and instantiate its interface. Behavioral observations belong in
+Runtime header self-containment checks live in `tests/crafts/carven/runtime/`. They use
+one translation unit per component entry and instantiate its interface. Behavioral observations belong in
 runtime or generated-program tests.
 
 Terminating operations run in isolated processes with a specific expected outcome.
@@ -149,8 +164,6 @@ satisfy the observation.
 
 Native exception-boundary cases execute the throwing operation and verify that it
 reaches the installed termination handler; escaped exceptions are failures.
-Allocation-failure injection uses separate executables and reaches the allocations
-under test, including those across library linkage boundaries.
 
 ## Validation
 
