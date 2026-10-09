@@ -39,7 +39,7 @@ const TestSuite suite([] static noexcept {
              .primary_text = "s.clear()"},
             {.name = "pending owner Take",
              .source =
-                 R"(fn consume(&&s: String) -> usize => s.len(); fn bad() { var s = String {}; let r = f"{s}{consume(&&s)}"; })",
+                 R"(fn consume(&&s: String) -> usize => s.byte_length(); fn bad() { var s = String {}; let r = f"{s}{consume(&&s)}"; })",
              .code = DiagnosticCode::AccessOperationConflict,
              .primary_text = "&&s"},
             {.name = "named holder remains after formatting",
@@ -103,14 +103,6 @@ const TestSuite suite([] static noexcept {
                  .source = R"(fn bad() { let x = 1; const text = f"{x}"; })",
                  .code = DiagnosticCode::ConstInitializer,
                  .primary_text = R"(const text = f"{x}")"},
-                {.name = "frozen result cannot retain String type",
-                 .source = R"(const text: String = f"x";)",
-                 .code = DiagnosticCode::TypeMismatch,
-                 .primary_text = R"(f"x")"},
-                {.name = "owning interpolation is not a canonical enum payload",
-                 .source = R"(enum E { Value(String) } const result = E::Value(f"x");)",
-                 .code = DiagnosticCode::ConstInitializer,
-                 .primary_text = R"(E::Value(f"x"))"},
                 {.name = "owning text remains typed in nested calls",
                  .source =
                      R"(const fn consume(value: i32) -> i32 => value; const result = consume(f"x");)",
@@ -159,7 +151,7 @@ const TestSuite suite([] static noexcept {
             check_compiler_errors(cases);
             const auto initializer =
                 std::format("String::from_str(\"{}\")", std::string(1048577uz, 'x'));
-            const auto source = std::format("const length = {}.len();", initializer);
+            const auto source = std::format("const length = {}.byte_length();", initializer);
             const auto large_text = std::array {CompilerErrorExpectation {
                 .name = "direct text construction budget",
                 .source = source,

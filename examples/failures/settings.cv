@@ -8,7 +8,7 @@ enum InvalidPort {
 fn parse_port(text: str) -> i32 throw MissingSetting + InvalidPort {
     if text.is_empty() { throw MissingSetting {}; }
     var value = 0;
-    for position in 0..text.len() {
+    for position in 0..text.byte_length() {
         let byte = text.bytes[position];
         let digit = match byte {
             48..=57 => (byte as i32) - 48,

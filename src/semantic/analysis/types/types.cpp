@@ -47,9 +47,9 @@ auto source_builtin_type(std::string_view name) noexcept -> std::optional<Builti
 
 auto source_type_name_is_reserved(std::string_view name) noexcept -> bool {
     return name == "ptr"
-        || name == "range"
-        || name == "Sequence"
-        || name == "Operation"
+        || name == "Range"
+        || name == "Vector"
+        || name == "AsyncOperation"
         || source_builtin_type(name).has_value();
 }
 
@@ -172,14 +172,14 @@ auto resolve_named(
             "this type position requires a concrete type rather than a type parameter"
         ));
     }
-    if (!named.global_root && named.components.size() == 1uz && root == "Operation") {
+    if (!named.global_root && named.components.size() == 1uz && root == "AsyncOperation") {
         if (named.arguments.empty() || named.arguments.size() > 2uz) {
             co_return std::unexpected(fail(
                 draft,
                 module_id,
                 origin,
                 DiagnosticCode::TypeGenericArguments,
-                "Operation requires a result type and an optional throw failure set"
+                "AsyncOperation requires a result type and an optional throw failure set"
             ));
         }
         const auto result_argument =
@@ -206,7 +206,7 @@ auto resolve_named(
             *success,
             module_id,
             origin,
-            "Operation successful result"
+            "AsyncOperation successful result"
         );
         if (!checked) {
             co_return std::unexpected(checked.error());
@@ -221,7 +221,7 @@ auto resolve_named(
                     module_id,
                     argument.span,
                     DiagnosticCode::TypeGenericArguments,
-                    "Operation's second argument must be a throw failure set"
+                    "AsyncOperation's second argument must be a throw failure set"
                 ));
             }
             auto resolved = co_await resolve_failure_types(
@@ -242,14 +242,14 @@ auto resolve_named(
         }
         co_return make_operation_type(draft, *success, failures);
     }
-    if (!named.global_root && named.components.size() == 1uz && root == "Sequence") {
+    if (!named.global_root && named.components.size() == 1uz && root == "Vector") {
         if (named.arguments.size() != 1uz) {
             co_return std::unexpected(fail(
                 draft,
                 module_id,
                 origin,
                 DiagnosticCode::TypeUnresolved,
-                "Sequence requires one element type"
+                "Vector requires one element type"
             ));
         }
         const auto selected_type = require_type_argument(draft, module_id, named.arguments.front());
@@ -271,27 +271,27 @@ auto resolve_named(
             co_return std::unexpected(element.error());
         }
         if (auto checked =
-                require_source_value_type(draft, *element, module_id, origin, "Sequence element");
+                require_source_value_type(draft, *element, module_id, origin, "Vector element");
             !checked) {
             co_return std::unexpected(checked.error());
         }
         const auto concrete = draft.canonicalize_declared_type(*element);
-        draft.record_sequence_element(
+        draft.record_vector_element(
             concrete,
             draft.append_source_origin(draft.module_source(module_id), origin)
         );
         co_return ConstructionTypeRef {
-            draft.intern_type({.value = OwnedSequenceTypeValue {.element = concrete}})
+            draft.intern_type({.value = VectorTypeValue {.element = concrete}})
         };
     }
-    if (!named.global_root && named.components.size() == 1uz && root == "range") {
+    if (!named.global_root && named.components.size() == 1uz && root == "Range") {
         if (named.arguments.size() != 1uz) {
             co_return std::unexpected(fail(
                 draft,
                 module_id,
                 origin,
                 DiagnosticCode::TypeUnresolved,
-                "range requires one integer element type"
+                "Range requires one integer element type"
             ));
         }
         const auto selected_type = require_type_argument(draft, module_id, named.arguments.front());
@@ -941,14 +941,14 @@ auto resolve_generic_type_value(
                             GenericTypeParameter {.definition = context.definition, .index = *index}
                         );
                     }
-                    if (name == "Operation") {
+                    if (name == "AsyncOperation") {
                         if (named.arguments.empty() || named.arguments.size() > 2uz) {
                             co_return std::unexpected(fail(
                                 draft,
                                 module_id,
                                 source.span,
                                 DiagnosticCode::TypeGenericArguments,
-                                "Operation requires a result type and an optional throw failure set"
+                                "AsyncOperation requires a result type and an optional throw failure set"
                             ));
                         }
                         const auto result_argument =
@@ -981,7 +981,7 @@ auto resolve_generic_type_value(
                                     module_id,
                                     argument.span,
                                     DiagnosticCode::TypeGenericArguments,
-                                    "Operation's second argument must be a throw failure set"
+                                    "AsyncOperation's second argument must be a throw failure set"
                                 ));
                             }
                             auto resolved = co_await resolve_failure_types(
@@ -1007,14 +1007,14 @@ auto resolve_generic_type_value(
                             }
                         );
                     }
-                    if (name == "Sequence") {
+                    if (name == "Vector") {
                         if (named.arguments.size() != 1uz) {
                             co_return std::unexpected(fail(
                                 draft,
                                 module_id,
                                 source.span,
                                 DiagnosticCode::TypeUnresolved,
-                                "Sequence requires one element type"
+                                "Vector requires one element type"
                             ));
                         }
                         const auto selected_type =
@@ -1038,7 +1038,7 @@ auto resolve_generic_type_value(
                             co_return std::unexpected(element.error());
                         }
                         co_return draft.intern_generic_type(
-                            GenericOwnedSequenceType {.element = *element}
+                            GenericVectorType {.element = *element}
                         );
                     }
                     if (!catalog.lookup(module_id, name).empty()) {

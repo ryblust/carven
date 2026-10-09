@@ -272,7 +272,7 @@ const TestSuite suite([] static noexcept {
             return &&copy;
         })",
                 R"(const fn format(value: i32) -> String { return f"value-{value:04}"; })",
-                R"(const fn consume(&&value: String) -> usize { return value.len(); })",
+                R"(const fn consume(&&value: String) -> usize { return value.byte_length(); })",
                 R"(const fn caller(value: i32) -> i32 { return callee(value); }
            const fn callee(value: i32) -> i32 { return value + 1; })",
                 R"(const fn factorial(value: i32) -> i32 {
@@ -304,8 +304,10 @@ const TestSuite suite([] static noexcept {
                 {"pointer signature", R"(fn example(value: ptr<i32>) -> bool {
             return value == nullptr;
         })"},
-                {"slice signature", R"(fn example(value: [i32]) -> usize { return value.len(); })"},
-                {"array operation", R"(fn example() -> usize { return [1, 2].as_slice().len(); })"},
+                {"slice signature",
+                 R"(fn example(value: [i32]) -> usize { return value.length(); })"},
+                {"array operation",
+                 R"(fn example() -> usize { return [1, 2].as_slice().length(); })"},
                 {"closure value",
                  R"(fn example() -> i32 { let call = []() => 1; return call(); })"},
                 {"unchecked scalar construction", R"(fn example() -> char {
@@ -410,7 +412,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             const auto accepted = std::to_array<std::string_view>({
                 "const fn ignore(action: fn(::Native) -> ::Native) {}",
-                "const fn length(values: [::Native]) -> usize => values.len();",
+                "const fn length(values: [::Native]) -> usize => values.length();",
             });
             each(accepted, std::identity {}, [&](const auto& source) noexcept {
                 static_cast<void>(analyze_test_program(std::string(source)));

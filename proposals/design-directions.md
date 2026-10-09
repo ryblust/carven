@@ -9,27 +9,38 @@ states the problem, remaining questions, and evidence needed to select a scope.
 selected, define their value and ownership contracts. Result also needs explicit
 failure capture and a defined relationship to typed control effects.
 
-The constant-storage proposal owns growable containers. Iterator and operator
-protocols depend on the selected API. Type computation, structural queries, and
-declaration generation each need a defined source contract.
+Iterator protocols need a concrete source API and access contract. Type
+computation, structural queries, and declaration generation each need a defined
+source contract.
+
+## Vector extensions
+
+Additional element types, views, and operations require a concrete consumer and
+the contracts below.
+
+| Direction | Activation and required contract |
+| --- | --- |
+| Borrowed elements, such as `Vector<str>` | A parser or collection consumer needs them; track backing through insertion, replacement, extraction, copies, and escaping owners without extending referent lifetimes |
+| Move-only elements, including async or Unique owners | A concrete owner needs dynamic storage; derive conditional copying, relocation, extraction, and cancellation/disposal without weakening Take rules |
+| External C++ elements | A native consumer needs them; establish construction, relocation, exception termination, cleanup, and borrowing through native capability checks |
+| Mutable slices | An algorithm needs a writable view; define permissions, aliasing, owner mutation, and lifetime consistently with nonexclusive Write |
+| Bulk append, insertion, and pop | A consumer needs the operation; specify aliasing, partial effects, copying versus consumption, order, and empty-result behavior |
+
+Allocator and recoverable-allocation contracts belong to dynamic ownership.
 
 ## Multi-field consuming decomposition
 
-A consumer needing two independent field owners must establish whole-representation
-extraction, with the original owner unavailable, exactly-once field evaluation,
-and deterministic disposition of every field on success, failure, and rejected
-patterns. No usable partially moved object remains. A concrete `build`, `finish`,
+A nominal-record consumer needing independent field owners must establish
+whole-representation extraction, with the original owner unavailable, exactly-once
+field evaluation, and deterministic disposition of every field on success,
+failure, and rejected patterns. No usable partially moved object remains. A concrete `build`, `finish`,
 or `into_*` operation can select syntax. Validation covers all field dispositions
 and exits, including unused fields and borrowed backing.
 
-Builtin tuple decomposition is implemented. This candidate concerns nominal
-records and their field-disposition rules.
-
 ## Async extensions
 
-Cold operations, lexical children, terminal waiting, explicit closing, fixed
-composition, deadlines, and native event-pump integration are implemented.
-Additional scopes need a consumer and their own ownership and completion contract.
+Additional async scopes need a consumer and their own ownership and completion
+contract.
 
 | Candidate | Reactivation evidence and remaining contract |
 | --- | --- |
@@ -107,21 +118,3 @@ Distinguish semantic dependency cycles from scheduling waits and preserve
 diagnostics and events. Test caches across source, option, and dependency changes.
 For an execution IR, measure preparation cost against reuse in one-shot roots and
 repeatedly executed bodies.
-
-## Deferred representation candidates
-
-The [data representation proposal](data-representation.md) owns record ordering, enum niches, pointer tags,
-native representation boundaries, and the pool-relative handle and frozen
-collection experiments. It also retains independently deferred directions for
-access-driven ordering, AoS/SoA/AoSoA, hot/cold separation, high-bit tags, general
-packing, and binary images. Reactivation requires a concrete workload and its
-addressability, lifecycle, ABI, and measurement contracts; these are not implicit
-extensions of ordinary struct or class layout.
-
-## References
-
-- [Proposal index](README.md)
-- [Generic extensions](generic-extensions.md#open-decisions): capabilities and C++ boundaries.
-- [Constant storage](constant-storage.md#growable-library-containers): growable containers.
-- [Uninitialized storage](uninitialized-storage.md): construction destinations.
-- [Data representation](data-representation.md): representation plans, native boundaries, and compact storage.

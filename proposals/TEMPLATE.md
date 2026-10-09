@@ -21,7 +21,8 @@ and next decision.
 
 Explain the current behavior and constraints needed to understand the design.
 Keep the proposal understandable without following references.
-For mixed scopes, summarize the relevant implemented foundation briefly.
+Keep only the current constraints needed to understand unfinished decisions.
+Remove completed design sections once permanent documentation covers them.
 
 ## Goals and non-goals
 

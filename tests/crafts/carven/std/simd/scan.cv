@@ -243,7 +243,7 @@ const fn verify_queries() -> bool {
         assert(count_where(bytes, every_byte) == length);
         assert(prefix_where(bytes, every_byte) == length);
         assert(prefix_where(bytes, no_bytes) == 0);
-        assert(find_where(bytes, no_bytes) == bytes.len());
+        assert(find_where(bytes, no_bytes) == bytes.length());
         assert(find_where(bytes, every_byte) == 0);
         assert(find_where(bytes, one_of([0xff])) == 0);
     }
@@ -260,29 +260,29 @@ const fn verify_queries() -> bool {
     assert(prefix_end(leading, 4, digits) == 5);
     assert(prefix_end(leading, 5, digits) == 5);
     for start in [0usize, 1, 15, 16, 31, 32, 63, 64, 65, 96, 97] {
-        var first = data.as_slice().len();
-        for index in start..data.as_slice().len() {
+        var first = data.as_slice().length();
+        for index in start..data.as_slice().length() {
             if data[index] == 0xff {
                 first = index;
                 break;
             }
         }
         assert(find_from(data, start, one_of([0xff])) == first);
-        assert(find_from(data, start, no_bytes) == data.len());
+        assert(find_from(data, start, no_bytes) == data.length());
         assert(find_from(data, start, every_byte) == start);
         assert(prefix_end(data, start, no_bytes) == start);
-        assert(prefix_end(data, start, every_byte) == data.as_slice().len());
+        assert(prefix_end(data, start, every_byte) == data.as_slice().length());
     }
     let general: [u8; 5] = [0x0f, 0x80, 0xff, 0x81, 0x70];
     assert(count_where(general, chosen) == 4);
     assert(prefix_where(general, chosen) == 3);
     assert(find_where(general, chosen) == 0);
     let absent: [u8; 33] = {};
-    assert(find_where(absent, one_of([0xff])) == absent.len());
+    assert(find_where(absent, one_of([0xff])) == absent.length());
     let suffix = data.as_slice().slice(31, 65);
     assert(find_from(suffix, 1, one_of([0xff])) == 1);
     assert(find_from(suffix, 2, one_of([0xff])) == 32);
-    assert(find_from(suffix, suffix.len(), one_of([0xff])) == suffix.len());
+    assert(find_from(suffix, suffix.length(), one_of([0xff])) == suffix.length());
     return true;
 }
 

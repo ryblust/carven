@@ -521,7 +521,7 @@ auto DeclResolver::ConstantScope::construction_requests() noexcept -> Constructi
 }
 
 auto DeclResolver::ConstantScope::resolve_type_qualifier(ASTExprID expression) noexcept
-    -> AnalysisTask<std::optional<TypeID>> {
+    -> AnalysisTask<std::optional<ConstructionTypeRef>> {
     co_return (
         co_await resolver.resolve_type_qualifier(module_id, syntax, expression, generic_context)
     );

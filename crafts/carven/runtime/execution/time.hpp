@@ -65,7 +65,7 @@ inline auto now() noexcept -> std::int64_t {
     return detail::steady_now();
 }
 
-inline auto sleep_until(std::int64_t deadline) noexcept -> Operation<void> {
+inline auto sleep_until(std::int64_t deadline) noexcept -> AsyncOperation<void> {
     co_return co_await detail::TimerAwaiter(deadline);
 }
 

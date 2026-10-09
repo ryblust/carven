@@ -60,7 +60,7 @@ auto solve_type_contents(
                 [&](const CallableViewTypeValue&) noexcept {
                     contents[index] = callable_view_content;
                 },
-                [&](const OwnedSequenceTypeValue& value) noexcept {
+                [&](const VectorTypeValue& value) noexcept {
                     contents[index] = storage_owner_content;
                     depend(value.element, all_type_contents);
                 },

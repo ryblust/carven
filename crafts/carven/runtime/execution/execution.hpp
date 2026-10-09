@@ -27,7 +27,7 @@ template<std::size_t Count>
 class WaitReadyAwaiter;
 
 template<typename Result, typename... Failures>
-class Operation;
+class AsyncOperation;
 
 template<typename Result, typename... Failures>
 class Child;
@@ -36,7 +36,7 @@ template<typename... Children>
 auto wait_ready(Children&... children) noexcept -> WaitReadyAwaiter<sizeof...(Children)>;
 
 template<typename Result, typename... Failures, typename Pump = std::nullptr_t>
-auto drive_root(Operation<Result, Failures...>&& operation, Pump* pump = nullptr) noexcept
+auto drive_root(AsyncOperation<Result, Failures...>&& operation, Pump* pump = nullptr) noexcept
     -> Completion<Result, Failures...>;
 enum class ClosingPolicy { CloseOnly, RequestCancelAndClose };
 
@@ -131,7 +131,7 @@ class Driver final {
     template<typename T, typename... E>
     friend class Child;
     template<typename T, typename... E, typename Pump>
-    friend auto drive_root(Operation<T, E...>&&, Pump*) noexcept -> Completion<T, E...>;
+    friend auto drive_root(AsyncOperation<T, E...>&&, Pump*) noexcept -> Completion<T, E...>;
     auto enqueue(detail::WorkNode& node) noexcept -> void;
     auto subscribe(detail::CancellationRegistration& registration) noexcept -> void;
 
@@ -375,7 +375,7 @@ inline auto cancellation_requested() noexcept -> bool {
 }
 
 template<typename Result, typename... Failures>
-class Operation final {
+class AsyncOperation final {
 public:
     class promise_type final {
     public:
@@ -396,8 +396,8 @@ public:
             ::operator delete(storage);
         }
 
-        auto get_return_object() noexcept -> Operation {
-            return Operation(std::coroutine_handle<promise_type>::from_promise(*this));
+        auto get_return_object() noexcept -> AsyncOperation {
+            return AsyncOperation(std::coroutine_handle<promise_type>::from_promise(*this));
         }
 
         auto initial_suspend() const noexcept -> std::suspend_always { return {}; }
@@ -435,12 +435,12 @@ public:
 private:
     Handle frame;
 
-    explicit Operation(Handle handle) noexcept
+    explicit AsyncOperation(Handle handle) noexcept
         : frame(handle) {}
     template<typename T, typename... E>
     friend class Child;
     template<typename T, typename... E, typename Pump>
-    friend auto drive_root(Operation<T, E...>&&, Pump*) noexcept -> Completion<T, E...>;
+    friend auto drive_root(AsyncOperation<T, E...>&&, Pump*) noexcept -> Completion<T, E...>;
 
     auto release() noexcept -> Handle {
         detail::require_protocol(frame != nullptr);
@@ -448,21 +448,21 @@ private:
     }
 
 public:
-    Operation(const Operation&) = delete;
+    AsyncOperation(const AsyncOperation&) = delete;
 
-    Operation(Operation&& other) noexcept
+    AsyncOperation(AsyncOperation&& other) noexcept
         : frame(std::exchange(other.frame, nullptr)) {}
 
-    auto operator=(const Operation&) -> Operation& = delete;
-    auto operator=(Operation&&) -> Operation& = delete;
+    auto operator=(const AsyncOperation&) -> AsyncOperation& = delete;
+    auto operator=(AsyncOperation&&) -> AsyncOperation& = delete;
 
-    ~Operation() noexcept {
+    ~AsyncOperation() noexcept {
         if (frame != nullptr) {
             detail::destroy(frame, frame.promise().state);
         }
     }
 
-    // The Operation outlives suspension and owns the borrowed frame.
+    // The AsyncOperation outlives suspension and owns the borrowed frame.
     class Awaiter final {
         Handle frame;
 
@@ -536,7 +536,7 @@ public:
     ~ChildScope() noexcept;
 
     template<typename T, typename... E>
-    auto start(Operation<T, E...>&& operation) noexcept -> Child<T, E...> {
+    auto start(AsyncOperation<T, E...>&& operation) noexcept -> Child<T, E...> {
         return Child<T, E...>(*this, std::move(operation));
     }
 
@@ -638,7 +638,7 @@ inline auto ChildScope::CloseAwaiter::await_resume() const noexcept -> void {
 
 template<typename Result, typename... Failures>
 class Child final {
-    using Handle = typename Operation<Result, Failures...>::Handle;
+    using Handle = typename AsyncOperation<Result, Failures...>::Handle;
     detail::ChildSlot slot;
     TaskContext task;
     detail::WorkNode startup;
@@ -650,7 +650,7 @@ class Child final {
     template<typename... Children>
     friend auto wait_ready(Children&...) noexcept -> WaitReadyAwaiter<sizeof...(Children)>;
 
-    Child(ChildScope& scope, Operation<Result, Failures...>&& operation) noexcept
+    Child(ChildScope& scope, AsyncOperation<Result, Failures...>&& operation) noexcept
         : slot {
               .next = nullptr,
               .scope = nullptr,
@@ -974,18 +974,18 @@ inline auto await_yield_once() noexcept -> YieldAwaiter {
     return {};
 }
 
-inline auto cancellation_point() noexcept -> Operation<void> {
+inline auto cancellation_point() noexcept -> AsyncOperation<void> {
     co_return co_await await_cancellation_point();
 }
 
-inline auto yield_once() noexcept -> Operation<void> {
+inline auto yield_once() noexcept -> AsyncOperation<void> {
     co_return co_await await_yield_once();
 }
 
 // A native pump polls external events into this driver and waits only when it is idle.
 // Its callbacks retain registration state through quiescence and never resume user code.
 template<typename Result, typename... Failures, typename Pump>
-inline auto drive_root(Operation<Result, Failures...>&& operation, Pump* pump) noexcept
+inline auto drive_root(AsyncOperation<Result, Failures...>&& operation, Pump* pump) noexcept
     -> Completion<Result, Failures...> {
     detail::require_protocol(detail::current_task == nullptr);
     auto driver = Driver();

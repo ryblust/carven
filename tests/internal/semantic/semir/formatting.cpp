@@ -101,13 +101,19 @@ const TestSuite suite([] static noexcept {
                                   native_type,
                                   lifetime,
                                   module_origin.origin,
-                                  SemConstant {.constant = native_constant}
+                                  SemConstant {
+                                      .constant = native_constant,
+                                      .retained_storage = false
+                                  }
                               )
                             : index == 1uz ? body.make_expression(
                                                  boolean_type,
                                                  lifetime,
                                                  module_origin.origin,
-                                                 SemConstant {.constant = boolean_constant}
+                                                 SemConstant {
+                                                     .constant = boolean_constant,
+                                                     .retained_storage = false
+                                                 }
                                              )
                                            : body.make_expression(
                                                  owning,

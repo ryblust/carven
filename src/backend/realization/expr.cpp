@@ -103,11 +103,7 @@ auto BodyRealizer::ExpressionBuilder::finish_expression(
 ) noexcept -> ContinuationTask<Lowered<LoweringResult>> {
     auto fragment = (co_await build(
         source,
-        {.demand = demand,
-         .use = final_use,
-         .literal = literal,
-         .retain_backing = true,
-         .expression_depth = 0uz}
+        {.demand = demand, .use = final_use, .retain_backing = true, .expression_depth = 0uz}
     ));
     adopt(fragment);
     if (!statements.continues()) {
@@ -195,7 +191,6 @@ auto BodyRealizer::ExpressionBuilder::initialize_expression(
         initializer,
         {.demand = awaited ? ResultDemand::AdoptSuccess : ResultDemand::Value,
          .use = PreparedUse::Consume,
-         .literal = ConstantLiteralContext::TargetTyped,
          .retain_backing = false,
          .expression_depth = 0uz}
     ));
@@ -298,7 +293,6 @@ auto BodyRealizer::ExpressionBuilder::assign(
         assignment.target,
         {.demand = ResultDemand::Value,
          .use = PreparedUse::WritePlace,
-         .literal = ConstantLiteralContext::Exact,
          .retain_backing = true,
          .expression_depth = 0uz}
     ));
@@ -336,7 +330,6 @@ auto BodyRealizer::ExpressionBuilder::assign(
                 assignment.target,
                 {.demand = ResultDemand::Value,
                  .use = PreparedUse::ConstPlace,
-                 .literal = ConstantLiteralContext::Exact,
                  .retain_backing = true,
                  .expression_depth = 0uz}
             )
@@ -377,7 +370,6 @@ auto BodyRealizer::ExpressionBuilder::assign(
         assignment.value,
         {.demand = ResultDemand::Value,
          .use = PreparedUse::Consume,
-         .literal = ConstantLiteralContext::Exact,
          .retain_backing = true,
          .expression_depth = 0uz}
     ));

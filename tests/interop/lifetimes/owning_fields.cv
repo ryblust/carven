@@ -30,8 +30,7 @@ private fn extract(&&owner: Pair) -> Resource => (&&owner).selected;
 private class ResourceBox {
     pair: Pair,
 
-    fn create() -> ResourceBox => { pair: pair() };
-
+    fn new() -> ResourceBox => { pair: pair() };
     fn finish(&&self) -> Resource => (&&self).pair.selected;
 }
 
@@ -47,7 +46,7 @@ test "Owning fields: noncopyable field transfer retains remaining field cleanup"
     check(count(1) == 0);
     check(calls() == before + 1);
     if true {
-        let result = ResourceBox::create().finish();
+        let result = ResourceBox::new().finish();
         check(result.id() == 1);
         check(count(1) == 1);
         check(count(2) == 0);

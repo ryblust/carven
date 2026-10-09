@@ -11,11 +11,16 @@ ConstantStorage::ConstantStorage(const TargetNamePlan& names, ModuleID module_id
     : target_names(names),
       module_id(module_id) {}
 
-auto ConstantStorage::find(ConstantID id) const noexcept -> std::optional<TargetName> {
-    return materialized.contains(id)
-        ? std::optional(
-              target_names.module_support_name(module_id, target_names.constant_identifier(id))
-          )
+auto ConstantStorage::find(ConstantID id, ConstantStorageRole role) const noexcept
+    -> std::optional<TargetName> {
+    return materialized.contains({id, role})
+        ? std::optional(target_names.module_support_name(
+              module_id,
+              TargetIdentifier::from_spelling(
+                  std::string(target_names.constant_identifier(id).spelling())
+                  + (role == ConstantStorageRole::Object ? "_value" : "_backing")
+              )
+          ))
         : std::nullopt;
 }
 
@@ -23,12 +28,19 @@ auto ConstantStorage::empty() const noexcept -> bool {
     return items.empty();
 }
 
-auto ConstantStorage::append(ConstantID id, TargetTypeID type, TargetExpr initializer) noexcept
-    -> TargetName {
-    if (!materialized.insert(id).second) {
+auto ConstantStorage::append(
+    ConstantID id,
+    TargetTypeID type,
+    TargetExpr initializer,
+    ConstantStorageRole role
+) noexcept -> TargetName {
+    if (!materialized.insert({id, role}).second) {
         invariant_violation("constant storage was materialized more than once in a module");
     }
-    const auto identifier = target_names.constant_identifier(id);
+    const auto identifier = TargetIdentifier::from_spelling(
+        std::string(target_names.constant_identifier(id).spelling())
+        + (role == ConstantStorageRole::Object ? "_value" : "_backing")
+    );
     auto name = target_names.module_support_name(module_id, identifier);
     items.push_back(target_lowering_item(
         TargetDecl {TargetVariableDecl {

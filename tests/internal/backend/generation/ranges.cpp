@@ -59,7 +59,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(R"(
-                    fn count(values: range<u64>, end: u64) -> usize {
+                    fn count(values: Range<u64>, end: u64) -> usize {
                         var total = 0usize;
                         for value in 0u64..=end {
                             total += 1usize;

@@ -29,7 +29,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Generation: known slice results retain their range check"_test = [] static noexcept {
-        for (const auto query : {".len()", "[1] as usize"}) {
+        for (const auto query : {".length()", "[1] as usize"}) {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(
                     std::format(

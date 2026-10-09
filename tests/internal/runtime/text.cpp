@@ -73,6 +73,28 @@ const TestSuite suite([] static noexcept {
         expect(bytes.data() == reinterpret_cast<const std::uint8_t*>(text.as_str().data()));
         expect(bytes.size() == text.size());
     };
+
+    "Runtime: retained String copies own complete independent byte ranges"_test =
+        [] static noexcept {
+            const auto inputs = std::array {
+                std::string_view {},
+                std::string_view("a\0\xc3\xa9", 4),
+                std::string_view("retained text beyond short-string storage")
+            };
+            for (const auto input : inputs) {
+                const auto retained = carven::runtime::String::from_static(input);
+                auto copy = retained;
+                auto assigned = carven::runtime::String::from_str("previous contents");
+                assigned = retained;
+                expect_equal(copy.as_str(), input);
+                expect_equal(assigned.as_str(), input);
+                copy.append("!");
+                assigned.clear();
+                expect_equal(retained.as_str(), input);
+                expect_equal(copy.size(), input.size() + 1);
+                expect(assigned.empty());
+            }
+        };
 });
 
 } // namespace

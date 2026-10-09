@@ -10,7 +10,7 @@ import :semantic.semir.generic;
 import :semantic.semir.initialization;
 import :semantic.semir.operation;
 import :semantic.semir.program;
-import :semantic.semir.sequence;
+import :semantic.semir.vector;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import std;
@@ -73,7 +73,7 @@ struct RecordShape final {
 auto record_shape(ProgramDraft& draft, ConstructionTypeRef type) noexcept
     -> std::optional<RecordShape>;
 
-enum class SequenceShapeKind { Array, Slice, OwnedSequence };
+enum class SequenceShapeKind { Array, Slice, Vector };
 
 struct SequenceShape final {
     SequenceShapeKind kind;
@@ -212,12 +212,12 @@ auto decide_slice_method(
     std::size_t arguments
 ) noexcept -> std::expected<std::optional<SliceIntrinsic>, OperationDiagnostic>;
 
-auto decide_sequence_method(
+auto decide_vector_method(
     const ProgramDraft& draft,
     ConstructionTypeRef operand,
     std::string_view name,
     std::size_t arguments
-) noexcept -> std::expected<std::optional<SequenceIntrinsic>, OperationDiagnostic>;
+) noexcept -> std::expected<std::optional<VectorIntrinsic>, OperationDiagnostic>;
 
 auto decide_text_method(
     const ProgramDraft& draft,

@@ -16,17 +16,17 @@ const TestSuite suite([] static noexcept {
             static_cast<void>(analyze_test_program(R"(
         enum NoDefault { Item(i32) }
         struct Storage<T> {
-            values: Sequence<T>,
+            values: Vector<T>,
             empty: [T; 0],
             pointer: ptr<T>,
             view: [T],
         }
         fn storage<T>() -> Storage<T> => Storage<T> {};
         enum FixedElement { Item(i32) }
-        struct Holder<T> { values: Sequence<T>, fixed: Sequence<FixedElement> }
+        struct Holder<T> { values: Vector<T>, fixed: Vector<FixedElement> }
         const fn make<T>() -> Holder<T> => Holder<T> {};
-        const fixed_count = make<i32>().fixed.len();
-        const count = make<NoDefault>().values.len();
+        const fixed_count = make<i32>().fixed.length();
+        const count = make<NoDefault>().values.length();
         fn empty<T>() -> [T; 0] { return {}; }
     )"));
             const auto cases = std::array {

@@ -247,7 +247,7 @@ Borrowed views must remain within their owners' lifetimes and prevent mutation
 while the borrow remains live. `String::from_str(text)` is also available for
 explicit owning construction. Characters use single quotes.
 
-For either text type, `text.len()` counts UTF-8 bytes and `text.is_empty()` tests
+For either text type, `text.byte_length()` counts UTF-8 bytes and `text.is_empty()` tests
 for empty text. `text.bytes` and `text.chars` can be traversed in a loop.
 Interpolation such as `f"Count: {quantity}"` produces an owning `String`. A format
 specification follows a colon inside a hole, as in `f"ID: {42:04x}"`.
@@ -281,8 +281,8 @@ fn accumulate() -> i32 {
 
 The range `1..4` visits 1, 2, and 3; `1..=4` also visits 4. Ranges are values:
 `let interval = 1..4;` can be used with `for n in interval`. Their type is
-`range<i32>` here, and their bounds are snapshots taken when the value is created.
-A bound can supply the integer type: `0..text.len()` is a `range<usize>`, so
+`Range<i32>` here, and their bounds are snapshots taken when the value is created.
+A bound can supply the integer type: `0..text.byte_length()` is a `Range<usize>`, so
 indexing text bytes does not require a cast or a suffixed zero.
 
 A range pattern classifies an integer by interval:

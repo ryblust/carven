@@ -153,7 +153,8 @@ auto constant_children(const ConstantValue& value) noexcept
                 return stored.fields;
             } else if constexpr (std::same_as<Value, ArrayConstant>
                                  || std::same_as<Value, TupleConstant>
-                                 || std::same_as<Value, SliceConstant>) {
+                                 || std::same_as<Value, SliceConstant>
+                                 || std::same_as<Value, VectorConstant>) {
                 return stored.elements;
             }
             return std::nullopt;
@@ -176,6 +177,8 @@ auto ConstantStoreBuilder::intern(ConstantFact fact) noexcept -> ConstantID {
                 invariant_violation("string constant used a foreign spelling");
             }
             mix(value.value.index());
+        } else if constexpr (std::same_as<Value, VectorConstant>) {
+            mix(value.capacity);
         } else if constexpr (std::same_as<Value, RangeConstant>) {
             mix(value.begin.magnitude());
             mix(value.begin.negative());

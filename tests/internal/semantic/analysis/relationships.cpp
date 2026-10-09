@@ -348,7 +348,7 @@ const TestSuite suite([] static noexcept {
                         let op = bump(&value);
                         relay(&value);
                         print(await op);
-                        var values = Sequence<i32> {};
+                        var values = Vector<i32> {};
                         values.push(1);
                         async let child = bump(&values[0]);
                         relay(&values[0]);
@@ -367,12 +367,12 @@ const TestSuite suite([] static noexcept {
                  }) {
                 const auto text = std::string(R"(
                         async fn bump(&value: i32) -> i32 => value;
-                        fn append(&values: Sequence<i32>) { values.push(2); }
-                        fn remove_first(&values: Sequence<i32>) { let item = values.remove(0); }
-                        fn clear(&values: Sequence<i32>) { values.clear(); }
-                        fn take_owner(&&values: Sequence<i32>) {}
+                        fn append(&values: Vector<i32>) { values.push(2); }
+                        fn remove_first(&values: Vector<i32>) { let item = values.remove(0); }
+                        fn clear(&values: Vector<i32>) { values.clear(); }
+                        fn take_owner(&&values: Vector<i32>) {}
                         async fn rejected() {
-                            var values = Sequence<i32> {};
+                            var values = Vector<i32> {};
                             values.push(1);
                             async let child = bump(&values[0]);
                     )")

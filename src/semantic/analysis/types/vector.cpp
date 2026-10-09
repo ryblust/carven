@@ -1,4 +1,4 @@
-module carven:semantic.analysis.types.sequence.impl;
+module carven:semantic.analysis.types.vector.impl;
 
 import :diagnostics.builder;
 import :semantic.analysis.construction.limits;
@@ -10,35 +10,35 @@ import std;
 namespace {
 
 template<typename Shape>
-auto unsupported_sequence_element_shape(const Shape& value) noexcept
+auto unsupported_vector_element_shape(const Shape& value) noexcept
     -> std::optional<std::string_view> {
     if constexpr (std::same_as<Shape, BuiltinTypeValue>) {
         if (value.kind == BuiltinType::Str || value.kind == BuiltinType::StrCharsView) {
-            return "Sequence elements cannot contain borrowed text";
+            return "Vector elements cannot contain borrowed text";
         }
         if (value.kind == BuiltinType::EntryArgs) {
-            return "Sequence element is not an owning value type";
+            return "Vector element is not an owning value type";
         }
     } else if constexpr (std::same_as<Shape, SliceTypeValue>
                          || std::same_as<Shape, GenericSliceType>
                          || std::same_as<Shape, ConstructionSliceTypeValue>) {
-        return "Sequence elements cannot contain borrowed slices";
+        return "Vector elements cannot contain borrowed slices";
     } else if constexpr (std::same_as<Shape, OperationTypeValue>
                          || std::same_as<Shape, GenericOperationType>
                          || std::same_as<Shape, ConstructionOperationTypeValue>) {
-        return "Sequence elements cannot contain async operations";
+        return "Vector elements cannot contain async operations";
     } else if constexpr (std::same_as<Shape, CppTypeValue>) {
-        return "Sequence elements require Carven-defined value semantics";
+        return "Vector elements require Carven-defined value semantics";
     } else if constexpr (std::same_as<Shape, ClosureTypeValue>
                          || std::same_as<Shape, FunctionTypeValue>
                          || std::same_as<Shape, CallableViewTypeValue>
                          || std::same_as<Shape, ConstructionCallableViewTypeValue>) {
-        return "Sequence elements cannot contain callable values";
+        return "Vector elements cannot contain callable values";
     }
     return std::nullopt;
 }
 
-auto unsupported_sequence_element(const ProgramDraft& values, ConstructionTypeRef element) noexcept
+auto unsupported_vector_element(const ProgramDraft& values, ConstructionTypeRef element) noexcept
     -> std::optional<std::string_view> {
     auto pending = std::vector<ConstructionTypeRef> {element};
     auto visited = std::set<ConstructionTypeRef>();
@@ -51,13 +51,13 @@ auto unsupported_sequence_element(const ProgramDraft& values, ConstructionTypeRe
         const auto inspect = [&](const auto& type) noexcept -> std::optional<std::string_view> {
             return type.value.visit(
                 [&](const auto& shape) noexcept -> std::optional<std::string_view> {
-                    if (const auto unsupported = unsupported_sequence_element_shape(shape)) {
+                    if (const auto unsupported = unsupported_vector_element_shape(shape)) {
                         return unsupported;
                     }
                     using Shape = std::remove_cvref_t<decltype(shape)>;
                     if constexpr (std::same_as<Shape, ArrayTypeValue>
                                   || std::same_as<Shape, ConstructionArrayTypeValue>
-                                  || std::same_as<Shape, OwnedSequenceTypeValue>) {
+                                  || std::same_as<Shape, VectorTypeValue>) {
                         pending.push_back(shape.element);
                     } else if constexpr (std::same_as<Shape, TupleTypeValue>
                                          || std::same_as<Shape, ConstructionTupleTypeValue>) {
@@ -65,13 +65,13 @@ auto unsupported_sequence_element(const ProgramDraft& values, ConstructionTypeRe
                     } else if constexpr (std::same_as<Shape, StructTypeValue>) {
                         const auto fields = values.struct_field_types(shape.structure);
                         if (!fields) {
-                            return "Sequence element requires completed declaration fields";
+                            return "Vector element requires completed declaration fields";
                         }
                         pending.append_range(*fields);
                     } else if constexpr (std::same_as<Shape, EnumTypeValue>) {
                         const auto cases = values.enum_case_types(shape.enumeration);
                         if (!cases) {
-                            return "Sequence element requires completed enum payloads";
+                            return "Vector element requires completed enum payloads";
                         }
                         for (const auto& member : *cases) {
                             pending.append_range(member.payload_types);
@@ -95,23 +95,23 @@ auto unsupported_sequence_element(const ProgramDraft& values, ConstructionTypeRe
 } // namespace
 
 // This check runs after source heads and the concrete instance closure are
-// complete. It also checks fixed sequence elements in unused symbolic heads.
-auto ProgramDraft::validate_sequence_elements() noexcept -> AnalysisResult<void> {
+// complete. It also checks fixed Vector elements in unused symbolic heads.
+auto ProgramDraft::validate_vector_elements() noexcept -> AnalysisResult<void> {
     using Application = std::tuple<GenericDeclarationID, GenericEnvironment, bool>;
     auto visited = std::set<Application>();
     auto failure = std::optional<AnalysisFailure>();
     auto work = 0uz;
     const auto reject = [&](std::string_view reason, ProgramOriginID origin) noexcept {
         failure = diagnostics().error(
-            DiagnosticBuilder(DiagnosticCode::TypeSequenceElement, std::string(reason))
+            DiagnosticBuilder(DiagnosticCode::TypeVectorElement, std::string(reason))
                 .primary(source_span(origin))
                 .build()
         );
     };
     // Canonical identity does not own source attribution. Keep each checked use
     // until all nominal fields are complete, then diagnose at that use.
-    for (const auto& [element, origin] : storage.sequence_elements) {
-        if (const auto reason = unsupported_sequence_element(*this, element)) {
+    for (const auto& [element, origin] : storage.vector_elements) {
+        if (const auto reason = unsupported_vector_element(*this, element)) {
             reject(*reason, origin);
             return std::unexpected(*failure);
         }
@@ -125,19 +125,18 @@ auto ProgramDraft::validate_sequence_elements() noexcept -> AnalysisResult<void>
             return;
         }
         if (++work > maximum_generic_type_work || depth >= maximum_generic_depth) {
-            failure =
-                diagnostics().error(DiagnosticBuilder(
-                                        DiagnosticCode::TypeGenericLimits,
-                                        "generic Sequence element checking exceeded its budget"
-                )
-                                        .primary(source_span(origin))
-                                        .build());
+            failure = diagnostics().error(DiagnosticBuilder(
+                                              DiagnosticCode::TypeGenericLimits,
+                                              "generic Vector element checking exceeded its budget"
+            )
+                                              .primary(source_span(origin))
+                                              .build());
             return;
         }
         const auto* generic = std::get_if<GenericTypeID>(&type);
         if (!generic) {
             if (element_storage) {
-                if (const auto reason = unsupported_sequence_element(*this, type)) {
+                if (const auto reason = unsupported_vector_element(*this, type)) {
                     reject(*reason, origin);
                 }
             }
@@ -147,18 +146,18 @@ auto ProgramDraft::validate_sequence_elements() noexcept -> AnalysisResult<void>
             using Shape = std::remove_cvref_t<decltype(shape)>;
             if constexpr (std::same_as<Shape, TypeID>) {
                 if (element_storage) {
-                    if (const auto reason = unsupported_sequence_element(*this, shape)) {
+                    if (const auto reason = unsupported_vector_element(*this, shape)) {
                         reject(*reason, origin);
                     }
                 }
             } else {
                 if (element_storage) {
-                    if (const auto reason = unsupported_sequence_element_shape(shape)) {
+                    if (const auto reason = unsupported_vector_element_shape(shape)) {
                         reject(*reason, origin);
                         return;
                     }
                 }
-                if constexpr (std::same_as<Shape, GenericOwnedSequenceType>) {
+                if constexpr (std::same_as<Shape, GenericVectorType>) {
                     self(shape.element, true, origin, depth + 1uz);
                 } else if constexpr (std::same_as<Shape, GenericArrayType>) {
                     self(shape.element, element_storage, origin, depth + 1uz);

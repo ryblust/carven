@@ -19,7 +19,6 @@ namespace {
 
 struct FunctionFacts final {
     std::size_t label_calls = 0uz;
-    std::size_t all_calls = 0uz;
     std::vector<TargetStringLiteral> literals;
 
     auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
@@ -28,7 +27,6 @@ struct FunctionFacts final {
 auto FunctionFacts::enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
     -> bool {
     if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
-        ++all_calls;
         if (const auto* name =
                 std::get_if<TargetNameExpr>(&template_primary_expression(*call->callee).value)) {
             label_calls += name->name.components().back().spelling() == "label";
@@ -47,11 +45,25 @@ struct FunctionQuery final {
     std::size_t frozen_definitions = 0uz;
     std::size_t ordinary_definitions = 0uz;
     std::size_t label_definitions = 0uz;
+    std::size_t static_text = 0uz;
 
     auto enter_declaration(const TargetDecl& declaration) noexcept -> bool;
 };
 
 auto FunctionQuery::enter_declaration(const TargetDecl& declaration) noexcept -> bool {
+    if (const auto* variable = std::get_if<TargetVariableDecl>(&declaration)) {
+        auto facts = FunctionFacts();
+        if (!expect(traverse_target_expression(variable->initializer, facts))) {
+            return false;
+        }
+        for (const auto& literal : facts.literals) {
+            if (literal.bytes == std::string_view("我\0😀", 8uz)) {
+                expect(variable->constexpr_specifier);
+                expect_equal(literal.kind, TargetStringLiteralKind::StringView);
+                ++static_text;
+            }
+        }
+    }
     const auto* function = std::get_if<TargetFunctionDecl>(&declaration);
     if (function == nullptr) {
         return true;
@@ -87,12 +99,7 @@ auto FunctionQuery::enter_declaration(const TargetDecl& declaration) noexcept ->
         return true;
     }
     expect_equal(result->symbol, TargetSymbol::StdStringView);
-    expect(facts.all_calls == 0uz);
-    if (!expect(facts.literals.size() == 1uz)) {
-        return false;
-    }
-    expect_equal(facts.literals.front().kind, TargetStringLiteralKind::StringView);
-    expect(facts.literals.front().bytes == std::string_view("我\0😀", 8uz));
+    expect(facts.label_calls == 0uz);
     ++frozen_definitions;
     return true;
 }
@@ -120,6 +127,7 @@ const TestSuite suite([] static noexcept {
             auto frozen_definitions = 0uz;
             auto ordinary_definitions = 0uz;
             auto label_definitions = 0uz;
+            auto static_text = 0uz;
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
                 auto query = FunctionQuery {.unit = unit};
@@ -127,10 +135,12 @@ const TestSuite suite([] static noexcept {
                 frozen_definitions += query.frozen_definitions;
                 ordinary_definitions += query.ordinary_definitions;
                 label_definitions += query.label_definitions;
+                static_text += query.static_text;
             }
             expect(frozen_definitions == 3uz);
             expect(ordinary_definitions == 1uz);
             expect(label_definitions == 1uz);
+            expect(static_text > 0uz);
         };
 });
 

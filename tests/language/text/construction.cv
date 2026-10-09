@@ -6,7 +6,7 @@ enum State {
 test "Text: empty and embedded NUL literals preserve their contents" {
     let empty: str = "";
     check(empty.is_empty());
-    check(empty.len() == 0usize);
+    check(empty.byte_length() == 0usize);
     var empty_count = 0usize;
     for scalar in empty.chars {
         let _ = scalar;
@@ -15,7 +15,7 @@ test "Text: empty and embedded NUL literals preserve their contents" {
     check(empty_count == 0usize);
 
     let text: str = "\0a\0";
-    check(text.len() == 3usize);
+    check(text.byte_length() == 3usize);
     var byte_count = 0usize;
     var nul_count = 0usize;
     for byte in text.bytes {
@@ -40,7 +40,7 @@ test "Conversions: casts binding access and UTF-8 text work together" {
     check((value as i64) == 42i64);
 
     let text: str = "aé你😀";
-    check(text.len() == 10usize);
+    check(text.byte_length() == 10usize);
     check(!text.is_empty());
 
     var byte_count = 0usize;

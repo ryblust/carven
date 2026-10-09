@@ -74,13 +74,13 @@ const fn transfer_element() -> i32 {
     var (text, count): (String, i32) = ("hello", 3);
     let moved = &&text;
     text = "again";
-    return moved.len() as i32 + text.len() as i32 + count;
+    return moved.byte_length() as i32 + text.byte_length() as i32 + count;
 }
 
 const fn construct_from_owner() -> i32 {
     var text: String = "owner";
     let (moved, count) = (&&text, 4);
-    return moved.len() as i32 + count;
+    return moved.byte_length() as i32 + count;
 }
 
 const test "Tuple: element owners transfer independently" {
@@ -121,7 +121,7 @@ const fn mutate_parts(&(first, (last,)): (i32, (i32,))) {
 
 const fn take_parts(&&(text, count): (String, i32)) -> i32 {
     let moved = &&text;
-    return moved.len() as i32 + count;
+    return moved.byte_length() as i32 + count;
 }
 
 const fn static_parts(const (first, (last,)): (i32, (i32,))) -> i32 {

@@ -747,7 +747,7 @@ const TestSuite suite([] static noexcept {
             "    let view = first.as_str();\n"
             "    let change = [&closure, &second]() { closure = maker(&second); };\n"
             "    closure(change);\n"
-            "    let length = view.len();\n"
+            "    let length = view.byte_length();\n"
             "}\n"
         ));
         const auto diagnostics = analyze_test_errors(
@@ -761,7 +761,7 @@ const TestSuite suite([] static noexcept {
             "    let view = second.as_str();\n"
             "    let change = [&closure, &second]() { closure = maker(&second); };\n"
             "    closure(change);\n"
-            "    let length = view.len();\n"
+            "    let length = view.byte_length();\n"
             "}\n"
         );
         expect_diagnostic(diagnostics, DiagnosticCode::AccessBorrowConflict);
@@ -922,7 +922,7 @@ const TestSuite suite([] static noexcept {
         fn invalid() -> usize {
             var owner: String = "hello";
             let view = keep(&owner, owner.as_str());
-            return view.len();
+            return view.byte_length();
         }
     )");
             expect_diagnostic(text, DiagnosticCode::AccessBorrowConflict);
@@ -938,7 +938,7 @@ const TestSuite suite([] static noexcept {
             let reset = [&selected]() { selected = ""; };
             let kept = pick(selected, reset);
             let moved = &&owner;
-            let length = kept.len();
+            let length = kept.byte_length();
         }
     )");
             expect_diagnostic(text, DiagnosticCode::AccessBorrowConflict);
@@ -955,7 +955,7 @@ const TestSuite suite([] static noexcept {
             var owner: String = "hello";
             var holder = Holder { n: 0, text: owner.as_str() };
             increment(&holder.n);
-            return holder.text.len();
+            return holder.text.byte_length();
         }
     )"));
             expect_diagnostic(
@@ -965,7 +965,7 @@ const TestSuite suite([] static noexcept {
             var holder = Holder { n: 0, text: owner.as_str() };
             increment(&holder.n);
             owner.clear();
-            return holder.text.len();
+            return holder.text.byte_length();
         }
     )"),
                 DiagnosticCode::AccessBorrowConflict
@@ -1076,7 +1076,7 @@ const TestSuite suite([] static noexcept {
         fn combine(values: [i32; 2], &written: i32) -> usize {
             let view = view_of(values);
             increment(&written);
-            return view.len();
+            return view.length();
         }
     )");
             static_cast<void>(analyze_test_program(prelude + R"(
@@ -1094,100 +1094,72 @@ const TestSuite suite([] static noexcept {
             );
         };
 
-    "Semantic ownership: constant array backing permits immediate views but rejects holders"_test =
-        [] static noexcept {
-            const auto program = analyze_test_program(R"(
+    "Semantic ownership: constant array backing permits retained views"_test = [] static noexcept {
+        const auto program = analyze_test_program(R"(
         const owned = [1, 2];
         fn view_of(values: [i32; 2]) -> [i32] => values;
-        fn valid() -> usize { return view_of(owned).len(); }
+        fn valid() -> usize { return view_of(owned).length(); }
     )");
-            auto constant_arguments = 0uz;
-            for (const auto [id, declaration] : program.declarations().functions()) {
-                static_cast<void>(id);
-                if (program.provenance().spelling(declaration.name) != "valid") {
-                    continue;
-                }
-                const auto body = program.declarations().body_for_callable(declaration.callable);
-                require(body.has_value());
-                visit_semantic_nodes(
-                    program.bodies().body(*body).region(),
-                    [&](const SemanticExpression& expression) noexcept {
-                        const auto* call = std::get_if<SemCall>(&expression.value);
-                        if (call == nullptr) {
-                            return;
-                        }
-                        if (!expect_equal(call->arguments.size(), 1uz)) {
-                            return;
-                        }
-                        const auto& argument = call->arguments.front();
-                        expect_equal(argument.access, AccessMode::Read);
-                        expect_equal(argument.expression.category, SemanticValueCategory::Value);
-                        const auto* constant = std::get_if<SemConstant>(&argument.expression.value);
-                        if (!expect(constant != nullptr)) {
-                            return;
-                        }
-                        const auto* type = std::get_if<ArrayTypeValue>(
-                            &program.types().type(argument.expression.type.resolved()).value
-                        );
-                        if (!expect(type != nullptr)) {
-                            return;
-                        }
-                        expect_equal(type->extent, 2ull);
-                        const auto* element = std::get_if<BuiltinTypeValue>(
-                            &program.types().type(type->element).value
-                        );
-                        if (!expect(element != nullptr)) {
-                            return;
-                        }
-                        expect_equal(element->kind, BuiltinType::I32);
-                        const auto* values = std::get_if<ArrayConstant>(
-                            &program.constants().constant(constant->constant).value
-                        );
-                        if (!expect(values != nullptr)) {
-                            return;
-                        }
-                        expect_equal(values->elements.size(), 2uz);
-                        ++constant_arguments;
+        auto constant_arguments = 0uz;
+        for (const auto [id, declaration] : program.declarations().functions()) {
+            static_cast<void>(id);
+            if (program.provenance().spelling(declaration.name) != "valid") {
+                continue;
+            }
+            const auto body = program.declarations().body_for_callable(declaration.callable);
+            require(body.has_value());
+            visit_semantic_nodes(
+                program.bodies().body(*body).region(),
+                [&](const SemanticExpression& expression) noexcept {
+                    const auto* call = std::get_if<SemCall>(&expression.value);
+                    if (call == nullptr) {
+                        return;
                     }
-                );
-            }
-            expect_equal(constant_arguments, 1uz);
+                    if (!expect_equal(call->arguments.size(), 1uz)) {
+                        return;
+                    }
+                    const auto& argument = call->arguments.front();
+                    expect_equal(argument.access, AccessMode::Read);
+                    expect_equal(argument.expression.category, SemanticValueCategory::Value);
+                    const auto* constant = std::get_if<SemConstant>(&argument.expression.value);
+                    if (!expect(constant != nullptr)) {
+                        return;
+                    }
+                    const auto* type = std::get_if<ArrayTypeValue>(
+                        &program.types().type(argument.expression.type.resolved()).value
+                    );
+                    if (!expect(type != nullptr)) {
+                        return;
+                    }
+                    expect_equal(type->extent, 2ull);
+                    const auto* element =
+                        std::get_if<BuiltinTypeValue>(&program.types().type(type->element).value);
+                    if (!expect(element != nullptr)) {
+                        return;
+                    }
+                    expect_equal(element->kind, BuiltinType::I32);
+                    const auto* values = std::get_if<ArrayConstant>(
+                        &program.constants().constant(constant->constant).value
+                    );
+                    if (!expect(values != nullptr)) {
+                        return;
+                    }
+                    expect_equal(values->elements.size(), 2uz);
+                    ++constant_arguments;
+                }
+            );
+        }
+        expect_equal(constant_arguments, 1uz);
 
-            auto sources = SourceManager();
-            const auto source_id = sources.append_virtual("analysis.cv", R"(
+        static_cast<void>(analyze_test_program(R"(
         const owned = [1, 2];
         fn view_of(values: [i32; 2]) -> [i32] => values;
-        fn invalid() {
-            let escaped = view_of(owned);
-            let length = escaped.len();
+        fn retained() -> [i32] {
+            let view = view_of(owned);
+            return view;
         }
-    )");
-            require(source_id.has_value());
-            const auto input = SourceModuleInput {
-                .source_id = *source_id,
-                .module_path = semantic_test_module_path(),
-            };
-            auto parsed = parse_program(sources, SourceBatch {.modules = std::span(&input, 1)});
-            require(parsed.has_value());
-            const auto result = analyze(std::move(*parsed));
-            if (!expect(!result.has_value())) {
-                return;
-            }
-            const auto* diagnostic =
-                find_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
-            expect_diagnostic(result.error(), DiagnosticCode::AccessBorrowConflict);
-            if (diagnostic == nullptr) {
-                return;
-            }
-            expect_equal(diagnostic->finding.severity, DiagnosticSeverity::Error);
-            if (!expect(diagnostic->attachment.primary.has_value())) {
-                return;
-            }
-            expect_equal(
-                sources.slice(diagnostic->attachment.primary->span),
-                "let escaped = view_of(owned)"
-            );
-        };
+    )"));
+    };
     "Semantic ownership: caller diagnosis observes completed dependency answers"_test =
         [] static noexcept {
             static_cast<void>(analyze_test_program(R"(fn valid() {
@@ -1371,7 +1343,7 @@ fn invalid(flag: bool) {
                 R"(fn copied(&&copied_text: String, tokens: [i32]) -> String => copied_text;
 fn blocked(&&blocked_text: String, tokens: [i32]) -> String {
     let held = blocked_text.as_str();
-    let length = held.len();
+    let length = held.byte_length();
     return blocked_text;
 }
 fn forward_copied(&&text: String, tokens: [i32]) -> String => copied(&&text, tokens);
@@ -1416,7 +1388,7 @@ fn invoke() {
 fn pack(values: [i32]) -> Values => Values::Borrowed(values);
 fn valid(values: [i32]) -> usize {
     let wrapped = pack(values);
-    return match wrapped { .Borrowed(items) => items.len(), .Empty => 0usize };
+    return match wrapped { .Borrowed(items) => items.length(), .Empty => 0usize };
 }
 )");
             auto constructors = 0uz;

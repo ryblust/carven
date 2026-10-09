@@ -26,7 +26,7 @@ the official package sources.
 | `encoded_bytes(encoded: UTF8Encoded) -> [u8]` | Borrow exactly the valid encoding prefix |
 | `char_from_u32(value: u32) -> char throw UnicodeScalarError` | Reject surrogates and values above U+10FFFF |
 | `character as u32` | Unicode scalar number |
-| `UTF8Validator::create() -> UTF8Validator` | Start an incremental validation attempt |
+| `UTF8Validator::new() -> UTF8Validator` | Start an incremental validation attempt |
 | `state.push(byte: u8) throw UTF8Error` | Accept one byte |
 | `state.feed(bytes: [u8]) throw UTF8Error` | Accept one block; its end is not EOF |
 | `state.check_complete() throw UTF8Error` | Check that no partial scalar remains; does not end the stream |
@@ -55,8 +55,8 @@ fn example() -> String throw UTF8Error {
 Scalar conversion, encoding, prefix decoding, validation, and text construction
 are `const fn`: the same implementation runs in static roots and ordinary
 runtime calls. `from_utf8` retains its input byte storage during execution;
-`to_string` returns an independent owner. A completed owning text result freezes
-to `str` at a constant initializer.
+`to_string` returns an independent owner and retains its `String` type in a
+constant initializer. A `str` destination selects a retained text view.
 Encoded arrays can also become frozen constant slices:
 
 ```carven
@@ -96,7 +96,7 @@ retrying with different bytes describes a different stream. An incomplete block
 is accepted, and only `check_complete` reports truncation. Logical stream length
 must fit `usize`.
 
-Initialize `UTF8Validator` through `UTF8Validator::create()` and change it through
+Initialize `UTF8Validator` through `UTF8Validator::new()` and change it through
 `push` or `feed`. Its private fields record byte positions and the pending
 sequence; it stores no input. `processed_bytes()` returns the accepted byte count,
 and `is_complete()` reports whether no partial scalar is pending. Both queries

@@ -46,7 +46,7 @@ private const fn mutate_patterns() -> i32 {
         borrowed if borrowed.0.is_empty() => {},
         borrowed => assert(borrowed.0.as_str() == "start!"),
     }
-    return value.0.len() as i32 + value.1;
+    return value.0.byte_length() as i32 + value.1;
 }
 
 const test "Pattern access: static execution preserves writable subjects and releases Read aliases" {
@@ -56,7 +56,7 @@ const test "Pattern access: static execution preserves writable subjects and rel
 test "Pattern access: runtime uses the same Read and Write model" {
     check(mutate_patterns() == 8);
     let value = match ("temporary" as String, 9) {
-        (text, count) => text.len() as i32 + count,
+        (text, count) => text.byte_length() as i32 + count,
     };
     check(value == 18);
 }

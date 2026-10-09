@@ -270,7 +270,7 @@ The generated signatures use the same C++ representations as Carven functions:
 | Take parameters | Owned values; exports use ordinary transfer and imports forward native rvalues |
 | Infallible result | The ordinary result type, including `void` |
 | Declared synchronous failures | `carven::runtime::Outcome<Result, Failures...>` |
-| Async completion contract | Cold `carven::runtime::execution::Operation<Result, Failures...>` |
+| Async completion contract | Cold `carven::runtime::execution::AsyncOperation<Result, Failures...>` |
 
 Async imports and exports use the [async borrowing and host contracts](async.md#native-providers-and-hosts).
 Native-containing Read uses `carven::runtime::ReadArg<T>` unless the callable

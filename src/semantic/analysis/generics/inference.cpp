@@ -79,10 +79,10 @@ auto ProgramDraft::infer_generic_argument(
         return element
             && infer_generic_argument(slice->element, *element, definition, inferred, origin);
     }
-    if (const auto* sequence = std::get_if<GenericOwnedSequenceType>(&description)) {
+    if (const auto* sequence = std::get_if<GenericVectorType>(&description)) {
         const auto shape = sequence_shape(*this, actual);
         return shape
-            && shape->kind == SequenceShapeKind::OwnedSequence
+            && shape->kind == SequenceShapeKind::Vector
             && infer_generic_argument(
                    sequence->element,
                    shape->element,

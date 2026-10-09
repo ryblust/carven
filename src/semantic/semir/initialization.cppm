@@ -54,8 +54,8 @@ auto query_default_initialization(
                         pending.push_back(element);
                     }
                     return true;
-                } else if constexpr (std::same_as<Value, OwnedSequenceTypeValue>
-                                     || std::same_as<Value, GenericOwnedSequenceType>) {
+                } else if constexpr (std::same_as<Value, VectorTypeValue>
+                                     || std::same_as<Value, GenericVectorType>) {
                     return true;
                 } else if constexpr (std::same_as<Value, ArrayTypeValue>
                                      || std::same_as<Value, ConstructionArrayTypeValue>

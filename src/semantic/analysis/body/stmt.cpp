@@ -200,7 +200,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             co_return std::unexpected(value.error());
         }
         const auto binding_type = source.kind == ASTBindingKind::Const
-            ? constant_initializer_type(draft(), value->type.construction())
+            ? value->type.construction()
             : (declared ? *declared : value->type.construction());
         auto bindings = std::vector<SemDecompositionBinding>();
         const auto collect = [&](this auto&& self,
@@ -318,7 +318,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
         if (!result) {
             co_return std::unexpected(result.error());
         }
-        const auto type = constant_initializer_type(draft(), result->type.construction());
+        const auto type = result->type.construction();
         if (declared && !compatible(type, *declared)) {
             co_return std::unexpected(fail(
                 source.span,
@@ -588,7 +588,7 @@ auto BodyElaborator::update_statement(const ASTUpdate& source) noexcept -> Analy
         one->type,
         active_builder().lifetime(),
         origin(source.operator_span),
-        SemConstant {.constant = draft().intern_constant(*one)}
+        constant_operation(draft(), draft().intern_constant(*one))
     );
     append_statement(
         SemAssign {

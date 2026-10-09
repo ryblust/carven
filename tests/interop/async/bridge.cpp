@@ -21,7 +21,7 @@ using async_bridge::Observations;
 using async_bridge::TrivialContext;
 using async_interop::PipeQueue;
 using IoError = decltype(api::make_io_error(0));
-using ReadOperation = async::Operation<std::int32_t, IoError>;
+using ReadOperation = async::AsyncOperation<std::int32_t, IoError>;
 
 static_assert(
     std::is_same_v<decltype(api::source_read), auto(const Context&) noexcept -> ReadOperation>
@@ -279,7 +279,7 @@ auto trivial() noexcept -> void {
     balanced(queue, observed);
 }
 
-auto cancel_character() noexcept -> async::Operation<void> {
+auto cancel_character() noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(api::source_character(0xd800, false));
     async::cancel(child);
@@ -292,7 +292,7 @@ auto cancel_character() noexcept -> async::Operation<void> {
     co_return async::Completion<void>::success();
 }
 
-auto cancel_join_characters() noexcept -> async::Operation<void> {
+auto cancel_join_characters() noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(api::source_join_characters(0xd800, false));
     async::cancel(child);

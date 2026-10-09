@@ -202,7 +202,7 @@ auto body_closure_references(const SemIRProgram& semantic, const SemIRBody& body
                         }
                         pending.push_back(value.success);
                     },
-                    [&](const OwnedSequenceTypeValue& value) noexcept {
+                    [&](const VectorTypeValue& value) noexcept {
                         pending.push_back(value.element);
                     },
                     [&](const SliceTypeValue& value) noexcept { pending.push_back(value.element); },

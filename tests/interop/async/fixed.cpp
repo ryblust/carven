@@ -69,7 +69,8 @@ public:
 
 // Coroutine parameters remain alive through final suspension. Observation must
 // destroy this parameter before timeout commits its outward success.
-auto completion_winner(CancelOnDestroy retained) noexcept -> execution::Operation<std::int32_t> {
+auto completion_winner(CancelOnDestroy retained) noexcept
+    -> execution::AsyncOperation<std::int32_t> {
     retained.publish(*(co_await execution::current_activation()).task);
     co_return execution::Completion<std::int32_t>::success(7);
 }
@@ -132,7 +133,7 @@ auto fixed_report() noexcept -> void {
     );
 }
 
-auto fixed_cancel_on_destroy() noexcept -> execution::Operation<std::int32_t> {
+auto fixed_cancel_on_destroy() noexcept -> execution::AsyncOperation<std::int32_t> {
     completion_observation = {.published = false, .destroyed = false, .requested = false};
     return completion_winner(CancelOnDestroy(completion_observation));
 }

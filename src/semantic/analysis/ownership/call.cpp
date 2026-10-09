@@ -500,7 +500,7 @@ auto OwnershipBodyAnalyzer::call_body(
             visit_input(parameters.size() + static_cast<std::size_t>(index), argument);
         }
         // Inline fields and callable capture storage have a finite structural shape.
-        // Preserve their exact roots. Sequence selections were split above;
+        // Preserve their exact roots. Vector selections were split above;
         // indirect slice backing is deliberately not followed here.
         auto inline_roots = std::vector<std::size_t>(distinguished.begin(), distinguished.end());
         const auto inline_target = [&](std::size_t object) noexcept {
@@ -549,7 +549,7 @@ auto OwnershipBodyAnalyzer::call_body(
         }
         // Keep owns paths between interface roles, including one possible-alias
         // relay at either endpoint. Alias possibilities never become traversal edges.
-        // Added connectors are selected owning values; Sequence element admission
+        // Added connectors are selected owning values; Vector element admission
         // excludes contained loan and callable relationships.
         // Other caller readers and selections use the instantiated effects below.
         const auto interface = reachable;

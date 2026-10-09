@@ -3,24 +3,24 @@ export struct FloatBlock {
     value: f32x8,
     active: mask8,
     offset: usize,
-    len: usize,
+    length: usize,
 }
 
 export const fn block_count(values: [f32]) -> usize {
-    let full = values.len() / 8;
-    if values.len() % 8 == 0 { return full; }
+    let full = values.length() / 8;
+    if values.length() % 8 == 0 { return full; }
     return full + 1;
 }
 
 export const fn load_block(values: [f32], offset: usize) -> FloatBlock {
-    assert(offset <= values.len());
-    var count = values.len() - offset;
+    assert(offset <= values.length());
+    var count = values.length() - offset;
     if count > 8 { count = 8; }
     return {
         value: f32x8::load_partial(values, offset, 0.0),
         active: mask8::prefix(count),
         offset: offset,
-        len: count
+        length: count
     };
 }
 

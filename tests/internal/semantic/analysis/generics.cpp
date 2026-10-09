@@ -53,7 +53,7 @@ const TestSuite suite([] static noexcept {
                         R"(
                     const async fn produce() -> i32 => 42;
                     const fn relay<T>(&&value: T) -> T => &&value;
-                    const async fn consume<T, throw E>(&&operation: Operation<T, throw E>) -> T throw E {{
+                    const async fn consume<T, throw E>(&&operation: AsyncOperation<T, throw E>) -> T throw E {{
                         return (await operation)?;
                     }}
                     const result = {};
@@ -76,15 +76,15 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             static_cast<void>(analyze_test_program(R"(
                 struct Error { code: i32 }
-                struct Holder<T, throw E> { pending: Operation<T, throw E> }
-                fn forward<T, throw E>(&&operation: Operation<T, throw E>) -> Operation<T, throw E> => &&operation;
-                fn hold<T, throw E>(&&operation: Operation<T, throw E>) -> Holder<T, throw E> {
+                struct Holder<T, throw E> { pending: AsyncOperation<T, throw E> }
+                fn forward<T, throw E>(&&operation: AsyncOperation<T, throw E>) -> AsyncOperation<T, throw E> => &&operation;
+                fn hold<T, throw E>(&&operation: AsyncOperation<T, throw E>) -> Holder<T, throw E> {
                     return Holder<T, throw E> { pending: &&operation };
                 }
-                fn release<T, throw E>(&&holder: Holder<T, throw E>) -> Operation<T, throw E> => (&&holder).pending;
+                fn release<T, throw E>(&&holder: Holder<T, throw E>) -> AsyncOperation<T, throw E> => (&&holder).pending;
                 async fn success() -> i32 => 42;
                 async fn fallible() -> i32 throw Error => 42;
-                async fn consume<T, throw E>(&&operation: Operation<T, throw E>) -> T throw E {
+                async fn consume<T, throw E>(&&operation: AsyncOperation<T, throw E>) -> T throw E {
                     return (await operation)?;
                 }
                 async fn use() -> i32 throw Error {
@@ -134,13 +134,13 @@ const TestSuite suite([] static noexcept {
             const auto shared = std::string(R"(
                 struct Error {}
                 struct OtherError {}
-                fn discard<T, throw E>(&&left: Operation<T, throw E>, &&right: Operation<T, throw E>) {}
+                fn discard<T, throw E>(&&left: AsyncOperation<T, throw E>, &&right: AsyncOperation<T, throw E>) {}
                 const async fn first() -> i32 => 42;
                 const async fn second() -> i32 => 7;
                 async fn fallible() -> i32 throw Error => 42;
                 async fn also_fallible() -> i32 throw Error => 7;
                 async fn different() -> i32 throw OtherError => 7;
-                const async fn both<T, throw E>(&&left: Operation<T, throw E>, &&right: Operation<T, throw E>) -> T throw E {
+                const async fn both<T, throw E>(&&left: AsyncOperation<T, throw E>, &&right: AsyncOperation<T, throw E>) -> T throw E {
                     let value = (await left)?;
                     let _ = (await right)?;
                     return &&value;
@@ -163,10 +163,10 @@ const TestSuite suite([] static noexcept {
     "Generic effects: transparent inferred producers preserve recursive effect environments"_test =
         [] static noexcept {
             static_cast<void>(analyze_test_program(R"(
-                private async fn relay<throw F>(&&operation: Operation<i32, throw F>) -> i32 {
+                private async fn relay<throw F>(&&operation: AsyncOperation<i32, throw F>) -> i32 {
                     return (await operation)?;
                 }
-                private async fn recur<throw E>(&&operation: Operation<i32, throw E>, again: bool) -> i32 {
+                private async fn recur<throw E>(&&operation: AsyncOperation<i32, throw E>, again: bool) -> i32 {
                     if again { return (await recur(&&relay(&&operation), false))?; }
                     return (await operation)?;
                 }
@@ -415,7 +415,7 @@ const TestSuite suite([] static noexcept {
             const auto program = analyze_test_program(R"(
                 struct Box<T> { pair: (T, void), empty: () }
                 enum Maybe<T> { None, Some((T, void)) }
-                struct Tree<T> { pair: (T, Sequence<Tree<T>>) }
+                struct Tree<T> { pair: (T, Vector<Tree<T>>) }
                 fn unit(value: Box<void>) -> Box<void> => value;
                 fn pair(value: Box<i32>) -> (i32, void) => value.pair;
                 fn nested(value: Box<(i32, void)>) -> Box<(i32, void)> => value;
@@ -444,15 +444,15 @@ const TestSuite suite([] static noexcept {
             const auto program = analyze_test_program(R"(
                 fn inspect<T>(values: [T; 1]) -> usize {
                     let slice = values.as_slice();
-                    return slice.len();
+                    return slice.length();
                 }
                 fn empty<T>() -> usize {
                     let values: [T] = [];
-                    return values.len();
+                    return values.length();
                 }
                 fn nested<T>(values: [[T; 1]; 1]) -> usize {
                     let slice = values.as_slice();
-                    return slice.len();
+                    return slice.length();
                 }
             )");
             expect(program.declarations().functions().size() == 0uz);
@@ -498,7 +498,7 @@ const TestSuite suite([] static noexcept {
                 nested: Pair<Pair<T, U>, Pair<U, T>>,
                 arrays: Pair<[T; 2], [U; 3]>,
                 views: Pair<[T], ptr<&U>>,
-                sequence: Sequence<Pair<T, U>>,
+                sequence: Vector<Pair<T, U>>,
                 next: ptr<Group<T, U>>,
             }
             fn values(value: Group<i32, u8>) -> Pair<i32, u8> => value.values;
@@ -507,7 +507,7 @@ const TestSuite suite([] static noexcept {
             fn nested(value: Group<i32, u8>) -> Pair<Pair<i32, u8>, Pair<u8, i32>> => value.nested;
             fn arrays(value: Group<i32, u8>) -> Pair<[i32; 2], [u8; 3]> => value.arrays;
             fn views(value: Group<i32, u8>) -> Pair<[i32], ptr<&u8>> => value.views;
-            fn sequence(value: Group<i32, u8>) -> Sequence<Pair<i32, u8>> => value.sequence;
+            fn sequence(value: Group<i32, u8>) -> Vector<Pair<i32, u8>> => value.sequence;
             fn next(value: Group<i32, u8>) -> ptr<Group<i32, u8>> => value.next;
         )");
             // Explicit result types and substituted fields select the same seven nominals.

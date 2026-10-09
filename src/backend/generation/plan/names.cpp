@@ -3,6 +3,7 @@ module carven:backend.generation.plan.names.impl;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :semantic.semir.constant;
+import :semantic.semir.constant_access;
 import :semantic.semir.content;
 import :semantic.semir.generic;
 import :semantic.semir.stage;
@@ -184,7 +185,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
                 [&](const SliceTypeValue& value) noexcept {
                     self(value.element, destination, active_types);
                 },
-                [](const OwnedSequenceTypeValue&) static noexcept {},
+                [](const VectorTypeValue&) static noexcept {},
                 [&](const RangeTypeValue& value) noexcept {
                     self(value.element, destination, active_types);
                 },
@@ -632,8 +633,10 @@ auto plan_names(
             );
         }
     }
+    const auto constant_values = PublishedConstantValues(semantic);
     for (const auto constant : semantic.constants().entries()) {
-        if (std::holds_alternative<SliceConstant>(constant.value.value)) {
+        if (constant_has_storage(constant_values, constant.id)
+            || std::holds_alternative<SliceConstant>(constant.value.value)) {
             request_name(
                 "carven_constant_",
                 constant_content_key(semantic, constant.id),

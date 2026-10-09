@@ -19,8 +19,11 @@ enum TextChoice {
 
 fn view_of(text: String) -> str => text;
 fn own(text: str) -> String => text as String;
-fn pair_size(first: String, &&second: String) -> usize => first.len() + second.len();
-fn scalar_then_take(first: usize, &&second: String) -> usize => first + second.len();
+
+fn pair_size(first: String, &&second: String) -> usize => first.byte_length()
+    + second.byte_length();
+
+fn scalar_then_take(first: usize, &&second: String) -> usize => first + second.byte_length();
 
 fn output_view(text: String, &output: str) {
     output = text;
@@ -39,7 +42,7 @@ fn recursive_view(text: String, count: i32) -> str {
 }
 
 fn read_with_write_alias(text: String, &alias: String) -> usize {
-    let size = text.len();
+    let size = text.byte_length();
     alias.push('!');
     return size;
 }
@@ -52,13 +55,13 @@ test "String: builtin factories UTF-8 and independent value ownership" {
     empty.push('我');
     empty.push('😀');
     empty.push('\0');
-    check(empty.len() == 11usize);
+    check(empty.byte_length() == 11usize);
     check(empty.as_str() == "Aé我😀\0");
     var copy = empty;
     empty.clear();
     check(empty.is_empty());
     copy.append("é");
-    check(copy.len() == 14usize);
+    check(copy.byte_length() == 14usize);
     check(copy != String::from_str("Aé我😀\0é"));
     let moved = &&copy;
     check(moved == own("Aé我😀\0é"));
@@ -73,8 +76,8 @@ test "String: builtin factories UTF-8 and independent value ownership" {
         let _ = b;
         bytes += 1usize;
     }
-    check(bytes == moved.len());
-    check(String::from_str("﻿").len() == 3usize);
+    check(bytes == moved.byte_length());
+    check(String::from_str("﻿").byte_length() == 3usize);
 }
 
 test "String: holders end by scope replacement and independent consumption" {
@@ -91,7 +94,7 @@ test "String: holders end by scope replacement and independent consumption" {
     check(text == "abc!");
     check(pair_size(String::from_str(text), &&text) == 8usize);
     var second = own("xy");
-    check(scalar_then_take(second.len(), &&second) == 4usize);
+    check(scalar_then_take(second.byte_length(), &&second) == 4usize);
     var third = own("last");
     var output: str = "";
     output_view(third, &output);
@@ -123,11 +126,11 @@ test "String: aggregate storage captures branches recursive calls and retained r
     check(mixed.owner.as_str() == mixed.view);
     let choice = TextChoice::View(recursive_view(pair.first, 2));
     let size: usize = match choice {
-        .View(v) => v.len(),
-        .Owned(s) => s.len()
+        .View(v) => v.byte_length(),
+        .Owned(s) => s.byte_length()
     };
     check(size == 3usize);
-    let closure = [view]() -> usize => view.text.len();
+    let closure = [view]() -> usize => view.text.byte_length();
     check(closure() == 3usize);
     var count = 0usize;
     for c in view_of("a我😀").chars {
@@ -137,7 +140,7 @@ test "String: aggregate storage captures branches recursive calls and retained r
     check(count == 3usize);
 }
 
-fn take_view(&&view: str) -> usize => view.len();
+fn take_view(&&view: str) -> usize => view.byte_length();
 
 fn recursive_str(view: str, count: i32) -> str {
     return match count {
@@ -150,7 +153,7 @@ fn selected_view(first: String, second: String, choose: bool) -> str {
     return if choose { first } else { second };
 }
 
-fn capture_view(view: str) => [view]() -> usize => view.len();
+fn capture_view(view: str) => [view]() -> usize => view.byte_length();
 
 test "String: transferred views recursive str and selected results retain the right backing" {
     var text: String = "abc";
@@ -170,7 +173,7 @@ test "String: transferred views recursive str and selected results retain the ri
     let String = 7;
     let builtin: String = "builtin";
     check(String == 7);
-    check(builtin.len() == 7usize);
+    check(builtin.byte_length() == 7usize);
 }
 
 fn text_closure(text: String) => [text]() -> str => text;
@@ -184,7 +187,7 @@ test "String: a returned view can borrow the owning value in a closure" {
 }
 
 test "String: Take parameters keep owning storage even for a read-only body" {
-    let consume = [](&&text: String) -> usize => text.len();
+    let consume = [](&&text: String) -> usize => text.byte_length();
     let text: String = "taken";
     check(consume(&&text) == 5usize);
 }
@@ -194,7 +197,7 @@ fn literal_string() -> String {
 }
 
 fn grouped_string() -> String => (("456"));
-fn text_length(text: str) -> usize => text.len();
+fn text_length(text: str) -> usize => text.byte_length();
 
 test "String: contextual literals and explicit copies own independent text" {
     var owner: String = "我\0abc";
@@ -233,7 +236,7 @@ test "String: contextual views retain owners and temporary call arguments" {
     check(owner.is_empty());
 }
 
-fn taken_text_length(&&text: str) -> usize => text.len();
+fn taken_text_length(&&text: str) -> usize => text.byte_length();
 
 test "String: Take conversion delivers a borrowed view of the transferred value" {
     let text: String = "transferred text";

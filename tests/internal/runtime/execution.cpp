@@ -64,10 +64,10 @@ Fixed::Fixed(int source) noexcept
 
 static_assert(std::is_move_constructible_v<async::Completion<Fixed>>);
 static_assert(!std::is_copy_constructible_v<async::Completion<Fixed>>);
-static_assert(!std::is_move_assignable_v<async::Operation<int>>);
+static_assert(!std::is_move_assignable_v<async::AsyncOperation<int>>);
 static_assert(!std::is_move_constructible_v<async::Child<int>>);
 
-auto deep(int depth, int& bodies) noexcept -> async::Operation<int> {
+auto deep(int depth, int& bodies) noexcept -> async::AsyncOperation<int> {
     ++bodies;
     if (depth == 0) {
         co_return async::Completion<int>::success(0);
@@ -76,7 +76,7 @@ auto deep(int depth, int& bodies) noexcept -> async::Operation<int> {
     co_return async::Completion<int>::success(next.success_if()->value + 1);
 }
 
-auto deep_close(int depth, int& bodies) noexcept -> async::Operation<void> {
+auto deep_close(int depth, int& bodies) noexcept -> async::AsyncOperation<void> {
     ++bodies;
     if (depth != 0) {
         auto scope = async::ChildScope(co_await async::current_activation());
@@ -86,14 +86,14 @@ auto deep_close(int depth, int& bodies) noexcept -> async::Operation<void> {
     co_return async::Completion<void>::success();
 }
 
-auto fixed(int& factories) noexcept -> async::Operation<Fixed> {
+auto fixed(int& factories) noexcept -> async::AsyncOperation<Fixed> {
     co_return async::Completion<Fixed>::success_from([&]() noexcept {
         ++factories;
         return Fixed(42);
     });
 }
 
-auto numbered(std::vector<int>& log, int number) noexcept -> async::Operation<void> {
+auto numbered(std::vector<int>& log, int number) noexcept -> async::AsyncOperation<void> {
     log.push_back(number);
     auto yielded = co_await async::yield_once();
     if (yielded.success_if() == nullptr) {
@@ -103,7 +103,7 @@ auto numbered(std::vector<int>& log, int number) noexcept -> async::Operation<vo
     co_return async::Completion<void>::success();
 }
 
-auto fifo(std::vector<int>& log) noexcept -> async::Operation<void> {
+auto fifo(std::vector<int>& log) noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto first = scope.start(numbered(log, 1));
     auto second = scope.start(numbered(log, 2));
@@ -115,22 +115,25 @@ auto fifo(std::vector<int>& log) noexcept -> async::Operation<void> {
         : async::Completion<void>::cancelled();
 }
 
-auto nested_checkpoint(bool& same_task, async::Operation<void> checkpoint) noexcept
-    -> async::Operation<void> {
+auto nested_checkpoint(bool& same_task, async::AsyncOperation<void> checkpoint) noexcept
+    -> async::AsyncOperation<void> {
     same_task = async::cancellation_requested();
-    co_return co_await async::Operation<void>(std::move(checkpoint));
+    co_return co_await async::AsyncOperation<void>(std::move(checkpoint));
 }
 
-auto accepting(bool& yield_succeeded, bool& same_task, async::Operation<void> checkpoint) noexcept
-    -> async::Operation<void> {
+auto accepting(
+    bool& yield_succeeded,
+    bool& same_task,
+    async::AsyncOperation<void> checkpoint
+) noexcept -> async::AsyncOperation<void> {
     auto turn = async::yield_once();
-    auto yielded = co_await async::Operation<void>(std::move(turn));
+    auto yielded = co_await async::AsyncOperation<void>(std::move(turn));
     yield_succeeded = yielded.success_if() != nullptr && async::cancellation_requested();
     co_return co_await nested_checkpoint(same_task, std::move(checkpoint));
 }
 
 auto cancel_child(bool& yield_succeeded, bool& same_task, bool& parent_unrequested) noexcept
-    -> async::Operation<void> {
+    -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto checkpoint = async::cancellation_point();
     auto child = scope.start(accepting(yield_succeeded, same_task, std::move(checkpoint)));
@@ -142,7 +145,7 @@ auto cancel_child(bool& yield_succeeded, bool& same_task, bool& parent_unrequest
     co_return completion;
 }
 
-auto sibling(bool& released, int& finished) noexcept -> async::Operation<void> {
+auto sibling(bool& released, int& finished) noexcept -> async::AsyncOperation<void> {
     while (!released) {
         auto result = co_await async::yield_once();
         if (result.success_if() == nullptr) {
@@ -153,11 +156,11 @@ auto sibling(bool& released, int& finished) noexcept -> async::Operation<void> {
     co_return async::Completion<void>::success();
 }
 
-auto immediate() noexcept -> async::Operation<int> {
+auto immediate() noexcept -> async::AsyncOperation<int> {
     co_return async::Completion<int>::success(7);
 }
 
-auto local_child_scope() noexcept -> async::Operation<int> {
+auto local_child_scope() noexcept -> async::AsyncOperation<int> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(immediate());
     auto result = co_await child.observe();
@@ -165,7 +168,7 @@ auto local_child_scope() noexcept -> async::Operation<int> {
     co_return result;
 }
 
-auto separate_owners(int& finished) noexcept -> async::Operation<void> {
+auto separate_owners(int& finished) noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto released = false;
     auto child = scope.start(sibling(released, finished));
@@ -219,7 +222,7 @@ Abandoned::~Abandoned() noexcept {
     log->push_back(*alive ? destruction_event : -destruction_event);
 }
 
-auto grandchild(bool& alive, std::vector<int>& log) noexcept -> async::Operation<Abandoned> {
+auto grandchild(bool& alive, std::vector<int>& log) noexcept -> async::AsyncOperation<Abandoned> {
     auto yielded = co_await async::yield_once();
     log.push_back(yielded.success_if() != nullptr && alive ? 1 : -1);
     co_return async::Completion<Abandoned>::success_from([&]() noexcept {
@@ -227,7 +230,7 @@ auto grandchild(bool& alive, std::vector<int>& log) noexcept -> async::Operation
     });
 }
 
-auto closing_parent(bool& alive, std::vector<int>& log) noexcept -> async::Operation<void> {
+auto closing_parent(bool& alive, std::vector<int>& log) noexcept -> async::AsyncOperation<void> {
     auto backing = Backing(alive, log);
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(grandchild(alive, log));
@@ -237,7 +240,7 @@ auto closing_parent(bool& alive, std::vector<int>& log) noexcept -> async::Opera
     co_return checkpoint;
 }
 
-auto nested_close(bool& alive, std::vector<int>& log) noexcept -> async::Operation<void> {
+auto nested_close(bool& alive, std::vector<int>& log) noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(closing_parent(alive, log));
     async::cancel(child);
@@ -247,7 +250,7 @@ auto nested_close(bool& alive, std::vector<int>& log) noexcept -> async::Operati
 }
 
 auto unobserved_sibling(bool& alive, std::vector<int>& log, int number, int turns) noexcept
-    -> async::Operation<Abandoned> {
+    -> async::AsyncOperation<Abandoned> {
     log.push_back(alive ? number : -number);
     for (auto turn = 0; turn < turns; ++turn) {
         co_await async::yield_once();
@@ -259,7 +262,7 @@ auto unobserved_sibling(bool& alive, std::vector<int>& log, int number, int turn
 }
 
 auto close_siblings(bool& alive, std::vector<int>& log, int first_turns, int second_turns) noexcept
-    -> async::Operation<void> {
+    -> async::AsyncOperation<void> {
     auto backing = Backing(alive, log);
     auto scope = async::ChildScope(co_await async::current_activation());
     auto first = scope.start(unobserved_sibling(alive, log, 1, first_turns));
@@ -269,18 +272,18 @@ auto close_siblings(bool& alive, std::vector<int>& log, int first_turns, int sec
     co_return async::Completion<void>::success();
 }
 
-auto cancelled_before_close(std::vector<int>& log) noexcept -> async::Operation<void> {
+auto cancelled_before_close(std::vector<int>& log) noexcept -> async::AsyncOperation<void> {
     auto result = co_await async::cancellation_point();
     log.push_back(result.is_cancelled() ? 1 : -1);
     co_return result;
 }
 
-auto mark(std::vector<int>& log) noexcept -> async::Operation<void> {
+auto mark(std::vector<int>& log) noexcept -> async::AsyncOperation<void> {
     log.push_back(7);
     co_return async::Completion<void>::success();
 }
 
-auto close_once(std::vector<int>& log) noexcept -> async::Operation<void> {
+auto close_once(std::vector<int>& log) noexcept -> async::AsyncOperation<void> {
     auto outer = async::ChildScope(co_await async::current_activation());
     auto inner = async::ChildScope(co_await async::current_activation());
     auto cancelled = inner.start(cancelled_before_close(log));
@@ -295,24 +298,24 @@ auto close_once(std::vector<int>& log) noexcept -> async::Operation<void> {
     co_return completion;
 }
 
-auto record(std::vector<int>& log, int number) noexcept -> async::Operation<void> {
+auto record(std::vector<int>& log, int number) noexcept -> async::AsyncOperation<void> {
     log.push_back(number);
     co_return async::Completion<void>::success();
 }
 
-auto yielding_dependency(std::vector<int>& log) noexcept -> async::Operation<void> {
+auto yielding_dependency(std::vector<int>& log) noexcept -> async::AsyncOperation<void> {
     log.push_back(1);
     auto ready = co_await record(log, 2);
     auto turn = async::yield_once();
     log.push_back(3);
-    auto yielded = co_await async::Operation<void>(std::move(turn));
+    auto yielded = co_await async::AsyncOperation<void>(std::move(turn));
     log.push_back(4);
     co_return ready.success_if() != nullptr&& yielded.success_if() != nullptr
         ? async::Completion<void>::success()
         : async::Completion<void>::cancelled();
 }
 
-auto explicit_boundary(std::vector<int>& log) noexcept -> async::Operation<void> {
+auto explicit_boundary(std::vector<int>& log) noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(record(log, 8));
     auto result = co_await yielding_dependency(log);
@@ -328,13 +331,13 @@ auto explicit_boundary(std::vector<int>& log) noexcept -> async::Operation<void>
         : async::Completion<void>::cancelled();
 }
 
-auto inherited_checkpoint(bool& inherited) noexcept -> async::Operation<void> {
+auto inherited_checkpoint(bool& inherited) noexcept -> async::AsyncOperation<void> {
     inherited = async::cancellation_requested();
     co_return co_await async::cancellation_point();
 }
 
 auto cancelled_context(bool& before, bool& after, bool& inherited) noexcept
-    -> async::Operation<void> {
+    -> async::AsyncOperation<void> {
     before = async::cancellation_requested();
     auto yielded = co_await async::yield_once();
     after = yielded.success_if() != nullptr && async::cancellation_requested();
@@ -345,14 +348,14 @@ auto cancelled_context(bool& before, bool& after, bool& inherited) noexcept
     co_return result;
 }
 
-auto unrequested_context(bool& before, bool& after) noexcept -> async::Operation<void> {
+auto unrequested_context(bool& before, bool& after) noexcept -> async::AsyncOperation<void> {
     before = !async::cancellation_requested();
     auto yielded = co_await async::yield_once();
     after = yielded.success_if() != nullptr && !async::cancellation_requested();
     co_return async::Completion<void>::success();
 }
 
-auto sibling_contexts(bool& restored, bool& inherited) noexcept -> async::Operation<void> {
+auto sibling_contexts(bool& restored, bool& inherited) noexcept -> async::AsyncOperation<void> {
     auto cancelled_before = false;
     auto cancelled_after = false;
     auto sibling_before = false;
@@ -409,7 +412,7 @@ auto captured_result(
     [[maybe_unused]] Capture capture,
     std::vector<int>& log,
     bool deferred
-) noexcept -> async::Operation<Fixed> {
+) noexcept -> async::AsyncOperation<Fixed> {
     log.push_back(1);
     if (deferred) {
         auto yielded = co_await async::yield_once();
@@ -430,14 +433,14 @@ auto inspect_completion(
 }
 
 auto captured_delivery(bool& alive, std::vector<int>& log, bool deferred) noexcept
-    -> async::Operation<Fixed> {
+    -> async::AsyncOperation<Fixed> {
     auto cold = captured_result(Capture(alive, log), log, deferred);
-    auto moved = async::Operation<Fixed>(std::move(cold));
+    auto moved = async::AsyncOperation<Fixed>(std::move(cold));
     if (!alive || !log.empty()) {
         co_return async::Completion<Fixed>::cancelled();
     }
     auto result =
-        inspect_completion(co_await async::Operation<Fixed>(std::move(moved)), alive, log);
+        inspect_completion(co_await async::AsyncOperation<Fixed>(std::move(moved)), alive, log);
     log.push_back(4);
     co_return result;
 }
@@ -472,13 +475,13 @@ Tracked::~Tracked() noexcept {
     ++*destructions;
 }
 
-auto tracked(int& moves, int& destructions) noexcept -> async::Operation<Tracked> {
+auto tracked(int& moves, int& destructions) noexcept -> async::AsyncOperation<Tracked> {
     co_return async::Completion<Tracked>::success_from([&]() noexcept {
         return Tracked(moves, destructions);
     });
 }
 
-auto deadline_wait() noexcept -> async::Operation<bool> {
+auto deadline_wait() noexcept -> async::AsyncOperation<bool> {
     const auto deadline = async::now() + 1'000'000;
     const auto completion = co_await async::sleep_until(deadline);
     const auto elapsed = async::now() >= deadline;
@@ -488,13 +491,13 @@ auto deadline_wait() noexcept -> async::Operation<bool> {
     );
 }
 
-auto host_cancelled_timer(async::TaskContext*& task) noexcept -> async::Operation<bool> {
+auto host_cancelled_timer(async::TaskContext*& task) noexcept -> async::AsyncOperation<bool> {
     task = (co_await async::current_activation()).task;
     const auto result = co_await async::sleep_until(std::numeric_limits<std::int64_t>::max());
     co_return async::Completion<bool>::success(result.is_cancelled());
 }
 
-auto timer_descendant(std::int64_t deadline) noexcept -> async::Operation<void> {
+auto timer_descendant(std::int64_t deadline) noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto timer = scope.start(async::sleep_until(deadline));
     auto result = co_await timer.observe();
@@ -502,7 +505,7 @@ auto timer_descendant(std::int64_t deadline) noexcept -> async::Operation<void> 
     co_return result;
 }
 
-auto cancel_ancestor_timer() noexcept -> async::Operation<bool> {
+auto cancel_ancestor_timer() noexcept -> async::AsyncOperation<bool> {
     auto& activation = co_await async::current_activation();
     auto scope = async::ChildScope(activation);
     auto child = scope.start(timer_descendant(async::now() + 1'000'000'000));
@@ -519,7 +522,7 @@ auto cancel_ancestor_timer() noexcept -> async::Operation<bool> {
     co_return async::Completion<bool>::success(registered && unlinked && selected.tail.head);
 }
 
-auto cancel_unregistered_timer() noexcept -> async::Operation<bool> {
+auto cancel_unregistered_timer() noexcept -> async::AsyncOperation<bool> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(async::sleep_until(async::now() + 1'000'000'000));
     async::cancel(child);
@@ -528,7 +531,7 @@ auto cancel_unregistered_timer() noexcept -> async::Operation<bool> {
     co_return async::Completion<bool>::success(result.is_cancelled());
 }
 
-auto readiness_value(int turns, int value) noexcept -> async::Operation<int> {
+auto readiness_value(int turns, int value) noexcept -> async::AsyncOperation<int> {
     for (auto turn = 0; turn < turns; ++turn) {
         co_await async::yield_once();
     }
@@ -536,7 +539,7 @@ auto readiness_value(int turns, int value) noexcept -> async::Operation<int> {
 }
 
 auto composition_candidate(int turns, int value, int outcome, std::vector<int>& started) noexcept
-    -> async::Operation<int, int> {
+    -> async::AsyncOperation<int, int> {
     started.push_back(value);
     for (auto turn = 0; turn < turns; ++turn) {
         co_await async::await_yield_once();
@@ -550,7 +553,7 @@ auto composition_candidate(int turns, int value, int outcome, std::vector<int>& 
     co_return async::Completion<int, int>::success(value);
 }
 
-auto composition_character(char32_t value) noexcept -> async::Operation<char32_t> {
+auto composition_character(char32_t value) noexcept -> async::AsyncOperation<char32_t> {
     co_return async::Completion<char32_t>::success(value);
 }
 
@@ -595,7 +598,7 @@ public:
 };
 
 auto composition_timing_winner(CompositionTiming& timing) noexcept
-    -> async::Operation<CompositionCommit> {
+    -> async::AsyncOperation<CompositionCommit> {
     timing.published = true;
     co_return async::Completion<CompositionCommit>::success_from([&]() noexcept {
         return CompositionCommit(timing.committed);
@@ -603,7 +606,7 @@ auto composition_timing_winner(CompositionTiming& timing) noexcept
 }
 
 auto composition_timing_loser(CompositionTiming& timing) noexcept
-    -> async::Operation<CompositionCommit> {
+    -> async::AsyncOperation<CompositionCommit> {
     const auto timer = co_await async::sleep_until(std::numeric_limits<std::int64_t>::max());
     if (timer.is_cancelled()) {
         co_return async::Completion<CompositionCommit>::cancelled();
@@ -613,7 +616,7 @@ auto composition_timing_loser(CompositionTiming& timing) noexcept
     });
 }
 
-auto composition_timing(CompositionTiming& timing) noexcept -> async::Operation<bool> {
+auto composition_timing(CompositionTiming& timing) noexcept -> async::AsyncOperation<bool> {
     timing.parent = (co_await async::current_activation()).task;
     using Product = carven::runtime::Tuple<std::size_t, CompositionCommit>;
     auto result = co_await async::when_any<Product>(
@@ -628,7 +631,7 @@ auto composition_timing(CompositionTiming& timing) noexcept -> async::Operation<
 }
 
 auto composition_until_cancel(bool& closed, std::vector<int>& started) noexcept
-    -> async::Operation<int> {
+    -> async::AsyncOperation<int> {
     started.push_back(1);
     while (!async::cancellation_requested()) {
         co_await async::await_yield_once();
@@ -641,7 +644,7 @@ auto composition_ambient(
     async::TaskContext*& task,
     bool before_start,
     std::vector<int>& started
-) noexcept -> async::Operation<bool> {
+) noexcept -> async::AsyncOperation<bool> {
     task = (co_await async::current_activation()).task;
     if (before_start) {
         task->request_cancel();
@@ -657,16 +660,16 @@ auto composition_ambient(
     co_return async::Completion<bool>::success(result.is_cancelled() && closed);
 }
 
-auto cancelled_signal() noexcept -> async::Operation<void> {
+auto cancelled_signal() noexcept -> async::AsyncOperation<void> {
     co_return async::Completion<void>::cancelled();
 }
 
-auto failed_signal() noexcept -> async::Operation<void, int> {
+auto failed_signal() noexcept -> async::AsyncOperation<void, int> {
     co_await async::yield_once();
     co_return async::Completion<void, int>::failure(17);
 }
 
-auto readiness_order() noexcept -> async::Operation<bool> {
+auto readiness_order() noexcept -> async::AsyncOperation<bool> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto first = scope.start(readiness_value(1, 7));
     auto second = scope.start(readiness_value(0, 9));
@@ -690,7 +693,7 @@ auto readiness_order() noexcept -> async::Operation<bool> {
     );
 }
 
-auto readiness_cancellation() noexcept -> async::Operation<bool> {
+auto readiness_cancellation() noexcept -> async::AsyncOperation<bool> {
     auto& activation = co_await async::current_activation();
     activation.task->request_cancel();
     auto scope = async::ChildScope(activation);
@@ -716,7 +719,7 @@ auto readiness_cancellation() noexcept -> async::Operation<bool> {
     );
 }
 
-auto readiness_storage(bool& alive, std::vector<int>& log) noexcept -> async::Operation<bool> {
+auto readiness_storage(bool& alive, std::vector<int>& log) noexcept -> async::AsyncOperation<bool> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto fixed_child = scope.start(captured_result(Capture(alive, log), log, true));
     auto scalar_child = scope.start(readiness_value(0, 9));

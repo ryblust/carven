@@ -44,7 +44,7 @@ auto ConstructionRequests::close_generic_environment(
                 using Shape = std::remove_cvref_t<decltype(shape)>;
                 if constexpr (std::same_as<Shape, GenericArrayType>
                               || std::same_as<Shape, GenericSliceType>
-                              || std::same_as<Shape, GenericOwnedSequenceType>) {
+                              || std::same_as<Shape, GenericVectorType>) {
                     types.push_back(shape.element);
                 } else if constexpr (std::same_as<Shape, GenericPointerType>) {
                     types.push_back(shape.target);

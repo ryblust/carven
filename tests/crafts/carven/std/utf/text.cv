@@ -5,7 +5,7 @@ private const fn copied_text() -> String throw UTF8Error {
     let bytes = [0xffu8, 0x61, 0, 0xc3, 0xa9, 0xe4, 0xbd, 0xa0, 0xff];
     let selected = bytes.as_slice().slice(1, 8);
     let view = from_utf8(selected)?;
-    assert(view.bytes.len() == selected.len());
+    assert(view.bytes.length() == selected.length());
     assert(view.bytes[0] == 0x61);
     assert(view.bytes[1] == 0);
     assert(from_utf8(selected.slice(2, 2))?.is_empty());

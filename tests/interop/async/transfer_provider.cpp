@@ -85,7 +85,8 @@ async_transfer::Context::~Context() noexcept {
     ++observed.context_destroyed;
 }
 
-auto transfer_read(const Context& context) noexcept -> async::Operation<std::int32_t, IoError> {
+auto transfer_read(const Context& context) noexcept
+    -> async::AsyncOperation<std::int32_t, IoError> {
     check(&context == context.host_address, "read borrows host holder");
     auto loan = BufferLoan(context.observed);
     auto result = co_await context.queue.read_some(context.fd, context.buffer);
@@ -93,7 +94,7 @@ auto transfer_read(const Context& context) noexcept -> async::Operation<std::int
 }
 
 auto transfer_write(const Context& context, std::int32_t offset, std::int32_t count) noexcept
-    -> async::Operation<std::int32_t, IoError> {
+    -> async::AsyncOperation<std::int32_t, IoError> {
     check(
         &context == context.host_address
             && offset >= 0

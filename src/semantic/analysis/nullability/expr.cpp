@@ -3,7 +3,7 @@ module carven:semantic.analysis.nullability.expr.impl;
 import :semantic.analysis.nullability.context;
 import :semantic.semir.evaluation;
 import :semantic.semir.initialization;
-import :semantic.semir.sequence;
+import :semantic.semir.vector;
 import :support.invariant;
 import :support.visit;
 import std;
@@ -374,13 +374,13 @@ auto NullabilityBodyAnalyzer::expression(const SemanticExpression& source, NullS
                             set_value({});
                             co_return {};
                         },
-                        [&](const SequenceIntrinsicOperation& operation) noexcept
+                        [&](const VectorIntrinsicOperation& operation) noexcept
                             -> ContinuationTask<std::monostate> {
                             for (const auto& operand : value.operands) {
                                 static_cast<void>(co_await evaluate(operand.expression));
                             }
                             if (flow.normal
-                                && sequence_intrinsic_contract(operation.intrinsic).receiver_access
+                                && vector_intrinsic_contract(operation.intrinsic).receiver_access
                                     == AccessMode::Write) {
                                 const auto& receiver = value.operands.front().expression;
                                 expose(flow.normal->state, receiver);

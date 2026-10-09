@@ -56,7 +56,7 @@ struct ExecutionPlace final {
     auto operator==(const ExecutionPlace&) const -> bool = default;
 };
 
-// A slice borrows elements of one live array or text backing. Copying it copies the coordinate,
+// A slice borrows elements of one live array, Vector, or text backing. Copying it copies the coordinate,
 // not its backing storage. A sub-slice advances offset within the same owner.
 struct ExecutionSlice final {
     TypeID type;
@@ -160,6 +160,8 @@ struct ExecutionValue;
 struct ExecutionAggregateValue final {
     TypeID type;
     std::vector<ExecutionValue> elements;
+    // Logical capacity for growable owners; host vector allocation is not observable.
+    std::size_t capacity = 0;
 };
 
 struct ExecutionEnumValue final {

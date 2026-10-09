@@ -80,10 +80,6 @@ const TestSuite suite([] static noexcept {
                     .source = "const value = false && ([1, 2][true] == 0);",
                     .code = DiagnosticCode::TypeIndexInteger,
                 },
-                Case {
-                    .source = "const values: [String; 1] = [\"text\"];",
-                    .code = DiagnosticCode::ConstInitializer
-                },
             };
             each(cases, &Case::source, [&](const auto& item) noexcept {
                 const auto diagnostics = analyze_test_errors(std::string(item.source));
@@ -91,8 +87,12 @@ const TestSuite suite([] static noexcept {
             });
         };
 
-    "Constant arrays: repeated constant children still count toward the complete value budget"_test =
+    "Constant arrays: budgets count selected values and repeated constant children"_test =
         [] static noexcept {
+            static_cast<void>(analyze_test_program(R"(
+                enum Choice { Small(i32), Large([i32; 65536]) }
+                const rows: [Choice; 2] = [.Small(1), .Small(2)];
+            )"));
             auto source = std::string("const row = [");
             for (auto index = 0uz; index < 260uz; ++index) {
                 source += index == 0uz ? "0" : ",0";

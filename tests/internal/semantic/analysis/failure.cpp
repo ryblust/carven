@@ -598,28 +598,28 @@ const TestSuite suite([] static noexcept {
             const auto sources = std::array<std::string_view, 6> {
                 R"(
                     fn declared() throw Failure {}
-                    struct Failure { pending: Operation<i32> }
+                    struct Failure { pending: AsyncOperation<i32> }
                 )",
                 R"(
-                    struct Holder { pending: (Operation<i32>,) }
+                    struct Holder { pending: (AsyncOperation<i32>,) }
                     struct Failure { holder: Holder }
                     fn declared() throw Failure {}
                 )",
                 R"(
-                    enum Failure { Pending(Operation<i32>), Empty }
+                    enum Failure { Pending(AsyncOperation<i32>), Empty }
                     fn declared() throw Failure {}
                 )",
                 R"(
-                    struct Failure { pending: Operation<i32> }
-                    fn consume(&&pending: Operation<void, throw Failure>) { let _ = &&pending; }
+                    struct Failure { pending: AsyncOperation<i32> }
+                    fn consume(&&pending: AsyncOperation<void, throw Failure>) { let _ = &&pending; }
                 )",
                 R"(
-                    struct Failure { pending: Operation<i32> }
+                    struct Failure { pending: AsyncOperation<i32> }
                     async fn leaf() -> i32 => 7;
                     private fn emit() { throw Failure { pending: leaf() }; }
                 )",
                 R"(
-                    struct Failure { pending: Operation<i32> }
+                    struct Failure { pending: AsyncOperation<i32> }
                     fn handled() { try {} catch { Failure(_) => {}, } }
                 )",
             };
@@ -632,7 +632,7 @@ const TestSuite suite([] static noexcept {
             static_cast<void>(analyze_test_program(R"(
                 struct RecursiveFailure { callback: ptr<fn() -> void throw RecursiveFailure> }
                 fn declared() throw RecursiveFailure {}
-                struct EmptyFailure { absent: [Operation<i32>; 0] }
+                struct EmptyFailure { absent: [AsyncOperation<i32>; 0] }
                 fn empty() throw EmptyFailure {}
                 struct NativeFailure { value: ::Opaque }
                 fn native() throw NativeFailure {}

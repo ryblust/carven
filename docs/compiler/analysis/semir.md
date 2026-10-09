@@ -148,7 +148,7 @@ execution budgets remain with execution.
 `semantic.semir.text` defines each text intrinsic's ordered parameter types, access
 modes, and result type. Construction resolves contextual types from this contract;
 publication checks arity, operand/result types, and Write-place requirements.
-`Len`, `IsEmpty`, `Bytes`, and `Chars` accept `str` or `String` receivers;
+`ByteLength`, `IsEmpty`, `Bytes`, and `Chars` accept `str` or `String` receivers;
 byte-slice constraints require `[u8]`. Static root admission belongs to analysis,
 and execution belongs to the evaluator.
 
@@ -156,7 +156,7 @@ Construction and mutation require evaluation even when their results are discard
 Contextual String literals and `str as String` publish `FromStr`; contextual
 String-to-str borrowing publishes `AsStr`, sharing the explicit APIs' ownership
 and lowering paths.
-Contextual array-to-slice borrowing publishes `SliceIntrinsic::FromArray`,
+Contextual array/Vector-to-slice borrowing publishes `SliceIntrinsic::FromOwner`,
 sharing `as_slice()` storage checks and lowering. Unchecked scalar and UTF-8
 construction publish text intrinsics with `u32` and byte-slice inputs respectively.
 UTF-8 construction preserves the input storage loans; the caller must establish
@@ -244,7 +244,7 @@ subtree, including loop steps. Source checking retains the inactive operations.
 Expression construction composes normal completion from completed operands.
 `semantic.semir.completion` computes full exit sets with an iterative postorder
 traversal where construction or specialization needs return, break, continue,
-failure, and test-stop facts. Sequence enters its successor only through normal
+failure, and test-stop facts. Sequential statements advance only through normal
 completion; loops consume their own break and continue exits. Conditional report
 messages contribute exits only on their evaluation path. Ordinary constant
 conditions do not narrow the exit set.
@@ -310,8 +310,8 @@ static test declaration have no body reference.
 
 Checked source bodies store local static roots as `SemStaticBinding`, which owns
 its typed initializer at a stable tree edge. The binding records the frozen local
-type; the initializer records its execution result type. These agree except that
-local `String` results freeze to `str`. Construction finds a root by its binding
+type; the initializer records its execution result type. These types agree;
+retained owning results keep their source type. Construction finds a root by its binding
 identity and reads its value by computing a copy; the initializer stays in place.
 Root failures and ownership transitions belong to static execution, independently
 of the surrounding runtime region.
@@ -338,7 +338,11 @@ depending on which instances callers requested.
 
 Constants have one normalized `ConstantFact` representation and `SemConstant`
 occurrences. Module constant declarations retain binding metadata and a
-`ConstantID`; the fact owns the type.
+`ConstantID`; the fact owns the type. Each occurrence records whether its
+constant selects retained storage. Compound owners and owning String values expose
+persistent Read storage; numeric, character, and pointer constants remain scalar
+expressions, including in native construction queries. Value delivery reconstructs
+contents independently of that Read storage.
 Floating-point identity uses bits; language equality compares
 numeric values and recursively compares aggregate contents. An expression’s
 constant fact describes its value on normal completion. Syntax admission and
@@ -365,7 +369,7 @@ Immutable local views and their copies retain extent facts. Take preserves the
 transferred extent and the ownership transition. Mutable slice slots, dynamic
 bounds, unknown parameters, native results, control-flow joins, and
 interprocedural propagation supply no additional extent facts. Extent metadata
-describes storage shape and does not make a runtime receiver's `len` or `is_empty`
+describes storage shape and does not make a runtime receiver's `length` or `is_empty`
 query a static expression. Queries retain receiver execution, bounds checks, and
 backing loans. Publication requires array views to report the exact array extent and
 rejects extent metadata on scalar query results. Extents do not change slice type identity.

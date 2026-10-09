@@ -7,7 +7,7 @@ namespace {
 
 namespace async = carven::runtime::execution;
 
-auto caller() noexcept -> async::Operation<int> {
+auto caller() noexcept -> async::AsyncOperation<int> {
     auto& activation = co_await async::current_activation();
     auto scope = async::ChildScope(activation);
     auto child = scope.start(async_mode_operation(40));
@@ -31,7 +31,7 @@ auto main() -> int {
     if (layout.debug == debug
         || layout.work_node != sizeof(async::detail::WorkNode)
         || layout.state != sizeof(async::OperationState)
-        || layout.promise != sizeof(async::Operation<int>::promise_type)
+        || layout.promise != sizeof(async::AsyncOperation<int>::promise_type)
         || layout.child_scope != sizeof(async::ChildScope)) {
         return EXIT_FAILURE;
     }

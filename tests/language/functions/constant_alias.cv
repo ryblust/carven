@@ -97,7 +97,7 @@ const fn constant_restore_taken() -> String {
     return f"{first}:{text}";
 }
 
-const fn constant_read_view(text: str) -> usize => text.len();
+const fn constant_read_view(text: str) -> usize => text.byte_length();
 
 enum DeferredValue {
     Value(i32),
@@ -143,11 +143,11 @@ test "Const functions: initializer composition preserves types and skips unused 
     check(length == 8usize);
     check(constant_read_view(constant_string_identity("borrowed")) == length);
 
-    const direct_length = constant_string_identity("abc").len();
+    const direct_length = constant_string_identity("abc").byte_length();
     const empty = constant_string_identity("").is_empty();
     const equal = constant_string_identity("abc") == "abc";
     check(direct_length == 3usize);
-    check(constant_string_identity("abc").len() == direct_length);
+    check(constant_string_identity("abc").byte_length() == direct_length);
     check(empty);
     check(constant_string_identity("").is_empty() == empty);
     check(equal);

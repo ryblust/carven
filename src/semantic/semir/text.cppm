@@ -5,7 +5,7 @@ import :support.invariant;
 import std;
 
 enum class TextIntrinsic {
-    Len,
+    ByteLength,
     IsEmpty,
     Bytes,
     Chars,
@@ -59,8 +59,8 @@ constexpr auto text_intrinsic_contract(TextIntrinsic intrinsic) noexcept -> Text
         {.access = AccessMode::Write, .type = BuiltinType::String},
     });
     switch (intrinsic) {
-        case TextIntrinsic::Len:     return {.parameters = text, .result = BuiltinType::Usize};
-        case TextIntrinsic::IsEmpty: return {.parameters = text, .result = BuiltinType::Bool};
+        case TextIntrinsic::ByteLength: return {.parameters = text, .result = BuiltinType::Usize};
+        case TextIntrinsic::IsEmpty:    return {.parameters = text, .result = BuiltinType::Bool};
         case TextIntrinsic::Bytes:
             return {.parameters = text, .result = TextIntrinsicShape::ByteSlice};
         case TextIntrinsic::Chars: return {.parameters = text, .result = BuiltinType::StrCharsView};

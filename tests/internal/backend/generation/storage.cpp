@@ -144,7 +144,7 @@ const TestSuite suite([] static noexcept {
         const auto summary = inspect_storage(
             "fn pure(value: i32) -> i32 => value; "
             "fn probe(flag: bool) -> bool => "
-            "flag && (f\"{pure(1)}/{pure(2)}\".len() > 0);"
+            "flag && (f\"{pure(1)}/{pure(2)}\".byte_length() > 0);"
         );
         expect_equal(summary.deferred_integers, 0uz);
     };

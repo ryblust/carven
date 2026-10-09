@@ -3,7 +3,7 @@ module carven:semantic.analysis.ownership.expr.impl;
 import :semantic.analysis.ownership.context;
 import :semantic.semir.callable;
 import :semantic.semir.evaluation;
-import :semantic.semir.sequence;
+import :semantic.semir.vector;
 import :support.invariant;
 import std;
 
@@ -697,7 +697,7 @@ auto OwnershipBodyAnalyzer::expression(
                                 const auto previous_readers = storage_readers.size();
                                 auto relationships =
                                     (co_await evaluate(value.operands.front().expression));
-                                if (family.intrinsic == SliceIntrinsic::FromArray) {
+                                if (family.intrinsic == SliceIntrinsic::FromOwner) {
                                     // A slice refers to backing storage; nested relationships remain
                                     // on that storage and are selected only when an element is read.
                                     relationships = {};
@@ -720,7 +720,7 @@ auto OwnershipBodyAnalyzer::expression(
                                 }
                                 if (flow.normal) {
                                     flow.normal->value =
-                                        family.intrinsic == SliceIntrinsic::FromArray
+                                        family.intrinsic == SliceIntrinsic::FromOwner
                                             || family.intrinsic == SliceIntrinsic::Slice
                                         ? std::move(relationships)
                                         : OwnershipRelationships {};
@@ -751,9 +751,9 @@ auto OwnershipBodyAnalyzer::expression(
                                 restore_storage_readers(previous_readers);
                                 co_return {};
                             },
-                            [&](const SequenceIntrinsicOperation& family) noexcept
+                            [&](const VectorIntrinsicOperation& family) noexcept
                                 -> ContinuationTask<std::monostate> {
-                                const auto contract = sequence_intrinsic_contract(family.intrinsic);
+                                const auto contract = vector_intrinsic_contract(family.intrinsic);
                                 const auto previous_accesses = accesses.size();
                                 const auto previous_readers = storage_readers.size();
                                 auto receiver_storage = std::vector<OwnershipPlace>();

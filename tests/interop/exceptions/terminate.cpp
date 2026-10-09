@@ -71,7 +71,7 @@ auto throw_async_exception() -> void {
     throw 5;
 }
 
-auto async_body() noexcept -> async::Operation<void> {
+auto async_body() noexcept -> async::AsyncOperation<void> {
     throw_async_exception();
     co_return async::Completion<void>::success();
 }
@@ -85,7 +85,7 @@ public:
     auto await_resume() const noexcept -> void {}
 };
 
-auto async_awaiter() noexcept -> async::Operation<void> {
+auto async_awaiter() noexcept -> async::AsyncOperation<void> {
     co_await ThrowingAwaiter();
     co_return async::Completion<void>::success();
 }

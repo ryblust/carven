@@ -9,7 +9,7 @@ namespace carven::runtime::execution {
 namespace detail {
 
 template<typename Result, typename Timeout>
-auto timeout_timer(std::int64_t deadline) noexcept -> Operation<Result, Timeout> {
+auto timeout_timer(std::int64_t deadline) noexcept -> AsyncOperation<Result, Timeout> {
     const auto completion = co_await sleep_until(deadline);
     if (completion.is_cancelled()) {
         co_return Completion<Result, Timeout>::cancelled();
@@ -26,7 +26,7 @@ template<
     typename RangeError,
     typename... Failures,
     typename Input>
-auto timeout(Input input, std::int64_t duration) noexcept -> Operation<Result, Failures...> {
+auto timeout(Input input, std::int64_t duration) noexcept -> AsyncOperation<Result, Failures...> {
     using Output = Completion<Result, Failures...>;
     if (cancellation_requested()) {
         co_return Output::cancelled();

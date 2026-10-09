@@ -188,7 +188,7 @@ auto type_supports_copy(ProgramDraft& draft, ConstructionTypeRef type) noexcept 
                 for (const auto element : tuple->elements) {
                     pending.push_back(element);
                 }
-            } else if (const auto* sequence = std::get_if<GenericOwnedSequenceType>(&expression)) {
+            } else if (const auto* sequence = std::get_if<GenericVectorType>(&expression)) {
                 pending.push_back(sequence->element);
             } else if (const auto* application =
                            std::get_if<GenericNominalApplication>(&expression)) {
@@ -244,7 +244,7 @@ auto type_supports_copy(ProgramDraft& draft, ConstructionTypeRef type) noexcept 
             for (const auto element : tuple->elements) {
                 pending.push_back(element);
             }
-        } else if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&value.value)) {
+        } else if (const auto* sequence = std::get_if<VectorTypeValue>(&value.value)) {
             pending.push_back(sequence->element);
         } else if (const auto* record = std::get_if<StructTypeValue>(&value.value)) {
             for (const auto& field :

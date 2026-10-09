@@ -231,7 +231,8 @@ public:
     ) noexcept -> AnalysisResult<FunctionID>;
     auto resolve_static_callable(std::string_view name, Span span) noexcept
         -> ExpressionTask<std::optional<ResolvedStaticCallable>>;
-    auto resolve_type_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>>;
+    auto resolve_type_qualifier(ASTExprID id) noexcept
+        -> ExpressionTask<std::optional<ConstructionTypeRef>>;
     auto resolve_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> ExpressionTask<ResolvedEnumCase>;
     auto is_numeric_enum(TypeID type) noexcept -> bool;

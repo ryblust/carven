@@ -117,7 +117,6 @@ const TestSuite suite([] static noexcept {
             }
             const auto shape = ExecutionTypeShapes(values).get(tuple);
             if (expect(shape.has_value())) {
-                expect(shape->supported);
                 expect(shape->depth == 1uz);
                 expect(shape->elements == 2uz);
             }

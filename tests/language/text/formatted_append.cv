@@ -47,7 +47,7 @@ struct AppendPair {
 
 const fn append_current_length() -> String {
     var text: String = "abc";
-    text.append_format(f"/{text.len()}");
+    text.append_format(f"/{text.byte_length()}");
     text.append_format(
         f"{if true {
                 text = "new";
@@ -63,7 +63,7 @@ const appended_current_length = append_current_length();
 
 test "Formatted append: destination queries and independent projections remain available" {
     var text: String = "abc";
-    text.append_format(f"/{text.len()}");
+    text.append_format(f"/{text.byte_length()}");
     check(text == "abc/3");
     var pair = AppendPair {
         first: {},
@@ -189,8 +189,8 @@ test "Formatted append: const functions and runtime execution produce the same t
     for index in 0..128 {
         result.append_format(f"[{dynamic:04}:{index}]我");
     }
-    check(result.len() > 1024usize);
+    check(result.byte_length() > 1024usize);
     let saved = result;
     result.clear();
-    check(saved.len() > 1024usize);
+    check(saved.byte_length() > 1024usize);
 }

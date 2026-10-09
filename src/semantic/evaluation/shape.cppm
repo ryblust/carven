@@ -4,7 +4,6 @@ import :semantic.semir.constant_access;
 import std;
 
 struct ExecutionTypeShape final {
-    bool supported;
     // True when every value has exactly this contained-storage shape.
     bool exact;
     std::size_t depth;

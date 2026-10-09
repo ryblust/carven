@@ -168,7 +168,7 @@ carven/runtime/numeric.hpp
 carven/runtime/array.hpp
 carven/runtime/range.hpp
 carven/runtime/slice.hpp
-carven/runtime/sequence.hpp
+carven/runtime/vector.hpp
 carven/runtime/text/text.hpp
 carven/runtime/format.hpp
 carven/runtime/format_writer.hpp
@@ -208,5 +208,6 @@ print support without changing the consumer's selected standard.
 For direct C++ calls, `String::from_str` and `append` require valid UTF-8, and
 `push` requires a Unicode scalar. `String::from_utf8` validates incoming byte
 storage and terminates on invalid UTF-8. Runtime String operations support C++20
-constant evaluation. In Carven compile-time execution, temporary String values keep
-ownership until initializer completion freezes a text result to `str`.
+constant evaluation. Carven constant execution retains String and Vector values
+with their source types. The compiler emits immutable backing and native constexpr descriptors;
+Read uses do not allocate. Runtime copies construct independent native owners.

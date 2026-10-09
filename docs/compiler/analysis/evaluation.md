@@ -8,9 +8,10 @@ and canonical facts.
 ## Execution interfaces
 
 In `semantic/evaluation`, `value` owns execution representations, text and compound
-read views, and equality over execution values. `shape` caches supported compound element types,
-nesting depth, and retained slot count. Counts saturate at the element limit plus one;
-size admission checks that count separately. Incomplete declarations and types beyond
+read views, and equality over execution values. `shape` caches compound nesting
+depth and slot counts for resource accounting, independently of execution
+admission. Counts saturate at the element limit plus one; size checks use that
+count separately. Incomplete declarations and types beyond
 the depth limit, including containment cycles, produce no cache entry. Cached subtrees
 remain subject to the caller's nesting depth. `operation` supplies
 checked scalar operations and retained-input queries. `freeze` interns completed
@@ -20,7 +21,7 @@ text, and an unavailable-input alternative. Callers adapt their input storage an
 supply a byte budget. Execution translates failures into diagnostics and accounts
 for work; optional preparation uses runtime formatting on failure.
 `execution` defines execution entries and their call context; `executor` owns
-execution state, with `expr`, `control`, `text`, and `sequence` implementation slices.
+execution state, with `expr`, `control`, `text`, and `vector` implementation slices.
 `memory` owns addressable objects and resolves their projections. `limits`
 names resource bounds.
 
@@ -139,7 +140,7 @@ one operation-folding dispatcher. Type queries refresh facts after type-time
 static reads; specialization refreshes them after substituting child expressions.
 Successful folds record known values on normal completion while retaining operand
 effects. A known in-range index into an array or slice with known extent also
-refreshes its bounds proof. Known slice extents determine `len` and `is_empty`
+refreshes its bounds proof. Known slice extents determine `length` and `is_empty`
 independently of element values. Source and index evaluation retain their effects,
 including checks required to construct a slice. Unknown or out-of-range indices
 keep their runtime checks. When folding fails during specialization, the expression
@@ -205,8 +206,8 @@ fresh `ExecutionIdentity`, an object index and a projection path. Domain identit
 and object indices are never reused; exhaustion terminates. Local pointers retain
 these coordinates without retaining the target's lifetime. Reads and writes
 resolve coordinates through the same storage operations.
-Array, owning-sequence, and slice iteration use the same sequence view as indexing and slice
-queries. Iteration evaluates its source once, retains temporary owners until loop
+Array, Vector, and slice iteration use the same sequence view as indexing and
+slice queries. Iteration evaluates its source once, retains temporary owners until loop
 exit, and binds elements using the source Read or Write policy. Scalar Read
 bindings snapshot each element; borrowed aggregate bindings retain its location.
 Nested loops compose projection paths. Loop exits release their bindings and
@@ -228,8 +229,8 @@ String copying creates fresh storage;
 source Take and mutation replace its storage identity, whereas host moves preserve
 it. Releasing that storage expires its weak borrowers. Formatting,
 queries, and equality read text without freezing it. At the initializer boundary,
-borrowed results detach before execution storage is released, and owning String
-becomes canonical `str`.
+eligible text results retain their bytes before execution storage is released.
+Their canonical types remain `str` for views and `String` for owners.
 
 `ExecutionMemory` owns a weak identity index and registers one `TextBytes` backing
 per text identity on demand. Each execution domain keeps its own byte coordinates.
@@ -251,7 +252,7 @@ fixed-array elements, struct fields, or text bytes. Assignment to a live owner
 preserves its object identity; Take and scope exit end it. Text backing has its
 own lifetime, separate from the String owner slot. Read operands use the
 expression's storage-selection fact. The shared type-contents query selects delayed
-Read observation for array, Sequence, and String storage, including aggregate fields.
+Read observation for array, Vector, and String storage, including aggregate fields.
 Other admitted values capture their value at the source position. Constant and runtime
 constructors share array shape rules and struct initializer selection in `analysis.operations`.
 
@@ -265,7 +266,9 @@ allowances at the execution entry. Nested calls share those allowances; each roo
 starts fresh. Per-value size, aggregate depth, and call depth retain fixed limits.
 Text work counts constructed, copied, and appended bytes; formatted append charges
 its completed format result and the destination append. Aggregate work counts
-constructed and copied slots, including nested children. Reads of retained values
+constructed and copied slots, including nested children. Freezing bounds each
+completed value's depth and slots, counting shared constant children at every
+occurrence in that value tree. Reads of retained values
 and storage transfers create no additional slots.
 Fixed storage shapes provide exact size checks without walking their values.
 Dynamic shape checks inspect the selected payloads and consume execution steps.
@@ -283,11 +286,17 @@ structs and payload enums freeze recursively into `ArrayConstant`, `StructConsta
 and `PayloadEnumConstant` children
 without changing element types, nominal identities, or field types. Struct fields
 use declaration order. Publication verifies the type, arity, and exact child
-types; compound constants reference already interned children.
-Owning sequences share execution aggregate storage and ordinary copying, transfer,
+types; compound constants reference already interned children. Freezing checks
+the completed value tree, including only the selected enum payload. Definition
+admission for `const fn` separately checks its declared types and reachable
+operations across possible inputs.
+Vectors share execution aggregate storage and ordinary copying, transfer,
 indexing, and mutation. Their actual value trees are bounded during execution;
-recursive type declarations do not imply unbounded retained storage. Sequences
-and aggregates containing them cannot cross the freezing boundary.
+recursive type declarations do not imply unbounded retained storage. Completed
+vectors freeze to typed `VectorConstant` children and logical capacity;
+String constants distinguish owning and borrowed text by their canonical type.
+The same recursive publication checks apply inside products and enum payloads.
+Capacity intrinsics update logical capacity in both static and interpreted modes.
 
 At a constant initializer, an explicit slice destination or `as_slice()` can
 produce an execution-local slice and retain it through `analysis.constant.freeze`.
@@ -343,8 +352,8 @@ Static test roots retain their static no-escaping-failures requirement.
 
 Declaration preparation includes failure payload types alongside parameter and
 result types. Enum case construction prepares the complete nominal dependency
-graph before execution shape queries. Shape and freezing validate case identity,
-arity and payload types. Freezing preserves nominal field types.
+graph before execution shape queries. Construction and freezing validate case
+identity, arity, and payload types. Freezing preserves nominal field types.
 
 ## Structural display and condition explanations
 

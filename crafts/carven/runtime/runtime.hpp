@@ -12,7 +12,6 @@
 #include "passing.hpp"
 #include "print.hpp"
 #include "range.hpp"
-#include "sequence.hpp"
 #include "slice.hpp"
 #include "stateless.hpp"
 #include "testing.hpp"
@@ -20,3 +19,4 @@
 #include "trap.hpp"
 #include "tuple.hpp"
 #include "unreachable.hpp"
+#include "vector.hpp"

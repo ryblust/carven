@@ -5,7 +5,7 @@ import :semantic.analysis.validation.context;
 import :semantic.format;
 import :semantic.semir.format;
 import :semantic.semir.initialization;
-import :semantic.semir.sequence;
+import :semantic.semir.vector;
 import :support.utf8;
 import std;
 
@@ -430,11 +430,12 @@ auto BodyContractVerifier::verify_expression(
             [&](const SemArray& value) noexcept {
                 const auto& type = require_type(source.type.resolved());
                 const auto* array = std::get_if<ArrayTypeValue>(&type.value);
-                if (array == nullptr || array->extent != value.elements.size()) {
+                const auto* vector = std::get_if<VectorTypeValue>(&type.value);
+                if ((!array && !vector) || (array && array->extent != value.elements.size())) {
                     invariant_violation("array initialization has wrong shape");
                 }
                 for (const auto& element : value.elements) {
-                    if (element.type.resolved() != array->element) {
+                    if (element.type.resolved() != (array ? array->element : vector->element)) {
                         invariant_violation("array element type mismatch");
                     }
                 }
@@ -607,14 +608,18 @@ auto BodyContractVerifier::verify_expression(
                                     .value;
                             const auto* array = std::get_if<ArrayTypeValue>(&receiver);
                             const auto* slice = std::get_if<SliceTypeValue>(&receiver);
-                            if ((array == nullptr && slice == nullptr)
+                            const auto* vector = std::get_if<VectorTypeValue>(&receiver);
+                            if ((array == nullptr && slice == nullptr && vector == nullptr)
                                 || !slice_intrinsic_accepts_receiver(
                                     contract.receiver,
-                                    array ? SliceIntrinsicShape::Array : SliceIntrinsicShape::Slice
+                                    array        ? SliceIntrinsicShape::Array
+                                        : vector ? SliceIntrinsicShape::Vector
+                                                 : SliceIntrinsicShape::Slice
                                 )) {
                                 invariant_violation("slice intrinsic receiver mismatch");
                             }
-                            if (family.intrinsic == SliceIntrinsic::FromArray
+                            if (family.intrinsic == SliceIntrinsic::FromOwner
+                                && array
                                 && family.result_extent != array->extent) {
                                 invariant_violation(
                                     "array slice extent differs from its source type"
@@ -632,7 +637,9 @@ auto BodyContractVerifier::verify_expression(
                                 }
                             } else if (result
                                        != CanonicalTypeValue {SliceTypeValue {
-                                           .element = array ? array->element : slice->element
+                                           .element = array ? array->element
+                                               : vector     ? vector->element
+                                                            : slice->element
                                        }}) {
                                 invariant_violation("slice result element mismatch");
                             }
@@ -645,37 +652,74 @@ auto BodyContractVerifier::verify_expression(
                                 }
                             }
                         },
-                        [&](const SequenceIntrinsicOperation& family) noexcept {
-                            const auto contract = sequence_intrinsic_contract(family.intrinsic);
+                        [&](const VectorIntrinsicOperation& family) noexcept {
+                            const auto contract = vector_intrinsic_contract(family.intrinsic);
+                            if (vector_intrinsic_factory(family.intrinsic)) {
+                                const auto* vector = std::get_if<VectorTypeValue>(
+                                    &require_type(source.type.resolved()).value
+                                );
+                                if (!vector
+                                    || value.operands.size() != 1uz
+                                    || value.operands.front().access != AccessMode::Read) {
+                                    invariant_violation("Vector factory contract mismatch");
+                                }
+                                const auto input =
+                                    require_type(value.operands.front().expression.type.resolved())
+                                        .value;
+                                const auto expected =
+                                    contract.argument == VectorIntrinsicArgument::Slice
+                                    ? CanonicalTypeValue {SliceTypeValue {
+                                          .element = vector->element
+                                      }}
+                                    : CanonicalTypeValue {BuiltinTypeValue {BuiltinType::Usize}};
+                                if (input != expected) {
+                                    invariant_violation("Vector factory argument mismatch");
+                                }
+                                return;
+                            }
                             if (value.operands.size() != 1uz + contract.argument.has_value()
                                 || value.operands.front().access != contract.receiver_access) {
-                                invariant_violation("Sequence intrinsic operand contract mismatch");
+                                invariant_violation("Vector intrinsic operand contract mismatch");
                             }
-                            const auto* sequence = std::get_if<OwnedSequenceTypeValue>(
+                            const auto* sequence = std::get_if<VectorTypeValue>(
                                 &require_type(value.operands.front().expression.type.resolved())
                                      .value
                             );
                             if (!sequence
-                                || require_type(source.type.resolved()).value
-                                    != CanonicalTypeValue {BuiltinTypeValue {contract.result}}) {
-                                invariant_violation("Sequence intrinsic type contract mismatch");
+                                || source.type.resolved()
+                                    != vector_intrinsic_result_type(
+                                        family.intrinsic,
+                                        value.operands.front().expression.type.resolved(),
+                                        sequence->element,
+                                        [&](BuiltinType type) noexcept {
+                                            return program.types().builtin_type(type);
+                                        }
+                                    )) {
+                                invariant_violation("Vector intrinsic type contract mismatch");
                             }
                             if (contract.argument) {
                                 const auto& operand = value.operands[1];
-                                if (*contract.argument == SequenceIntrinsicArgument::Element) {
+                                if (*contract.argument == VectorIntrinsicArgument::Element) {
                                     if (operand.expression.type.resolved() != sequence->element
                                         || (operand.access != AccessMode::Read
                                             && operand.access != AccessMode::Take)) {
                                         invariant_violation(
-                                            "Sequence push element contract mismatch"
+                                            "Vector push element contract mismatch"
                                         );
                                     }
-                                } else if (operand.access != AccessMode::Read
-                                           || require_type(operand.expression.type.resolved()).value
-                                               != CanonicalTypeValue {
-                                                   BuiltinTypeValue {BuiltinType::Usize}
-                                               }) {
-                                    invariant_violation("Sequence remove index contract mismatch");
+                                } else {
+                                    const auto* builtin = std::get_if<BuiltinTypeValue>(
+                                        &require_type(operand.expression.type.resolved()).value
+                                    );
+                                    if (operand.access != AccessMode::Read
+                                        || !builtin
+                                        || (*contract.argument == VectorIntrinsicArgument::Index
+                                                ? !builtin_is_integer(builtin->kind)
+                                                : builtin->kind != BuiltinType::Usize)) {
+                                        invariant_violation(
+                                            "Vector index or capacity contract mismatch"
+                                        );
+                                    }
                                 }
                             }
                         },
@@ -900,7 +944,7 @@ auto BodyContractVerifier::verify_expression(
                 const auto& index = require_type(value.index->type.resolved());
                 const auto* integer = std::get_if<BuiltinTypeValue>(&index.value);
                 const auto* slice = std::get_if<SliceTypeValue>(&type.value);
-                const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&type.value);
+                const auto* sequence = std::get_if<VectorTypeValue>(&type.value);
                 if ((array == nullptr && slice == nullptr && sequence == nullptr)
                     || value.source_owns_elements != (array != nullptr || sequence != nullptr)
                     || (array       ? array->element

@@ -121,7 +121,7 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
             );
         case TargetSymbol::RuntimeAsyncOperation:
             return runtime_symbol_info(
-                "::carven::runtime::execution::Operation",
+                "::carven::runtime::execution::AsyncOperation",
                 "carven/runtime/execution/execution.hpp"
             );
         case TargetSymbol::RuntimeAsyncCompletion:
@@ -337,11 +337,8 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
             return runtime_symbol_info("::carven::runtime::Range", "carven/runtime/range.hpp");
         case TargetSymbol::RuntimeSlice:
             return runtime_symbol_info("::carven::runtime::Slice", "carven/runtime/slice.hpp");
-        case TargetSymbol::RuntimeSequence:
-            return runtime_symbol_info(
-                "::carven::runtime::Sequence",
-                "carven/runtime/sequence.hpp"
-            );
+        case TargetSymbol::RuntimeVector:
+            return runtime_symbol_info("::carven::runtime::Vector", "carven/runtime/vector.hpp");
         case TargetSymbol::RuntimeString:
             return runtime_symbol_info("::carven::runtime::String", "carven/runtime/text/text.hpp");
         case TargetSymbol::RuntimeF32x4:
@@ -485,10 +482,10 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "carven/runtime/slice.hpp",
                 true
             );
-        case TargetSymbol::RuntimeCheckedSequenceIndex:
+        case TargetSymbol::RuntimeCheckedVectorIndex:
             return runtime_symbol_info(
-                "::carven::runtime::checked_sequence_index",
-                "carven/runtime/sequence.hpp",
+                "::carven::runtime::checked_vector_index",
+                "carven/runtime/vector.hpp",
                 true
             );
         case TargetSymbol::RuntimeSourceSite:

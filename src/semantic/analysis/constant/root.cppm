@@ -89,10 +89,10 @@ public:
     auto aggregate_admitted(ConstructionTypeRef type, Span span) noexcept -> AnalysisResult<bool> {
         const auto* concrete = std::get_if<TypeID>(&type);
         const auto shape = concrete ? shapes.get(*concrete) : std::nullopt;
-        if (!shape || !supported_execution_type(program, type)) {
+        if (!concrete) {
             return false;
         }
-        if (shape->elements > maximum_constant_aggregate_elements) {
+        if (shape && shape->exact && shape->elements > maximum_constant_aggregate_elements) {
             return std::unexpected(fail(
                 span,
                 DiagnosticCode::ConstLimit,
@@ -288,7 +288,7 @@ public:
     }
 
     auto constant(ConstantID value, Span span) noexcept -> Value {
-        return make(program.constant(value).type, SemConstant {.constant = value}, span);
+        return make(program.constant(value).type, constant_operation(program, value), span);
     }
 
     auto enter_operand_execution(bool) const noexcept -> std::monostate { return {}; }
@@ -485,7 +485,8 @@ public:
         return program.source_slice_copy(source_module_id, span);
     }
 
-    auto resolve_type_qualifier(ASTExprID id) noexcept -> ExpressionTask<std::optional<TypeID>> {
+    auto resolve_type_qualifier(ASTExprID id) noexcept
+        -> ExpressionTask<std::optional<ConstructionTypeRef>> {
         co_return (co_await scope.resolve_type_qualifier(id));
     }
 

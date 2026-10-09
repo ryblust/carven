@@ -28,7 +28,7 @@ export class TimePoint {
 
     fn has_passed(self) -> bool => self.nanoseconds_since_epoch <= carven_time_now_nanoseconds();
 
-    fn wait(self) -> Operation<void> => carven_time_wait_until_nanoseconds(
+    fn wait(self) -> AsyncOperation<void> => carven_time_wait_until_nanoseconds(
         self.nanoseconds_since_epoch
     );
 }

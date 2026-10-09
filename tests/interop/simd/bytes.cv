@@ -154,12 +154,12 @@ const fn verify_blocks() -> bool {
         var visited: usize = 0;
         for index in 0..block_count(bytes) {
             let block = load_block(bytes, index * 32);
-            assert(block.active.count() == block.len);
-            visited += block.len;
+            assert(block.active.count() == block.length);
+            visited += block.length;
         }
         assert(visited == size);
         let empty = load_block(bytes, size);
-        assert(empty.len == 0 && empty.active.any() == false);
+        assert(empty.length == 0 && empty.active.any() == false);
         assert((empty.value == 0).all());
     }
     assert(u8x32::load(all, 1).lane(14) == 7);

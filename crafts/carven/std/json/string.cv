@@ -12,7 +12,7 @@ private const stops = set_union(byte_range(0, 0x1f), one_of([0x22, 0x5c]));
 private const fn read_hex(bytes: [u8], &offset: usize) -> u32 throw JSONError {
     var value: u32 = 0;
     for _ in 0..4 {
-        if offset == bytes.len() {
+        if offset == bytes.length() {
             throw JSONError {
                 kind:.UnexpectedEnd,
                 offset: offset
@@ -37,7 +37,7 @@ private const fn read_hex(bytes: [u8], &offset: usize) -> u32 throw JSONError {
 // offset starts immediately after the backslash and advances past the escape.
 private const fn read_escape(bytes: [u8], &offset: usize) -> char throw JSONError {
     let start = offset - 1;
-    if offset == bytes.len() {
+    if offset == bytes.length() {
         throw JSONError {
             kind:.UnexpectedEnd,
             offset: offset
@@ -68,7 +68,7 @@ private const fn read_escape(bytes: [u8], &offset: usize) -> char throw JSONErro
         };
     }
     if first < 0xd800 || first > 0xdbff { return char::from_u32_unchecked(first); }
-    if bytes.len() - offset < 2 {
+    if bytes.length() - offset < 2 {
         throw JSONError {
             kind:.UnpairedSurrogate,
             offset: start
@@ -93,7 +93,7 @@ private const fn read_escape(bytes: [u8], &offset: usize) -> char throw JSONErro
 }
 
 const fn begin_string(bytes: [u8], &offset: usize) throw JSONError {
-    if offset == bytes.len() {
+    if offset == bytes.length() {
         throw JSONError {
             kind:.UnexpectedEnd,
             offset: offset
@@ -111,10 +111,10 @@ const fn begin_string(bytes: [u8], &offset: usize) throw JSONError {
 // Raw bytes are not checked for UTF-8 here; each public ingress establishes it.
 const fn next_string_part(bytes: [u8], &offset: usize) -> StringPart throw JSONError {
     let end = find_from(bytes, offset, stops);
-    if end == bytes.len() {
+    if end == bytes.length() {
         throw JSONError {
             kind:.UnexpectedEnd,
-            offset: bytes.len()
+            offset: bytes.length()
         };
     }
     let byte = bytes[end];
@@ -138,7 +138,7 @@ export const fn decode_string(text: str) -> String throw JSONError {
         let start = offset;
         match next_string_part(text.bytes, &offset)? {
             .End(end) => {
-                if offset != text.len() {
+                if offset != text.byte_length() {
                     throw JSONError {
                         kind:.TrailingInput,
                         offset: offset

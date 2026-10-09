@@ -24,7 +24,7 @@ class Completion final {
     template<typename T, typename... E>
     friend class Completion;
     template<typename T, typename... E>
-    friend class Operation;
+    friend class AsyncOperation;
     template<typename T>
     friend class SuccessBinding;
 

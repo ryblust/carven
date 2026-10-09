@@ -102,7 +102,7 @@ auto Specializer::substitute(Tree& source) noexcept -> void {
         if (const auto found = environment.find(binding->binding); found != environment.end()) {
             expression->constant = found->second;
             expression->category = SemanticValueCategory::Value;
-            expression->value = SemConstant {found->second};
+            expression->value = constant_operation(draft, found->second);
         }
     }
 }
@@ -340,7 +340,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
         if (const auto found = environment.find(binding->binding); found != environment.end()) {
             source.constant = found->second;
             source.category = SemanticValueCategory::Value;
-            source.value = SemConstant {found->second};
+            source.value = constant_operation(draft, found->second);
             rewritten = true;
         }
         co_return {};
@@ -420,7 +420,7 @@ auto Specializer::expression(SemanticExpression& source) noexcept -> AnalysisTas
                 if (!known) {
                     operand.constant = *constant;
                     operand.category = SemanticValueCategory::Value;
-                    operand.value = SemConstant {*constant};
+                    operand.value = constant_operation(draft, *constant);
                     rewritten = true;
                 }
             }

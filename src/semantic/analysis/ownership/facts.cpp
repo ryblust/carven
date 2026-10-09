@@ -3,7 +3,7 @@ module carven:semantic.analysis.ownership.facts.impl;
 import :semantic.analysis.coverage;
 import :semantic.analysis.ownership.context;
 import :semantic.semir.callable;
-import :semantic.semir.sequence;
+import :semantic.semir.vector;
 import :semantic.semir.text;
 import std;
 
@@ -45,8 +45,8 @@ auto observe_relation_demand(
             const auto writes =
                 operation.operation.visit([](const auto& intrinsic) static noexcept {
                     using Intrinsic = std::remove_cvref_t<decltype(intrinsic)>;
-                    if constexpr (std::same_as<Intrinsic, SequenceIntrinsicOperation>) {
-                        return sequence_intrinsic_contract(intrinsic.intrinsic).receiver_access
+                    if constexpr (std::same_as<Intrinsic, VectorIntrinsicOperation>) {
+                        return vector_intrinsic_contract(intrinsic.intrinsic).receiver_access
                             == AccessMode::Write;
                     } else if constexpr (std::same_as<Intrinsic, TextIntrinsic>) {
                         return text_intrinsic_writes(intrinsic);
@@ -221,6 +221,9 @@ auto prepare_ownership_body_facts(
     visit_semantic_nodes(
         body.region(),
         Overloaded {observe_expression, [&](const SemanticStatement& statement) noexcept {
+                        if (const auto* binding = std::get_if<SemStaticBinding>(&statement.value)) {
+                            facts.retained_bindings.insert(binding->binding);
+                        }
                         if (const auto* assignment = std::get_if<SemAssign>(&statement.value)) {
                             facts.relation_demand.writes_storage = true;
                             facts.relation_demand.observes_relations |= !is_scalar_write_type(

@@ -60,7 +60,6 @@ private:
     struct BuildRequest final {
         ResultDemand demand;
         PreparedUse use;
-        ConstantLiteralContext literal;
         bool retain_backing;
         std::size_t expression_depth;
         // Only an immediate await consumes an embedded producer's ordinary result.
@@ -159,7 +158,8 @@ private:
     auto retain_input(Fragment& value, PreparedUse use) noexcept -> void;
     auto raw(
         Fragment& value,
-        ConstantLiteralContext literal = ConstantLiteralContext::Exact
+        ConstantLiteralContext literal = ConstantLiteralContext::Exact,
+        PreparedUse use = PreparedUse::ReadBorrow
     ) noexcept -> TargetExpr;
     auto emit(
         Fragment& value,

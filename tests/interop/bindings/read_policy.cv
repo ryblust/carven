@@ -44,6 +44,21 @@ test "Pattern Read supports move-only native payloads without a separate marker"
     check(second == 9);
 }
 
+private struct RetainedPayloads {
+    entries: [(Payload, i32); 1]
+}
+
+private const retained_payloads = RetainedPayloads { entries: [(.Empty, 7)] };
+
+test "Constant projections construct their selected value independently" {
+    let payload = retained_payloads.entries[0].0;
+    let value = match payload {
+        .Value(value) => value.value,
+        .Empty => retained_payloads.entries[0].1,
+    };
+    check(value == 7);
+}
+
 fn borrowed_read(value: Borrowed, marker: i32) -> i32 {
     let _ = marker;
     return value.value;

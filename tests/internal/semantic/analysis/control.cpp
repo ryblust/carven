@@ -223,7 +223,7 @@ const TestSuite suite([] static noexcept {
                 fn count(values: [i32; 2], replacement: [i32]) -> usize {{
                     {} view = values.as_slice();
                     {}
-                    return view.len();
+                    return view.length();
                 }}
             )",
                     writable ? "var" : "let",
@@ -243,7 +243,7 @@ const TestSuite suite([] static noexcept {
                             return;
                         }
                         if (std::get<SliceIntrinsicOperation>(intrinsic->operation).intrinsic
-                            != SliceIntrinsic::Len) {
+                            != SliceIntrinsic::Length) {
                             return;
                         }
                         queried = true;
@@ -257,7 +257,7 @@ const TestSuite suite([] static noexcept {
             analyze_test_errors("const values: [i32] = [3, 7]; const invalid = values[2];"),
             DiagnosticCode::ConstIndexBounds
         );
-        for (const auto query : {".len()", "[1] as usize"}) {
+        for (const auto query : {".length()", "[1] as usize"}) {
             expect_diagnostic(
                 analyze_test_errors(
                     std::format(
@@ -786,9 +786,9 @@ const TestSuite suite([] static noexcept {
                 "fn f() { for &n in 0..10 {} }",
                 DiagnosticCode::AccessRangeBinding
             },
-            Case {"noninteger element", "fn f(x: range<f64>) {}", DiagnosticCode::TypeRangeInteger},
+            Case {"noninteger element", "fn f(x: Range<f64>) {}", DiagnosticCode::TypeRangeInteger},
             Case {"missing element", "fn f(x: range) {}", DiagnosticCode::TypeUnresolved},
-            Case {"extra element", "fn f(x: range<i32, u8>) {}", DiagnosticCode::TypeUnresolved},
+            Case {"extra element", "fn f(x: Range<i32, u8>) {}", DiagnosticCode::TypeUnresolved},
             Case {
                 "noninteger bounds",
                 "fn f() { let r = 0.0..1.0; }",

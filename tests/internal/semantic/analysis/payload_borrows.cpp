@@ -96,9 +96,9 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             expect_diagnostic(
                 analyze_test_errors(R"(
-            enum Node { Values(Sequence<String>), Empty }
+            enum Node { Values(Vector<String>), Empty }
             fn invalid() {
-                var value: Node = .Values(Sequence<String> {});
+                var value: Node = .Values(Vector<String> {});
                 match value {
                     .Values(&items) => { value = .Empty; },
                     .Empty => {},
@@ -109,13 +109,13 @@ const TestSuite suite([] static noexcept {
             );
             expect_diagnostic(
                 analyze_test_errors(R"(
-                    enum Node { Values(Sequence<String>), Empty }
+                    enum Node { Values(Vector<String>), Empty }
                     fn invalid() {
-                        var value: Node = .Values(Sequence<String> {});
+                        var value: Node = .Values(Vector<String> {});
                         match value {
                             .Values(items) => {
                                 value = .Empty;
-                                let observed = items.len();
+                                let observed = items.length();
                             },
                             .Empty => {},
                         }
@@ -124,9 +124,9 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode::AccessBorrowConflict
             );
             static_cast<void>(analyze_test_program(R"(
-            enum Node { Values(Sequence<String>), Empty }
+            enum Node { Values(Vector<String>), Empty }
             fn accepted() {
-                var value: Node = .Values(Sequence<String> {});
+                var value: Node = .Values(Vector<String> {});
                 match value {
                     .Values(&items) => { items.push("first" as String); },
                     .Empty => {},
@@ -134,9 +134,9 @@ const TestSuite suite([] static noexcept {
                 value = .Empty;
             }
             fn read_arm() {
-                var value: Node = .Values(Sequence<String> {});
+                var value: Node = .Values(Vector<String> {});
                 match value {
-                    .Values(items) => { let observed = items.len(); },
+                    .Values(items) => { let observed = items.length(); },
                     .Empty => {},
                 }
                 value = .Empty;
@@ -281,7 +281,7 @@ const TestSuite suite([] static noexcept {
     "Payload ownership: default Read bindings cannot be Taken from a consumed subject"_test =
         [] static noexcept {
             for (const auto subject : {"value", "&&value"}) {
-                for (const auto type : {"i32", "Sequence<String>"}) {
+                for (const auto type : {"i32", "Vector<String>"}) {
                     const auto source = std::format(
                         R"(
                         enum Payload {{ Value({}) }}

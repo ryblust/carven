@@ -26,12 +26,12 @@ Calling an `async fn` constructs an operation without executing its body. The
 function's `-> T` is its successful completion type. Its declared `throw` set is
 delivered when awaited. Operations with equal success and solved failure types
 have the same type even when produced by different functions. Write
-`Operation<T>` for an operation without nominal failures, or
-`Operation<T, throw Error + OtherError>` for its complete completion contract.
+`AsyncOperation<T>` for an operation without nominal failures, or
+`AsyncOperation<T, throw Error + OtherError>` for its complete completion contract.
 The type can also be inferred from a cold call. Inside a parameterized
-declaration, `Operation<T, throw E>` uses an independent success type and
+declaration, `AsyncOperation<T, throw E>` uses an independent success type and
 [failure-set parameter](failures.md#failure-set-parameters).
-`Operation<void, throw ()>` and `Operation<void>` both complete successfully with
+`AsyncOperation<void, throw ()>` and `AsyncOperation<void>` both complete successfully with
 the unit value `()` and have no nominal failure alternatives. Cancellation remains
 a separate completion.
 
@@ -49,7 +49,7 @@ prove their retained backing remains valid. Use a Take parameter to transfer
 the complete owner:
 
 ```carven
-fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
+fn relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
 ```
 
 An async successful result cannot itself contain an operation.
@@ -318,11 +318,11 @@ calls to the same source definition use C++ coroutines.
 ## Native providers and hosts
 
 `import(cpp) async fn` declares a native function that returns a cold
-`carven::runtime::execution::Operation<Result, Failures...>`. Its source result and
+`carven::runtime::execution::AsyncOperation<Result, Failures...>`. Its source result and
 failure declarations describe completion, not operation construction. Native
 imports undergo the same async signature checks even without a source body.
 `export(cpp) async fn` exposes a source async function through its module's existing
-C++ API header with the same cold Operation representation.
+C++ API header with the same cold AsyncOperation representation.
 
 A native host owns its event pump and provider resources, passes an explicit
 context to the exported root, and calls `drive_root(operation, &pump)`. Context

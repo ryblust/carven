@@ -25,19 +25,19 @@ template<typename Input>
 struct CompositionInput;
 
 template<typename Result, typename... Failures>
-struct CompositionInput<Operation<Result, Failures...>> final {
+struct CompositionInput<AsyncOperation<Result, Failures...>> final {
     using Value = std::conditional_t<std::is_void_v<Result>, carven::runtime::Void, Result>;
     using ChildType = Child<Result, Failures...>;
     using CompletionType = Completion<Result, Failures...>;
     static constexpr bool validate = false;
     using ValidationSite = UncheckedCompositionSite;
 
-    static auto operation(Operation<Result, Failures...>& input) noexcept
-        -> Operation<Result, Failures...>& {
+    static auto operation(AsyncOperation<Result, Failures...>& input) noexcept
+        -> AsyncOperation<Result, Failures...>& {
         return input;
     }
 
-    static auto site(Operation<Result, Failures...>&) noexcept -> ValidationSite { return {}; }
+    static auto site(AsyncOperation<Result, Failures...>&) noexcept -> ValidationSite { return {}; }
 };
 
 template<typename Input, bool Validate>
@@ -223,7 +223,7 @@ auto composition_operand(Input input, carven::runtime::SourceSite site) noexcept
 // or discarding this coroutine does not start them. Product delivery follows
 // the normal value transfer requirements of each completed slot.
 template<CompositionPolicy Policy, typename Result, typename... Failures, typename... Inputs>
-auto compose(Inputs... inputs) noexcept -> Operation<Result, Failures...> {
+auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
     using Output = Completion<Result, Failures...>;
     constexpr auto count = sizeof...(Inputs);
     if (cancellation_requested()) {
@@ -321,17 +321,17 @@ auto compose(Inputs... inputs) noexcept -> Operation<Result, Failures...> {
 }
 
 template<typename Result, typename... Failures, typename... Inputs>
-auto when_all(Inputs... inputs) noexcept -> Operation<Result, Failures...> {
+auto when_all(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
     return compose<CompositionPolicy::WhenAll, Result, Failures...>(std::move(inputs)...);
 }
 
 template<typename Result, typename... Failures, typename... Inputs>
-auto when_any(Inputs... inputs) noexcept -> Operation<Result, Failures...> {
+auto when_any(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
     return compose<CompositionPolicy::WhenAny, Result, Failures...>(std::move(inputs)...);
 }
 
 template<typename Result, typename... Failures, typename... Inputs>
-auto first_successful(Inputs... inputs) noexcept -> Operation<Result, Failures...> {
+auto first_successful(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
     return compose<CompositionPolicy::FirstSuccessful, Result, Failures...>(std::move(inputs)...);
 }
 

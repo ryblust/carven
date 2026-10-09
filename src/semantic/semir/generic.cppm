@@ -50,9 +50,9 @@ struct GenericSliceType final {
     auto operator<=>(const GenericSliceType&) const noexcept = default;
 };
 
-struct GenericOwnedSequenceType final {
+struct GenericVectorType final {
     ConstructionTypeRef element;
-    auto operator<=>(const GenericOwnedSequenceType&) const noexcept = default;
+    auto operator<=>(const GenericVectorType&) const noexcept = default;
 };
 
 struct GenericPointerType final {
@@ -79,7 +79,7 @@ using GenericTypeExpression = std::variant<
     GenericArrayType,
     GenericTupleType,
     GenericSliceType,
-    GenericOwnedSequenceType,
+    GenericVectorType,
     GenericPointerType,
     GenericOperationType,
     GenericNominalApplication>;
@@ -91,7 +91,7 @@ auto visit_generic_type_children(const GenericTypeExpression& type, Visitor&& vi
         using Shape = std::remove_cvref_t<decltype(shape)>;
         if constexpr (std::same_as<Shape, GenericArrayType>
                       || std::same_as<Shape, GenericSliceType>
-                      || std::same_as<Shape, GenericOwnedSequenceType>) {
+                      || std::same_as<Shape, GenericVectorType>) {
             visitor(shape.element);
         } else if constexpr (std::same_as<Shape, GenericTupleType>) {
             for (const auto element : shape.elements) {

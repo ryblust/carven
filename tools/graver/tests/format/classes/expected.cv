@@ -1,7 +1,7 @@
 export class Counter {
     value: i32,
 
-    fn create(value: i32) -> Counter {
+    fn new(value: i32) -> Counter {
         return { value: value };
     }
 

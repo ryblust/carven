@@ -2,16 +2,21 @@
 
 [Language](README.md)
 
-This page defines classes, structures, arrays, tuples, owning sequences, enums, and their construction.
+This page defines classes, structures, arrays, tuples, owning vectors, enums, and their construction.
 
 - [Ordinary value classes](#ordinary-value-classes)
 - [Contextual construction](#contextual-construction)
 - [Structures and arrays](#structures-and-arrays)
 - [Tuples](#tuples)
 - [Enums](#enums)
-- [Owning sequences](#owning-sequences)
+- [Owning vectors](#owning-vectors)
 
 ## Ordinary value classes
+
+The conventional associated factory is `Type::new(...)`. It is an ordinary
+function returning a completed value; its spelling supplies no allocation,
+implicit invocation, or lifecycle behavior. Factories with a specific role retain
+names such as `from_str`, `parse`, and `open`.
 
 An ordinary `class` is an encapsulated nominal value. Declaring one adds no heap
 allocation, reference identity, inheritance, virtual dispatch, or custom
@@ -22,11 +27,11 @@ the nominal product rules.
 ```carven
 class Counter {
     value: i32,
-    fn create(value: i32) -> Counter => { value: value };
+    fn new(value: i32) -> Counter => { value: value };
     fn read(self) -> i32 => self.value;
     fn increment(&self) { self.value += 1; }
 }
-var counter = Counter::create(3);
+var counter = Counter::new(3);
 counter.increment();
 check(counter.read() == 4);
 ```
@@ -127,8 +132,8 @@ Default initialization is a type operation with these values:
 | `str` or `String` | Empty text; String owns its independent storage |
 | `ptr<T>` or `ptr<&T>` | Null pointer, subject to ordinary non-null checks |
 | `[T]` | Empty read-only slice |
-| `Sequence<T>` | Empty owning sequence; no element default is required |
-| `range<T>` | Empty exclusive range from zero to zero |
+| `Vector<T>` | Empty owning sequence; no element default is required |
+| `Range<T>` | Empty exclusive range from zero to zero |
 | `[T; N]` | N independently default-initialized elements |
 | `void` | The unit value `()` |
 | Tuple | Each element recursively default-initialized |
@@ -143,7 +148,7 @@ case or invent a callable target. `CV-TYPE-DEFAULT-INITIALIZATION` identifies a
 requested default that is unavailable. External constructors and their effects
 follow the native boundary's requirements.
 
-Generic definitions use the same structural rules: `Sequence<T>` and `[T; 0]`
+Generic definitions use the same structural rules: `Vector<T>` and `[T; 0]`
 have defaults without requiring a default for the unknown `T`. Structures derive
 this capability from their fields.
 
@@ -165,19 +170,20 @@ are outside Carven's interpreter and constant executor.
 An array type has one element type and a constant nonnegative extent. A
 zero-length array type is valid and still carries its element type. A
 comma-separated literal has an extent equal to its element count. Without an
-expected array or slice type, it must be nonempty; its element type is inferred
+expected array, slice, or Vector type, it must be nonempty; its element type is inferred
 from an unambiguous element, and every element must be compatible. An expected
 `[T; N]` supplies the element type and requires exactly N elements. An expected
 `[T]` supplies the element type and borrows the resulting array under ordinary
-lifetime rules. Empty `[]` is valid with either an expected `[T; 0]` or `[T]`.
+lifetime rules. An expected `Vector<T>` constructs an owning vector. Empty `[]` is valid with
+an expected `[T; 0]`, `[T]`, or `Vector<T>`.
 An empty slice constructed from a zero-length array retains no backing storage.
 
-Arrays provide `len() -> usize` and `is_empty() -> bool` directly. These queries
+Arrays provide `length() -> usize` and `is_empty() -> bool` directly. These queries
 use the fixed extent while evaluating the receiver once, including its effects
 and failures; no slice conversion is required.
 
 `[expression; N]` constructs an array with N elements. N follows the same
-constant nonnegative extent rules as `[T; N]`. An expected array or slice supplies
+constant nonnegative extent rules as `[T; N]`. An expected array, slice, or Vector supplies
 the element type; otherwise it is inferred from the expression. An expected
 array extent must equal N. Each element evaluates the expression afresh in
 index order, with ordinary access and lifetime rules. For N = 0, the expression
@@ -260,38 +266,71 @@ cannot be taken. Tuple patterns in `match` and enum payloads recursively match
 each position; `()` matches unit, `(pattern)` groups, and `(pattern,)` matches a
 singleton. Pattern names retain ordinary match binding and guard rules.
 
-## Owning sequences
+## Owning vectors
 
-`Sequence<T>` owns an ordered collection of initialized values. It supports
-deep copying, whole-owner transfer, checked Read and Write indexing, and
-iteration. Taking an indexed element is invalid; the collection keeps every
-element initialized. Recursive products and enums can contain sequences of
-their own values.
+`Vector<T>` owns a growable ordered collection of initialized contiguous elements.
+It supports deep copying, whole-owner Take, checked Read and Write indexing, and
+iteration. Recursive products and enums may contain vectors of their own values.
+Copying creates independent owned contents; raw pointer elements still copy their
+addresses. Taking a complete vector makes the source unavailable.
 
 ```carven
-var names = Sequence<String> {};
-names.push("first" as String);
-names[0] = "updated" as String;
-for name in names { check(name.as_str() == "updated"); }
+var numbers: Vector<i32> = [10, 20, 30];
+numbers.push(40);
+let removed = numbers.remove(1);
+check(removed == 20);
+let tail: [i32] = numbers.slice(1, 3);
+check(tail[0] == 30);
 ```
 
-`len()` and `is_empty()` read the sequence. `push(value)` copies an element;
-`push(&&value)` transfers it. `remove(index)` removes one checked position and
-`clear()` removes all elements. Structural mutation requires Write access and
-cannot run while element storage is borrowed, including through nested fields.
-Write iteration updates elements while retaining the sequence owner.
+An expected Vector type supplies the element type for comma-separated and repeat
+literals, including `[]` and `[value; 0]`. Each repeat element evaluates its
+expression independently, under the array literal evaluation rules. Without
+Vector context, literals retain their fixed-array type. Existing arrays and
+slices require `Vector<T>::from_slice(values)` to copy their elements into an owner.
 
-Elements must have Carven-defined owning value semantics. Borrowed text, slices,
-callable values and views, external C++ values, and products containing them are
-invalid elements. Raw pointers keep their ordinary pointer contracts. The
-sequence exposes neither contiguous slices nor uninitialized storage.
+| Operation | Access and result |
+| --- | --- |
+| `Vector<T>::new()` | Empty owner, zero capacity |
+| `Vector<T>::from_slice(values: [T])` | Independent owning copy of the elements |
+| `Vector<T>::with_capacity(minimum: usize)` | Empty owner with at least the requested capacity |
+| `v.length()` / `v.is_empty()` | Read; `usize` / `bool` |
+| `v.capacity()` | Read; capacity in elements |
+| `v.reserve(minimum: usize)` | Write; ensure minimum total capacity, preserving contents |
+| `v.push(value)` / `v.push(&&value)` | Write; copy or transfer an element into the end |
+| `v.remove(index)` | Write; return the removed owner and preserve remaining order |
+| `v.clear()` | Write; destroy all elements and retain capacity |
+| `v.as_slice()` | Read; borrowed `[T]` |
+| `v.slice(start: usize, end: usize)` | Read; borrowed half-open subrange |
 
-Sequences and payload borrowing use the same operations during runtime and
-constant execution. Constant functions can construct, copy, transfer, and mutate
-sequences and return them to other constant functions. Sequence storage cannot
-be frozen into a constant declaration, including inside a field or enum payload.
-Dynamic owning values obey the execution limits on total elements and nesting;
-checks of recursive storage also consume execution work.
+`Vector<T> {}` and contextual empty construction also produce the empty default;
+no element default is required. Capacity growth factors are unspecified. Appending
+within capacity does not reallocate. Removal and clear retain capacity; copying
+preserves contents without promising the same spare capacity. Allocation failure
+and capacity overflow terminate without a nominal throw effect.
+
+A Vector supplies `[T]` directly in a slice destination context, including Read
+arguments. Borrowing copies no elements and extends no lifetime. A live slice
+protects the whole owner from mutation, replacement, Take, and destruction.
+Structural mutation is rejected while element storage is borrowed, even when
+reserved capacity would avoid reallocation. Read and Write iteration retain the
+owner and prohibit structural mutation; Write iteration can update elements.
+Taking an indexed element is invalid; `remove` extracts it without leaving a hole.
+An admitted self-element push copies the argument before modifying storage.
+
+Elements require Carven-defined owning value semantics. Borrowed text, slices,
+callable values and views, external C++ values, async operations, and products
+containing them are invalid elements. Raw pointers keep their ordinary target
+contracts. `Vector<bool>` uses ordinary elements and supports `[bool]` views.
+There is no raw pointer extraction or uninitialized-storage API.
+
+Logical construction, copying, transfer, mutation, extraction, and slicing work
+in native, interpreted, and constant execution, including capacity queries,
+reservation, and capacity construction. Completed constants preserve Vector
+ownership, element types, contents, and capacity. A slice retained at initializer
+completion has immutable static backing; ordinary runtime slices still borrow.
+Copying a retained Vector creates independent owned contents before mutation.
+Execution limits bound aggregate storage, reserved capacity, and work.
 
 ## Enums
 

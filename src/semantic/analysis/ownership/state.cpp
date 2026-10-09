@@ -482,6 +482,10 @@ auto OwnershipBodyAnalyzer::binding_places(
     LocalBindingID binding,
     const OwnershipState& state
 ) const noexcept -> std::vector<OwnershipPlace> {
+    // Static bindings denote published immutable contents, not lexical backing.
+    if (facts.retained_bindings.contains(binding)) {
+        return {};
+    }
     if (const auto found = capture_holders.find(binding); found != capture_holders.end()) {
         const auto& holder = found->second;
         const auto value =

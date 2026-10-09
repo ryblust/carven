@@ -39,14 +39,14 @@ const TestSuite suite([] static noexcept {
              .primary_text = "text.as_str()"},
             {.name = "a named view keeps the original owner borrowed",
              .source =
-                 R"(const fn mutate() -> usize { var text: String = "local"; let view = text.as_str(); text.clear(); return view.len(); })",
+                 R"(const fn mutate() -> usize { var text: String = "local"; let view = text.as_str(); text.clear(); return view.byte_length(); })",
              .code = DiagnosticCode::AccessBorrowConflict,
              .primary_text = "text.clear()"},
             {.name = "taking a String leaves the source unavailable",
              .source =
-                 R"(const fn moved() -> usize { var text: String = "local"; let owner = &&text; return text.len(); })",
+                 R"(const fn moved() -> usize { var text: String = "local"; let owner = &&text; return text.byte_length(); })",
              .code = DiagnosticCode::AccessUnavailable,
-             .primary_text = "text.len()"},
+             .primary_text = "text.byte_length()"},
             {.name = "a pending view keeps later interpolation operands from mutating backing",
              .source =
                  R"(const fn mutate() -> String { var text: String = "local"; return f"{text.as_str()}:{if true { text.clear(); 1 } else { 0 }}"; })",
@@ -119,22 +119,6 @@ const TestSuite suite([] static noexcept {
          )",
                  .code = DiagnosticCode::ConstEvaluation,
                  .primary_text = "!="},
-            });
-            check_compiler_errors(cases);
-        };
-
-    "Const functions: typed intermediate values cannot corrupt constant publication"_test =
-        [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
-                {.name = "owning literal cannot become a borrowed enum constant payload",
-                 .source = R"(enum E { Value(String) } const result = E::Value("x");)",
-                 .code = DiagnosticCode::ConstInitializer,
-                 .primary_text = R"(E::Value("x"))"},
-                {.name = "owning call result cannot become a borrowed enum constant payload",
-                 .source =
-                     R"(const fn make() -> String => "x"; enum E { Value(String) } const result = E::Value(make());)",
-                 .code = DiagnosticCode::ConstInitializer,
-                 .primary_text = "E::Value(make())"},
             });
             check_compiler_errors(cases);
         };

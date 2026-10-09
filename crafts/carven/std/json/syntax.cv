@@ -64,7 +64,7 @@ private const fn read_digits(bytes: [u8], &offset: usize) throw JSONError {
 
 private const fn read_number(bytes: [u8], &offset: usize) throw JSONError {
     if bytes[offset] == 0x2d { offset += 1; }
-    if offset == bytes.len() {
+    if offset == bytes.length() {
         throw JSONError {
             kind:.InvalidNumber,
             offset: offset
@@ -72,7 +72,7 @@ private const fn read_number(bytes: [u8], &offset: usize) throw JSONError {
     }
     if bytes[offset] == 0x30 {
         offset += 1;
-        if offset < bytes.len() && bytes[offset] >= 0x30 && bytes[offset] <= 0x39 {
+        if offset < bytes.length() && bytes[offset] >= 0x30 && bytes[offset] <= 0x39 {
             throw JSONError {
                 kind:.InvalidNumber,
                 offset: offset
@@ -81,20 +81,22 @@ private const fn read_number(bytes: [u8], &offset: usize) throw JSONError {
     } else {
         read_digits(bytes, &offset)?;
     }
-    if offset < bytes.len() && bytes[offset] == 0x2e {
+    if offset < bytes.length() && bytes[offset] == 0x2e {
         offset += 1;
         read_digits(bytes, &offset)?;
     }
-    if offset < bytes.len() && (bytes[offset] == 0x65 || bytes[offset] == 0x45) {
+    if offset < bytes.length() && (bytes[offset] == 0x65 || bytes[offset] == 0x45) {
         offset += 1;
-        if offset < bytes.len() && (bytes[offset] == 0x2b || bytes[offset] == 0x2d) { offset += 1; }
+        if offset < bytes.length() && (bytes[offset] == 0x2b || bytes[offset] == 0x2d) {
+            offset += 1;
+        }
         read_digits(bytes, &offset)?;
     }
 }
 
 private const fn read_literal(bytes: [u8], &offset: usize, const literal: str) throw JSONError {
     for byte in literal.bytes {
-        if offset == bytes.len() {
+        if offset == bytes.length() {
             throw JSONError {
                 kind:.UnexpectedEnd,
                 offset: offset
@@ -125,7 +127,7 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
     while {
         skip_space(bytes, &state.offset);
         if state.depth == 0 && state.root_done {
-            if state.offset != bytes.len() {
+            if state.offset != bytes.length() {
                 throw JSONError {
                     kind:.TrailingInput,
                     offset: state.offset
@@ -133,7 +135,7 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
             }
             return .Complete;
         }
-        if state.offset == bytes.len() {
+        if state.offset == bytes.length() {
             throw JSONError {
                 kind:.UnexpectedEnd,
                 offset: state.offset
@@ -213,7 +215,7 @@ const fn next_event(bytes: [u8], &state: SyntaxState) -> SyntaxEvent throw JSONE
         }
         match byte {
             0x7b | 0x5b => {
-                if state.depth == state.frames.len() {
+                if state.depth == state.frames.length() {
                     throw JSONError {
                         kind:.DepthLimit,
                         offset: state.offset
@@ -264,7 +266,7 @@ const fn validate_number(bytes: [u8]) throw JSONError {
     }
     var offset: usize = 0;
     read_number(bytes, &offset)?;
-    if offset != bytes.len() {
+    if offset != bytes.length() {
         throw JSONError {
             kind:.InvalidNumber,
             offset: offset

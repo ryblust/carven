@@ -219,15 +219,15 @@ private const fn contains_byte(byte: u8, const set: ByteSet) -> bool {
 
 export const fn count_where(bytes: [u8], const set: ByteSet) -> usize {
     const if run_count(set) == 0 { return 0; }
-    const if is_complete(set) { return bytes.len(); }
+    const if is_complete(set) { return bytes.length(); }
     const chains = 2usize;
     const group_bytes = chains * 32;
     var offset: usize = 0;
     var count: usize = 0;
     let ones = u8x32::splat(1);
     let zero = u8x32::splat(0);
-    while bytes.len() - offset >= group_bytes * 4 {
-        var groups = (bytes.len() - offset) / group_bytes;
+    while bytes.length() - offset >= group_bytes * 4 {
+        var groups = (bytes.length() - offset) / group_bytes;
         // Each lane receives at most 255 increments before widening the sum.
         if groups > 255 { groups = 255; }
         let batch_end = offset + groups * group_bytes;
@@ -244,11 +244,11 @@ export const fn count_where(bytes: [u8], const set: ByteSet) -> usize {
             count += accumulators[chain].sum();
         }
     }
-    while bytes.len() - offset >= 32 {
+    while bytes.length() - offset >= 32 {
         count += match_set(u8x32::load(bytes, offset), set).count();
         offset += 32;
     }
-    while offset < bytes.len() {
+    while offset < bytes.length() {
         if contains_byte(bytes[offset], set) { count += 1; }
         offset += 1;
     }
@@ -261,20 +261,20 @@ export const fn find_where(bytes: [u8], const set: ByteSet) -> usize {
 
 // Positions refer to the supplied input; its length denotes no match.
 export const fn find_from(bytes: [u8], start: usize, const set: ByteSet) -> usize {
-    assert(start <= bytes.len());
-    const if run_count(set) == 0 { return bytes.len(); }
+    assert(start <= bytes.length());
+    const if run_count(set) == 0 { return bytes.length(); }
     const if is_complete(set) { return start; }
     var offset = start;
-    while bytes.len() - offset >= 32 {
+    while bytes.length() - offset >= 32 {
         let matched = match_set(u8x32::load(bytes, offset), set);
         if matched.any() { return offset + matched.first_or(0); }
         offset += 32;
     }
-    while offset < bytes.len() {
+    while offset < bytes.length() {
         if contains_byte(bytes[offset], set) { return offset; }
         offset += 1;
     }
-    return bytes.len();
+    return bytes.length();
 }
 
 export const fn prefix_where(bytes: [u8], const set: ByteSet) -> usize {
@@ -282,17 +282,17 @@ export const fn prefix_where(bytes: [u8], const set: ByteSet) -> usize {
 }
 
 export const fn prefix_end(bytes: [u8], start: usize, const set: ByteSet) -> usize {
-    assert(start <= bytes.len());
+    assert(start <= bytes.length());
     const if run_count(set) == 0 { return start; }
-    const if is_complete(set) { return bytes.len(); }
-    if start == bytes.len() || contains_byte(bytes[start], set) == false { return start; }
+    const if is_complete(set) { return bytes.length(); }
+    if start == bytes.length() || contains_byte(bytes[start], set) == false { return start; }
     var offset = start;
-    while bytes.len() - offset >= 32 {
+    while bytes.length() - offset >= 32 {
         let rejected = ~match_set(u8x32::load(bytes, offset), set);
         if rejected.any() { return offset + rejected.first_or(0); }
         offset += 32;
     }
-    while offset < bytes.len() {
+    while offset < bytes.length() {
         if contains_byte(bytes[offset], set) == false { return offset; }
         offset += 1;
     }

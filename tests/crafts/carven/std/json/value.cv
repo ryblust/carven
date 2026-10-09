@@ -81,13 +81,13 @@ test "JSON values: array edits change their selected elements and preserve owned
         var array = Value::array();
         array.push(&&Value::integer(1))?;
         array.push(&&Value::string("你好"))?;
-        check(array.kind() == .Array && array.len()? == 2);
+        check(array.kind() == .Array && array.length()? == 2);
         let snapshot = array.at(1)?;
         array.set_at(1, &&Value::boolean(true))?;
         check(snapshot.as_str()? == "你好");
         check(array.at(1)?.as_bool()?);
         array.remove_at(0)?;
-        check(array.len()? == 1 && array.at(0)?.as_bool()?);
+        check(array.length()? == 1 && array.at(0)?.as_bool()?);
         let copied = array;
         array.set_at(0, &&Value::null())?;
         check(copied.at(0)?.as_bool()?);
@@ -103,7 +103,7 @@ test "JSON values: ordered duplicate members use last lookup and complete erase"
         object.append_member("x", &&Value::integer(1))?;
         object.append_member("y", &&Value::integer(2))?;
         object.append_member("x", &&Value::integer(3))?;
-        check(object.len()? == 3);
+        check(object.length()? == 3);
         check(object.key_at(0)? == "x" && object.key_at(1)? == "y");
         check(object.member_value_at(0)?.as_i64()? == 1);
         let snapshot = object.get("x")?;
@@ -111,13 +111,13 @@ test "JSON values: ordered duplicate members use last lookup and complete erase"
         check(snapshot.as_i64()? == 3);
         check(object.get("x")?.as_i64()? == 4);
         check(object.member_value_at(0)?.as_i64()? == 1);
-        check(object.len()? == 3 && object.key_at(2)? == "x");
+        check(object.length()? == 3 && object.key_at(2)? == "x");
         object.set("z", &&Value::boolean(false))?;
-        check(object.len()? == 4 && object.key_at(3)? == "z");
+        check(object.length()? == 4 && object.key_at(3)? == "z");
         check(object.has("x")? && object.has("missing")? == false);
         check(object.erase("x")? == 2);
         check(object.erase("x")? == 0);
-        check(object.len()? == 2);
+        check(object.length()? == 2);
         check(object.key_at(0)? == "y" && object.key_at(1)? == "z");
     } catch {
         ValueError(_) => fail("object lookup and mutation must preserve the member contract"),
@@ -246,9 +246,9 @@ test "JSON values: nested edits use an owned child and replace the selected memb
         parent.set("untouched", &&Value::string("stay"))?;
         var child = parent.get("items")?;
         child.push(&&Value::integer(2))?;
-        check(parent.get("items")?.len()? == 1);
+        check(parent.get("items")?.length()? == 1);
         parent.set("items", &&child)?;
-        check(parent.get("items")?.len()? == 2);
+        check(parent.get("items")?.length()? == 2);
         check(parent.get("items")?.at(1)?.as_i64()? == 2);
         check(parent.get("untouched")?.as_str()? == "stay");
     } catch {

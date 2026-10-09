@@ -170,7 +170,7 @@ auto BodyElaborator::read_local(const BodyLocalStorage& local, Span span) noexce
             draft().constant(**constant).type,
             active_builder().lifetime(),
             origin(span),
-            SemConstant {.constant = **constant}
+            constant_operation(draft(), **constant)
         );
         for (const auto index : local.projection) {
             const auto elements = tuple_elements(draft(), value.type.construction());
@@ -210,7 +210,7 @@ auto BodyElaborator::resolve_static_references(SemanticExpression& source) noexc
             continue;
         }
         expression->constant = **value;
-        expression->value = SemConstant {.constant = **value};
+        expression->value = constant_operation(draft(), **value);
     }
     co_return complete;
 }
@@ -232,7 +232,7 @@ auto BodyElaborator::compute_static_binding(LocalBindingID binding) noexcept
     if (!*complete) {
         co_return std::nullopt;
     }
-    const auto published_type = constant_initializer_type(draft(), initializer.type.construction());
+    const auto published_type = initializer.type.construction();
     auto result = co_await construction_requests().stage().evaluate(
         initializer,
         ExecutionOutputMode::Discard
@@ -388,7 +388,7 @@ auto BodyElaborator::resolve_static_callable(std::string_view name, Span span) n
 }
 
 auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
-    -> AnalysisTask<std::optional<TypeID>> {
+    -> AnalysisTask<std::optional<ConstructionTypeRef>> {
     auto current_id = expression;
     while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(current_id).value)) {
         current_id = group->expression;
@@ -411,12 +411,13 @@ auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
             ast,
             *application,
             extent,
-            &batch->requests
+            &batch->requests,
+            generic_context ? std::addressof(*generic_context) : nullptr
         ));
         if (!type) {
             co_return std::unexpected(type.error());
         }
-        co_return std::optional(draft().canonicalize_declared_type(*type));
+        co_return std::optional(*type);
     }
     const auto* name = std::get_if<ASTNameExpr>(&ast.expression(current_id).value);
     if (name == nullptr) {

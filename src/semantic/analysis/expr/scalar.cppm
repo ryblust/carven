@@ -308,6 +308,18 @@ auto interpret_binary(
     if (site.external(site.type(*left)) || site.external(site.type(*right))) {
         co_return site.external_binary(operation, std::move(*left), std::move(*right), span);
     }
+    const auto text = ConstructionTypeRef(site.draft().builtin_type(BuiltinType::Str));
+    const auto owned_text = ConstructionTypeRef(site.draft().builtin_type(BuiltinType::String));
+    if ((operation == BinaryOperator::Equal || operation == BinaryOperator::NotEqual)
+        && ((site.type(*left) == text && site.type(*right) == owned_text)
+            || (site.type(*left) == owned_text && site.type(*right) == text))) {
+        if (auto converted = site.convert_argument(*left, text, span); !converted) {
+            co_return std::unexpected(converted.error());
+        }
+        if (auto converted = site.convert_argument(*right, text, span); !converted) {
+            co_return std::unexpected(converted.error());
+        }
+    }
     const auto pointer_equality =
         (operation == BinaryOperator::Equal || operation == BinaryOperator::NotEqual)
         && (pointer_narrows(site.draft(), site.type(*left), site.type(*right))

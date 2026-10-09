@@ -18,19 +18,13 @@ Current contracts belong in `docs/`.
 | [Generic extensions](generic-extensions.md) | Static capabilities, associated types, parameterized class operations, and finite boundary extensions |
 | [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations; consumes generic evidence |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
-| [Constant storage](constant-storage.md) | Constant-execution admission for library storage and retention of completed values and reference graphs |
-| [Semantic execution](semantic-execution.md) | Structured static roots, object and literal identity, and address observations during execution |
-| [Compiler optimization](compiler-optimization.md) | Compiler costs and C++ realization experiments preserving existing source contracts |
-| [Data representation](data-representation.md) | Record and enum representations, native-layout boundaries, compact handles, and collection-layout experiments |
-| [Uninitialized storage](uninitialized-storage.md) | Construction destinations, partial initialization, cleanup, native object lifetime, and caller validity obligations |
-| [Formatting and output](formatting-and-output.md) | Capacity and composition across text/output observation boundaries |
+| [Dynamic ownership](dynamic-ownership.md) | Unique/shared object owners, allocator policy, and factory construction in owned storage |
+| [Semantic execution](semantic-execution.md) | Structured static roots, text traversal, address observations, and retained reference graphs |
+| [Compiler optimization](compiler-optimization.md) | Compiler costs, C++ realization, and formatting/output experiments preserving source contracts |
+| [Data representation](data-representation.md) | Record, tuple, and enum representations, native-layout boundaries, compact handles, and collection layouts |
+| [Uninitialized storage](uninitialized-storage.md) | Construction destinations, partial initialization, native lifetime, and library storage in constant execution |
 | [Concurrency](concurrency.md) | Cross-thread values, memory ordering, threads, and synchronization |
 | [Documentation comments](doc-comments.md) | Source attachment, retained content, and its artifact consumer |
-
-Implemented async operations, tuples, and the parametric generic core are covered
-by the language and compiler references. Undeveloped async extensions belong in
-design directions; product traversal and representation experiments stay with generics
-and compiler optimization respectively.
 
 ## Status
 
@@ -72,8 +66,9 @@ scope is selected separately, with a defined contract and validation criteria.
 - Give distinct semantic domains separate owners. Related implementation
   experiments can share a document with independent scopes, decisions, cost
   measures, and validation; split them when a developed design needs its own owner.
-- Remove a proposal once implementation and permanent documentation are complete.
-  For mixed scopes, retain a short implemented foundation and the unfinished work.
+- Remove completed sections once implementation and permanent documentation are
+  complete; delete proposals with no unfinished scope. Keep only the current
+  constraints needed to understand remaining decisions.
   Consolidate candidates without a developed design into design directions, retaining
   relevant constraints, activation conditions, and validation requirements.
   Update inbound links when moving or removing material.

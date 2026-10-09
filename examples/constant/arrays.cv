@@ -13,7 +13,7 @@ fn run_arrays() {
     println("Selected:", selected);
     let stored = table;
     let view = stored.as_slice();
-    println("Entries:", view.len());
+    println("Entries:", view.length());
     for value in view {
         println(value);
     }

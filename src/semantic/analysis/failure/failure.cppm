@@ -389,7 +389,7 @@ public:
     FailureSolution(const FailureSolution&) = delete;
     FailureSolution(FailureSolution&&) = default;
     auto operator=(const FailureSolution&) -> FailureSolution& = delete;
-    auto operator=(FailureSolution&&) -> FailureSolution& = default;
+    auto operator=(FailureSolution&&) -> FailureSolution& = delete;
     ~FailureSolution() = default;
     auto owner() const noexcept -> ProgramIdentity;
     auto contains(FailureTermID term) const noexcept -> bool;

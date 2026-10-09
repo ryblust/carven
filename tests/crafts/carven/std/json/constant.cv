@@ -10,7 +10,7 @@ private const fn edited_document(text: str) -> String throw JSONError + ValueErr
     items.set_at(0, &&Value::string("你好😀"))?;
     items.push(&&Value::integer(42))?;
     items.remove_at(1)?;
-    assert(snapshot.len()? == 2);
+    assert(snapshot.length()? == 2);
     assert(snapshot.at(0)?.number_text()? == "1E400");
     document.set("items", &&items)?;
     document.append_member("enabled", &&Value::boolean(false))?;
@@ -76,12 +76,12 @@ private const fn round_trip_tree() -> usize throw JSONError + ValueError {
     }
     let text = tree.to_json()?;
     let parsed = Value::parse(text.as_str())?;
-    assert(parsed.len()? == 4);
+    assert(parsed.length()? == 4);
     var count: usize = 0;
     for branch in 0usize..4 {
         let node = parsed.get(f"branch{branch}")?;
         let values = node.get("values")?;
-        assert(values.len()? == 8);
+        assert(values.length()? == 8);
         for leaf in 0usize..8 {
             let value = values.at(leaf)?;
             let expected = f"{branch * 8 + leaf}";

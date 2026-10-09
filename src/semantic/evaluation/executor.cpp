@@ -217,7 +217,7 @@ auto SemanticExecutor::check_value_size(
             return account(shape->elements);
         }
         const auto canonical = values.type_copy(compound->type);
-        if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&canonical.value)) {
+        if (const auto* sequence = std::get_if<VectorTypeValue>(&canonical.value)) {
             if (const auto child = shapes.get(sequence->element); child && child->exact) {
                 if (compound->size() == 0uz) {
                     return {};
@@ -258,44 +258,36 @@ auto SemanticExecutor::bounded_value(ExecutionValue value, ProgramOriginID origi
     return value;
 }
 
+auto SemanticExecutor::retained_storage(ConstantID id, ProgramOriginID origin) noexcept
+    -> ExecutionResult<ExecutionPlace> {
+    if (const auto found = retained_backings.find(id); found != retained_backings.end()) {
+        return found->second;
+    }
+    auto storage = copy_value(ExecutionValue(id), origin, CopyMode::Retained);
+    if (!storage) {
+        return std::unexpected(std::move(storage.error()));
+    }
+    const auto place = memory.create(std::move(*storage));
+    retained_backings.emplace(id, place);
+    return place;
+}
+
 auto SemanticExecutor::retained_slice(ConstantID id, ProgramOriginID origin) noexcept
     -> ExecutionResult<ExecutionSlice> {
     const auto& fact = values.constant(id);
     const auto* slice = std::get_if<SliceConstant>(&fact.value);
-    if (slice == nullptr) {
+    if (!slice) {
         return std::unexpected(
             fail(origin, ExecutionReason::Evaluation, "constant is not a slice")
         );
     }
-    if (const auto found = retained_slice_backings.find(id);
-        found != retained_slice_backings.end()) {
-        return ExecutionSlice {
-            .type = fact.type,
-            .backing = found->second,
-            .offset = 0uz,
-            .extent = slice->elements.size()
-        };
+    auto backing = retained_storage(id, origin);
+    if (!backing) {
+        return std::unexpected(std::move(backing.error()));
     }
-    if (auto checked = account_aggregate(slice->elements.size(), origin); !checked) {
-        return std::unexpected(std::move(checked.error()));
-    }
-    auto elements = std::vector<ExecutionValue>();
-    elements.reserve(slice->elements.size());
-    for (const auto element : slice->elements) {
-        elements.emplace_back(element);
-    }
-    auto storage = own_storage(
-        ExecutionAggregateValue {.type = fact.type, .elements = std::move(elements)},
-        origin
-    );
-    if (!storage) {
-        return std::unexpected(std::move(storage.error()));
-    }
-    auto backing = memory.create(std::move(*storage));
-    retained_slice_backings.emplace(id, backing);
     return ExecutionSlice {
         .type = fact.type,
-        .backing = std::move(backing),
+        .backing = *backing,
         .offset = 0uz,
         .extent = slice->elements.size()
     };
@@ -316,8 +308,11 @@ auto SemanticExecutor::own_storage(ExecutionValue value, ProgramOriginID origin)
     return value;
 }
 
-auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID origin) noexcept
-    -> ExecutionResult<ExecutionValue> {
+auto SemanticExecutor::copy_value(
+    const ExecutionValue& source,
+    ProgramOriginID origin,
+    CopyMode mode
+) noexcept -> ExecutionResult<ExecutionValue> {
     const auto copy = [&](this auto&& self,
                           const ExecutionValue& value,
                           std::size_t depth) noexcept -> ExecutionResult<ExecutionValue> {
@@ -326,8 +321,9 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
                 fail(origin, ExecutionReason::Limit, "aggregate exceeds its nesting limit")
             );
         }
-        if (const auto* constant = std::get_if<ConstantID>(&value);
-            constant && std::holds_alternative<SliceConstant>(values.constant(*constant).value)) {
+        if (const auto* constant = std::get_if<ConstantID>(&value); constant
+            && std::holds_alternative<SliceConstant>(values.constant(*constant).value)
+            && !(mode == CopyMode::Retained && depth == 0uz)) {
             auto slice = retained_slice(*constant, origin);
             if (!slice) {
                 return std::unexpected(std::move(slice.error()));
@@ -367,7 +363,32 @@ auto SemanticExecutor::copy_value(const ExecutionValue& source, ProgramOriginID 
                     .payload = std::move(*copied)
                 };
             }
-            return ExecutionAggregateValue {.type = compound->type, .elements = std::move(*copied)};
+            auto capacity = copied->size();
+            if (mode == CopyMode::Retained) {
+                if (const auto* id = std::get_if<ConstantID>(&value)) {
+                    if (const auto* vector =
+                            std::get_if<VectorConstant>(&values.constant(*id).value)) {
+                        capacity = vector->capacity;
+                    }
+                }
+            }
+            return ExecutionAggregateValue {
+                .type = compound->type,
+                .elements = std::move(*copied),
+                .capacity = capacity
+            };
+        }
+        if (const auto* constant = std::get_if<ConstantID>(&value)) {
+            const auto& fact = values.constant(*constant);
+            if (const auto* text = std::get_if<StringConstant>(&fact.value); text
+                && values.type_copy(fact.type).value
+                    == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}) {
+                const auto bytes = values.spelling(text->value);
+                if (auto checked = account_text(bytes.size(), origin); !checked) {
+                    return std::unexpected(std::move(checked.error()));
+                }
+                return ExecutionOwnedText(std::string(bytes));
+            }
         }
         if (const auto* text = std::get_if<ExecutionOwnedText>(&value)) {
             const auto bytes = text->bytes();
@@ -536,6 +557,9 @@ auto SemanticExecutor::place(ExecutionFrame& frame, const SemanticExpression& ex
     }
     if (auto checked = step(expression.origin); !checked) {
         co_return std::unexpected(std::move(checked.error()));
+    }
+    if (const auto* constant = std::get_if<SemConstant>(&expression.value)) {
+        co_return retained_storage(constant->constant, expression.origin);
     }
     if (const auto* name = std::get_if<SemBinding>(&expression.value)) {
         const auto& slot = frame.slots.at(name->binding.index());

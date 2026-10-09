@@ -107,7 +107,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(shapes.get(table).has_value())) {
                 return;
             }
-            expect(shapes.get(table)->supported);
+
             expect(shapes.get(table)->elements == 65535uz);
             const auto oversized =
                 draft.intern_type({.value = ArrayTypeValue {.element = entry, .extent = 21846u}});
@@ -123,7 +123,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(shapes.get(nested).has_value())) {
                 return;
             }
-            expect(shapes.get(nested)->supported);
+
             expect(shapes.get(nested)->elements == 65uz);
             nested = draft.intern_type({.value = ArrayTypeValue {.element = nested, .extent = 1u}});
             expect(!(shapes.get(nested).has_value()));

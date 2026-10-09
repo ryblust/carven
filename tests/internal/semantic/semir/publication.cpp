@@ -173,7 +173,7 @@ auto check_unresolved_residual_call() noexcept -> void {
         boolean,
         lifetime,
         module_origin.origin,
-        SemConstant {.constant = constant}
+        SemConstant {.constant = constant, .retained_storage = false}
     );
     auto expression = caller.make_expression(
         void_type,
@@ -301,7 +301,7 @@ auto check_residual_static_statement(ResidualStaticStatement kind, bool retained
                         boolean,
                         lifetime,
                         module_origin.origin,
-                        SemConstant {.constant = constant},
+                        SemConstant {.constant = constant, .retained_storage = false},
                         constant
                     )),
                 };
@@ -329,7 +329,7 @@ auto check_residual_static_statement(ResidualStaticStatement kind, bool retained
                         integer,
                         lifetime,
                         module_origin.origin,
-                        SemConstant {.constant = constant},
+                        SemConstant {.constant = constant, .retained_storage = false},
                         constant
                     );
                 };

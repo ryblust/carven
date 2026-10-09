@@ -1,12 +1,13 @@
 module carven:semantic.semir.structured;
 
 import :semantic.semir.async;
+import :semantic.semir.constant_access;
 import :semantic.semir.body;
 import :semantic.semir.format;
 import :semantic.semir.generic;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
-import :semantic.semir.sequence;
+import :semantic.semir.vector;
 import :semantic.semir.simd;
 import :semantic.semir.type;
 import :support.invariant;
@@ -55,7 +56,10 @@ struct SemDefault final {};
 
 struct SemConstant final {
     ConstantID constant;
+    bool retained_storage;
 };
+
+auto constant_operation(const ConstantValueReader& values, ConstantID id) noexcept -> SemConstant;
 
 // Executable projection of an edge proved to have no entry in this stage.
 struct SemUnreachable final {};
@@ -186,7 +190,7 @@ using IntrinsicOperation = std::variant<
     SliceIntrinsicOperation,
     TextIntrinsic,
     SIMDIntrinsic,
-    SequenceIntrinsicOperation,
+    VectorIntrinsicOperation,
     FloatIntrinsic>;
 
 struct SemIntrinsic final {
@@ -393,6 +397,7 @@ struct SemanticExpression final {
     // A Read can retain this expression's selected object. Consuming a value
     // still creates independent destination storage through the normal use rules.
     auto selects_storage() const noexcept -> bool;
+    auto selects_retained_storage() const noexcept -> bool;
 };
 
 struct SemanticRegion final {

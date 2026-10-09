@@ -122,11 +122,11 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
             [&](const SliceTypeValue& value) noexcept {
                 return std::format("[{}]", name(value.element));
             },
-            [&](const OwnedSequenceTypeValue& value) noexcept {
-                return std::format("Sequence<{}>", name(value.element));
+            [&](const VectorTypeValue& value) noexcept {
+                return std::format("Vector<{}>", name(value.element));
             },
             [&](const RangeTypeValue& value) noexcept {
-                return std::format("range<{}>", name(value.element));
+                return std::format("Range<{}>", name(value.element));
             },
             [&](const PointerTypeValue& value) noexcept {
                 return std::format(
@@ -142,7 +142,7 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
                 return callable_name(signature.parameters, name(signature.result), name);
             },
             [&](const OperationTypeValue& value) noexcept {
-                return std::format("Operation<{}>", name(value.success));
+                return std::format("AsyncOperation<{}>", name(value.success));
             },
             [](const CppTypeValue& value) static noexcept {
                 const auto* reference = cpp_type_name(value);
@@ -190,8 +190,8 @@ auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noex
                 [&](const GenericSliceType& value) noexcept {
                     return std::format("[{}]", name(value.element));
                 },
-                [&](const GenericOwnedSequenceType& value) noexcept {
-                    return std::format("Sequence<{}>", name(value.element));
+                [&](const GenericVectorType& value) noexcept {
+                    return std::format("Vector<{}>", name(value.element));
                 },
                 [&](const GenericPointerType& value) noexcept {
                     return std::format(
@@ -201,7 +201,7 @@ auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noex
                     );
                 },
                 [&](const GenericOperationType& value) noexcept {
-                    return std::format("Operation<{}>", name(value.success));
+                    return std::format("AsyncOperation<{}>", name(value.success));
                 },
                 [&](const GenericNominalApplication& value) noexcept {
                     const auto contract = draft.generic_declaration_contract_copy(value.definition);
@@ -252,7 +252,7 @@ auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noex
                     return std::format("[{}]", name(value.element));
                 },
                 [&](const ConstructionOperationTypeValue& value) noexcept {
-                    return std::format("Operation<{}>", name(value.success));
+                    return std::format("AsyncOperation<{}>", name(value.success));
                 },
                 [&](const ConstructionCallableViewTypeValue& value) noexcept {
                     return callable_name(value.parameters, name(value.result), name);

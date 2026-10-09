@@ -101,6 +101,12 @@ with optional optimizer transformations disabled.
 
 ## Generate idiomatic C++
 
+Source `class` and `struct` declarations establish nominal identity, fields, and
+access rules. Their C++ carriers and physical layout are implementation choices.
+Select representations from established semantic facts while preserving values,
+evaluation order, addressability, ownership, lifetimes, and failures. Native
+interfaces constrain the representation and operations exposed at their boundary.
+
 Express resolved types, construction, access, and control flow through ordinary
 C++ facilities. Additional storage and control preserve sequencing, failure
 handling, and lifetimes. Use shared runtime operations to keep generated uses

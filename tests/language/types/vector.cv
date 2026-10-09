@@ -1,0 +1,243 @@
+enum Node {
+    Leaf(i32),
+    Branch(Vector<Node>),
+}
+
+struct Labels {
+    labels: Vector<String>,
+}
+
+const fn leaf(value: Node) -> i32 {
+    return match value {
+        .Leaf(number) => number,
+        .Branch(_) => -1,
+    };
+}
+
+const fn add(&values: Vector<i32>, value: i32) {
+    values.push(value);
+}
+
+const fn first_text(values: Vector<String>) -> str => values[0].as_str();
+
+const fn sum(value: Node) -> i32 {
+    match value {
+        .Leaf(number) => return number,
+        .Branch(children) => {
+            var result = 0;
+            for child in children {
+                result += sum(child);
+            }
+            return result;
+        },
+    }
+}
+
+const fn increment(&value: Node) -> void {
+    match value {
+        .Leaf(&number) => {
+            number += 1;
+        },
+        .Branch(&children) => {
+            for &child in children {
+                increment(&child);
+            }
+        },
+    }
+}
+
+test "Vector: initialized elements support copies, transfer and mutation" {
+    var values = Vector<i32> {};
+    check(values.is_empty());
+    values.push(3);
+    add(&values, 7);
+    check(values.length() == 2);
+    check(values[0] == 3);
+    check(values[1] == 7);
+    for &item in values {
+        item += 1;
+    }
+    var sum = 0;
+    for item in values {
+        sum += item;
+    }
+    check(sum == 12);
+    values.remove(0);
+    check(values.length() == 1);
+    check(values[0] == 8);
+    var moved = &&values;
+    moved.clear();
+    check(moved.is_empty());
+
+    var flags = Vector<bool> {};
+    flags.push(true);
+    flags.push(false);
+    flags[1] = true;
+    for &flag in flags {
+        flag = !flag;
+    }
+    check(!flags[0]);
+    check(!flags[1]);
+}
+
+test "Vector: nested String copies own independent storage" {
+    var labels = Vector<String> {};
+    var first: String = "first";
+    labels.push(first);
+    first.append(" local");
+    check(labels[0].as_str() == "first");
+    let second: String = "second";
+    labels.push(&&second);
+    var original = Labels { labels: (&&labels) };
+    var copy = original;
+    copy.labels[0].append(" copy");
+    check(original.labels[0].as_str() == "first");
+    check(copy.labels[0].as_str() == "first copy");
+    original.labels.remove(0);
+    check(original.labels[0].as_str() == "second");
+    check(copy.labels.length() == 2);
+    let borrowed = first_text(original.labels);
+    copy.labels.clear();
+    check(borrowed == "second");
+}
+
+test "Vector: owning indirection permits recursive enum children" {
+    var children = Vector<Node> {};
+    children.push(.Leaf(4));
+    var branch: Node = .Branch(&&children);
+    match branch {
+        .Branch(&items) => { items.push(.Leaf(9)); },
+        .Leaf(_) => {},
+    }
+    let copy = branch;
+    match branch {
+        .Branch(&items) => { items[0] = .Leaf(8); },
+        .Leaf(_) => {},
+    }
+    match copy {
+        .Branch(items) => {
+            check(items.length() == 2);
+            check(leaf(items[0]) == 4);
+            check(leaf(items[1]) == 9);
+        },
+        .Leaf(_) => {
+            check(false);
+        },
+    }
+}
+
+test "Vector: recursive reads and writes traverse independent owned trees" {
+    var inner = Vector<Node> {};
+    inner.push(.Leaf(4));
+    inner.push(.Leaf(9));
+    var outer = Vector<Node> {};
+    outer.push(.Branch(&&inner));
+    outer.push(.Leaf(2));
+    var tree: Node = .Branch(&&outer);
+    var copy = tree;
+    check(sum(tree) == 15);
+    increment(&copy);
+    check(sum(copy) == 18);
+    check(sum(tree) == 15);
+}
+
+const test "Vector: static execution preserves owning copies, Take and payload Write" {
+    var values = Vector<i32> {};
+    check(values.is_empty());
+    values.push(3);
+    add(&values, 7);
+    let copy = values;
+    for &item in values {
+        item += 1;
+    }
+    check(copy[0] == 3);
+    check(values[0] == 4);
+    values.remove(0);
+    check(values[0] == 8);
+    var moved = &&values;
+    moved.clear();
+    check(moved.is_empty());
+
+    var children = Vector<Node> {};
+    children.push(Node::Leaf(2));
+    children.push(Node::Leaf(5));
+    var tree = Node::Branch(&&children);
+    check(sum(tree) == 7);
+    increment(&tree);
+    check(sum(tree) == 9);
+}
+
+private const fn total(values: [i32]) -> i32 {
+    var result = 0;
+    for value in values {
+        result += value;
+    }
+    return result;
+}
+
+private const fn copy_values<T>(values: [T]) -> Vector<T> => Vector<T>::from_slice(values);
+
+private const fn empty_values<T>() -> Vector<T> => Vector<T>::new();
+
+private const fn check_views() {
+    var bytes: Vector<u8> = [1, 255];
+    const retained_bytes: Vector<u8> = [3, 4];
+    var copied_bytes = retained_bytes;
+    copied_bytes[0] = bytes[1];
+    check(copied_bytes[0] == 255 && retained_bytes[0] == 3);
+    check(Vector<i32>::with_capacity(8).capacity() >= 8);
+    let seed = String::from_str("seed");
+    var repeated: Vector<String> = [seed; 2];
+    repeated[0].append(" changed");
+    check(repeated[1] == "seed" && seed == "seed");
+    let owned = String::from_str("moved");
+    let single: Vector<String> = [&&owned; 1];
+    check(single[0] == "moved");
+    let empty_repeated: Vector<String> = [String::from_str("unused"); 0];
+    check(empty_repeated.is_empty());
+    var values: Vector<i32> = [10, 20, 30];
+    values.push(values[0]);
+    let index = 1i32;
+    let removed = values.remove(index);
+    check(removed == 20);
+    check(values.length() == 3);
+    check(total(values) == 50);
+    check(total(values.slice(1, 3)) == 40);
+    let array = [4, 5, 6];
+    check(total(array.slice(1, 3)) == 11);
+    var copy = copy_values<i32>(values);
+    copy[0] = 100;
+    check(values[0] == 10);
+    let view: [i32] = values;
+    check(view[2] == 10);
+    check(values.slice(3, 3).is_empty());
+    var flags: Vector<bool> = [true, false];
+    let bits: [bool] = flags;
+    check(bits[0] && !bits[1]);
+    let empty = empty_values<String>();
+    check(empty.is_empty());
+}
+
+const test "Vector: literals, owning extraction and contiguous views work statically" {
+    check_views();
+}
+
+test "Vector: literals, owning extraction and contiguous views work at runtime" {
+    check_views();
+}
+
+test "Vector: capacity reserves total storage and survives removal and clear" {
+    var values = Vector<i32>::with_capacity(8);
+    let capacity = values.capacity();
+    check(capacity >= 8 && values.is_empty());
+    values.push(1);
+    values.reserve(4);
+    check(values.capacity() == capacity && values[0] == 1);
+    check(values.remove(0) == 1);
+    check(values.capacity() == capacity);
+    values.push(2);
+    values.clear();
+    check(values.is_empty() && values.capacity() == capacity);
+    values.reserve(capacity + 1);
+    check(values.capacity() >= capacity + 1);
+}

@@ -19,4 +19,4 @@ auto tail_actual(std::int32_t value, std::int32_t digit) noexcept -> std::int32_
 auto tail_trace() noexcept -> std::int32_t;
 auto tail_address(std::int32_t& value) noexcept -> void;
 auto tail_addresses() noexcept -> std::int32_t;
-auto tail_native() noexcept -> carven::runtime::execution::Operation<std::int32_t>;
+auto tail_native() noexcept -> carven::runtime::execution::AsyncOperation<std::int32_t>;

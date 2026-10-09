@@ -598,12 +598,12 @@ auto SemanticExecutor::expression_value(
             }
             co_return co_await text_intrinsic(frame, operation, *target, source.origin);
         }
-        if (std::holds_alternative<SequenceIntrinsicOperation>(operation.operation)) {
+        if (std::holds_alternative<VectorIntrinsicOperation>(operation.operation)) {
             auto target = type(source.type.construction(), source.origin);
             if (!target) {
                 co_return std::unexpected(std::move(target.error()));
             }
-            co_return co_await sequence_intrinsic(frame, operation, *target, source.origin);
+            co_return co_await vector_intrinsic(frame, operation, *target, source.origin);
         }
         const auto intrinsic = std::get<SliceIntrinsicOperation>(operation.operation).intrinsic;
         auto sequence =
@@ -616,7 +616,7 @@ auto SemanticExecutor::expression_value(
             co_return std::unexpected(std::move(target.error()));
         }
         switch (intrinsic) {
-            case SliceIntrinsic::Len:
+            case SliceIntrinsic::Length:
                 co_return ConstantAtom {
                     .type = *target,
                     .value = IntegerConstant::from_parts(sequence->extent, false)
@@ -626,9 +626,9 @@ auto SemanticExecutor::expression_value(
                     .type = *target,
                     .value = BooleanConstant {.value = sequence->extent == 0uz}
                 };
-            case SliceIntrinsic::FromArray:
+            case SliceIntrinsic::FromOwner:
             case SliceIntrinsic::Slice:     {
-                if (intrinsic == SliceIntrinsic::FromArray && sequence->extent == 0uz) {
+                if (intrinsic == SliceIntrinsic::FromOwner && sequence->extent == 0uz) {
                     co_return ExecutionAggregateValue {.type = *target, .elements = {}};
                 }
                 auto begin = 0uz;
@@ -749,7 +749,11 @@ auto SemanticExecutor::expression_value(
             elements.push_back(std::move(*evaluated));
         }
         co_return bounded_value(
-            ExecutionAggregateValue {.type = *result_type, .elements = std::move(elements)},
+            ExecutionAggregateValue {
+                .type = *result_type,
+                .elements = std::move(elements),
+                .capacity = operation.elements.size()
+            },
             source.origin
         );
     } else if constexpr (std::same_as<Operation, SemTupleElement>) {

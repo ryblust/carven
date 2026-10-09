@@ -1,4 +1,4 @@
-const fn sum_interval(values: range<i32>) -> i32 {
+const fn sum_interval(values: Range<i32>) -> i32 {
     var sum = 0;
     for value in values {
         sum += value;
@@ -6,9 +6,9 @@ const fn sum_interval(values: range<i32>) -> i32 {
     return sum;
 }
 
-const fn make_interval(end: i32) -> range<i32> => 1..=end;
+const fn make_interval(end: i32) -> Range<i32> => 1..=end;
 
-const fn sum_size_interval(values: range<usize>) -> usize {
+const fn sum_size_interval(values: Range<usize>) -> usize {
     var sum = 0usize;
     for value in values {
         sum += value;
@@ -16,7 +16,7 @@ const fn sum_size_interval(values: range<usize>) -> usize {
     return sum;
 }
 
-const fn make_size_interval() -> range<usize> => 0..4;
+const fn make_size_interval() -> Range<usize> => 0..4;
 
 const range_end = 4usize;
 const frozen_size_interval = 0..range_end;
@@ -26,7 +26,7 @@ const fn check_literal_bounds(end: usize) {
     let inclusive = 0..=end;
     check(sum_size_interval(exclusive) == 6usize);
     check(sum_size_interval(inclusive) == 10usize);
-    let grouped: range<usize> = (0)..end;
+    let grouped: Range<usize> = (0)..end;
     check(sum_size_interval(grouped) == 6usize);
     let begin = 1usize;
     let right_literal = begin..4;
@@ -34,7 +34,7 @@ const fn check_literal_bounds(end: usize) {
 
     let defaulted = 0..4;
     check(sum_interval(defaulted) == 6);
-    let contextual: range<usize> = 0..=4;
+    let contextual: Range<usize> = 0..=4;
     check(sum_size_interval(contextual) == 10usize);
     check(sum_size_interval(0..4) == 6usize);
     check(sum_size_interval(make_size_interval()) == 6usize);
@@ -119,7 +119,7 @@ test "Range values: construction and iteration retain independent snapshots" {
     check(count == 2);
 }
 
-const fn count_signed_interval(values: range<i64>) -> usize {
+const fn count_signed_interval(values: Range<i64>) -> usize {
     var count = 0usize;
     for value in values {
         count += 1usize;

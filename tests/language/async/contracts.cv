@@ -258,9 +258,9 @@ async fn operand_recovery(reject: bool) -> i32 {
     return result * 1000 + trace;
 }
 
-export fn typed_relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
+export fn typed_relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
 
-async fn typed_forward(&&pending: Operation<i32, throw Failure>) -> i32 throw Failure {
+async fn typed_forward(&&pending: AsyncOperation<i32, throw Failure>) -> i32 throw Failure {
     return await pending?;
 }
 
@@ -269,11 +269,11 @@ async fn typed_failure() -> i32 throw Failure {
 }
 
 struct PendingBox {
-    pending: Operation<i32>
+    pending: AsyncOperation<i32>
 }
 
 fn array_text(&&values: [String; 2]) -> String => (&&values)[0];
-fn sequence_text(&&values: Sequence<String>) -> String => (&&values)[0];
+fn sequence_text(&&values: Vector<String>) -> String => (&&values)[0];
 fn slice_text(&&values: [String]) -> String => (&&values)[0];
 
 private struct Box<T> {
@@ -284,13 +284,13 @@ private fn store<T>(&&value: T) -> Box<T> => { value: &&value };
 private fn release<T>(&&box: Box<T>) -> T => (&&box).value;
 private fn relay<T>(&&value: T) -> T => &&value;
 
-private async fn complete<T, throw E>(&&pending: Operation<T, throw E>) -> T throw E {
+private async fn complete<T, throw E>(&&pending: AsyncOperation<T, throw E>) -> T throw E {
     return (await pending)?;
 }
 
 private async fn keep_first<T, throw E>(
-    &&left: Operation<T, throw E>,
-    &&right: Operation<T, throw E>
+    &&left: AsyncOperation<T, throw E>,
+    &&right: AsyncOperation<T, throw E>
 ) -> T throw E {
     let value = (await left)?;
     let _ = (await right)?;
@@ -298,27 +298,27 @@ private async fn keep_first<T, throw E>(
 }
 
 private fn store_pending<T, throw E>(
-    &&pending: Operation<T, throw E>
-) -> Box<Operation<T, throw E>> => { value: &&pending };
+    &&pending: AsyncOperation<T, throw E>
+) -> Box<AsyncOperation<T, throw E>> => { value: &&pending };
 
-private async fn forwarded<throw E>(&&pending: Operation<i32, throw E>) -> i32 {
+private async fn forwarded<throw E>(&&pending: AsyncOperation<i32, throw E>) -> i32 {
     return (await pending)?;
 }
 
-private async fn repeat<throw E>(&&pending: Operation<i32, throw E>, again: bool) -> i32 {
+private async fn repeat<throw E>(&&pending: AsyncOperation<i32, throw E>, again: bool) -> i32 {
     if again { return (await repeat(&&forwarded(&&pending), false))?; }
     return (await pending)?;
 }
 
 async fn generic_owners() {
-    let pending: Operation<i32> = leaf(42);
+    let pending: AsyncOperation<i32> = leaf(42);
     let boxed = store(&&pending);
     let released = release(&&boxed);
-    assert((await relay<Operation<i32>>(&&released)) == 42);
-    let item: Operation<i32> = leaf(43);
-    let items = relay<[Operation<i32>; 1]>(&&[&&item]);
+    assert((await relay<AsyncOperation<i32>>(&&released)) == 42);
+    let item: AsyncOperation<i32> = leaf(43);
+    let items = relay<[AsyncOperation<i32>; 1]>(&&[&&item]);
     assert((await (&&items)[0]) == 43);
-    let rejected: Operation<i32, throw Failure> = typed_failure();
+    let rejected: AsyncOperation<i32, throw Failure> = typed_failure();
     let forwarded = relay(&&rejected);
     let result = try {
         await forwarded?
@@ -344,7 +344,7 @@ async fn generic_owners() {
 async fn typed_owners() {
     let text = array_text(&&["first", "second"]);
     assert(text == "first");
-    var texts: Sequence<String> = {};
+    var texts: Vector<String> = {};
     texts.push("kept");
     let selected = sequence_text(&&texts);
     assert(selected == "kept");
@@ -352,14 +352,14 @@ async fn typed_owners() {
     var copied = slice_text(&&originals.as_slice());
     copied.clear();
     assert(originals[0] == "unchanged");
-    let pending: Operation<i32> = typed_relay(&&leaf(31));
+    let pending: AsyncOperation<i32> = typed_relay(&&leaf(31));
     assert((await pending) == 31);
     let box = PendingBox { pending: leaf(37) };
     assert((await (&&box).pending) == 37);
-    let pair: (Operation<i32>, void) = (leaf(41), ());
+    let pair: (AsyncOperation<i32>, void) = (leaf(41), ());
     let (inner, empty) = &&pair;
     assert((await inner) == 41);
-    let array: [Operation<i32>; 1] = [leaf(43)];
+    let array: [AsyncOperation<i32>; 1] = [leaf(43)];
     assert((await (&&array)[0]) == 43);
     let result = try {
         await typed_forward(&&typed_failure())?

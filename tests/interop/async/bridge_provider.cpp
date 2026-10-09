@@ -17,7 +17,7 @@ using async_bridge::TrivialContext;
 using async_interop::PipeQueue;
 using IoError = decltype(api::make_io_error(0));
 using ReadResult = async::Completion<std::int32_t, IoError>;
-using ReadOperation = async::Operation<std::int32_t, IoError>;
+using ReadOperation = async::AsyncOperation<std::int32_t, IoError>;
 
 auto check(bool condition, const char* message) noexcept -> void {
     if (!condition) {
@@ -82,7 +82,7 @@ auto bridge_read_byte(const Context& context) noexcept -> ReadOperation {
 }
 
 auto bridge_write_byte(const Context& context, std::int32_t value) noexcept
-    -> async::Operation<void, IoError> {
+    -> async::AsyncOperation<void, IoError> {
     check(
         &context == context.host_address && value >= 0 && value <= 255,
         "valid write context and byte"
@@ -130,7 +130,7 @@ auto bridge_note(const Context& context, std::int32_t stage) noexcept -> void {
 }
 
 auto bridge_native_character(std::int32_t value, bool fail) noexcept
-    -> async::Operation<char32_t, IoError> {
+    -> async::AsyncOperation<char32_t, IoError> {
     using Result = async::Completion<char32_t, IoError>;
     if (async::cancellation_requested()) {
         co_return Result::cancelled();

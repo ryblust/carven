@@ -139,7 +139,8 @@ auto validate_constant_value(const ConstantValueReader& values, const ConstantVa
             }
         } else if constexpr (std::same_as<Item, ArrayConstant>
                              || std::same_as<Item, TupleConstant>
-                             || std::same_as<Item, SliceConstant>) {
+                             || std::same_as<Item, SliceConstant>
+                             || std::same_as<Item, VectorConstant>) {
             for (const auto child : item.elements) {
                 static_cast<void>(values.constant(child));
             }
@@ -530,7 +531,8 @@ auto constant_value_equal(
                 }
             }
             return true;
-        } else if constexpr (std::same_as<Value, StructConstant>) {
+        } else if constexpr (std::same_as<Value, StructConstant>
+                             || std::same_as<Value, VectorConstant>) {
             invariant_violation("structure constants do not support language equality");
         } else if constexpr (std::same_as<Value, ArrayConstant>
                              || std::same_as<Value, TupleConstant>) {
@@ -921,7 +923,7 @@ auto evaluate_text_intrinsic_constant_value(
     }
     const auto bytes = values.spelling(string->value);
     switch (intrinsic) {
-        case TextIntrinsic::Len: {
+        case TextIntrinsic::ByteLength: {
             const auto target = builtin_type(values, result);
             if (!target.has_value() || *target != BuiltinType::Usize) {
                 return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
@@ -969,14 +971,14 @@ auto evaluate_slice_intrinsic_constant_value(
         || bounds.size() != contract.arguments.size()) {
         return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
     }
-    if (intrinsic == SliceIntrinsic::FromArray) {
+    if (intrinsic == SliceIntrinsic::FromOwner) {
         return std::unexpected(ConstantEvaluationFailure::UnsupportedOperation);
     }
     const auto& elements = array ? array->elements : slice->elements;
     if (intrinsic == SliceIntrinsic::IsEmpty) {
         return constant_boolean(values, result, elements.empty());
     }
-    if (intrinsic == SliceIntrinsic::Len) {
+    if (intrinsic == SliceIntrinsic::Length) {
         if (!is_builtin(values, result, BuiltinType::Usize)) {
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
         }

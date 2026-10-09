@@ -8,21 +8,6 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
-    "Const arrays: owning elements require execution storage"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
-            {.name = "owning elements do not acquire a recursively frozen source type",
-             .source = R"(const fn make() -> [String; 1] => ["text"]; const value = make();)",
-             .code = DiagnosticCode::ConstInitializer,
-             .primary_text = "make()"},
-            {.name = "nested owning elements cannot freeze into borrowed elements",
-             .source =
-                 R"(const fn make() -> [[String; 1]; 1] => [["text"]]; const value = make();)",
-             .code = DiagnosticCode::ConstInitializer,
-             .primary_text = "make()"},
-        });
-        check_compiler_errors(cases);
-    };
-
     "Const arrays: freezing preserves ownership and ordinary backing lifetimes"_test =
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({

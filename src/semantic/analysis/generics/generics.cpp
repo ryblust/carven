@@ -152,9 +152,7 @@ auto ProgramDraft::intern_generic_type(GenericTypeExpression expression) noexcep
                 }
             },
             [&](const GenericSliceType& slice) noexcept { validate_child(slice.element); },
-            [&](const GenericOwnedSequenceType& sequence) noexcept {
-                validate_child(sequence.element);
-            },
+            [&](const GenericVectorType& sequence) noexcept { validate_child(sequence.element); },
             [&](const GenericPointerType& pointer) noexcept { validate_child(pointer.target); },
             [&](const GenericOperationType& operation) noexcept {
                 validate_child(operation.success);
@@ -300,7 +298,7 @@ auto ProgramDraft::substitute_generic_type(
         using Shape = std::remove_cvref_t<decltype(value)>;
         if constexpr (std::same_as<Shape, GenericArrayType>
                       || std::same_as<Shape, GenericSliceType>
-                      || std::same_as<Shape, GenericOwnedSequenceType>) {
+                      || std::same_as<Shape, GenericVectorType>) {
             child(value.element);
         } else if constexpr (std::same_as<Shape, GenericTupleType>) {
             for (auto& element : value.elements) {
@@ -388,7 +386,7 @@ auto ProgramDraft::resolve_generic_type(
                     }
                     return intern_type({.value = SliceTypeValue {*element}});
                 },
-                [&](const GenericOwnedSequenceType& sequence) noexcept -> AnalysisResult<TypeID> {
+                [&](const GenericVectorType& sequence) noexcept -> AnalysisResult<TypeID> {
                     auto element = resolve_generic_type(
                         sequence.element,
                         definition,
@@ -399,8 +397,8 @@ auto ProgramDraft::resolve_generic_type(
                     if (!element) {
                         return std::unexpected(element.error());
                     }
-                    record_sequence_element(*element, origin);
-                    return intern_type({.value = OwnedSequenceTypeValue {*element}});
+                    record_vector_element(*element, origin);
+                    return intern_type({.value = VectorTypeValue {*element}});
                 },
                 [&](const GenericPointerType& pointer) noexcept -> AnalysisResult<TypeID> {
                     auto target = resolve_generic_type(

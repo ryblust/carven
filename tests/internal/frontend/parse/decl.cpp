@@ -144,7 +144,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             constexpr auto text = std::string_view(
                 "class Counter { value: i32, "
-                "const fn create() -> Counter => { value: 0 }; "
+                "const fn new() -> Counter => { value: 0 }; "
                 "private const fn read(self) -> i32 => self.value; "
                 "fn reset(&self) { self.value = 0; } }"
             );

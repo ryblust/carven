@@ -2,19 +2,32 @@ module carven:semantic.analysis.constant.freeze.impl;
 
 import :semantic.analysis.constant.freeze;
 import :semantic.evaluation.limits;
-import :semantic.evaluation.shape;
 import std;
 
 namespace {
 
 auto freeze_value(
     ProgramDraft& draft,
-    const ExecutionTypeShapes& shapes,
     ExecutionValue value,
-    std::size_t depth
+    std::size_t depth,
+    std::size_t& slots
 ) noexcept -> std::optional<ConstantID> {
+    if (const auto compound = execution_compound_view(draft, value)) {
+        if (depth >= maximum_constant_aggregate_depth
+            || compound->size() > maximum_constant_aggregate_elements - slots) {
+            return std::nullopt;
+        }
+        slots += compound->size();
+    }
     if (const auto* constant = std::get_if<ConstantID>(&value)) {
-        static_cast<void>(draft.constant(*constant));
+        const auto& fact = draft.constant(*constant);
+        if (const auto children = constant_children(fact.value)) {
+            for (const auto child : *children) {
+                if (!freeze_value(draft, ExecutionValue(child), depth + 1uz, slots)) {
+                    return std::nullopt;
+                }
+            }
+        }
         return *constant;
     }
     if (const auto atom = execution_atom(draft, value)) {
@@ -22,7 +35,9 @@ auto freeze_value(
     }
     if (const auto text = execution_text(draft, value)) {
         return draft.intern_constant({
-            .type = draft.builtin_type(BuiltinType::Str),
+            .type = std::holds_alternative<ExecutionOwnedText>(value)
+                ? draft.builtin_type(BuiltinType::String)
+                : draft.builtin_type(BuiltinType::Str),
             .value = StringConstant {.value = draft.intern_spelling(text->view())},
         });
     }
@@ -32,15 +47,12 @@ auto freeze_value(
         const auto type = aggregate ? aggregate->type : enumeration->type;
         const auto enum_case = enumeration ? std::optional(enumeration->enum_case) : std::nullopt;
         const auto children = execution_elements(value);
-        if (depth >= maximum_constant_aggregate_depth
-            || children.size() > maximum_constant_aggregate_elements) {
-            return std::nullopt;
-        }
         const auto canonical = draft.type_copy(type);
         if (enum_case.has_value() != std::holds_alternative<EnumTypeValue>(canonical.value)) {
             return std::nullopt;
         }
         const auto* array = std::get_if<ArrayTypeValue>(&canonical.value);
+        const auto* vector = std::get_if<VectorTypeValue>(&canonical.value);
         const auto* tuple = std::get_if<TupleTypeValue>(&canonical.value);
         const auto unit =
             canonical.value == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::Void}};
@@ -64,21 +76,17 @@ auto freeze_value(
                 return std::nullopt;
             }
         }
-        if (!slice) {
-            const auto shape = shapes.get(type);
-            if (!shape
-                || !shape->supported
-                || shape->elements > maximum_constant_aggregate_elements
-                || (array && children.size() != array->extent)
-                || (tuple && children.size() != tuple->elements.size())
-                || (unit && !children.empty())
-                || (!array
-                    && !tuple
-                    && !unit
-                    && !enum_case
-                    && (!fields || fields->size() != children.size()))) {
-                return std::nullopt;
-            }
+        if ((array && children.size() != array->extent)
+            || (tuple && children.size() != tuple->elements.size())
+            || (unit && !children.empty())
+            || (!array
+                && !vector
+                && !tuple
+                && !unit
+                && !slice
+                && !enum_case
+                && (!fields || fields->size() != children.size()))) {
+            return std::nullopt;
         }
         auto elements = std::vector<ConstantID>();
         elements.reserve(children.size());
@@ -90,6 +98,7 @@ auto freeze_value(
                 return std::nullopt;
             }
             const auto expected = array ? array->element
+                : vector                ? vector->element
                 : tuple                 ? tuple->elements[index]
                 : slice                 ? slice->element
                 : fields                ? (*fields)[index]
@@ -98,7 +107,7 @@ auto freeze_value(
             if (*actual != expected) {
                 return std::nullopt;
             }
-            const auto frozen = freeze_value(draft, shapes, std::move(child), depth + 1uz);
+            const auto frozen = freeze_value(draft, std::move(child), depth + 1uz, slots);
             if (!frozen || draft.constant(*frozen).type != expected) {
                 return std::nullopt;
             }
@@ -113,6 +122,12 @@ auto freeze_value(
             }
             if (array) {
                 return ArrayConstant {.elements = std::move(elements)};
+            }
+            if (vector) {
+                return VectorConstant {
+                    .elements = std::move(elements),
+                    .capacity = aggregate->capacity
+                };
             }
             if (tuple) {
                 return TupleConstant {.elements = std::move(elements)};
@@ -134,17 +149,6 @@ auto freeze_value(
 
 auto freeze_constant_value(ProgramDraft& draft, ExecutionValue value) noexcept
     -> std::optional<ConstantID> {
-    const auto shapes = ExecutionTypeShapes(draft);
-    return freeze_value(draft, shapes, std::move(value), 0);
-}
-
-auto constant_initializer_type(const ProgramDraft& draft, ConstructionTypeRef type) noexcept
-    -> ConstructionTypeRef {
-    const auto* id = std::get_if<TypeID>(&type);
-    if (id
-        && draft.type_copy(*id).value
-            == CanonicalTypeValue {BuiltinTypeValue {.kind = BuiltinType::String}}) {
-        return draft.builtin_type(BuiltinType::Str);
-    }
-    return type;
+    auto slots = 0uz;
+    return freeze_value(draft, std::move(value), 0uz, slots);
 }

@@ -1,7 +1,7 @@
 private class Counter {
     value: i32,
 
-    fn create(value: i32) -> Counter => { value: value };
+    fn new(value: i32) -> Counter => { value: value };
     fn read(self) -> i32 => self.value;
 
     fn increment(&self, amount: i32) {
@@ -19,7 +19,7 @@ private class Counter {
 
 private class Empty {
 
-    fn create() -> Empty => {};
+    fn new() -> Empty => {};
 }
 
 private fn argument(&trace: i32) -> i32 {
@@ -30,17 +30,17 @@ private fn argument(&trace: i32) -> i32 {
 private class Receiver {
     value: i32,
 
-    fn create(value: i32) -> Receiver => { value: value };
+    fn new(value: i32) -> Receiver => { value: value };
     fn sum(self, value: i32) -> i32 => self.value + value;
 }
 
 private fn receiver(&trace: i32) -> Receiver {
     trace = trace * 10 + 1;
-    return Receiver::create(7);
+    return Receiver::new(7);
 }
 
 test "Classes: factories, receivers and lexical access compose ordinary value rules" {
-    let factory: fn(i32) -> Counter = Counter::create;
+    let factory: fn(i32) -> Counter = Counter::new;
     var counter = factory(3);
     counter.increment(4);
     check(counter.read() == 7);
@@ -48,19 +48,19 @@ test "Classes: factories, receivers and lexical access compose ordinary value ru
     counter.increment(1);
     check(copy.read() == 7);
     check(counter.from_other(copy) == 23);
-    let _ = Empty::create();
+    let _ = Empty::new();
     check(counter.read() == 8);
     var trace = 0;
     check(receiver(&trace).sum(argument(&trace)) == 12);
     check(trace == 12);
-    let array = [Counter::create(1), Counter::create(2)];
+    let array = [Counter::new(1), Counter::new(2)];
     check(array[1].read() == 2);
 }
 
 private class Label {
     text: String,
 
-    fn create(text: str) -> Label => { text: text as String };
+    fn new(text: str) -> Label => { text: text as String };
     fn view(self) -> str => self.text;
 
     fn replace(&self, text: str) {
@@ -69,7 +69,7 @@ private class Label {
 }
 
 test "Classes: private owning storage retains ordinary copy and borrow behavior" {
-    var label = Label::create("first");
+    var label = Label::new("first");
     let copy = label;
     label.replace("second");
     check(copy.view() == "first");
@@ -79,7 +79,7 @@ test "Classes: private owning storage retains ordinary copy and borrow behavior"
 private class TextBuilder {
     text: String,
 
-    fn create() -> TextBuilder => { text: {} };
+    fn new() -> TextBuilder => { text: {} };
 
     fn append(&self, text: str) {
         self.text.append(text);
@@ -89,12 +89,12 @@ private class TextBuilder {
 }
 
 test "Classes: Take builder delivers its owning string" {
-    var builder = TextBuilder::create();
+    var builder = TextBuilder::new();
     builder.append("Car");
     builder.append("ven");
     let result = builder.build();
     check(result.as_str() == "Carven");
-    check(TextBuilder::create().build().as_str() == "");
+    check(TextBuilder::new().build().as_str() == "");
 }
 
 private class StaticCounter {
@@ -102,7 +102,7 @@ private class StaticCounter {
 
     private const fn initial(value: i32) -> i32 => if value < 0 { 0 } else { value };
 
-    const fn create(value: i32) -> StaticCounter => { value: StaticCounter::initial(value) };
+    const fn new(value: i32) -> StaticCounter => { value: StaticCounter::initial(value) };
 
     const fn increment(&self) {
         self.value += 1;
@@ -117,7 +117,7 @@ private class StaticCounter {
 }
 
 private const fn static_counter_value() -> i32 {
-    var counter = StaticCounter::create(-1);
+    var counter = StaticCounter::new(-1);
     counter.increment();
     var copy = counter;
     copy.increment();
@@ -128,17 +128,17 @@ const test "Classes: const operations preserve private construction, mutation an
     check(static_counter_value() == 12);
 }
 
-private const direct_counter = StaticCounter::create(7);
+private const direct_counter = StaticCounter::new(7);
 private const direct_counter_value = direct_counter.read();
 
-private fn direct_counter_array() -> [i32; StaticCounter::create(3).read() as usize] {
-    const value = StaticCounter::create(5).read();
+private fn direct_counter_array() -> [i32; StaticCounter::new(3).read() as usize] {
+    const value = StaticCounter::new(5).read();
     return [value; 3];
 }
 
 const test "Classes: constant roots call associated and receiver operations" {
     check(direct_counter_value == 7);
-    check(StaticCounter::create(-1).read() == 0);
+    check(StaticCounter::new(-1).read() == 0);
     check(StaticCounter::default_value() == 4);
 }
 

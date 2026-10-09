@@ -138,7 +138,7 @@ auto BodyExprSite::resolve_duration_type(Span span) noexcept -> ExpressionTask<T
 
 auto BodyExprSite::constant(ConstantID constant, Span span) noexcept -> Value {
     return body
-        .make_built(draft().constant(constant).type, SemConstant {.constant = constant}, span);
+        .make_built(draft().constant(constant).type, constant_operation(draft(), constant), span);
 }
 
 auto BodyExprSite::resolve_generic_arguments(
@@ -416,7 +416,7 @@ auto BodyExprSite::resolve_name(std::string_view name, Span span) noexcept
 }
 
 auto BodyExprSite::resolve_type_qualifier(ASTExprID id) noexcept
-    -> ExpressionTask<std::optional<TypeID>> {
+    -> ExpressionTask<std::optional<ConstructionTypeRef>> {
     co_return (co_await body.resolve_type_qualifier(id));
 }
 

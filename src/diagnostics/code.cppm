@@ -165,7 +165,7 @@ enum class DiagnosticCode {
     TypeTextProperty,
     TypeUnresolved,
     TypeUpdateInteger,
-    TypeSequenceElement,
+    TypeVectorElement,
     TypeValueRequired,
 };
 

@@ -2,15 +2,16 @@
 
 - **Status:** Exploration
 - **Implementation:** Not started
-- **Scope:** Record and enum representation, native-layout boundaries, compact handles, and collection-layout experiments
+- **Scope:** Record, tuple, and enum representation, native-layout boundaries, compact handles, and collection layouts
 
 ## Summary
 
 This proposal explores smaller records, enum carriers, and object collections
-while preserving Carven's value, access, failure, and lifetime contracts. Ordinary
-records may permit representation selection; explicit native forms would fix the
-relevant interoperability contract. Compact collections have separate access and
-mutation rules rather than silently changing ordinary record semantics.
+while preserving Carven's value, access, failure, and lifetime contracts.
+Representation selection uses known values, structure, access, and lifetime facts
+to choose C++ storage and operations. Explicit native forms would fix the relevant
+interoperability contract. Compact collections have separate access and mutation
+rules.
 
 All forms and plan names below are candidates. No layout syntax or optimization
 is accepted by this document. Select each experiment using target facts and a
@@ -20,6 +21,7 @@ workload; a smaller representation alone does not establish a performance gain.
 | --- | --- |
 | Native layout boundaries and target facts | Define the ABI domain, admitted fields, and source of target layout information |
 | Field ordering | Demonstrate preserved construction and observation order for a restricted record family |
+| Tuple representation | Measure native compilation and generated size for large products while preserving element lifetimes |
 | Enum niches and pointer tags | Specify valid encodings, addressable projections, and C++20 reconstruction |
 | Pool-relative handles | Select a node workload with an explicit pool identity and reuse policy |
 | Frozen compact collections | Select a builder/reader API with independently checked retention and representation contracts |
@@ -67,8 +69,11 @@ identify the implementations and research behind each observation.
 ### Ordinary and native records
 
 The proposed default for ordinary `struct` and `class` preserves logical field
-identity and behavior without promising physical declaration order. Privacy is
-independent of representation: a class method may still expose a field address,
+identity and behavior without promising physical declaration order. A source
+nominal type need not map to a single C++ class or struct. Construction, projection,
+copying, transfer, and cleanup must agree on the selected representation throughout
+its native interface domain. Privacy is independent of representation: a class
+method may still expose a field address,
 retain a borrow, or call native code. Class encapsulation alone grants no right
 to eliminate that field's storage.
 
@@ -188,6 +193,17 @@ seen first. One nominal instance has one representation throughout its ABI domai
 Either every admitted construction has a legal realization or the type keeps its
 ordinary representation. Failure before full construction cleans only completed
 members under the existing semantic order.
+
+## Tuple representation
+
+A measured large-product cost may justify flat aggregates selected by canonical
+product identity. Compare generated size and native compile time with recursive
+aggregates before selecting another form. Shared definitions require consistent
+cross-module placement and dependencies.
+
+Preserve nested shapes, unit slots, ordered construction, stable element storage,
+immovable native results, partial construction, retained loans, and cleanup.
+Representation changes do not expand the source tuple API.
 
 ## Enum representation candidates
 
@@ -324,8 +340,25 @@ an explicit failure policy rather than an invented source failure type.
 Runtime compact storage, compile-time retained data, and a persistent wire format
 are separate contracts. A file format additionally fixes versioning, endianness,
 widths, padding policy, and input validation; optimized internal layout is not a
-serialization promise. The constant-storage proposal owns promotion eligibility
-and graph identity. This proposal owns the selected physical encoding.
+serialization promise.
+
+For compile-time construction, begin with acyclic scalar/text records and an
+explicit immutable reader. Execute logical construction, failures, and cleanup;
+retain completed reachable values and backing before assigning physical offsets.
+A conversion to a different reader type remains explicit. Pending operations,
+scheduler state, native register bytes, and external resources are not logical
+collection contents.
+
+Offsets derive from final target storage, not host addresses or execution
+coordinates. Native realization must produce legal C++20 static data with the
+same reader contract as runtime construction. An encoding cannot silently add
+dynamic initialization or change the ABI of a constant instance.
+
+Compare static and runtime builders with the same reader and expected values.
+Cover empty data, construction failure, escaping backing, offset overflow, and
+cross-module storage; measure static bytes, native compilation, and access costs.
+Shared or cyclic collections additionally need the retained-reference-graph
+contract defined in semantic execution.
 
 ## Target representation planning
 
@@ -447,8 +480,8 @@ suspension, cancellation, failure, and cleanup retain their existing semantics.
   a builder/reader collection, and which operations remain addressable?
 - **Closure condition:** One owner and invalidation model, overflow behavior,
   construction-failure example, traversal/indexing costs, and explicit copy rules.
-  Static promotion additionally consumes the constant-storage retention contract;
-  runtime-only experiments need not wait for retained cyclic graphs.
+  Static promotion also needs eligible contents and legal static reconstruction;
+  acyclic collections do not require a retained-cycle design.
 
 ## Deferred directions
 
@@ -537,7 +570,7 @@ suite do not predict Carven's gains.
 
 - [Read values and aliases](../docs/language/ownership.md#read-values-and-aliases): snapshot policy.
 - [Uninitialized storage](uninitialized-storage.md): construction destinations.
-- [Semantic execution](semantic-execution.md) and [constant storage](constant-storage.md): address observations and retained graphs.
+- [Semantic execution](semantic-execution.md): address observations and retained graphs.
 - [C++ representation](../docs/compiler/backend/representation.md) and [compiler architecture](../docs/compiler/README.md): current ownership and publication boundaries.
 - [Async](../docs/language/async.md) and [tuples](../docs/language/aggregates.md#tuples): implemented completion and product contracts.
 - [Concurrency](concurrency.md): future shared-memory obligations.

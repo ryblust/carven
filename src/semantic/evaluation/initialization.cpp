@@ -13,7 +13,7 @@ auto SemanticExecutor::default_value(TypeID target, ProgramOriginID origin) noex
         co_return std::unexpected(std::move(checked.error()));
     }
     const auto canonical = values.type_copy(target);
-    if (std::holds_alternative<OwnedSequenceTypeValue>(canonical.value)) {
+    if (std::holds_alternative<VectorTypeValue>(canonical.value)) {
         co_return ExecutionAggregateValue {.type = target, .elements = {}};
     }
     if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {

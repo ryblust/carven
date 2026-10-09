@@ -18,6 +18,8 @@ public:
     virtual auto spelling(ProgramSpellingID spelling) const noexcept -> std::string_view = 0;
 };
 
+auto constant_has_storage(const ConstantValueReader& values, ConstantID id) noexcept -> bool;
+
 struct EnumCaseTypes final {
     EnumCaseID id;
     std::vector<TypeID> payload_types;

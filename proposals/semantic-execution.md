@@ -1,37 +1,23 @@
 # Semantic execution extensions
 
 - **Status:** Exploration
-- **Implementation:** Not started for the extensions described here
-- **Scope:** Structured static-root expressions, address observation, C-string literal identity, and execution-mode policies
+- **Implementation:** Not started
+- **Scope:** Structured static roots, text traversal, address observation, literal identity, and retained reference graphs
 
 ## Summary
 
 This proposal explores inline structured expressions in static initializers and
 array extents, and source-visible observations of execution addresses. These are
 independent design slices. Structured roots can reduce one-use `const fn` helpers;
-address observations need explicit identity and stability guarantees before they
-can produce ordinary values or affect retained results.
+address observations and retained reference graphs need explicit identity and
+stability guarantees.
 
-## Current foundation
+## Execution boundary
 
-The semantic executor consumes typed
-structured operations for required and interpreted execution. Execution places
-contain a domain identity, object number, and projection path rather than a host
-address. Assignment to a live owner preserves its identity; Take and scope exit
-end it, and reinitialization does not revive old pointers. Read observation and
-Write aliasing retain their ordinary type and storage contracts.
-
-Ordinary `const fn` bodies support structured controls, but the initializer and
-extent entry in `StaticRootSite` rejects direct `if`, `match`, and `try` forms.
-`CStringConstant` retains spelling for content display; generated C++ supplies
-static-lifetime string literals. Neither constant interning nor native literal
-pooling establishes a source literal-identity policy. The full execution path
-from a C-string pointer through `ptr<void>` conversion to address formatting is
-not implemented.
-
-Source admission, executed-path support, and result publication have separate
-checks. This proposal covers observations during execution; constant storage
-covers retained values and reference graphs.
+Execution places use domain and object identities with projection paths.
+Address-observation and graph-retention designs must preserve invalidation by
+Take and scope exit; reinitialization cannot revive old pointers. Source
+admission, executed-path support, and result publication remain separate checks.
 
 ## Structured expressions in static roots
 
@@ -110,6 +96,40 @@ text or an integer, choose a branch, or determine an array extent. A policy that
 prohibits that influence must restrict the observation itself or define complete
 dependency rules.
 
+## Text traversal admission
+
+Static scalar traversal through `.chars()` remains unsupported. A text-processing
+consumer can select this extension. Reuse the text backing and Unicode scalar
+contracts, and define cursor lifetime, mutation invalidation, iteration work
+accounting, and rejection of escaping views.
+
+## Retained reference graphs
+
+### DEFER-01 — Shared or cyclic static graphs
+
+- **Reason deferred:** Retained alias identity, cycles, and access permissions
+  require an explicit source contract.
+- **Reactivation condition:** A static-data consumer needs shared nodes or cycles
+  and can state its roots, relationships, and permissions.
+
+Retain a root-reachable closure of eligible objects with shared node identity and
+valid typed subobject projections. Define promotable targets, admitted cycles,
+external resources, and escaping mutable aliases. Promotion cannot repair a
+pointer already dangling during execution. The address-observation policy must
+agree with the relationships preserved by retention.
+
+A graph needs node identities, staged node and edge construction, and publication
+checks for a closed graph; a pointer alternative in the recursive constant tree
+is insufficient. Analysis owns canonical publication. Lowering assigns target
+symbols and relocations; compiler-host addresses and execution coordinates never
+become target pointers.
+
+Validate shared and separate equal-valued nodes, subobjects, closed and escaping
+roots, dangling targets, admitted cycles, access permissions, and resource limits.
+Native reconstruction must establish C++20 static initialization across modules
+without silently adding runtime initialization. Observe alias relationships and
+backing lifetimes in the generated program.
+
 ## Open decisions
 
 ### OPEN-01 — Define one structured static-root form
@@ -152,8 +172,3 @@ address relations within each environment, then compare environment-independent
 results. Do not strip all address text from comparisons in a way that hides alias
 errors. Preserve source contracts for copying, cleanup, typed failure, and resource
 stops while implementing the selected observation.
-
-## References
-
-- [Semantic execution](../docs/compiler/analysis/evaluation.md): current evaluator and publication boundaries.
-- [Constant storage](constant-storage.md): retained values and reference graphs.

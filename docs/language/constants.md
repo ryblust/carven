@@ -45,28 +45,31 @@ does not give the source declaration an identity.
 Carven evaluates `const` initializers during semantic analysis. Constant
 facts include scalar and string literals, numeric enum cases, resolved local and
 module constants, grouping, supported casts, supported pure unary and binary
-operations, constant `str.len()` and `str.is_empty()`, and payload-case
+operations, constant `str.byte_length()` and `str.is_empty()`, and payload-case
 construction whose payloads are all constant. Direct interpolation within the
 supported builtin subset, pure String construction and text queries, and direct
 calls to explicitly declared `const fn` functions with constant arguments can
 also produce a constant when the executed operations are supported.
 Fallible calls require explicit `?`; an actual failure escaping the static
 root produces a diagnostic, while successful results may form constants.
-Owning text can be passed between these expressions; only the completed
-initializer freezes its result to `str`. Fixed-array literals, struct
+Owning text and vectors can pass between these expressions. Completed constants
+preserve their result types, including `String` and `Vector<T>`. Fixed-array literals, struct
 construction, tuple construction, indexing, and field or tuple-element access
 also produce constants for the aggregate types admitted during static execution.
 Arrays and tuples support equality when their component types support it.
 Arrays retain `[T; N]`, tuples retain their arity and ordered component types,
 and structs retain their nominal type. The unit value `()` freezes as `void`;
 a successful `const fn` call with a `void` result can initialize a constant.
-Array `len()` and `is_empty()` queries also produce constants.
+Array `length()` and `is_empty()` queries also produce constants.
 An explicit `[T]` constant annotation or `as_slice()` in a constant initializer
-retains a completed array as a frozen slice. Its `len`, `is_empty`, indexing,
+retains eligible completed array or Vector backing as a frozen slice. Its `length`, `is_empty`, indexing,
 and `slice` queries can also produce constants. Calls to ordinary `fn` and direct
 control-flow expressions are not Carven constant expressions. Local and module
 constant declarations exist only in the static stage; their later uses denote the
 selected normalized value without creating a runtime binding or lambda capture.
+Retained owners and their projections have immutable program-lifetime backing,
+including constants declared inside functions. A view of that backing can outlive
+the declaration's source scope. Ordinary mutable copies have their own lifetime.
 
 A body-local `const` executes where it stands in the static stage: once for
 each selected instance or expanded occurrence, and not at all in an unselected
@@ -229,8 +232,9 @@ const decorated = decorate(label(3)); // "[000102]"
 
 Function signatures follow ordinary rules, including Read, Write, and Take
 parameters. Unit values are supported in parameters, results, bindings and
-aggregate components. Every completed result must be eligible for the consuming
-constant boundary. Static execution supports
+aggregate components. Retention checks the completed result and its selected enum payloads. Declaring
+a `const fn` also requires its types and reachable operations to support execution
+for the function's possible inputs. Static execution supports
 scalar arithmetic, comparisons, logical operations and casts; local
 initialization, assignment and Take; `if`, `match`, `while`, C-style loops,
 integer ranges, array and slice loops; `return`, `break`, `continue`, direct
@@ -242,7 +246,7 @@ construction dependency cycle; the `const fn` capability check handles its
 recursive direct-call graph without proving termination.
 
 Text operations include `String {}`, `String::from_str`, the owning
-`str as String` conversion, `as_str`, `len`, `is_empty`, `append`, `append_format`,
+`str as String` conversion, `as_str`, `byte_length`, `is_empty`, `append`, `append_format`,
 `push`, `clear`, byte views and iteration, and interpolation. Constant formatting
 accepts default integer, bool, char, unit (`()`) and text formatting, including known C string contents,
 plus integer `b`, `B`, `o`, `d`, `x` and `X` presentations with decimal width and optional zero
@@ -257,12 +261,14 @@ instead of deferring them to runtime.
 Fixed arrays support construction, indexing, element assignment, equality,
 independent copies, Read and Write iteration, whole-binding Take, and function
 parameters and results.
-Sequences support empty construction, checked indexing, Read and Write iteration,
-independent copies, whole-owner Take, and `len`, `is_empty`, `push`, `remove`, and
-`clear`. Their elements follow the ordinary ownership rules. Sequences and
-aggregates containing them remain execution-local: a completed constant cannot
-freeze their storage. A computation can consume a sequence and return supported
-text or scalar results.
+Vectors support empty and literal construction, copying from slices, checked
+indexing, Read and Write iteration, independent copies, whole-owner Take, borrowed
+slicing, and `length`, `is_empty`, `push`, `remove`, and `clear`. Removal returns
+the extracted owner. Capacity construction, queries, and reservation are also
+available. Capacity is logical execution state, independent of host allocation.
+Completed vectors preserve contents and capacity; nested String and Vector
+owners preserve their types. Retained slices require live, eligible backing at
+initializer completion. Returning a borrowed local from a function is still invalid.
 Structs support positional and named construction, field access and assignment,
 independent copies, whole-binding Take, and parameters and results.
 Tuples support construction, positional element access, destructuring, equality,
@@ -273,13 +279,13 @@ parameters and results. Fields, elements, and payloads follow the same execution
 type rules recursively; publishing a completed constant also requires each
 component to support freezing. Construction evaluates initializers in source
 order. Freezing preserves nominal identity, array extents, tuple arity and nesting, and component types;
-it does not convert owning String fields or elements to `str`.
+it retains owning String and Vector fields and elements with their original types.
 Empty array literals require an expected element type.
 
-Read arguments containing array, Sequence, or String storage observe their contents after
+Read arguments containing array, Vector, or String storage observe their contents after
 all arguments have evaluated. Other supported values are snapshotted at their
 argument position. Field and index projections follow the selected value's type.
-Slice operations, including `as_slice().len()`, indexing, and subslicing, can
+Slice operations, including `as_slice().length()`, indexing, and subslicing, can
 execute against live backing storage. Slice chains preserve the selected element
 identity during execution. Completed results become frozen slices at a constant
 initializer; runtime copies use the ordinary slice API and borrowing rules.
@@ -287,9 +293,10 @@ initializer; runtime copies use the ordinary slice API and borrowing rules.
 String values retain owning copy and Take behavior within and between constant
 function calls. Read String operands observe their contents after all arguments
 or interpolation holes have evaluated, following the ordinary evaluation order.
-Only the completed constant initializer freezes an owning result into immutable
-`str` bytes. Consequently `const text = label(3)` has type `str`, and an explicit
-`String` annotation on that constant is invalid.
+The completed constant initializer preserves the owning result type. Thus
+`const text = label(3)` has type `String`; an explicit `str` destination borrows
+the completed bytes. Reads use immutable retained storage, while value copies
+construct independent owners.
 
 Typed failure contracts use the ordinary language rules during static execution:
 `throw` creates a typed payload, `?` propagates it, and `try/catch` matches its type
@@ -348,13 +355,13 @@ produces an ordinary `char` constant with the same publication rules as a litera
 
 ## Frozen constant slices
 
-A constant initializer can retain a completed array as `[T]`,
+A constant initializer can retain a completed array or Vector as `[T]`,
 using an explicit annotation or `as_slice()`:
 
 ```carven
 const table: [i32] = [2, 4, 6];
 const middle = table.slice(1, 3);
-const count = middle.len();
+const count = middle.length();
 fn table_view() -> [i32] => table;
 ```
 
@@ -371,13 +378,14 @@ their declared type. Element types are preserved:
 Struct fields keep their declared types. There is no recursive conversion of
 owning fields or nested arrays to views. Slice comparison remains unsupported.
 
-Array results of static function calls can reach this initializer boundary.
+Array and Vector results of static function calls can reach this initializer
+boundary.
 During static execution, slice parameters, locals, indexing, and subslicing
 borrow live backing storage. Copies and chained slices retain that backing
 relationship; they do not extend its lifetime. A completed static root freezes
 the selected elements into immutable program-lifetime backing before releasing the
 evaluation storage.
-Ordinary runtime array-to-slice conversions still borrow their source storage;
+Ordinary runtime array/Vector-to-slice conversions still borrow their source storage;
 known contents alone do not extend that storage's lifetime.
 
 Retaining an array and constructing a constant subslice charge their number of

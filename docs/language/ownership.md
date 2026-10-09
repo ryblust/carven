@@ -50,7 +50,7 @@ storage. Contained pointers and Write captures retain their separate target acce
 
 ## Read values and aliases
 
-Read parameters preserve Carven array, Sequence, String, and closure storage
+Read parameters preserve Carven array, Vector, String, and closure storage
 through const references, including storage nested in aggregates. Pure Carven
 values use const value snapshots. Native-containing values use a const value
 when C++ copy construction and destruction are both trivial, and a const

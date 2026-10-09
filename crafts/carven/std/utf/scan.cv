@@ -91,13 +91,13 @@ const fn feed_utf8(&state: UTF8State, bytes: [u8]) throw UTF8Error {
     var index: usize = 0;
     // A previous feed may end inside a scalar. Its existing state is sufficient;
     // no access to the previous caller's input storage is needed.
-    while index < bytes.len() && state.remaining != 0 {
+    while index < bytes.length() && state.remaining != 0 {
         push_utf8(&state, bytes[index])?;
         index += 1;
     }
     let start = index;
     var previous = u8x32::splat(0);
-    while bytes.len() - index >= 32 {
+    while bytes.length() - index >= 32 {
         let current = u8x32::load(bytes, index);
         if ((previous | current) >= 0x80).any() {
             if invalid_utf8_block(previous, current).any() { break; }
@@ -108,9 +108,9 @@ const fn feed_utf8(&state: UTF8State, bytes: [u8]) throw UTF8Error {
     commit_utf8_blocks(&state, bytes, start, index);
     // Short tails and failed blocks use the authoritative byte transition,
     // preserving exact error positions and recoverable streaming state.
-    while index < bytes.len() {
+    while index < bytes.length() {
         if state.remaining == 0 && bytes[index] < 0x80 {
-            let count = ascii_prefix(bytes.slice(index, bytes.len()));
+            let count = ascii_prefix(bytes.slice(index, bytes.length()));
             state.offset += count;
             state.sequence_start = state.offset;
             state.lead = 0;

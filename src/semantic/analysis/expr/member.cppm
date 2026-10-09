@@ -135,7 +135,11 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
         if (!type->has_value()) {
             co_return site.invalid_type_qualifier(site.syntax().expression(source.operand_id).span);
         }
-        const auto canonical = site.draft().type_copy(**type);
+        const auto concrete = site.draft().try_canonicalize_declared_type(**type);
+        if (!concrete) {
+            co_return site.invalid_type_qualifier(site.syntax().expression(source.operand_id).span);
+        }
+        const auto canonical = site.draft().type_copy(*concrete);
         if (std::holds_alternative<BuiltinTypeValue>(canonical.value)) {
             co_return std::unexpected(site.fail(
                 source.name_span,
@@ -156,7 +160,7 @@ auto interpret_member(Site& site, const ASTMemberExpr& source, Span span) noexce
         }
         co_return (co_await interpret_enum_case(
             site,
-            **type,
+            *concrete,
             site.spelling(source.name_span),
             source.name_span,
             {},

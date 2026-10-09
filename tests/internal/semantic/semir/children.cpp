@@ -28,8 +28,12 @@ const TestSuite suite([] static noexcept {
             const auto lifetime =
                 body.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, origin);
             const auto leaf = [&]() noexcept {
-                return body
-                    .make_expression(integer, lifetime, origin, SemConstant {.constant = constant});
+                return body.make_expression(
+                    integer,
+                    lifetime,
+                    origin,
+                    SemConstant {.constant = constant, .retained_storage = false}
+                );
             };
             auto expression = leaf();
             constexpr auto depth = 10'000uz;
@@ -62,7 +66,7 @@ const TestSuite suite([] static noexcept {
                             boolean,
                             lifetime,
                             origin,
-                            SemConstant {.constant = condition}
+                            SemConstant {.constant = condition, .retained_storage = false}
                         ),
                         .body = std::move(region),
                     });
@@ -154,8 +158,12 @@ const TestSuite suite([] static noexcept {
         const auto lifetime =
             body.add_lifetime_region(std::nullopt, LifetimeRegionKind::Lexical, origin);
         const auto leaf = [&]() noexcept {
-            return body
-                .make_expression(integer, lifetime, origin, SemConstant {.constant = constant});
+            return body.make_expression(
+                integer,
+                lifetime,
+                origin,
+                SemConstant {.constant = constant, .retained_storage = false}
+            );
         };
         auto operation = SemBinary {
             .left = UniqueIndirect(body.make_expression(

@@ -102,7 +102,7 @@ struct TextContainer {
     text: String,
 }
 
-fn text_length_after(value: String, marker: i32) -> usize => value.len() + marker as usize;
+fn text_length_after(value: String, marker: i32) -> usize => value.byte_length() + marker as usize;
 
 test "Evaluation: read-only owner projections retain backing across later effects" {
     var trace = 0;

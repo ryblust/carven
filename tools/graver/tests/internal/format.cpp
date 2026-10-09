@@ -285,7 +285,7 @@ const TestSuite suite([] static noexcept {
                 "struct Box < T , U , >{first:T,second:U}"
                 "fn relay < T > (&&value:T)->T=>&&value;"
                 "relay < Box < i32 , u8 > , > (value);"
-                "Owner < i32 > :: create(value);"
+                "Owner < i32 > :: new(value);"
                 "a < b > (c);(a < b)>c;value>>amount;",
                 "struct Box<T, U,> {\n"
                 "    first: T,\n"
@@ -293,7 +293,7 @@ const TestSuite suite([] static noexcept {
                 "}\n\n"
                 "fn relay<T>(&&value: T) -> T => &&value;\n\n"
                 "relay<Box<i32, u8>,>(value);\n"
-                "Owner<i32>::create(value);\n"
+                "Owner<i32>::new(value);\n"
                 "a<b>(c);\n"
                 "(a < b) > c;\n"
                 "value >> amount;\n"

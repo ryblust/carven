@@ -23,7 +23,7 @@ namespace carven::runtime {
 class FormatWriter final {
 public:
     FormatWriter(String& destination, std::size_t minimum_size, std::size_t maximum_size) noexcept
-        : storage(destination.storage) {
+        : storage(destination.owned()) {
         reserve(minimum_size, maximum_size);
     }
 
@@ -35,7 +35,7 @@ public:
         std::size_t maximum_size,
         std::initializer_list<std::size_t> text_sizes
     ) noexcept
-        : storage(destination.storage) {
+        : storage(destination.owned()) {
         const auto available = storage.max_size() - storage.size();
         for (const auto size : text_sizes) {
             if (size > available || minimum_size > available - size) {

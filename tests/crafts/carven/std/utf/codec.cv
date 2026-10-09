@@ -128,13 +128,13 @@ const test "UTF8: encoded arrays freeze as constant slices" {
     check(encoded.width == 4);
     check(encoded.bytes == [0xf0, 0x9f, 0x98, 0x80]);
     const padded: [u8] = encode_utf8('é').bytes;
-    check(padded.len() == 4);
+    check(padded.length() == 4);
     check(padded[0] == 0xc3);
     check(padded[1] == 0xa9);
     check(padded[2] == 0);
     check(padded[3] == 0);
     const bytes = encoded_bytes(encoded);
-    check(bytes.len() == 4);
+    check(bytes.length() == 4);
     check(bytes[0] == 0xf0 && bytes[1] == 0x9f && bytes[2] == 0x98 && bytes[3] == 0x80);
 }
 
@@ -182,7 +182,7 @@ test "UTF8: encoded views contain exactly the scalar encoding" {
     for character in characters {
         let encoded = encode_utf8(character);
         let bytes = encoded_bytes(encoded);
-        check(bytes.len() == widths[index]);
+        check(bytes.length() == widths[index]);
         index += 1;
     }
 }

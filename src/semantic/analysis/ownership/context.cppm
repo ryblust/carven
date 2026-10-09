@@ -405,6 +405,7 @@ struct OwnershipRelationDemand final {
 struct OwnershipBodyFacts final {
     OwnershipRelationDemand relation_demand;
     std::vector<OwnershipLocalObject> locals;
+    std::set<LocalBindingID> retained_bindings;
     std::flat_map<const SemanticExpression*, std::size_t> temporaries;
     std::flat_map<LifetimeRegionID, std::vector<std::size_t>> lifetime_objects;
     std::flat_map<const SemCatchArm*, std::flat_map<TypeID, OwnershipCatchAcceptance>> catches;

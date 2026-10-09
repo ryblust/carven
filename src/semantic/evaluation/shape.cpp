@@ -24,10 +24,9 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
     }
     const auto calculate = [&]() noexcept -> std::optional<ExecutionTypeShape> {
         const auto canonical = values.type_copy(type);
-        auto result =
-            ExecutionTypeShape {.supported = false, .exact = true, .depth = 0uz, .elements = 0uz};
+        auto result = ExecutionTypeShape {.exact = true, .depth = 0uz, .elements = 0uz};
         constexpr auto saturated = maximum_constant_aggregate_elements + 1uz;
-        if (std::holds_alternative<OwnedSequenceTypeValue>(canonical.value)) {
+        if (std::holds_alternative<VectorTypeValue>(canonical.value)) {
             result.exact = false;
             return result;
         } else if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
@@ -36,7 +35,6 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
                 return std::nullopt;
             }
             result.depth = child->depth + 1uz;
-            result.supported = child->supported;
             result.exact = child->exact;
             const auto count = 1uz + child->elements;
             result.elements = array->extent > maximum_constant_aggregate_elements / count
@@ -51,19 +49,13 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
             if (!fields) {
                 return std::nullopt;
             }
-            result = {
-                .supported = true,
-                .exact = true,
-                .depth = 1uz,
-                .elements = std::min(fields->size(), saturated)
-            };
+            result = {.exact = true, .depth = 1uz, .elements = std::min(fields->size(), saturated)};
             for (const auto field : *fields) {
                 const auto child = compute(field, depth + 1uz);
                 if (!child) {
                     return std::nullopt;
                 }
                 result.depth = std::max(result.depth, child->depth + 1uz);
-                result.supported &= child->supported;
                 result.exact &= child->exact;
                 result.elements += std::min(child->elements, saturated - result.elements);
             }
@@ -72,7 +64,7 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
             if (!cases) {
                 return std::nullopt;
             }
-            result = {.supported = true, .exact = false, .depth = 1uz, .elements = 0uz};
+            result = {.exact = false, .depth = 1uz, .elements = 0uz};
             for (const auto& item : *cases) {
                 auto count = std::min(item.payload_types.size(), saturated);
                 for (const auto field : item.payload_types) {
@@ -81,35 +73,10 @@ auto ExecutionTypeShapes::compute(TypeID type, std::size_t depth) const noexcept
                         return std::nullopt;
                     }
                     result.depth = std::max(result.depth, child->depth + 1uz);
-                    result.supported &= child->supported;
                     count += std::min(child->elements, saturated - count);
                 }
                 result.elements = std::max(result.elements, count);
             }
-        } else if (std::holds_alternative<RangeTypeValue>(canonical.value)) {
-            result.supported = true;
-        } else if (std::holds_alternative<PointerTypeValue>(canonical.value)
-                   || std::holds_alternative<SliceTypeValue>(canonical.value)) {
-            // Pointers and slices are views. Their backing storage is not contained
-            // in the value's aggregate shape.
-            result.supported = true;
-        } else if (const auto* cpp = std::get_if<CppTypeValue>(&canonical.value)) {
-            result.supported = std::holds_alternative<CppConstCharPointerType>(cpp->form);
-        } else if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
-            result.supported = builtin_is_numeric(builtin->kind)
-                || builtin->kind == BuiltinType::U8x32
-                || builtin->kind == BuiltinType::Mask32
-                || builtin->kind == BuiltinType::F32x8
-                || builtin->kind == BuiltinType::Mask8
-                || builtin->kind == BuiltinType::U8x16
-                || builtin->kind == BuiltinType::Mask16
-                || builtin->kind == BuiltinType::F32x4
-                || builtin->kind == BuiltinType::Mask4
-                || builtin->kind == BuiltinType::Bool
-                || builtin->kind == BuiltinType::Char
-                || builtin->kind == BuiltinType::Str
-                || builtin->kind == BuiltinType::String
-                || builtin->kind == BuiltinType::Void;
         }
         return result;
     };

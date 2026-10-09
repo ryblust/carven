@@ -76,7 +76,7 @@ overloading is not supported.
 
 Bare source declaration names require identifier tokens, so reserved keywords
 cannot name declarations. Fixed builtin type names and the type constructors
-`ptr` and `range` are additionally reserved for module declarations; locals,
+`ptr` and `Range` are additionally reserved for module declarations; locals,
 parameters, and members may use those identifier spellings. Root builtin
 callable names such as `print` may be shadowed. The
 [name classification](grammar.md#22-identifiers-and-keywords) distinguishes these

@@ -1,4 +1,4 @@
-module carven:test.internal.semantic.analysis.sequences;
+module carven:test.internal.semantic.analysis.vector;
 
 import :diagnostics.code;
 import :semantic.analysis.types;
@@ -13,17 +13,17 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
-    "Sequence types: empty storage does not require an element default"_test = [] static noexcept {
+    "Vector types: empty storage does not require an element default"_test = [] static noexcept {
         const auto program = analyze_test_program(R"(
-            enum Tree { Leaf, Branch(Sequence<Tree>) }
-            struct Holder<T> { items: Sequence<T> }
-            fn empty() -> Sequence<Tree> => {};
+            enum Tree { Leaf, Branch(Vector<Tree>) }
+            struct Holder<T> { items: Vector<T> }
+            fn empty() -> Vector<Tree> => {};
             fn generic_empty() -> Holder<Tree> => {};
         )");
         auto owners = 0uz;
         for (const auto [id, type] : program.types().entries()) {
             static_cast<void>(id);
-            if (std::holds_alternative<OwnedSequenceTypeValue>(type.value)) {
+            if (std::holds_alternative<VectorTypeValue>(type.value)) {
                 ++owners;
             }
         }
@@ -31,47 +31,47 @@ const TestSuite suite([] static noexcept {
         expect_equal(program.generic_nominal_instances().size(), 1uz);
     };
 
-    "Sequence types: source constructors have one reserved name and one value argument"_test =
+    "Vector types: source constructors have one reserved name and one value argument"_test =
         [] static noexcept {
-            expect(source_type_name_is_reserved("Sequence"));
+            expect(source_type_name_is_reserved("Vector"));
             expect(source_type_name_is_reserved("ptr"));
-            expect(source_type_name_is_reserved("range"));
+            expect(source_type_name_is_reserved("Range"));
             expect(!source_type_name_is_reserved("Holder"));
-            expect_diagnostic(analyze_test_errors("struct Sequence {}"), DiagnosticCode::Catalog);
+            expect_diagnostic(analyze_test_errors("struct Vector {}"), DiagnosticCode::Catalog);
             expect_diagnostic(
-                analyze_test_errors("struct Holder<Sequence> {}"),
+                analyze_test_errors("struct Holder<Vector> {}"),
                 DiagnosticCode::TypeGenericDefinition
             );
             for (const auto text : {
-                     "struct Box { value: Sequence }",
-                     "struct Box { value: Sequence<i32, u32> }",
-                     "struct Box<T> { value: Sequence<T, T> }",
+                     "struct Box { value: Vector }",
+                     "struct Box { value: Vector<i32, u32> }",
+                     "struct Box<T> { value: Vector<T, T> }",
                  }) {
                 expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeUnresolved);
             }
             static_cast<void>(analyze_test_program(R"(
-                struct Box { value: Sequence<void> }
-                struct Holder<T> { value: Sequence<(T, void)> }
+                struct Box { value: Vector<void> }
+                struct Holder<T> { value: Vector<(T, void)> }
                 fn accepted(value: Holder<void>) -> Holder<void> => value;
                 fn values() {
-                    var units: Sequence<void> = {};
+                    var units: Vector<void> = {};
                     units.push(());
-                    var products: Sequence<(i32, void)> = {};
+                    var products: Vector<(i32, void)> = {};
                     products.push((1, ()));
                 }
             )"));
             for (const auto text : {
-                     "struct Box { value: Sequence<(i32, str)> }",
-                     "struct Box<T> { value: Sequence<(T, str)> }",
+                     "struct Box { value: Vector<(i32, str)> }",
+                     "struct Box<T> { value: Vector<(T, str)> }",
                  }) {
-                expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeSequenceElement);
+                expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeVectorElement);
             }
         };
 
-    "Sequence calls: source access agrees with the selected intrinsic"_test = [] static noexcept {
+    "Vector calls: source access agrees with the selected intrinsic"_test = [] static noexcept {
         static_cast<void>(analyze_test_program(R"(
             fn accepted() {
-                var values: Sequence<i32> = {};
+                var values: Vector<i32> = {};
                 values.push(1);
                 var item: i32 = 2;
                 values.push(&&item);
@@ -80,12 +80,12 @@ const TestSuite suite([] static noexcept {
                 for value in values { let _ = value; }
                 values.remove(0);
                 values.clear();
-                let _ = values.len();
+                let _ = values.length();
                 let _ = values.is_empty();
             }
         )"));
         static_cast<void>(analyze_test_program(R"(
-            enum Group { Empty, Items(Sequence<i32>) }
+            enum Group { Empty, Items(Vector<i32>) }
             fn update(&group: Group) {
                 match group {
                     .Empty => {},
@@ -96,9 +96,9 @@ const TestSuite suite([] static noexcept {
             }
         )"));
         for (const auto text : {
-                 "fn f() { let s: Sequence<i32> = {}; for &v in s { v += 1; } }",
+                 "fn f() { let s: Vector<i32> = {}; for &v in s { v += 1; } }",
                  R"(
-                    enum Group { Empty, Items(Sequence<i32>) }
+                    enum Group { Empty, Items(Vector<i32>) }
                     fn f(&group: Group) {
                         match group {
                             .Empty => {},
@@ -110,8 +110,8 @@ const TestSuite suite([] static noexcept {
             expect_diagnostic(analyze_test_errors(text), DiagnosticCode::AccessRangeIterable);
         }
         for (const auto text : {
-                 "fn f() { var s: Sequence<i32> = {}; var v = 1; s.push(&v); }",
-                 "fn f() { var s: Sequence<i32> = {}; var index: usize = 0; s.remove(&&index); }",
+                 "fn f() { var s: Vector<i32> = {}; var v = 1; s.push(&v); }",
+                 "fn f() { var s: Vector<i32> = {}; var index: usize = 0; s.remove(&&index); }",
              }) {
             expect_diagnostic(analyze_test_errors(text), DiagnosticCode::AccessCallMismatch);
         }
@@ -120,15 +120,14 @@ const TestSuite suite([] static noexcept {
                 struct Item { value: String }
                 fn consume(&&value: String) {}
                 fn rejected() {
-                    var values: Sequence<Item> = {};
+                    var values: Vector<Item> = {};
                     consume(&&values[0].value);
                 }
             )"),
             DiagnosticCode::AccessTakeOperand
         );
-        expect_diagnostic(
-            analyze_test_errors("fn f() { var s: Sequence<i32> = {}; s.as_slice(); }"),
-            DiagnosticCode::TypeMethodCall
+        static_cast<void>(
+            analyze_test_program("fn f() { var s: Vector<i32> = {}; s.as_slice(); }")
         );
     };
 });

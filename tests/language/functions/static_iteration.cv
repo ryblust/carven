@@ -43,7 +43,7 @@ private const fn value_types() -> usize {
     const words: [str] = ["a", "bc"];
     var result: usize = 0;
     const for text in words {
-        result += text.len();
+        result += text.byte_length();
     }
     const for item in [
             Item { value: 2 },

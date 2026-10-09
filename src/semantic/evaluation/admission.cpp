@@ -19,7 +19,7 @@ auto supported_execution_type(const ExecutionValueAccess& values, ConstructionTy
             continue;
         }
         const auto canonical = values.type_copy(current);
-        if (const auto* sequence = std::get_if<OwnedSequenceTypeValue>(&canonical.value)) {
+        if (const auto* sequence = std::get_if<VectorTypeValue>(&canonical.value)) {
             pending.push_back(sequence->element);
         } else if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
             pending.push_back(array->element);

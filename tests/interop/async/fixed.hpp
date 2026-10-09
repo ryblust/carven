@@ -26,5 +26,5 @@ auto fixed_live() noexcept -> std::int32_t;
 auto fixed_trace() noexcept -> std::int32_t;
 auto fixed_identity_stable() noexcept -> std::int32_t;
 auto fixed_report() noexcept -> void;
-auto fixed_cancel_on_destroy() noexcept -> carven::runtime::execution::Operation<std::int32_t>;
+auto fixed_cancel_on_destroy() noexcept -> carven::runtime::execution::AsyncOperation<std::int32_t>;
 auto fixed_completion_cancel_observed() noexcept -> bool;

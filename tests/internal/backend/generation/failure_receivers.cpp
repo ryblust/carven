@@ -133,7 +133,7 @@ const TestSuite suite([] static noexcept {
             Case {
                 .name = "protected owner must clean before handler",
                 .body = "return try { let text = \"owned\" as String; "
-                        "source(flag)? + (text.len() as i32) } "
+                        "source(flag)? + (text.byte_length() as i32) } "
                         "catch { Error(_) => handled(), };",
                 .slots = 1uz,
                 .outcomes = 1uz
@@ -141,7 +141,7 @@ const TestSuite suite([] static noexcept {
             Case {
                 .name = "owner constructed after failure does not constrain the handoff",
                 .body = "return try { let value = source(flag)?; "
-                        "let text = \"owned\" as String; value + (text.len() as i32) } "
+                        "let text = \"owned\" as String; value + (text.byte_length() as i32) } "
                         "catch { Error(_) => handled(), };",
                 .slots = 0uz,
                 .outcomes = 1uz

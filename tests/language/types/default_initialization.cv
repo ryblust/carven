@@ -14,7 +14,7 @@ struct Nested {
     labels: [String; 2],
     pointer: ptr<i32>,
     slice: [i32],
-    interval: range<i32>,
+    interval: Range<i32>,
 }
 
 enum Choice {
@@ -39,7 +39,7 @@ const fn constant_total() -> i32 {
     for _ in array.values {
         ++count;
     }
-    return record.number + count + record.text.len() as i32;
+    return record.number + count + record.text.byte_length() as i32;
 }
 
 const total = constant_total();

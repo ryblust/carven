@@ -28,7 +28,7 @@ const TestSuite suite([] static noexcept {
         const tail = table.slice(1, 3);
         const selected = tail[1];
         const nested = rows[1][0];
-        const length = table.len();
+        const length = table.length();
         const ending = table.slice(4, 4);
         const is_empty = ending.is_empty();
         const skipped = false && (build(8).as_slice()[0] == 8);
@@ -105,10 +105,10 @@ const TestSuite suite([] static noexcept {
                 const fn inspect() -> bool {
                     var values = [3, 5, 7];
                     let empty: [i32; 0] = [];
-                    return values.len() == 3 && !values.is_empty()
-                        && empty.len() == 0 && empty.is_empty();
+                    return values.length() == 3 && !values.is_empty()
+                        && empty.length() == 0 && empty.is_empty();
                 }
-                const count = [1, 2, 3].len();
+                const count = [1, 2, 3].length();
                 const nonempty = [1, 2, 3].is_empty();
                 const executed = inspect();
             )");
@@ -140,10 +140,6 @@ const TestSuite suite([] static noexcept {
                     .code = DiagnosticCode::TypeMismatch
                 },
                 Case {
-                    .source = "const values: [String] = [\"text\"];",
-                    .code = DiagnosticCode::ConstInitializer
-                },
-                Case {
                     .source = "const value = [1, 2].as_slice()[2];",
                     .code = DiagnosticCode::ConstIndexBounds
                 },
@@ -168,20 +164,16 @@ const TestSuite suite([] static noexcept {
                     .code = DiagnosticCode::TypeMismatch
                 },
                 Case {
-                    .source = "const value = [1, 2].as_slice().len(0);",
+                    .source = "const value = [1, 2].as_slice().length(0);",
                     .code = DiagnosticCode::TypeMethodCallArity
                 },
                 Case {
-                    .source = "const value = [1, 2].len(0);",
+                    .source = "const value = [1, 2].length(0);",
                     .code = DiagnosticCode::TypeMethodCallArity
                 },
                 Case {
                     .source = "const value = [1, 2].is_empty(0);",
                     .code = DiagnosticCode::TypeMethodCallArity
-                },
-                Case {
-                    .source = "const value = [1, 2].slice(0, 1);",
-                    .code = DiagnosticCode::TypeMethodCall
                 },
                 Case {
                     .source = "const value = [1, 2].as_slice().as_slice();",
@@ -219,9 +211,9 @@ const TestSuite suite([] static noexcept {
             for (auto index = 0uz; index < 2048uz; ++index) {
                 source += index == 0uz ? "0" : ",0";
             }
-            source += "]; const values = array.as_slice(); const count = values.len()";
+            source += "]; const values = array.as_slice(); const count = values.length()";
             for (auto index = 0uz; index < 256uz; ++index) {
-                source += "+values.len()";
+                source += "+values.length()";
             }
             source += ';';
             const auto program = analyze_test_program(std::move(source));

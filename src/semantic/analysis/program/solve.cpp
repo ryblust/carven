@@ -220,7 +220,7 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
             );
         });
     }
-    const auto valid_sequence_elements = validate_sequence_elements();
+    const auto valid_sequence_elements = validate_vector_elements();
     if (!valid_sequence_elements) {
         return std::unexpected(valid_sequence_elements.error());
     }

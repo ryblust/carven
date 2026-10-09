@@ -137,7 +137,7 @@ const TestSuite suite([] static noexcept {
     "Parser type: failure arguments retain their effect role and source spans"_test =
         [] static noexcept {
             constexpr auto text =
-                std::string_view("fn f(value: Operation<i32, throw Error + IO>) {}");
+                std::string_view("fn f(value: AsyncOperation<i32, throw Error + IO>) {}");
             const auto tree = parse_valid(text);
             const auto ast = tree.view();
             const auto& operation = get<ASTNamedType>(ast.type(*function(tree).parameters[0].type));
@@ -154,13 +154,13 @@ const TestSuite suite([] static noexcept {
                 slice(text, operation.arguments[1].span),
                 std::string_view("throw Error + IO")
             );
-            check_invalid("fn invalid(value: Operation<i32, throw>) {}");
+            check_invalid("fn invalid(value: AsyncOperation<i32, throw>) {}");
         };
 
     "Parser type: explicit empty failure clauses retain their effect role"_test =
         [] static noexcept {
             constexpr auto text =
-                std::string_view("fn f(value: Operation<i32, throw ()>) throw () {}");
+                std::string_view("fn f(value: AsyncOperation<i32, throw ()>) throw () {}");
             const auto tree = parse_valid(text);
             const auto ast = tree.view();
             const auto& declaration = function(tree);

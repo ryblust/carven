@@ -194,7 +194,7 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
                     return ConstructionTupleTypeValue {std::move(elements)};
                 } else if constexpr (std::same_as<Shape, SliceTypeValue>) {
                     return ConstructionSliceTypeValue {shape.element};
-                } else if constexpr (std::same_as<Shape, OwnedSequenceTypeValue>) {
+                } else if constexpr (std::same_as<Shape, VectorTypeValue>) {
                     return AnalysisSequenceType {shape.element};
                 } else if constexpr (std::same_as<Shape, PointerTypeValue>) {
                     return AnalysisPointerType {shape.target, shape.access};
@@ -225,7 +225,7 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
                 return ConstructionTupleTypeValue {std::move(elements)};
             } else if constexpr (std::same_as<Shape, GenericSliceType>) {
                 return ConstructionSliceTypeValue {shape.element};
-            } else if constexpr (std::same_as<Shape, GenericOwnedSequenceType>) {
+            } else if constexpr (std::same_as<Shape, GenericVectorType>) {
                 return AnalysisSequenceType {shape.element};
             } else if constexpr (std::same_as<Shape, GenericPointerType>) {
                 return AnalysisPointerType {shape.target, shape.access};

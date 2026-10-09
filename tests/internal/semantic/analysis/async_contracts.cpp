@@ -142,23 +142,23 @@ fn run(value: str) { let pending = inspect(value); }
                     .name =
                         "known native boundary rejects operation input in an unused generic body",
                     .source = R"(
-private import(cpp) fn inspect(value: Operation<i32>);
-fn invalid<T>(value: Operation<i32>, marker: T) { inspect(value); }
+private import(cpp) fn inspect(value: AsyncOperation<i32>);
+fn invalid<T>(value: AsyncOperation<i32>, marker: T) { inspect(value); }
 )",
                     .rejection = DiagnosticCode::AsyncAdmission
                 },
                 ContractCase {
                     .name = "native import rejects operation input in an ordinary body",
                     .source = R"(
-private import(cpp) fn inspect(value: Operation<i32>);
-fn invalid(value: Operation<i32>) { inspect(value); }
+private import(cpp) fn inspect(value: AsyncOperation<i32>);
+fn invalid(value: AsyncOperation<i32>) { inspect(value); }
 )",
                     .rejection = DiagnosticCode::AsyncAdmission
                 },
                 ContractCase {
                     .name = "native import rejects a nested operation owner",
                     .source = R"(
-struct Box { value: Operation<i32> }
+struct Box { value: AsyncOperation<i32> }
 private import(cpp) fn inspect(value: Box);
 fn invalid<T>(value: Box, marker: T) { inspect(value); }
 )",
@@ -167,9 +167,9 @@ fn invalid<T>(value: Box, marker: T) { inspect(value); }
                 ContractCase {
                     .name = "source calls preserve typed operation Read and Take contracts",
                     .source = R"(
-fn inspect(value: Operation<i32>) {}
-fn relay(&&value: Operation<i32>) -> Operation<i32> => &&value;
-fn valid<T>(&&value: Operation<i32>, marker: T) -> Operation<i32> {
+fn inspect(value: AsyncOperation<i32>) {}
+fn relay(&&value: AsyncOperation<i32>) -> AsyncOperation<i32> => &&value;
+fn valid<T>(&&value: AsyncOperation<i32>, marker: T) -> AsyncOperation<i32> {
     inspect(value); return relay(&&value);
 }
 )",
@@ -179,7 +179,7 @@ fn valid<T>(&&value: Operation<i32>, marker: T) -> Operation<i32> {
                     .name = "unused generic caller rejects a closed Take slice argument",
                     .source = R"(
 async fn sink<T>(&&value: T) {}
-fn invalid<U>(&&values: [i32]) -> Operation<void> => sink<[i32]>(&&values);
+fn invalid<U>(&&values: [i32]) -> AsyncOperation<void> => sink<[i32]>(&&values);
 )",
                     .rejection = DiagnosticCode::AsyncOwnership
                 },
@@ -187,7 +187,7 @@ fn invalid<U>(&&values: [i32]) -> Operation<void> => sink<[i32]>(&&values);
                     .name = "unused generic caller rejects a closed Read borrowed argument",
                     .source = R"(
 async fn sink<T>(value: T) {}
-fn invalid<U>(value: str) -> Operation<void> => sink<str>(value);
+fn invalid<U>(value: str) -> AsyncOperation<void> => sink<str>(value);
 )",
                     .rejection = DiagnosticCode::AsyncOwnership
                 },
@@ -196,7 +196,7 @@ fn invalid<U>(value: str) -> Operation<void> => sink<str>(value);
                     .source = R"(
 struct View<T> { value: T, text: str }
 async fn sink<T>(&&value: T) {}
-fn invalid<U>(&&value: View<U>) -> Operation<void> => sink(&&value);
+fn invalid<U>(&&value: View<U>) -> AsyncOperation<void> => sink(&&value);
 )",
                     .rejection = DiagnosticCode::AsyncOwnership
                 },
@@ -204,8 +204,8 @@ fn invalid<U>(&&value: View<U>) -> Operation<void> => sink(&&value);
                     .name = "unused generic caller checks substituted completion backing",
                     .source = R"(
 async fn forward<T>(&&value: T) -> T => &&value;
-fn invalid<U>(&&pending: Operation<i32>) -> Operation<Operation<i32>> {
-    return forward<Operation<i32>>(&&pending);
+fn invalid<U>(&&pending: AsyncOperation<i32>) -> AsyncOperation<AsyncOperation<i32>> {
+    return forward<AsyncOperation<i32>>(&&pending);
 }
 )",
                     .rejection = DiagnosticCode::AsyncOwnership
@@ -214,8 +214,8 @@ fn invalid<U>(&&pending: Operation<i32>) -> Operation<Operation<i32>> {
                     .name = "dependent caller and closed owning arguments keep valid admission",
                     .source = R"(
 async fn sink<T>(&&value: T) {}
-fn dependent<U>(&&value: U) -> Operation<void> => sink(&&value);
-fn closed<U>(&&values: [i32; 1]) -> Operation<void> => sink<[i32; 1]>(&&values);
+fn dependent<U>(&&value: U) -> AsyncOperation<void> => sink(&&value);
+fn closed<U>(&&values: [i32; 1]) -> AsyncOperation<void> => sink<[i32; 1]>(&&values);
 )",
                     .rejection = std::nullopt
                 },
@@ -336,8 +336,8 @@ async fn valid<T>() { checked<T>(); }
                     .name = "public synchronous relay transfers a typed cold owner",
                     .source = R"(
 async fn leaf() -> i32 => 7;
-export fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
-async fn run() { let pending: Operation<i32> = relay(&&leaf()); print(await pending); }
+export fn relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
+async fn run() { let pending: AsyncOperation<i32> = relay(&&leaf()); print(await pending); }
 )",
                     .rejection = std::nullopt
                 },
@@ -346,7 +346,7 @@ async fn run() { let pending: Operation<i32> = relay(&&leaf()); print(await pend
                     .source = R"(
 struct Error {}
 async fn leaf() -> i32 throw Error { throw Error {}; }
-async fn forward(&&pending: Operation<i32, throw Error>) -> i32 throw Error {
+async fn forward(&&pending: AsyncOperation<i32, throw Error>) -> i32 throw Error {
     return await pending?;
 }
 async fn run() { let value = try { await forward(&&leaf())? } catch { Error(_) => 9, }; }
@@ -356,14 +356,14 @@ async fn run() { let value = try { await forward(&&leaf())? } catch { Error(_) =
                 ContractCase {
                     .name = "tuple record and array slots transfer complete owners",
                     .source = R"(
-struct Box { pending: Operation<i32> }
+struct Box { pending: AsyncOperation<i32> }
 async fn leaf() -> i32 => 7;
-fn boxed(&&pending: Operation<i32>) -> Box => Box { pending: &&pending };
+fn boxed(&&pending: AsyncOperation<i32>) -> Box => Box { pending: &&pending };
 async fn run() {
     let box = boxed(&&leaf()); print(await (&&box).pending);
-    let pair: (Operation<i32>, void) = (leaf(), ());
+    let pair: (AsyncOperation<i32>, void) = (leaf(), ());
     let (pending, empty) = &&pair; print(await pending);
-    let array: [Operation<i32>; 1] = [leaf()]; print(await (&&array)[0]);
+    let array: [AsyncOperation<i32>; 1] = [leaf()]; print(await (&&array)[0]);
 }
 )",
                     .rejection = std::nullopt
@@ -372,7 +372,7 @@ async fn run() {
                     .name = "direct Read copy of a cold owner is unavailable",
                     .source = R"(
 async fn leaf() -> i32 => 7;
-fn relay(pending: Operation<i32>) -> Operation<i32> => pending;
+fn relay(pending: AsyncOperation<i32>) -> AsyncOperation<i32> => pending;
 )",
                     .rejection = DiagnosticCode::AsyncOwnership
                 },
@@ -380,7 +380,7 @@ fn relay(pending: Operation<i32>) -> Operation<i32> => pending;
                     .name = "ordinary Read parameters borrow operations without consuming them",
                     .source = R"(
 async fn leaf() -> i32 => 7;
-fn inspect(pending: Operation<i32>) -> bool => true;
+fn inspect(pending: AsyncOperation<i32>) -> bool => true;
 async fn run() {
     let pending = leaf(); print(inspect(pending), inspect(pending)); print(await pending);
 }
@@ -391,8 +391,8 @@ async fn run() {
                     .name = "ordinary Read array parameters permit readonly slice receivers",
                     .source = R"(
 async fn leaf() -> i32 => 7;
-fn inspect(values: [Operation<i32>; 1]) -> usize => values.as_slice().len();
-fn inspect_slice(values: [Operation<i32>]) -> usize => values.len();
+fn inspect(values: [AsyncOperation<i32>; 1]) -> usize => values.as_slice().length();
+fn inspect_slice(values: [AsyncOperation<i32>]) -> usize => values.length();
 async fn run() {
     let values = [leaf()]; print(inspect(values), inspect(values), inspect_slice(values));
     print(await (&&values)[0]);
@@ -407,7 +407,7 @@ async fn leaf() -> i32 => 7;
 fn inspect<T>(value: T) -> bool => true;
 fn forward<T>(value: T) -> bool => inspect(value);
 async fn run() {
-    let pending: Operation<i32> = leaf(); print(forward(pending)); print(await pending);
+    let pending: AsyncOperation<i32> = leaf(); print(forward(pending)); print(await pending);
 }
 )",
                     .rejection = std::nullopt
@@ -416,22 +416,22 @@ async fn run() {
                     .name = "unknown array elements permit readonly slice receivers",
                     .source = R"(
 async fn leaf() -> i32 => 7;
-fn inspect<T>(values: [T; 1]) -> usize => values.as_slice().len();
+fn inspect<T>(values: [T; 1]) -> usize => values.as_slice().length();
 async fn run() {
-    let values: [Operation<i32>; 1] = [leaf()];
+    let values: [AsyncOperation<i32>; 1] = [leaf()];
     print(inspect(values)); print(await (&&values)[0]);
 }
 )",
                     .rejection = std::nullopt
                 },
                 ContractCase {
-                    .name = "owning array and Sequence indices deliver independent String values",
+                    .name = "owning array and Vector indices deliver independent String values",
                     .source = R"(
 fn from_array(&&values: [String; 2]) -> String => (&&values)[0];
-fn from_sequence(&&values: Sequence<String>) -> String => (&&values)[0];
+fn from_sequence(&&values: Vector<String>) -> String => (&&values)[0];
 fn run() {
     let first = from_array(&&["first", "second"]);
-    var values: Sequence<String> = {}; values.push("kept");
+    var values: Vector<String> = {}; values.push("kept");
     let second = from_sequence(&&values);
 }
 )",
@@ -451,7 +451,7 @@ async fn run() {
                 ContractCase {
                     .name = "aggregate Read cannot copy an operation slot",
                     .source = R"(
-struct Box { pending: Operation<i32> }
+struct Box { pending: AsyncOperation<i32> }
 async fn leaf() -> i32 => 7;
 fn run() { let box = Box { pending: leaf() }; let copied = box; }
 )",
@@ -461,7 +461,7 @@ fn run() { let box = Box { pending: leaf() }; let copied = box; }
                     .name = "Take relay retains the original backing until observation",
                     .source = R"(
 async fn leaf(&value: i32) -> i32 { await yield_once(); return value; }
-fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
+fn relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
 async fn run() {
     var value = 7; let pending = relay(&&leaf(&value));
     let moved = &&value; print(await pending);
@@ -473,7 +473,7 @@ async fn run() {
                     .name = "async returned owner awaits completion relationship forwarding",
                     .source = R"(
 async fn leaf(&value: i32) -> i32 { await yield_once(); return value; }
-async fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
+async fn relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
 async fn run() {
     var value = 7; let pending = await relay(&&leaf(&value));
     let moved = &&value; print(await pending);
@@ -485,9 +485,9 @@ async fn run() {
                     .name = "owner observation releases the transferred loan",
                     .source = R"(
 async fn leaf(&value: i32) -> i32 { await yield_once(); return value; }
-fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
+fn relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
 async fn run() {
-    var value = 7; let pending: Operation<i32> = relay(&&leaf(&value));
+    var value = 7; let pending: AsyncOperation<i32> = relay(&&leaf(&value));
     print(await pending); let moved = &&value;
 }
 )",
@@ -495,7 +495,7 @@ async fn run() {
                 },
                 ContractCase {
                     .name = "operation failure arguments remain nominal",
-                    .source = "fn relay(&&pending: Operation<i32, throw i32>) {}",
+                    .source = "fn relay(&&pending: AsyncOperation<i32, throw i32>) {}",
                     .rejection = DiagnosticCode::EffectThrowType
                 },
                 ContractCase {
@@ -504,7 +504,7 @@ async fn run() {
 async fn leaf(&value: i32) -> i32 => value;
 async fn run() {
     var first = 1; var second = 2;
-    var pending: Operation<i32> = leaf(&first);
+    var pending: AsyncOperation<i32> = leaf(&first);
     pending = leaf(&second);
     let moved = &&first; print(await pending); let other = &&second;
 }
@@ -517,7 +517,7 @@ async fn run() {
 async fn leaf(&value: i32) -> i32 => value;
 async fn run() {
     var first = 1; var second = 2;
-    var pending: Operation<i32> = leaf(&first);
+    var pending: AsyncOperation<i32> = leaf(&first);
     pending = leaf(&second);
     let moved = &&second; print(await pending);
 }
@@ -526,7 +526,7 @@ async fn run() {
                 },
                 ContractCase {
                     .name = "fixed type constructors reject failure-kind arguments",
-                    .source = "struct Error {} fn relay(value: Sequence<throw Error>) {}",
+                    .source = "struct Error {} fn relay(value: Vector<throw Error>) {}",
                     .rejection = DiagnosticCode::TypeGenericArguments
                 },
             };
@@ -630,7 +630,7 @@ async fn run() {
             ContractCase {
                 .name = "local callable observer names use ordinary arguments",
                 .source =
-                    "async fn leaf(value: i32) -> i32 => value; async fn run() { let wait_ready = [](value: i32) -> Operation<i32> => leaf(value); let result: i32 = await wait_ready(7); }",
+                    "async fn leaf(value: i32) -> i32 => value; async fn run() { let wait_ready = [](value: i32) -> AsyncOperation<i32> => leaf(value); let result: i32 = await wait_ready(7); }",
                 .rejection = std::nullopt
             },
             ContractCase {
@@ -921,7 +921,7 @@ fn run() { let pending = leaf(); let wrapped = timeout(pending, Duration {}); }
                 ContractCase {
                     .name = "Read operation parameter cannot supply an owner",
                     .source = R"(
-fn run(pending: Operation<void>) { let wrapped = timeout(&&pending, Duration {}); }
+fn run(pending: AsyncOperation<void>) { let wrapped = timeout(&&pending, Duration {}); }
 )",
                     .rejection = DiagnosticCode::AccessTakeOperand
                 },
@@ -1001,20 +1001,20 @@ const async fn run() -> i32 throw Timeout + RangeError {
                     .name = "associated async body accesses its lexical class representation",
                     .source = R"(class Value {
     value: i32,
-    fn create(value: i32) -> Value => { value: value };
+    fn new(value: i32) -> Value => { value: value };
     async fn read(value: Value) -> i32 { await yield_once(); return value.value; }
 }
-async fn run() -> i32 => await Value::read(Value::create(3));)",
+async fn run() -> i32 => await Value::read(Value::new(3));)",
                     .rejection = std::nullopt
                 },
                 ContractCase {
                     .name = "associated async function constructs an independent class result",
                     .source = R"(class Value {
     value: i32,
-    async fn create(value: i32) -> Value => { value: value };
+    async fn new(value: i32) -> Value => { value: value };
     fn read(self) -> i32 => self.value;
 }
-async fn run() -> i32 { let value = await Value::create(3); return value.read(); })",
+async fn run() -> i32 { let value = await Value::new(3); return value.read(); })",
                     .rejection = std::nullopt
                 },
                 ContractCase {
@@ -1026,10 +1026,10 @@ async fn run() -> i32 { let value = await Value::create(3); return value.read();
                     .name = "associated access does not grant module peers field authority",
                     .source = R"(class Value {
     value: i32,
-    fn create() -> Value => { value: 3 };
+    fn new() -> Value => { value: 3 };
     async fn read(value: Value) -> i32 => value.value;
 }
-async fn run() -> i32 { let value = Value::create(); return value.value; })",
+async fn run() -> i32 { let value = Value::new(); return value.value; })",
                     .rejection = DiagnosticCode::AccessClassPrivate
                 },
                 ContractCase {

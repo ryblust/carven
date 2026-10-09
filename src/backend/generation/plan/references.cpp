@@ -136,7 +136,7 @@ auto DeclarationReferenceCollector::collect_type(
             [&](const SliceTypeValue& value) noexcept {
                 collect_type(value.element, TargetTypeCompleteness::Declaration);
             },
-            [&](const OwnedSequenceTypeValue& value) noexcept {
+            [&](const VectorTypeValue& value) noexcept {
                 collect_type(
                     value.element,
                     completeness == TargetTypeCompleteness::Declaration

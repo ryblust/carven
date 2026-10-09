@@ -19,7 +19,7 @@ import :semantic.semir.delegation;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
-import :semantic.semir.sequence;
+import :semantic.semir.vector;
 import :semantic.semir.slice;
 import :semantic.semir.structured;
 import :semantic.semir.text;
@@ -377,6 +377,16 @@ auto realize_operation(
                 };
             },
             [&](const SemArray&) noexcept -> TargetExpr {
+                if (std::holds_alternative<VectorTypeValue>(
+                        context.semantic().types().type(source.type.resolved()).value
+                    )) {
+                    return TargetExpr {
+                        .value = TargetConstructionExpr {
+                            .type = context.lower_type(source.type.resolved()),
+                            .initializer = std::move(operands)
+                        }
+                    };
+                }
                 const auto& array = std::get<ArrayTypeValue>(
                     context.semantic().types().type(source.type.resolved()).value
                 );
@@ -501,12 +511,12 @@ auto realize_operation(
                 if (std::holds_alternative<RuntimeCheckedBounds>(value.bounds)) {
                     // A consumed place takes its consumer's origin; the subscript
                     // keeps the position the executor reports.
-                    const auto is_sequence = std::holds_alternative<OwnedSequenceTypeValue>(
+                    const auto is_sequence = std::holds_alternative<VectorTypeValue>(
                         context.semantic().types().type(value.source->type.resolved()).value
                     );
                     return call_expression(
                         intrinsic_expression(
-                            is_sequence    ? TargetSymbol::RuntimeCheckedSequenceIndex
+                            is_sequence    ? TargetSymbol::RuntimeCheckedVectorIndex
                                 : is_slice ? TargetSymbol::RuntimeCheckedSliceIndex
                                            : TargetSymbol::RuntimeCheckedArrayIndex
                         ),
@@ -587,20 +597,37 @@ auto realize_operation(
                                 std::move(operands)
                             );
                         },
-                        [&](const SequenceIntrinsicOperation& family) noexcept -> TargetExpr {
+                        [&](const VectorIntrinsicOperation& family) noexcept -> TargetExpr {
+                            if (vector_intrinsic_factory(family.intrinsic)) {
+                                return call_expression(
+                                    static_member_expression(
+                                        context.lower_type(source.type.resolved()),
+                                        TargetIdentifier::from_spelling(
+                                            family.intrinsic == VectorIntrinsic::FromSlice
+                                                ? "from_slice"
+                                                : "with_capacity"
+                                        )
+                                    ),
+                                    std::move(operands)
+                                );
+                            }
                             auto receiver = std::move(operands.front());
                             operands.erase(operands.begin());
                             const auto name = [&]() noexcept {
                                 switch (family.intrinsic) {
-                                    case SequenceIntrinsic::Len:     return "size";
-                                    case SequenceIntrinsic::IsEmpty: return "empty";
-                                    case SequenceIntrinsic::Push:    return "push";
-                                    case SequenceIntrinsic::Remove:  return "remove";
-                                    case SequenceIntrinsic::Clear:   return "clear";
+                                    case VectorIntrinsic::Capacity:     return "capacity";
+                                    case VectorIntrinsic::Reserve:      return "reserve";
+                                    case VectorIntrinsic::FromSlice:
+                                    case VectorIntrinsic::WithCapacity: std::unreachable();
+                                    case VectorIntrinsic::Length:       return "size";
+                                    case VectorIntrinsic::IsEmpty:      return "empty";
+                                    case VectorIntrinsic::Push:         return "push";
+                                    case VectorIntrinsic::Remove:       return "remove";
+                                    case VectorIntrinsic::Clear:        return "clear";
                                 }
                                 std::unreachable();
                             }();
-                            if (family.intrinsic == SequenceIntrinsic::Remove) {
+                            if (family.intrinsic == VectorIntrinsic::Remove) {
                                 operands.push_back(source_site_expression(context, source.origin));
                             }
                             return call_member(std::move(receiver), name, std::move(operands));
@@ -612,12 +639,12 @@ auto realize_operation(
                                 return call_member(std::move(receiver), name, std::move(operands));
                             };
                             switch (family.intrinsic) {
-                                case SliceIntrinsic::FromArray:
+                                case SliceIntrinsic::FromOwner:
                                     return call_expression(
                                         intrinsic_expression(TargetSymbol::RuntimeAsSlice),
                                         std::move(operands)
                                     );
-                                case SliceIntrinsic::Len:     return method("size");
+                                case SliceIntrinsic::Length:  return method("size");
                                 case SliceIntrinsic::IsEmpty: return method("empty");
                                 case SliceIntrinsic::Slice:
                                     operands.push_back(
@@ -724,7 +751,7 @@ auto realize_operation(
                                     );
                                 case TextIntrinsic::Clear:
                                     return call_member(std::move(operands[0]), "clear", {});
-                                case TextIntrinsic::Len:
+                                case TextIntrinsic::ByteLength:
                                     return call_member(std::move(operands[0]), "size", {});
                                 case TextIntrinsic::IsEmpty:
                                     return call_member(std::move(operands[0]), "empty", {});

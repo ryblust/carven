@@ -9,11 +9,15 @@ import std;
 
 enum class ConstantLiteralContext { Exact, TargetTyped };
 
+auto constant_has_storage(const SemIRProgram& program, ConstantID id) noexcept -> bool;
+
 auto constant_expression(
     ModuleLowering& context,
     ConstantID constant,
     ConstantLiteralContext use = ConstantLiteralContext::Exact
 ) noexcept -> TargetExpr;
+
+auto constant_reference(ModuleLowering& context, ConstantID constant) noexcept -> TargetExpr;
 
 auto typed_integer_expression(
     ModuleLowering& context,

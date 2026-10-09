@@ -159,7 +159,8 @@ auto boolean_expression(PreparedFunction& prepared, const BodyFixture& body) noe
         .value = SemConstant {
             .constant = prepared.builder.intern_constant(
                 {.type = prepared.boolean_type, .value = BooleanConstant {.value = true}}
-            )
+            ),
+            .retained_storage = false
         },
 
 
@@ -290,7 +291,7 @@ auto check_residual_construction(ResidualConstructionContract contract) noexcept
             .value = BooleanConstant {.value = false},
         });
         operand.expression.constant = replacement;
-        operand.expression.value = SemConstant {.constant = replacement};
+        operand.expression.value = SemConstant {.constant = replacement, .retained_storage = false};
     } else if (contract == ResidualConstructionContract::ChangedTarget) {
         std::get<CppConstructOperation>(operation.operation).target =
             prepared.builder.builtin_type(BuiltinType::I32);
@@ -413,7 +414,7 @@ const TestSuite suite([] static noexcept {
                     integer,
                     body.lifetime,
                     prepared.origin,
-                    SemConstant {.constant = constant}
+                    SemConstant {.constant = constant, .retained_storage = false}
                 );
                 auto result = boolean_expression(prepared, body);
                 result.value = SemUnary {
@@ -438,7 +439,7 @@ const TestSuite suite([] static noexcept {
                         integer,
                         body.lifetime,
                         prepared.origin,
-                        SemConstant {.constant = constant}
+                        SemConstant {.constant = constant, .retained_storage = false}
                     );
                 };
                 auto result = boolean_expression(prepared, body);

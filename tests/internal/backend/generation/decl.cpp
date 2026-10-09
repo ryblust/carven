@@ -219,8 +219,8 @@ const TestSuite suite([] static noexcept {
         const auto step = builder.add_local(name("step"));
         const auto body_step = builder.add_local(name("step"));
         const auto index = builder.add_local(name("index"));
-        const auto range = builder.add_local(name("range"));
-        const auto element = builder.add_local(name("range"));
+        const auto range = builder.add_local(name("Range"));
+        const auto element = builder.add_local(name("Range"));
         auto body = std::vector<TargetStmt>();
         body.push_back(local(step, type));
         auto loop_body = std::vector<TargetStmt>();

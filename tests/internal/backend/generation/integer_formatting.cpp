@@ -157,7 +157,7 @@ const TestSuite suite([] static noexcept {
     "Generation: nested owning formatting retains its expression construction boundary"_test =
         [] static noexcept {
             const auto query = inspect(R"(
-        fn length(value: i32, text: String) -> usize => f"{value}/{text}".len();
+        fn length(value: i32, text: String) -> usize => f"{value}/{text}".byte_length();
     )");
             expect(query.generic_calls == 0uz);
             expect(query.policies.size() == 1uz);
@@ -168,7 +168,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             const auto query = inspect(R"(
         fn direct(value: i32, width: i32, text: str) -> String => f"{42:04}/{value:0{width}x}/{text}/{value:d}";
-        fn nested(value: i32, width: u16) -> usize => f"{value:{width}B}".len();
+        fn nested(value: i32, width: u16) -> usize => f"{value:{width}B}".byte_length();
         fn append(&out: String, value: i32, width: i16) {
             out.append_format(f"{value:0{width}X}/{value:{width}o}");
         }

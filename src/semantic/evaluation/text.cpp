@@ -169,12 +169,12 @@ auto SemanticExecutor::text_intrinsic(
             }
             co_return append_text(*receiver, suffix, origin);
         }
-        case TextIntrinsic::Len:
+        case TextIntrinsic::ByteLength:
         case TextIntrinsic::IsEmpty:
         case TextIntrinsic::Bytes:
         case TextIntrinsic::Chars:
         case TextIntrinsic::FromStr:
-        case TextIntrinsic::AsStr:   break;
+        case TextIntrinsic::AsStr:      break;
     }
     auto operand = (co_await read_operand(frame, operation.operands[0].expression));
     if (!operand) {
@@ -240,7 +240,7 @@ auto SemanticExecutor::text_intrinsic(
                 .extent = *size
             };
         }
-        case TextIntrinsic::Len:
+        case TextIntrinsic::ByteLength:
             co_return ConstantAtom {
                 .type = result_type,
                 .value = IntegerConstant::from_parts(*size, false),

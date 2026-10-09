@@ -12,4 +12,4 @@ message.clear();
 message.append("Goodbye!");
 println(message);
 println(saved);
-println(f"Bytes: {saved.len()}, ID: {42:04x}");
+println(f"Bytes: {saved.byte_length()}, ID: {42:04x}");

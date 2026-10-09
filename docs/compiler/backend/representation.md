@@ -22,7 +22,9 @@ and runtime arguments; function-template calls and variable-template references
 use the same name representation.
 These describe native C++ syntax, with type dependencies visited normally.
 
-Structure declarations lower to C++ aggregates containing their declared fields.
+The current implementation lowers struct and class storage to C++ aggregates
+containing their declared fields. Source nominal identity and access rules are
+checked before lowering; this mapping is an implementation choice.
 Payload enum factories are ordinary C++ functions. Payload access uses
 standard variant selection on the checked case record. Carven evaluates source constants during semantic analysis; their
 uses reconstruct the normalized values through the same target operations.
@@ -99,7 +101,7 @@ The qualifier alone supplies no call-result fact or permission to discard a call
 
 ## Parameters and access
 
-Read parameters and Read argument temporaries preserve Carven array, Sequence,
+Read parameters and Read argument temporaries preserve Carven array, Vector,
 String, and closure storage, including storage in Carven aggregate fields,
 through const references. Lowering uses the resolved type-contents query
 shared with ownership analysis. Other pure Carven Read parameters use const
@@ -110,6 +112,11 @@ propagates native value containment through array elements, tuple slots, struct 
 and enum payloads; pointer and slice targets do not contribute. Native template
 arguments alone leave the instantiated type's
 storage contents unknown. No size threshold participates in the trait policy.
+
+`ReadArg` delegates native copy and destruction classification to C++ traits.
+Carven supplies storage-borrow and stable-address requirements from its semantic
+facts. Container layout and argument passing are separate choices: a storage
+optimization preserves this policy and its snapshot and borrow observations.
 
 Published `ReadPassingFacts` identifies parameter holders that remain reachable
 through returned values or writes to external state. Those parameters use const
@@ -272,3 +279,40 @@ An explicitly specialized native construction uses its named target as the
 result type. Deduction remains a C++ query when the target has no explicit template
 arguments. The semantic construction query retains argument-delivery facts in
 both cases.
+
+## Container storage
+
+The native `Vector<T>` owns allocator-established storage for a real array of T,
+with a separately tracked initialized prefix and capacity. Ordinary bool elements
+use the same representation, so `Slice<bool>` views contain no proxies. Growth
+moves the live prefix and releases the old allocation; copying constructs
+independent contents, and extraction removes one owner while preserving order.
+Vector stores a pointer, an encoded length, and capacity. The high length bit
+marks retained storage; the remaining bits hold the initialized element count.
+Native capacity is bounded by both the length encoding and allocation size.
+Read access shares these fields across allocated and retained arrays. Cleanup
+releases only allocated arrays, and writable access requires native ownership.
+The stateless allocator has no member. Retained constants provide Read access to
+static backing; copying constructs an independent owner.
+
+String selects `std::string` ownership or an immutable `std::string_view` through
+`std::variant`. Copying constructs an owning string directly from the complete
+byte view. The owning alternative retains native short-string storage and accepts
+validated native strings by move. Container representation does not change Read
+parameter passing or the logical constant representation.
+Eligible operations are declared `constexpr` in the C++20 runtime.
+Native constant evaluation does not determine Carven static-execution admission.
+
+Vector literals lower to direct owner construction. Vector and array borrowing
+both lower through `as_slice`, and direct source slicing selects the borrowed
+subrange. Source loans protect the owning storage before native realization.
+
+Retained constants use typed logical contents rather than compiler-host addresses.
+Lowering materializes backing before descriptors, recursively initializing owning
+children in retained form. This supports arrays, tuples, records, and enum payloads
+containing String or Vector without dynamic initialization. Ordinary references to
+those constants denote the stored const value, so Read preserves storage and a
+runtime value use reconstructs independent contents. Reconstructing the selected
+case also permits a constant enum case whose other branches contain noncopyable
+native payloads. Retained payload constants construct their selected native record
+directly, without calling ordinary factories.

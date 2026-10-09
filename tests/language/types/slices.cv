@@ -4,7 +4,7 @@ struct SliceHolder {
     values: [i32],
 }
 
-fn middle(values: [i32]) -> [i32] => values.slice(1, values.len() - 1);
+fn middle(values: [i32]) -> [i32] => values.slice(1, values.length() - 1);
 
 fn sum(values: [i32]) -> i32 {
     var result = 0;
@@ -17,7 +17,7 @@ fn sum(values: [i32]) -> i32 {
 test "Slices: arrays expose explicit read views and half-open subranges" {
     let values = [10, 20, 30, 40];
     let view: [i32] = values.as_slice();
-    check(view.len() == 4);
+    check(view.length() == 4);
     check(!view.is_empty());
     check(view[0] == 10);
     check(view[3] == 40);
@@ -43,11 +43,11 @@ test "Slices: extracting elements preserves their text backing" {
 test "Slices: byte projections have a native slice type" {
     let text: String = "a\u{0}😀";
     let bytes: [u8] = text.bytes;
-    check(bytes.len() == 6);
+    check(bytes.length() == 6);
     check(bytes[1] == 0);
     check(bytes[2] == 0xf0);
-    let suffix = bytes.slice(2, bytes.len());
-    check(suffix.len() == 4);
+    let suffix = bytes.slice(2, bytes.length());
+    check(suffix.length() == 4);
     var count = 0;
     for byte in suffix {
         if byte != 0 { count += 1; }
@@ -306,21 +306,22 @@ private fn specialized_slice_element(values: [i32; 4], const index: usize) -> i3
 
 test "Slices: known lengths preserve receiver and bound evaluation" {
     var trace = 0;
-    check(slice_extent_array(&trace).as_slice().len() == 4);
+    check(slice_extent_array(&trace).as_slice().length() == 4);
     check(trace == 1);
     trace = 0;
     let rendered = f"{slice_extent_array(&trace).as_slice().slice(
             (slice_extent_mark(&trace, 2) && false) as usize,
             ((slice_extent_mark(&trace, 3) && false) as usize) + 2
-        ).len()}";
+        ).length()}";
     check(rendered == "2");
     check(trace == 123);
     trace = 0;
-    slice_extent_array(&trace).as_slice().slice(0, 2).len();
+    slice_extent_array(&trace).as_slice().slice(0, 2).length();
     check(trace == 1);
     trace = 0;
     check(
-        slice_extent_array(&trace).as_slice()[slice_extent_array(&trace).as_slice().len() - 3] == 20
+        slice_extent_array(&trace).as_slice()[slice_extent_array(&trace).as_slice().length() - 3]
+            == 20
     );
     check(trace == 11);
     check(specialized_slice_element([10, 20, 30, 40], 2) == 30);
@@ -331,9 +332,9 @@ test "Slices: immutable extent facts do not follow mutable view slots" {
     let second = [5, 6];
     let original: [i32] = first;
     let copy = original;
-    check(copy.len() == 4);
+    check(copy.length() == 4);
     var selected: [i32] = first;
     selected = second;
-    check(selected.len() == 2);
+    check(selected.length() == 2);
     check(selected.slice(2, 2).is_empty());
 }

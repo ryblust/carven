@@ -108,9 +108,10 @@ const TestSuite suite([] static noexcept {
              .code = DiagnosticCode::AccessCallMismatch,
              .primary_text = "&s.as_str()"},
             {.name = "Take is unavailable afterward",
-             .source = "fn invalid() { var s: String = \"abc\"; let moved = &&s; s.len(); }",
+             .source =
+                 "fn invalid() { var s: String = \"abc\"; let moved = &&s; s.byte_length(); }",
              .code = DiagnosticCode::AccessUnavailable,
-             .primary_text = "s.len()"},
+             .primary_text = "s.byte_length()"},
         });
         check_compiler_errors(cases);
     };
@@ -132,7 +133,7 @@ const TestSuite suite([] static noexcept {
              .primary_text = "s"},
             {.name = "local protected throw",
              .source =
-                 "struct E { text: str } fn bad() { try { let s = String {}; throw E { text: s }; } catch { E(e) => { let _ = e.text.len(); }, } }",
+                 "struct E { text: str } fn bad() { try { let s = String {}; throw E { text: s }; } catch { E(e) => { let _ = e.text.byte_length(); }, } }",
              .code = DiagnosticCode::AccessBorrowConflict,
              .primary_text = "s"},
             {.name = "caught original holder",
@@ -166,7 +167,7 @@ const TestSuite suite([] static noexcept {
              .primary_text = "&&s"},
             {.name = "closure capture",
              .source =
-                 "fn bad() { var s = String {}; let v = s.as_str(); let c = [v]() { return v.len(); }; s.clear(); }",
+                 "fn bad() { var s = String {}; let v = s.as_str(); let c = [v]() { return v.byte_length(); }; s.clear(); }",
              .code = DiagnosticCode::AccessBorrowConflict,
              .primary_text = "s.clear()"},
             {.name = "str values require explicit owning conversion",
@@ -207,7 +208,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             const auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "temporary closure passed as a callable view",
-                 .source = "fn make(v: str) => [v]() -> usize { return v.len(); }; "
+                 .source = "fn make(v: str) => [v]() -> usize { return v.byte_length(); }; "
                            "fn invoke(cb: fn() -> usize, &s: String) { s.clear(); let _ = cb(); } "
                            "fn invalid() { var s = String {}; invoke(make(s.as_str()), &s); }",
                  .code = DiagnosticCode::AccessBorrowConflict,

@@ -14,13 +14,13 @@ export enum ValueKind: u8 {
     Object,
 }
 
-private const fn find_member(members: Sequence<Member>, key: str) -> usize {
-    var index = members.len();
+private const fn find_member(members: Vector<Member>, key: str) -> usize {
+    var index = members.length();
     while index != 0 {
         index -= 1;
         if members[index].key.as_str() == key { return index; }
     }
-    return members.len();
+    return members.length();
 }
 
 // Child access returns independent values; text access borrows this value.
@@ -39,8 +39,8 @@ export class Value {
     }
 
     const fn string(text: str) -> Value => { node:.Text(text as String) };
-    const fn array() -> Value => { node:.Array(Sequence<Node> {}) };
-    const fn object() -> Value => { node:.Object(Sequence<Member> {}) };
+    const fn array() -> Value => { node:.Array(Vector<Node> {}) };
+    const fn object() -> Value => { node:.Object(Vector<Member> {}) };
     const fn parse(text: str) -> Value throw JSONError => { node: parse_node(text)? };
 
     const fn parse_bytes(bytes: [u8]) -> Value throw JSONError + UTF8Error => {
@@ -85,7 +85,7 @@ export class Value {
         match self.node {
             .Number(text) => {
                 return try {
-                    parse_i64(text.as_str())?
+                    parse_i64(text)?
                 } catch {
                     ParseError(_) => throw ValueError::NumberConversion,
                 };
@@ -98,7 +98,7 @@ export class Value {
         match self.node {
             .Number(text) => {
                 return try {
-                    parse_u64(text.as_str())?
+                    parse_u64(text)?
                 } catch {
                     ParseError(_) => throw ValueError::NumberConversion,
                 };
@@ -111,7 +111,7 @@ export class Value {
         match self.node {
             .Number(text) => {
                 return try {
-                    parse_f64(text.as_str())?
+                    parse_f64(text)?
                 } catch {
                     ParseError(_) => throw ValueError::NumberConversion,
                 };
@@ -120,10 +120,10 @@ export class Value {
         }
     }
 
-    const fn len(self) -> usize throw ValueError {
+    const fn length(self) -> usize throw ValueError {
         return match self.node {
-            .Array(items) => items.len(),
-            .Object(members) => members.len(),
+            .Array(items) => items.length(),
+            .Object(members) => members.length(),
             _ => throw ValueError::WrongKind,
         };
     }
@@ -131,7 +131,7 @@ export class Value {
     const fn at(self, index: usize) -> Value throw ValueError {
         match self.node {
             .Array(items) => {
-                if index >= items.len() { throw ValueError::IndexOutOfBounds; }
+                if index >= items.length() { throw ValueError::IndexOutOfBounds; }
                 return { node: items[index] };
             },
             _ => throw ValueError::WrongKind,
@@ -151,7 +151,7 @@ export class Value {
     const fn set_at(&self, index: usize, &&value: Value) throw ValueError {
         match self.node {
             .Array(&items) => {
-                if index >= items.len() { throw ValueError::IndexOutOfBounds; }
+                if index >= items.length() { throw ValueError::IndexOutOfBounds; }
                 items[index] = (&&value).node;
             },
             _ => throw ValueError::WrongKind,
@@ -161,7 +161,7 @@ export class Value {
     const fn remove_at(&self, index: usize) throw ValueError {
         match self.node {
             .Array(&items) => {
-                if index >= items.len() { throw ValueError::IndexOutOfBounds; }
+                if index >= items.length() { throw ValueError::IndexOutOfBounds; }
                 items.remove(index);
             },
             _ => throw ValueError::WrongKind,
@@ -171,8 +171,8 @@ export class Value {
     const fn key_at(self, index: usize) -> str throw ValueError {
         match self.node {
             .Object(members) => {
-                if index >= members.len() { throw ValueError::IndexOutOfBounds; }
-                return members[index].key.as_str();
+                if index >= members.length() { throw ValueError::IndexOutOfBounds; }
+                return members[index].key;
             },
             _ => throw ValueError::WrongKind,
         }
@@ -181,7 +181,7 @@ export class Value {
     const fn member_value_at(self, index: usize) -> Value throw ValueError {
         match self.node {
             .Object(members) => {
-                if index >= members.len() { throw ValueError::IndexOutOfBounds; }
+                if index >= members.length() { throw ValueError::IndexOutOfBounds; }
                 return { node: members[index].value };
             },
             _ => throw ValueError::WrongKind,
@@ -190,7 +190,7 @@ export class Value {
 
     const fn has(self, key: str) -> bool throw ValueError {
         return match self.node {
-            .Object(members) => find_member(members, key) != members.len(),
+            .Object(members) => find_member(members, key) != members.length(),
             _ => throw ValueError::WrongKind,
         };
     }
@@ -199,7 +199,7 @@ export class Value {
         match self.node {
             .Object(members) => {
                 let index = find_member(members, key);
-                if index == members.len() { throw ValueError::MissingKey; }
+                if index == members.length() { throw ValueError::MissingKey; }
                 return { node: members[index].value };
             },
             _ => throw ValueError::WrongKind,
@@ -223,7 +223,7 @@ export class Value {
         match self.node {
             .Object(&members) => {
                 let index = find_member(members, key);
-                if index == members.len() {
+                if index == members.length() {
                     let member = Member {
                         key: key as String,
                         value: (&&value).node
@@ -242,7 +242,7 @@ export class Value {
             .Object(&members) => {
                 var removed: usize = 0;
                 var index: usize = 0;
-                while index < members.len() {
+                while index < members.length() {
                     if members[index].key.as_str() == key {
                         members.remove(index);
                         removed += 1;

@@ -89,6 +89,6 @@ test "Const functions: owning text freezes only at the constant initializer boun
     check(formatted(42, 4).as_str() == scalar_text);
     const unicode_text = unicode();
     check(unicode_text == "我\0😀");
-    check(unicode_text.len() == 8usize);
+    check(unicode_text.byte_length() == 8usize);
     check(unicode().as_str() == unicode_text);
 }

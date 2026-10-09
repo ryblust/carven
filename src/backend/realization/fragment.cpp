@@ -146,6 +146,9 @@ auto BodyRealizer::ExpressionBuilder::stable_place(const SemanticExpression& val
     if (const auto* element = std::get_if<SemTupleElement>(&value.value)) {
         return !element->consumes_source() && stable_place(*element->source);
     }
+    if (const auto* constant = std::get_if<SemConstant>(&value.value)) {
+        return constant_has_storage(owner.context.semantic(), constant->constant);
+    }
     const auto* binding = std::get_if<SemBinding>(&value.value);
     if (binding == nullptr) {
         return false;
@@ -162,7 +165,6 @@ auto BodyRealizer::ExpressionBuilder::build(
     const auto scope = BuildScope(*this);
     auto result_needed = request.demand != ResultDemand::Discard;
     const auto result_use = request.use;
-    const auto literal = request.literal;
     const auto direct_return = request.demand == ResultDemand::DirectReturn;
     auto retain_backing = request.retain_backing;
     const auto expression_depth = request.expression_depth;
@@ -193,6 +195,11 @@ auto BodyRealizer::ExpressionBuilder::build(
         );
         co_return finish_fragment(std::move(fragment));
     }
+    const auto observed = owner.condition_observation
+        && owner.condition_observation->expression == std::addressof(expression);
+    if (!observed && !result_needed && !value.requires_execution) {
+        co_return finish_fragment(std::move(fragment));
+    }
     const auto* builtin_result = std::get_if<BuiltinTypeValue>(
         &owner.context.semantic().types().type(value.operation.type.resolved()).value
     );
@@ -206,12 +213,16 @@ auto BodyRealizer::ExpressionBuilder::build(
         && (std::holds_alternative<SemBinary>(value.operation.value)
             || std::holds_alternative<SemUnary>(value.operation.value));
     retain_backing |= depth_boundary;
-    const auto observed = owner.condition_observation
-        && owner.condition_observation->expression == std::addressof(expression);
+    const auto retained_snapshot = value.operation.selects_retained_storage()
+        && (result_use == PreparedUse::Consume
+            || result_use == PreparedUse::OperandValue
+            || result_use == PreparedUse::NativeTake
+            || (result_use == PreparedUse::ReadArgument
+                && scalar(value.operation.type.resolved())));
     if (!observed
         && value.operation.constant
         && !value.requires_execution
-        && scalar(value.operation.type.resolved())) {
+        && (scalar(value.operation.type.resolved()) || retained_snapshot)) {
         complete(fragment, *value.operation.constant);
         co_return finish_fragment(std::move(fragment));
     }
@@ -219,23 +230,19 @@ auto BodyRealizer::ExpressionBuilder::build(
         && result_needed
         && value.operation.constant
         && !value.executes_operation
-        && !names_storage(value)
-        && scalar(value.operation.type.resolved())) {
+        && ((!names_storage(value) && scalar(value.operation.type.resolved()))
+            || retained_snapshot)) {
         auto effects = co_await build(
             expression,
             {.demand = ResultDemand::Discard,
              .use = PreparedUse::OperandValue,
-             .literal = ConstantLiteralContext::Exact,
              .retain_backing = true,
              .expression_depth = 0uz}
         );
         discard_pending(effects);
         adopt(effects);
         if (statements.continues()) {
-            complete(
-                fragment,
-                constant_expression(owner.context, *value.operation.constant, literal)
-            );
+            complete(fragment, *value.operation.constant);
         }
         co_return finish_fragment(std::move(fragment));
     }
@@ -323,7 +330,6 @@ auto BodyRealizer::ExpressionBuilder::build(
                     *awaited->operand,
                     {.demand = demand,
                      .use = PreparedUse::OperandValue,
-                     .literal = ConstantLiteralContext::Exact,
                      .retain_backing = true,
                      .expression_depth = 0uz,
                      .await_fusion = fusion}
@@ -441,7 +447,6 @@ auto BodyRealizer::ExpressionBuilder::build(
                 *logic->left,
                 {.demand = ResultDemand::Discard,
                  .use = PreparedUse::OperandValue,
-                 .literal = ConstantLiteralContext::Exact,
                  .retain_backing = true,
                  .expression_depth = 0uz}
             );
@@ -470,7 +475,6 @@ auto BodyRealizer::ExpressionBuilder::build(
             *logic->left,
             {.demand = known == nullptr ? ResultDemand::Value : ResultDemand::Discard,
              .use = PreparedUse::OperandValue,
-             .literal = ConstantLiteralContext::Exact,
              .retain_backing = true,
              .expression_depth = 0uz}
         );
@@ -487,7 +491,6 @@ auto BodyRealizer::ExpressionBuilder::build(
                     *logic->right,
                     {.demand = result_needed ? ResultDemand::Value : ResultDemand::Discard,
                      .use = PreparedUse::OperandValue,
-                     .literal = ConstantLiteralContext::Exact,
                      .retain_backing = true,
                      .expression_depth = 0uz}
                 );
@@ -522,7 +525,6 @@ auto BodyRealizer::ExpressionBuilder::build(
                     *logic->right,
                     {.demand = result_needed ? ResultDemand::Value : ResultDemand::Discard,
                      .use = PreparedUse::OperandValue,
-                     .literal = ConstantLiteralContext::Exact,
                      .retain_backing = true,
                      .expression_depth = 0uz}
                 )
@@ -684,6 +686,9 @@ auto BodyRealizer::ExpressionBuilder::build(
                                     : ConstantLiteralContext::Exact;
         }
         return std::holds_alternative<SemArray>(value.operation.value)
+                && std::holds_alternative<ArrayTypeValue>(
+                    owner.context.semantic().types().type(value.operation.type.resolved()).value
+                )
             ? ConstantLiteralContext::TargetTyped
             : ConstantLiteralContext::Exact;
     };
@@ -707,13 +712,11 @@ auto BodyRealizer::ExpressionBuilder::build(
                 && ((input_source.requires_execution && (later_effect || later_read))
                     || (input_source.reads_storage && later_effect)));
         const auto keep = input.demand == PreparedDemand::Value;
-        const auto child_literal = operand_literal(input.use);
         auto child = co_await build(
             *input.expression,
             {.demand = keep && (result_needed || value.executes_operation) ? ResultDemand::Value
                                                                            : ResultDemand::Discard,
              .use = input.use,
-             .literal = child_literal,
              .retain_backing = retain_backing || crosses || multiple_uses,
              .expression_depth = depth_boundary ? 0uz : expression_depth + 1uz}
         );

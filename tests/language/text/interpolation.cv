@@ -12,7 +12,7 @@ fn append_format_value(&text: String) -> i32 {
     return 7;
 }
 
-fn consume_format_value(&&text: String) -> usize => text.len();
+fn consume_format_value(&&text: String) -> usize => text.byte_length();
 fn format_view(text: String) -> str => text;
 
 fn record_format_flag(&trace: i32, digit: i32) -> bool {
@@ -34,7 +34,7 @@ test "Interpolation: precomputed contents preserve local values ownership and in
     let second = f"{42:64}";
     first.clear();
     check(first.is_empty());
-    check(second.len() == 64usize);
+    check(second.byte_length() == 64usize);
     let limit = 2147483647;
     check(limit + 1 == -2147483648);
     var dynamic = 42;
@@ -110,7 +110,7 @@ test "Interpolation: expressions nested strings and dynamic specifications" {
     check(f"{'我'} {'😀':>4} {String::from_str("abc"):.2}" == "我   😀 ab");
     check(f"{if true { FormatPair { value: 3 }.value } else { 4 }}" == "3");
     check(f"{f"inner {count}"}" == "inner 2");
-    check(f"{("unused")}".len() > 0usize);
+    check(f"{("unused")}".byte_length() > 0usize);
 }
 
 test "Interpolation: source order snapshots aliases and independent results" {

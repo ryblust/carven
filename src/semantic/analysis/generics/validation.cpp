@@ -198,7 +198,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                     [&](const GenericSliceType& slice) noexcept {
                         self(self, slice.element, true, result);
                     },
-                    [&](const GenericOwnedSequenceType& sequence) noexcept {
+                    [&](const GenericVectorType& sequence) noexcept {
                         self(self, sequence.element, true, result);
                     },
                     [&](const GenericPointerType& pointer) noexcept {
@@ -246,7 +246,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                         }
                     },
                     [&](const GenericSliceType& slice) noexcept { self(self, slice.element); },
-                    [&](const GenericOwnedSequenceType& sequence) noexcept {
+                    [&](const GenericVectorType& sequence) noexcept {
                         self(self, sequence.element);
                     },
                     [&](const GenericPointerType& pointer) noexcept { self(self, pointer.target); },
@@ -440,7 +440,7 @@ auto ProgramDraft::validate_generic_definitions(std::optional<GenericDeclaration
                         self(self, element, owns_storage, origin);
                     }
                 },
-                [&](const GenericOwnedSequenceType& sequence) noexcept {
+                [&](const GenericVectorType& sequence) noexcept {
                     // Dynamic owning storage breaks layout recursion. Its element
                     // value contract is checked after source heads are complete.
                     self(self, sequence.element, false, origin);

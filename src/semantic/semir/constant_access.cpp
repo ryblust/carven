@@ -4,6 +4,15 @@ import :semantic.semir.constant_access;
 import :semantic.semir.program;
 import std;
 
+auto constant_has_storage(const ConstantValueReader& values, ConstantID id) noexcept -> bool {
+    const auto& fact = values.constant(id);
+    return (constant_children(fact.value).has_value()
+            && !std::holds_alternative<SliceConstant>(fact.value))
+        || (std::holds_alternative<StringConstant>(fact.value)
+            && values.type_copy(fact.type).value
+                == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}});
+}
+
 PublishedConstantValues::PublishedConstantValues(const SemIRProgram& program) noexcept
     : program(program) {}
 

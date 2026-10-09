@@ -12,4 +12,4 @@ struct AsyncModeLayout final {
 };
 
 auto async_mode_layout() noexcept -> AsyncModeLayout;
-auto async_mode_operation(int value) noexcept -> carven::runtime::execution::Operation<int>;
+auto async_mode_operation(int value) noexcept -> carven::runtime::execution::AsyncOperation<int>;

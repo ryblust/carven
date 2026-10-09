@@ -45,9 +45,9 @@ auto ProgramDraft::normalize_generic_environment(
             if (const auto element = self(self, slice->element)) {
                 return intern_type({.value = SliceTypeValue {.element = *element}});
             }
-        } else if (const auto* sequence = std::get_if<GenericOwnedSequenceType>(&shape)) {
+        } else if (const auto* sequence = std::get_if<GenericVectorType>(&shape)) {
             if (const auto element = self(self, sequence->element)) {
-                return intern_type({.value = OwnedSequenceTypeValue {.element = *element}});
+                return intern_type({.value = VectorTypeValue {.element = *element}});
             }
         } else if (const auto* pointer = std::get_if<GenericPointerType>(&shape)) {
             if (const auto target = self(self, pointer->target)) {
@@ -199,12 +199,12 @@ auto ProgramDraft::normalize_construction_types(const FailureSolution& failures)
                     return intern_type({.value = PointerTypeValue {*concrete, shape.access}});
                 }
                 return intern_generic_type(GenericPointerType {target, shape.access});
-            } else if constexpr (std::same_as<Shape, GenericOwnedSequenceType>) {
+            } else if constexpr (std::same_as<Shape, GenericVectorType>) {
                 const auto element = child(shape.element);
                 if (const auto* concrete = std::get_if<TypeID>(&element)) {
-                    return intern_type({.value = OwnedSequenceTypeValue {*concrete}});
+                    return intern_type({.value = VectorTypeValue {*concrete}});
                 }
-                return intern_generic_type(GenericOwnedSequenceType {element});
+                return intern_generic_type(GenericVectorType {element});
             } else if constexpr (std::same_as<Shape, GenericNominalApplication>) {
                 auto environment = CanonicalGenericEnvironment();
                 for (const auto& argument : shape.arguments) {

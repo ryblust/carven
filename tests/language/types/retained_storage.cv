@@ -1,0 +1,79 @@
+struct Entry {
+    title: String,
+    values: Vector<i32>
+}
+
+enum Tree {
+    Leaf(String),
+    Branch(Vector<Tree>)
+}
+
+const fn build() -> Vector<Entry> {
+    var rows = Vector<Entry>::with_capacity(8);
+    for number in 1..4 {
+        var values: Vector<i32> = [number, number * 10];
+        values.reserve(5);
+        rows.push(
+            Entry {
+                title: f"row {number}",
+                values: &&values
+            }
+        );
+    }
+    return &&rows;
+}
+
+const rows = build();
+const text: String = f"retained {rows.length()}";
+const slice: [i32] = Vector<i32>::from_slice([4, 5, 6]).slice(1, 3);
+const tree = Tree::Branch([Tree::Leaf("leaf")]);
+const empty = Vector<String>::new();
+const labels: [[String; 1]; 1] = [[f"label {1}"]];
+const pair: (String, Vector<i32>) = (f"pair {2}", [7, 8]);
+
+private const fn constant_view() -> [i32] => rows[1].values;
+
+private const fn local_constant_text() -> str {
+    const label = String::from_str("local static");
+    return label;
+}
+
+private const fn inspect() {
+    check(rows.length() == 3 && rows.capacity() >= 8);
+    check(rows[0].values[1] == 10 && rows[0].values.capacity() >= 5);
+    check(text.as_str() == "retained 3");
+    check(slice[0] == 5 && slice.length() == 2);
+    check(empty.is_empty());
+    const for label in labels[0] {
+        check(label == "label 1");
+    }
+    check(pair.0 == "pair 2" && pair.1[1] == 8);
+    check(constant_view()[1] == 20);
+    check(local_constant_text() == "local static");
+    var copy = rows;
+    copy[0].title.append(" changed");
+    copy[0].values.push(99);
+    check(rows[0].title.as_str() == "row 1");
+    check(rows[0].values.length() == 2);
+    check(copy[0].values[2] == 99);
+    var message = text;
+    message.append("!");
+    check(message.as_str() == "retained 3!");
+    match tree {
+        .Branch(children) => {
+            match children[0] {
+                .Leaf(label) => check(label.as_str() == "leaf"),
+                .Branch(_) => check(false),
+            }
+        },
+        .Leaf(_) => check(false),
+    }
+}
+
+const test "Retained storage: nested owners preserve types, contents and capacity" {
+    inspect();
+}
+
+test "Retained storage: native copies own independent mutable contents" {
+    inspect();
+}

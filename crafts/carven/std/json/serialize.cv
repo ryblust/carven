@@ -8,11 +8,11 @@ private const fn append_quoted(text: str, &output: String) {
     output.push('"');
     let bytes = text.bytes;
     var offset: usize = 0;
-    while offset < bytes.len() {
+    while offset < bytes.length() {
         let stop = find_from(bytes, offset, escaped_bytes);
         // ASCII escape boundaries cannot split a scalar in valid UTF-8.
         output.append(str::from_utf8_unchecked(bytes.slice(offset, stop)));
-        if stop == bytes.len() { break; }
+        if stop == bytes.length() { break; }
         let byte = bytes[stop];
         match byte {
             0x22 => output.append("\\\""),
@@ -38,8 +38,8 @@ private const fn append_value(value: Node, &output: String, depth: usize) -> voi
     match value {
         .Null => output.append("null"),
         .Boolean(boolean) => output.append(if boolean { "true" } else { "false" }),
-        .Number(text) => output.append(text.as_str()),
-        .Text(text) => append_quoted(text.as_str(), &output),
+        .Number(text) => output.append(text),
+        .Text(text) => append_quoted(text, &output),
         .Array(items) => {
             if depth == 64 { throw ValueError::DepthLimit; }
             output.push('[');
@@ -56,7 +56,7 @@ private const fn append_value(value: Node, &output: String, depth: usize) -> voi
             var first = true;
             for member in members {
                 if first { first = false; } else { output.push(','); }
-                append_quoted(member.key.as_str(), &output);
+                append_quoted(member.key, &output);
                 output.push(':');
                 append_value(member.value, &output, depth + 1)?;
             }

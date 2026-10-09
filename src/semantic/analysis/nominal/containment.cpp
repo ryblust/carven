@@ -86,7 +86,7 @@ auto append_dependency(
                                 || std::same_as<Value, OperationTypeValue>
                                 || std::same_as<Value, CppTypeValue>
                                 || std::same_as<Value, PointerTypeValue>
-                                || std::same_as<Value, OwnedSequenceTypeValue>
+                                || std::same_as<Value, VectorTypeValue>
                                 || std::same_as<Value, SliceTypeValue>
                                 || std::same_as<Value, RangeTypeValue>,
                             "unhandled non-containing canonical type"

@@ -93,6 +93,24 @@ auto BodyFailures::resolved() const noexcept -> FailureSetID {
     invariant_violation("body failures have not been resolved");
 }
 
+auto constant_operation(const ConstantValueReader& values, ConstantID id) noexcept -> SemConstant {
+    return {.constant = id, .retained_storage = constant_has_storage(values, id)};
+}
+
+auto SemanticExpression::selects_retained_storage() const noexcept -> bool {
+    if (const auto* element = std::get_if<SemTupleElement>(&value)) {
+        return element->source->selects_retained_storage();
+    }
+    if (const auto* field = std::get_if<SemField>(&value)) {
+        return field->source->selects_retained_storage();
+    }
+    if (const auto* index = std::get_if<SemIndex>(&value)) {
+        return index->source->selects_retained_storage();
+    }
+    const auto* constant = std::get_if<SemConstant>(&value);
+    return constant && constant->retained_storage;
+}
+
 auto SemField::consumes_source() const noexcept -> bool {
     // Read bindings can have Value category while still naming existing storage.
     return source->category == SemanticValueCategory::Value && !source->selects_storage();
@@ -117,6 +135,9 @@ auto SemanticExpression::selects_storage() const noexcept -> bool {
     }
     if (const auto* index = std::get_if<SemIndex>(&value)) {
         return !index->consumes_source();
+    }
+    if (const auto* constant = std::get_if<SemConstant>(&value)) {
+        return constant->retained_storage;
     }
     return std::holds_alternative<SemBinding>(value)
         || std::holds_alternative<SemDereference>(value);

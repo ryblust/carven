@@ -1,7 +1,7 @@
 module carven:semantic.evaluation.admission;
 
 import :semantic.semir.constant_access;
-import :semantic.semir.sequence;
+import :semantic.semir.vector;
 import :semantic.semir.structured;
 import :semantic.semir.type;
 import std;
@@ -40,7 +40,7 @@ constexpr auto unsupported_execution_operation(const Operation& operation) noexc
             case TextIntrinsic::FromStr:
             case TextIntrinsic::AsStr:
             case TextIntrinsic::Bytes:
-            case TextIntrinsic::Len:
+            case TextIntrinsic::ByteLength:
             case TextIntrinsic::IsEmpty:
             case TextIntrinsic::Append:
             case TextIntrinsic::Push:

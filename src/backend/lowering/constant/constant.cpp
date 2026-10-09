@@ -3,11 +3,13 @@ module carven:backend.lowering.constant.impl;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.lowering.constant;
+import :backend.lowering.constant.storage;
 import :backend.lowering.context;
 import :backend.target.expr;
 import :backend.target.symbol;
 import :backend.target.type;
 import :semantic.semir.constant;
+import :semantic.semir.constant_access;
 import :semantic.semir.decl;
 import :semantic.semir.ids;
 import :semantic.semir.program;
@@ -202,12 +204,24 @@ auto tuple_expression(
     return result;
 }
 
-auto constant_expression(
+auto constant_has_storage(const SemIRProgram& program, ConstantID id) noexcept -> bool {
+    return constant_has_storage(PublishedConstantValues(program), id);
+}
+
+namespace {
+
+enum class ConstantOwnership { Owned, Retained };
+
+auto constant_initializer(
     ModuleLowering& context,
     ConstantID id,
-    ConstantLiteralContext use
+    ConstantLiteralContext literal,
+    ConstantOwnership ownership
 ) noexcept -> TargetExpr {
     const auto& fact = context.semantic().constants().constant(id);
+    const auto child = [&](ConstantID value) noexcept {
+        return constant_initializer(context, value, ConstantLiteralContext::TargetTyped, ownership);
+    };
     return fact.value.visit(
         Overloaded {
             [&](const VoidConstant&) noexcept -> TargetExpr {
@@ -216,7 +230,7 @@ auto constant_expression(
             [&](const TupleConstant& value) noexcept -> TargetExpr {
                 auto elements = std::vector<TargetExpr>();
                 for (const auto element : value.elements) {
-                    elements.push_back(constant_expression(context, element));
+                    elements.push_back(child(element));
                 }
                 return tuple_expression(context, fact.type, std::move(elements));
             },
@@ -245,7 +259,7 @@ auto constant_expression(
                 };
             },
             [&](const IntegerConstant& value) noexcept {
-                return typed_integer_expression(context, value, fact.type, use);
+                return typed_integer_expression(context, value, fact.type, literal);
             },
             [&](const SIMDConstant& value) noexcept -> TargetExpr {
                 auto inputs = std::vector<TargetExpr>();
@@ -315,10 +329,23 @@ auto constant_expression(
                 return bool_expression(value.value);
             },
             [&](const StringConstant& value) noexcept {
-                return string_expression(
+                auto text = string_expression(
                     std::string(context.semantic().provenance().spelling(value.value)),
                     TargetStringLiteralKind::StringView
                 );
+                if (context.semantic().types().type(fact.type).value
+                    == CanonicalTypeValue {BuiltinTypeValue {BuiltinType::String}}) {
+                    return call_expression(
+                        static_member_expression(
+                            context.lower_type(fact.type),
+                            TargetIdentifier::from_spelling(
+                                ownership == ConstantOwnership::Owned ? "from_str" : "from_static"
+                            )
+                        ),
+                        target_expressions(std::move(text))
+                    );
+                }
+                return text;
             },
             [&](const CStringConstant& value) noexcept {
                 return TargetExpr {
@@ -360,18 +387,36 @@ auto constant_expression(
             [&](const PayloadEnumConstant& value) noexcept {
                 auto payload = std::vector<TargetExpr>();
                 payload.reserve(value.payload.size());
-                for (const auto child : value.payload) {
-                    payload.push_back(constant_expression(context, child));
+                for (const auto element : value.payload) {
+                    payload.push_back(child(element));
                 }
-                return enum_case_expression(context, value.enum_case, std::move(payload));
+                const auto owner =
+                    context.semantic().declarations().enum_case(value.enum_case).owner;
+                const auto& representation = context.payload_enum(owner);
+                auto record_name = context.enumeration_name(owner);
+                record_name.append(
+                    representation
+                        .case_records[enum_case_index(context.semantic(), value.enum_case)]
+                );
+                return TargetExpr {
+                    .value = TargetConstructionExpr {
+                        .type = context.lower_type(fact.type),
+                        .initializer = target_expressions(
+                            TargetExpr {
+                                .value = TargetConstructionExpr {
+                                    .type = context.named_type(record_name),
+                                    .initializer = std::move(payload)
+                                }
+                            }
+                        )
+                    }
+                };
             },
             [&](const StructConstant& value) noexcept -> TargetExpr {
                 auto fields = std::vector<TargetExpr>();
                 fields.reserve(value.fields.size());
-                for (const auto child : value.fields) {
-                    fields.push_back(
-                        constant_expression(context, child, ConstantLiteralContext::TargetTyped)
-                    );
+                for (const auto element : value.fields) {
+                    fields.push_back(child(element));
                 }
                 return {
                     .value = TargetConstructionExpr {
@@ -388,10 +433,8 @@ auto constant_expression(
                 }
                 auto elements = std::vector<TargetExpr>();
                 elements.reserve(value.elements.size());
-                for (const auto child : value.elements) {
-                    elements.push_back(
-                        constant_expression(context, child, ConstantLiteralContext::TargetTyped)
-                    );
+                for (const auto element : value.elements) {
+                    elements.push_back(child(element));
                 }
                 return {
                     .value = TargetArrayExpr {
@@ -401,22 +444,50 @@ auto constant_expression(
                     },
                 };
             },
-            [&](const SliceConstant& value) noexcept -> TargetExpr {
+            [&]<typename Sequence>(const Sequence& value) noexcept -> TargetExpr
+                requires (std::same_as<Sequence, SliceConstant>
+                          || std::same_as<Sequence, VectorConstant>)
+            {
+                constexpr auto owning = std::same_as<Sequence, VectorConstant>;
+                if constexpr (owning) {
+                    if (ownership == ConstantOwnership::Owned) {
+                        auto elements = std::vector<TargetExpr>();
+                        elements.reserve(value.elements.size());
+                        for (const auto element : value.elements) {
+                            elements.push_back(constant_initializer(
+                                context,
+                                element,
+                                ConstantLiteralContext::Exact,
+                                ownership
+                            ));
+                        }
+                        return TargetExpr {
+                            .value = TargetConstructionExpr {
+                                .type = context.lower_type(fact.type),
+                                .initializer = std::move(elements)
+                            }
+                        };
+                    }
+                }
                 auto storage = context.constant_storage().find(id);
                 if (!storage) {
-                    const auto* slice = std::get_if<SliceTypeValue>(
-                        &context.semantic().types().type(fact.type).value
-                    );
-                    if (slice == nullptr) {
-                        invariant_violation("slice constant has a non-slice canonical type");
-                    }
-                    const auto element = context.lower_type(slice->element);
+                    const auto& canonical = context.semantic().types().type(fact.type).value;
+                    const auto element = context.lower_type([&]() noexcept {
+                        if constexpr (owning) {
+                            return std::get<VectorTypeValue>(canonical).element;
+                        } else {
+                            return std::get<SliceTypeValue>(canonical).element;
+                        }
+                    }());
                     auto elements = std::vector<TargetExpr>();
                     elements.reserve(value.elements.size());
                     for (const auto child : value.elements) {
-                        elements.push_back(
-                            constant_expression(context, child, ConstantLiteralContext::TargetTyped)
-                        );
+                        elements.push_back(constant_initializer(
+                            context,
+                            child,
+                            ConstantLiteralContext::TargetTyped,
+                            ConstantOwnership::Retained
+                        ));
                     }
                     storage = context.constant_storage().append(
                         id,
@@ -430,13 +501,56 @@ auto constant_expression(
                         }
                     );
                 }
-                return call_expression(
+                auto view = call_expression(
                     intrinsic_expression(TargetSymbol::RuntimeAsSlice),
                     target_expressions(name_expression(std::move(*storage)))
                 );
+                if constexpr (owning) {
+                    return call_expression(
+                        static_member_expression(
+                            context.lower_type(fact.type),
+                            TargetIdentifier::from_spelling("from_static")
+                        ),
+                        target_expressions(std::move(view), integer_expression(value.capacity))
+                    );
+                } else {
+                    return view;
+                }
             },
-        }
+            }
     );
+}
+
+} // namespace
+
+auto constant_expression(
+    ModuleLowering& context,
+    ConstantID id,
+    ConstantLiteralContext literal
+) noexcept -> TargetExpr {
+    return constant_initializer(context, id, literal, ConstantOwnership::Owned);
+}
+
+auto constant_reference(ModuleLowering& context, ConstantID id) noexcept -> TargetExpr {
+    if (!constant_has_storage(context.semantic(), id)) {
+        return constant_expression(context, id);
+    }
+    auto stored = context.constant_storage().find(id, ConstantStorageRole::Object);
+    if (!stored) {
+        auto initializer = constant_initializer(
+            context,
+            id,
+            ConstantLiteralContext::TargetTyped,
+            ConstantOwnership::Retained
+        );
+        stored = context.constant_storage().append(
+            id,
+            context.lower_type(context.semantic().constants().constant(id).type),
+            std::move(initializer),
+            ConstantStorageRole::Object
+        );
+    }
+    return name_expression(std::move(*stored));
 }
 
 auto numeric_enum_case_value_expression(ModuleLowering& context, EnumCaseID enum_case) noexcept

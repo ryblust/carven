@@ -45,17 +45,17 @@ test "JSON parse: events build independent owners and preserve nested value kind
         let document = Value::parse(input)?;
         input.clear();
         check(document.kind() == .Object);
-        check(document.len()? == 2);
+        check(document.length()? == 2);
         check(document.key_at(0)? == "k" && document.key_at(1)? == "empty");
         let values = document.member_value_at(0)?;
-        check(values.len()? == 3);
+        check(values.length()? == 3);
         check(values.at(0)?.kind() == .Null);
         check(values.at(1)?.as_bool()?);
         let object = values.at(2)?;
         check(object.get("s")?.as_str()? == "owned");
         check(object.get("n")?.number_text()? == "123");
         let empty = document.member_value_at(1)?;
-        check(empty.get("")?.len()? == 0);
+        check(empty.get("")?.length()? == 0);
     } catch {
         JSONError(error) => fail(f"parse rejected valid input at byte {error.offset}"),
         ValueError(_) => fail("parsed value has an unexpected shape"),

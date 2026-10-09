@@ -8,7 +8,7 @@ fn table_view() -> [i32] => table;
 fn run_slices() {
     let view = table_view();
     println("Selected:", selected);
-    println("Entries:", view.len());
+    println("Entries:", view.length());
     for value in view {
         println(value);
     }

@@ -1329,14 +1329,14 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 let text = String::from_str("abc");
                 let view = text.as_str();
                 let bytes = view.bytes.slice(1usize, 3usize);
-                return view == "abc" && bytes.len() == 2usize && bytes[0] == 98u8
+                return view == "abc" && bytes.length() == 2usize && bytes[0] == 98u8
                     && addressof(bytes[0]) == addressof(text.bytes[1]);
             }
             const fn retained() -> bool {
                 let text = "abc";
                 let bytes = text.bytes;
                 let copy = bytes;
-                return bytes.len() == 3usize && bytes[1] == 98u8
+                return bytes.length() == 3usize && bytes[1] == 98u8
                     && addressof(bytes[1]) == addressof(copy[1]);
             }
             const fn frozen() -> [u8] => "ab".bytes;
@@ -1423,18 +1423,24 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                                     integer,
                                     lifetime,
                                     origin(),
-                                    SemConstant {draft.intern_constant(
-                                        constant_test_integer_fact(integer, 1)
-                                    )}
+                                    SemConstant {
+                                        draft.intern_constant(
+                                            constant_test_integer_fact(integer, 1)
+                                        ),
+                                        false
+                                    }
                                 )),
                                 .operation = BinaryOperator::Add,
                                 .right = OwnedSemanticExpression(builder.make_expression(
                                     integer,
                                     lifetime,
                                     last_origin,
-                                    SemConstant {draft.intern_constant(
-                                        constant_test_integer_fact(integer, 2)
-                                    )}
+                                    SemConstant {
+                                        draft.intern_constant(
+                                            constant_test_integer_fact(integer, 2)
+                                        ),
+                                        false
+                                    }
                                 )),
                             }
                         );
@@ -1517,9 +1523,12 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                                 integer,
                                 lifetime,
                                 at,
-                                SemConstant {draft.intern_constant(
-                                    constant_test_integer_fact(integer, value)
-                                )}
+                                SemConstant {
+                                    draft.intern_constant(
+                                        constant_test_integer_fact(integer, value)
+                                    ),
+                                    false
+                                }
                             );
                         };
                         const auto root = builder.make_expression(
@@ -1692,7 +1701,8 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                                 lifetime,
                                 origin,
                                 SemConstant {
-                                    draft.intern_constant(constant_test_integer_fact(integer, 1))
+                                    draft.intern_constant(constant_test_integer_fact(integer, 1)),
+                                    false
                                 }
                             )),
                         }
@@ -1713,7 +1723,10 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                         integer,
                         lifetime,
                         changed_origin,
-                        SemConstant {draft.intern_constant(constant_test_integer_fact(integer, 42))}
+                        SemConstant {
+                            draft.intern_constant(constant_test_integer_fact(integer, 42)),
+                            false
+                        }
                     );
                     const auto result = std::move(task).run();
                     if (!expect(result.has_value())) {

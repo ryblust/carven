@@ -26,6 +26,9 @@ auto tuple_constant(ProgramDraft& draft, TypeID type, const SemTuple& tuple) noe
 
 auto array_constant(ProgramDraft& draft, TypeID type, const SemArray& array) noexcept
     -> std::optional<ConstantID> {
+    if (!std::holds_alternative<ArrayTypeValue>(draft.type_copy(type).value)) {
+        return std::nullopt;
+    }
     auto elements = std::vector<ConstantID>();
     for (const auto& element : array.elements) {
         if (!element.constant) {
@@ -222,13 +225,13 @@ auto fold_constant_expression(
         } else if constexpr (std::same_as<Operation, SemIntrinsic>) {
             if (const auto* slice = std::get_if<SliceIntrinsicOperation>(&operation.operation);
                 slice
-                && (slice->intrinsic == SliceIntrinsic::Len
+                && (slice->intrinsic == SliceIntrinsic::Length
                     || slice->intrinsic == SliceIntrinsic::IsEmpty)) {
                 if (const auto extent =
                         sequence_extent(draft, operation.operands.front().expression)) {
                     folded = ConstantFact {
                         .type = *type,
-                        .value = slice->intrinsic == SliceIntrinsic::Len
+                        .value = slice->intrinsic == SliceIntrinsic::Length
                             ? ConstantValue(IntegerConstant::from_parts(*extent, false))
                             : ConstantValue(BooleanConstant {.value = *extent == 0u}),
                     };
@@ -250,7 +253,7 @@ auto fold_constant_expression(
                         evaluate_text_intrinsic_constant_value(draft, intrinsic, receiver, *type)
                     );
                 } else if constexpr (std::same_as<Intrinsic, SliceIntrinsicOperation>) {
-                    if (intrinsic.intrinsic == SliceIntrinsic::FromArray) {
+                    if (intrinsic.intrinsic == SliceIntrinsic::FromOwner) {
                         if (const auto* array = std::get_if<ArrayConstant>(&receiver.value)) {
                             folded = ConstantFact {
                                 .type = *type,

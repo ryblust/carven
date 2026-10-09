@@ -41,7 +41,7 @@ export(cpp) fn slice_range(start: usize, end: usize) {
 
 export(cpp) fn slice_known_length() {
     let array = [1];
-    let _ = array.as_slice().slice(0, 2).len();
+    let _ = array.as_slice().slice(0, 2).length();
 }
 
 export(cpp) fn slice_known_empty() {
@@ -51,7 +51,7 @@ export(cpp) fn slice_known_empty() {
 
 export(cpp) fn slice_known_format() {
     let array = [1];
-    let _ = f"{array.as_slice().slice(0, 2).len()}";
+    let _ = f"{array.as_slice().slice(0, 2).length()}";
 }
 
 private fn native_result() => result();

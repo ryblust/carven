@@ -361,23 +361,23 @@ auto construct_slice_value(
     const auto contract = slice_intrinsic_contract(intrinsic);
     const auto shape = sequence_shape(site.draft(), receiver_type);
     if (!shape
-        || shape->kind == SequenceShapeKind::OwnedSequence
         || !slice_intrinsic_accepts_receiver(
             contract.receiver,
-            shape->kind == SequenceShapeKind::Array ? SliceIntrinsicShape::Array
-                                                    : SliceIntrinsicShape::Slice
+            shape->kind == SequenceShapeKind::Array        ? SliceIntrinsicShape::Array
+                : shape->kind == SequenceShapeKind::Vector ? SliceIntrinsicShape::Vector
+                                                           : SliceIntrinsicShape::Slice
         )) {
         invariant_violation("slice construction receiver mismatch");
     }
     auto result_type = receiver_type;
     if (const auto* builtin = std::get_if<BuiltinType>(&contract.result)) {
         result_type = site.draft().builtin_type(*builtin);
-    } else if (shape->kind == SequenceShapeKind::Array) {
+    } else if (shape->kind != SequenceShapeKind::Slice) {
         result_type = make_slice_type(site.draft(), shape->element);
     }
     auto result_extent = std::optional<std::uint64_t>();
     auto known = std::optional<ConstantID>();
-    if (intrinsic == SliceIntrinsic::FromArray) {
+    if (intrinsic == SliceIntrinsic::FromOwner) {
         result_extent = extent;
     } else if constexpr (Site::mode == ExpressionMode::Body) {
         if (intrinsic == SliceIntrinsic::Slice) {
@@ -397,7 +397,7 @@ auto construct_slice_value(
             }
         } else if (extent) {
             switch (intrinsic) {
-                case SliceIntrinsic::Len:
+                case SliceIntrinsic::Length:
                     known = site.draft().intern_constant(
                         {.type = std::get<TypeID>(result_type),
                          .value = IntegerConstant::from_parts(*extent, false)}
@@ -409,7 +409,7 @@ auto construct_slice_value(
                          .value = BooleanConstant {.value = *extent == 0u}}
                     );
                     break;
-                case SliceIntrinsic::FromArray:
+                case SliceIntrinsic::FromOwner:
                 case SliceIntrinsic::Slice:     std::unreachable();
             }
         }
@@ -435,6 +435,19 @@ auto construct_slice_call(
     std::span<const ASTExprID> arguments,
     Span span
 ) noexcept -> ExpressionTask<typename Site::Value> {
+    if (intrinsic == SliceIntrinsic::Slice && !slice_element(site.draft(), site.type(receiver))) {
+        auto borrowed = co_await construct_slice_call(
+            site,
+            SliceIntrinsic::FromOwner,
+            std::move(receiver),
+            std::span<const ASTExprID>(),
+            span
+        );
+        if (!borrowed) {
+            co_return std::unexpected(borrowed.error());
+        }
+        receiver = std::move(*borrowed);
+    }
     const auto receiver_type = site.type(receiver);
     const auto extent = site.known_sequence_extent(receiver);
     const auto contract = slice_intrinsic_contract(intrinsic);

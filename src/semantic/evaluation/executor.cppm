@@ -216,7 +216,7 @@ private:
         const SemIntrinsic& operation,
         const SemanticExpression& source
     ) noexcept -> ExecutionTask<ExecutionValue>;
-    auto sequence_intrinsic(
+    auto vector_intrinsic(
         ExecutionFrame& frame,
         const SemIntrinsic& operation,
         TypeID result_type,
@@ -253,8 +253,14 @@ private:
     auto read_borrows_storage(ConstructionTypeRef type) noexcept -> bool;
     auto own_storage(ExecutionValue value, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionValue>;
-    auto copy_value(const ExecutionValue& value, ProgramOriginID origin) noexcept
-        -> ExecutionResult<ExecutionValue>;
+    enum class CopyMode { Value, Retained };
+    auto copy_value(
+        const ExecutionValue& value,
+        ProgramOriginID origin,
+        CopyMode mode = CopyMode::Value
+    ) noexcept -> ExecutionResult<ExecutionValue>;
+    auto retained_storage(ConstantID id, ProgramOriginID origin) noexcept
+        -> ExecutionResult<ExecutionPlace>;
     auto retained_slice(ConstantID id, ProgramOriginID origin) noexcept
         -> ExecutionResult<ExecutionSlice>;
     auto sequence_view(
@@ -427,7 +433,7 @@ private:
     const ExecutionLimits limits;
     ExecutionTypeShapes shapes;
     ExecutionMemory memory;
-    std::map<ConstantID, ExecutionPlace> retained_slice_backings;
+    std::map<ConstantID, ExecutionPlace> retained_backings;
     std::map<TypeID, bool> storage_reads;
     std::map<ProgramSpellingID, ExecutionText> retained_text;
     // The arena outlives every slot and frame; source memory outlives arena frames.

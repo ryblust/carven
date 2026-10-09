@@ -15,24 +15,12 @@ needed for adoption.
 | Compiler data and queries | Can ownership, preparation, or data organization avoid repeated work? | A reproducible time, memory, or scaling cost |
 | Stage parallelism | Can independent work overlap within a bounded resource budget? | Sufficient independent work after scheduling and memory costs |
 | C++ realization | Can a snapshot, reservation, or result carrier be avoided? | A concrete redundant generated operation with an equivalent alternative |
-| Constant output | Can completed values use smaller target expressions or shared storage? | Output growth or repeated materialization in representative programs |
+| Constant output | Can completed values use smaller target expressions? | Output growth in representative programs |
+| Formatting and output | Can reservation or composition remove work? | A workload with preserved observation points and failure behavior |
 | Local value facts | Can additional non-diagnostic facts remove runtime work? | An operation or formatting workload that benefits from precomputation |
 
 Compiler wall time, CPU time, peak RSS, generated size, native compilation, and
 program runtime and memory are measured separately.
-
-## Current foundation
-
-Static specialization substitutes checked semantic values and refreshes parent
-constant facts through the shared folding dispatcher. A successful fact preserves
-operand effects; a failed optional fold leaves runtime checks and failure timing
-intact. Equal-bit SIMD constants already lower through compact splats. The SIMD
-library uses ordinary static parameters to select byte-set comparisons and lookup
-tables, which also support UTF validation.
-
-The candidates below concern remaining runtime work, broader value propagation,
-and representation costs. Extending local dataflow, sharing constant backing, or
-changing product layout needs evidence beyond the implemented specialization.
 
 ## Measurements
 
@@ -207,20 +195,6 @@ check observable behavior and target structure.
 
 ## Constant output and local facts
 
-### Product representation
-
-Tuples currently use recursive C++ aggregates, preserving ordered construction,
-stable element storage, and direct initialization of immovable native results.
-A measured large-product cost may justify flat aggregates selected by canonical
-product identity. Shared definitions need consistent cross-module placement and
-dependencies.
-
-Compare generated size and native compile time before adding another target form.
-Preserve nested shapes, unit slots, operand effects, partial construction, retained
-loans, discarded-slot lifetime, and cleanup. Local direct delivery can reuse the
-existing preparation and realization contracts; changing storage does not expand
-the source tuple API.
-
 ### Compact default arrays
 
 Frozen `ArrayConstant` lowering reconstructs elements individually. A candidate
@@ -237,14 +211,6 @@ excluded types, indexing, and independent mutation after copying. At fixed depth
 initializer-node count should not grow with all-default element count; scanning
 and extent spelling still have costs. Measure target nodes, bytes, generation,
 and native compilation separately.
-
-### Shared materialization
-
-Repeated large values may justify shared target data only if owner independence,
-Take, address observations, and cleanup survive. Prove C++20 static-initialization
-eligibility for each reconstruction path, including payload-enum factories.
-Use shared static storage only for paths proven to permit C++20 constant
-initialization; retain current reconstruction for other paths.
 
 ### Broader local value propagation
 
@@ -263,6 +229,47 @@ aliases, calls, loops, and joins. `touch() && false` still executes touch;
 `false && touch()` does not. Known slice length does not remove bounds checks.
 Preserve failure, storage observation, borrowed owners, and condition cleanup.
 
+## Formatting and output
+
+### Destination capacity planning
+
+Select a reservation experiment when a representative workload exceeds existing
+writer bounds. Exact length, an upper bound, and minimum field width are distinct
+facts. Define length arithmetic, formatter invocation count, and resource
+observations. Compare fresh and reused destinations: an upper bound can reserve
+unused memory, while computing the exact size adds work. Explicit operation
+resource constraints take precedence over growth heuristics.
+
+### Composition across output boundaries
+
+A formatting/output experiment must preserve operand completion, String
+observation, and visible failure prefixes. For example:
+
+```carven
+println(f"{text}", mutate(&text));
+```
+
+The owning interpolation completes before the later argument mutates `text`.
+Within one interpolation, String holes observe their owners after all holes
+evaluate. Composition must retain both observation points and temporary backing.
+
+Streaming segments can expose a prefix before failure during String construction;
+batching print values can suppress an already observable prefix. Define the
+preserved construction, conversion, and allocation-failure behavior before
+selecting fusion. Measure the complete operation, including effects and aliases.
+
+### Conversion runtime replacement
+
+A replacement needs a concrete byte-output and failure contract and representative
+cost evidence. Cover the selected target libraries, Unicode width and precision,
+locale, floating presentation, custom formatters, and invalid dynamic widths.
+Optional precomputation retains runtime evaluation for valid specifications it
+cannot evaluate. Preserve runtime failure timing, diagnostics, the supported
+data model, and floating-point constant-fact boundaries.
+
+Measure generated source, native compilation, runtime, and memory independently.
+A native formatting kernel alone does not establish an application throughput gain.
+
 ## Validation and stopping conditions
 
 Select source, structural, diagnostic, and native checks for the affected behavior.
@@ -279,5 +286,5 @@ require disproportionate complexity.
 
 - [Benchmarks](../benchmarks/README.md) and [testing](../docs/development/testing.md): measurement and validation commands.
 - [Realization](../docs/compiler/backend/realization.md) and [known results](../docs/compiler/analysis/semir.md#known-results-and-execution-requirements): current semantic boundaries.
-- [Semantic execution](semantic-execution.md), [constant storage](constant-storage.md), [uninitialized storage](uninitialized-storage.md), and [data representation](data-representation.md): related semantic designs.
+- [Uninitialized storage](uninitialized-storage.md): construction-destination contracts for direct delivery.
 - [Infrastructure candidates](design-directions.md#deferred-infrastructure): concurrent queries and persistent caches.

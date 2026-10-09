@@ -21,7 +21,7 @@ test "String interpolation: integer types preserve signs bases width Unicode and
     check(narrow_record(-128i8) == "-00128/-080/-10000000");
     check(unicode_record(18446744073709551615u64) == "{我}\0value=FFFFFFFFFFFFFFFF;");
     let wide = wide_record(-7);
-    check(wide.len() == 65543usize);
+    check(wide.byte_length() == 65543usize);
     let bytes = wide.bytes;
     check(bytes[0usize] == 115u8 && bytes[4usize] == 116u8);
     check(bytes[65540usize] == 45u8 && bytes[65541usize] == 55u8 && bytes[65542usize] == 33u8);
@@ -60,7 +60,7 @@ test "String interpolation: mixed writer fields preserve bytes growth and owners
     for index in 0..100 {
         mixed_writer_append(&output, owned, index, true, '\0');
     }
-    check(output.len() == 2207usize);
+    check(output.byte_length() == 2207usize);
     owned.clear();
     check(result == "{view}\0我\0text|FFFFFFFFFFFFFFFF|false|😀");
 }
@@ -156,7 +156,7 @@ test "Dynamic integer width: direct nested and append delivery preserve mixed op
     check(dynamic_integer_record(-7, 4, "我\0") == "0042/-007/我\0/  -7");
     check(dynamic_integer_record(-7, 0, "text") == "0042/-7/text/-7");
     var width = 4;
-    check(f"{-7:0{width}x}".len() == 4usize);
+    check(f"{-7:0{width}x}".byte_length() == 4usize);
     var text: String = "before storage long enough to allocate";
     var output: String = "prefix:";
     var trace = 0;

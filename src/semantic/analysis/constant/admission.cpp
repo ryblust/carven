@@ -172,7 +172,7 @@ auto ConstFunctionValidator::supported_type(ConstructionTypeRef type) const noex
                             }
                         }
                     });
-                } else if constexpr (std::same_as<Value, GenericOwnedSequenceType>) {
+                } else if constexpr (std::same_as<Value, GenericVectorType>) {
                     pending.emplace_back(value.element);
                 }
                 // Rigid holders carry an argument value; no copy/default/equality

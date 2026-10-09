@@ -458,7 +458,7 @@ const TestSuite suite([] static noexcept {
             constexpr auto text = std::string_view(
                 "fn use() { "
                 "relay<Box<i32,>,>(value); "
-                "Owner<Box<i32>>::create(value); "
+                "Owner<Box<i32>>::new(value); "
                 "let box = Box<i32,> { value: 1 }; }"
             );
             const auto tree = parse_valid(text);

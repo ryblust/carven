@@ -14,7 +14,7 @@ const TestSuite suite([] static noexcept {
             const auto prelude = std::string(R"(
         class C {
             value: i32,
-            fn create() -> C { return { value: 1 }; }
+            fn new() -> C { return { value: 1 }; }
             private fn secret(self) -> i32 { return self.value; }
             fn read(self) -> i32 { return self.secret(); }
             fn update(&self) { self.value += 1; }
@@ -37,11 +37,11 @@ const TestSuite suite([] static noexcept {
     "Semantic classes: default construction cannot bypass a factory through containers"_test =
         [] static noexcept {
             const auto prelude =
-                std::string("class C { value: i32, fn create() -> C { return { value: 1 }; } } ");
+                std::string("class C { value: i32, fn new() -> C { return { value: 1 }; } } ");
             const auto cases = std::array {
                 "struct S { value: C } fn f() -> S { return S {}; }",
                 "struct S { values: [C; 2] } fn f() -> S { return S {}; }",
-                "class D { value: C, fn create() -> D { return D {}; } }",
+                "class D { value: C, fn new() -> D { return D {}; } }",
             };
             each(cases, std::identity {}, [&](const auto& source) noexcept {
                 const auto diagnostics = analyze_test_errors(prelude + source);
@@ -58,7 +58,7 @@ const TestSuite suite([] static noexcept {
             static_cast<void>(analyze_test_program(R"(
         class C {
             value: i32,
-            fn create() -> C { return { value: 1 }; }
+            fn new() -> C { return { value: 1 }; }
             fn read(self) -> i32 { return self.value; }
             private fn update(&self) { self.value += 1; }
         }
@@ -83,28 +83,28 @@ const TestSuite suite([] static noexcept {
         class C {
             value: i32,
             private const fn initial() -> i32 => 3;
-            const fn create() -> C {
+            const fn new() -> C {
                 const value = C { value: C::initial() }.value;
                 return { value: value };
             }
             const fn read(self) -> i32 => self.value;
             const fn consume(&&self) -> i32 => self.value;
         }
-        const object = C::create();
+        const object = C::new();
         const result = object.read();
-        const taken = C::create().consume();
-        const extent = C::create().read() as usize;
+        const taken = C::new().consume();
+        const extent = C::new().read() as usize;
         fn local() -> i32 {
-            const value = C::create().read();
-            const taken = C::create().consume();
+            const value = C::new().read();
+            const taken = C::new().consume();
             return value + taken;
         }
-        fn array() -> [i32; C::create().read() as usize] => [0; extent];
+        fn array() -> [i32; C::new().read() as usize] => [0; extent];
     )"));
         const auto prelude = std::string(R"(
         class C {
             value: i32,
-            const fn create() -> C => { value: 3 };
+            const fn new() -> C => { value: 3 };
             fn runtime_create() -> C => { value: 4 };
             fn runtime_read(self) -> i32 => self.value;
             private const fn secret() -> i32 => 3;
@@ -112,14 +112,14 @@ const TestSuite suite([] static noexcept {
             const fn update(&self) -> i32 { self.value += 1; return self.value; }
             const fn consume(&&self) -> i32 => self.value;
         }
-        const object = C::create();
+        const object = C::new();
     )");
         const auto cases = std::array {
             std::pair {"const value = C::runtime_create();", DiagnosticCode::ConstAdmission},
             std::pair {"const value = object.runtime_read();", DiagnosticCode::ConstAdmission},
             std::pair {"const value = C::secret();", DiagnosticCode::AccessClassPrivate},
             std::pair {"const value = C::read();", DiagnosticCode::TypeMethodCall},
-            std::pair {"const value = object.create();", DiagnosticCode::TypeMethodCall},
+            std::pair {"const value = object.new();", DiagnosticCode::TypeMethodCall},
             std::pair {"const value = object.update();", DiagnosticCode::AccessWriteArgument},
             std::pair {"const value = object.consume();", DiagnosticCode::AccessTakeOperand},
             std::pair {"const value = C { value: 1 };", DiagnosticCode::AccessClassPrivate},
@@ -190,12 +190,12 @@ const TestSuite suite([] static noexcept {
             const auto diagnostics = analyze_test_errors(R"(
         class Label {
             text: String,
-            fn create() -> Label { return { text: String::from_str("first") }; }
+            fn new() -> Label { return { text: String::from_str("first") }; }
             fn view(self) -> str { return self.text.as_str(); }
             fn replace(&self) { self.text = String::from_str("second"); }
         }
         fn use() {
-            var label = Label::create();
+            var label = Label::new();
             let view = label.view();
             label.replace();
             println(view);
@@ -209,18 +209,18 @@ const TestSuite suite([] static noexcept {
             const auto prelude = std::string(R"(
         class C {
             text: String,
-            fn create() -> C { return { text: String::from_str("x") }; }
+            fn new() -> C { return { text: String::from_str("x") }; }
             fn build(&&self) -> String { return (&&self).text; }
             fn view(self) -> str { return self.text.as_str(); }
         }
     )");
             const auto reused = analyze_test_errors(prelude + R"(
-        fn use() { let owner = C::create(); let _ = owner.build(); let _ = owner.build(); }
+        fn use() { let owner = C::new(); let _ = owner.build(); let _ = owner.build(); }
     )");
             expect_diagnostic(reused, DiagnosticCode::AccessUnavailable);
             const auto borrowed = analyze_test_errors(prelude + R"(
         fn use() {
-            let owner = C::create();
+            let owner = C::new();
             let view = owner.view();
             let _ = owner.build();
             println(view);

@@ -143,11 +143,11 @@ test "Const arrays: literals and function results retain element types and fixed
     let empty_copy = empty;
     let literal_empty_copy = array_empty;
     check(empty_copy.as_slice().is_empty());
-    check(literal_empty_copy.as_slice().len() == 0usize);
+    check(literal_empty_copy.as_slice().length() == 0usize);
 
     let copy: [i32; 4] = array_table;
     let view = copy.as_slice();
-    check(view.len() == 4usize);
+    check(view.length() == 4usize);
     var index = 3;
     check(view[index] == 12);
     var offset = 3;
@@ -201,7 +201,7 @@ test "Const arrays: bool char and borrowed static text compose without type chan
     const characters = array_characters('A');
     check(texts[0] == "first");
     check(texts[1] == "我\0😀");
-    check(texts[1].len() == 8usize);
+    check(texts[1].byte_length() == 8usize);
     check(flags[0]);
     check(!flags[1]);
     check(characters[0] == 'A');

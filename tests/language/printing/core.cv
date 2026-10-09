@@ -22,12 +22,12 @@ struct PrintedEmpty {}
 class PrintedBox {
     value: i32,
 
-    fn create(value: i32) -> PrintedBox => { value: value };
+    fn new(value: i32) -> PrintedBox => { value: value };
 }
 
 class PrintedEmptyBox {
 
-    fn create() -> PrintedEmptyBox => {};
+    fn new() -> PrintedEmptyBox => {};
 }
 
 struct PrintedEnvelope {
@@ -124,7 +124,7 @@ fn main() {
     let structural: fn(PrintedOrder) -> void = println;
     structural(order);
     println(1..=3);
-    println(PrintedBox::create(1), PrintedEnvelope { box: PrintedBox::create(2) });
+    println(PrintedBox::new(1), PrintedEnvelope { box: PrintedBox::new(2) });
     let cstring = c"我\n";
     println(cstring, c"");
     println(cstring_formatted);
@@ -135,7 +135,7 @@ fn main() {
     println([PrintedMoney { 7 }]);
     let empty: [i32; 0] = [];
     println(empty);
-    println(PrintedEmptyBox::create());
-    println([PrintedBox::create(1), PrintedBox::create(2)]);
+    println(PrintedEmptyBox::new());
+    println([PrintedBox::new(1), PrintedBox::new(2)]);
     println(PrintedPair { make_money(1), make_money(2) });
 }

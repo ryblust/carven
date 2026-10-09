@@ -130,7 +130,7 @@ auto DeclResolver::resolve_generic_declaration(
                     [&](const GenericSliceType& slice) noexcept {
                         self(self, slice.element, origin);
                     },
-                    [&](const GenericOwnedSequenceType& sequence) noexcept {
+                    [&](const GenericVectorType& sequence) noexcept {
                         self(self, sequence.element, origin);
                     },
                     [&](const GenericPointerType& pointer) noexcept {

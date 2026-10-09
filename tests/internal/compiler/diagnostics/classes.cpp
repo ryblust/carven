@@ -31,12 +31,12 @@ const TestSuite suite([] static noexcept {
              .primary_text = "self.read()"},
             {.name = "class equality",
              .source =
-                 "class C { value: i32, fn create() -> C { return { value: 1 }; } } fn equal() -> bool { return C::create() == C::create(); }",
+                 "class C { value: i32, fn new() -> C { return { value: 1 }; } } fn equal() -> bool { return C::new() == C::new(); }",
              .code = DiagnosticCode::TypeEqualityUnsupported,
              .primary_text = "=="},
             {.name = "containing record equality",
              .source =
-                 "class C { value: i32, fn create() -> C { return { value: 1 }; } } struct Box { value: C } fn equal() -> bool { return Box { C::create() } == Box { C::create() }; }",
+                 "class C { value: i32, fn new() -> C { return { value: 1 }; } } struct Box { value: C } fn equal() -> bool { return Box { C::new() } == Box { C::new() }; }",
              .code = DiagnosticCode::TypeEqualityUnsupported,
              .primary_text = "=="},
         });

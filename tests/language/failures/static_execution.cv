@@ -107,7 +107,7 @@ const fn text_relay() -> i32 throw TextError {
         TextError(error) => {
             let owned = error;
             let moved = &&owned;
-            if moved.text.len() == 16usize { rethrow; }
+            if moved.text.byte_length() == 16usize { rethrow; }
             0
         },
     };
@@ -140,7 +140,7 @@ const fn operands() -> i32 {
     } catch {
         ReadError(_) => "caught",
     };
-    return value + caught + index + (formatted.len() as i32);
+    return value + caught + index + (formatted.byte_length() as i32);
 }
 
 const fn control() -> i32 {

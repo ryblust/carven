@@ -103,7 +103,7 @@ public:
     auto append_expansion_origin(ProgramOriginID parent, ProgramExpansionReason reason) noexcept
         -> ProgramOriginID;
     auto intern_type(const CanonicalType& type) noexcept -> TypeID;
-    auto record_sequence_element(TypeID element, ProgramOriginID origin) noexcept -> void;
+    auto record_vector_element(TypeID element, ProgramOriginID origin) noexcept -> void;
     auto builtin_type(BuiltinType type) const noexcept -> TypeID override;
     auto try_canonicalize_declared_type(ConstructionTypeRef type) noexcept -> std::optional<TypeID>;
     auto canonicalize_declared_type(ConstructionTypeRef type) noexcept -> TypeID;
@@ -136,7 +136,7 @@ public:
     auto validate_generic_definitions(
         std::optional<GenericDeclarationID> root = std::nullopt
     ) noexcept -> AnalysisResult<void>;
-    auto validate_sequence_elements() noexcept -> AnalysisResult<void>;
+    auto validate_vector_elements() noexcept -> AnalysisResult<void>;
     auto generic_nominal_instance_copy(NominalDeclarationRef declaration) const noexcept
         -> std::optional<GenericNominalInstance>;
     auto generic_declaration_contract_copy(GenericDeclarationID definition) const noexcept
@@ -488,7 +488,7 @@ private:
         std::vector<GenericTypeExpression> generic_types;
         std::map<GenericTypeExpression, GenericTypeID> generic_type_index;
         std::vector<GenericInstanceSlot> generic_instances;
-        std::vector<std::pair<TypeID, ProgramOriginID>> sequence_elements;
+        std::vector<std::pair<TypeID, ProgramOriginID>> vector_elements;
         std::vector<std::pair<TypeID, ProgramOriginID>> failure_members;
         std::map<std::pair<GenericDeclarationID, CanonicalGenericEnvironment>, std::size_t>
             generic_instance_index;

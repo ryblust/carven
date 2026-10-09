@@ -11,7 +11,7 @@ const fn array_repeat_units() -> bool {
     var counter = 0;
     let empty: [void; 0] = [array_initialize_unit(&counter); 0];
     let units: [void; 2] = [array_initialize_unit(&counter); 2];
-    return empty.len() == 0 && counter == 2 && units == [(), ()];
+    return empty.length() == 0 && counter == 2 && units == [(), ()];
 }
 
 const fn array_repeat_values() -> [i32; 4] {
@@ -24,9 +24,9 @@ const fn array_repeat_empty() -> bool {
     let empty = [array_initialize(&counter); 0];
     let input: String = "retained";
     let unused = [&&input; 0];
-    return empty.as_slice().len()
+    return empty.as_slice().length()
         == 0
-        && unused.as_slice().len() == 0
+        && unused.as_slice().length() == 0
         && counter == 0
         && input == "retained";
 }
@@ -52,8 +52,8 @@ const test "Array initialization: each element executes in order and zero execut
     check(array_repeat_empty());
     check(array_repeat_units());
     check(array_repeated == [7u8, 7u8, 7u8]);
-    check(array_zero.as_slice().len() == 0);
-    check(array_skipped_failure.as_slice().len() == 0);
+    check(array_zero.as_slice().length() == 0);
+    check(array_skipped_failure.as_slice().length() == 0);
     check(
         array_nested_repeat
             == [
@@ -86,7 +86,7 @@ test "Array initialization: native effects and owning copies follow ordinary ele
 class ArrayElement {
     value: i32,
 
-    fn create(&counter: i32) -> ArrayElement {
+    fn new(&counter: i32) -> ArrayElement {
         counter += 1;
         return { value: counter };
     }
@@ -96,11 +96,11 @@ class ArrayElement {
 
 test "Array initialization: elements need no default construction" {
     var counter = 0;
-    let values = [ArrayElement::create(&counter); 3];
+    let values = [ArrayElement::new(&counter); 3];
     check(counter == 3);
     check(values[0].read() == 1 && values[1].read() == 2 && values[2].read() == 3);
-    let empty = [ArrayElement::create(&counter); 0];
-    check(empty.as_slice().len() == 0 && counter == 3);
+    let empty = [ArrayElement::new(&counter); 0];
+    check(empty.as_slice().length() == 0 && counter == 3);
 }
 
 test "Array initialization: one lexical lambda type keeps independent capture values" {
@@ -162,22 +162,22 @@ test "Array initialization: zero lambda occurrences retain a type without constr
 
 const fn array_extent_effects() -> bool {
     var counter = 0;
-    let count = [array_initialize(&counter); 3].len();
+    let count = [array_initialize(&counter); 3].length();
     let empty = [array_initialize(&counter); 0].is_empty();
     let nonempty = [array_initialize(&counter); 1].is_empty();
-    [array_initialize(&counter); 1].len();
+    [array_initialize(&counter); 1].length();
     return count == 3 && empty && !nonempty && counter == 5;
 }
 
 const fn array_extent_failure() -> usize {
     return try {
-        [array_fail_value()?].len()
+        [array_fail_value()?].length()
     } catch {
         ArrayFailure(_) => 9usize,
     };
 }
 
-const array_direct_extent = [2u8, 4u8, 6u8].len();
+const array_direct_extent = [2u8, 4u8, 6u8].length();
 
 const test "Array extent queries: receiver effects and failures execute once" {
     check(array_direct_extent == 3);

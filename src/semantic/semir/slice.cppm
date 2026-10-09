@@ -3,8 +3,8 @@ module carven:semantic.semir.slice;
 import :semantic.semir.type;
 import std;
 
-enum class SliceIntrinsic { FromArray, Len, IsEmpty, Slice };
-enum class SliceIntrinsicShape { Array, Slice, ArrayOrSlice };
+enum class SliceIntrinsic { FromOwner, Length, IsEmpty, Slice };
+enum class SliceIntrinsicShape { Array, Slice, Vector, ArrayOrVector, ArrayOrSlice };
 
 struct SliceOfReceiver final {};
 
@@ -20,6 +20,9 @@ constexpr auto slice_intrinsic_accepts_receiver(
     SliceIntrinsicShape requirement,
     SliceIntrinsicShape actual
 ) noexcept -> bool {
+    if (requirement == SliceIntrinsicShape::ArrayOrVector) {
+        return actual == SliceIntrinsicShape::Array || actual == SliceIntrinsicShape::Vector;
+    }
     return requirement == SliceIntrinsicShape::ArrayOrSlice
         ? actual == SliceIntrinsicShape::Array || actual == SliceIntrinsicShape::Slice
         : requirement == actual;
@@ -30,8 +33,9 @@ constexpr auto slice_intrinsic_contract(SliceIntrinsic intrinsic) noexcept
     -> SliceIntrinsicContract {
     static constexpr auto bounds = std::array {BuiltinType::Usize, BuiltinType::Usize};
     switch (intrinsic) {
-        case SliceIntrinsic::FromArray: return {SliceIntrinsicShape::Array, {}, SliceOfReceiver {}};
-        case SliceIntrinsic::Len:
+        case SliceIntrinsic::FromOwner:
+            return {SliceIntrinsicShape::ArrayOrVector, {}, SliceOfReceiver {}};
+        case SliceIntrinsic::Length:
             return {SliceIntrinsicShape::ArrayOrSlice, {}, BuiltinType::Usize};
         case SliceIntrinsic::IsEmpty:
             return {SliceIntrinsicShape::ArrayOrSlice, {}, BuiltinType::Bool};

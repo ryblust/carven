@@ -1,7 +1,7 @@
 import .data using { table, empty, rows, from_provider, provider_row };
 
 const selected = table[1];
-const tail = table.slice(1, table.len());
+const tail = table.slice(1, table.length());
 
 fn from_consumer() -> [i32] => table;
 
@@ -14,7 +14,7 @@ test "Modules: frozen slices retain static contents across artifact boundaries" 
     check(consumer[index] == 9);
     check(table[index] == 9);
     check(selected == 7);
-    check(tail.len() == 2usize);
+    check(tail.length() == 2usize);
     check(tail[1] == 9);
     check(empty.is_empty());
     check(row[0] == 6);

@@ -342,7 +342,7 @@ private:
     auto construction_requests() noexcept -> ConstructionRequests&;
     auto resolve_duration_type(Span span) noexcept -> AnalysisTask<TypeID>;
     auto resolve_type_qualifier(ASTExprID expression) noexcept
-        -> AnalysisTask<std::optional<TypeID>>;
+        -> AnalysisTask<std::optional<ConstructionTypeRef>>;
     auto resolve_constant_enum_case(TypeID type, std::string_view name, Span span) noexcept
         -> AnalysisTask<ResolvedEnumCase>;
     auto compatible(ConstructionTypeRef left, ConstructionTypeRef right) const noexcept -> bool;

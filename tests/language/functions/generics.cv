@@ -19,7 +19,7 @@ private const fn empty_slice<T>() -> [T] {
 
 private const async fn produce() -> i32 => 42;
 
-private const async fn complete<T, throw E>(&&pending: Operation<T, throw E>) -> T throw E {
+private const async fn complete<T, throw E>(&&pending: AsyncOperation<T, throw E>) -> T throw E {
     return (await pending)?;
 }
 
@@ -29,10 +29,10 @@ const {
 }
 
 const test "Generic functions: cold operations transfer through checked value algorithms" {
-    let pending: Operation<i32> = produce();
+    let pending: AsyncOperation<i32> = produce();
     let boxed = hold(&&pending);
     let released = release(&&boxed);
-    check(await relay<Operation<i32>>(&&released) == 42);
+    check(await relay<AsyncOperation<i32>>(&&released) == 42);
     let inferred = produce();
     check(await complete(&&inferred) == 42);
     let explicit = produce();
@@ -41,7 +41,7 @@ const test "Generic functions: cold operations transfer through checked value al
 
 const test "Generic functions: empty slices do not retain temporary array backing" {
     check(empty_slice<i32>().is_empty());
-    check(empty_slice<(i32, bool)>().len() == 0);
+    check(empty_slice<(i32, bool)>().length() == 0);
 }
 
 test "Generic functions: empty slice delivery has no element storage" {
@@ -50,7 +50,7 @@ test "Generic functions: empty slice delivery has no element storage" {
     let view = values.as_slice();
     let moved = &&values;
     check(view.is_empty());
-    check(moved.len() == 0);
+    check(moved.length() == 0);
 }
 
 private const fn choose<T>(first: bool, &&left: T, &&right: T) -> T {
@@ -84,7 +84,7 @@ test "Generic functions: owned values transfer through ordinary aggregate fields
 test "Generic functions: slice forwarding retains its backing and element type" {
     let data = [20, 22];
     let forwarded = pass_slice<i32>(data.as_slice());
-    check(forwarded.len() == 2);
+    check(forwarded.length() == 2);
     check(forwarded[0] + forwarded[1] == 42);
     let boxed = hold<[i32]>(&&forwarded);
     let extracted = release<[i32]>(&&boxed);

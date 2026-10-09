@@ -52,12 +52,12 @@ display();
 class Token {
     secret: i32,
 
-    fn create(secret: i32) -> Token => { secret: secret };
+    fn new(secret: i32) -> Token => { secret: secret };
 }
 
 class EmptyToken {
 
-    fn create() -> EmptyToken => {};
+    fn new() -> EmptyToken => {};
 }
 
 struct Envelope {
@@ -65,9 +65,9 @@ struct Envelope {
     empty: EmptyToken,
 }
 
-println(Token::create(42), EmptyToken::create());
-println(Envelope { Token::create(7), EmptyToken::create() });
-println([Token::create(1), Token::create(2)]);
+println(Token::new(42), EmptyToken::new());
+println(Envelope { Token::new(7), EmptyToken::new() });
+println([Token::new(1), Token::new(2)]);
 
 // Aggregate fields retain distinct identities through C++ naming and display.
 struct __A {

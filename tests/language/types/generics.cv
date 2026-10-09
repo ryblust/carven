@@ -32,7 +32,7 @@ private enum NestedChoice<T, U> {
     Pair(Pair<U, T>),
     Repeated(Pair<T, T>),
     Array([T; 2]),
-    Many(Sequence<T>),
+    Many(Vector<T>),
 }
 
 private const fn maybe_number(value: Maybe<i32>) -> i32 => match value {
@@ -94,12 +94,12 @@ test "Generics: nested enum payloads preserve argument order and container value
         .Array(values) => check(values[0] + values[1] == 42),
         _ => check(false),
     }
-    var values = Sequence<i32> {};
+    var values = Vector<i32> {};
     values.push(17);
     values.push(25);
     let many = NestedChoice<i32, u8>::Many(&&values);
     match many {
-        .Many(items) => check(items.len() == 2 && items[0] + items[1] == 42),
+        .Many(items) => check(items.length() == 2 && items[0] + items[1] == 42),
         _ => check(false),
     }
 }

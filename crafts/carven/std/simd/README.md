@@ -66,7 +66,7 @@ and `N` its lane count.
 | `Vector::splat(value)` | Broadcast one `T`. |
 | `Vector::from_array(values)` / `value.to_array()` | Copy to/from `[T; N]`. |
 | `Vector::load(values, offset)` | Read exactly `N` elements, without an alignment precondition. |
-| `Vector::load_partial(values, offset, fill)` | Read at most `N` elements and fill the rest; `offset <= len`. |
+| `Vector::load_partial(values, offset, fill)` | Read at most `N` elements and fill the rest; `offset <= length`. |
 | `value.lane(index)` / `value.with_lane(index, element)` | Read a lane or return an updated copy; `index < N`. |
 | `left.extract(right, offset)` | Take `N` elements from the concatenation at `offset`, in `0..=N`; `offset` is static. |
 | `Mask::from_bits(bits)` | Expand packed bits; ignore bits above `N`. |
@@ -97,7 +97,7 @@ uses eight-float blocks (`f32x8`, `mask8`). Both provide `block_count`, `load_bl
 `store`, `store_partial`, static `extract`, and static `swizzle`.
 
 `block_count` divides without overflowing a rounded-up length. `load_block`
-returns an owning block with `value`, `active`, `offset`, and `len`. Tail lanes
+returns an owning block with `value`, `active`, `offset`, and `length`. Tail lanes
 are zero-filled and inactive; include `active` whenever padding could match.
 An offset equal to the input length produces an empty block. Store helpers use
 writable fixed arrays of the block's width; read-only slices do not grant write
@@ -173,7 +173,7 @@ sum before the byte accumulators can wrap.
 `find_from(bytes, start, set)` searches from `start` and returns a position in
 the supplied input, or its length when absent. `prefix_end(bytes, start, set)`
 returns the end of the matching run starting there. Both accept
-`start <= bytes.len()`, including an
+`start <= bytes.length()`, including an
 empty suffix. `find_where` and `prefix_where` use the same scans from zero.
 
 ## Floating execution

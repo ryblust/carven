@@ -7,7 +7,7 @@
 
 namespace async = carven::runtime::execution;
 
-auto async_allocation_operation() noexcept -> async::Operation<void> {
+auto async_allocation_operation() noexcept -> async::AsyncOperation<void> {
     co_return async::Completion<void>::success();
 }
 

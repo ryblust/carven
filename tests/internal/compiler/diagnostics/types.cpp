@@ -117,9 +117,9 @@ const TestSuite suite([] static noexcept {
                 },
                 {
                     .name = "text method requires a call",
-                    .source = "fn invalid() { let value = \"a\".len; }",
+                    .source = "fn invalid() { let value = \"a\".length; }",
                     .code = DiagnosticCode::TypeTextProperty,
-                    .primary_text = "len",
+                    .primary_text = "length",
                 },
                 {
                     .name = "integer literal range",

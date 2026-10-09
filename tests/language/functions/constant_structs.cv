@@ -201,7 +201,7 @@ test "Const structs: typed records and arrays retain static views and ordinary r
     check(entry_selected == 7);
     check(selected == 9);
     let view = entry_view();
-    check(view.len() == 2usize);
+    check(view.length() == 2usize);
     var index = 1;
     check(view[index].key == 2);
     check(view[index].value == 7);
@@ -248,7 +248,7 @@ test "Const structs: field order projected Read and scalar snapshots match runti
 
 test "Const structs: static text fields retain UTF8 bytes NUL and scalar types" {
     const entry = entry_text("我\0😀");
-    check(entry.text.len() == 8usize);
+    check(entry.text.byte_length() == 8usize);
     check(entry.marker == '我');
     check(entry.enabled);
     check(entry.text == "我\0😀");

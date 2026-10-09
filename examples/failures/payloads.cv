@@ -60,5 +60,5 @@ fn run_payloads() {
     };
     source.clear();
     println("Saved detail:", saved);
-    println("Source bytes after clear:", source.len());
+    println("Source bytes after clear:", source.byte_length());
 }

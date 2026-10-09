@@ -80,11 +80,11 @@ tokens, independently of expected types.
 The source catalog reserves a generic definition identity rather than a concrete
 struct or enum identity. Each parameter has a type or failure-set kind; an
 application keeps those argument domains distinct. Declaration construction binds
-parameter references, nominal applications, and array, Tuple, slice, Sequence,
-pointer, and Operation constructors into checked type expressions. These descriptors contain semantic identities rather
-than AST nodes or unresolved names. Definition checking validates application
-arity, parameter-flow growth, and symbolic by-value storage cycles, including
-unused definitions.
+parameter references, nominal applications, and array, Tuple, slice, Vector,
+pointer, and AsyncOperation constructors into checked type expressions. These descriptors
+contain semantic identities rather than AST nodes or unresolved names. Definition
+checking validates application arity, parameter-flow growth, and symbolic by-value
+storage cycles, including unused definitions.
 
 Instance formation keys an ordinary concrete nominal declaration by its
 definition and ordered canonical arguments. It reserves that declaration before
@@ -113,7 +113,7 @@ from the table of published concrete bodies.
 
 Concrete instance formation reserves a callable before replacing types and
 already bound generic calls in the checked body. It reuses that reservation for
-recursive calls. Array, Tuple, slice, and Operation construction retains unresolved
+recursive calls. Array, Tuple, slice, and AsyncOperation construction retains unresolved
 failure terms until the shared failure solver completes them. Instantiation does
 not revisit source syntax or re-run definition diagnostics.
 
@@ -203,7 +203,7 @@ during construction. The read follows binding identities, computes a copy of the
 initializer with its output discarded, and records the frozen value by binding;
 later reads reuse it. The source initializer is unchanged and executes during
 specialization. An unbound static input cannot determine a fixed type or
-implicitly enter a separate body. Local owning text freezes to `str`; static call
+implicitly enter a separate body. Retained owning values preserve their source type; static call
 inputs retain their declared types. Explicit captures require runtime local storage.
 C++ construction queries resolve explicit static references and propagate pure
 operand facts; ordinary runtime calls retain their execution obligations.

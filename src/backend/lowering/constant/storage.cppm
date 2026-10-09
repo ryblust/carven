@@ -8,6 +8,8 @@ import :backend.target.type;
 import :semantic.semir.ids;
 import std;
 
+enum class ConstantStorageRole { Elements, Object };
+
 // One module owns content-named backing storage within an artifact. The
 // initializer and every reference use that module context.
 class ConstantStorage final {
@@ -16,14 +18,22 @@ public:
     ConstantStorage(const ConstantStorage&) = delete;
     ConstantStorage(ConstantStorage&&) = default;
     auto operator=(const ConstantStorage&) -> ConstantStorage& = delete;
-    auto find(ConstantID id) const noexcept -> std::optional<TargetName>;
-    auto append(ConstantID id, TargetTypeID type, TargetExpr initializer) noexcept -> TargetName;
+    auto find(
+        ConstantID id,
+        ConstantStorageRole role = ConstantStorageRole::Elements
+    ) const noexcept -> std::optional<TargetName>;
+    auto append(
+        ConstantID id,
+        TargetTypeID type,
+        TargetExpr initializer,
+        ConstantStorageRole role = ConstantStorageRole::Elements
+    ) noexcept -> TargetName;
     auto take() noexcept -> std::vector<TargetItem>;
     auto empty() const noexcept -> bool;
 
 private:
     const TargetNamePlan& target_names;
     ModuleID module_id;
-    std::set<ConstantID> materialized;
+    std::set<std::pair<ConstantID, ConstantStorageRole>> materialized;
     std::vector<TargetItem> items;
 };

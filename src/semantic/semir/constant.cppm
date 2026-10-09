@@ -110,6 +110,12 @@ struct ArrayConstant final {
 };
 
 // Frozen contents describe persistent read-only storage without host addresses.
+struct VectorConstant final {
+    std::vector<ConstantID> elements;
+    std::size_t capacity;
+    auto operator==(const VectorConstant&) const noexcept -> bool = default;
+};
+
 struct SliceConstant final {
     std::vector<ConstantID> elements;
     auto operator==(const SliceConstant&) const noexcept -> bool = default;
@@ -140,6 +146,7 @@ using ConstantValue = std::variant<
     StructConstant,
     ArrayConstant,
     SliceConstant,
+    VectorConstant,
     TupleConstant,
     VoidConstant>;
 
@@ -223,7 +230,8 @@ auto constant_matches_type(
         } else if constexpr (std::same_as<Value, NullPointerConstant>) {
             return std::holds_alternative<PointerTypeValue>(type);
         } else if constexpr (std::same_as<Value, StringConstant>) {
-            return builtin(BuiltinType::Str) && spellings(value.value).has_value();
+            return (builtin(BuiltinType::Str) || builtin(BuiltinType::String))
+                && spellings(value.value).has_value();
         } else if constexpr (std::same_as<Value, CStringConstant>) {
             const auto* native = std::get_if<CppTypeValue>(&type);
             const auto bytes = spellings(value.value);
@@ -254,7 +262,8 @@ auto constant_matches_type(
             const auto expected = fields(record->structure);
             return expected && children_match(value.fields, *expected);
         } else if constexpr (std::same_as<Value, ArrayConstant>
-                             || std::same_as<Value, SliceConstant>) {
+                             || std::same_as<Value, SliceConstant>
+                             || std::same_as<Value, VectorConstant>) {
             auto element = std::optional<TypeID>();
             if constexpr (std::same_as<Value, ArrayConstant>) {
                 const auto* array = std::get_if<ArrayTypeValue>(&type);
@@ -262,6 +271,12 @@ auto constant_matches_type(
                     return false;
                 }
                 element = array->element;
+            } else if constexpr (std::same_as<Value, VectorConstant>) {
+                const auto* vector = std::get_if<VectorTypeValue>(&type);
+                if (!vector || value.capacity < value.elements.size()) {
+                    return false;
+                }
+                element = vector->element;
             } else {
                 const auto* slice = std::get_if<SliceTypeValue>(&type);
                 if (!slice) {

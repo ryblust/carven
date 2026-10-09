@@ -30,6 +30,6 @@ inline auto resource_released() noexcept -> bool {
 
 } // namespace async_cleanup_probe
 
-inline auto cleanup_cancelled() noexcept -> carven::runtime::execution::Operation<void> {
+inline auto cleanup_cancelled() noexcept -> carven::runtime::execution::AsyncOperation<void> {
     co_return carven::runtime::execution::Completion<void>::cancelled();
 }

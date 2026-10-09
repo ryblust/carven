@@ -10,15 +10,15 @@ export(cpp) fn make_io_error(code: i32) -> IoError => IoError { code: code };
 #include <carven/api/tests/interop/async/bridge.hpp>
 using BridgeIoError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
 auto bridge_read_byte(const async_bridge::Context&) noexcept
-    -> carven::runtime::execution::Operation<std::int32_t, BridgeIoError>;
+    -> carven::runtime::execution::AsyncOperation<std::int32_t, BridgeIoError>;
 auto bridge_write_byte(const async_bridge::Context&, std::int32_t) noexcept
-    -> carven::runtime::execution::Operation<void, BridgeIoError>;
+    -> carven::runtime::execution::AsyncOperation<void, BridgeIoError>;
 auto bridge_trivial_byte(const async_bridge::TrivialContext&, std::int32_t) noexcept
-    -> carven::runtime::execution::Operation<std::int32_t, BridgeIoError>;
+    -> carven::runtime::execution::AsyncOperation<std::int32_t, BridgeIoError>;
 auto bridge_note(const async_bridge::Context&, std::int32_t) noexcept -> void;
 auto bridge_scalar_character(std::int32_t) noexcept -> char32_t;
 auto bridge_native_character(std::int32_t, bool) noexcept
-    -> carven::runtime::execution::Operation<char32_t, BridgeIoError>;
+    -> carven::runtime::execution::AsyncOperation<char32_t, BridgeIoError>;
 ---
 
 import(cpp) async fn bridge_read_byte(context: Context) -> i32 throw IoError;

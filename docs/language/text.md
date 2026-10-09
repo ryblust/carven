@@ -28,7 +28,7 @@ Decoded string and character literal values are not Unicode-normalized.
 
 Both `str` and `String` provide:
 
-- `text.len() -> usize` returns the UTF-8 byte count.
+- `text.byte_length() -> usize` returns the UTF-8 byte count.
 - `text.is_empty() -> bool` tests that byte count.
 - `text.bytes` returns the read-only slice `[u8]`.
 - `text.chars` is a copyable read-only range that decodes `char` values.
@@ -147,15 +147,16 @@ position or a factory qualifier selects the builtin before ordinary declarations
 Ordinary value lookup is unchanged; `::String` selects an external C++ name.
 
 A String owns contiguous, valid UTF-8 bytes, including internal NUL. It performs
-no normalization, case folding, or BOM removal. Equality and inequality between
-two Strings compare their bytes. Length counts bytes. Storage layout, capacity,
-address stability, trailing NUL, and allocation count are unspecified.
+no normalization, case folding, or BOM removal. Equality and inequality compare
+bytes, including between `String` and `str` operands through borrowed views.
+Length counts bytes. Storage layout, capacity, address stability, trailing NUL,
+and allocation count are unspecified.
 
 | Operation | Access and result |
 | --- | --- |
 | `String {}` | Empty owning `String` |
 | `String::from_str(text: str)` | Read text; independent owning copy |
-| `s.len()` / `s.is_empty()` | Read receiver; `usize` / `bool` |
+| `s.byte_length()` / `s.is_empty()` | Read receiver; `usize` / `bool` |
 | `s.as_str()` | Read receiver; borrowed `str` |
 | `s.bytes` / `s.chars` | Read receiver; borrowed byte/scalar range |
 | `s.append(text: str)` | Write receiver, Read text; `void` |
@@ -163,7 +164,7 @@ address stability, trailing NUL, and allocation count are unspecified.
 | `s.push(value: char)` | Write receiver, Read scalar; `void` |
 | `s.clear()` | Write receiver; `void` |
 
-The queries `len`, `is_empty`, and `as_str` are O(1); `as_str` does not allocate
+The queries `byte_length`, `is_empty`, and `as_str` are O(1); `as_str` does not allocate
 or transcode. `push` encodes one Unicode scalar into UTF-8. Mutable fields and
 array elements can be Write receivers; temporaries and Read parameters cannot.
 The dot receiver supplies its access, while ordinary arguments follow the usual
@@ -182,10 +183,9 @@ require matching storage types. Without a `str` context, `let copy = owner`
 retains String value semantics; `let view = owner.as_str()` explicitly creates a
 view. Borrowing neither allocates nor extends the owner's lifetime.
 
-Equality requires operands of the same type; a string literal on the right can
-adopt a String left operand's type through ordinary operand context. Constant
-expressions and functions can construct owning String values, but a constant initializer freezes
-an owning text result to `str`; there is no stored owning String constant.
+Constant expressions and functions can construct and retain owning String values. Constant
+initializers preserve `String`, including nested fields and elements. A `str`
+destination or `as_str()` explicitly selects a retained read-only text view.
 String literal patterns, indexing, ordering, truthiness, concatenation,
 direct iteration, and access to C++ container members are unsupported.
 Nonempty `String { ... }`, `String(...)`, and `String as str` are invalid.
@@ -299,8 +299,8 @@ Direct interpolation and interpolation in functions executed in the static stage
 [supported builtin formatting subset](constants.md#static-execution-of-functions)
 in static roots. For example,
 `const title = f"build-{42:04}";` produces static `str` text, and
-`const bytes = f"{'我'}".len();` produces `3usize`. Nested calls, `String {}`,
-`String::from_str(...)`, `.as_str()`, `.len()` and `.is_empty()` compose before
+`const bytes = f"{'我'}".byte_length();` produces `3usize`. Nested calls, `String {}`,
+`String::from_str(...)`, `.as_str()`, `.byte_length()` and `.is_empty()` compose before
 initializer completion. Each constant interpolation is limited to 1 MiB of
 result text; unsupported formatting is diagnosed without runtime fallback.
 Interpolation remains excluded from literal patterns and positions requiring
@@ -316,7 +316,7 @@ The receiver is selected once before the holes. All holes then follow the Read
 evaluation and observation rules above, before appending begins. Formatting inputs
 must not borrow or alias the destination's storage during formatting; this includes
 String Read aliases. Existing views also prevent mutation, even when the content
-is known or empty. Scalar queries such as `text.append_format(f"{text.len()}")`
+is known or empty. Scalar queries such as `text.append_format(f"{text.byte_length()}")`
 can supply a snapshot without borrowing text storage. Native callers and formatter
 providers must preserve this separation through indirect aliases and reentrant calls.
 

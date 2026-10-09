@@ -125,7 +125,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             const auto length =
-                fold_text_intrinsic_constant(values, TextIntrinsic::Len, string_id, usize);
+                fold_text_intrinsic_constant(values, TextIntrinsic::ByteLength, string_id, usize);
             if (!expect(length.has_value())) {
                 return;
             }

@@ -68,7 +68,7 @@ auto construct_index_expression(Site& site, const ASTIndexExpr& source, Span spa
         co_return std::unexpected(site.fail(
             span,
             DiagnosticCode::TypeNotIndexable,
-            "indexing requires an array, slice, or Sequence value"
+            "indexing requires an array, slice, or Vector value"
         ));
     }
     const auto index_type = site.type(*index);

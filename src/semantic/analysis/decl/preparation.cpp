@@ -378,7 +378,7 @@ auto DeclResolver::prepare_type_dependencies(
                     prepared
                 );
             },
-            [&](const OwnedSequenceTypeValue& value) noexcept {
+            [&](const VectorTypeValue& value) noexcept {
                 return prepare_type_dependencies(
                     value.element,
                     requester,

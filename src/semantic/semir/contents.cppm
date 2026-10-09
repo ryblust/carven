@@ -26,7 +26,7 @@ struct TypeContents final {
     bool contains_closure_owner;
     // Also propagates through slice element types and native C++ template arguments.
     bool contains_callable_view;
-    // Owned Array, Sequence or String storage.
+    // Owned Array, Vector or String storage.
     bool contains_storage_owner;
     // Borrowed Str, StrCharsView, or Slice held by value; empty arrays contain none.
     bool contains_storage_view;

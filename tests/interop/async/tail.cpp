@@ -69,13 +69,13 @@ struct FrameToken final {
 };
 
 auto native_frame(FrameToken token) noexcept
-    -> carven::runtime::execution::Operation<std::int32_t> {
+    -> carven::runtime::execution::AsyncOperation<std::int32_t> {
     static_cast<void>(token);
     co_return carven::runtime::execution::Completion<std::int32_t>::success(1);
 }
 }
 
-auto tail_native() noexcept -> carven::runtime::execution::Operation<std::int32_t> {
+auto tail_native() noexcept -> carven::runtime::execution::AsyncOperation<std::int32_t> {
     // A movable frame parameter keeps observable cleanup until its operation
     // owner ends the enclosing full-expression.
     return native_frame(FrameToken {});

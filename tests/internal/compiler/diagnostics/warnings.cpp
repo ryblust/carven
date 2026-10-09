@@ -230,7 +230,7 @@ const TestSuite suite([] static noexcept {
             "fn borrowed() -> String {\n"
             "    let owner: String = \"a\";\n"
             "    let view = owner.as_str();\n"
-            "    let length = view.len();\n"
+            "    let length = view.byte_length();\n"
             "    return owner;\n"
             "}\n"
             "fn read_parameter(text: String) -> String => text;\n"

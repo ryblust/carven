@@ -377,7 +377,7 @@ const TestSuite suite([] static noexcept {
                     }
                     fn select(&calls: i32, &size: usize) {
                         match next(&calls) {
-                            .Text(text) => { size = text.len(); },
+                            .Text(text) => { size = text.byte_length(); },
                             .Number(number) => { size = number; },
                             .Empty => { size = 0usize; },
                         }

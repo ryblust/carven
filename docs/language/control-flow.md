@@ -74,7 +74,7 @@ initializer once, tests its required condition before each iteration, executes
 the body, then evaluates step clauses in source order. `continue` in a C-style `for` proceeds
 to its step clauses; `break` exits the loop.
 
-An integer range value has type `range<T>` for a builtin integer `T`. Expressions
+An integer range value has type `Range<T>` for a builtin integer `T`. Expressions
 `begin..end` and `begin..=end` evaluate both bounds once, left to right, and own
 snapshots of one compatible integer type. The former excludes the upper bound;
 the latter includes it. Ranges support ordinary storage, copying, parameters,

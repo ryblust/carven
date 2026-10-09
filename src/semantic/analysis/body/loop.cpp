@@ -183,8 +183,7 @@ auto BodyElaborator::range_for_statement(
             if (const auto* array = std::get_if<ArrayTypeValue>(&canonical.value)) {
                 element_type = array->element;
                 static_iterable = true;
-            } else if (const auto* sequence =
-                           std::get_if<OwnedSequenceTypeValue>(&canonical.value)) {
+            } else if (const auto* sequence = std::get_if<VectorTypeValue>(&canonical.value)) {
                 element_type = sequence->element;
             } else if (const auto* range = std::get_if<RangeTypeValue>(&canonical.value)) {
                 element_type = range->element;
@@ -216,7 +215,7 @@ auto BodyElaborator::range_for_statement(
             co_return std::unexpected(fail(
                 ast.expression(id).span,
                 DiagnosticCode::TypeRangeIterable,
-                "range iterable must be an integer range, array, slice, Sequence, or character view"
+                "range iterable must be an integer range, array, slice, Vector, or character view"
             ));
         }
         if (source.const_span && (!static_iterable || header.write_marker.has_value())) {

@@ -71,13 +71,14 @@ auto require_integer(const ConstantFact& fact, std::int64_t expected) noexcept -
 auto require_text(
     const SemIRProgram& program,
     const ConstantFact& fact,
+    BuiltinType expected_type,
     std::string_view expected
 ) noexcept -> void {
     const auto* type = std::get_if<BuiltinTypeValue>(&program.types().type(fact.type).value);
     if (!expect(type != nullptr)) {
         return;
     }
-    expect(type->kind == BuiltinType::Str);
+    expect_equal(type->kind, expected_type);
     const auto* text = std::get_if<StringConstant>(&fact.value);
     if (!expect(text != nullptr)) {
         return;
@@ -309,6 +310,7 @@ const TestSuite suite([] static noexcept {
             require_text(
                 program,
                 module_constant(program, "frozen"),
+                BuiltinType::Str,
                 std::string_view("[我\0😀]", 10uz)
             );
             auto calls = 0uz;
@@ -339,6 +341,7 @@ const TestSuite suite([] static noexcept {
                         require_text(
                             program,
                             program.constants().constant(constant->constant),
+                            BuiltinType::String,
                             std::string_view("我\0😀", 8uz)
                         );
                         ++frozen_reads;
@@ -460,23 +463,39 @@ const TestSuite suite([] static noexcept {
         const title = f"build-{42:04}";
         const exact = f"{'我'}\0{'😀'}";
         const wrapped = wrap(f"{title}");
-        const count = wrap(f"{title}").len();
+        const count = wrap(f"{title}").byte_length();
         const copy = String::from_str(f"{title}");
         const view = f"{title}".as_str();
         const empty = String {};
         const fn wrap(value: String) -> String => f"[{value}]";
     )");
-            require_text(program, module_constant(program, "title"), "build-0042");
+            require_text(
+                program,
+                module_constant(program, "title"),
+                BuiltinType::String,
+                "build-0042"
+            );
             require_text(
                 program,
                 module_constant(program, "exact"),
+                BuiltinType::String,
                 std::string_view("我\0😀", 8uz)
             );
-            require_text(program, module_constant(program, "wrapped"), "[build-0042]");
+            require_text(
+                program,
+                module_constant(program, "wrapped"),
+                BuiltinType::String,
+                "[build-0042]"
+            );
             require_integer(module_constant(program, "count"), 12);
-            require_text(program, module_constant(program, "copy"), "build-0042");
-            require_text(program, module_constant(program, "view"), "build-0042");
-            require_text(program, module_constant(program, "empty"), "");
+            require_text(
+                program,
+                module_constant(program, "copy"),
+                BuiltinType::String,
+                "build-0042"
+            );
+            require_text(program, module_constant(program, "view"), BuiltinType::Str, "build-0042");
+            require_text(program, module_constant(program, "empty"), BuiltinType::String, "");
         };
 
     "Constant text: incremental growth and length queries build persistent text"_test =
@@ -484,7 +503,7 @@ const TestSuite suite([] static noexcept {
             const auto program = analyze_test_program(R"(
         const fn build() -> String {
             var text = String {};
-            while text.len() < 8000usize {
+            while text.byte_length() < 8000usize {
                 text.push('a');
                 text.append("bc");
                 text.append_format(f"{7}");
@@ -498,7 +517,12 @@ const TestSuite suite([] static noexcept {
             for (auto index = 0uz; index < 2000uz; ++index) {
                 expected += "abc7";
             }
-            require_text(program, module_constant(program, "result"), expected);
+            require_text(
+                program,
+                module_constant(program, "result"),
+                BuiltinType::String,
+                expected
+            );
         };
 
     "Constant functions: temporary execution history does not enlarge retained constants"_test =
@@ -515,7 +539,7 @@ const TestSuite suite([] static noexcept {
                     text.clear();
                     text.append_format(f"{{value}}");
                     let equal = text == text;
-                    let length = text.as_str().len();
+                    let length = text.as_str().byte_length();
                 }}
                 return 0;
             }}
@@ -551,7 +575,7 @@ const TestSuite suite([] static noexcept {
             const auto program = analyze_test_program(R"(
         const fn label(value: f64) -> String => f"{value:.2f}";
         const text = label(1.5);
-        const length = text.len();
+        const length = text.byte_length();
     )");
             require_integer(module_constant(program, "length"), 4);
         };
@@ -678,7 +702,7 @@ const TestSuite suite([] static noexcept {
         expect_diagnostic(checks, DiagnosticCode::ConstTest);
     };
 
-    "Constant aggregates: owning text executes but does not freeze into nominal str fields"_test =
+    "Constant aggregates: nested owning text executes with ordinary types"_test =
         [] static noexcept {
             const auto program = analyze_test_program(R"(
         struct Text { value: String }
@@ -687,25 +711,11 @@ const TestSuite suite([] static noexcept {
             let values: [String; 2] = ["one", "two"];
             let text = Text { values[0] };
             let message = Message::Owned(text.value);
-            return match message { .Owned(value) => value.len(), .Empty => 0usize, };
+            return match message { .Owned(value) => value.byte_length(), .Empty => 0usize, };
         }
         const size = length();
     )");
             require_integer(module_constant(program, "size"), 3);
-            const auto cases = std::to_array<std::string_view>({
-                R"(struct Text { value: String }
-            const fn make() -> Text => Text { "one" };
-            const value = make();)",
-                R"(enum Text { Owned(String) }
-            const fn make() -> Text => Text::Owned("one");
-            const value = make();)",
-            });
-            each(cases, std::identity {}, [](std::string_view source) static noexcept {
-                expect_diagnostic(
-                    analyze_test_errors(std::string(source)),
-                    DiagnosticCode::ConstInitializer
-                );
-            });
         };
 });
 

@@ -202,7 +202,7 @@ auto ProgramDraft::take_generic_analysis_snapshot(
             using Shape = std::remove_cvref_t<decltype(shape)>;
             if constexpr (std::same_as<Shape, GenericArrayType>
                           || std::same_as<Shape, GenericSliceType>
-                          || std::same_as<Shape, GenericOwnedSequenceType>) {
+                          || std::same_as<Shape, GenericVectorType>) {
                 normalize(shape.element);
             } else if constexpr (std::same_as<Shape, GenericTupleType>) {
                 for (auto& element : shape.elements) {

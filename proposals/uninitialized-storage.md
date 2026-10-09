@@ -124,6 +124,24 @@ execution need their respective operation admission and retained-result rules.
 Text output also needs UTF-8 validity and a
 failure policy beyond initialized byte extents.
 
+## Constant execution and library storage
+
+A library-defined owner needs admitted construction, access, mutation, and cleanup
+operations in each selected execution mode. Generic bodies remain checked at
+definition site; executing one instance cannot justify an unconstrained operation.
+Parameterized operations and capability requirements follow the selected API.
+
+Model empty, partial, live, and consumed destinations without exposing host
+uninitialized memory. Reads and completion assertions consult initialization
+state. Preserve borrowed bytes, ranges, and backing lifetimes instead of copying
+to evade a borrow contract.
+
+Retaining a completed owner requires eligible typed contents, observable state,
+valid backing, and defined copy, Take, and cleanup behavior. Decide whether raw
+addresses or unfinished destinations may escape; execution admission alone does
+not grant publication. Validate these contracts on a concrete source-defined
+container or native adapter, including partial failure and unsupported operations.
+
 ## Open decisions
 
 ### OPEN-01 — Select the destination and ownership surface
@@ -201,8 +219,6 @@ compilation cost separately.
 - [C++ interoperation](../docs/language/interop.md): existing concrete native
   adapters and provider obligations.
 - [Generic extensions](generic-extensions.md): prerequisites for a generic storage surface.
-- [Constant storage](constant-storage.md): operation admission and retained
-  results during constant execution.
 - [Async](../docs/language/async.md): lifetime closure before suspending operations release or
   reuse storage.
 - [Concurrency](concurrency.md): synchronization and visibility for cross-thread

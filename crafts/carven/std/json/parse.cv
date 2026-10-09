@@ -39,7 +39,7 @@ private const fn read_value(
             return .Text(&&text);
         },
         .ArrayBegin => {
-            var result: Sequence<Node> = {};
+            var result: Vector<Node> = {};
             while {
                 let element = next_event(bytes, &state)?;
                 match element {
@@ -52,7 +52,7 @@ private const fn read_value(
             }
         },
         .ObjectBegin => {
-            var result: Sequence<Member> = {};
+            var result: Vector<Member> = {};
             while {
                 match next_event(bytes, &state)? {
                     .ObjectEnd => return .Object(&&result),

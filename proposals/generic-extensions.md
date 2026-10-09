@@ -4,31 +4,16 @@
 - **Implementation:** Not started for the extensions below
 - **Scope:** Static capabilities, associated types, generic class operations, and finite boundary extensions
 
-## Current foundation
+## Extension boundary
 
-Nominal type and scalar failure-set parameters, named generic functions, bounded
-local inference, and finite instance formation are implemented. Definitions are
-checked against rigid semantic parameters; concrete instances substitute checked
-types and bodies without replaying source syntax. Pending callable contracts
-close before canonical arguments select an instance. Ordinary owning bindings,
-record fields, tuple slots, and fixed arrays can transfer cold Operations.
+Unknown type parameters admit forwarding and whole-value Take; additional
+operations need capability evidence. Associated projections must extend finite
+instance formation with a termination argument. Parameterized class operations
+and generic C++ boundary declarations remain unsupported.
 
-Unknown types support Read and Write forwarding and whole-value Take. They do not
-promise copying, default construction, comparison, or formatting. Known
-constructor shapes retain their ordinary operations. Parameterized classes admit
-fields but not operations; generic C++ boundary declarations are not supported.
-
-Recursive parameter flow permits forwarding and permutation and rejects cycles
-that grow constructed arguments. Failure-set substitution has its own finite-flow
-check. By-value storage cycles and compiler resource limits are separate checks.
-These rules cover the implemented first-order model; capability evidence and
-associated projections need an additional termination argument.
-
-The remaining design retains the accepted static capability contracts below.
-`concept`, `impl`, `Self`, and `where` are ordinary identifiers today. Selection
-of an implementation slice requires a concrete consumer and closure of its open
-decisions. Fixed async composition and SIMD byte-set planning already work through
-builtin contracts and ordinary static parameters respectively.
+`concept`, `impl`, `Self`, and `where` are ordinary identifiers today. The accepted
+capability contracts below still require a concrete implementation scope and
+closure of its open decisions.
 
 ## Static capability design
 

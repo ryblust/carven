@@ -91,7 +91,7 @@ const fn verify_floats() -> bool {
         for index in 0..block_count(view) {
             let block = load_block(view, index * 8);
             visited += block.active.count();
-            assert(block.len == block.active.count());
+            assert(block.length == block.active.count());
         }
         assert(visited == size);
         assert(load_block(view, size).active.any() == false);

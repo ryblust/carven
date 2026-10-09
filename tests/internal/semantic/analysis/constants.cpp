@@ -25,7 +25,7 @@ const TestSuite suite([] static noexcept {
                 "enum State: u8 { Ready = 4, Done, }\n"
                 "const arithmetic: i64 = -2i64 + 5;\n"
                 "const raw: i32 = State::Done as i32;\n"
-                "const text_size: usize = \"abc\".len();\n"
+                "const text_size: usize = \"abc\".byte_length();\n"
                 "const same = Choice::Value(2) == .Value(2);\n"
             );
             expect_equal(program.bodies().size(), 0uz);

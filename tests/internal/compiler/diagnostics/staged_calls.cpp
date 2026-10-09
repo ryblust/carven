@@ -190,13 +190,6 @@ const TestSuite suite([] static noexcept {
                 .primary_text = "value",
             },
             {
-                .name = "static array iteration retains element binding types",
-                .source = R"(const fn make() -> [String; 1] => [String::from_str("a")];
-                fn use() { const for value in make() {} })",
-                .code = DiagnosticCode::ConstAdmission,
-                .primary_text = "make()",
-            },
-            {
                 .name = "a failed static sequence does not create iterations",
                 .source = R"(struct Broken {}
                 const fn make() -> [i32; 1] throw Broken { throw Broken {}; }

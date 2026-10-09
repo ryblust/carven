@@ -156,7 +156,7 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                     draft().constant(declaration.value).type,
                     active_builder().lifetime(),
                     origin(span),
-                    SemConstant {.constant = declaration.value}
+                    constant_operation(draft(), declaration.value)
                 );
                 co_return BuiltExpression {
                     .storage = UniqueIndirect {BodyExpressionStorage {std::move(value)}},

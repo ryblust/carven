@@ -5,14 +5,14 @@ const exact = f"{{{'我'}}}\0{'😀'}";
 const empty = String {};
 const copied = String::from_str(f"{title}");
 const borrowed = f"{title}".as_str();
-const bytes = f"{'我'}\0{'😀'}".len();
+const bytes = f"{'我'}\0{'😀'}".byte_length();
 const skipped = false && f"{1 / 0}".is_empty();
 const skipped_copy = false && String::from_str(f"{1 / 0}").is_empty();
 const skipped_borrow = false && takes_view(f"{1 / 0}");
 
 const fn wrap(value: String) -> String => f"[{value}]";
 const fn runtime_format(value: i32, width: i32) -> String => f"{{{value:0{width}x}}}";
-const fn takes_owned(value: String) -> usize => value.len();
+const fn takes_owned(value: String) -> usize => value.byte_length();
 const fn takes_view(value: str) -> bool => value.is_empty();
 const fn zero_width(value: i32, width: i32) -> String => f"{value:0{width}x}/{value:{width}}";
 
@@ -27,14 +27,14 @@ test "Constant interpolation: composition freezes text only at initializer compl
     check(copied == title);
     check(borrowed == title);
     check(bytes == 8usize);
-    check(owned_length == title.len());
+    check(owned_length == title.byte_length());
     check(nested_length == 4usize);
     check(!skipped);
     check(!skipped_copy);
     check(!skipped_borrow);
     const local = f"{title}/{7:03}";
     check(local == "build-0042/007");
-    let extent: [i32; f"{42:03}".len()] = [1, 2, 3];
+    let extent: [i32; f"{42:03}".byte_length()] = [1, 2, 3];
     check(extent[2] == 3);
 }
 

@@ -5,9 +5,9 @@ import tests.interop.async.bridge using IoError;
 #include <carven/api/tests/interop/async/bridge.hpp>
 using TransferIoError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
 auto transfer_read(const async_transfer::Context&) noexcept
-    -> carven::runtime::execution::Operation<std::int32_t, TransferIoError>;
+    -> carven::runtime::execution::AsyncOperation<std::int32_t, TransferIoError>;
 auto transfer_write(const async_transfer::Context&, std::int32_t, std::int32_t) noexcept
-    -> carven::runtime::execution::Operation<std::int32_t, TransferIoError>;
+    -> carven::runtime::execution::AsyncOperation<std::int32_t, TransferIoError>;
 auto transfer_copy_buffer(const async_transfer::Context&, const async_transfer::Context&, std::int32_t) noexcept -> void;
 ---
 

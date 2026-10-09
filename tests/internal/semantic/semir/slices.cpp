@@ -110,7 +110,7 @@ const TestSuite suite([] static noexcept {
                         SemIntrinsic {
                             .operation =
                                 SliceIntrinsicOperation {
-                                    .intrinsic = SliceIntrinsic::FromArray,
+                                    .intrinsic = SliceIntrinsic::FromOwner,
                                     .result_extent = scenario.query
                                         ? std::optional<std::uint64_t>(0u)
                                         : scenario.extent
@@ -132,7 +132,7 @@ const TestSuite suite([] static noexcept {
                         SemIntrinsic {
                             .operation =
                                 SliceIntrinsicOperation {
-                                    .intrinsic = SliceIntrinsic::Len,
+                                    .intrinsic = SliceIntrinsic::Length,
                                     .result_extent = scenario.extent
                                 },
                             .operands = std::move(query_operands),

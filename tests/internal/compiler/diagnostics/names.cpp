@@ -68,17 +68,17 @@ const TestSuite suite([] static noexcept {
                  .code = DiagnosticCode::Catalog,
                  .primary_text = "ptr"},
                 {.name = "range constructor cannot name an enum",
-                 .source = "enum range { Value }",
+                 .source = "enum Range { Value }",
                  .code = DiagnosticCode::Catalog,
-                 .primary_text = "range"},
+                 .primary_text = "Range"},
                 {.name = "pointer constructor cannot name a function",
                  .source = "fn ptr() {}",
                  .code = DiagnosticCode::Catalog,
                  .primary_text = "ptr"},
                 {.name = "range constructor cannot name a constant",
-                 .source = "const range = 7;",
+                 .source = "const Range = 7;",
                  .code = DiagnosticCode::Catalog,
-                 .primary_text = "range"},
+                 .primary_text = "Range"},
             });
             check_compiler_errors(cases);
         };

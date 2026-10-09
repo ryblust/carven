@@ -16,7 +16,7 @@ import :semantic.semir.body;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
-import :semantic.semir.sequence;
+import :semantic.semir.vector;
 import :semantic.semir.type;
 import :semantic.visibility;
 import :source.batch;
@@ -118,7 +118,7 @@ const TestSuite suite([] static noexcept {
         const auto element = draft.builtin_type(BuiltinType::I32);
         const auto array = draft.intern_type({.value = ArrayTypeValue {element, 0u}});
         const auto slice = draft.intern_type({.value = SliceTypeValue {element}});
-        const auto owner = draft.intern_type({.value = OwnedSequenceTypeValue {element}});
+        const auto owner = draft.intern_type({.value = VectorTypeValue {element}});
         const auto array_shape = sequence_shape(draft, array);
         const auto slice_shape = sequence_shape(draft, slice);
         const auto owner_shape = sequence_shape(draft, owner);
@@ -130,24 +130,26 @@ const TestSuite suite([] static noexcept {
         expect_equal(*array_shape->extent, 0u);
         expect_equal(slice_shape->kind, SequenceShapeKind::Slice);
         expect(!slice_shape->extent.has_value());
-        expect_equal(owner_shape->kind, SequenceShapeKind::OwnedSequence);
+        expect_equal(owner_shape->kind, SequenceShapeKind::Vector);
         expect(!owner_shape->extent.has_value());
         expect(owner_shape->element == ConstructionTypeRef(element));
-        const auto push = decide_sequence_method(draft, owner, "push", 1uz);
+        const auto push = decide_vector_method(draft, owner, "push", 1uz);
         require(push.has_value());
         require(push->has_value());
-        expect_equal(**push, SequenceIntrinsic::Push);
-        expect(!decide_sequence_method(draft, owner, "push", 0uz).has_value());
-        expect(!decide_sequence_method(draft, owner, "as_slice", 0uz).has_value());
-        const auto on_slice = decide_sequence_method(draft, slice, "push", 1uz);
+        expect_equal(**push, VectorIntrinsic::Push);
+        expect(!decide_vector_method(draft, owner, "push", 0uz).has_value());
+        const auto slice_method = decide_vector_method(draft, owner, "as_slice", 0uz);
+        require(slice_method.has_value());
+        expect(!slice_method->has_value());
+        const auto on_slice = decide_vector_method(draft, slice, "push", 1uz);
         require(on_slice.has_value());
         expect(!on_slice->has_value());
         expect_equal(
-            sequence_intrinsic_contract(SequenceIntrinsic::Push).receiver_access,
+            vector_intrinsic_contract(VectorIntrinsic::Push).receiver_access,
             AccessMode::Write
         );
         expect_equal(
-            sequence_intrinsic_contract(SequenceIntrinsic::Len).receiver_access,
+            vector_intrinsic_contract(VectorIntrinsic::Length).receiver_access,
             AccessMode::Read
         );
     };
@@ -399,7 +401,7 @@ const TestSuite suite([] static noexcept {
                     "text_intrinsic_contract(**method).result == TextIntrinsicType {BuiltinType::Bool}"
                 );
             const auto non_text_method =
-                decide_text_method(compilation, ConstructionTypeRef {i32}, "len", 0uz);
+                decide_text_method(compilation, ConstructionTypeRef {i32}, "length", 0uz);
             if (!expect(non_text_method.has_value())) {
                 return;
             }
@@ -411,12 +413,12 @@ const TestSuite suite([] static noexcept {
             }
             expect_equal(property_as_method.error().code, DiagnosticCode::TypeMethodCall);
             const auto method_arity =
-                decide_text_method(compilation, ConstructionTypeRef {text}, "len", 1uz);
+                decide_text_method(compilation, ConstructionTypeRef {text}, "byte_length", 1uz);
             if (!expect(!(method_arity.has_value()))) {
                 return;
             }
             expect_equal(method_arity.error().code, DiagnosticCode::TypeMethodCallArity);
-            const auto method_as_property = decide_text_property("len");
+            const auto method_as_property = decide_text_property("byte_length");
             if (!expect(!(method_as_property.has_value()))) {
                 return;
             }

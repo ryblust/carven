@@ -122,9 +122,9 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             const auto semantic = analyze_test_program(R"(
         struct Record { value: i32 }
-        fn stable(record: Record, address: ptr<i32>, text: str, interval: range<i32>, view: [i32]) {
+        fn stable(record: Record, address: ptr<i32>, text: str, interval: Range<i32>, view: [i32]) {
             let _ = record.value;
-            let _ = text.len();
+            let _ = text.byte_length();
             let _ = interval;
             if address != nullptr { let _ = *address; }
             let _ = view[0];

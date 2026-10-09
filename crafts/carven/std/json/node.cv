@@ -3,8 +3,8 @@ enum Node {
     Boolean(bool),
     Number(String),
     Text(String),
-    Array(Sequence<Node>),
-    Object(Sequence<Member>),
+    Array(Vector<Node>),
+    Object(Vector<Member>),
 }
 
 struct Member {

@@ -17,9 +17,9 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
-    "Compiler diagnostics: Sequence element errors retain the type use in later modules"_test =
+    "Compiler diagnostics: Vector element errors retain the type use in later modules"_test =
         [] static noexcept {
-            for (const auto annotation : {"Sequence<str>", "Sequence<Borrowed>"}) {
+            for (const auto annotation : {"Vector<str>", "Vector<Borrowed>"}) {
                 auto sources = SourceManager();
                 const auto healthy = *sources.append_virtual("a.cv", "fn healthy() {}\n");
                 const auto failing_text = std::format(
@@ -43,7 +43,7 @@ const TestSuite suite([] static noexcept {
                     return;
                 }
                 const auto* diagnostic =
-                    find_diagnostic(result.error(), DiagnosticCode::TypeSequenceElement);
+                    find_diagnostic(result.error(), DiagnosticCode::TypeVectorElement);
                 if (!expect(diagnostic != nullptr && diagnostic->attachment.primary.has_value())) {
                     return;
                 }

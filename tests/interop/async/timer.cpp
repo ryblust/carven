@@ -50,7 +50,7 @@ public:
 };
 
 auto timer(TimerQueue& timers, TimerQueue::Clock::duration delay, Observation& observed) noexcept
-    -> async::Operation<void> {
+    -> async::AsyncOperation<void> {
     ++observed.started;
     auto result = co_await timers.wait_for(delay);
     observed.cancelled = result.is_cancelled();
@@ -62,7 +62,7 @@ auto captured_timer(
     TimerQueue& timers,
     std::unique_ptr<Lifetime> capture,
     Observation& observed
-) noexcept -> async::Operation<void> {
+) noexcept -> async::AsyncOperation<void> {
     check(capture != nullptr, "cold capture remains owned when body starts");
     co_return co_await timer(timers, 1h, observed);
 }
@@ -178,7 +178,7 @@ auto sibling_timer(
     std::vector<int>& trace,
     int& live,
     int& destroyed
-) noexcept -> async::Operation<void> {
+) noexcept -> async::AsyncOperation<void> {
     auto lifetime = Lifetime(live, destroyed);
     trace.push_back(number);
     auto result = co_await timers.wait_for(2ms);
@@ -193,7 +193,7 @@ auto siblings_body(
     int& live,
     int& destroyed,
     bool& released
-) noexcept -> async::Operation<void> {
+) noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto first = scope.start(sibling_timer(timers, 1, trace, live, destroyed));
     auto second = scope.start(sibling_timer(timers, 2, trace, live, destroyed));
@@ -237,7 +237,7 @@ auto pre_cancel_body(
     TimerQueue& timers,
     Observation& observed,
     TimerQueue::Clock::duration delay
-) noexcept -> async::Operation<void> {
+) noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(timer(timers, delay, observed));
     async::cancel(child);
@@ -296,7 +296,7 @@ public:
 };
 
 auto borrowed_timer(TimerQueue& timers, bool& alive, Observation& observed) noexcept
-    -> async::Operation<void> {
+    -> async::AsyncOperation<void> {
     check(alive, "descendant backing alive at registration");
     auto result = co_await timer(timers, 1h, observed);
     check(alive, "descendant backing alive at cancellation delivery");
@@ -309,7 +309,7 @@ auto ancestor(
     int& destroyed,
     Observation& own,
     Observation& descendant
-) noexcept -> async::Operation<void> {
+) noexcept -> async::AsyncOperation<void> {
     auto backing = Backing(timers, alive, destroyed);
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(borrowed_timer(timers, alive, descendant));
@@ -332,7 +332,7 @@ auto cancelled_close_body(
     int& destroyed,
     Observation& own,
     Observation& descendant
-) noexcept -> async::Operation<void> {
+) noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(ancestor(timers, alive, destroyed, own, descendant));
     co_await async::await_yield_once();
@@ -370,7 +370,7 @@ auto cancelled_close() noexcept -> void {
 }
 
 auto committed_body(TimerQueue& timers, Observation& observed, bool& released) noexcept
-    -> async::Operation<void> {
+    -> async::AsyncOperation<void> {
     auto& activation = co_await async::current_activation();
     auto scope = async::ChildScope(activation);
     auto child = scope.start(timer(timers, 2ms, observed));
@@ -403,7 +403,7 @@ auto committed() noexcept -> void {
     balanced(timers);
 }
 
-auto rearm_body(TimerQueue& timers) noexcept -> async::Operation<void> {
+auto rearm_body(TimerQueue& timers) noexcept -> async::AsyncOperation<void> {
     auto first = co_await timers.wait_for(2ms);
     check(
         first.success_if() != nullptr && timers.pending_count() == 0,

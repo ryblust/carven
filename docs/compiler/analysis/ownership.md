@@ -145,9 +145,9 @@ identity.
 ### Recursive storage and function interfaces
 
 Body evaluation and calls share one referent graph. A place names a storage node
-and its inline field or array suffix. Selecting a checked Sequence element follows
+and its inline field or array suffix. Selecting a checked Vector element follows
 an owns edge immediately. Checked element type participates in selection identity,
-including enum payloads with different types. Sequence elements contain no loans
+including enum payloads with different types. Vector elements contain no loans
 or callable storage and cannot be taken through their fields. Availability follows
 all possible owning sources in the current flow, including when a retained query
 domain is reused before a local declaration has initialized its owner.
@@ -335,7 +335,7 @@ after every query succeeds. Solver and diagnosis state remain private to analysi
 ### Control flow and diagnostics
 
 Unfinished calls retain direct place and borrowed-target accesses. Array iteration
-retains its source owner. Sequence traversal also retains its carrier against
+retains its source owner. Vector traversal also retains its carrier against
 structural replacement while allowing element updates. Match guards additionally
 require stable subject storage.
 Read storage and Write pattern bindings resolve through the selected storage map;
@@ -360,3 +360,10 @@ Pointer nullability analyzes structured operations locally and merges slot facts
 across normal and abrupt exits. Indirect places check address availability and target
 access without assigning a local owner to the referent. Pointer targets are
 leaves for owned-content, loan-content, and infinite-size containment queries.
+
+Retained constants denote immutable program-lifetime storage. Local static
+bindings have the same backing lifetime as module constants; their source lexical
+scope does not destroy retained contents. Constant field and element projections
+select that storage, while an ordinary value copy creates a new owner with its
+own lifetime. Static publication validates contents and backing before this
+contract applies; an ordinary local owner cannot escape by returning its view.

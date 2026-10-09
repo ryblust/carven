@@ -18,7 +18,7 @@ namespace async = carven::runtime::execution;
 using async_interop::PipeError;
 using async_interop::PipeQueue;
 using Result = async::Completion<std::size_t, PipeError>;
-using Operation = async::Operation<std::size_t, PipeError>;
+using Operation = async::AsyncOperation<std::size_t, PipeError>;
 
 auto check(bool condition, const char* message) noexcept -> void {
     if (!condition) {
@@ -155,7 +155,7 @@ auto cold() noexcept -> void {
     balanced(queue);
 }
 
-auto transfer_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::Operation<void> {
+auto transfer_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::AsyncOperation<void> {
     const auto data = std::array {std::byte {1}, std::byte {2}, std::byte {3}};
     auto buffer = std::array<std::byte, 4> {};
     auto written = co_await queue.write_some(pipe.writer(), data);
@@ -182,7 +182,7 @@ auto transfer() noexcept -> void {
     balanced(queue);
 }
 
-auto eof_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::Operation<void> {
+auto eof_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::AsyncOperation<void> {
     auto buffer = std::array<std::byte, 2> {};
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
     auto scope = async::ChildScope(co_await async::current_activation());
@@ -249,7 +249,7 @@ public:
 };
 
 auto writer_task(PipeQueue& queue, int fd, Observation& reading, bool& released) noexcept
-    -> async::Operation<void> {
+    -> async::AsyncOperation<void> {
     check(
         queue.pending_count() == 1 && reading.started == 1 && reading.finished == 0,
         "reader registers EAGAIN before sibling writer starts"
@@ -262,7 +262,7 @@ auto writer_task(PipeQueue& queue, int fd, Observation& reading, bool& released)
 }
 
 auto delayed_body(PipeQueue& queue, Pipe& pipe, bool& released, Observation& observed) noexcept
-    -> async::Operation<void> {
+    -> async::AsyncOperation<void> {
     auto buffer = std::array<std::byte, 2> {};
     auto scope = async::ChildScope(co_await async::current_activation());
     auto reader = scope.start(read(queue, pipe.reader(), buffer, observed));
@@ -327,7 +327,7 @@ public:
 };
 
 auto timed_read(PipeQueue& queue, Pipe& pipe, bool data_ready, Observation& observed) noexcept
-    -> async::Operation<bool> {
+    -> async::AsyncOperation<bool> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto buffer = std::array<std::byte, 1> {};
     auto input = scope.start(read(queue, pipe.reader(), buffer, observed));
@@ -447,7 +447,7 @@ auto ancestor(
     int& destroyed,
     Observation& own,
     Observation& descendant
-) noexcept -> async::Operation<void> {
+) noexcept -> async::AsyncOperation<void> {
     auto buffer = Buffer(queue, alive, destroyed);
     auto own_buffer = std::array<std::byte, 1> {};
     auto scope = async::ChildScope(co_await async::current_activation());
@@ -470,7 +470,7 @@ auto cancelled_close_body(
     int& destroyed,
     Observation& own,
     Observation& descendant
-) noexcept -> async::Operation<void> {
+) noexcept -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(
         ancestor(queue, own_pipe.reader(), child_pipe.reader(), alive, destroyed, own, descendant)
@@ -513,7 +513,7 @@ auto cancelled_close() noexcept -> void {
 }
 
 auto committed_body(PipeQueue& queue, Pipe& pipe, bool& released, Observation& observed) noexcept
-    -> async::Operation<void> {
+    -> async::AsyncOperation<void> {
     auto& activation = co_await async::current_activation();
     auto buffer = std::array<std::byte, 1> {};
     auto scope = async::ChildScope(activation);
@@ -576,7 +576,7 @@ public:
     }
 };
 
-auto rearm_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::Operation<void> {
+auto rearm_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::AsyncOperation<void> {
     auto buffer = std::array<std::byte, 1> {};
     for (const auto value : {std::byte {11}, std::byte {12}}) {
         auto received = co_await queue.read_some(pipe.reader(), buffer);
@@ -629,7 +629,7 @@ auto backpressure_body(
     std::size_t capacity,
     bool& released,
     Observation& observed
-) noexcept -> async::Operation<void> {
+) noexcept -> async::AsyncOperation<void> {
     const auto data = std::vector<std::byte>(capacity + 1, std::byte {13});
     auto filled = capacity;
     for (;;) {

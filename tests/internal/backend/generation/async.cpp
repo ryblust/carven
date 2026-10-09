@@ -366,9 +366,9 @@ const TestSuite suite([] static noexcept {
 
 async fn leaf(value: i32) -> i32 {
     var text: String = "abc";
-    if value < 0 { return text.len() as i32; }
+    if value < 0 { return text.byte_length() as i32; }
     await yield_once();
-    return value + text.len() as i32;
+    return value + text.byte_length() as i32;
 }
 fn factory(value: i32) => leaf(value);
 async fn other(value: bool) -> char {

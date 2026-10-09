@@ -9,7 +9,7 @@ import :semantic.analysis.expr.member;
 import :semantic.analysis.expr.numeric;
 import :semantic.analysis.expr.result;
 import :semantic.analysis.expr.scope;
-import :semantic.analysis.expr.sequence;
+import :semantic.analysis.expr.vector;
 import :semantic.analysis.expr.simd;
 import :semantic.analysis.expr.text;
 import :semantic.analysis.operations;
@@ -57,7 +57,27 @@ auto interpret_call(
                     site.syntax().expression(member->operand_id).span
                 );
             }
-            const auto canonical = site.draft().type_copy(**type);
+            if (const auto shape = sequence_shape(site.draft(), **type);
+                shape && shape->kind == SequenceShapeKind::Vector) {
+                const auto name = site.spelling(member->name_span);
+                if (name == "new" && source.arguments.empty()) {
+                    co_return construct_default_expression(site, **type, span);
+                }
+                co_return co_await construct_vector_factory(
+                    site,
+                    **type,
+                    name,
+                    source.arguments,
+                    span
+                );
+            }
+            const auto concrete = site.draft().try_canonicalize_declared_type(**type);
+            if (!concrete) {
+                co_return site.invalid_type_qualifier(
+                    site.syntax().expression(member->operand_id).span
+                );
+            }
+            const auto canonical = site.draft().type_copy(*concrete);
             if (const auto* builtin = std::get_if<BuiltinTypeValue>(&canonical.value)) {
                 const auto kind = builtin->kind;
                 const auto name = site.spelling(member->name_span);
@@ -109,7 +129,7 @@ auto interpret_call(
             }
             co_return (co_await interpret_enum_case(
                 site,
-                **type,
+                *concrete,
                 site.spelling(member->name_span),
                 member->name_span,
                 source.arguments,
@@ -163,7 +183,7 @@ auto interpret_call(
         if (floating->has_value()) {
             co_return construct_float_query(site, **floating, std::move(*operand), span);
         }
-        const auto sequence = decide_sequence_method(
+        const auto sequence = decide_vector_method(
             site.draft(),
             site.type(*operand),
             site.spelling(member->name_span),
@@ -175,7 +195,7 @@ auto interpret_call(
             );
         }
         if (sequence->has_value()) {
-            co_return (co_await construct_sequence_call(
+            co_return (co_await construct_vector_call(
                 site,
                 **sequence,
                 std::move(*operand),
@@ -249,7 +269,7 @@ auto interpret_call(
             ));
         }
         if (decision->has_value()) {
-            if (**decision == TextIntrinsic::Len || **decision == TextIntrinsic::IsEmpty) {
+            if (**decision == TextIntrinsic::ByteLength || **decision == TextIntrinsic::IsEmpty) {
                 co_return interpret_text(site, **decision, std::move(*operand), span);
             }
             co_return (co_await construct_text_call(

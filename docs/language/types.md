@@ -23,8 +23,8 @@ f32 f64
 u8x16 mask16 f32x4 mask4 u8x32 mask32 f32x8 mask8
 ```
 
-These names, along with the type constructors `ptr`, `range`, `Sequence`, and
-`Operation`, are reserved
+These names, along with the type constructors `ptr`, `Range`, `Vector`, and
+`AsyncOperation`, are reserved
 for module declarations. Locals, parameters, and members may use those spellings;
 type resolution retains the builtin meaning. They are identifier tokens rather
 than reserved keywords. The [name classification](grammar.md#22-identifiers-and-keywords)
@@ -96,7 +96,7 @@ Operations. `throw E` declares a failure-set parameter, which may appear in
 failure contracts but cannot be used as an object type:
 
 ```carven
-struct Pending<T, throw E> { operation: Operation<T, throw E> }
+struct Pending<T, throw E> { operation: AsyncOperation<T, throw E> }
 ```
 
 An application supplies every argument explicitly and in its declared kind,
@@ -161,8 +161,8 @@ that operand is not itself a direct contextual case. This selection precedes
 the numeric-literal rule. Logical operators instead require `bool` operands.
 
 Integer range bounds use the same numeric sibling-selection rule when there is
-no expected `range<T>` type. An expected `range<T>` supplies `T` to the bounds.
-Thus `0..text.len()` has type `range<usize>`: the literal is checked directly as
+no expected `Range<T>` type. An expected `Range<T>` supplies `T` to the bounds.
+Thus `0..text.byte_length()` has type `Range<usize>`: the literal is checked directly as
 `usize`, without converting an `i32` value. Two unsuffixed bounds without an
 expected type still default to `i32`. Suffixed literals and existing bindings
 keep their types; incompatible bounds and literals outside the selected type's
@@ -258,24 +258,24 @@ implemented.
 ## Read-only slices
 
 `[T]` is a copyable, nonowning, read-only view of contiguous elements. `[T; N]`
-denotes a fixed array. An array creates a view explicitly through
-`array.as_slice()`. When a destination requires `[T]`, an array `[T; N]`
-implicitly creates the same borrowed view. This applies to bindings, assignments,
-arguments, returns, and aggregate elements. Element types remain invariant;
+denotes a fixed array. Arrays and `Vector<T>` create views explicitly through
+`as_slice()`. When a destination requires `[T]`, either owner implicitly creates
+the same borrowed view. This applies to bindings, assignments, arguments,
+returns, and aggregate elements. Both owners also support `slice(start, end)` directly. Element types remain invariant;
 Write arguments require an actual slice slot. Array literals use the expected
 slice element type, including empty literals. Without a slice destination,
 an array remains an array. Conversion does not extend backing lifetimes.
 
-Slices provide `len() -> usize`, `is_empty() -> bool`, read-only integer
+Slices provide `length() -> usize`, `is_empty() -> bool`, read-only integer
 indexing, Read iteration, and `slice(start: usize, end: usize) -> [T]` with a
-half-open range. Empty ranges, including `slice(len, len)`, are valid. Invalid
+half-open range. Empty ranges, including `slice(length, length)`, are valid. Invalid
 indices and ranges terminate, following array bounds handling. Slices do not
 support element writes, Write iteration, pointer extraction, or comparison.
 Their element representation is invariant; creating a view never converts or
 copies its elements. Reading an element follows the ordinary Read/value rules.
 
 Slice and text views share storage-borrow analysis. A view with known Carven
-backing protects its entire array or String against mutation, replacement, Take, and destruction.
+backing protects its entire array, Vector, or String against mutation, replacement, Take, and destruction.
 Disjoint subranges are not analyzed separately. Copies, arguments, returned
 values, aggregate fields, closures, and failure values retain backing relations.
 Extracting an element also retains any borrows inside that element. Temporary

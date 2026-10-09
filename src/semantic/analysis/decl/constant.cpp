@@ -144,7 +144,7 @@ auto DeclResolver::resolve_type_qualifier(
     ASTView syntax,
     ASTExprID expression,
     const GenericTypeContext* generic_context
-) noexcept -> AnalysisTask<std::optional<TypeID>> {
+) noexcept -> AnalysisTask<std::optional<ConstructionTypeRef>> {
     auto current = expression;
     while (const auto* group = std::get_if<ASTGroupExpr>(&syntax.expression(current).value)) {
         current = group->expression;
@@ -173,7 +173,7 @@ auto DeclResolver::resolve_type_qualifier(
         if (!ready) {
             co_return std::unexpected(ready.error());
         }
-        co_return std::optional(draft.canonicalize_declared_type(*type));
+        co_return std::optional(*type);
     }
     const auto* name = std::get_if<ASTNameExpr>(&syntax.expression(current).value);
     if (name == nullptr) {

@@ -293,7 +293,7 @@ test "JSON: long whitespace and number runs preserve syntax and EOF offsets" {
         } catch {
             JSONError(_) => fail("long runs must be accepted"),
         }
-        let end = document.len();
+        let end = document.byte_length();
         document.push('x');
         var rejected = false;
         try {
@@ -310,7 +310,7 @@ test "JSON: long whitespace and number runs preserve syntax and EOF offsets" {
             validate(incomplete)?;
         } catch {
             JSONError(error) => {
-                rejected = error.kind == .InvalidNumber && error.offset == incomplete.len();
+                rejected = error.kind == .InvalidNumber && error.offset == incomplete.byte_length();
             },
         }
         check(rejected);

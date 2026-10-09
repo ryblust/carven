@@ -8,7 +8,7 @@ import :semantic.semir.evaluation;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
-import :semantic.semir.sequence;
+import :semantic.semir.vector;
 import :semantic.semir.simd;
 import :semantic.semir.slice;
 import :semantic.semir.structured;
@@ -171,8 +171,8 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                         [&](const SliceIntrinsicOperation& family) noexcept {
                             switch (family.intrinsic) {
                                 case SliceIntrinsic::Slice:     return required;
-                                case SliceIntrinsic::FromArray:
-                                case SliceIntrinsic::Len:
+                                case SliceIntrinsic::FromOwner:
+                                case SliceIntrinsic::Length:
                                 case SliceIntrinsic::IsEmpty:
                                     return operands(value.operands.front().expression);
                             }
@@ -261,7 +261,7 @@ auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& exp
                         [&](const FloatIntrinsic&) noexcept {
                             return operands(value.operands.front().expression);
                         },
-                        [&](const SequenceIntrinsicOperation&) noexcept { return required; },
+                        [&](const VectorIntrinsicOperation&) noexcept { return required; },
                         [&](const TextIntrinsic& family) noexcept {
                             return text_intrinsic_writes(family) || family == TextIntrinsic::FromStr
                                 ? required

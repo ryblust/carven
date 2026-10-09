@@ -512,7 +512,7 @@ const TestSuite suite([] static noexcept {
             Input {
                 .name = "slice range",
                 .declaration =
-                    "fn slice(values: [i32], start: usize, end: usize) { println(values.slice(start, end).len()); }",
+                    "fn slice(values: [i32], start: usize, end: usize) { println(values.slice(start, end).length()); }",
                 .operation = "slice([1, 2], 2, 1);",
                 .message = "slice range is out of bounds"
             },

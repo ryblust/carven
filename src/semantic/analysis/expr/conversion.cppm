@@ -60,7 +60,9 @@ auto convert_intrinsic_argument(
         value = std::move(*converted);
         return true;
     }
-    if (const auto source_element = array_element(site.draft(), source)) {
+    if (const auto shape = sequence_shape(site.draft(), source);
+        shape && shape->kind != SequenceShapeKind::Slice) {
+        const auto source_element = std::optional(shape->element);
         if (const auto target_element = slice_element(site.draft(), target)) {
             if (auto checked =
                     site.require_invariant_storage(*source_element, *target_element, span);
@@ -77,7 +79,7 @@ auto convert_intrinsic_argument(
             operands.push_back({.access = AccessMode::Read, .expression = std::move(*receiver)});
             auto converted = construct_slice_value(
                 site,
-                SliceIntrinsic::FromArray,
+                SliceIntrinsic::FromOwner,
                 source,
                 extent,
                 std::move(operands),

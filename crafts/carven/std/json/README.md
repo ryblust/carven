@@ -30,7 +30,7 @@ fn update(text: str) -> String throw JSONError + ValueError {
 `real`, `array`, and `object` construct values. `number` accepts exactly one
 JSON number spelling; `real` requires a finite value. Arrays support `push`,
 `at`, `set_at`, and `remove_at`. Objects support `get`, `has`, `set`, and
-`erase`. `len` reports the member or element count. `key_at` and
+`erase`. `length` reports the member or element count. `key_at` and
 `member_value_at` return the key and value at an object's member position;
 `append_member` appends a member, including a duplicate key.
 
@@ -65,7 +65,7 @@ Validation and parsing share one bounded syntax machine. String events carry
 ordinary byte spans and decoded escape scalars, so parsing builds owned text
 during the same scan. SIMD classifies string stops, whitespace, and digit runs;
 loads remain within the supplied input. A Carven enum represents each value;
-`Sequence` owns array elements and ordered object members. Parsing transfers
+`Vector` owns array elements and ordered object members. Parsing transfers
 constructed children into their containers. Writing borrows enum payloads and
 sequence elements while traversing the tree. Numeric conversions use
 `std::number.parse`; its native support delegates to standard character conversion.
@@ -89,8 +89,8 @@ same ownership and failure rules as runtime calls. For example:
 const compact = Value::parse(r#"{ "enabled": true }"#)?.to_json()?;
 ```
 
-The completed `String` freezes to `str`. JSON trees contain `Sequence` storage
-and remain execution-local; they cannot be retained as module constants. Return
-text or a supported scalar from a constant computation that builds a tree.
+Completed `String` results retain their owning type. JSON values can also be
+retained as constants, including their nested strings, arrays, and object members.
+Copying a retained value creates independent mutable contents.
 `as_i64`, `as_u64`, and `as_f64` require runtime execution because their
 `std::number.parse` conversions use native C++ character conversion.

@@ -69,9 +69,9 @@ async fn fused_scalar(value: i32) -> i32 {
     let owner = tail_owner(3);
     var text: String = "abc";
     tail_mark(1);
-    if value < 0 { return tail_actual(text.len() as i32, 2); }
+    if value < 0 { return tail_actual(text.byte_length() as i32, 2); }
     await yield_once();
-    return tail_actual(value + text.len() as i32, 4);
+    return tail_actual(value + text.byte_length() as i32, 4);
 }
 
 fn fused_factory(value: i32, unused: i32) => fused_scalar(value);

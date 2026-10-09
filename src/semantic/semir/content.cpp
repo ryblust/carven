@@ -271,7 +271,7 @@ auto ContentWriter::type(TypeID id) noexcept -> ContentTask {
                 for (const auto element : value.elements) {
                     co_await type(element);
                 }
-            } else if constexpr (std::same_as<Value, OwnedSequenceTypeValue>
+            } else if constexpr (std::same_as<Value, VectorTypeValue>
                                  || std::same_as<Value, SliceTypeValue>
                                  || std::same_as<Value, RangeTypeValue>) {
                 co_await type(value.element);
@@ -334,6 +334,8 @@ auto ContentWriter::constant(ConstantID id) noexcept -> ContentTask {
             if constexpr (std::same_as<Value, StringConstant>
                           || std::same_as<Value, CStringConstant>) {
                 token(provenance.spelling(value.value));
+            } else if constexpr (std::same_as<Value, VectorConstant>) {
+                number(value.capacity);
             } else if constexpr (std::same_as<Value, IntegerConstant>) {
                 integer(value);
             } else if constexpr (std::same_as<Value, RangeConstant>) {

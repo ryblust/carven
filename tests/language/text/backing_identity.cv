@@ -25,7 +25,7 @@ const fn transferred_text_has_live_backing() -> bool {
     source.append("b");
     let moved = &&source;
     let view = moved.as_str();
-    return view.bytes[1] == 98u8 && moved.bytes.len() == 2usize;
+    return view.bytes[1] == 98u8 && moved.bytes.length() == 2usize;
 }
 
 const fn default_text_byte_queries_are_empty() -> bool {
@@ -33,7 +33,7 @@ const fn default_text_byte_queries_are_empty() -> bool {
     for _ in (str {}).bytes {
         ++count;
     }
-    return (str {}).bytes.len() == 0usize && count == 0;
+    return (str {}).bytes.length() == 0usize && count == 0;
 }
 
 const frozen_text_view = String::from_str("ab").as_str();

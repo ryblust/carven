@@ -7,8 +7,7 @@ private struct Local {
 export class HiddenBox {
     stored: Box<Local>,
 
-    fn create(value: i32) -> HiddenBox => { stored: { value: { value: value } } };
-
+    fn new(value: i32) -> HiddenBox => { stored: { value: { value: value } } };
     fn read(self) -> i32 => self.stored.value.value;
 }
 

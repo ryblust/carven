@@ -1,5 +1,5 @@
 fn tail(values: [i32], start: usize) -> usize {
-    return values.slice(start, 3).len();
+    return values.slice(start, 3).length();
 }
 
 fn run_range() {

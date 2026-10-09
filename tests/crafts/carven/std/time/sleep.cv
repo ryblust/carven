@@ -2,12 +2,12 @@ import std::time.duration using RangeError;
 import std::time.clock using TimePoint;
 import std::time.sleep using { sleep, sleep_until };
 
-fn local_wait() -> Operation<void> throw RangeError {
+fn local_wait() -> AsyncOperation<void> throw RangeError {
     let point = TimePoint::after(-1ns)?;
     return point.wait();
 }
 
-fn temporary_wait() -> Operation<void> throw RangeError => TimePoint::after(-1ns)?.wait();
+fn temporary_wait() -> AsyncOperation<void> throw RangeError => TimePoint::after(-1ns)?.wait();
 
 async fn main() throw RangeError {
     await sleep(0ns)?;

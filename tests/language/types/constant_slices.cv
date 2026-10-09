@@ -29,13 +29,13 @@ fn persistent_local_constant() -> [i32] {
 fn copy_static_view(value: [i32]) -> [i32] => value;
 
 test "Const slices: completed data outlives function and local constant uses" {
-    const count = static_table.len();
+    const count = static_table.length();
     const selected = static_tail[1];
     const last_empty = static_table.slice(4, 4).is_empty();
     check(count == 4usize);
     check(selected == 7);
     check(last_empty);
-    check(static_empty.len() == 0usize);
+    check(static_empty.length() == 0usize);
     check(static_empty.slice(0, 0).is_empty());
     let returned = persistent_view();
     let local = persistent_local_constant();
@@ -66,7 +66,7 @@ test "Const slices: scalar text and nested array element types retain valid stor
     var index = 1;
     check(static_rows[index][0] == 3);
     check(static_words[index] == "我\0😀");
-    check(static_words[index].len() == 8usize);
+    check(static_words[index].byte_length() == 8usize);
     check(static_flags[0]);
     check(!static_flags[index]);
     check(static_characters[index] == '我');

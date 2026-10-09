@@ -1,7 +1,7 @@
 #include <carven/runtime/execution/execution.hpp>
 
 namespace {
-auto cold() noexcept -> carven::runtime::execution::Operation<void> {
+auto cold() noexcept -> carven::runtime::execution::AsyncOperation<void> {
     co_return carven::runtime::execution::Completion<void>::success();
 }
 } // namespace

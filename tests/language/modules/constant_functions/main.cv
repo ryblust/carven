@@ -12,5 +12,5 @@ test "Modules: const functions complete forward bodies across imported modules" 
     check(frozen_label == "value-0042\0我😀");
     let runtime_label = label();
     check(runtime_label.as_str() == frozen_label);
-    check(runtime_label.len() == 18usize);
+    check(runtime_label.byte_length() == 18usize);
 }

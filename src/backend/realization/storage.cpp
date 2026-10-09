@@ -92,7 +92,8 @@ auto BodyRealizer::ExpressionBuilder::retain_input(Fragment& fragment, PreparedU
 
 auto BodyRealizer::ExpressionBuilder::raw(
     Fragment& fragment,
-    ConstantLiteralContext literal
+    ConstantLiteralContext literal,
+    PreparedUse use
 ) noexcept -> TargetExpr {
     if (auto* value = std::get_if<TargetExpr>(&fragment.completion)) {
         auto result = std::move(*value);
@@ -116,7 +117,11 @@ auto BodyRealizer::ExpressionBuilder::raw(
         return owner.binding_expression(*binding);
     }
     if (const auto* constant = std::get_if<ConstantID>(&fragment.completion)) {
-        return constant_expression(owner.context, *constant, literal);
+        return use == PreparedUse::Consume
+                || use == PreparedUse::OperandValue
+                || use == PreparedUse::NativeTake
+            ? constant_expression(owner.context, *constant, literal)
+            : constant_reference(owner.context, *constant);
     }
     invariant_violation("completed fragment has no residual expression");
 }
@@ -144,10 +149,10 @@ auto BodyRealizer::ExpressionBuilder::emit(
         return native_take_expression(
             owner.context,
             source(fragment).operation.type.resolved(),
-            raw(fragment, literal)
+            raw(fragment, literal, use)
         );
     }
-    auto result = raw(fragment, literal);
+    auto result = raw(fragment, literal, use);
     if (use == PreparedUse::Consume
         && saved(fragment)
         && saved(fragment)->kind != SavedKind::Place

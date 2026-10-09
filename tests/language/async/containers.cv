@@ -6,16 +6,16 @@ async fn parse_owned(&&text: String) -> Value throw JSONError {
     return Value::parse(text.as_str())?;
 }
 
-async fn products() -> Sequence<(i32, void)> {
-    var values = Sequence<(i32, void)> {};
+async fn products() -> Vector<(i32, void)> {
+    var values = Vector<(i32, void)> {};
     values.push((41, ()));
     await yield_once();
     values.push((42, ()));
     return &&values;
 }
 
-async fn units() -> Sequence<void> {
-    var values = Sequence<void> {};
+async fn units() -> Vector<void> {
+    var values = Vector<void> {};
     values.push(());
     await yield_once();
     values.push(());
@@ -29,13 +29,13 @@ async fn exercise() -> bool throw JSONError + ValueError {
         products(),
         units()
     )?;
-    return document.len()?
+    return document.length()?
         == 2
         && document.at(1)?.as_i64()? == 42
-        && values.len() == 2
+        && values.length() == 2
         && values[0] == (41, ())
         && values[1] == (42, ())
-        && empty_values.len() == 2
+        && empty_values.length() == 2
         && empty_values[1] == ();
 }
 

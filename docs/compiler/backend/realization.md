@@ -291,7 +291,7 @@ A known scalar result uses literal delivery when the operation itself needs no
 execution and selects no storage. The ordinary discard path completes its
 operands before delivering the constant. Effects-only evaluation preserves
 borrowed temporary owners through their source cleanup boundary.
-For `values.slice(0, 2).len()`, realization executes the checked slice and returns
+For `values.slice(0, 2).length()`, realization executes the checked slice and returns
 `2`; the slice result needs no storage or size query. Failure still prevents
 result delivery.
 

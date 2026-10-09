@@ -255,10 +255,8 @@ const TestSuite suite([] static noexcept {
 
     "Syntax dump: generic parameters and applications retain structural identity"_test =
         [] static noexcept {
-            const auto owned = dump_source(
-                "main.cv",
-                "struct Box<T> { value: T } fn use() { Box<i32>::create(1); }"
-            );
+            const auto owned =
+                dump_source("main.cv", "struct Box<T> { value: T } fn use() { Box<i32>::new(1); }");
             const auto lexical = lex(owned.sources.view(owned.source_id));
             if (!expect(lexical.diagnostics.empty())) {
                 return;
