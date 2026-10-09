@@ -1,5 +1,6 @@
 module carven:backend.generation.plan.names.impl;
 
+import :backend.generation.linkage;
 import :backend.generation.names;
 import :backend.generation.plan;
 import :semantic.semir.constant;
@@ -320,7 +321,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
 
 auto plan_names(
     const SemIRProgram& semantic,
-    const LinkageDomainID& linkage,
+    const TargetPlanningRequest& request,
     const TargetClosureCatalog& closures
 ) noexcept -> TargetNamePlan {
     const auto& declarations = semantic.declarations();
@@ -483,25 +484,34 @@ auto plan_names(
         }
     }
     const auto generated_namespace = generated_target_namespace();
-    const auto domain_namespace = linkage_target_namespace(linkage);
-    auto namespace_prefix = std::vector<TargetIdentifier>(
-        generated_namespace.components().begin(),
-        generated_namespace.components().end()
-    );
-    namespace_prefix.insert(
-        namespace_prefix.end(),
-        domain_namespace.components().begin(),
-        domain_namespace.components().end()
-    );
-
+    const auto domain_namespace = linkage_target_namespace(derive_linkage_domain_id(request));
+    const auto library_namespace = request.library
+        ? std::optional(linkage_target_namespace(derive_linkage_domain_id({
+              .test_mode = TestGenerationMode::None,
+              .linkage_domain = request.library->linkage_domain,
+              .library = std::nullopt,
+          })))
+        : std::nullopt;
     auto modules = std::vector<std::optional<TargetModuleNames>>(module_count);
     for (const auto module_record : declarations.modules()) {
         const auto& path = provenance.module_record(module_record.value.provenance_module).path;
         const auto module_namespace = TargetIdentifier::from_spelling(
             derive_module_namespace_id(path.value()).namespace_identifier()
         );
-        auto qualified = namespace_prefix;
-        qualified.push_back(module_namespace);
+        const auto& module_domain =
+            request.library && std::ranges::contains(request.library->modules, path)
+            ? *library_namespace
+            : domain_namespace;
+        auto relative = std::vector<TargetIdentifier>(
+            module_domain.components().begin(),
+            module_domain.components().end()
+        );
+        relative.push_back(module_namespace);
+        auto qualified = std::vector<TargetIdentifier>(
+            generated_namespace.components().begin(),
+            generated_namespace.components().end()
+        );
+        qualified.insert(qualified.end(), relative.begin(), relative.end());
         auto public_components = std::vector<TargetIdentifier> {
             TargetIdentifier::from_spelling("carven"),
             TargetIdentifier::from_spelling("api")
@@ -523,7 +533,7 @@ auto plan_names(
         }
         modules[module_record.id.index()] = TargetModuleNames {
             .qualified_namespace_name = TargetName::from_components(std::move(qualified)),
-            .module_namespace_name = TargetName {module_namespace},
+            .module_namespace_name = TargetName::from_components(std::move(relative)),
             .public_namespace_name = TargetName::from_components(std::move(public_components)),
             .public_functions = std::move(public_functions),
             .reserved_identifiers = std::move(module_occupied[module_record.id.index()]),
@@ -689,7 +699,6 @@ auto plan_names(
         semantic.identity(),
         take_total(std::move(modules), "target name plan did not name every module"),
         generated_namespace,
-        domain_namespace,
         take_total(std::move(structure_names), "target name plan did not name every structure"),
         take_total(std::move(enumeration_names), "target name plan did not name every enumeration"),
         std::move(callable_names),

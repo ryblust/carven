@@ -1,6 +1,7 @@
 # Testing
 
-Tests protect language and toolchain behavior against meaningful regressions.
+Tests establish accepted behavior, rejected inputs, and invariants at language
+and toolchain boundaries.
 Choose cases by the failure they can detect, rather than by the number of files,
 classes, or internal components they exercise. An internal component does not
 need its own suite when existing behavioral tests establish its responsibility.
@@ -8,7 +9,7 @@ need its own suite when existing behavioral tests establish its responsibility.
 Each case should identify an observable contract, a plausible failure, and the
 evidence it adds beyond existing cases. Assertions admit equivalent implementations
 that preserve that contract. Keep focused internal tests when they isolate a
-complex algorithm, cheaply exercise a difficult boundary, or diagnose a regression
+complex algorithm, cheaply exercise a difficult boundary, or establish a contract
 that broader tests cannot adequately expose. Avoid mirroring private data layouts,
 helper call sequences, or standard-library behavior.
 
@@ -16,17 +17,18 @@ helper call sequences, or standard-library behavior.
 
 | Group | Boundary | Evidence |
 | --- | --- | --- |
-| `internal` | Focused compiler and runtime boundaries | Algorithmic edge cases, diagnostics, and regressions not adequately established by program-level tests |
+| `internal` | Focused compiler boundaries | Algorithmic boundaries, diagnostics, and invariants not adequately established by program-level tests |
 | `language` | Compiled and executed Carven programs | Values, access, ownership, control, failure, modules, closures, and testing behavior |
 | `crafts` | Public source-package APIs and runtime headers | Library behavior and runtime header self-containment |
 | `interop` | C++ providers and consumers | Boundary signatures, native calls, and source fragments |
 | `examples` | User-facing programs | Documented output from actual example executables |
 | `cli` | Compiler processes, interpreted execution, and build integration | Arguments, reports, exit status, files, scheduling, and generation policy |
-| `graver` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
+| `format` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
+| `workspace` | Source snapshots and analysis queries | Versioned locations, complete selection reuse, invalidation, and navigation |
 
 Place each case in the group that owns the tested boundary. Reuse fixtures and
 assertions across applicable configurations. Merge cases that repeat the same
-input class, execution path, and observation. Prefer one behavioral regression at
+input class, execution path, and observation. Prefer one behavioral case at
 the owning boundary over assertions on intermediate node kinds, temporary storage,
 helper names, or enumeration-to-enumeration mappings.
 
@@ -174,15 +176,15 @@ Commands run from the repository root through `./xmakew`; Windows uses
 | --- | --- |
 | `./xmakew build` | Build or update the local compiler |
 | `./xmakew test -g <group>` | Build and run one group from the responsibility table |
-| `./xmakew test` | Build and run all registered tests, including examples and Graver |
-| `./xmakew build graver` | Build the formatter used by formatting tasks |
+| `./xmakew test` | Build and run all registered tests, including examples, formatting, and workspace analysis |
+| `./xmakew build carven-format` | Build the formatter used by formatting tasks |
 | `./xmakew format-check` | Check C++ and Carven formatting without changing sources |
 | `./xmakew format` | Apply C++ and Carven formatting |
 | `./xmakew clean` | Clear build outputs |
 
 Generated-test preparation invokes the local compiler before target dependencies
 are built. `./xmakew build` supplies an up-to-date compiler before testing.
-Formatting tasks require a built Graver. Applying formatting changes sources;
+Formatting tasks require a built `carven-format`. Applying formatting changes sources;
 subsequent builds and tests use those changes. A clean followed by a build recreates
 module build state.
 

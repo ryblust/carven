@@ -24,7 +24,7 @@ private fn local_factory(value: i32) {
     return local_after_yield(value);
 }
 
-async fn main() {
+export async fn run_tracked() {
     println(
         tracked_created(),
         tracked_copied(),

@@ -85,7 +85,6 @@ TargetNamePlan::TargetNamePlan(
     ProgramIdentity semantic_identity,
     std::vector<TargetModuleNames> modules,
     TargetName generated_namespace,
-    TargetName domain_namespace,
     std::vector<TargetEntityName> structures,
     std::vector<TargetEntityName> enumerations,
     std::vector<std::optional<TargetEntityName>> callables,
@@ -99,7 +98,6 @@ TargetNamePlan::TargetNamePlan(
     : source_identity(semantic_identity),
       target_modules(std::move(modules)),
       target_generated_namespace(std::move(generated_namespace)),
-      target_domain_namespace(std::move(domain_namespace)),
       target_structure_names(std::move(structures)),
       target_enumeration_names(std::move(enumerations)),
       target_callable_names(std::move(callables)),
@@ -132,10 +130,6 @@ auto TargetNamePlan::module_names(ModuleID id) const noexcept -> const TargetMod
 
 auto TargetNamePlan::generated_namespace() const noexcept -> const TargetName& {
     return target_generated_namespace;
-}
-
-auto TargetNamePlan::domain_namespace() const noexcept -> const TargetName& {
-    return target_domain_namespace;
 }
 
 auto TargetNamePlan::entity_name(
@@ -501,9 +495,8 @@ TargetPlan::TargetPlan(
 auto TargetPlan::build(const SemIRProgram& semantic, const TargetPlanningRequest& request) noexcept
     -> TargetPlan {
     const auto identity = TargetPlanIdentity::fresh();
-    const auto linkage = derive_linkage_domain_id(request);
     const auto closures = plan_closures(semantic);
-    auto names = plan_names(semantic, linkage, closures);
+    auto names = plan_names(semantic, request, closures);
     auto failures = plan_failure_abi(semantic);
     auto artifacts = plan_artifacts(semantic, request, closures, identity);
     return TargetPlan(

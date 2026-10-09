@@ -144,8 +144,16 @@ scanning, supplies a target-private output root and linkage domain, and register
 generated implementations as C++ sources. Installed source paths preserve their
 `crafts/carven/` hierarchy. The compiler derives module identities from the supplied
 filenames, deduplicates canonical file paths, and rejects conflicting module
-identities. The CLI also collects its fixed Crafts roots. Imports resolve within
-the combined batch; `std::` selects modules under `crafts/carven/std/`.
+identities. The rule uses `--explicit-inputs`, so the CLI adds no other source roots. Imports
+resolve within the supplied batch; `std::` selects modules under `crafts/carven/std/`.
+
+The installed standard-library implementations and native support sources belong
+to a shared object target owned by the package rule. Consumers retain their own
+application linkage domain and compile the inline static instances they need.
+The rule shares these objects among targets with matching compiler, Crafts, and
+native compilation settings and prerequisite targets. Each consumer performs
+full Carven analysis.
+Project-local Crafts remain ordinary target inputs.
 
 Generation runs in a staging directory before updating live artifacts. A failed
 compiler invocation leaves live output intact; promotion itself can fail partway

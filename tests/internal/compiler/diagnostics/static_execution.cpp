@@ -33,7 +33,8 @@ auto compile_constant_program(
         SourceBatch {.modules = std::span(&input, 1)},
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
-            .linkage_domain = *LinkageDomain::explicit_value("static-execution")
+            .linkage_domain = *LinkageDomain::explicit_value("static-execution"),
+            .library = std::nullopt
         },
         write_output
     );

@@ -95,6 +95,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:cpp-collision").value(),
+                    .library = std::nullopt,
                 }
             );
 
@@ -199,7 +200,8 @@ const TestSuite suite([] static noexcept {
                 SourceBatch {.modules = inputs},
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
-                    .linkage_domain = LinkageDomain::explicit_value("test:cpp-isolation").value()
+                    .linkage_domain = LinkageDomain::explicit_value("test:cpp-isolation").value(),
+                    .library = std::nullopt
                 }
             );
             if (!(expect(!result.has_value()))) {
@@ -256,6 +258,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:cpp-delegation").value(),
+                    .library = std::nullopt,
                 }
             );
             expect(result.has_value());

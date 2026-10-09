@@ -5,6 +5,8 @@ import :backend.generate;
 import :backend.generation.request;
 import :compiler.analysis;
 import :compiler.compile;
+import :diagnostics.builder;
+import :diagnostics.code;
 import :semantic.evaluation.output;
 import :source.batch;
 import :source.manager;
@@ -22,12 +24,18 @@ auto compile(
     if (!semantic.has_value()) {
         return std::unexpected(std::move(semantic.error()));
     }
-
     auto artifacts =
         generate_artifacts(std::move(semantic->value), generation, std::nullopt, timings);
+    if (!artifacts) {
+        semantic->diagnostics.push_back(
+            DiagnosticBuilder(DiagnosticCode::CompilationInput, std::move(artifacts.error()))
+                .build()
+        );
+        return std::unexpected(std::move(semantic->diagnostics));
+    }
 
     return Diagnosed<GeneratedArtifactSet> {
-        .value = std::move(artifacts),
+        .value = std::move(*artifacts),
         .diagnostics = std::move(semantic->diagnostics),
     };
 }

@@ -13,6 +13,8 @@
 #include <unistd.h>
 #include <utility>
 
+auto run_transfer_cases() noexcept -> void;
+
 namespace {
 namespace async = carven::runtime::execution;
 namespace api = carven::api::tests::interop::async::bridge;
@@ -21,14 +23,6 @@ using async_bridge::Observations;
 using async_bridge::TrivialContext;
 using async_interop::PipeQueue;
 using IoError = decltype(api::make_io_error(0));
-using ReadOperation = async::AsyncOperation<std::int32_t, IoError>;
-
-static_assert(
-    std::is_same_v<decltype(api::source_read), auto(const Context&) noexcept -> ReadOperation>
-);
-static_assert(std::is_same_v<
-              decltype(api::source_trivial),
-              auto(const TrivialContext&) noexcept -> ReadOperation>);
 
 auto check(bool condition, const char* message) noexcept -> void {
     if (!condition) {
@@ -313,35 +307,6 @@ auto characters() noexcept -> void {
         discarded.success_if() != nullptr,
         "discarded native char await still executes valid success"
     );
-    auto fused = async::drive_root(api::source_fused_character(90));
-    check(
-        fused.success_if() != nullptr && fused.success_if()->value == U'Z',
-        "embedded source producer delivers valid char success"
-    );
-    const auto before_discarded = bridge_scalar_character_calls();
-    auto fused_discarded = async::drive_root(api::source_discard_fused_character(90));
-    check(
-        fused_discarded.success_if() != nullptr,
-        "discarded embedded source producer executes char success"
-    );
-    check(
-        bridge_scalar_character_calls() == before_discarded + 1,
-        "discarded fused char evaluates native effect once"
-    );
-    auto factory_discarded = async::drive_root(api::source_discard_factory_character(90));
-    check(
-        factory_discarded.success_if() != nullptr,
-        "discarded factory char still validates success"
-    );
-    check(
-        bridge_scalar_character_calls() == before_discarded + 2,
-        "discarded factory char evaluates native effect once"
-    );
-    auto division_discarded = async::drive_root(api::source_discard_fused_division(1));
-    check(
-        division_discarded.success_if() != nullptr,
-        "discarded numeric success still evaluates checked arithmetic"
-    );
     auto failed = async::drive_root(api::source_character(0xd800, true));
     const auto* error = failed.failure_if<IoError>();
     check(
@@ -384,12 +349,6 @@ auto main(int argc, char** argv) -> int {
             auto result = async::drive_root(api::source_character(0xd800, false));
         } else if (operation == "invalidchar-discard") {
             auto result = async::drive_root(api::source_discard_character(0xd800, false));
-        } else if (operation == "invalidchar-fused") {
-            auto result = async::drive_root(api::source_fused_character(0xd800));
-        } else if (operation == "invalidchar-fused-discard") {
-            auto result = async::drive_root(api::source_discard_fused_character(0xd800));
-        } else if (operation == "invalidchar-factory-discard") {
-            auto result = async::drive_root(api::source_discard_factory_character(0xd800));
         } else if (operation == "invalidchar-join") {
             auto result = async::drive_root(api::source_join_characters(0xd800, false));
         } else if (operation == "invalidchar-race") {
@@ -398,8 +357,6 @@ auto main(int argc, char** argv) -> int {
             auto result = async::drive_root(api::source_first_character(0xd800, false));
         } else if (operation == "invalidchar-join-later-failure") {
             auto result = async::drive_root(api::source_join_character_then_failure(0xd800));
-        } else if (operation == "division-fused-discard") {
-            auto result = async::drive_root(api::source_discard_fused_division(0));
         } else {
             return EXIT_FAILURE;
         }
@@ -421,5 +378,6 @@ auto main(int argc, char** argv) -> int {
         test.second();
         std::printf("%s: pass\n", test.first);
     }
+    run_transfer_cases();
     return EXIT_SUCCESS;
 }

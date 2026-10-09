@@ -153,12 +153,9 @@ auto construct_member_expression(
             ));
         }
         const auto index = static_cast<std::uint32_t>(field - declaration.fields.begin());
-        return site.finish_field(
-            field->type,
-            FieldProjection {.owner = structure->owner, .field_index = index},
-            std::move(receiver),
-            span
-        );
+        const auto projection = FieldProjection {.owner = structure->owner, .field_index = index};
+        site.observe_field(field->origin, source.name_span, field->type);
+        return site.finish_field(field->type, projection, std::move(receiver), span);
     }
     return std::unexpected(site.fail(
         source.name_span,

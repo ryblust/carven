@@ -38,6 +38,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:failures").value(),
+                    .library = std::nullopt,
                 }
             );
 
@@ -86,6 +87,7 @@ const TestSuite suite([] static noexcept {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain =
                             LinkageDomain::explicit_value("test:catch-warnings").value(),
+                        .library = std::nullopt,
                     }
                 );
 
@@ -431,6 +433,7 @@ const TestSuite suite([] static noexcept {
                     TargetPlanningRequest {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain = *LinkageDomain::explicit_value("test:entry"),
+                        .library = std::nullopt,
                     }
                 );
                 if (!item.error.has_value()) {
@@ -514,6 +517,7 @@ const TestSuite suite([] static noexcept {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain =
                             *LinkageDomain::explicit_value("test:failure-explanations"),
+                        .library = std::nullopt,
                     }
                 );
                 if (!(expect(!(result.has_value())))) {
@@ -576,6 +580,7 @@ const TestSuite suite([] static noexcept {
                     TargetPlanningRequest {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain = *LinkageDomain::explicit_value("test:catch-type-names"),
+                        .library = std::nullopt,
                     }
                 );
                 if (!expect(!(result.has_value()))) {
@@ -620,6 +625,7 @@ const TestSuite suite([] static noexcept {
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:adoption").value(),
+                .library = std::nullopt,
             }
         );
         expect(result.has_value());

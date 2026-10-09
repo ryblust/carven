@@ -55,7 +55,8 @@ const TestSuite suite([] static noexcept {
                     const auto compilation = PlannedCompilation::build(
                         analyze_test_program(source),
                         {.test_mode = TestGenerationMode::None,
-                         .linkage_domain = *LinkageDomain::explicit_value("linear_composition")}
+                         .linkage_domain = *LinkageDomain::explicit_value("linear_composition"),
+                         .library = std::nullopt}
                     );
 
                     struct Query final {

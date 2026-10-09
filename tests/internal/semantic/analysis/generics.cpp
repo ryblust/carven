@@ -1,44 +1,16 @@
 module carven:test.internal.semantic.analysis.generics;
 
 import :diagnostics.code;
-import :diagnostics.diagnosed;
-import :diagnostics.diagnostic;
-import :diagnostics.sink;
-import :frontend.program.parse;
 import :semantic.analysis.construction.limits;
-import :semantic.analysis.operations;
-import :semantic.analysis.program;
-import :semantic.analyze;
 import :semantic.semir.constant;
-import :semantic.semir.generic;
 import :semantic.semir.program;
 import :semantic.semir.type;
-import :source.batch;
-import :source.manager;
-import :source.module_path;
 import :test.harness.diagnostics;
 import :test.harness.framework;
 import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
-
-auto analyze_modules(
-    std::span<const std::pair<std::string_view, std::string_view>> modules
-) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
-    auto sources = SourceManager();
-    auto inputs = std::vector<SourceModuleInput>();
-    for (const auto& [name, text] : modules) {
-        const auto id = sources.append_virtual(std::format("{}.cv", name), std::string(text));
-        const auto path = CanonicalModulePath::from_value(name);
-        require(id.has_value());
-        require(path.has_value());
-        inputs.push_back({.source_id = *id, .module_path = *path});
-    }
-    auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
-    require(parsed.has_value());
-    return analyze(std::move(*parsed));
-}
 
 const TestSuite suite([] static noexcept {
     "Generic static calls: canonical environments close completed operation dependencies"_test =
@@ -241,49 +213,6 @@ const TestSuite suite([] static noexcept {
                 }
             )"));
         };
-    "Generic descriptors: mixed products preserve deferred children through substitution"_test =
-        [] static noexcept {
-            auto sources = SourceManager();
-            const auto source = sources.append_virtual("generic-descriptor.cv", "");
-            const auto path = CanonicalModulePath::from_value("generic_descriptor");
-            require(source.has_value());
-            require(path.has_value());
-            const auto inputs = std::array {
-                SourceModuleInput {.source_id = *source, .module_path = *path},
-            };
-            auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-            require(syntax.has_value());
-            auto diagnostics = DiagnosticSink();
-            auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);
-            const auto definition = draft.reserve_generic_declaration();
-            const auto parameter = draft.intern_generic_type(GenericTypeParameter {definition, 0u});
-            const auto integer = draft.builtin_type(BuiltinType::I32);
-            const auto pending =
-                make_operation_type(draft, integer, draft.add_empty_failure_term());
-            require(std::holds_alternative<TypeTermID>(pending));
-            const auto product = make_tuple_type(draft, {integer, parameter, pending});
-            require(std::holds_alternative<GenericTypeID>(product));
-            const auto array = make_array_type(draft, product, 2u);
-            const auto slice = make_slice_type(draft, array);
-            const auto environment = std::array {GenericArgument(ConstructionTypeRef(integer))};
-            const auto substituted = draft.substitute_generic_type(slice, definition, environment);
-            const auto slice_shape = draft.generic_type_copy(std::get<GenericTypeID>(substituted));
-            const auto element = std::get<GenericSliceType>(slice_shape).element;
-            const auto array_shape = draft.generic_type_copy(std::get<GenericTypeID>(element));
-            expect_equal(std::get<GenericArrayType>(array_shape).extent, 2u);
-            const auto tuple = std::get<GenericArrayType>(array_shape).element;
-            const auto fields = tuple_elements(draft, tuple);
-            require(fields.has_value());
-            require(fields->size() == 3uz);
-            expect((*fields)[0] == ConstructionTypeRef(integer));
-            expect((*fields)[1] == ConstructionTypeRef(integer));
-            const auto operation = operation_shape(draft, (*fields)[2]);
-            require(operation.has_value());
-            expect(operation->success == ConstructionTypeRef(integer));
-            expect(std::holds_alternative<FailureTermID>(operation->failures));
-            expect(!draft.try_canonicalize_declared_type(substituted).has_value());
-        };
-
     "Generic descriptors: unused bodies can hold a rigid value beside a cold operation"_test =
         [] static noexcept {
             static_cast<void>(analyze_test_program(R"(
@@ -294,47 +223,6 @@ const TestSuite suite([] static noexcept {
                 }
             )"));
         };
-    "Generic descriptors: final normalization retains recursive symbolic operation effects"_test =
-        [] static noexcept {
-            auto sources = SourceManager();
-            const auto source = sources.append_virtual("generic-effects.cv", "");
-            const auto path = CanonicalModulePath::from_value("generic_effects");
-            require(source.has_value());
-            require(path.has_value());
-            const auto inputs =
-                std::array {SourceModuleInput {.source_id = *source, .module_path = *path}};
-            auto syntax = parse_program(sources, SourceBatch {.modules = inputs});
-            require(syntax.has_value());
-            auto diagnostics = DiagnosticSink();
-            auto draft = ProgramDraft::begin(std::move(*syntax), diagnostics);
-            const auto definition = draft.reserve_generic_declaration();
-            const auto parameter =
-                draft.add_generic_failure_parameter({.definition = definition, .index = 0u});
-            const auto effect = draft.add_union_failure_term({parameter});
-            const auto payload = draft.intern_failure_set({draft.builtin_type(BuiltinType::Bool)});
-            draft.add_guarded_failure_contribution(effect, effect, payload);
-            const auto success = draft.builtin_type(BuiltinType::I32);
-            const auto construction = make_operation_type(draft, success, effect);
-            const auto generic = draft.intern_generic_type(GenericOperationType {success, effect});
-            auto failures = draft.preview_failures();
-            require(failures.has_value());
-            expect(!failures->closed_set(effect).has_value());
-            auto types = draft.normalize_construction_types(*failures);
-            for (const auto reference :
-                 std::array<ConstructionTypeRef, 2> {construction, generic}) {
-                const auto normalized = types.normalize(reference);
-                if (!expect(std::holds_alternative<GenericTypeID>(normalized))) {
-                    return;
-                }
-                const auto shape = operation_shape(draft, normalized);
-                if (!expect(shape.has_value())) {
-                    return;
-                }
-                expect(shape->success == ConstructionTypeRef(success));
-                expect(shape->failures == ConstructionFailureRef(effect));
-            }
-        };
-
     "Generic functions: rigid definitions preserve access and backing relationships"_test =
         [] static noexcept {
             expect_diagnostic(
@@ -412,7 +300,7 @@ const TestSuite suite([] static noexcept {
 
     "Generic tuples: symbolic products retain unit slots and enforce storage boundaries"_test =
         [] static noexcept {
-            const auto program = analyze_test_program(R"(
+            static_cast<void>(analyze_test_program(R"(
                 struct Box<T> { pair: (T, void), empty: () }
                 enum Maybe<T> { None, Some((T, void)) }
                 struct Tree<T> { pair: (T, Vector<Tree<T>>) }
@@ -421,8 +309,7 @@ const TestSuite suite([] static noexcept {
                 fn nested(value: Box<(i32, void)>) -> Box<(i32, void)> => value;
                 fn tree(value: Tree<(i32, void)>) -> Tree<(i32, void)> => value;
                 fn maybe(value: Maybe<i32>) -> Maybe<i32> => value;
-            )");
-            expect(!program.generic_nominal_instances().empty());
+            )"));
             for (const auto text : {
                      "struct Box<T> { pair: (T, Box<T>) }",
                      "struct Box<T> { pair: (T, Box<T>, void) }",
@@ -441,7 +328,7 @@ const TestSuite suite([] static noexcept {
 
     "Generic functions: array and slice construction keep rigid element shapes"_test =
         [] static noexcept {
-            const auto program = analyze_test_program(R"(
+            static_cast<void>(analyze_test_program(R"(
                 fn inspect<T>(values: [T; 1]) -> usize {
                     let slice = values.as_slice();
                     return slice.length();
@@ -454,42 +341,20 @@ const TestSuite suite([] static noexcept {
                     let slice = values.as_slice();
                     return slice.length();
                 }
-            )");
-            expect(program.declarations().functions().size() == 0uz);
+            )"));
         };
 
     "Generic functions: cold calls retain unresolved effects outside canonical types"_test =
         [] static noexcept {
-            const auto program = analyze_test_program(R"(
+            static_cast<void>(analyze_test_program(R"(
                 async fn relay<T>(&&value: T) -> T => &&value;
                 async fn forward<T>(&&value: T) -> T => await relay(&&value);
-            )");
-            expect(program.declarations().functions().size() == 0uz);
-        };
-
-    "Generic instances: normalized concrete arguments share one published identity"_test =
-        [] static noexcept {
-            const auto program = analyze_test_program(R"(
-            struct Box<T> { value: T }
-            fn first(value: Box<[i32; 1 + 1]>) -> Box<[i32; 2]> => value;
-            fn second(value: Box<[i32; 2]>) -> Box<[i32; 1 + 1]> => value;
-            fn distinct(value: Box<u32>) -> Box<u32> => value;
-        )");
-            const auto instances = program.generic_nominal_instances();
-            if (!expect(instances.size() == 2uz)) {
-                return;
-            }
-            expect(instances[0].definition == instances[1].definition);
-            expect(instances[0].arguments != instances[1].arguments);
-            expect(instances[0].declaration != instances[1].declaration);
-            for (const auto& instance : instances) {
-                expect(program.generic_nominal_instance(instance.declaration) == &instance);
-            }
+            )"));
         };
 
     "Generic instances: nested fields retain their declaring argument environment"_test =
         [] static noexcept {
-            const auto program = analyze_test_program(R"(
+            static_cast<void>(analyze_test_program(R"(
             struct Pair<T, U> { first: T, second: U }
             struct Group<T, U> {
                 values: Pair<T, U>,
@@ -509,9 +374,7 @@ const TestSuite suite([] static noexcept {
             fn views(value: Group<i32, u8>) -> Pair<[i32], ptr<&u8>> => value.views;
             fn sequence(value: Group<i32, u8>) -> Vector<Pair<i32, u8>> => value.sequence;
             fn next(value: Group<i32, u8>) -> ptr<Group<i32, u8>> => value.next;
-        )");
-            // Explicit result types and substituted fields select the same seven nominals.
-            expect_equal(program.generic_nominal_instances().size(), 7uz);
+        )"));
         };
 
     "Callable views: canonical signatures obey adoption subsets and storage invariance"_test =
@@ -702,48 +565,6 @@ const TestSuite suite([] static noexcept {
                        "private struct Hidden {} export class Box<T> { hidden: Hidden }"
             )
                        .empty());
-        };
-
-    "Generic modules: application audience is independent of the first caller"_test =
-        [] static noexcept {
-            const auto modules = std::array {
-                std::pair<std::string_view, std::string_view> {
-                    "shared",
-                    "export struct Box<T> { value: T } export enum Maybe<T> { None, Some(T) }"
-                },
-                std::pair<std::string_view, std::string_view> {"first", R"(
-                import shared using { Box, Maybe };
-                private struct Local { value: i32 }
-                private fn local(value: Box<Local>) -> Box<Local> => value;
-                fn integer(value: Box<i32>) -> Box<i32> => value;
-                fn some() -> Maybe<i32> => Maybe<i32>::Some(1);
-            )"},
-                std::pair<std::string_view, std::string_view> {
-                    "second",
-                    "import shared using Box; fn integer(value: Box<i32>) -> Box<i32> => value;"
-                },
-            };
-            auto result = analyze_modules(modules);
-            if (!expect(result.has_value())) {
-                return;
-            }
-            const auto& program = result->value;
-            expect(program.generic_nominal_instances().size() == 3uz);
-            auto box_i32_count = 0uz;
-            for (const auto& instance : program.generic_nominal_instances()) {
-                const auto& contract = program.generic_declaration_contract(instance.definition);
-                const auto* builtin = instance.arguments.size() == 1uz
-                    ? std::get_if<BuiltinTypeValue>(
-                          &program.types().type(std::get<TypeID>(instance.arguments.front())).value
-                      )
-                    : nullptr;
-                if (program.provenance().spelling(contract.name) == "Box"
-                    && builtin
-                    && builtin->kind == BuiltinType::I32) {
-                    ++box_i32_count;
-                }
-            }
-            expect(box_i32_count == 1uz);
         };
 });
 

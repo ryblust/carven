@@ -55,6 +55,7 @@ public:
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = *LinkageDomain::explicit_value("test:utf"),
+                .library = std::nullopt,
             }
         );
     }

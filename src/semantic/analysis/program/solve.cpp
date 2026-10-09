@@ -245,6 +245,9 @@ auto ProgramDraft::resolve() && noexcept -> AnalysisResult<ResolvedAnalysisProgr
     }
     auto failure_owner = std::make_shared<const FailureSolution>(std::move(*failures));
     const auto resolved_types = normalize_construction_types(*failure_owner);
+    if (source_observer != nullptr) {
+        source_observer->resolve_types(resolved_types);
+    }
     auto generics = take_generic_analysis_snapshot(resolved_types, failure_owner);
     finalize_callable_signatures(resolved_types, *failure_owner);
     auto declarations = std::move(input.declarations).seal(resolved_types);

@@ -11,7 +11,6 @@ configuration.
 | Path | Responsibility |
 | --- | --- |
 | [`clang-module-pipeline/`](clang-module-pipeline/README.md) | Versioned Xmake patch and wrappers for Clang module compilation and incremental dependency checks |
-| [`crafts.lua`](crafts.lua) | Shared public Crafts objects for repository tests and examples |
 | [`format.lua`](format.lua) | C++ and Carven formatting and formatting checks |
 | [`generated.clang-tidy`](generated.clang-tidy) | clang-tidy overrides for generated C++ |
 
@@ -20,14 +19,14 @@ configuration.
 `format.lua` implements `format-check` to report formatting violations and
 `format` to apply formatting.
 Both use clang-format for `.cpp`, `.cppm`, `.h`, and `.hpp` files under `src/`,
-`tests/`, `crafts/`, `examples/`, `benchmarks/`, and Graver's source and test directories.
+`tests/`, `crafts/`, `examples/`, `benchmarks/`, `tools/format/`, and `tools/workspace/`.
 On macOS, the script queries Homebrew's local installation prefix and looks in
 `opt/llvm/bin`, then falls back to PATH. Other platforms use PATH.
 
-Both formatting commands require a built Graver and use it for `.cv` files
+Both formatting commands require a built `carven-format` and use it for `.cv` files
 under `crafts/`, `examples/`, `tests/`, and `benchmarks/`, plus benchmark
-`.cv.fixture` inputs and Graver's expected-output fixtures.
-Deliberately unformatted Graver inputs and the three lexical/syntax rejection fixtures listed in
+`.cv.fixture` inputs and the formatter’s expected-output fixtures.
+Deliberately unformatted formatter inputs and the three lexical/syntax rejection fixtures listed in
 `format.lua` are excluded. Other formatting or parse failures fail the command.
 
 ## Generated-code analysis profile
@@ -43,19 +42,14 @@ for generated C++.
 compilation and incremental dependency checks. The root `xmakew` and `xmakew.ps1`
 entry points launch its wrappers.
 
-## Shared Crafts compilation
+## Standard-library compilation
 
-Repository test and example targets opt into `repository-crafts` explicitly.
-`crafts.lua` defines object providers for their C++ standard, test-runner mode,
-SIMD backend, exception, RTTI, and assertion configurations. Only required
-providers are built. Targets that test private linkage domains keep the package
-rule's ordinary independent compilation.
+Repository tests and examples attach the packaged `@carven/carven` rule. The
+rule owns installed Crafts source collection, generation ordering, and native
+object dependencies. Targets with matching compiler, Crafts, and native
+compilation settings and prerequisite targets share the installed library's
+objects. Target settings
+select the configuration automatically; project-local Crafts remain target inputs.
 
-Each consumer still performs Carven analysis and generation. Matching consumers
-reuse the provider's native objects for public Crafts sources; generated headers,
-shared source contents, and native compiler settings must agree before reuse.
-`std/json/syntax` and `std/utf/block` remain consumer-local because static
-specialization ordering can change their generated definitions. This is a
-repository build optimization, not a separately distributed Crafts ABI.
-
-Compiler and Graver modules remain `moduleonly` targets and reuse their BMIs.
+Compiler, formatter, and workspace modules use `moduleonly` and reuse their BMIs.
+Workspace scenarios share the compiler's internal test executable.

@@ -186,7 +186,7 @@ auto realize_writer_statements(
     ));
     const auto append_text = [&](std::string_view text) noexcept {
         if (!text.empty()) {
-            statements.push_back(statement_expression(call_member(
+            statements.push_back(discard_statement(call_member(
                 name_expression(writer),
                 "append",
                 target_expressions(
@@ -210,7 +210,7 @@ auto realize_writer_statements(
         if (const auto* field = std::get_if<IntegerFormatField>(&format.fields[index])) {
             auto width = field->static_width ? size_expression(*field->static_width)
                                              : std::move(operands[operand++]);
-            statements.push_back(statement_expression(template_call_expression(
+            statements.push_back(discard_statement(template_call_expression(
                 member_expression(
                     name_expression(writer),
                     TargetIdentifier::from_spelling(
@@ -230,7 +230,7 @@ auto realize_writer_statements(
             auto member =
                 member_expression(name_expression(writer), TargetIdentifier::from_spelling(method));
             auto arguments = target_expressions(std::move(argument));
-            statements.push_back(statement_expression(
+            statements.push_back(discard_statement(
                 field->mode == FloatingFormatMode::Shortest
                     ? call_expression(std::move(member), std::move(arguments))
                     : template_call_expression(
@@ -243,7 +243,7 @@ auto realize_writer_statements(
             const auto method = *builtin == BuiltinType::Bool ? "boolean"
                 : *builtin == BuiltinType::Char               ? "character"
                                                               : "append";
-            statements.push_back(statement_expression(call_member(
+            statements.push_back(discard_statement(call_member(
                 name_expression(writer),
                 method,
                 target_expressions(std::move(argument))

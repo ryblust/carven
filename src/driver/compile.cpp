@@ -81,6 +81,10 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
             "      --stdout              Print explicit inputs with path headings\n"
             "      --linkage-domain=<id> Set the private namespace identity\n"
             "                            (default: derived from the output directory)\n"
+            "      --library-domain=<id> Set the identity of a fixed source library\n"
+            "      --library-module=<path> Select a canonical library module (repeatable)\n"
+            "      --emit-library        Emit library implementations for their owning build\n"
+            "                            (default: emit only consumer implementations)\n"
             "\n"
             "Test options:\n"
             "      --tests               Emit runtime tests, runner, and test entry\n"
@@ -89,6 +93,7 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
             "                            (default: no runtime test artifacts)\n"
             "\n"
             "Options:\n"
+            "      --explicit-inputs     Use exactly the supplied source files\n"
             "      --timings             Show total and stage timings on stderr\n"
             "  -h, --help                Show this help\n"
             "\n"
@@ -108,8 +113,12 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
         return emit_driver_error(linkage_domain.error());
     }
 
-    const auto sources =
-        collect_command_sources(executable, request->input_paths, timings.output());
+    const auto sources = collect_command_sources(
+        executable,
+        request->input_paths,
+        timings.output(),
+        request->explicit_inputs
+    );
     if (!sources) {
         return emit_driver_error(sources.error());
     }
@@ -140,25 +149,26 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
         }
         selection = displayed_modules;
     }
-    const auto artifacts = generate_artifacts(
-        std::move(*semantic),
-        TargetPlanningRequest {
-            .test_mode = request->test_mode,
-            .linkage_domain = std::move(*linkage_domain),
-        },
-        selection,
-        timings.output()
-    );
+    const auto generation = TargetPlanningRequest {
+        .test_mode = request->test_mode,
+        .linkage_domain = std::move(*linkage_domain),
+        .library = std::move(request->library),
+    };
+    const auto artifacts =
+        generate_artifacts(std::move(*semantic), generation, selection, timings.output());
+    if (!artifacts) {
+        return emit_driver_error(artifacts.error());
+    }
 
     auto writing = TimingScope(timings.output(), TimingStage::ArtifactWriting);
     const auto written = request->destination.visit(
         Overloaded {
             [&](const DirectoryArtifactDestination& destination) noexcept {
-                return write_artifacts(destination.root, artifacts);
+                return write_artifacts(destination.root, *artifacts);
             },
             [&](const StandardOutputArtifactDestination&) noexcept
                 -> std::expected<void, std::string> {
-                print_artifacts(artifacts);
+                print_artifacts(*artifacts);
                 return {};
             },
         }

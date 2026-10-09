@@ -80,8 +80,6 @@ target("carven")
     end
 target_end()
 
-includes("xmake/crafts.lua")
-
 includes("examples")
 includes("tests/harness")
 includes("tests/crafts")
@@ -89,7 +87,8 @@ includes("tests/cli")
 includes("tests/interop")
 includes("tests/internal")
 includes("tests/language")
-includes("tools/graver")
+includes("tools/format")
+includes("tools/workspace")
 
 task("bench")
     set_menu({

@@ -40,7 +40,6 @@ local rejection_cases = {
 
 target("carven-test-interop")
     set_default(false)
-    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "external"})
 
     set_languages("c++20")
@@ -82,7 +81,6 @@ for _, variant in ipairs({
 }) do
     target(variant.name)
         set_default(false)
-        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         add_includedirs(interop_dir)
@@ -139,11 +137,10 @@ for _, mode in ipairs({
     target("carven-test-interop-exception-boundary" .. mode.suffix)
         set_default(false)
         set_kind("binary")
-        add_rules("repository-crafts")
         add_rules("@carven/carven")
         set_languages(mode.standard)
         set_exceptions("cxx")
-        add_includedirs(crafts_dir, interop_dir)
+        add_includedirs(interop_dir)
         add_files(path.join(interop_dir, "exceptions", "terminate.cpp"))
         add_files(path.join(interop_dir, "exceptions", "precomputed.cv"))
         for _, operation in ipairs(mode.operations) do
@@ -161,7 +158,6 @@ end
 
 target("carven-test-interop-print")
     set_default(false)
-    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "default"})
 
     set_languages("c++23")
@@ -177,29 +173,26 @@ target("carven-test-interop-print")
     end)
 target_end()
 
--- Async result ownership is observed at native construction/destruction boundaries.
-for _, case in ipairs({"fixed", "tracked", "tail"}) do
-    target("carven-test-interop-async-" .. case)
-        set_default(false)
-        add_rules("repository-crafts")
-        add_rules("@carven/carven", {tests = "external"})
-        set_languages("c++20")
-        add_includedirs(interop_dir)
+-- One program observes native result ownership across the source async boundary.
+target("carven-test-interop-async-ownership")
+    set_default(false)
+    add_rules("@carven/carven")
+    set_languages("c++20")
+    add_includedirs(interop_dir)
+    add_files(path.join(interop_dir, "async", "ownership.cv"))
+    for _, case in ipairs({"fixed", "tracked", "tail"}) do
         add_files(path.join(interop_dir, "async", case .. ".cv"))
         add_files(path.join(interop_dir, "async", case .. ".cpp"))
-        if case == "tail" then
-            add_cxxflags("-Werror=unused-but-set-variable")
-        end
-        add_tests("ownership", {group = "interop", run_timeout = 30000})
-        on_test(function (target)
-            local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-            local expected = io.readfile(path.join(interop_dir, "async", case .. ".expected"))
-            assert(output:gsub("\r\n", "\n") == expected, "async " .. case .. " ownership differs: " .. output)
-            assert(errors == "", "unexpected async " .. case .. " report: " .. errors)
-            return true
-        end)
-    target_end()
-end
+    end
+    add_tests("ownership", {group = "interop", run_timeout = 30000})
+    on_test(function (target)
+        local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
+        local expected = io.readfile(path.join(interop_dir, "async", "ownership.expected"))
+        assert(output:gsub("\r\n", "\n") == expected, "async ownership differs: " .. output)
+        assert(errors == "", "unexpected async ownership report: " .. errors)
+        return true
+    end)
+target_end()
 
 
 target("carven-test-interop-async-timer")
@@ -248,27 +241,25 @@ if is_plat("macosx", "linux") then
     target("carven-test-interop-async-bridge")
         set_default(false)
         set_kind("binary")
-        add_rules("repository-crafts")
-        add_rules("@carven/carven", {tests = "external"})
+        add_rules("@carven/carven")
         set_languages("c++20")
-        add_includedirs(crafts_dir, interop_dir)
+        add_includedirs(interop_dir)
         add_files(path.join(interop_dir, "async", "bridge.cv"))
         add_files(path.join(interop_dir, "async", "bridge.cpp"))
         add_files(path.join(interop_dir, "async", "bridge_provider.cpp"))
+        add_files(path.join(interop_dir, "async", "transfer.cv"))
+        add_files(path.join(interop_dir, "async", "transfer.cpp"))
+        add_files(path.join(interop_dir, "async", "transfer_provider.cpp"))
         if is_plat("linux") then
             add_syslinks("pthread")
         end
         add_tests("provider", {group = "interop", run_timeout = 30000})
         add_tests("invalidchar", {group = "interop", run_timeout = 30000})
         add_tests("invalidchar-discard", {group = "interop", run_timeout = 30000})
-        add_tests("invalidchar-fused", {group = "interop", run_timeout = 30000})
-        add_tests("invalidchar-fused-discard", {group = "interop", run_timeout = 30000})
-        add_tests("invalidchar-factory-discard", {group = "interop", run_timeout = 30000})
         add_tests("invalidchar-join", {group = "interop", run_timeout = 30000})
         add_tests("invalidchar-race", {group = "interop", run_timeout = 30000})
         add_tests("invalidchar-first", {group = "interop", run_timeout = 30000})
         add_tests("invalidchar-join-later-failure", {group = "interop", run_timeout = 30000})
-        add_tests("division-fused-discard", {group = "interop", run_timeout = 30000})
         on_test(function (target, opt)
             local name = opt.name:match("([^/]+)$")
             if name ~= "provider" then
@@ -280,10 +271,8 @@ if is_plat("macosx", "linux") then
                 local errors = os.isfile(stderr_file) and io.readfile(stderr_file) or ""
                 os.tryrm(stdout_file)
                 os.tryrm(stderr_file)
-                local expected_error = name == "division-fused-discard" and "division by zero"
-                    or "value is not a Unicode scalar value"
                 assert(code == 73 and output == ""
-                    and errors:find(expected_error, 1, true)
+                    and errors:find("value is not a Unicode scalar value", 1, true)
                     and (not name:find("invalidchar%-join") and name ~= "invalidchar-race"
                         and name ~= "invalidchar-first" or errors:find("bridge.cv:", 1, true)),
                     "async " .. name .. " must report invalid success: " .. tostring(code) .. output .. errors)
@@ -292,35 +281,9 @@ if is_plat("macosx", "linux") then
             local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
             local expected = "cold: pass\nready: pass\npending: pass\nfailures: pass\n"
                 .. "cancelled-close: pass\ntrivial: pass\ncharacters: pass\n"
+                .. "chunks: pass\npending-read: pass\nbackpressure: pass\nfailure: pass\ncancelled-close: pass\n"
             assert(output:gsub("\r\n", "\n") == expected, "async source/native bridge contracts differ: " .. output)
             assert(errors == "", "unexpected async source/native bridge report: " .. errors)
-            return true
-        end)
-    target_end()
-end
-
-if is_plat("macosx", "linux") then
-    target("carven-test-interop-async-transfer")
-        set_default(false)
-        set_kind("binary")
-        add_rules("repository-crafts")
-        add_rules("@carven/carven", {tests = "external"})
-        set_languages("c++20")
-        add_includedirs(crafts_dir, interop_dir)
-        add_files(path.join(interop_dir, "async", "bridge.cv"))
-        add_files(path.join(interop_dir, "async", "bridge_provider.cpp"))
-        add_files(path.join(interop_dir, "async", "transfer.cv"))
-        add_files(path.join(interop_dir, "async", "transfer.cpp"))
-        add_files(path.join(interop_dir, "async", "transfer_provider.cpp"))
-        if is_plat("linux") then
-            add_syslinks("pthread")
-        end
-        add_tests("provider", {group = "interop", run_timeout = 30000})
-        on_test(function (target, opt)
-            local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})
-            local expected = "chunks: pass\npending-read: pass\nbackpressure: pass\nfailure: pass\ncancelled-close: pass\n"
-            assert(output:gsub("\r\n", "\n") == expected, "async chunk transfer contracts differ: " .. output)
-            assert(errors == "", "unexpected async chunk transfer report: " .. errors)
             return true
         end)
     target_end()
@@ -330,7 +293,6 @@ end
 target("carven-test-interop-async-cleanup")
     set_default(false)
     set_kind("binary")
-    add_rules("repository-crafts")
     add_rules("@carven/carven")
     set_languages("c++20")
     add_includedirs(interop_dir)

@@ -35,7 +35,7 @@ auto BodyRealizer::emit_return(
     if (local_result_exit && std::holds_alternative<LoweringReturnResult>(result)) {
         if (std::holds_alternative<LoweringDiscardResult>(local_result_exit->result)) {
             if (value) {
-                destination.emit(statement_expression(std::move(*value)));
+                destination.emit(discard_statement(std::move(*value)));
             }
         } else {
             deliver_result(
@@ -74,7 +74,7 @@ auto BodyRealizer::emit_return(
                     || std::holds_alternative<PointerTypeValue>(type);
                 if (value.has_value()) {
                     if (context.is_void(signature.result)) {
-                        destination.emit(statement_expression(std::move(*value)));
+                        destination.emit(discard_statement(std::move(*value)));
                     } else if (direct) {
                         arguments.push_back(std::move(*value));
                     } else {
@@ -103,13 +103,13 @@ auto BodyRealizer::emit_return(
                 );
             } else if (context.is_void(signature.result)) {
                 if (value) {
-                    destination.emit(statement_expression(std::move(*value)));
+                    destination.emit(discard_statement(std::move(*value)));
                 }
                 value = std::nullopt;
             }
         } else if (std::holds_alternative<TestBodyExit>(inputs.exit)) {
             if (value) {
-                destination.emit(statement_expression(std::move(*value)));
+                destination.emit(discard_statement(std::move(*value)));
             }
             value = std::nullopt;
         }
@@ -169,7 +169,7 @@ auto BodyRealizer::deliver_failure(
         return;
     }
     if (relay) {
-        destination.emit(statement_expression(call_member(
+        destination.emit(discard_statement(call_member(
             name_expression(relay->slot.storage),
             "emplace",
             target_expressions(std::move(value))

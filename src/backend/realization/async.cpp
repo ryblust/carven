@@ -109,7 +109,7 @@ auto BodyRealizer::close_async_locals(
             context.intrinsic_type(TargetSymbol::RuntimeAsyncClosingPolicy),
             TargetIdentifier::from_spelling(cancel ? "RequestCancelAndClose" : "CloseOnly")
         );
-        destination.emit(statement_expression(co_await_expression(
+        destination.emit(discard_statement(co_await_expression(
             call_member(name_expression(scope), "close", target_expressions(std::move(policy)))
         )));
     }
@@ -310,7 +310,7 @@ auto BodyRealizer::ExpressionBuilder::complete_awaited(
             &owner.context.semantic().types().type(operation_type->success).value
         );
         builtin != nullptr && builtin->kind == BuiltinType::Char) {
-        statements.emit(statement_expression(call_expression(
+        statements.emit(discard_statement(call_expression(
             intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
             target_expressions(
                 member_expression(

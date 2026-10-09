@@ -2,6 +2,7 @@ module carven:test.internal.driver.options;
 
 import :backend.generation.request;
 import :driver.options;
+import :source.module_path;
 import :test.harness.framework;
 import std;
 
@@ -121,6 +122,18 @@ const TestSuite suite([] static noexcept {
                 .option = std::nullopt,
             },
             InvalidCase {
+                .name = "library without identity",
+                .args = {"--library-module=crafts.carven.std.math", "main.cv"},
+                .kind = CompileOptionErrorKind::IncompleteLibraryOptions,
+                .option = std::nullopt,
+            },
+            InvalidCase {
+                .name = "invalid canonical library module",
+                .args = {"--library-module=../math", "main.cv"},
+                .kind = CompileOptionErrorKind::InvalidLibraryModule,
+                .option = "../math",
+            },
+            InvalidCase {
                 .name = "missing source input",
                 .args = {"--tests=default"},
                 .kind = CompileOptionErrorKind::NoSourceInput,
@@ -137,6 +150,33 @@ const TestSuite suite([] static noexcept {
             expect((result.error().option == test_case.option));
         });
     };
+
+    "Compile options: library identity and emission are independent of application tests"_test =
+        [] static noexcept {
+            auto args = std::vector<const char*> {
+                "--library-domain=installed-toolchain",
+                "--library-module=crafts.carven.std.math",
+                "--library-module=crafts.carven.std.time.clock",
+                "--tests=external",
+                "main.cv",
+            };
+            const auto consumer = parse_compile_command_options(args);
+            require(consumer.has_value());
+            require(consumer->library.has_value());
+            const auto& library = *consumer->library;
+            expect_equal(library.linkage_domain.value(), std::string_view("installed-toolchain"));
+            require_equal(library.modules.size(), 2uz);
+            expect_equal(
+                library.modules[1].value(),
+                std::string_view("crafts.carven.std.time.clock")
+            );
+            expect(!library.emit_implementations);
+            expect_equal(consumer->test_mode, TestGenerationMode::RunnerHeader);
+            args.push_back("--emit-library");
+            const auto provider = parse_compile_command_options(args);
+            require(provider.has_value());
+            expect(provider->library->emit_implementations);
+        };
 });
 
 } // namespace

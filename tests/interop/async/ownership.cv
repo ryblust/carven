@@ -1,0 +1,11 @@
+import .fixed using { run_fixed, ParentFailure };
+import .tracked using run_tracked;
+import .tail using run_tail;
+import std::time.timeout using Timeout;
+import std::time.duration using RangeError;
+
+async fn main() throw ParentFailure + Timeout + RangeError {
+    await run_fixed()?;
+    await run_tracked();
+    await run_tail();
+}

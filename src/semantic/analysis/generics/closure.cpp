@@ -9,8 +9,23 @@ import std;
 
 auto ProgramDraft::normalize_generic_environment(
     std::span<const GenericArgument> arguments,
-    const FailureSolution& failures
+    const FailureSolution* failures
 ) noexcept -> std::optional<CanonicalGenericEnvironment> {
+    const auto closed_failure =
+        [&](ConstructionFailureRef effect) noexcept -> std::optional<FailureSetID> {
+        if (const auto* closed = std::get_if<FailureSetID>(&effect)) {
+            return *closed;
+        }
+        if (const auto* symbolic = std::get_if<GenericFailureID>(&effect)) {
+            const auto expression = storage.failure_constraints.generic_failure_copy(*symbolic);
+            if (expression.parameters.empty() && expression.guards.empty()) {
+                return storage.failure_sets.intern(expression.concrete_members);
+            }
+            return std::nullopt;
+        }
+        // Inference terms remain pending until their caller supplies a solution.
+        return failures ? failures->closed_set(effect) : std::nullopt;
+    };
     const auto normalize_type = [&](auto&& self,
                                     ConstructionTypeRef type) noexcept -> std::optional<TypeID> {
         type = unwrap_type_alias(*this, type);
@@ -23,13 +38,13 @@ auto ProgramDraft::normalize_generic_environment(
                 storage.types,
                 storage.callable_signatures,
                 [&](ConstructionTypeRef child) noexcept { return self(self, child); },
-                [&](ConstructionFailureRef effect) noexcept { return failures.closed_set(effect); }
+                [&](ConstructionFailureRef effect) noexcept { return closed_failure(effect); }
             );
         }
         const auto shape = generic_type_copy(std::get<GenericTypeID>(type));
         if (const auto* operation = std::get_if<GenericOperationType>(&shape)) {
             const auto success = self(self, operation->success);
-            const auto effect = failures.closed_set(operation->failures);
+            const auto effect = closed_failure(operation->failures);
             if (success && effect) {
                 return intern_type(
                     {.value = OperationTypeValue {.success = *success, .failures = *effect}}
@@ -87,7 +102,7 @@ auto ProgramDraft::normalize_generic_environment(
             }
             result.emplace_back(*closed);
         } else if (const auto* effect = std::get_if<ConstructionFailureRef>(&argument)) {
-            const auto closed = failures.closed_set(*effect);
+            const auto closed = closed_failure(*effect);
             if (!closed) {
                 return std::nullopt;
             }
@@ -261,21 +276,7 @@ auto ProgramDraft::close_generic_calls() noexcept -> AnalysisResult<void> {
         if (!effects) {
             return std::unexpected(effects.error());
         }
-        auto preview = solve_failure_constraints(
-            storage.failure_constraints.snapshot(),
-            storage.failure_sets,
-            provenance_appender.reader(),
-            FailureTypeDiagnosticNames(
-                storage.types,
-                storage.declarations.construction_view(),
-                provenance_appender.reader()
-            ),
-            analysis_diagnostics,
-            false
-        );
-        if (!preview) {
-            return std::unexpected(preview.error());
-        }
+        auto preview = std::optional<FailureSolution>();
         auto progress = false;
         auto pending = std::optional<ProgramOriginID>();
         auto error = std::optional<AnalysisFailure>();
@@ -284,7 +285,15 @@ auto ProgramDraft::close_generic_calls() noexcept -> AnalysisResult<void> {
             if (!call || error) {
                 return;
             }
-            const auto environment = normalize_generic_environment(call->environment, *preview);
+            if (!preview) {
+                auto solved = preview_failures();
+                if (!solved) {
+                    error = solved.error();
+                    return;
+                }
+                preview.emplace(std::move(*solved));
+            }
+            const auto environment = normalize_generic_environment(call->environment, &*preview);
             if (!environment) {
                 pending = expression.origin;
                 return;

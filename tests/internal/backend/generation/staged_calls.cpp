@@ -12,7 +12,6 @@ import :backend.target.expr;
 import :backend.target.stmt;
 import :backend.target.traversal;
 import :backend.target.type;
-import :compiler.compile;
 import :frontend.program.parse;
 import :semantic.analyze;
 import :semantic.semir.decl;
@@ -51,11 +50,8 @@ constexpr auto provider_source = std::string_view(
     "export fn direct() -> i32 => unused();\n"
 );
 
-auto analyze_modules(
-    std::string_view provider_text,
-    std::string_view calls,
-    bool unrelated = false
-) noexcept -> SemIRProgram {
+auto analyze_modules(std::string_view provider_text, std::string_view calls) noexcept
+    -> SemIRProgram {
     auto sources = SourceManager();
     const auto provider = sources.append_virtual("provider.cv", std::string(provider_text));
     const auto consumer = sources.append_virtual(
@@ -69,17 +65,6 @@ auto analyze_modules(
     require(provider_path.has_value());
     require(consumer_path.has_value());
     auto inputs = std::vector<SourceModuleInput>();
-    if (unrelated) {
-        const auto source = sources.append_virtual(
-            "earlier.cv",
-            "struct Earlier { value: i32 } const values: [Earlier] = [{ value: 1 }]; "
-            "export fn earlier() -> i32 => ([](x: i32) => x + 1)(values[0].value);"
-        );
-        const auto path = CanonicalModulePath::from_value("earlier");
-        require(source.has_value());
-        require(path.has_value());
-        inputs.push_back({.source_id = *source, .module_path = *path});
-    }
     inputs.push_back({.source_id = *provider, .module_path = *provider_path});
     inputs.push_back({.source_id = *consumer, .module_path = *consumer_path});
     auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
@@ -195,8 +180,13 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_modules(provider_source, "add(value, 3) + add(value, 4)"),
-                {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("cross_module_stages")}
+                {.test_mode = TestGenerationMode::RunnerHeader,
+                 .linkage_domain = *LinkageDomain::explicit_value("cross_module_stages"),
+                 .library = SourceLibrary {
+                     .modules = {*CanonicalModulePath::from_value("provider")},
+                     .linkage_domain = *LinkageDomain::explicit_value("external-provider"),
+                     .emit_implementations = false,
+                 }}
             );
             const auto names_for_add = instance_names(compilation, "add");
             expect_equal(names_for_add.size(), 2uz);
@@ -247,39 +237,39 @@ const TestSuite suite([] static noexcept {
             expect_equal(consumer.inline_instances, 2uz);
         };
 
-    "Generation: provider artifacts do not depend on their callers"_test = [] static noexcept {
-        const auto generate = [](std::string_view calls, bool unrelated = false) static noexcept {
-            const auto source = std::string("import <vector> using std::vector;\n")
-                + std::string(provider_source) + R"(
-                private struct Record { value: i32 }
-                export fn support(value: i32) -> i32 {
-                    const values: [i32] = [2, 3];
-                    let native = vector<i32> { value };
-                    println(Record { value: values[0] });
-                    return (native[0] as i32) + values[1];
+    "Generation: source libraries reject unsupported declarations and invalid module selections"_test =
+        [] static noexcept {
+            const auto check = [](std::string_view source,
+                                  std::vector<CanonicalModulePath> modules,
+                                  std::string_view error) static noexcept {
+                const auto request = TargetPlanningRequest {
+                    .test_mode = TestGenerationMode::None,
+                    .linkage_domain = *LinkageDomain::explicit_value("application"),
+                    .library = SourceLibrary {
+                        .modules = std::move(modules),
+                        .linkage_domain = *LinkageDomain::explicit_value("library"),
+                        .emit_implementations = false,
+                    },
+                };
+                const auto generated =
+                    generate_artifacts(analyze_test_program(std::string(source)), request);
+                if (expect(!generated.has_value())) {
+                    expect(generated.error().contains(error));
                 }
-            )";
-            return generate_artifacts(
-                analyze_modules(source, calls, unrelated),
-                {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("provider_stability")}
+            };
+            check(
+                "fn value() -> i32 => 1;",
+                {*CanonicalModulePath::from_value("absent")},
+                "unknown"
             );
+            check(
+                "fn value() -> i32 => 1;",
+                {semantic_test_module_path(), semantic_test_module_path()},
+                "duplicate"
+            );
+            check("struct Box<T> { value: T }", {semantic_test_module_path()}, "generic");
+            check("fn main() {}", {semantic_test_module_path()}, "entry point");
         };
-        const auto content = [](const GeneratedArtifactSet& artifacts,
-                                std::string_view path) static noexcept -> std::string {
-            const auto entries = artifacts.entries();
-            const auto found = std::ranges::find(entries, path, &GeneratedArtifact::logical_path);
-            require(found != entries.end());
-            return found->content;
-        };
-        const auto first = generate("add(value, 3) + add(value, 4)");
-        // Caller instances and unrelated types leave provider support and closures stable.
-        const auto second = generate("([](x: i32) => x + 1)(add(value, 5))", true);
-        for (const auto path : {"provider.cpp", "carven/generated/provider.hpp"}) {
-            expect_equal(content(first, path), content(second, path));
-        }
-        expect(content(first, "consumer.cpp") != content(second, "consumer.cpp"));
-    };
 
     "Generation: shared bodies retain identical module references"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
@@ -298,7 +288,8 @@ const TestSuite suite([] static noexcept {
                 "add(value, 5)"
             ),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("shared_body_references")}
+             .linkage_domain = *LinkageDomain::explicit_value("shared_body_references"),
+             .library = std::nullopt}
         );
         const auto names = instance_names(compilation, "add");
         if (!expect_equal(names.size(), 1uz)) {
@@ -377,7 +368,8 @@ const TestSuite suite([] static noexcept {
             fn use(value: i32) -> i32 => add(value, index_value()) + add(value, 3) + add(value, 4);
         )"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("staged_calls")}
+                 .linkage_domain = *LinkageDomain::explicit_value("staged_calls"),
+                 .library = std::nullopt}
             );
             const auto names = instance_names(compilation, "add");
             expect_equal(names.size(), 2uz);
@@ -412,7 +404,8 @@ const TestSuite suite([] static noexcept {
             }
         )"),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("expanded_range")}
+             .linkage_domain = *LinkageDomain::explicit_value("expanded_range"),
+             .library = std::nullopt}
         );
         const auto names = instance_names(compilation, "add");
         expect_equal(names.size(), 3uz);
@@ -463,7 +456,8 @@ const TestSuite suite([] static noexcept {
             }
         )"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("empty_expanded_range")}
+                 .linkage_domain = *LinkageDomain::explicit_value("empty_expanded_range"),
+                 .library = std::nullopt}
             );
             expect(instance_names(compilation, "add").empty());
 
@@ -506,7 +500,8 @@ const TestSuite suite([] static noexcept {
                 fn caller() -> bool => use(7);
             )"),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("omitted_native_edges")}
+             .linkage_domain = *LinkageDomain::explicit_value("omitted_native_edges"),
+             .library = std::nullopt}
         );
         const auto names = instance_names(compilation, "lane");
         expect_equal(names.size(), 1uz);
@@ -537,7 +532,8 @@ const TestSuite suite([] static noexcept {
             fn use() -> i32 => countdown(3);
         )"),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("terminating_static_recursion")}
+             .linkage_domain = *LinkageDomain::explicit_value("terminating_static_recursion"),
+             .library = std::nullopt}
         );
         expect_equal(instance_names(compilation, "countdown").size(), 4uz);
         for (const auto artifact : compilation.target().artifacts()) {
@@ -586,7 +582,8 @@ const TestSuite suite([] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(std::string(input.source)),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("unselected_static_arm")}
+                 .linkage_domain = *LinkageDomain::explicit_value("unselected_static_arm"),
+                 .library = std::nullopt}
             );
             expect(instance_names(compilation, "lane").empty());
             for (const auto artifact : compilation.target().artifacts()) {

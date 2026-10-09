@@ -7,14 +7,18 @@ import :semantic.analysis.ownership;
 import :semantic.analysis.program;
 import :semantic.analysis.validation;
 import :semantic.semir.passing;
+import :support.timing;
 import std;
 
 auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
     const auto diagnostics = analysis_diagnostics;
+    const auto timings = analysis_timings;
+    auto solve_scope = TimingScope(timings, TimingStage::SemanticSolving);
     auto solved = [this]() noexcept {
         auto draft = std::move(*this);
         return std::move(draft).resolve();
     }();
+    solve_scope.stop();
     if (!solved) {
         return std::unexpected(solved.error());
     }
@@ -23,6 +27,7 @@ auto ProgramDraft::finish() && noexcept -> AnalysisResult<SemIRProgram> {
     if (const auto failure = diagnostics.failure()) {
         return std::unexpected(*failure);
     }
+    const auto validation_scope = TimingScope(timings, TimingStage::SemanticValidation);
     const auto& program = *result;
     for (const auto entry : program.bodies().entries()) {
         verify_semantic_body(entry.value, program);

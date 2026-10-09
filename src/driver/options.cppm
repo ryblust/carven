@@ -16,7 +16,9 @@ struct CompileCommandOptions final {
     ArtifactDestination destination;
     TestGenerationMode test_mode;
     std::optional<LinkageDomain> linkage_domain;
+    std::optional<SourceLibrary> library;
     std::vector<std::string_view> input_paths;
+    bool explicit_inputs;
     bool timings;
 };
 
@@ -27,6 +29,9 @@ enum class CompileOptionErrorKind {
     EmptyOutputPath,
     LinkageDomainSpecifiedMoreThanOnce,
     EmptyLinkageDomain,
+    LibraryDomainSpecifiedMoreThanOnce,
+    InvalidLibraryModule,
+    IncompleteLibraryOptions,
     UnknownOption,
     NoSourceInput,
 };

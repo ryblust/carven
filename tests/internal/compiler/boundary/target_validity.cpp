@@ -34,6 +34,7 @@ const TestSuite suite([] static noexcept {
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:target-validity").value(),
+                .library = std::nullopt,
             }
         );
 

@@ -207,4 +207,4 @@ struct TargetStmt final {
     TargetAttribution attribution;
 };
 
-auto statement_expression(TargetExpr expression) noexcept -> TargetStmt;
+auto discard_statement(TargetExpr expression) noexcept -> TargetStmt;

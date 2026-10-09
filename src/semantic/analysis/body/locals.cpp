@@ -70,12 +70,20 @@ auto BodyElaborator::visible_locals() const noexcept -> BodyLocalNames {
     return names;
 }
 
+auto BodyElaborator::observe_binding(Span location, const BodyLocalStorage& local) noexcept
+    -> void {
+    observe_source(location, local.definition, local.type);
+}
+
 auto BodyElaborator::bind_local(
     Span name_span,
     BodyLocalStorage storage,
     DiagnosticCode duplicate_code
 ) noexcept -> AnalysisResult<void> {
     auto name = spelling(name_span);
+    if (observe_sources && !storage.definition) {
+        storage.definition = locate(ast.source_id(), name_span);
+    }
     if (reachable && reference_path_reachable) {
         storage.unused_candidate = name_span;
     }
@@ -86,6 +94,7 @@ auto BodyElaborator::bind_local(
             std::format("local name '{}' is already defined in this scope", name)
         ));
     }
+    observe_binding(name_span, storage);
     return {};
 }
 
@@ -175,8 +184,27 @@ auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
     if (!completed) {
         co_return std::unexpected(completed.error());
     }
-
+    if (observe_sources) {
+        observe_source(
+            span,
+            catalog().declaration_location(draft(), result->symbol_id),
+            std::nullopt
+        );
+    }
     co_return result;
+}
+
+auto BodyElaborator::find_enum_case(EnumID owner, std::string_view name, Span span) noexcept
+    -> std::optional<EnumCaseID> {
+    const auto selected = draft().enum_case_named(owner, name);
+    if (selected && observe_sources) {
+        observe_source(
+            span,
+            draft().source_span(draft().construction_enum_case_declaration_copy(*selected).origin),
+            std::nullopt
+        );
+    }
+    return selected;
 }
 
 auto BodyElaborator::add_parameter(
@@ -228,6 +256,7 @@ auto BodyElaborator::add_parameter(
             .role = BodyLocalRole::Parameter,
             .unused_candidate = std::nullopt,
             .projection = {},
+            .definition = std::nullopt,
         },
         DiagnosticCode::NameDuplicateParameter
     );
@@ -306,7 +335,8 @@ auto BodyElaborator::bind_tuple_target(
                 .static_source = static_source,
                 .role = role,
                 .unused_candidate = std::nullopt,
-                .projection = owning ? std::vector<std::uint32_t>() : path
+                .projection = owning ? std::vector<std::uint32_t>() : path,
+                .definition = std::nullopt
             },
             role == BodyLocalRole::Parameter ? DiagnosticCode::NameDuplicateParameter
                                              : DiagnosticCode::NameDuplicateLocal
@@ -329,7 +359,8 @@ auto BodyElaborator::bind_tuple_target(
 auto BodyElaborator::add_capture(
     Span name_span,
     ConstructionTypeRef type,
-    CaptureMode mode
+    CaptureMode mode,
+    std::optional<SourceSpan> definition
 ) noexcept -> AnalysisResult<void> {
     const auto name = spelling(name_span);
     const auto storage = body_builder.add_capture(
@@ -350,6 +381,7 @@ auto BodyElaborator::add_capture(
             .role = BodyLocalRole::Capture,
             .unused_candidate = std::nullopt,
             .projection = {},
+            .definition = definition,
         },
         DiagnosticCode::LambdaCaptureDuplicate
     );

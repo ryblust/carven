@@ -37,6 +37,7 @@ const TestSuite suite([] static noexcept {
                     TargetPlanningRequest {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain = *LinkageDomain::explicit_value("test:sequence-source"),
+                        .library = std::nullopt,
                     }
                 );
                 if (!expect(!result.has_value())) {
@@ -83,6 +84,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
+                    .library = std::nullopt,
                 }
             );
 
@@ -138,6 +140,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
+                    .library = std::nullopt,
                 }
             );
 
@@ -180,6 +183,7 @@ const TestSuite suite([] static noexcept {
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
+                .library = std::nullopt,
             }
         );
 
@@ -229,6 +233,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:modules").value(),
+                    .library = std::nullopt,
                 }
             );
 
@@ -295,6 +300,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = *LinkageDomain::explicit_value("test:top-level"),
+                    .library = std::nullopt,
                 }
             );
             if (!expect(!result.has_value())) {
@@ -335,6 +341,7 @@ const TestSuite suite([] static noexcept {
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = *LinkageDomain::explicit_value("test:top-level"),
+                .library = std::nullopt,
             }
         );
         expect(result.has_value());

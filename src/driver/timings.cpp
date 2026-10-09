@@ -64,7 +64,14 @@ CommandTimings::~CommandTimings() {
         "C++ generation",
         "Artifact writing",
         "Native compilation",
-        "Execution"
+        "Execution",
+        "  Catalog",
+        "  Declarations",
+        "  Body batch",
+        "  Solving",
+        "  Validation",
+        "  Source observations",
+        "Source index"
     };
     static_assert(labels.size() == static_cast<std::size_t>(TimingStage::Count));
     std::println(std::cerr, "  {:<22} {:>12} {:>8}", "Stage", "Time", "% total");

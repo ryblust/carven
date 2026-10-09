@@ -116,7 +116,8 @@ Native runs report C++ compilation and linking. Native and interpreted runs labe
 their runtime phase `Execution`; `compile` ends with C++ artifact output.
 
 Total time includes pipeline setup, diagnostics and command-resource cleanup.
-Stage percentages use the unrounded durations and may sum to less than 100%.
+Stage percentages use the unrounded durations. Semantic detail intervals are
+included in the semantic total; these nested intervals must not be added to it.
 Failed commands report the stages attempted. Native runs report the program's
 exit code. Invalid command options
 produce diagnostics without a timing report.
@@ -286,6 +287,11 @@ Each artifact has a heading of this form:
 The headings make this an inspection format. Compile the files written by a
 filesystem destination when building generated C++.
 
+`--explicit-inputs` disables automatic Crafts discovery for this compilation.
+The caller supplies the complete `.cv` batch, including every source dependency.
+Build systems use this mode to own source selection and keep library builds
+independent of unrelated files in the working directory.
+
 ## Test emission
 
 Test emission is omitted by default. One explicit mode may be selected:
@@ -326,6 +332,25 @@ value.
 Source text, module membership, source order, and source locations are not
 linkage-domain inputs. The linkage domain does not alter Carven nominal
 identity or define a public C++ ABI.
+
+## Fixed source libraries
+
+A build can give a closed source library an identity separate from application
+targets using `--library-domain=<id>` and repeated
+`--library-module=<canonical.path>` options. Every listed module participates in
+full semantic analysis and interface generation. Its native implementation is
+omitted from consumer output. `--emit-library` emits those implementations for
+the library's owning build instead. Library identity and emission use no runtime
+test mode, so application test runners do not require additional library builds.
+
+This boundary supports the fixed library installed with the compiler. It rejects
+unknown or duplicate modules, generic declarations, process entries, and interfaces
+that merge library and application modules. The owning build supplies and checks
+the library as an independent source batch. Consumers emit the inline static
+instances they use.
+
+The compiler supplies generated identity and artifacts. The build system owns
+library targets, toolchains, native configurations, object reuse, and linking.
 
 ## Diagnostics and status
 

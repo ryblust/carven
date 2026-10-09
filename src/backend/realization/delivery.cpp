@@ -34,7 +34,7 @@ auto BodyRealizer::initialize_deferred(
     emit_return(std::move(initializer), value, LoweringYieldResult {.target = yield});
     auto factory =
         std::move(value).result_factory(factory_result.value_or(storage.value_type), yield);
-    destination.emit(statement_expression(call_member(
+    destination.emit(discard_statement(call_member(
         name_expression(storage.local),
         "initialize",
         target_expressions(std::move(factory))

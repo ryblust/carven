@@ -13,7 +13,7 @@ import(cpp) fn fixed_identity_stable() -> i32;
 import(cpp) async fn fixed_cancel_on_destroy() -> i32;
 import(cpp) fn fixed_completion_cancel_observed() -> bool;
 
-private struct ParentFailure {}
+export struct ParentFailure {}
 
 private async fn fixed() -> ::Fixed => make_fixed();
 
@@ -26,7 +26,7 @@ private async fn parent() -> ::Fixed throw ParentFailure {
     return await forward();
 }
 
-private async fn main() throw ParentFailure + Timeout + RangeError {
+export async fn run_fixed() throw ParentFailure + Timeout + RangeError {
     println(
         fixed_created(),
         fixed_destroyed(),

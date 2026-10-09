@@ -92,7 +92,7 @@ const test "Range values: constants and calls share interval semantics" {
     check(sum_interval(1..1) == 0);
     check(sum_interval(1..=1) == 1);
     var count = 0;
-    for value in 254u8..=255u8 {
+    for _ in 254u8..=255u8 {
         count += 1;
         continue;
     }
@@ -112,7 +112,7 @@ test "Range values: construction and iteration retain independent snapshots" {
     check(sum == 6);
     check(sum_interval(make_interval(4)) == 10);
     var count = 0;
-    for value in 18446744073709551614u64..=18446744073709551615u64 {
+    for _ in 18446744073709551614u64..=18446744073709551615u64 {
         count += 1;
         continue;
     }
@@ -121,7 +121,7 @@ test "Range values: construction and iteration retain independent snapshots" {
 
 const fn count_signed_interval(values: Range<i64>) -> usize {
     var count = 0usize;
-    for value in values {
+    for _ in values {
         count += 1usize;
         continue;
     }
@@ -132,10 +132,47 @@ test "Range values: inclusive snapshots reach signed maxima through continue" {
     var interval = 9223372036854775806i64..=9223372036854775807i64;
     check(count_signed_interval(interval) == 2usize);
     var count = 0usize;
-    for value in interval {
+    for _ in interval {
         interval = 10i64..20i64;
         count += 1usize;
         continue;
     }
     check(count == 2usize);
+}
+
+test "Ranges: ranges preserve bounds expressions and iteration semantics" {
+    var ascending_total: i32 = 0;
+    for value: i32 in 1..4 {
+        ascending_total += value;
+    }
+
+    let begin: i32 = 1;
+    let end: i32 = 6;
+    var expression_total: i32 = 0;
+    for value in (begin + 1)..(end - 1) {
+        expression_total += value;
+    }
+
+    var empty_total: i32 = 0;
+    for value in begin..begin {
+        empty_total += value;
+    }
+    for value in end..begin {
+        empty_total += value;
+    }
+
+    var filtered_total: i32 = 0;
+    for value in begin..end {
+        match value {
+            2 => continue,
+            5 => break,
+            _ => {},
+        }
+        filtered_total += value;
+    }
+
+    check(ascending_total == 6);
+    check(expression_total == 9);
+    check(empty_total == 0);
+    check(filtered_total == 8);
 }

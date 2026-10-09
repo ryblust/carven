@@ -309,7 +309,8 @@ auto BodyElaborator::range_for_statement(
                     .role = header.write_marker.has_value() ? BodyLocalRole::Local
                                                             : BodyLocalRole::RangeRead,
                     .unused_candidate = std::nullopt,
-                    .projection = {}
+                    .projection = {},
+                    .definition = std::nullopt
                 },
                 DiagnosticCode::NameDuplicateLocal
             );

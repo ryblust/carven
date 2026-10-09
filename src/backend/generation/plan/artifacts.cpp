@@ -158,6 +158,13 @@ auto plan_artifacts(
     auto schedules = std::vector<std::optional<TargetModuleSchedule>>(module_count);
     auto surface_declarations = std::vector<std::vector<DeclarationRef>>(module_count);
     for (const auto module_record : declarations.modules()) {
+        const auto library_module =
+            request.library
+            && std::ranges::contains(
+                request.library->modules,
+                provenance.module_record(module_record.value.provenance_module).path
+            );
+        const auto test_mode = library_module ? TestGenerationMode::None : request.test_mode;
         module_ids.push_back(module_record.id);
         module_by_index[module_record.id.index()] = module_record.id;
         schedules[module_record.id.index()] = TargetModuleSchedule {
@@ -166,14 +173,15 @@ auto plan_artifacts(
             .closure_definitions = {},
             .interface_callables = {},
             .emitted_tests = {},
-            .emit_program_entry = request.test_mode != TestGenerationMode::RunnerEntryPoint,
+            .emit_program_entry =
+                !library_module && test_mode != TestGenerationMode::RunnerEntryPoint,
         };
         auto& closure_definitions = schedules[module_record.id.index()]->closure_definitions;
         closure_definitions.assign(
             closures.production(module_record.id).begin(),
             closures.production(module_record.id).end()
         );
-        if (request.test_mode != TestGenerationMode::None) {
+        if (test_mode != TestGenerationMode::None) {
             closure_definitions.insert(
                 closure_definitions.end(),
                 closures.tests(module_record.id).begin(),
@@ -201,7 +209,7 @@ auto plan_artifacts(
                     },
                     [](ModuleConstantID) static noexcept {},
                     [&](TestID id) noexcept {
-                        if (request.test_mode != TestGenerationMode::None
+                        if (test_mode != TestGenerationMode::None
                             && !semantic.tests().test(id).is_const) {
                             schedules[module_record.id.index()]->emitted_tests.push_back(id);
                         }

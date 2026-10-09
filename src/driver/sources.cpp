@@ -37,7 +37,8 @@ auto find_crafts_directory(std::string_view executable) noexcept -> std::filesys
 // collected; imports, manifests, and parent directories are not searched.
 auto collect_crafts_sources(
     std::span<const std::string_view> inputs,
-    const std::filesystem::path& crafts
+    const std::filesystem::path& crafts,
+    bool explicit_inputs
 ) noexcept -> std::expected<CommandSources, std::string> {
     auto result = CommandSources {.crafts = crafts, .carven = {}, .native = {}};
     auto seen = std::set<std::filesystem::path>();
@@ -74,7 +75,7 @@ auto collect_crafts_sources(
         return {};
     };
     const auto roots = std::array {crafts / "carven", std::filesystem::path("crafts")};
-    for (auto index = 0uz; index < roots.size(); ++index) {
+    for (auto index = 0uz; !explicit_inputs && index < roots.size(); ++index) {
         const auto& root = roots[index];
         auto error = std::error_code();
         const auto exists = std::filesystem::exists(root, error);
@@ -139,14 +140,16 @@ auto collect_crafts_sources(
 auto collect_command_sources(
     std::string_view executable,
     std::span<const std::string_view> inputs,
-    TimingOutput timings
+    TimingOutput timings,
+    bool explicit_inputs
 ) noexcept -> std::expected<CommandSources, std::string> {
     const auto collection = TimingScope(timings, TimingStage::SourceCollection);
-    const auto crafts = find_crafts_directory(executable);
-    if (crafts.empty()) {
+    const auto crafts =
+        explicit_inputs ? std::filesystem::path() : find_crafts_directory(executable);
+    if (!explicit_inputs && crafts.empty()) {
         return std::unexpected(
             "cannot locate Crafts in the Carven installation or source checkout"
         );
     }
-    return collect_crafts_sources(inputs, crafts);
+    return collect_crafts_sources(inputs, crafts, explicit_inputs);
 }

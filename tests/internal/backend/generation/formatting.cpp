@@ -111,7 +111,8 @@ auto inspect_append(std::string source) noexcept -> AppendQuery {
     const auto compilation = PlannedCompilation::build(
         analyze_test_program(std::move(source)),
         {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("formatted_append")}
+         .linkage_domain = *LinkageDomain::explicit_value("formatted_append"),
+         .library = std::nullopt}
     );
     auto query =
         AppendQuery {.entries = {}, .events = {}, .owning_formats = 0uz, .boolean_writes = 0uz};
@@ -160,7 +161,8 @@ const TestSuite suite([] static noexcept {
                             )
                         ),
                         {.test_mode = TestGenerationMode::None,
-                         .linkage_domain = *LinkageDomain::explicit_value("format_encoding")}
+                         .linkage_domain = *LinkageDomain::explicit_value("format_encoding"),
+                         .library = std::nullopt}
                     );
                     auto query = FormatQuery();
                     for (const auto artifact : compilation.target().artifacts()) {
@@ -195,7 +197,8 @@ const TestSuite suite([] static noexcept {
                 "fn effects() { f\"{touch() && false}\"; }\n"
             ),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("precomputed_format")}
+             .linkage_domain = *LinkageDomain::explicit_value("precomputed_format"),
+             .library = std::nullopt}
         );
 
         struct Query final {
@@ -237,7 +240,8 @@ const TestSuite suite([] static noexcept {
                     "return f\"{42:04}/{touch() && false}/{value:{width}.{precision}f}/{7}\"; }"
                 ),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("mixed_format")}
+                 .linkage_domain = *LinkageDomain::explicit_value("mixed_format"),
+                 .library = std::nullopt}
             );
 
             struct Query final {

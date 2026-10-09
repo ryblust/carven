@@ -172,6 +172,11 @@ public:
     auto imports() const noexcept -> std::span<const CatalogImportBinding>;
     auto find_module(ProgramModuleID id) const noexcept -> const CatalogModule*;
     auto symbol(CatalogSymbolID id) const noexcept -> const CatalogSymbol*;
+    // Declaration selections derive from the same source metadata used by lookup.
+    auto declaration_location(const ProgramDraft& draft, CatalogSymbolID id) const noexcept
+        -> SourceSpan;
+    auto field_location(const ProgramDraft& draft, StructID owner, std::size_t index) const noexcept
+        -> SourceSpan;
     auto function_symbol(FunctionID id) const noexcept -> CatalogSymbolID;
     auto struct_symbol(StructID id) const noexcept -> CatalogSymbolID;
     auto generic_symbol(GenericDeclarationID id) const noexcept -> CatalogSymbolID;

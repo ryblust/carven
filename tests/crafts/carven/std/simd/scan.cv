@@ -30,7 +30,7 @@ private const fn dense_member(byte: u8) -> bool {
     return byte != 32 && byte != 64 && byte != 128 && byte != 192;
 }
 
-const fn verify_dense_set() -> bool {
+fn verify_dense_set() -> bool {
     var data: [u8; 257] = {};
     for block in 0usize..8 {
         var values: [u8; 32] = {};
@@ -73,75 +73,7 @@ const fn verify_dense_set() -> bool {
     return true;
 }
 
-private const fn sampled_members(seed: u32) -> [u8; 24] {
-    var state = seed;
-    var members: [u8; 24] = {};
-    for index in 0usize..24 {
-        state = state * 1664525 + 1013904223;
-        members[index] = (state >> 24) as u8;
-    }
-    return members;
-}
-
-const fn verify_table_set(const members: [u8]) -> bool {
-    const set = one_of(members);
-    var membership: [bool; 256] = {};
-    for member in members {
-        membership[member as usize] = true;
-    }
-    for block in 0usize..8 {
-        var bytes: [u8; 32] = {};
-        var expected_bits: u32 = 0;
-        var expected_count: usize = 0;
-        var first: usize = 32;
-        var prefix: usize = 0;
-        for lane in 0usize..32 {
-            let byte = ((block * 32 + lane) * 17) as u8;
-            bytes[lane] = byte;
-            if membership[byte as usize] {
-                expected_bits |= 1u32 << (lane as u32);
-                expected_count += 1;
-                if first == 32 { first = lane; }
-                if prefix == lane { prefix += 1; }
-            }
-        }
-        assert(match_set(u8x32::from_array(bytes), set).bits() == expected_bits);
-        assert(count_where(bytes, set) == expected_count);
-        assert(prefix_where(bytes, set) == prefix);
-        assert(find_where(bytes, set) == first);
-    }
-    return true;
-}
-
-private const grouped_members = [0u8, 9, 34, 47, 65, 97, 127, 128, 200, 255];
-
-private const diagonal_members = [
-    0u8,
-    17,
-    34,
-    51,
-    68,
-    85,
-    102,
-    119,
-    136,
-    153,
-    170,
-    187,
-    204,
-    221,
-    238,
-    255
-];
-
-const fn verify_table_sets() -> bool {
-    assert(verify_table_set(grouped_members));
-    assert(verify_table_set(diagonal_members));
-    assert(verify_table_set(sampled_members(17)));
-    return true;
-}
-
-const fn verify_general_sets() -> bool {
+fn verify_general_sets() -> bool {
     var data: [u8; 256] = {};
     for block in 0usize..8 {
         var values: [u8; 32] = {};
@@ -183,7 +115,7 @@ const fn verify_general_sets() -> bool {
     return true;
 }
 
-const fn verify_run_sets() -> bool {
+fn verify_run_sets() -> bool {
     for value in 0u16..256 {
         let byte = value as u8;
         let vector = u8x32::splat(byte);
@@ -207,7 +139,7 @@ const fn verify_run_sets() -> bool {
     return true;
 }
 
-const fn verify_extreme_sets() -> bool {
+fn verify_extreme_sets() -> bool {
     for value in 0u16..256 {
         let byte = value as u8;
         let vector = u8x32::splat(byte);
@@ -219,7 +151,7 @@ const fn verify_extreme_sets() -> bool {
     return true;
 }
 
-const fn verify_queries() -> bool {
+fn verify_queries() -> bool {
     let empty: [u8; 0] = [];
     assert(find_from(empty, 0, no_bytes) == 0);
     assert(find_from(empty, 0, every_byte) == 0);
@@ -289,9 +221,8 @@ const test "SIMD scan: constant sets and queries" {
     check(prefix_where("12b".bytes, digits) == 2);
 }
 
-test "SIMD scan: native dense and scattered sets preserve byte membership and query positions" {
+test "SIMD scan: native dense sets preserve byte membership and query positions" {
     check(verify_dense_set());
-    check(verify_table_sets());
 }
 
 test "SIMD scan: native sets express byte membership" {

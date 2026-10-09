@@ -36,7 +36,7 @@ test "Payload borrowing: alternatives select original storage and guards release
 private const fn mutate_patterns() -> i32 {
     var value: (String, i32) = ("start", 1);
     match value {
-        (text, count) if text.is_empty() => {},
+        (text, _) if text.is_empty() => {},
         (&text, &count) => {
             text.append("!");
             count += 1;

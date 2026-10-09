@@ -1,7 +1,6 @@
 module carven:backend.generation.plan;
 
 import :artifacts;
-import :backend.generation.linkage;
 import :backend.generation.names;
 import :backend.generation.request;
 import :backend.target.ids;
@@ -57,7 +56,6 @@ public:
         ProgramIdentity semantic_identity,
         std::vector<TargetModuleNames> modules,
         TargetName generated_namespace,
-        TargetName domain_namespace,
         std::vector<TargetEntityName> structures,
         std::vector<TargetEntityName> enumerations,
         std::vector<std::optional<TargetEntityName>> callables,
@@ -78,7 +76,6 @@ public:
     auto semantic_owner() const noexcept -> ProgramIdentity;
     auto module_names(ModuleID id) const noexcept -> const TargetModuleNames&;
     auto generated_namespace() const noexcept -> const TargetName&;
-    auto domain_namespace() const noexcept -> const TargetName&;
     // A function or an instance of one; an instance is named in its function's module.
     auto callable_identifier(CallableID id) const noexcept -> const TargetIdentifier&;
     auto callable_owner(CallableID id) const noexcept -> ModuleID;
@@ -112,7 +109,6 @@ private:
     ProgramIdentity source_identity;
     std::vector<TargetModuleNames> target_modules;
     TargetName target_generated_namespace;
-    TargetName target_domain_namespace;
     std::vector<TargetEntityName> target_structure_names;
     std::vector<TargetEntityName> target_enumeration_names;
     std::vector<std::optional<TargetEntityName>> target_callable_names;
@@ -279,7 +275,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
 
 auto plan_names(
     const SemIRProgram& semantic,
-    const LinkageDomainID& linkage,
+    const TargetPlanningRequest& request,
     const TargetClosureCatalog& closures
 ) noexcept -> TargetNamePlan;
 

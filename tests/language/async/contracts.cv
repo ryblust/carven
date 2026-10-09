@@ -75,7 +75,7 @@ async fn write_later(&value: i32) -> i32 {
 }
 
 fn wrapped(&used: i32, &discarded: i32) {
-    let unused = write_later(&discarded);
+    let _ = write_later(&discarded);
     return write_later(&used);
 }
 
@@ -169,7 +169,7 @@ async fn cold_capture() -> i32 {
     var backing: i32 = 3;
     var bodies: i32 = 0;
     if true {
-        let dropped = captured(0, 0, &backing, &bodies);
+        let _ = captured(0, 0, &backing, &bodies);
     }
     let operation = captured(
         capture_argument(&trace, 1, backing),
@@ -357,7 +357,7 @@ async fn typed_owners() {
     let box = PendingBox { pending: leaf(37) };
     assert((await (&&box).pending) == 37);
     let pair: (AsyncOperation<i32>, void) = (leaf(41), ());
-    let (inner, empty) = &&pair;
+    let (inner, _) = &&pair;
     assert((await inner) == 41);
     let array: [AsyncOperation<i32>; 1] = [leaf(43)];
     assert((await (&&array)[0]) == 43);

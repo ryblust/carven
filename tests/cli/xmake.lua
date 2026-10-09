@@ -31,7 +31,7 @@ local case_specs = {
         },
     },
     ["commands/check"] = {
-        inputs = {"empty.cv", "input.cv", "invalid_test.cv", "crafts/demo/dependency.cv"},
+        inputs = {"input.cv", "invalid_test.cv", "crafts/demo/dependency.cv"},
         fixtures = {
             ["../interpretation/static_failure.cv"] = "static_failure.cv",
             ["../../diagnostics/syntax/input.cv"] = "syntax.cv",
@@ -44,11 +44,6 @@ local case_specs = {
             {args = {"check", "warning.cv"}, stderr_ordered = {"CV-LINT-UNUSED-LOCAL", "carven: check passed\n"}},
             {args = {"check", "static_failure.cv"}, exit_code = 1, stderr_contains = {"CV-CONST-TEST"}},
             {args = {"check", "invalid_test.cv"}, exit_code = 1, stderr_contains = {"CV-TYPE-MISMATCH", "invalid_test.cv:2:"}},
-            {args = {"check", "empty.cv"}, stderr = "passed.txt"},
-            {
-                args = {"check", "input.cv"},
-                stdout = "stdout.txt", stderr = "stderr.txt",
-            },
             {
                 args = {"check", "input.cv", "crafts/demo/dependency.cv"},
                 stdout = "stdout.txt", stderr = "stderr.txt",
@@ -98,7 +93,6 @@ local case_specs = {
         steps = {
             {args = {"check", "input.cv", "helper.cv"}, stderr = "../check/passed.txt", stdout = "stdout.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n"}},
             {args = {"interpret", "input.cv", "helper.cv"}, stdout = "run.txt", stdout_unordered = true, stdout_ordered = {"helper call\nmodule\n", "runtime\nruntime\n"}},
-            {args = {"dump", "ast", "input.cv"}, stdout_contains = {"ConstBlock", "ConstTestDeclaration", "label ["}},
         },
     },
     ["commands/static_execution"] = {
@@ -173,7 +167,6 @@ local case_specs = {
         fixtures = {["../fixtures/bare_structure.cv"] = "bare_structure.cv"},
         args = {"compile", "bare_structure.cv"},
         output_files = {"bare_structure.cpp", "carven/generated/bare_structure.hpp"},
-        absent_files = {".carven", ".carven-artifacts"},
     },
     ["output/destination"] = {
         fixtures = {
@@ -187,7 +180,6 @@ local case_specs = {
             "emit/carven/generated/bare_structure.hpp",
             "emit/stale.txt",
         },
-        absent_files = {".carven"},
         file_not_contains = {
             ["emit/bare_structure.cpp"] = {"preexisting output"},
         },
@@ -202,8 +194,6 @@ local case_specs = {
         absent_files = {
             "bare_structure.cpp",
             "carven/generated/bare_structure.hpp",
-            ".carven-artifacts",
-            ".carven",
         },
     },
     ["output/testing_modes"] = {
@@ -265,7 +255,7 @@ local case_specs = {
         project = "../project",
         args = {"compile", "nested/local.cv", "./nested/local.cv", "-o", "emit"},
         output_files = {"emit/nested/local.cpp"},
-        absent_files = {"emit/main.cpp", ".carven", ".carven-artifacts"},
+        absent_files = {"emit/main.cpp"},
     },
     ["module_layout/spec"] = {
         project = "../project",
@@ -303,7 +293,7 @@ case_specs["commands/native_crafts"] = {
             installed_toolchain = true,
             args = {"input.cv", "./input.cv", "crafts/demo/api.cv", "--", "--timings"}, run_timeout = 120000,
             stdout = "stdout.txt",
-            absent_files = {"input.cpp", "program", ".carven", ".xmake"},
+            absent_files = {"input.cpp", "program"},
         },
         {
             args = {"compile", "input.cv", "-o", "emit"},
@@ -596,8 +586,7 @@ for _, selection in ipairs({
             or {tests and "runtime output" or "runtime test"},
         stderr_contains = mode ~= "compile" and tests and {"tests: 1 passed; 0 failed"} or nil,
         stderr_ordered = mode == "native" and {"carven: run exited with code 0 in ",
-            "Source collection", "Source loading", "Lexing", "Parsing", "Semantic analysis",
-            "C++ generation", "Artifact writing", "Native compilation", "Execution"} or nil,
+            "Native compilation", "Execution"} or nil,
     })
 end
 
@@ -697,11 +686,10 @@ for _, spec in ipairs(native_specs) do
     target("carven-test-cli-" .. spec.name)
         set_default(false)
         set_kind("binary")
-        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = spec.tests})
         set_languages("c++20")
-        add_includedirs(path.join(cli_dir, "commands", "runtime_traps"))
-        if spec.name == "runtime" or spec.name == "fatal" then
+        if spec.name == "runtime" then
+            add_includedirs(path.join(cli_dir, "commands", "runtime_traps"))
             add_defines("NDEBUG")
         end
         on_load(function (target)

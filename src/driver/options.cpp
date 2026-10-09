@@ -2,6 +2,7 @@ module carven:driver.options.impl;
 
 import :backend.generation.request;
 import :driver.options;
+import :source.module_path;
 import std;
 
 namespace {
@@ -29,12 +30,17 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
         .destination = DirectoryArtifactDestination {.root = "."},
         .test_mode = TestGenerationMode::None,
         .linkage_domain = std::nullopt,
+        .library = std::nullopt,
         .input_paths = {},
+        .explicit_inputs = false,
         .timings = false,
     };
     auto has_test_option = false;
     auto has_destination_option = false;
     auto has_linkage_domain_option = false;
+    auto library_domain = std::optional<LinkageDomain>();
+    auto library_modules = std::vector<CanonicalModulePath>();
+    auto emit_library = false;
 
     const auto set_destination =
         [&](ArtifactDestination destination) noexcept -> std::expected<void, CompileOptionError> {
@@ -80,6 +86,8 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
         const auto arg = std::string_view(args[index]);
         if (arg == "--timings") {
             request.timings = true;
+        } else if (arg == "--explicit-inputs") {
+            request.explicit_inputs = true;
         } else if (arg == "--tests" || arg == "--tests=default" || arg == "--tests=external") {
             if (has_test_option) {
                 return std::unexpected(
@@ -126,6 +134,28 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
             }
             request.linkage_domain = std::move(*domain);
             has_linkage_domain_option = true;
+        } else if (arg.starts_with("--library-domain=")) {
+            if (library_domain) {
+                return std::unexpected(
+                    compile_option_error(CompileOptionErrorKind::LibraryDomainSpecifiedMoreThanOnce)
+                );
+            }
+            auto domain = linkage_domain(arg.substr(std::string_view("--library-domain=").size()));
+            if (!domain) {
+                return std::unexpected(domain.error());
+            }
+            library_domain = std::move(*domain);
+        } else if (arg.starts_with("--library-module=")) {
+            const auto value = arg.substr(std::string_view("--library-module=").size());
+            auto module_path = CanonicalModulePath::from_value(value);
+            if (!module_path) {
+                return std::unexpected(
+                    compile_option_error(CompileOptionErrorKind::InvalidLibraryModule, value)
+                );
+            }
+            library_modules.push_back(std::move(*module_path));
+        } else if (arg == "--emit-library") {
+            emit_library = true;
         } else if (arg.starts_with('-')) {
             return std::unexpected(
                 compile_option_error(CompileOptionErrorKind::UnknownOption, arg)
@@ -137,6 +167,18 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
 
     if (request.input_paths.empty()) {
         return std::unexpected(compile_option_error(CompileOptionErrorKind::NoSourceInput));
+    }
+    if (library_domain || !library_modules.empty() || emit_library) {
+        if (!library_domain || library_modules.empty()) {
+            return std::unexpected(
+                compile_option_error(CompileOptionErrorKind::IncompleteLibraryOptions)
+            );
+        }
+        request.library = SourceLibrary {
+            .modules = std::move(library_modules),
+            .linkage_domain = std::move(*library_domain),
+            .emit_implementations = emit_library,
+        };
     }
     return request;
 }
@@ -153,6 +195,12 @@ auto format_compile_option_error(const CompileOptionError& error) noexcept -> st
         case CompileOptionErrorKind::LinkageDomainSpecifiedMoreThanOnce:
             return "linkage domain was specified more than once";
         case CompileOptionErrorKind::EmptyLinkageDomain: return "linkage domain is empty";
+        case CompileOptionErrorKind::LibraryDomainSpecifiedMoreThanOnce:
+            return "library domain was specified more than once";
+        case CompileOptionErrorKind::InvalidLibraryModule:
+            return std::format("invalid canonical library module '{}'", *error.option);
+        case CompileOptionErrorKind::IncompleteLibraryOptions:
+            return "library generation requires --library-domain and at least one --library-module";
         case CompileOptionErrorKind::UnknownOption:
             return std::format("unknown option '{}'", *error.option);
         case CompileOptionErrorKind::NoSourceInput:

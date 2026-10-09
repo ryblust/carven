@@ -109,7 +109,8 @@ const TestSuite suite([] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 analyze_test_program(std::string(input.source)),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("pattern_selection")}
+                 .linkage_domain = *LinkageDomain::explicit_value("pattern_selection"),
+                 .library = std::nullopt}
             );
             auto query = PatternQuery {.comparisons = 0uz, .unreachable = 0uz, .bound_calls = 0uz};
             for (const auto artifact : compilation.target().artifacts()) {
@@ -133,7 +134,8 @@ const TestSuite suite([] static noexcept {
                 };
             )"),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("pattern_bound")}
+             .linkage_domain = *LinkageDomain::explicit_value("pattern_bound"),
+             .library = std::nullopt}
         );
         auto query = PatternQuery {.comparisons = 0uz, .unreachable = 0uz, .bound_calls = 0uz};
         for (const auto artifact : compilation.target().artifacts()) {
@@ -171,7 +173,8 @@ const TestSuite suite([] static noexcept {
                         )
                     ),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("pattern_size")}
+                     .linkage_domain = *LinkageDomain::explicit_value("pattern_size"),
+                     .library = std::nullopt}
                 );
 
                 struct Query final {
@@ -220,7 +223,8 @@ const TestSuite suite([] static noexcept {
             fn recover() -> i32 => try { failing()? } catch { _ => 7, };
         )"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("pattern_predicates")}
+                 .linkage_domain = *LinkageDomain::explicit_value("pattern_predicates"),
+                 .library = std::nullopt}
             );
 
             struct Query final {
@@ -309,7 +313,8 @@ const TestSuite suite([] static noexcept {
                 const auto compilation = PlannedCompilation::build(
                     analyze_test_program(std::string(input.source)),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("fixed_payload_binding")}
+                     .linkage_domain = *LinkageDomain::explicit_value("fixed_payload_binding"),
+                     .library = std::nullopt}
                 );
 
                 struct Query final {
@@ -384,7 +389,8 @@ const TestSuite suite([] static noexcept {
                     }
                 )"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("structured_enum_selection")}
+                 .linkage_domain = *LinkageDomain::explicit_value("structured_enum_selection"),
+                 .library = std::nullopt}
             );
 
             struct Query final {
@@ -438,7 +444,8 @@ const TestSuite suite([] static noexcept {
                     "fn copy(value: i32) -> i32 => match value { bound => bound, };"
                 ),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("direct_pattern_binding")}
+                 .linkage_domain = *LinkageDomain::explicit_value("direct_pattern_binding"),
+                 .library = std::nullopt}
             );
 
             struct Query final {
@@ -476,7 +483,8 @@ const TestSuite suite([] static noexcept {
             };
         )"),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("known_match")}
+             .linkage_domain = *LinkageDomain::explicit_value("known_match"),
+             .library = std::nullopt}
         );
 
         struct Query final {

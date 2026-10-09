@@ -110,10 +110,14 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         TargetPlanningRequest {
             .test_mode = tests ? TestGenerationMode::RunnerEntryPoint : TestGenerationMode::None,
             .linkage_domain = *LinkageDomain::explicit_value("carven.run"),
+            .library = std::nullopt,
         },
         std::nullopt,
         timings.output()
     );
+    if (!artifacts) {
+        return emit_driver_error(artifacts.error());
+    }
     auto writing = TimingScope(timings.output(), TimingStage::ArtifactWriting);
     const auto directory = create_run_directory();
     if (!directory) {
@@ -121,7 +125,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
     }
     const auto cleanup = TemporaryDirectory(*directory);
     const auto output_directory = path_to_generic_utf8(*directory);
-    if (const auto written = write_artifacts(output_directory, artifacts); !written) {
+    if (const auto written = write_artifacts(output_directory, *artifacts); !written) {
         return emit_driver_error(written.error());
     }
     writing.stop();
@@ -146,7 +150,7 @@ auto run_native_command(std::string_view executable, std::span<const char* const
         || compiler_name == "clang-cl"
         || compiler_name == "clang-cl.exe";
     auto native_sources = std::vector<std::string>();
-    for (const auto& artifact : artifacts.entries()) {
+    for (const auto& artifact : artifacts->entries()) {
         if (artifact.role == GeneratedArtifactRole::ModuleImplementation
             || artifact.role == GeneratedArtifactRole::TestEntry) {
             native_sources.push_back(

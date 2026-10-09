@@ -29,14 +29,10 @@ produces no normal value.
 Discarded results pass through expression evaluation. Known conditions request
 execution without a value and retain their full-expression cleanup boundary. An
 unused short-circuit result needs no branch when its selected operand has no
-execution obligation. After required execution is selected,
-`discarded_operation` chooses the C++ statement form. Calls with known Carven or
-runtime callable and result contracts use ordinary expression statements.
-Non-void native calls, opaque result types, and other retained value expressions
-use explicit void conversion. `TargetSymbolInfo` owns each intrinsic's spelling,
-optional header provider, and call-result discard policy. Emission, dependency
-collection, and realization consume that record. Discard policy does not grant
-permission to omit execution.
+execution obligation. Required expressions whose results are discarded use explicit
+C++ void conversion, including calls returning native void. Evaluation and
+full-expression cleanup remain unchanged. `TargetSymbolInfo` supplies intrinsic
+spellings and header providers for emission and dependency collection.
 
 ## Local identities and access
 

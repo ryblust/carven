@@ -1,0 +1,7 @@
+target("carven-workspace-modules")
+    set_default(false)
+    set_kind("moduleonly")
+    add_deps("carven-modules")
+    add_files(path.join(os.scriptdir(), "src", "**.cppm"))
+    add_files(path.join(os.scriptdir(), "src", "**.cpp"))
+target_end()

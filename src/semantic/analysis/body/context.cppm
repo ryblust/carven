@@ -18,6 +18,7 @@ import :semantic.analysis.coverage;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
 import :semantic.analysis.stage.session;
 import :semantic.analysis.types;
 import :semantic.analysis.validation;
@@ -48,6 +49,7 @@ struct BodyLocalStorage final {
     BodyLocalRole role;
     std::optional<Span> unused_candidate;
     std::vector<std::uint32_t> projection;
+    std::optional<SourceSpan> definition;
 };
 
 using BodyLocalNames = std::flat_map<std::string, BodyLocalStorage, std::less<>>;
@@ -266,7 +268,8 @@ public:
         FailureTermID outward_failure_term_id,
         bool accepts_catch_residual,
         bool test_body,
-        std::optional<GenericTypeContext> generic_context = std::nullopt
+        std::optional<GenericTypeContext> generic_context = std::nullopt,
+        bool observe_source = true
     ) noexcept;
     // Inside a const block, a const test or a module const block every local
     // is a static value and control is ordinary execution.
@@ -293,14 +296,25 @@ public:
         const ASTFunctionParameter& source,
         const ConstructionCallableParameter& contract
     ) noexcept -> AnalysisResult<void>;
-    auto add_capture(Span name, ConstructionTypeRef type, CaptureMode mode) noexcept
-        -> AnalysisResult<void>;
+    auto add_capture(
+        Span name,
+        ConstructionTypeRef type,
+        CaptureMode mode,
+        std::optional<SourceSpan> definition
+    ) noexcept -> AnalysisResult<void>;
     auto inferred_result_type() const noexcept -> ConstructionTypeRef;
     auto local_was_used(std::string_view name) const noexcept -> bool;
     auto run(const ASTCallableBody& source_body) noexcept -> AnalysisTask<StructuredBodyDraft>;
 
 private:
     auto draft() const noexcept -> ProgramDraft&;
+    auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
+    auto observe_source(
+        Span location,
+        std::optional<SourceSpan> definition,
+        std::optional<ConstructionTypeRef> type
+    ) noexcept -> void;
+    auto observe_binding(Span location, const BodyLocalStorage& local) noexcept -> void;
     auto catalog() const noexcept -> AnalysisCatalogView;
     auto import_usage() const noexcept -> ImportUsage&;
     auto origin(Span span) noexcept -> ProgramOriginID;
@@ -416,6 +430,8 @@ private:
     auto runtime_local_outside_block(std::string_view name) const noexcept -> bool;
     auto find_global(std::string_view name, Span span) noexcept
         -> AnalysisTask<const CatalogSymbol*>;
+    auto find_enum_case(EnumID owner, std::string_view name, Span span) noexcept
+        -> std::optional<EnumCaseID>;
     auto consume_value(BuiltExpression& expression, Span span, AccessMode access) noexcept
         -> AnalysisResult<SemanticExpression>;
     auto dereference_expression(const ASTPrefixExpr& source, Span span) noexcept
@@ -668,6 +684,8 @@ private:
     // One lexical lambda declaration serves each evaluation of that source expression.
     std::map<Span, CallableID> lambda_callables;
     std::size_t aggregate_construction_work = 0uz;
+    bool observe_sources;
+    SourceObservation source_occurrences;
     bool static_body = false;
     std::optional<LifetimeRegionID> active_full_expression;
     bool reachable;

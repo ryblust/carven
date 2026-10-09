@@ -15,9 +15,10 @@ struct CommandSources final {
     std::vector<std::string> native;
 };
 
-// Fixed toolchain and working-directory Crafts roots; other inputs remain explicit.
+// The CLI discovers fixed Crafts roots unless the build supplies a complete batch.
 auto collect_command_sources(
     std::string_view executable,
     std::span<const std::string_view> inputs,
-    TimingOutput timings
+    TimingOutput timings,
+    bool explicit_inputs = false
 ) noexcept -> std::expected<CommandSources, std::string>;

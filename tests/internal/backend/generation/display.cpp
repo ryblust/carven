@@ -52,7 +52,8 @@ auto inspect(std::string source) noexcept -> DisplayQuery {
     const auto compilation = PlannedCompilation::build(
         analyze_test_program(std::move(source)),
         {.test_mode = TestGenerationMode::None,
-         .linkage_domain = *LinkageDomain::explicit_value("display")}
+         .linkage_domain = *LinkageDomain::explicit_value("display"),
+         .library = std::nullopt}
     );
     auto query = DisplayQuery {
         .nodes = 0uz,

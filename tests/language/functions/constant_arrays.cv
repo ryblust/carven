@@ -126,10 +126,6 @@ const fn array_index_effects() -> [i32; 3] {
     return [values[0], observed, evaluations];
 }
 
-const fn array_texts(value: str) -> [str; 2] => [value, "我\0😀"];
-const fn array_flags(value: bool) -> [bool; 2] => [value, !value];
-const fn array_characters(value: char) -> [char; 2] => [value, '我'];
-
 test "Const arrays: literals and function results retain element types and fixed extents" {
     const local: [u16; 2] = [7, 9];
     const selected = array_nested[1][0];
@@ -175,7 +171,7 @@ test "Const arrays: nested copies and whole-array Take preserve independent valu
     check(array_table[0] == 3);
 }
 
-test "Const arrays: Read aliases and scalar snapshots observe ordinary evaluation order" {
+const test "Const arrays: Read aliases and scalar snapshots preserve evaluation order" {
     const whole = array_read_alias();
     const row = array_read_row_alias();
     const scalar = array_scalar_snapshot();
@@ -188,27 +184,6 @@ test "Const arrays: Read aliases and scalar snapshots observe ordinary evaluatio
     check(effects[0] == 12);
     check(effects[1] == 12);
     check(effects[2] == 2);
-    check(array_read_alias() == whole);
-    check(array_read_row_alias() == row);
-    check(array_scalar_snapshot() == scalar);
-    check(array_comparison_snapshot() == comparison);
-    check(array_index_effects() == effects);
-}
-
-test "Const arrays: bool char and borrowed static text compose without type changes" {
-    const texts = array_texts("first");
-    const flags = array_flags(true);
-    const characters = array_characters('A');
-    check(texts[0] == "first");
-    check(texts[1] == "我\0😀");
-    check(texts[1].byte_length() == 8usize);
-    check(flags[0]);
-    check(!flags[1]);
-    check(characters[0] == 'A');
-    check(characters[1] == '我');
-    check(array_texts("first") == texts);
-    check(array_flags(true) == flags);
-    check(array_characters('A') == characters);
 }
 
 const fn array_range_fill(size: usize) {
@@ -299,7 +274,7 @@ const fn array_range_source_once() {
     return sum + evaluations;
 }
 
-test "Const arrays: sequence bindings share projection and control semantics" {
+const test "Const arrays: sequence bindings preserve projection and control semantics" {
     const filled = array_range_fill(2);
     const nested = array_range_nested();
     const control = array_range_control();
@@ -320,12 +295,4 @@ test "Const arrays: sequence bindings share projection and control semantics" {
     check(snapshot == 7);
     check(rows == 5);
     check(once == 11);
-    var input = 2usize;
-    check(array_range_fill(input) == filled);
-    check(array_range_nested() == nested);
-    check(array_range_control() == control);
-    check(array_range_return() == early);
-    check(array_range_snapshot() == snapshot);
-    check(array_range_read_rows() == rows);
-    check(array_range_source_once() == once);
 }

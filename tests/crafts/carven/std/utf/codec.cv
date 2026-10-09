@@ -29,7 +29,7 @@ private struct ScalarCase {
     bytes: [u8; 4],
 }
 
-const test "UTF8: scalar boundaries have the specified encoding and decoding" {
+test "UTF8: scalar boundaries have the specified encoding and decoding" {
     let cases = [
         ScalarCase {
             scalar: 0,
@@ -95,6 +95,7 @@ const test "UTF8: scalar boundaries have the specified encoding and decoding" {
             check(encoded.width == item.width);
             check(encoded.bytes == item.bytes);
             let bytes = encoded_bytes(encoded);
+            check(bytes.length() == item.width);
             validate_utf8(bytes)?;
             match decode_utf8_prefix(bytes)? {
                 .End => fail("nonempty input must have a scalar"),
@@ -110,7 +111,7 @@ const test "UTF8: scalar boundaries have the specified encoding and decoding" {
     }
 }
 
-const test "UTF8: surrogate and out-of-range values are rejected" {
+test "UTF8: surrogate and out-of-range values are rejected" {
     let invalid: [u32; 4] = [0xd800, 0xdfff, 0x110000, 0xffffffff];
     for value in invalid {
         var rejected = false;
@@ -138,27 +139,6 @@ const test "UTF8: encoded arrays freeze as constant slices" {
     check(bytes[0] == 0xf0 && bytes[1] == 0x9f && bytes[2] == 0x98 && bytes[3] == 0x80);
 }
 
-test "UTF8: scalar boundaries round trip through encoding and prefix decoding" {
-    for value in [0u32, 0x7f, 0x80, 0x7ff, 0x800, 0xd7ff, 0xe000, 0xffff, 0x10000, 0x10ffff] {
-        try {
-            let character = char_from_u32(value)?;
-            let encoded = encode_utf8(character);
-            let bytes = encoded_bytes(encoded);
-            validate_utf8(bytes)?;
-            match decode_utf8_prefix(bytes)? {
-                .End => fail("a scalar encoding cannot be empty"),
-                .Scalar(decoded, width) => {
-                    require((decoded as u32) == value);
-                    require(width == encoded.width);
-                },
-            }
-        } catch {
-            UTF8Error(_) => fail("valid scalar encoding was rejected"),
-            UnicodeScalarError(_) => fail("valid Unicode scalar was rejected"),
-        }
-    }
-}
-
 const test "UTF8: scalar and decoded results freeze as public constants" {
     const character = char_from_u32(0x1f600)?;
     check(character == '😀');
@@ -172,14 +152,18 @@ const test "UTF8: scalar and decoded results freeze as public constants" {
     }
 }
 
-test "UTF8: encoded views contain exactly the scalar encoding" {
-    let characters = ['\u{0}', 'a', 'é', '你', '😀'];
-    let widths: [usize; 5] = [1, 1, 2, 3, 4];
-    var index: usize = 0;
-    for character in characters {
-        let encoded = encode_utf8(character);
-        let bytes = encoded_bytes(encoded);
-        check(bytes.length() == widths[index]);
-        index += 1;
+test "UTF8: prefix errors use offsets relative to the selected input" {
+    let bytes = [0x61u8, 0xe2, 0x28, 0xa1];
+    var rejected = false;
+    try {
+        let _ = decode_utf8_prefix(bytes.as_slice().slice(1, 4))?;
+    } catch {
+        UTF8Error(error) => {
+            rejected = error.kind
+                == .InvalidContinuation
+                && error.offset == 1
+                && error.sequence_start == 0;
+        },
     }
+    check(rejected);
 }

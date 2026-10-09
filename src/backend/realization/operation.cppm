@@ -4,7 +4,6 @@ import :backend.lowering.context;
 import :backend.preparation;
 import :backend.target.expr;
 import :backend.target.name;
-import :backend.target.stmt;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.program;
@@ -57,10 +56,3 @@ auto realize_callable_adaptation(
     const PreparedCallableAdaptation& preparation,
     TypeID to
 ) noexcept -> TargetExpr;
-
-// Execution and operand sequencing are already established by the caller.
-auto discarded_operation(
-    const ModuleLowering& context,
-    const SemanticExpression& source,
-    TargetExpr expression
-) noexcept -> TargetStmt;

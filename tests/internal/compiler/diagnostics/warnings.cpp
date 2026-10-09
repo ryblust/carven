@@ -54,6 +54,7 @@ const TestSuite suite([] static noexcept {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain =
                         LinkageDomain::explicit_value("test:timeout-type-imports").value(),
+                    .library = std::nullopt,
                 }
             );
             if (!expect(result.has_value())) {
@@ -97,6 +98,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:semantics").value(),
+                    .library = std::nullopt,
                 }
             );
 
@@ -161,6 +163,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:global-unused").value(),
+                    .library = std::nullopt,
                 }
             );
             if (!expect(result.has_value())) {
@@ -198,6 +201,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = LinkageDomain::explicit_value("test:selections").value(),
+                    .library = std::nullopt,
                 }
             );
             if (!expect(result.has_value())) {
@@ -251,6 +255,7 @@ const TestSuite suite([] static noexcept {
             TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:semantics").value(),
+                .library = std::nullopt,
             }
         );
 

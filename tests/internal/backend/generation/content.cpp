@@ -35,7 +35,8 @@ const TestSuite suite([] static noexcept {
                         std::format("struct Box<T> {{ value: T }}\nfn hold({}) {{}}\n", parameters)
                     ),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("generic_content")}
+                     .linkage_domain = *LinkageDomain::explicit_value("generic_content"),
+                     .library = std::nullopt}
                 );
             };
             const auto first = build(false);
@@ -85,7 +86,8 @@ const TestSuite suite([] static noexcept {
                         )
                     ),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("failure_content")}
+                     .linkage_domain = *LinkageDomain::explicit_value("failure_content"),
+                     .library = std::nullopt}
                 );
             };
             const auto keys = [](const PlannedCompilation& compilation) noexcept {
@@ -169,6 +171,7 @@ const TestSuite suite([] static noexcept {
                 {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = *LinkageDomain::explicit_value("query_graph"),
+                    .library = std::nullopt,
                 }
             );
 

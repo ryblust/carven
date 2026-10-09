@@ -1,7 +1,6 @@
 fn classify(value: i32) -> i32 {
     return match value {
         is i32 => 1,
-        _ => 0,
     };
 }
 

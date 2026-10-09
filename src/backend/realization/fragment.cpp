@@ -102,7 +102,7 @@ auto BodyRealizer::ExpressionBuilder::finish_fragment(Fragment value) noexcept -
         };
         if (pending(value)) {
             auto body = std::vector<TargetStmt>();
-            body.push_back(statement_expression(raw(value)));
+            body.push_back(discard_statement(raw(value)));
             body.push_back(
                 generated_statement(TargetReturnStmt {.expression = std::move(carrier)})
             );
@@ -298,7 +298,7 @@ auto BodyRealizer::ExpressionBuilder::build(
         co_return finish_fragment(std::move(fragment));
     }
     if (const auto* close = std::get_if<SemCloseChild>(&value.operation.value)) {
-        statements.emit(statement_expression(co_await_expression(call_expression(
+        statements.emit(discard_statement(co_await_expression(call_expression(
             intrinsic_expression(TargetSymbol::RuntimeAsyncClose),
             target_expressions(owner.binding_expression(close->child))
         ))));
@@ -340,7 +340,7 @@ auto BodyRealizer::ExpressionBuilder::build(
                     fragment.observes = true;
                     if (!owner.context.is_void(operation_type->success)) {
                         if (check_character) {
-                            statements.emit(statement_expression(call_expression(
+                            statements.emit(discard_statement(call_expression(
                                 intrinsic_expression(TargetSymbol::RuntimeCheckedUnicodeScalar),
                                 target_expressions(
                                     raw(completed),
@@ -366,7 +366,7 @@ auto BodyRealizer::ExpressionBuilder::build(
             auto invocation = call_expression(intrinsic_expression(symbol), {});
             if (intrinsic->kind == AsyncIntrinsic::YieldOnce
                 && request.demand == ResultDemand::Discard) {
-                statements.emit(statement_expression(co_await_expression(std::move(invocation))));
+                statements.emit(discard_statement(co_await_expression(std::move(invocation))));
                 complete(fragment, LoweringCompleted {});
             } else {
                 complete_await(
@@ -600,7 +600,7 @@ auto BodyRealizer::ExpressionBuilder::build(
         auto skipped = std::optional<std::vector<TargetStmt>>();
         if (observed && logic->operation == ShortCircuitOperator::And) {
             skipped.emplace();
-            skipped->push_back(statement_expression(observe(false, std::nullopt)));
+            skipped->push_back(discard_statement(observe(false, std::nullopt)));
         }
         statements.emit(generated_statement(
             TargetIfStmt {.branches = std::move(branches), .else_body = std::move(skipped)}

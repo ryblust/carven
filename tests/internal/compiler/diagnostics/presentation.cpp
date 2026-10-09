@@ -36,6 +36,7 @@ auto reject(std::string_view source) noexcept -> Rejection {
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:presentation").value(),
+            .library = std::nullopt,
         }
     );
     auto diagnostics = Diagnostics();

@@ -39,8 +39,10 @@ working-directory Crafts roots. It collects `.cv` and `.cpp` files recursively,
 deduplicates canonical paths, and sorts inputs by path spelling. The collected
 batch supplies physical source paths and resolved module identities to checking,
 C++ generation, and execution. Module imports resolve within that batch.
-The direct-run driver compiles collected native sources with generated
-implementations and executes the result.
+`compile --explicit-inputs` accepts the build system's complete batch without
+Crafts discovery. The direct-run driver compiles native sources and executes the
+result. Project builds use `carven-xmake-repo` for toolchain selection, native
+compilation, linking, and execution.
 `load_and_analyze_sources` prepares the batch, calls `analyze_compilation`, and
 renders diagnostics. `diagnostics.report` renders source diagnostics from their
 codes and source spans; the driver owns terminal styling and output transport.
@@ -63,11 +65,37 @@ SourceBatch → SyntaxProgram → ProgramDraft → SemIRProgram
 provides node storage and read-only views. `frontend.ast.topology` supplies
 structural traversal for syntax construction and validation.
 
+`parse_recovering` retains complete top-level items around recoverable syntax
+errors for source queries. Lexical errors, delimiter preflight failures, and
+invalid initial imports provide no tree. The ordinary `parse` entry rejects
+results with diagnostics; recovered syntax does not enter compilation.
+
 `parse_program` parses the closed source batch and resolves module imports.
 `analyze` constructs declarations and typed structured bodies, solves types and
 failure sets, validates contracts, checks ownership and callable loans, and
 publishes an immutable semantic program. Errors prevent delivery; warnings accompany
 a successful result.
+
+`semantic.analysis.source` defines optional source observations delivered through
+`SourceAnalysisOutput`. Analysis records resolved definitions and types at their
+source tokens. Successful publication supplies types owned by the returned
+program; failed analysis can retain definitions and known builtin types from
+admitted declarations and completed bodies. Observations do not establish program
+validity. The recipient borrows one batch during delivery and copies retained
+records. An empty recipient performs no recording.
+
+`tools/workspace` owns document revisions, source snapshots, query selections,
+and bounded caches of complete analysis results. Navigation selects a document's
+transitive import closure; semantic and reference queries use the explicit
+project selection. Every uncached selection runs the complete compiler pipeline
+and publication checks. Snapshots retain source revisions and query results
+independently of later document edits.
+
+`SourceLibrary` assigns a closed source library a generated linkage identity.
+Its owning build emits library implementations; consumers emit their own
+interfaces and requested inline static instances. Every compilation analyzes the
+full source batch. `carven-xmake-repo` owns source selection, native configuration,
+object reuse, artifact materialization, and toolchain invocation.
 
 ## Design considerations
 
@@ -240,3 +268,14 @@ syntax; SemIR owns data, storage, and structural contracts without depending on
 AST or analysis. Post-solve analysis consumes final operations. The backend
 consumes published semantics. Runtime support implements native operations;
 build orchestration supplies source batches and native build inputs.
+
+## Analysis timing
+
+Lexing and parsing accumulate across modules. Semantic timing includes catalog
+construction, declarations, body construction, solving, validation, and optional
+source observations. Detail intervals are included in the semantic total and
+must not be added to it. Static execution occurs within the stage requesting it.
+
+Workspace source loading and occurrence indexing have separate intervals.
+Cache hits emit no compiler timing events. End-to-end measurements also account
+for input preparation, import selection, cache maintenance, and owner teardown.

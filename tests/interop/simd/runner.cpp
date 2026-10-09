@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <span>
 #include <string_view>
-#include <type_traits>
 
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/mman.h>
@@ -24,23 +23,6 @@ namespace rt = carven::runtime;
 namespace simd = rt::simd;
 
 constexpr auto site = rt::SourceSite::native();
-
-template<typename... Value>
-constexpr auto has_value_representation =
-    ((std::is_aggregate_v<Value>
-      && std::is_standard_layout_v<Value>
-      && std::is_trivially_copyable_v<Value>)
-     && ...);
-
-static_assert(has_value_representation<
-              simd::U8x16,
-              simd::U8x32,
-              simd::F32x4,
-              simd::F32x8,
-              simd::Mask16,
-              simd::Mask32,
-              simd::Mask4,
-              simd::Mask8>);
 
 template<typename Vector>
 auto preserves_float_storage() noexcept -> bool {

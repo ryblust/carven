@@ -941,28 +941,3 @@ auto realize_operation(
     }
     return result;
 }
-
-auto discarded_operation(
-    const ModuleLowering& context,
-    const SemanticExpression& source,
-    TargetExpr expression
-) noexcept -> TargetStmt {
-    auto implicit = context.is_void(source.type.resolved());
-    const auto* call = std::get_if<TargetCallExpr>(&expression.value);
-    if (!implicit
-        && call != nullptr
-        && !std::holds_alternative<CppTypeValue>(
-            context.semantic().types().type(source.type.resolved()).value
-        )
-        && !std::holds_alternative<SemCpp>(source.value)
-        && !std::holds_alternative<SemCppCall>(source.value)) {
-        const auto* intrinsic =
-            std::get_if<TargetIntrinsicNameExpr>(&template_primary_expression(*call->callee).value);
-        implicit =
-            intrinsic == nullptr || target_symbol_info(intrinsic->symbol).allows_implicit_discard;
-    }
-    if (implicit) {
-        return generated_statement(TargetExprStmt {.expression = std::move(expression)});
-    }
-    return generated_statement(TargetDiscardStmt {.expression = std::move(expression)});
-}

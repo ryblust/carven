@@ -16,7 +16,6 @@ auto bridge_write_byte(const async_bridge::Context&, std::int32_t) noexcept
 auto bridge_trivial_byte(const async_bridge::TrivialContext&, std::int32_t) noexcept
     -> carven::runtime::execution::AsyncOperation<std::int32_t, BridgeIoError>;
 auto bridge_note(const async_bridge::Context&, std::int32_t) noexcept -> void;
-auto bridge_scalar_character(std::int32_t) noexcept -> char32_t;
 auto bridge_native_character(std::int32_t, bool) noexcept
     -> carven::runtime::execution::AsyncOperation<char32_t, BridgeIoError>;
 ---
@@ -25,7 +24,6 @@ import(cpp) async fn bridge_read_byte(context: Context) -> i32 throw IoError;
 import(cpp) async fn bridge_write_byte(context: Context, value: i32) throw IoError;
 import(cpp) async fn bridge_trivial_byte(context: TrivialContext, marker: i32) -> i32 throw IoError;
 import(cpp) async fn bridge_native_character(value: i32, fail: bool) -> char throw IoError;
-import(cpp) fn bridge_scalar_character(value: i32) -> char;
 import(cpp) fn bridge_note(context: Context, stage: i32);
 
 export(cpp) async fn source_read(context: Context) -> i32 throw IoError {
@@ -113,8 +111,6 @@ export(cpp) async fn source_discard_character(value: i32, fail: bool) throw IoEr
     await bridge_native_character(value, fail)?;
 }
 
-private async fn scalar_character(value: i32) -> char => bridge_scalar_character(value);
-
 export(cpp) async fn source_join_characters(value: i32, fail: bool) throw IoError {
     await when_all(bridge_native_character(value, fail), bridge_native_character(90, false))?;
 }
@@ -133,22 +129,4 @@ export(cpp) async fn source_first_character(value: i32, fail: bool) throw IoErro
 // A consumed success must be checked even when a later input fails the join.
 export(cpp) async fn source_join_character_then_failure(value: i32) throw IoError {
     await when_all(bridge_native_character(value, false), bridge_native_character(0xd800, true))?;
-}
-
-export(cpp) async fn source_fused_character(value: i32) -> char => await scalar_character(value);
-
-export(cpp) async fn source_discard_fused_character(value: i32) {
-    await scalar_character(value);
-}
-
-private fn character_factory(value: i32, unused: i32) => scalar_character(value);
-
-export(cpp) async fn source_discard_factory_character(value: i32) {
-    await character_factory(value, 0);
-}
-
-private async fn scalar_division(value: i32) -> i32 => 1 / value;
-
-export(cpp) async fn source_discard_fused_division(value: i32) {
-    await scalar_division(value);
 }

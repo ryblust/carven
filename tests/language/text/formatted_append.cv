@@ -28,13 +28,13 @@ const fn append_labels(count: i32) -> String {
     for index in 0..count {
         result.append_format(f"[{index:02}]");
     }
-    return result;
+    return &&result;
 }
 
 const fn append_padded(value: i32, width: i32) -> String {
     var result = String {};
     result.append_format(f"<{value:0{width}x}>我\0{'😀'}");
-    return result;
+    return &&result;
 }
 
 const appended_labels = append_labels(4);
@@ -56,7 +56,7 @@ const fn append_current_length() -> String {
                 0
             }}"
     );
-    return text;
+    return &&text;
 }
 
 const appended_current_length = append_current_length();

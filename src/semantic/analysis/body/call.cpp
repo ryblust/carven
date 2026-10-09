@@ -585,7 +585,7 @@ auto BodyElaborator::class_operation(
         co_return std::unexpected(ready.error());
     }
     const auto declaration = draft().function_declaration_copy(*function);
-    co_return BuiltExpression {
+    auto callee = BuiltExpression {
         .storage = UniqueIndirect {BodyExpressionStorage {
             active_builder().callable_expression(declaration.callable, origin(span))
         }},
@@ -593,6 +593,12 @@ auto BodyElaborator::class_operation(
         .takeable = false,
         .completes = true
     };
+    observe_source(
+        span,
+        catalog().declaration_location(draft(), catalog().function_symbol(*function)),
+        callee.type()
+    );
+    co_return callee;
 }
 
 auto BodyElaborator::class_call(
@@ -653,12 +659,7 @@ auto BodyElaborator::generic_call_expression(
         for (auto i = 0uz; i < count; ++i) {
             inferred[i] = explicit_environment[i];
         }
-        const auto proof = draft().preview_failures();
-        if (!proof) {
-            co_return std::unexpected(proof.error());
-        }
-        if (const auto canonical =
-                draft().normalize_generic_environment(explicit_environment, *proof)) {
+        if (const auto canonical = draft().normalize_generic_environment(explicit_environment)) {
             explicit_canonical = *canonical;
         }
     }
@@ -743,11 +744,7 @@ auto BodyElaborator::generic_call_expression(
         }
         arguments.push_back(*argument);
     }
-    const auto proof = draft().preview_failures();
-    if (!proof) {
-        co_return std::unexpected(proof.error());
-    }
-    const auto canonical = draft().normalize_generic_environment(arguments, *proof);
+    const auto canonical = draft().normalize_generic_environment(arguments);
     const auto all_concrete = canonical.has_value();
     const auto concrete = canonical.value_or(CanonicalGenericEnvironment());
     auto formed = draft().check_generic_type_formations(definition, arguments, origin(span));

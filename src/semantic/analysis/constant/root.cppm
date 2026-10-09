@@ -219,7 +219,11 @@ public:
         }
         aggregate_depth += aggregate;
         const auto depth = AggregateDepth {.depth = aggregate_depth, .entered = aggregate};
-        co_return (co_await interpret_expression(*this, id, expected));
+        auto result = co_await interpret_expression(*this, id, expected);
+        if (result) {
+            scope.observe_expression(id, type(*result));
+        }
+        co_return result;
     }
 
     auto read_aggregate_element(
@@ -481,6 +485,11 @@ public:
         co_return (co_await construct_interpolation(*this, source, span));
     }
 
+    auto observe_field(ProgramOriginID definition, Span name, ConstructionTypeRef type) noexcept
+        -> void {
+        scope.observe_field(definition, name, type);
+    }
+
     auto spelling(Span span) const noexcept -> std::string {
         return program.source_slice_copy(source_module_id, span);
     }
@@ -707,12 +716,8 @@ public:
             for (auto i = 0uz; i < inferred.size(); ++i) {
                 inferred[i] = explicit_environment[i];
             }
-            const auto proof = program.preview_failures();
-            if (!proof) {
-                co_return std::unexpected(proof.error());
-            }
             if (const auto canonical =
-                    program.normalize_generic_environment(explicit_environment, *proof)) {
+                    program.normalize_generic_environment(explicit_environment)) {
                 explicit_types = *canonical;
             }
         }
@@ -816,7 +821,7 @@ public:
                 {.access = contract.parameters[i].access, .expression = std::move(*argument)}
             );
         }
-        co_return co_await finish_call(*target, std::move(arguments), span);
+        co_return co_await finish_call(*target, std::move(arguments), span, source.callee);
     }
 
     auto call(const ASTCallExpr& source, Span span) noexcept -> ExpressionTask<Value> {
@@ -939,11 +944,20 @@ public:
             }
             arguments.push_back({.access = selected.access, .expression = std::move(*value)});
         }
-        co_return co_await finish_call(declaration.callable, std::move(arguments), span);
+        co_return co_await finish_call(
+            declaration.callable,
+            std::move(arguments),
+            span,
+            source.callee
+        );
     }
 
-    auto finish_call(CallableID target, std::vector<SemCallArgument> arguments, Span span) noexcept
-        -> ExpressionTask<Value> {
+    auto finish_call(
+        CallableID target,
+        std::vector<SemCallArgument> arguments,
+        Span span,
+        ASTExprID source_callee
+    ) noexcept -> ExpressionTask<Value> {
         const auto contract = program.construction_callable_contract_copy(target);
         auto dependencies = std::vector<ConstructionTypeRef> {contract.result};
         for (const auto& parameter : contract.parameters) {
@@ -965,6 +979,7 @@ public:
         }
         const auto callee_type =
             program.intern_type({.value = FunctionTypeValue {.callable = target}});
+        scope.observe_expression(source_callee, callee_type);
         auto callee = make(callee_type, SemCallable {.callable = target}, span);
         if (contract.execution == CallableExecutionKind::Async) {
             co_return make(

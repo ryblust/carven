@@ -8,6 +8,7 @@ import :semantic.analysis.catalog;
 import :semantic.analysis.construction.requests;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
 import :semantic.semir.generic;
 import :semantic.semir.program;
 import :support.function_ref;
@@ -37,7 +38,8 @@ auto resolve_source_generic_argument(
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests = nullptr,
     const GenericTypeContext* generic_context = nullptr,
-    std::optional<GenericParameterKind> expected = std::nullopt
+    std::optional<GenericParameterKind> expected = std::nullopt,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<GenericArgument>;
 
 auto resolve_generic_source_arguments(
@@ -50,7 +52,8 @@ auto resolve_generic_source_arguments(
     std::span<const GenericParameterKind> policies,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests = nullptr,
-    const GenericTypeContext* generic_context = nullptr
+    const GenericTypeContext* generic_context = nullptr,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<GenericEnvironment>;
 
 auto resolve_generic_source_type(
@@ -63,7 +66,8 @@ auto resolve_generic_source_type(
     GenericTypeContext context,
     ArrayExtentResolver resolve_extent,
     bool value_required = true,
-    ConstructionRequests* requests = nullptr
+    ConstructionRequests* requests = nullptr,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<GenericTypeID>;
 
 auto resolve_source_type(
@@ -75,7 +79,8 @@ auto resolve_source_type(
     ASTTypeID source_type,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests = nullptr,
-    const GenericTypeContext* generic_context = nullptr
+    const GenericTypeContext* generic_context = nullptr,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_type_application(
@@ -87,7 +92,8 @@ auto resolve_source_type_application(
     const ASTTypeApplicationExpr& application,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests = nullptr,
-    const GenericTypeContext* generic_context = nullptr
+    const GenericTypeContext* generic_context = nullptr,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_construction_type(
@@ -99,7 +105,8 @@ auto resolve_source_construction_type(
     const ASTConstructionType& source_type,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests = nullptr,
-    const GenericTypeContext* generic_context = nullptr
+    const GenericTypeContext* generic_context = nullptr,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto resolve_source_constraint_type(
@@ -111,7 +118,8 @@ auto resolve_source_constraint_type(
     const ASTConstraintOperand& source_type,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests = nullptr,
-    const GenericTypeContext* generic_context = nullptr
+    const GenericTypeContext* generic_context = nullptr,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<ConstructionTypeRef>;
 
 auto require_source_value_type(
@@ -131,5 +139,6 @@ auto resolve_failure_types(
     const ASTThrowClause& clause,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests = nullptr,
-    const GenericTypeContext* generic_context = nullptr
+    const GenericTypeContext* generic_context = nullptr,
+    SourceObservation* observations = nullptr
 ) noexcept -> AnalysisTask<ConstructionFailureRef>;

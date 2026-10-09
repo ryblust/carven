@@ -31,7 +31,8 @@ auto resolve_source_generic_argument(
     ArrayExtentResolver extent,
     ConstructionRequests* requests,
     const GenericTypeContext* context,
-    std::optional<GenericParameterKind> expected
+    std::optional<GenericParameterKind> expected,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<GenericArgument> {
     auto result = std::optional<GenericArgument>();
     if (const auto* type = std::get_if<ASTTypeID>(&argument.value)) {
@@ -44,7 +45,8 @@ auto resolve_source_generic_argument(
             *type,
             extent,
             requests,
-            context
+            context,
+            observations
         );
         if (!resolved) {
             co_return std::unexpected(resolved.error());
@@ -60,7 +62,8 @@ auto resolve_source_generic_argument(
             std::get<ASTThrowClause>(argument.value),
             extent,
             requests,
-            context
+            context,
+            observations
         );
         if (!resolved) {
             co_return std::unexpected(resolved.error());
@@ -88,7 +91,8 @@ auto resolve_generic_source_arguments(
     std::span<const GenericParameterKind> policies,
     ArrayExtentResolver extent,
     ConstructionRequests* requests,
-    const GenericTypeContext* context
+    const GenericTypeContext* context,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<GenericEnvironment> {
     if (arguments.size() != policies.size()) {
         const auto span = arguments.empty() ? Span::at(0u) : arguments.front().span;
@@ -111,7 +115,8 @@ auto resolve_generic_source_arguments(
             extent,
             requests,
             context,
-            policies[index]
+            policies[index],
+            observations
         );
         if (!resolved) {
             co_return std::unexpected(resolved.error());

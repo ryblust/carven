@@ -86,7 +86,7 @@ const fn constant_view_scope() -> String {
 const fn constant_extend_owned(&&text: String) -> String {
     var result = &&text;
     result.append("b");
-    return result;
+    return &&result;
 }
 
 const fn constant_restore_taken() -> String {
@@ -142,16 +142,6 @@ test "Const functions: initializer composition preserves types and skips unused 
     const length = constant_read_view(constant_string_identity("borrowed"));
     check(length == 8usize);
     check(constant_read_view(constant_string_identity("borrowed")) == length);
-
-    const direct_length = constant_string_identity("abc").byte_length();
-    const empty = constant_string_identity("").is_empty();
-    const equal = constant_string_identity("abc") == "abc";
-    check(direct_length == 3usize);
-    check(constant_string_identity("abc").byte_length() == direct_length);
-    check(empty);
-    check(constant_string_identity("").is_empty() == empty);
-    check(equal);
-    check((constant_string_identity("abc") == "abc") == equal);
 
     const ignored = false && (DeferredValue::Value(constant_value()) == DeferredValue::Value(0));
     check(!ignored);

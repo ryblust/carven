@@ -13,6 +13,14 @@ enum class TimingStage {
     ArtifactWriting,
     NativeCompilation,
     Execution,
+    // Semantic details and SourceObservations are included in SemanticAnalysis.
+    SemanticCatalog,
+    SemanticDeclarations,
+    SemanticBodies,
+    SemanticSolving,
+    SemanticValidation,
+    SourceObservations,
+    SourceIndex,
     Count,
 };
 

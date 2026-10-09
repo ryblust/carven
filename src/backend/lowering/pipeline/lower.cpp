@@ -32,17 +32,9 @@ auto wrap_linkage_namespaces(
     if (items.empty()) {
         return {};
     }
-    auto domain = namespace_item(
-        context.plan().names().domain_namespace(),
-        std::move(items),
-        TargetCompilerReason::ArtifactScaffolding,
-        false
+    return target_items(
+        namespace_item(context.plan().names().generated_namespace(), std::move(items))
     );
-    auto generated = namespace_item(
-        context.plan().names().generated_namespace(),
-        target_items(std::move(domain))
-    );
-    return target_items(std::move(generated));
 }
 
 auto lower_interface(ArtifactLowering& context, const TargetInterfaceArtifact& schedule) noexcept

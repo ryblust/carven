@@ -216,7 +216,7 @@ test "Pointers: failure exits and iteration retain their contracts" {
     }
     var caught = false;
     try {
-        let value = null_is_failure(nullptr)?;
+        let _ = null_is_failure(nullptr)?;
     } catch {
         PointerFailure(_) => { caught = true; },
     }

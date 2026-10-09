@@ -63,7 +63,8 @@ const TestSuite suite([] static noexcept {
             fn fatal() { assert(false); touch(); }
         )"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("reporting")}
+                 .linkage_domain = *LinkageDomain::explicit_value("reporting"),
+                 .library = std::nullopt}
             );
             auto branches = 0uz;
             auto writers = 0uz;
@@ -122,7 +123,8 @@ const TestSuite suite([] static noexcept {
                         )
                     ),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("simd_sites")}
+                     .linkage_domain = *LinkageDomain::explicit_value("simd_sites"),
+                     .library = std::nullopt}
                 );
                 struct Query final {
                     std::size_t sites;
@@ -158,7 +160,8 @@ const TestSuite suite([] static noexcept {
                     }
                 )"),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("executable_effects")}
+             .linkage_domain = *LinkageDomain::explicit_value("executable_effects"),
+             .library = std::nullopt}
         );
         struct Query final {
             const TargetUnit& unit;

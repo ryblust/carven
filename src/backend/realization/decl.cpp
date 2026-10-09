@@ -322,9 +322,8 @@ struct DeclarationUses final {
             && mutable_owners.contains(variable.local)) {
             variable.binding = TargetVariableBinding::MutableValue;
         }
-        if (uses.read.contains(variable.local)) {
-            variable.maybe_unused = false;
-        }
+        // Retained storage can serve evaluation or cleanup without a value read.
+        variable.maybe_unused = !uses.read.contains(variable.local);
         return true;
     }
 };

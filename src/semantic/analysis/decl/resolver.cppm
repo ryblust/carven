@@ -64,6 +64,9 @@ private:
         ASTView syntax;
         const GenericTypeContext* generic_context = nullptr;
 
+        auto observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept -> void;
+        auto observe_field(ProgramOriginID definition, Span name, ConstructionTypeRef type) noexcept
+            -> void;
         auto resolve_name(std::string_view name, Span span) noexcept
             -> AnalysisTask<std::optional<ConstantID>>;
         auto resolve_class_operation(

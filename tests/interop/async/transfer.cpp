@@ -345,7 +345,7 @@ auto cancelled_close() noexcept -> void {
 }
 } // namespace
 
-int main() {
+auto run_transfer_cases() noexcept -> void {
     chunks();
     std::puts("chunks: pass");
     pending_read();

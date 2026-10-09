@@ -83,7 +83,8 @@ const TestSuite suite([] static noexcept {
                     "const (left, _, (right,)) = (20, (), (22,)); return left + right; }"
                 ),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("static_tuple_values")}
+                 .linkage_domain = *LinkageDomain::explicit_value("static_tuple_values"),
+                 .library = std::nullopt}
             );
             for (const auto artifact : compilation.target().artifacts()) {
                 const auto unit = lower_artifact(compilation, artifact.id);
@@ -102,7 +103,8 @@ const TestSuite suite([] static noexcept {
                     "nothing(empty); return first + last; }"
                 ),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("tuple_values")}
+                 .linkage_domain = *LinkageDomain::explicit_value("tuple_values"),
+                 .library = std::nullopt}
             );
             auto void_abi = false;
             auto tuple_positions = false;

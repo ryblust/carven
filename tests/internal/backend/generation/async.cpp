@@ -204,7 +204,8 @@ const TestSuite suite([] static noexcept {
                 const auto compilation = PlannedCompilation::build(
                     analyze_async_generation_source(std::string(input.source)),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("async_generation")}
+                     .linkage_domain = *LinkageDomain::explicit_value("async_generation"),
+                     .library = std::nullopt}
                 );
                 expect_greater(compilation.target().artifact_count(), 0uz);
                 for (const auto artifact : compilation.target().artifacts()) {
@@ -318,7 +319,8 @@ const TestSuite suite([] static noexcept {
                 const auto compilation = PlannedCompilation::build(
                     analyze_async_generation_source(std::string(input.source)),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("async_fusion")}
+                     .linkage_domain = *LinkageDomain::explicit_value("async_fusion"),
+                     .library = std::nullopt}
                 );
                 auto factories = std::flat_set<std::string> {"factory"};
                 for (const auto& instance : compilation.semantic().static_instances()) {
@@ -384,7 +386,8 @@ async fn probe(value: i32) -> i32 {
 }
 )"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("async_scalar_storage")}
+                 .linkage_domain = *LinkageDomain::explicit_value("async_scalar_storage"),
+                 .library = std::nullopt}
             );
             const auto factories = std::flat_set<std::string> {"factory"};
             auto summary = AsyncFusionSummary();
@@ -472,7 +475,8 @@ async fn probe() { await leaf(); after(); }
                 const auto compilation = PlannedCompilation::build(
                     analyze_async_generation_source(std::string(input.source)),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("async_discarded_success")}
+                     .linkage_domain = *LinkageDomain::explicit_value("async_discarded_success"),
+                     .library = std::nullopt}
                 );
                 const auto factories = std::flat_set<std::string> {"factory"};
                 auto summary = AsyncFusionSummary();
@@ -511,7 +515,8 @@ async fn probe(value: i32) -> i32 {
     return (await ready) + (await checked);
 })"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("async_static_instance")}
+                 .linkage_domain = *LinkageDomain::explicit_value("async_static_instance"),
+                 .library = std::nullopt}
             );
             expect_equal(compilation.semantic().static_instances().size(), 2uz);
             auto checked_instances = 0uz;
@@ -567,7 +572,8 @@ async fn probe(value: i32) -> i32 {
                 const auto compilation = PlannedCompilation::build(
                     analyze_async_generation_source(std::string(input.source)),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("async_cancellation")}
+                     .linkage_domain = *LinkageDomain::explicit_value("async_cancellation"),
+                     .library = std::nullopt}
                 );
                 struct Query final {
                     std::size_t observations;
@@ -639,7 +645,8 @@ async fn probe(value: i32) -> i32 {
                 const auto compilation = PlannedCompilation::build(
                     analyze_async_generation_source(std::string(input.source)),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("async_operand_value")}
+                     .linkage_domain = *LinkageDomain::explicit_value("async_operand_value"),
+                     .library = std::nullopt}
                 );
                 struct Query final {
                     std::size_t bodies;
@@ -699,7 +706,8 @@ export(cpp) async fn probe(context: ::Context) -> i32 throw IoError {
     return await operation?;
 })"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("async_native_boundary")}
+                 .linkage_domain = *LinkageDomain::explicit_value("async_native_boundary"),
+                 .library = std::nullopt}
             );
             struct Query final {
                 const TargetUnit& unit;
@@ -792,7 +800,8 @@ export(cpp) async fn probe(context: ::Context) -> i32 throw IoError {
                 const auto compilation = PlannedCompilation::build(
                     analyze_async_generation_source(std::string(input.source)),
                     {.test_mode = TestGenerationMode::None,
-                     .linkage_domain = *LinkageDomain::explicit_value("async_tail")}
+                     .linkage_domain = *LinkageDomain::explicit_value("async_tail"),
+                     .library = std::nullopt}
                 );
                 auto summary = AsyncFusionSummary {};
                 const auto names = std::flat_set<std::string> {"probe"};

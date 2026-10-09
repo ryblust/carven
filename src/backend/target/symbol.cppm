@@ -144,8 +144,6 @@ enum class TargetSymbol {
 struct TargetSymbolInfo final {
     std::string_view spelling;
     std::optional<TargetHeaderProvider> header;
-    // The call-result contract does not permit omitting execution.
-    bool allows_implicit_discard;
 };
 
 auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo;

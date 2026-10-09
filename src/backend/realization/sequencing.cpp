@@ -4,7 +4,6 @@ import :backend.lowering.constant;
 import :backend.lowering.context;
 import :backend.preparation.body;
 import :backend.realization.expr;
-import :backend.realization.operation;
 import :backend.realization.realizer;
 import :backend.target.expr;
 import :backend.target.stmt;
@@ -19,7 +18,7 @@ auto BodyRealizer::ExpressionBuilder::discard_pending(Fragment& fragment) noexce
     }
     if (fragment.executes) {
         fragment.statements.emit(
-            discarded_operation(owner.context, source(fragment).operation, raw(fragment))
+            generated_statement(TargetDiscardStmt {.expression = raw(fragment)})
         );
     }
     complete(fragment, LoweringCompleted {});

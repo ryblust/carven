@@ -38,7 +38,8 @@ const TestSuite suite([] static noexcept {
                     )
                 ),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("slice_range")}
+                 .linkage_domain = *LinkageDomain::explicit_value("slice_range"),
+                 .library = std::nullopt}
             );
             struct Query final {
                 std::size_t ranges = 0uz;
@@ -76,7 +77,8 @@ const TestSuite suite([] static noexcept {
                     }
                 )"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("static_projection")}
+                 .linkage_domain = *LinkageDomain::explicit_value("static_projection"),
+                 .library = std::nullopt}
             );
             struct Query final {
                 std::size_t splats;
@@ -225,53 +227,7 @@ const TestSuite suite([] static noexcept {
             expect(floating_count == 2uz);
         };
 
-    "Generation: proven scalar results require no computation or discard scaffolding"_test =
-        [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(
-                    "enum Error { E1, E2, }\n"
-                    "fn foo(a: i32) -> i32 throw Error {\n"
-                    "  if 1 < 2 { return 3 + a; } else { throw Error::E1; }\n"
-                    "}\n"
-                    "fn folded() -> i32 { return 1 + 2; }\n"
-                    "fn skipped() -> i32 { if false && (folded() == 3) { return 0; } return 2; }\n"
-                    "struct Value { field: i32, }\n"
-                    "fn skipped_object() -> bool { return false && (Value { field: 1 }.field == 1); }\n"
-                ),
-                {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("evaluation")}
-            );
-
-            struct Query final {
-                std::size_t calls;
-
-                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
-                    -> bool {
-                    expect(!(std::holds_alternative<TargetStaticCastExpr>(expression.value)));
-                    expect(!(std::holds_alternative<TargetBinaryExpr>(expression.value)));
-                    expect(!(std::holds_alternative<TargetConstructionExpr>(expression.value)));
-                    calls += std::holds_alternative<TargetCallExpr>(expression.value);
-                    return true;
-                }
-
-                auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-                    expect(!(std::holds_alternative<TargetBlockStmt>(statement.value)));
-                    expect(!(std::holds_alternative<TargetDiscardStmt>(statement.value)));
-                    expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
-                    expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
-                    return true;
-                }
-            };
-
-            auto query = Query {.calls = 0uz};
-            for (const auto artifact : compilation.target().artifacts()) {
-                const auto unit = lower_artifact(compilation, artifact.id);
-                expect(traverse_target_unit(unit.sections(), query));
-            }
-            expect(query.calls == 2uz);
-        };
-
-    "Generation: discarded operations use their native result contract"_test = [] static noexcept {
+    "Generation: discarded results retain calls and checked arithmetic"_test = [] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_test_program(R"(
             struct Record { value: i32, }
@@ -291,25 +247,13 @@ const TestSuite suite([] static noexcept {
             }
         )"),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("discarded_operations")}
+             .linkage_domain = *LinkageDomain::explicit_value("discarded_operations"),
+             .library = std::nullopt}
         );
 
         struct Query final {
             std::flat_map<std::string, std::size_t> calls;
             std::size_t checked_divisions;
-            std::size_t explicit_discards;
-
-            auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                if (const auto* discard = std::get_if<TargetDiscardStmt>(&statement.value)) {
-                    ++explicit_discards;
-                    expect(std::holds_alternative<TargetBinaryExpr>(discard->expression.value));
-                }
-                if (const auto* expression = std::get_if<TargetExprStmt>(&statement.value)) {
-                    expect(std::holds_alternative<TargetCallExpr>(expression->expression.value));
-                }
-                return true;
-            }
-
             auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
                 -> bool {
                 if (const auto* call = std::get_if<TargetCallExpr>(&expression.value)) {
@@ -328,7 +272,7 @@ const TestSuite suite([] static noexcept {
             }
         };
 
-        auto query = Query {.calls = {}, .checked_divisions = 0uz, .explicit_discards = 0uz};
+        auto query = Query {.calls = {}, .checked_divisions = 0uz};
         for (const auto artifact : compilation.target().artifacts()) {
             const auto unit = lower_artifact(compilation, artifact.id);
             if (!expect(traverse_target_unit(unit.sections(), query))) {
@@ -340,92 +284,7 @@ const TestSuite suite([] static noexcept {
         expect_equal(query.calls["tag"], 1uz);
         expect_equal(query.calls["effect"], 1uz);
         expect(query.checked_divisions == 1uz);
-        expect(query.explicit_discards == 1uz);
     };
-
-    "Generation: boolean expressions use native short circuit without result storage"_test =
-        [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
-            fn both(left: bool, right: bool) -> bool => left && right;
-            fn either(left: bool, right: bool) -> bool => left || right;
-            fn nested(a: bool, b: bool, c: bool) -> bool => a && (b || c);
-        )"),
-                {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("native_short_circuit")}
-            );
-
-            struct Query final {
-                std::size_t logical;
-
-                auto enter_statement(const TargetStmt& statement) const noexcept -> bool {
-                    expect(!(std::holds_alternative<TargetVariableStmt>(statement.value)));
-                    expect(!(std::holds_alternative<TargetIfStmt>(statement.value)));
-                    return true;
-                }
-
-                auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept
-                    -> bool {
-                    if (const auto* binary = std::get_if<TargetBinaryExpr>(&expression.value)) {
-                        logical += binary->op == TargetBinaryOperator::LogicalAnd
-                            || binary->op == TargetBinaryOperator::LogicalOr;
-                    }
-                    return true;
-                }
-            };
-
-            auto query = Query {.logical = 0uz};
-            for (const auto artifact : compilation.target().artifacts()) {
-                const auto unit = lower_artifact(compilation, artifact.id);
-                if (!expect(traverse_target_unit(unit.sections(), query))) {
-                    return;
-                }
-            }
-            expect(query.logical == 4uz);
-        };
-
-    "Generation: loop conditions use native expressions after required sequencing"_test =
-        [] static noexcept {
-            const auto compilation = PlannedCompilation::build(
-                analyze_test_program(R"(
-            fn direct(&remaining: i32) { while remaining > 0 { remaining -= 1; } }
-            struct Failure {}
-            fn predicate() -> bool throw Failure { return false; }
-            fn ordered() throw Failure { while predicate()? {} }
-        )"),
-                {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("loop_conditions")}
-            );
-
-            struct Query final {
-                std::size_t direct;
-                std::size_t sequenced;
-
-                auto enter_statement(const TargetStmt& statement) noexcept -> bool {
-                    if (const auto* loop = std::get_if<TargetWhileStmt>(&statement.value)) {
-                        const auto* literal =
-                            std::get_if<TargetLiteralExpr>(&loop->condition.value);
-                        if (literal != nullptr) {
-                            ++sequenced;
-                            expect(!(loop->body.empty()));
-                        } else {
-                            ++direct;
-                        }
-                    }
-                    return true;
-                }
-            };
-
-            auto query = Query {.direct = 0uz, .sequenced = 0uz};
-            for (const auto artifact : compilation.target().artifacts()) {
-                const auto unit = lower_artifact(compilation, artifact.id);
-                if (!expect(traverse_target_unit(unit.sections(), query))) {
-                    return;
-                }
-            }
-            expect(query.direct == 1uz);
-            expect(query.sequenced == 1uz);
-        };
 
     "Generation: nested expressions retain each runtime operand once"_test = [] static noexcept {
         constexpr auto count = 128uz;
@@ -442,7 +301,8 @@ const TestSuite suite([] static noexcept {
         const auto compilation = PlannedCompilation::build(
             analyze_test_program(std::move(source)),
             {.test_mode = TestGenerationMode::None,
-             .linkage_domain = *LinkageDomain::explicit_value("long_expression")}
+             .linkage_domain = *LinkageDomain::explicit_value("long_expression"),
+             .library = std::nullopt}
         );
 
         struct Query final {
@@ -481,7 +341,8 @@ const TestSuite suite([] static noexcept {
             fn discard() { effect() / 2; effect() / -1; effect() >> 2; }
         )"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("integer_facts")}
+                 .linkage_domain = *LinkageDomain::explicit_value("integer_facts"),
+                 .library = std::nullopt}
             );
 
             struct Query final {

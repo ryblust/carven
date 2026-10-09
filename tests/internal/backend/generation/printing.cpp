@@ -26,7 +26,8 @@ const TestSuite suite([] static noexcept {
                     "fn dynamic(value: i32) { println(value); }"
                 ),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("known_printing")}
+                 .linkage_domain = *LinkageDomain::explicit_value("known_printing"),
+                 .library = std::nullopt}
             );
 
             struct Query final {

@@ -131,7 +131,7 @@ test "Closures: assignment rebinds Write targets with default C++ assignment" {
 }
 
 test "Callee selection: identity and explicit value snapshots" {
-    let factory = [](value: i32) => [value](ignored: i32) => value;
+    let factory = [](value: i32) => [value](_: i32) => value;
     var selected = factory(1);
     let replacement = factory(10);
     let rebind = [&selected, replacement]() {

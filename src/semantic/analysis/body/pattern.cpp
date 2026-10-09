@@ -291,6 +291,7 @@ auto BodyElaborator::build_pattern(
                             .role = BodyLocalRole::Local,
                             .unused_candidate = std::nullopt,
                             .projection = {},
+                            .definition = std::nullopt,
                         },
                         DiagnosticCode::MatchBindingMismatch
                     );
@@ -309,6 +310,8 @@ auto BodyElaborator::build_pattern(
                         DiagnosticCode::MatchBindingMismatch,
                         "or-pattern binding has a different type in another alternative"
                     ));
+                } else {
+                    observe_binding(binding.name_span, *find_local(name));
                 }
                 const auto stored = body_builder.binding_copy(found->second.storage.binding);
                 const auto* alias = std::get_if<AccessBindingStorage>(&stored.storage);
@@ -381,7 +384,7 @@ auto BodyElaborator::build_pattern(
                     }
                 }
                 const auto case_name = spelling(case_pattern.name_span);
-                const auto selected_id = draft().enum_case_named(owner, case_name);
+                const auto selected_id = find_enum_case(owner, case_name, case_pattern.name_span);
                 auto selected = std::optional<ConstructionEnumCaseDeclaration>();
                 if (selected_id.has_value()) {
                     selected = draft().construction_enum_case_declaration_copy(*selected_id);
@@ -559,7 +562,10 @@ auto BodyElaborator::resolve_pattern_constraint(const ASTConstraintOperand& oper
         source_module_id,
         ast,
         operand,
-        resolve_extent
+        resolve_extent,
+        nullptr,
+        nullptr,
+        observe_sources ? &source_occurrences : nullptr
     ));
 }
 

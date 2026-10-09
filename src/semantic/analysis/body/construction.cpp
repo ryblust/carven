@@ -23,6 +23,8 @@ import :semantic.analysis.expr.scope;
 import :semantic.analysis.names;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
+import :semantic.analysis.types;
 import :semantic.analysis.types.display;
 import :semantic.analysis.types.standard;
 import :semantic.analysis.types;
@@ -48,7 +50,8 @@ BodyElaborator::BodyElaborator(
     FailureTermID outward_failure_term_id,
     bool accepts_catch_residual,
     bool test_body,
-    std::optional<GenericTypeContext> generic_context
+    std::optional<GenericTypeContext> generic_context,
+    bool observe_source
 ) noexcept
     : batch(std::addressof(owner)),
       source_module_id(source_module_id),
@@ -61,6 +64,7 @@ BodyElaborator::BodyElaborator(
       outward_failure_term_id(outward_failure_term_id),
       is_test(test_body),
       dead_failure_context {owner.draft->add_empty_failure_term(), true},
+      observe_sources(owner.draft->source_analysis() != nullptr && observe_source),
       reachable(true),
       reference_path_reachable(true),
       reported_unreachable(false) {
@@ -76,6 +80,17 @@ BodyElaborator::BodyElaborator(
     body_builder.set_lifetime(root_lifetime);
     regions.push_back(empty_region(ast.ast_module().span));
     failure_contexts.push_back({outward_failure_term_id, accepts_catch_residual});
+}
+
+auto BodyElaborator::observe_source(
+    Span location,
+    std::optional<SourceSpan> definition,
+    std::optional<ConstructionTypeRef> type
+) noexcept -> void {
+    if (!observe_sources || location.empty()) {
+        return;
+    }
+    source_occurrences.record(draft(), locate(ast.source_id(), location), definition, type);
 }
 
 auto BodyElaborator::draft() const noexcept -> ProgramDraft& {
@@ -255,6 +270,7 @@ auto BodyElaborator::compute_static_binding(LocalBindingID binding) noexcept
 auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noexcept
     -> AnalysisTask<std::optional<ConstantID>> {
     if (const auto* local = use_local(name)) {
+        observe_binding(span, *local);
         auto result = co_await compute_static_binding(local->storage.binding);
         if (!result || !*result) {
             co_return result;
@@ -412,7 +428,8 @@ auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
             *application,
             extent,
             &batch->requests,
-            generic_context ? std::addressof(*generic_context) : nullptr
+            generic_context ? std::addressof(*generic_context) : nullptr,
+            observe_sources ? &source_occurrences : nullptr
         ));
         if (!type) {
             co_return std::unexpected(type.error());
@@ -424,6 +441,7 @@ auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
         co_return std::optional<TypeID>();
     }
     const auto text = spelling(name->name_span);
+    observe_source(name->name_span, std::nullopt, std::nullopt);
     if (const auto builtin = source_builtin_type(text)) {
         co_return std::optional(draft().builtin_type(*builtin));
     }
@@ -466,11 +484,15 @@ auto BodyElaborator::resolve_constant_enum_case(
             "scope qualifier does not name an enum or class type"
         ));
     }
-    if (const auto case_id = draft().enum_case_named(nominal->enumeration, name)) {
+    if (const auto case_id = find_enum_case(nominal->enumeration, name, span)) {
         const auto declaration = draft().construction_enum_case_declaration_copy(*case_id);
+        const auto reference_type =
+            enum_case_reference_type(draft(), type, declaration.payload_types);
+        observe_source(span, std::nullopt, reference_type);
         co_return ResolvedEnumCase {
             .id = *case_id,
             .owner = declaration.owner,
+            .reference_type = reference_type,
             .payload_types = declaration.payload_types,
             .constant = declaration.constant,
         };
@@ -500,7 +522,8 @@ auto BodyElaborator::resolve_type(ASTTypeID type) noexcept -> AnalysisTask<Const
         type,
         resolve_extent,
         &batch->requests,
-        generic_context ? std::addressof(*generic_context) : nullptr
+        generic_context ? std::addressof(*generic_context) : nullptr,
+        observe_sources ? &source_occurrences : nullptr
     ));
     if (result) {
         auto prepared =
@@ -526,7 +549,8 @@ auto BodyElaborator::resolve_construction_type(const ASTConstructionType& type) 
         type,
         resolve_extent,
         &batch->requests,
-        generic_context ? std::addressof(*generic_context) : nullptr
+        generic_context ? std::addressof(*generic_context) : nullptr,
+        observe_sources ? &source_occurrences : nullptr
     ));
     if (result) {
         auto prepared =

@@ -8,7 +8,6 @@
 #include <span>
 
 namespace {
-int scalar_character_calls = 0;
 namespace async = carven::runtime::execution;
 namespace api = carven::api::tests::interop::async::bridge;
 using async_bridge::Context;
@@ -139,13 +138,4 @@ auto bridge_native_character(std::int32_t value, bool fail) noexcept
         co_return Result::failure(api::make_io_error(EIO));
     }
     co_return Result::success(static_cast<char32_t>(value));
-}
-
-auto bridge_scalar_character_calls() noexcept -> int {
-    return scalar_character_calls;
-}
-
-auto bridge_scalar_character(std::int32_t value) noexcept -> char32_t {
-    ++scalar_character_calls;
-    return static_cast<char32_t>(value);
 }

@@ -130,9 +130,15 @@ static calls. Tuple types have fixed element lists; substituting an element type
 preserves the product shape.
 
 Ordinary batch closure and static demand use the same normalization boundary.
-Static demand first completes the callable bodies reachable through its selected
-type and failure dependencies. A preview cannot infer an empty set from an
-unfinished body. Instance substitution shares one failure-instantiation memo
+Normalization reads canonical arguments, immutable symbolic facts, and any
+supplied failure solution without initiating a solve. Ordinary construction keeps
+unresolved environments in deferred calls. Once source bodies complete, batch
+closure shares a failure solution across those calls and closes newly formed
+instances before static realization. Static demand first completes the callable
+bodies reachable through its selected type and failure dependencies, then requests
+a failure preview if normalization still needs one. A preview cannot infer an
+empty set from an unfinished body. Publication solves and validates the complete
+program. Instance substitution shares one failure-instantiation memo
 across signatures, type descriptors, expressions, regions, calls, and handlers.
 Recursive equations retain their graph edges until solving; direct members of
 an unfinished equation are not a complete failure contract.

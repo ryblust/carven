@@ -89,10 +89,7 @@ auto append_domain_prefix(
     }
 }
 
-enum class ModuleReferenceResolutionError {
-    InvalidCanonicalPath,
-    EscapesModuleDomain,
-};
+} // namespace
 
 auto resolve_import_path(
     std::string_view source,
@@ -143,6 +140,8 @@ auto resolve_import_path(
     }
     return std::move(*resolved);
 }
+
+namespace {
 
 auto close_import_graph(
     CompilationProvenanceView provenance,

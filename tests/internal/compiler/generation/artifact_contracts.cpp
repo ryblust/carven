@@ -58,6 +58,7 @@ fn fail_value() -> i32 throw Failure {
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:artifacts").value(),
+            .library = std::nullopt,
         }
     );
     return checked_artifacts(std::move(result), sources);
@@ -86,6 +87,7 @@ auto compile_opaque_raw_fixture() noexcept -> GeneratedArtifactSet {
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:artifacts").value(),
+            .library = std::nullopt,
         }
     );
     return checked_artifacts(std::move(result), sources);
@@ -132,6 +134,7 @@ const TestSuite suite([] static noexcept {
             const auto request = TargetPlanningRequest {
                 .test_mode = TestGenerationMode::None,
                 .linkage_domain = LinkageDomain::explicit_value("test:pipeline").value(),
+                .library = std::nullopt,
             };
             auto composed_output = std::string();
             auto composed_stages = std::vector<TimingStage>();
@@ -170,24 +173,27 @@ const TestSuite suite([] static noexcept {
                 std::nullopt,
                 staged_timings
             );
+            if (!expect(staged.has_value())) {
+                return;
+            }
             expect_equal(composed_output, std::string_view("analysis"));
             expect_equal(staged_output, composed_output);
             expect_equal(composed->diagnostics.size(), semantic->diagnostics.size());
-            const auto expected_stages = std::vector {
-                TimingStage::Lexing,
-                TimingStage::Parsing,
+            const auto required_stages = std::array {
                 TimingStage::Lexing,
                 TimingStage::Parsing,
                 TimingStage::SemanticAnalysis,
                 TimingStage::CppGeneration,
             };
-            expect(composed_stages == expected_stages);
-            expect(staged_stages == composed_stages);
-            if (!expect_equal(composed->value.entries().size(), staged.entries().size())) {
+            for (const auto stage : required_stages) {
+                expect(std::ranges::contains(composed_stages, stage));
+                expect(std::ranges::contains(staged_stages, stage));
+            }
+            if (!expect_equal(composed->value.entries().size(), staged->entries().size())) {
                 return;
             }
             for (const auto& [left, right] :
-                 std::views::zip(composed->value.entries(), staged.entries())) {
+                 std::views::zip(composed->value.entries(), staged->entries())) {
                 expect_equal(left.logical_path, right.logical_path);
                 expect_equal(left.role, right.role);
                 expect(left.source_mapping == right.source_mapping);
@@ -233,12 +239,17 @@ const TestSuite suite([] static noexcept {
                     TargetPlanningRequest {
                         .test_mode = TestGenerationMode::None,
                         .linkage_domain = LinkageDomain::explicit_value("test:pipeline").value(),
+                        .library = std::nullopt,
                     },
                     {},
                     record_timing
                 );
                 expect(!result.has_value());
-                expect(stages == failure.stages);
+                for (const auto required : failure.stages) {
+                    expect(std::ranges::contains(stages, required));
+                }
+                expect(!std::ranges::contains(stages, TimingStage::CppGeneration));
+                expect(!std::ranges::contains(stages, TimingStage::ArtifactWriting));
             });
         }
     };

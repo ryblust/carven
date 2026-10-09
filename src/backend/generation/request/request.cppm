@@ -1,5 +1,6 @@
 module carven:backend.generation.request;
 
+import :source.module_path;
 import std;
 
 enum class TestGenerationMode {
@@ -28,7 +29,16 @@ private:
     std::string domain_value;
 };
 
+// A closed, independently analyzed source library. Its native implementation
+// has one identity independent of the consuming program's test mode.
+struct SourceLibrary final {
+    std::vector<CanonicalModulePath> modules;
+    LinkageDomain linkage_domain;
+    bool emit_implementations;
+};
+
 struct TargetPlanningRequest final {
     TestGenerationMode test_mode;
     LinkageDomain linkage_domain;
+    std::optional<SourceLibrary> library;
 };

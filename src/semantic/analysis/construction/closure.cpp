@@ -64,6 +64,12 @@ auto ConstructionRequests::close_generic_environment(
                     types.push_back(shape.element);
                 } else if constexpr (std::same_as<Shape, ConstructionTupleTypeValue>) {
                     types.append_range(shape.elements);
+                } else if constexpr (std::same_as<Shape, ConstructionCallableViewTypeValue>) {
+                    for (const auto& parameter : shape.parameters) {
+                        types.push_back(parameter.type);
+                    }
+                    types.push_back(shape.result);
+                    roots.push_back(shape.failures);
                 }
             });
         }
@@ -123,12 +129,21 @@ auto ConstructionRequests::close_generic_environment(
             co_return std::unexpected(completed.error());
         }
     }
-    auto preview = owner.draft.preview_failures();
-    if (!preview) {
-        co_return std::unexpected(preview.error());
-    }
-    const auto environment = owner.draft.normalize_generic_environment(arguments, *preview);
+    auto environment = owner.draft.normalize_generic_environment(arguments);
     if (!environment) {
+        if (const auto failure = owner.draft.diagnostics().failure()) {
+            co_return std::unexpected(*failure);
+        }
+        auto preview = owner.draft.preview_failures();
+        if (!preview) {
+            co_return std::unexpected(preview.error());
+        }
+        environment = owner.draft.normalize_generic_environment(arguments, &*preview);
+    }
+    if (!environment) {
+        if (const auto failure = owner.draft.diagnostics().failure()) {
+            co_return std::unexpected(*failure);
+        }
         co_return std::unexpected(owner.draft.diagnostics().error(
             DiagnosticBuilder(
                 DiagnosticCode::ConstAdmission,

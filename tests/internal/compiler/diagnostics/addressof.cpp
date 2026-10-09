@@ -149,6 +149,7 @@ const TestSuite suite([] static noexcept {
                 TargetPlanningRequest {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = *LinkageDomain::explicit_value("test:pointer-address-of"),
+                    .library = std::nullopt,
                 }
             );
             auto diagnostic_report = std::string();

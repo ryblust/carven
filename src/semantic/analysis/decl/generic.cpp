@@ -237,7 +237,8 @@ auto DeclResolver::resolve_generic_declaration(
                 context,
                 extent,
                 false,
-                &requests
+                &requests,
+                draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
             );
             if (!type) {
                 co_return std::unexpected(type.error());
@@ -265,7 +266,8 @@ auto DeclResolver::resolve_generic_declaration(
                 context,
                 extent,
                 false,
-                &requests
+                &requests,
+                draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
             );
             if (!type) {
                 co_return std::unexpected(type.error());
@@ -356,7 +358,8 @@ auto DeclResolver::resolve_generic_declaration(
                 context,
                 extent,
                 true,
-                &requests
+                &requests,
+                draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
             ));
             if (!type) {
                 co_return std::unexpected(type.error());
@@ -455,7 +458,8 @@ auto DeclResolver::resolve_generic_declaration(
                 context,
                 extent,
                 true,
-                &requests
+                &requests,
+                draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
             ));
             if (!type) {
                 co_return std::unexpected(type.error());

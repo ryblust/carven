@@ -54,6 +54,7 @@ auto compile_fixture(SourceManager& sources, std::span<const ModuleFixture> modu
         TargetPlanningRequest {
             .test_mode = TestGenerationMode::None,
             .linkage_domain = LinkageDomain::explicit_value("test:constants").value(),
+            .library = std::nullopt,
         }
     );
 }

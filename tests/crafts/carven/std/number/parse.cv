@@ -16,7 +16,7 @@ test "Number parsing: incomplete malformed and unrepresentable inputs fail" {
     for input in ["", " 1", "+1", "1x", "1.5", "9223372036854775808"] {
         var rejected = false;
         try {
-            let ignored = parse_i64(input)?;
+            let _ = parse_i64(input)?;
         } catch {
             ParseError(_) => { rejected = true; },
         }
@@ -25,7 +25,7 @@ test "Number parsing: incomplete malformed and unrepresentable inputs fail" {
     for input in ["-0", "-1", "18446744073709551616"] {
         var rejected = false;
         try {
-            let ignored = parse_u64(input)?;
+            let _ = parse_u64(input)?;
         } catch {
             ParseError(_) => { rejected = true; },
         }
@@ -34,7 +34,7 @@ test "Number parsing: incomplete malformed and unrepresentable inputs fail" {
     for input in ["", " 1", "+1", "1e", "1x", "1e400"] {
         var rejected = false;
         try {
-            let ignored = parse_f64(input)?;
+            let _ = parse_f64(input)?;
         } catch {
             ParseError(_) => { rejected = true; },
         }

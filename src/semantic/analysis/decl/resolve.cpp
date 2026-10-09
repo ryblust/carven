@@ -19,6 +19,7 @@ import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
 import :semantic.analysis.types.standard;
+import :semantic.analysis.source.builder;
 import :semantic.analysis.types;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
@@ -406,6 +407,14 @@ auto DeclResolver::select_symbol(
     if (selected.import_binding.has_value()) {
         import_usage.record(*selected.import_binding);
     }
+    if (auto* observations = draft.source_analysis()) {
+        observations->declarations().record(
+            draft,
+            locate(declaration_source_id(draft, module_id), origin),
+            catalog.declaration_location(draft, selected.symbol_id),
+            std::nullopt
+        );
+    }
     return std::addressof(require_catalog_symbol(catalog, selected.symbol_id));
 }
 
@@ -550,7 +559,9 @@ auto DeclResolver::ConstantScope::resolve_construction_type(
         type,
         extent,
         &resolver.requests,
-        generic_context
+        generic_context,
+        resolver.draft.source_analysis() ? &resolver.draft.source_analysis()->declarations()
+                                         : nullptr
     ));
     if (result) {
         auto prepared = (co_await resolver.requests.ensure_type(*result, module_id, type.span));
@@ -634,7 +645,9 @@ auto DeclResolver::resolve_type(ProgramModuleID module_id, ASTView syntax, ASTTy
         syntax,
         type,
         extent,
-        &requests
+        &requests,
+        nullptr,
+        draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
     ));
 }
 
@@ -670,6 +683,31 @@ auto DeclResolver::resolve_failures(
         clause,
         extent,
         &requests,
-        generic_context
+        generic_context,
+        draft.source_analysis() ? &draft.source_analysis()->declarations() : nullptr
     ));
+}
+
+auto DeclResolver::ConstantScope::observe_expression(
+    ASTExprID expression,
+    ConstructionTypeRef type
+) noexcept -> void {
+    if (auto* observations = resolver.draft.source_analysis()) {
+        observations->declarations().expression(resolver.draft, syntax, expression, type);
+    }
+}
+
+auto DeclResolver::ConstantScope::observe_field(
+    ProgramOriginID definition,
+    Span name,
+    ConstructionTypeRef type
+) noexcept -> void {
+    if (auto* observations = resolver.draft.source_analysis()) {
+        observations->declarations().record(
+            resolver.draft,
+            locate(syntax.source_id(), name),
+            resolver.draft.source_span(definition),
+            type
+        );
+    }
 }

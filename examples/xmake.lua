@@ -128,10 +128,11 @@ for _, case in ipairs(cases) do
         set_default(false)
         set_kind("binary")
         set_languages("c++20")
-        add_rules("repository-crafts")
         add_rules("@carven/carven")
 
-        add_includedirs(path.join(examples_dir, case.dir))
+        if case.name == "native-parser" then
+            add_includedirs(path.join(examples_dir, case.dir))
+        end
         add_files(path.join(examples_dir, case.dir, "*.cv"))
         if case.name == "cpp-host" then
             add_files(path.join(examples_dir, case.dir, "main.cpp"))

@@ -139,14 +139,14 @@ auto BodyRealizer::lower_report(
     }
     if (value.kind == ReportKind::Assert) {
         report.terminate(
-            statement_expression(call_expression(
+            discard_statement(call_expression(
                 intrinsic_expression(TargetSymbol::RuntimeAssertionFailed),
                 std::move(arguments)
             )),
             {.kind = LoweringExitKind::Unreachable, .identity = 0}
         );
     } else {
-        report.emit(statement_expression(call_expression(
+        report.emit(discard_statement(call_expression(
             intrinsic_expression(TargetSymbol::RuntimeReportTestFailure),
             std::move(arguments)
         )));

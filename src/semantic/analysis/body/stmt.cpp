@@ -179,7 +179,8 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
                 .static_source = false,
                 .role = BodyLocalRole::Local,
                 .unused_candidate = std::nullopt,
-                .projection = {}
+                .projection = {},
+                .definition = std::nullopt
             },
             DiagnosticCode::NameDuplicateLocal
         );
@@ -244,7 +245,8 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
                         .static_source = source.kind == ASTBindingKind::Const,
                         .role = BodyLocalRole::Local,
                         .unused_candidate = std::nullopt,
-                        .projection = {}
+                        .projection = {},
+                        .definition = std::nullopt
                     },
                     DiagnosticCode::NameDuplicateLocal
                 );
@@ -357,6 +359,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
                 .role = BodyLocalRole::Local,
                 .unused_candidate = std::nullopt,
                 .projection = {},
+                .definition = std::nullopt,
             },
             DiagnosticCode::NameDuplicateLocal
         );
@@ -396,6 +399,7 @@ auto BodyElaborator::variable_statement(const ASTVariableDecl& source) noexcept
             .role = BodyLocalRole::Local,
             .unused_candidate = std::nullopt,
             .projection = {},
+            .definition = std::nullopt,
         },
         DiagnosticCode::NameDuplicateLocal
     );

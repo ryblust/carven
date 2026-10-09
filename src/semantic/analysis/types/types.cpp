@@ -6,6 +6,7 @@ import :diagnostics.suggestion;
 import :semantic.analysis.names;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
 import :semantic.analysis.types;
 import :support.invariant;
 import :support.visit;
@@ -95,7 +96,8 @@ auto select_global_symbol(
     ImportUsage& import_usage,
     ProgramModuleID module_id,
     std::string_view name,
-    Span origin
+    Span origin,
+    SourceObservation* observations
 ) noexcept -> AnalysisResult<const CatalogSymbol*> {
     const auto candidates = catalog.lookup(module_id, name);
     if (candidates.empty()) {
@@ -140,10 +142,18 @@ auto select_global_symbol(
     if (symbol == nullptr) {
         invariant_violation("catalog lookup returned an invalid symbol identity");
     }
+    if (observations) {
+        observations->record(
+            draft,
+            locate(source_id(draft, module_id), origin),
+            catalog.declaration_location(draft, selected.symbol_id),
+            std::nullopt
+        );
+    }
     return symbol;
 }
 
-auto resolve_named(
+auto resolve_named_value(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
@@ -153,7 +163,8 @@ auto resolve_named(
     ArrayExtentResolver resolve_extent,
     Span origin,
     ConstructionRequests* requests,
-    const GenericTypeContext* generic_context
+    const GenericTypeContext* generic_context,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
     if (generic_context
@@ -196,7 +207,8 @@ auto resolve_named(
             *result_argument,
             resolve_extent,
             requests,
-            generic_context
+            generic_context,
+            observations
         );
         if (!success) {
             co_return std::unexpected(success.error());
@@ -233,7 +245,8 @@ auto resolve_named(
                 *clause,
                 resolve_extent,
                 requests,
-                generic_context
+                generic_context,
+                observations
             );
             if (!resolved) {
                 co_return std::unexpected(resolved.error());
@@ -265,7 +278,8 @@ auto resolve_named(
             *selected_type,
             resolve_extent,
             requests,
-            generic_context
+            generic_context,
+            observations
         ));
         if (!element) {
             co_return std::unexpected(element.error());
@@ -307,7 +321,8 @@ auto resolve_named(
             *selected_type,
             resolve_extent,
             requests,
-            generic_context
+            generic_context,
+            observations
         ));
         if (!element) {
             co_return std::unexpected(element.error());
@@ -363,7 +378,8 @@ auto resolve_named(
                     *selected_type,
                     resolve_extent,
                     requests,
-                    generic_context
+                    generic_context,
+                    observations
                 ));
                 if (!resolved.has_value()) {
                     co_return std::unexpected(resolved.error());
@@ -412,8 +428,15 @@ auto resolve_named(
         }
         co_return ConstructionTypeRef {draft.builtin_type(*builtin)};
     }
-    const auto selected =
-        select_global_symbol(draft, catalog, import_usage, module_id, name, component);
+    const auto selected = select_global_symbol(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        name,
+        component,
+        observations
+    );
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
     }
@@ -445,7 +468,8 @@ auto resolve_named(
             contract.parameter_kinds,
             resolve_extent,
             requests,
-            generic_context
+            generic_context,
+            observations
         );
         if (!resolved_arguments) {
             co_return std::unexpected(resolved_arguments.error());
@@ -510,6 +534,43 @@ auto resolve_named(
     ));
 }
 
+auto resolve_named(
+    ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ImportUsage& import_usage,
+    ProgramModuleID module_id,
+    const ASTNamedType& named,
+    ASTView syntax,
+    ArrayExtentResolver resolve_extent,
+    Span origin,
+    ConstructionRequests* requests,
+    const GenericTypeContext* generic_context,
+    SourceObservation* observations
+) noexcept -> AnalysisTask<ConstructionTypeRef> {
+    auto result = co_await resolve_named_value(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        named,
+        syntax,
+        resolve_extent,
+        origin,
+        requests,
+        generic_context,
+        observations
+    );
+    if (result && observations) {
+        observations->record(
+            draft,
+            locate(syntax.source_id(), named.components.back().name_span),
+            std::nullopt,
+            *result
+        );
+    }
+    co_return result;
+}
+
 auto resolve_function_type(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
@@ -519,7 +580,8 @@ auto resolve_function_type(
     const ASTFunctionType& function,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests,
-    const GenericTypeContext* generic_context
+    const GenericTypeContext* generic_context,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     const auto concrete_callable_type = [&](ConstructionTypeRef type,
                                             Span at) noexcept -> AnalysisTask<ConstructionTypeRef> {
@@ -592,7 +654,8 @@ auto resolve_function_type(
             parameter.type,
             resolve_extent,
             requests,
-            generic_context
+            generic_context,
+            observations
         ));
         if (!type.has_value()) {
             co_return std::unexpected(type.error());
@@ -626,7 +689,8 @@ auto resolve_function_type(
         function.result_type,
         resolve_extent,
         requests,
-        generic_context
+        generic_context,
+        observations
     ));
     if (!result.has_value()) {
         co_return std::unexpected(result.error());
@@ -647,7 +711,8 @@ auto resolve_function_type(
             *function.throw_clause,
             resolve_extent,
             requests,
-            generic_context
+            generic_context,
+            observations
         ));
         if (!resolved.has_value()) {
             co_return std::unexpected(resolved.error());
@@ -684,7 +749,8 @@ auto resolve_type_value(
     const ASTType& source_type,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests,
-    const GenericTypeContext* generic_context
+    const GenericTypeContext* generic_context,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -699,7 +765,8 @@ auto resolve_type_value(
                     resolve_extent,
                     source_type.span,
                     requests,
-                    generic_context
+                    generic_context,
+                    observations
                 ));
             },
             [&](const ASTPointerType& pointer) noexcept -> AnalysisTask<ConstructionTypeRef> {
@@ -712,7 +779,8 @@ auto resolve_type_value(
                     pointer.target,
                     resolve_extent,
                     requests,
-                    generic_context
+                    generic_context,
+                    observations
                 ));
                 if (!target) {
                     co_return std::unexpected(target.error());
@@ -746,7 +814,8 @@ auto resolve_type_value(
                     view.element_type,
                     resolve_extent,
                     requests,
-                    generic_context
+                    generic_context,
+                    observations
                 ));
                 if (!element) {
                     co_return std::unexpected(element.error());
@@ -780,7 +849,8 @@ auto resolve_type_value(
                     array.element_type,
                     resolve_extent,
                     requests,
-                    generic_context
+                    generic_context,
+                    observations
                 ));
                 if (!element.has_value()) {
                     co_return std::unexpected(element.error());
@@ -830,7 +900,8 @@ auto resolve_type_value(
                         element,
                         resolve_extent,
                         requests,
-                        generic_context
+                        generic_context,
+                        observations
                     ));
                     if (!resolved) {
                         co_return std::unexpected(resolved.error());
@@ -869,7 +940,8 @@ auto resolve_type_value(
                     function,
                     resolve_extent,
                     requests,
-                    generic_context
+                    generic_context,
+                    observations
                 ));
             },
         }
@@ -889,7 +961,7 @@ auto semantic_access_mode(ASTAccessSyntax access) noexcept -> AccessMode {
 
 namespace {
 
-auto resolve_generic_type_value(
+auto resolve_generic_type_contents(
     ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
@@ -899,7 +971,8 @@ auto resolve_generic_type_value(
     GenericTypeContext context,
     ArrayExtentResolver resolve_extent,
     bool value_required,
-    ConstructionRequests* requests
+    ConstructionRequests* requests,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<GenericTypeID> {
     const auto parameter_index =
         [&](std::string_view name) noexcept -> std::optional<std::uint32_t> {
@@ -966,7 +1039,8 @@ auto resolve_generic_type_value(
                             context,
                             resolve_extent,
                             true,
-                            requests
+                            requests,
+                            observations
                         );
                         if (!success) {
                             co_return std::unexpected(success.error());
@@ -993,7 +1067,8 @@ auto resolve_generic_type_value(
                                 *clause,
                                 resolve_extent,
                                 requests,
-                                &context
+                                &context,
+                                observations
                             );
                             if (!resolved) {
                                 co_return std::unexpected(resolved.error());
@@ -1032,7 +1107,8 @@ auto resolve_generic_type_value(
                             context,
                             resolve_extent,
                             true,
-                            requests
+                            requests,
+                            observations
                         ));
                         if (!element) {
                             co_return std::unexpected(element.error());
@@ -1048,7 +1124,8 @@ auto resolve_generic_type_value(
                             import_usage,
                             module_id,
                             name,
-                            component
+                            component,
+                            observations
                         );
                         if (!selected) {
                             co_return std::unexpected(selected.error());
@@ -1069,7 +1146,9 @@ auto resolve_generic_type_value(
                                     argument,
                                     resolve_extent,
                                     requests,
-                                    &context
+                                    &context,
+                                    std::nullopt,
+                                    observations
                                 );
                                 if (!resolved) {
                                     co_return std::unexpected(resolved.error());
@@ -1096,7 +1175,8 @@ auto resolve_generic_type_value(
                     source,
                     resolve_extent,
                     requests,
-                    &context
+                    &context,
+                    observations
                 ));
                 if (!concrete) {
                     co_return std::unexpected(concrete.error());
@@ -1126,7 +1206,8 @@ auto resolve_generic_type_value(
                     context,
                     resolve_extent,
                     true,
-                    requests
+                    requests,
+                    observations
                 ));
                 if (!element) {
                     co_return std::unexpected(element.error());
@@ -1152,7 +1233,8 @@ auto resolve_generic_type_value(
                         context,
                         resolve_extent,
                         true,
-                        requests
+                        requests,
+                        observations
                     ));
                     if (!resolved) {
                         co_return std::unexpected(resolved.error());
@@ -1173,7 +1255,8 @@ auto resolve_generic_type_value(
                     context,
                     resolve_extent,
                     true,
-                    requests
+                    requests,
+                    observations
                 ));
                 if (!element) {
                     co_return std::unexpected(element.error());
@@ -1191,7 +1274,8 @@ auto resolve_generic_type_value(
                     context,
                     resolve_extent,
                     false,
-                    requests
+                    requests,
+                    observations
                 ));
                 if (!target) {
                     co_return std::unexpected(target.error());
@@ -1214,7 +1298,8 @@ auto resolve_generic_type_value(
                     source,
                     resolve_extent,
                     requests,
-                    &context
+                    &context,
+                    observations
                 ));
                 if (!concrete) {
                     co_return std::unexpected(concrete.error());
@@ -1223,6 +1308,44 @@ auto resolve_generic_type_value(
             },
         }
     ));
+}
+
+auto resolve_generic_type_value(
+    ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ImportUsage& import_usage,
+    ProgramModuleID module_id,
+    ASTView syntax,
+    const ASTType& source,
+    GenericTypeContext context,
+    ArrayExtentResolver resolve_extent,
+    bool value_required,
+    ConstructionRequests* requests,
+    SourceObservation* observations
+) noexcept -> AnalysisTask<GenericTypeID> {
+    auto result = co_await resolve_generic_type_contents(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        syntax,
+        source,
+        context,
+        resolve_extent,
+        value_required,
+        requests,
+        observations
+    );
+    const auto* named = std::get_if<ASTNamedType>(&source.value);
+    if (result && observations && named) {
+        observations->record(
+            draft,
+            locate(syntax.source_id(), named->components.back().name_span),
+            std::nullopt,
+            ConstructionTypeRef(*result)
+        );
+    }
+    co_return result;
 }
 
 } // namespace
@@ -1237,7 +1360,8 @@ auto resolve_generic_source_type(
     GenericTypeContext context,
     ArrayExtentResolver resolve_extent,
     bool value_required,
-    ConstructionRequests* requests
+    ConstructionRequests* requests,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<GenericTypeID> {
     co_return co_await resolve_generic_type_value(
         draft,
@@ -1249,7 +1373,8 @@ auto resolve_generic_source_type(
         context,
         resolve_extent,
         value_required,
-        requests
+        requests,
+        observations
     );
 }
 
@@ -1262,7 +1387,8 @@ auto resolve_source_type(
     ASTTypeID source_type,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests,
-    const GenericTypeContext* generic_context
+    const GenericTypeContext* generic_context,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     if (generic_context) {
         auto resolved = co_await resolve_generic_source_type(
@@ -1275,7 +1401,8 @@ auto resolve_source_type(
             *generic_context,
             resolve_extent,
             true,
-            requests
+            requests,
+            observations
         );
         if (!resolved) {
             co_return std::unexpected(resolved.error());
@@ -1295,7 +1422,8 @@ auto resolve_source_type(
         syntax.type(source_type),
         resolve_extent,
         requests,
-        generic_context
+        generic_context,
+        observations
     ));
 }
 
@@ -1308,7 +1436,8 @@ auto resolve_source_type_application(
     const ASTTypeApplicationExpr& application,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests,
-    const GenericTypeContext* generic_context
+    const GenericTypeContext* generic_context,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     auto operand = application.operand_id;
     auto components = std::vector<ASTTypeNameComponent>();
@@ -1362,7 +1491,8 @@ auto resolve_source_type_application(
             *generic_context,
             resolve_extent,
             true,
-            requests
+            requests,
+            observations
         );
         if (!resolved) {
             co_return std::unexpected(resolved.error());
@@ -1383,7 +1513,8 @@ auto resolve_source_type_application(
         resolve_extent,
         span,
         requests,
-        generic_context
+        generic_context,
+        observations
     ));
 }
 
@@ -1396,7 +1527,8 @@ auto resolve_source_construction_type(
     const ASTConstructionType& source_type,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests,
-    const GenericTypeContext* generic_context
+    const GenericTypeContext* generic_context,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     if (generic_context) {
         const auto selected = source_type.value.visit([&](const auto& form) noexcept {
@@ -1412,7 +1544,8 @@ auto resolve_source_construction_type(
             *generic_context,
             resolve_extent,
             true,
-            requests
+            requests,
+            observations
         );
         if (!resolved) {
             co_return std::unexpected(resolved.error());
@@ -1436,7 +1569,8 @@ auto resolve_source_construction_type(
                     resolve_extent,
                     source_type.span,
                     requests,
-                    generic_context
+                    generic_context,
+                    observations
                 ));
             },
             [&](const ASTFunctionType& function) noexcept -> AnalysisTask<ConstructionTypeRef> {
@@ -1449,7 +1583,8 @@ auto resolve_source_construction_type(
                     function,
                     resolve_extent,
                     requests,
-                    generic_context
+                    generic_context,
+                    observations
                 ));
             },
         }
@@ -1465,7 +1600,8 @@ auto resolve_source_constraint_type(
     const ASTConstraintOperand& source_type,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests,
-    const GenericTypeContext* generic_context
+    const GenericTypeContext* generic_context,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     co_return (co_await source_type.value.visit(
         Overloaded {
@@ -1489,7 +1625,8 @@ auto resolve_source_constraint_type(
                     resolve_extent,
                     source_type.span,
                     requests,
-                    generic_context
+                    generic_context,
+                    observations
                 ));
             },
             [&](const ASTArrayType& array) noexcept -> AnalysisTask<ConstructionTypeRef> {
@@ -1505,7 +1642,8 @@ auto resolve_source_constraint_type(
                     },
                     resolve_extent,
                     requests,
-                    generic_context
+                    generic_context,
+                    observations
                 ));
             },
         }
@@ -1546,7 +1684,8 @@ auto resolve_failure_types(
     const ASTThrowClause& clause,
     ArrayExtentResolver resolve_extent,
     ConstructionRequests* requests,
-    const GenericTypeContext* generic_context
+    const GenericTypeContext* generic_context,
+    SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionFailureRef> {
     auto failures = std::vector<TypeID>();
     auto parameters = std::vector<ConstructionFailureRef>();
@@ -1596,7 +1735,8 @@ auto resolve_failure_types(
             syntax.type(source_failure),
             resolve_extent,
             requests,
-            generic_context
+            generic_context,
+            observations
         ));
         if (!built.has_value()) {
             co_return std::unexpected(built.error());

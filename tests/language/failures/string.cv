@@ -73,7 +73,6 @@ test "String failures: borrowed payloads preserve caller backing and owning reco
     let owner: String = "enum";
     let result = try {
         throw TextFailure::Borrowed(owner);
-        String {}
     } catch {
         TextFailure(.Borrowed(v)) => v as String,
         TextFailure(.Owned(s)) => s,

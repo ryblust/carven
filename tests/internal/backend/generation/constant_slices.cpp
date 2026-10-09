@@ -127,7 +127,8 @@ const TestSuite suite([] static noexcept {
             fn ordinary(value: [i32; 2]) -> [i32] => value;
         )"),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("constant_slices")}
+                 .linkage_domain = *LinkageDomain::explicit_value("constant_slices"),
+                 .library = std::nullopt}
             );
             auto declarations = 0uz;
             auto slices = 0uz;
@@ -194,7 +195,8 @@ const TestSuite suite([] static noexcept {
             const auto compilation = PlannedCompilation::build(
                 std::move(analyzed->value),
                 {.test_mode = TestGenerationMode::None,
-                 .linkage_domain = *LinkageDomain::explicit_value("cross_artifact_slices")}
+                 .linkage_domain = *LinkageDomain::explicit_value("cross_artifact_slices"),
+                 .library = std::nullopt}
             );
             auto names = std::flat_set<std::string>();
             auto declarations = 0uz;

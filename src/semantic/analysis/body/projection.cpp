@@ -183,6 +183,39 @@ auto BodyExprSite::finish_index(
     );
 }
 
+auto BodyExprSite::observe_field(
+    ProgramOriginID definition,
+    Span name,
+    ConstructionTypeRef type
+) noexcept -> void {
+    if (body.observe_sources) {
+        auto location = draft().source_span(definition);
+        // Field origins cover the declaration for diagnostics. Navigation points
+        // to the source name, including fields of instantiated generic records.
+        for (const auto& tree : draft().syntax_trees()) {
+            const auto syntax = tree.view();
+            if (syntax.source_id() != location.source_id) {
+                continue;
+            }
+            for (const auto& item : syntax.items()) {
+                const auto* record = std::get_if<ASTRecordDecl>(&item.value);
+                if (record == nullptr) {
+                    continue;
+                }
+                for (const auto& field : record->fields) {
+                    if (field.span == location.span) {
+                        location.span = field.name_span;
+                        body.observe_source(name, location, type);
+                        return;
+                    }
+                }
+            }
+            break;
+        }
+        body.observe_source(name, location, type);
+    }
+}
+
 auto BodyExprSite::finish_field(
     ConstructionTypeRef type,
     FieldProjection field,

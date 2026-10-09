@@ -23,7 +23,6 @@ local reporting_source = path.join(language_dir, "testing", "reporting.cv")
 
 target("carven-test-language")
     set_default(false)
-    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "default"})
 
     set_languages("c++20")
@@ -40,7 +39,6 @@ target_end()
 
 target("carven-test-language-entry")
     set_default(false)
-    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "external"})
 
     set_languages("c++20")
@@ -66,7 +64,6 @@ for _, scenario in ipairs({
 }) do
     target("carven-test-language-implicit-entry-" .. scenario.name)
         set_default(false)
-        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         add_files(path.join(language_dir, "entry", "implicit_" .. scenario.name .. ".cv"))
@@ -94,7 +91,6 @@ end
 
 target("carven-test-language-reporting")
     set_default(false)
-    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "external"})
 
     set_languages("c++20")
@@ -111,7 +107,6 @@ target_end()
 
 target("carven-test-language-runner-failure")
     set_default(false)
-    add_rules("repository-crafts")
     add_rules("@carven/carven", {tests = "default"})
     set_languages("c++20")
     add_files(path.join(language_dir, "testing", "runner_failure.cv"))
@@ -143,7 +138,6 @@ for _, mode in ipairs({
 }) do
     target("carven-test-language-printing" .. mode.suffix)
         set_default(false)
-        add_rules("repository-crafts")
         add_rules("@carven/carven")
         set_languages(mode.standard)
         add_files(path.join(language_dir, "printing", "core.cv"))
@@ -238,7 +232,6 @@ for _, scenario in ipairs({
 }) do
     target(scenario.target)
         set_default(false)
-        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         for _, source in ipairs(scenario.sources or {scenario.source}) do
@@ -281,7 +274,6 @@ for _, scenario in ipairs({
 }) do
     target("carven-test-language-async-" .. scenario.name)
         set_default(false)
-        add_rules("repository-crafts")
         add_rules("@carven/carven", {tests = "external"})
         set_languages("c++20")
         add_files(path.join(language_dir, "async", scenario.name .. ".cv"))

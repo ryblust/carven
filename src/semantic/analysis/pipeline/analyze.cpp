@@ -7,41 +7,68 @@ import :semantic.analysis.catalog;
 import :semantic.analysis.construction;
 import :semantic.analysis.lint.unused_imports;
 import :semantic.analysis.program;
+import :semantic.analysis.source;
+import :semantic.analysis.source.builder;
 import :semantic.analyze;
 import :semantic.evaluation.output;
 import :semantic.semir.program;
 import :support.timing;
 import std;
 
-auto analyze(SyntaxProgram syntax, ExecutionOutput output, TimingOutput timings) noexcept
-    -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
+auto analyze(
+    SyntaxProgram syntax,
+    ExecutionOutput output,
+    TimingOutput timings,
+    SourceAnalysisOutput source_output
+) noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
     const auto scope = TimingScope(timings, TimingStage::SemanticAnalysis);
-    auto diagnostics = DiagnosticSink();
-    auto draft = ProgramDraft::begin(std::move(syntax), diagnostics, output);
+    auto observations = std::optional<SourceAnalysisBuilder>();
+    if (source_output) {
+        observations.emplace();
+    }
+    auto result = [&]() noexcept -> std::expected<Diagnosed<SemIRProgram>, Diagnostics> {
+        auto diagnostics = DiagnosticSink();
+        auto draft = ProgramDraft::begin(
+            std::move(syntax),
+            diagnostics,
+            output,
+            observations ? std::addressof(*observations) : nullptr,
+            timings
+        );
 
-    {
-        auto catalog_result = build_analysis_catalog(draft);
-        if (!catalog_result.has_value()) {
-            return std::unexpected(std::move(catalog_result.error()));
+        {
+            auto catalog_scope = TimingScope(timings, TimingStage::SemanticCatalog);
+            auto catalog_result = build_analysis_catalog(draft);
+            catalog_scope.stop();
+            if (!catalog_result.has_value()) {
+                return std::unexpected(std::move(catalog_result.error()));
+            }
+            const auto catalog = std::move(*catalog_result);
+            auto import_usage = ImportUsage(catalog.view().imports().size());
+
+            const auto construction =
+                ProgramConstruction(draft, catalog.view(), import_usage).run();
+            if (!construction.has_value() || diagnostics.has_errors()) {
+                return std::unexpected(diagnostics.take());
+            }
+            diagnose_unused_imports(draft, catalog.view(), import_usage);
+            if (diagnostics.has_errors()) {
+                return std::unexpected(diagnostics.take());
+            }
         }
-        const auto catalog = std::move(*catalog_result);
-        auto import_usage = ImportUsage(catalog.view().imports().size());
-
-        const auto construction = ProgramConstruction(draft, catalog.view(), import_usage).run();
-        if (!construction.has_value() || diagnostics.has_errors()) {
+        auto published = std::move(draft).finish();
+        if (!published.has_value() || diagnostics.has_errors()) {
             return std::unexpected(diagnostics.take());
         }
-        diagnose_unused_imports(draft, catalog.view(), import_usage);
-        if (diagnostics.has_errors()) {
-            return std::unexpected(diagnostics.take());
-        }
+        return Diagnosed<SemIRProgram> {
+            .value = std::move(*published),
+            .diagnostics = diagnostics.take(),
+        };
+    }();
+    if (observations) {
+        const auto source_scope = TimingScope(timings, TimingStage::SourceObservations);
+        const auto occurrences = std::move(*observations).finish(result.has_value());
+        source_output(occurrences);
     }
-    auto published = std::move(draft).finish();
-    if (!published.has_value() || diagnostics.has_errors()) {
-        return std::unexpected(diagnostics.take());
-    }
-    return Diagnosed<SemIRProgram> {
-        .value = std::move(*published),
-        .diagnostics = diagnostics.take(),
-    };
+    return result;
 }

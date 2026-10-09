@@ -21,7 +21,7 @@ const fn make_label(count: i32) -> String {
         result.append(piece);
         if index + 1 < count { result.push(','); }
     }
-    return result;
+    return &&result;
 }
 
 const fn decorate(value: String) -> String => f"[{value}]";
@@ -57,7 +57,7 @@ const fn unicode() -> String {
     value.clear();
     value.push('我');
     value.append("\0😀");
-    return value;
+    return &&value;
 }
 
 const fn formatted(value: i32, width: i32) -> String => f"{{{value:0{width}x}}}";

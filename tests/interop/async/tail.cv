@@ -9,7 +9,7 @@ import(cpp) fn tail_address(&value: i32);
 import(cpp) fn tail_addresses() -> i32;
 import(cpp) async fn tail_native() -> i32;
 
-async fn effects(a: i32, b: i32, depth: i32, unused: i32) -> i32 {
+async fn effects(a: i32, b: i32, depth: i32, _: i32) -> i32 {
     if depth == 0 { return a * 10 + b; }
     return await effects(tail_actual(b, 1), tail_actual(a, 2), depth - 1, tail_actual(0, 3));
 }
@@ -26,7 +26,7 @@ async fn yielding(depth: i32) -> i32 {
 }
 
 async fn owned(depth: i32) -> i32 {
-    let owner = tail_owner(depth + 1);
+    let _ = tail_owner(depth + 1);
     if depth == 0 { return 7; }
     return await owned(depth - 1);
 }
@@ -65,8 +65,8 @@ async fn skipped_step(depth: i32) -> i32 {
     return -1;
 }
 
-async fn fused_scalar(value: i32) -> i32 {
-    let owner = tail_owner(3);
+async fn scalar_operation(value: i32) -> i32 {
+    let _ = tail_owner(3);
     var text: String = "abc";
     tail_mark(1);
     if value < 0 { return tail_actual(text.byte_length() as i32, 2); }
@@ -74,41 +74,41 @@ async fn fused_scalar(value: i32) -> i32 {
     return tail_actual(value + text.byte_length() as i32, 4);
 }
 
-fn fused_factory(value: i32, unused: i32) => fused_scalar(value);
+fn operation_factory(value: i32, _: i32) => scalar_operation(value);
 
-async fn fused_bool(value: bool) -> bool {
-    let owner = tail_owner(6);
+async fn boolean_operation(value: bool) -> bool {
+    let _ = tail_owner(6);
     await yield_once();
     return tail_actual(if value { 1 } else { 0 }, 5) > 0;
 }
 
-async fn fused_char(value: bool) -> char {
-    let owner = tail_owner(7);
+async fn character_operation(value: bool) -> char {
+    let _ = tail_owner(7);
     if value { return 'a'; }
     await yield_once();
     return 'b';
 }
 
-async fn fused_probe(value: i32) -> i32 {
-    let selected = await fused_factory(tail_actual(value, 8), tail_actual(0, 9));
+async fn composed_results(value: i32) -> i32 {
+    let selected = await operation_factory(tail_actual(value, 8), tail_actual(0, 9));
     await yield_once();
-    let flag = await fused_bool(selected > 3);
-    let letter = await fused_char(flag);
+    let flag = await boolean_operation(selected > 3);
+    let letter = await character_operation(flag);
     await yield_once();
     return if letter == 'a' { selected } else { selected * 10 };
 }
 
-async fn fused_discarded() {
+async fn discarded_results() {
     tail_reset();
-    await fused_factory(tail_actual(2, 8), tail_actual(0, 9));
+    await operation_factory(tail_actual(2, 8), tail_actual(0, 9));
     println(tail_trace());
     tail_reset();
-    await fused_bool(true);
-    await fused_char(false);
+    await boolean_operation(true);
+    await character_operation(false);
     println(tail_trace());
 }
 
-async fn main() {
+export async fn run_tail() {
     tail_reset();
     println(await effects(1, 2, 2, 0), tail_trace());
     tail_reset();
@@ -130,8 +130,8 @@ async fn main() {
     tail_reset();
     println(await skipped_step(3), tail_trace());
     tail_reset();
-    println(await fused_probe(-1), tail_trace());
+    println(await composed_results(-1), tail_trace());
     tail_reset();
-    println(await fused_probe(2), tail_trace());
-    await fused_discarded();
+    println(await composed_results(2), tail_trace());
+    await discarded_results();
 }

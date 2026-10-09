@@ -44,5 +44,3 @@ static_assert(std::is_trivially_copyable_v<TrivialContext>);
 static_assert(std::is_trivially_destructible_v<TrivialContext>);
 
 } // namespace async_bridge
-
-auto bridge_scalar_character_calls() noexcept -> int;

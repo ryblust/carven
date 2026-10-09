@@ -61,6 +61,11 @@ auto BodyExprSite::syntax() const noexcept -> ASTView {
     return body.ast;
 }
 
+auto BodyExprSite::observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept
+    -> void {
+    body.observe_expression(expression, type);
+}
+
 auto BodyExprSite::fail(Span span, DiagnosticCode code, std::string message) noexcept
     -> AnalysisFailure {
     return body.fail(span, code, std::move(message));
@@ -128,7 +133,8 @@ auto BodyExprSite::resolve_failure_clause(const ASTThrowClause& clause) noexcept
         clause,
         extent,
         &body.batch->requests,
-        body.generic_context ? &*body.generic_context : nullptr
+        body.generic_context ? &*body.generic_context : nullptr,
+        body.observe_sources ? &body.source_occurrences : nullptr
     );
 }
 
@@ -158,7 +164,8 @@ auto BodyExprSite::resolve_generic_arguments(
         policies,
         extent,
         &body.batch->requests,
-        body.generic_context ? &*body.generic_context : nullptr
+        body.generic_context ? &*body.generic_context : nullptr,
+        body.observe_sources ? &body.source_occurrences : nullptr
     );
 }
 
@@ -407,6 +414,7 @@ auto BodyExprSite::resolve_static_name(std::string_view name, Span span) noexcep
     if (!*value) {
         co_return std::unexpected(ExpressionNotAdmitted {});
     }
+    body.observe_binding(span, *local);
     co_return std::move(**value);
 }
 
@@ -451,33 +459,10 @@ auto BodyExprSite::convert_argument(Value& value, ConstructionTypeRef type, Span
     return converted;
 }
 
-auto BodyExprSite::enum_constructor(
-    TypeID enumeration_type,
-    const ResolvedEnumCase& selected,
-    Span span
-) noexcept -> Value {
-    auto parameters = std::vector<ConstructionCallableParameter>();
-    parameters.reserve(selected.payload_types.size());
-    for (const auto type : selected.payload_types) {
-        parameters.push_back(
-            ConstructionCallableParameter {
-                .stage = ParameterStage::Runtime,
-                .access = AccessMode::Read,
-                .type = type,
-            }
-        );
-    }
-    const auto type = body.draft().append_construction_type(
-        ConstructionType {
-            .value = ConstructionCallableViewTypeValue {
-                .parameters = std::move(parameters),
-                .result = enumeration_type,
-                .failures = body.draft().add_empty_failure_term(),
-            },
-        }
-    );
+auto BodyExprSite::enum_constructor(TypeID, const ResolvedEnumCase& selected, Span span) noexcept
+    -> Value {
     auto value = body.active_builder().make_expression(
-        type,
+        selected.reference_type,
         body.active_builder().lifetime(),
         body.origin(span),
         SemEnumConstructor {.enum_case = selected.id}

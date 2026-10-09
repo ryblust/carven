@@ -1,39 +1,50 @@
 module carven:test.internal.backend.generation.names;
 
-import :backend.generation.linkage;
 import :backend.generation.names;
-import :backend.generation.request;
 import :backend.target.name;
-import :test.harness.directory;
 import :test.harness.framework;
 import std;
 
 namespace {
 
-auto domain_id(LinkageDomain domain, TestGenerationMode tests = TestGenerationMode::None) noexcept
-    -> LinkageDomainID {
-    return derive_linkage_domain_id(
-        TargetPlanningRequest {
-            .test_mode = tests,
-            .linkage_domain = std::move(domain),
-        }
-    );
-}
-
 const TestSuite suite([] static noexcept {
-    "Target names: callable-local suffix state is isolated"_test = [] static noexcept {
-        const auto enclosing = std::flat_set<std::string> {"operand"};
-        auto first = TargetNameAllocator(enclosing);
-        auto second = TargetNameAllocator(enclosing);
-
-        const auto first_name = first.fresh(TargetTemporaryNameKind::Operand);
-        const auto second_name = second.fresh(TargetTemporaryNameKind::Operand);
-        const auto next_name = first.fresh(TargetTemporaryNameKind::Operand);
-        expect(first_name == second_name);
-        expect(first_name != next_name);
-        expect(!enclosing.contains(std::string(first_name.spelling())));
-        expect(!enclosing.contains(std::string(next_name.spelling())));
-        expect_equal(enclosing, std::flat_set<std::string> {"operand"});
+    "Names: content spelling preserves identity and source separation"_test = [] static noexcept {
+        const auto stems = std::array {"CarvenQuery", "CarvenDisplay", "carven_constant"};
+        each(
+            stems,
+            [](const auto& stem) static noexcept { return stem; },
+            [](const auto& stem) static noexcept {
+                const auto source = source_target_identifier(stem);
+                expect(source.spelling() != stem);
+                expect(
+                    std::format("{}_1234567890123456", source.spelling())
+                    != std::format("{}_1234567890123456", stem)
+                );
+            }
+        );
+        const auto requests = std::array {
+            TargetContentName {.preferred = "Shared", .content = "second"},
+            TargetContentName {.preferred = "Shared", .content = "first"},
+            TargetContentName {.preferred = "Shared", .content = "first"},
+        };
+        auto occupied = std::flat_set<std::string> {"Shared"};
+        const auto planned = claim_content_identifiers(requests, occupied);
+        if (!expect_equal(planned.size(), requests.size())) {
+            return;
+        }
+        expect(planned[0] != planned[1]);
+        expect(planned[1] == planned[2]);
+        expect(planned[0].spelling() != "Shared");
+        expect(planned[1].spelling() != "Shared");
+        const auto reversed = std::array {requests[2], requests[1], requests[0]};
+        auto reverse_occupied = std::flat_set<std::string> {"Shared"};
+        const auto reverse_names = claim_content_identifiers(reversed, reverse_occupied);
+        if (!expect_equal(reverse_names.size(), requests.size())) {
+            return;
+        }
+        expect(planned[0] == reverse_names[2]);
+        expect(planned[1] == reverse_names[1]);
+        expect(planned[2] == reverse_names[0]);
     };
 
     "Target names: local bindings and temporaries share a collision domain"_test =
@@ -50,16 +61,6 @@ const TestSuite suite([] static noexcept {
             expect(!enclosing.contains(std::string(temporary.spelling())));
             expect(binding == names.local_symbol("operand", 0, scope));
         };
-
-    "Target names: input reservations protect the callable scope"_test = [] static noexcept {
-        auto names = TargetNameAllocator {};
-        constexpr auto scope = TargetScopeID {.ordinal = 0};
-        names.reserve("value", scope);
-
-        const auto local = names.local_symbol("value", 0, scope);
-        expect(local.spelling() != "value");
-        expect(local == names.local_symbol("value", 0, scope));
-    };
 
     "Target names: source encoding is injective and avoids reserved and enclosing names"_test =
         [] static noexcept {
@@ -132,67 +133,6 @@ const TestSuite suite([] static noexcept {
         expect_equal(
             public_target_identifier("export").spelling(),
             std::string_view("cv_escaped_6578706f7274")
-        );
-    };
-
-    "Linkage domain: construction establishes resolved identity"_test = [] static noexcept {
-        expect(!(LinkageDomain::explicit_value("").has_value()));
-        expect(!(LinkageDomain::artifact_root("relative/root").has_value()));
-
-        const auto explicit_domain = LinkageDomain::explicit_value("target:debug");
-        if (!expect(explicit_domain.has_value())) {
-            return;
-        }
-        expect_equal(explicit_domain->kind(), LinkageDomainKind::Explicit);
-        expect_equal(explicit_domain->value(), std::string_view("target:debug"));
-
-        const auto directory = TempDirectory("linkage-domain");
-        const auto root = directory.path("root");
-        const auto artifact_domain = LinkageDomain::artifact_root(root / ".." / "root");
-        if (!expect(artifact_domain.has_value())) {
-            return;
-        }
-        expect_equal(artifact_domain->kind(), LinkageDomainKind::ArtifactRoot);
-        expect_equal(artifact_domain->value(), root.generic_string());
-
-        const auto artifact_domain_with_trailing_separator =
-            LinkageDomain::artifact_root(root / ".");
-        if (!expect(artifact_domain_with_trailing_separator.has_value())) {
-            return;
-        }
-        expect_equal(artifact_domain_with_trailing_separator->value(), artifact_domain->value());
-    };
-
-    "Linkage domain: identity follows resolved domain and emission mode"_test = [] static noexcept {
-        const auto left = domain_id(LinkageDomain::explicit_value("target:left").value());
-        const auto left_again = domain_id(LinkageDomain::explicit_value("target:left").value());
-        const auto right = domain_id(LinkageDomain::explicit_value("target:right").value());
-        const auto directory = TempDirectory("linkage-domain");
-        const auto root = directory.path("root");
-        const auto artifact_domain = LinkageDomain::artifact_root(root);
-        if (!expect(artifact_domain.has_value())) {
-            return;
-        }
-        const auto path_spelling =
-            domain_id(LinkageDomain::explicit_value(root.generic_string()).value());
-        const auto artifact_root = domain_id(*artifact_domain);
-        const auto tests = domain_id(
-            LinkageDomain::explicit_value("target:left").value(),
-            TestGenerationMode::RunnerEntryPoint
-        );
-
-        expect((left == left_again));
-        expect((left != right));
-        expect((path_spelling != artifact_root));
-        expect((left != tests));
-    };
-
-    "Linkage domain: module namespace follows canonical module identity"_test = [] static noexcept {
-        expect(
-            (derive_module_namespace_id("alpha.beta") == derive_module_namespace_id("alpha.beta"))
-        );
-        expect(
-            (derive_module_namespace_id("alpha.beta") != derive_module_namespace_id("alpha.gamma"))
         );
     };
 });

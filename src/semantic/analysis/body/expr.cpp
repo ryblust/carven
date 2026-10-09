@@ -29,6 +29,13 @@ import :support.unique_indirect;
 import :support.visit;
 import std;
 
+auto BodyElaborator::observe_expression(ASTExprID expression, ConstructionTypeRef type) noexcept
+    -> void {
+    if (observe_sources) {
+        source_occurrences.expression(draft(), ast, expression, type);
+    }
+}
+
 auto BodyElaborator::conditional_expression(
     const ASTIfForm& source,
     Span span,
@@ -134,6 +141,7 @@ auto BodyElaborator::lambda_expression(
         ConstructionTypeRef type;
         CaptureMode mode;
         SemCapture operand;
+        std::optional<SourceSpan> definition;
     };
 
     auto captures = std::vector<CaptureSource>();
@@ -183,6 +191,7 @@ auto BodyElaborator::lambda_expression(
             .takeable = false,
             .completes = true,
         };
+        observe_binding(capture.name_span, *local);
         const auto mode =
             capture.write_marker.has_value() ? CaptureMode::Write : CaptureMode::Value;
         auto operand = std::optional<SemCapture>();
@@ -214,6 +223,7 @@ auto BodyElaborator::lambda_expression(
                 .type = local->type,
                 .mode = mode,
                 .operand = std::move(*operand),
+                .definition = local->definition,
             }
         );
     }
@@ -269,7 +279,10 @@ auto BodyElaborator::lambda_expression(
             source_module_id,
             ast,
             *source.throw_clause,
-            resolve_extent
+            resolve_extent,
+            nullptr,
+            nullptr,
+            observe_sources ? &source_occurrences : nullptr
         ));
         if (!members.has_value()) {
             co_return std::unexpected(members.error());
@@ -296,7 +309,9 @@ auto BodyElaborator::lambda_expression(
         lambda_result,
         actual_failures,
         true,
-        false
+        false,
+        std::nullopt,
+        observe_sources
     );
     child.lexical_class = lexical_class;
     for (const auto& [name, local] : visible_locals()) {
@@ -305,7 +320,12 @@ auto BodyElaborator::lambda_expression(
         }
     }
     for (const auto& capture : captures) {
-        auto added = child.add_capture(capture.syntax.name_span, capture.type, capture.mode);
+        auto added = child.add_capture(
+            capture.syntax.name_span,
+            capture.type,
+            capture.mode,
+            capture.definition
+        );
         if (!added.has_value()) {
             co_return std::unexpected(added.error());
         }
@@ -348,6 +368,7 @@ auto BodyElaborator::lambda_expression(
         }
     );
     draft().complete_callable(callable, ClosureBodyImplementation {.body = body_id});
+    source_occurrences.merge(std::move(child.source_occurrences));
     draft().add_body_draft(std::move(*child_body));
 
     lambda_callables.emplace(span, callable);
@@ -408,6 +429,7 @@ auto BodyElaborator::expression(
             : dispatches_before_children ? entry_reachable
                                          : reachable && reference_path_reachable;
         reachable = was_reachable && result->completes;
+        observe_expression(id, result->type());
     }
     co_return result;
 }

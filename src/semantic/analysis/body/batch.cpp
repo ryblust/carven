@@ -82,6 +82,9 @@ auto BodyBatchElaborator::build_const_block(
     if (!body) {
         co_return std::unexpected(body.error());
     }
+    if (elaborator.observe_sources) {
+        draft->source_analysis()->add_body(std::move(elaborator.source_occurrences));
+    }
     draft->add_body_draft(std::move(*body));
     static_body_roots.push_back({
         .body = id,
@@ -229,6 +232,9 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
             if (test.is_const) {
                 static_body_roots.push_back({.body = body_id, .source = source});
             }
+            if (elaborator.observe_sources) {
+                draft->source_analysis()->add_body(std::move(elaborator.source_occurrences));
+            }
             draft->add_body_draft(std::move(*body));
         }
     }
@@ -240,6 +246,12 @@ auto BodyBatchElaborator::run() noexcept -> AnalysisTask<void> {
         if (!used_locals.contains(location)) {
             draft->diagnostics().warning(diagnostic);
         }
+    }
+    // Close inferred generic environments together before static realization
+    // consumes their callable bodies.
+    auto closed = draft->close_generic_calls();
+    if (!closed) {
+        co_return std::unexpected(closed.error());
     }
     auto contracts = validate_const_contracts(*draft, body_ids);
     if (!contracts) {
@@ -452,7 +464,9 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
         result_type,
         actual_failures,
         policy != FailureContractPolicy::UndeclaredExplicit,
-        false
+        false,
+        std::nullopt,
+        !draft->staged_function(id)
     );
     elaborator.async_body = function.async_span.has_value();
     elaborator.lexical_class =
@@ -470,6 +484,9 @@ auto BodyBatchElaborator::elaborate_function(FunctionID id) noexcept -> Analysis
     if (pending.has_value()) {
         const auto result = elaborator.inferred_result_type();
         draft->complete_function_result(declaration.callable, result);
+    }
+    if (elaborator.observe_sources) {
+        draft->source_analysis()->add_body(std::move(elaborator.source_occurrences));
     }
     draft->add_body_draft(std::move(*body));
     co_return {};
@@ -553,6 +570,9 @@ auto BodyBatchElaborator::ensure_generic_function(
     }
     if (function.infer_result) {
         draft->complete_generic_function_result(definition, elaborator.inferred_result_type());
+    }
+    if (elaborator.observe_sources) {
+        draft->source_analysis()->add_body(std::move(elaborator.source_occurrences));
     }
     draft->set_generic_function_body(definition, std::move(*body));
     state = Complete {};
