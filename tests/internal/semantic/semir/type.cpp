@@ -6,8 +6,8 @@ import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.semir.table;
 import :semantic.semir.type;
+import :test.harness.death;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import :test.internal.semantic.analysis.fixture;
 import std;
 

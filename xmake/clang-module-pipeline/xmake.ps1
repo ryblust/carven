@@ -23,6 +23,7 @@ $patchedPaths = @(
     "modules/private/action/build/object.lua"
     "modules/private/action/build/link_objects.lua"
     "modules/private/utils/toolchain.lua"
+    "plugins/project/utils/target_cmds.lua"
     "rules/c++/modules/clang/builder.lua"
     "rules/c++/modules/clang/scanner.lua"
     "rules/c++/modules/builder.lua"

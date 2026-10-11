@@ -26,8 +26,9 @@ target("carven-test-language")
     add_rules("@carven/carven", {tests = "main"})
 
     set_languages("c++20")
-    add_includedirs(language_dir)
-    add_files(table.unpack(language_sources))
+    for _, source in ipairs(language_sources) do
+        add_files(source, {includedirs = language_dir})
+    end
 
     add_tests("language", {group = "language", run_timeout = 30000})
     on_test(function (target)
@@ -42,8 +43,7 @@ target("carven-test-language-entry")
     add_rules("@carven/carven", {tests = "runner"})
 
     set_languages("c++20")
-    add_includedirs(language_dir)
-    add_files(entry_source)
+    add_files(entry_source, {includedirs = language_dir})
 
     for _, scenario in ipairs({"success", "throw", "recover", "propagate"}) do
         add_tests(scenario, {group = "language"})
@@ -94,9 +94,10 @@ target("carven-test-language-reporting")
     add_rules("@carven/carven", {tests = "runner"})
 
     set_languages("c++20")
-    add_includedirs(language_dir)
-    add_files(reporting_source)
-    add_files(path.join(language_dir, "testing", "reporting_driver.cpp"))
+    add_files(reporting_source, {includedirs = language_dir})
+    add_files(path.join(language_dir, "testing", "reporting_driver.cpp"), {
+        includedirs = language_dir,
+    })
 
     add_tests("reporting", {group = "language"})
     on_test(function (target)

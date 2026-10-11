@@ -9,8 +9,8 @@ import :semantic.semir.decl;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :source.text;
+import :test.harness.death;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import :test.internal.semantic.evaluation.fixture;
 import std;
 

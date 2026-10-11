@@ -22,9 +22,9 @@ import :source.manager;
 import :source.module_path;
 import :source.provenance.ids;
 import :source.text;
+import :test.harness.death;
 import :test.harness.diagnostics;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import :test.internal.semantic.analysis.fixture;
 import std;
 

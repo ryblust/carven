@@ -47,19 +47,27 @@ files retain their BMIs for downstream targets.
 
 ## Standard-library compilation
 
-Repository tests and examples attach the packaged `@carven/carven` rule. The
-rule owns installed Crafts source collection, generation ordering, and native
-object dependencies. Targets with matching compiler, Crafts, and native
-compilation settings and prerequisite targets share the installed library's
-objects. Target settings
-select the configuration automatically; project-local Crafts remain target inputs.
+Tests and examples use the packaged `@carven/carven` rule. It collects Crafts
+sources and manages generation and artifact publication. Targets with matching
+compiler, Crafts, native compilation settings, and prerequisite targets share
+installed-library object targets. Project-local Crafts remain target inputs.
 
-The Xmake project directory is the workspace root. Each target supplies its
-selected sources and compilation identity; the compiler's manifest reports that
-selection and its generated artifacts. The packaged rule owns source discovery,
-generation reuse and artifact promotion. Xmake's ordinary C++ rules own native
-dependencies, compilation, linking and their caches.
+Put include paths needed only by an implementation in
+`add_files(..., {includedirs = ...})`. The rule transfers `.cv` file settings to
+generated C++. Put requirements used by other translation units through headers
+on the target or its dependencies. Target-wide settings participate in
+installed-library producer selection.
 
-Compiler, formatter, and workspace modules use `moduleonly` and reuse their BMIs.
-Internal tests use domain targets with shared fixtures. Workspace scenarios have
-a separate test executable.
+The Xmake project directory is the workspace root. Targets select sources; the
+compiler manifest lists inputs and generated artifacts. Xmake's C++ rules own
+native dependency scanning, compilation, linking, and build caches.
+
+## Shared targets
+
+Register shared sources in one producer per compilation configuration. Consumers
+use `add_deps` to reuse its outputs. Compiler, formatter, workspace, test support,
+and internal fixture modules use `moduleonly` targets.
+
+Internal, formatter, and workspace test executables share the entry object from
+`carven-test-runner`. Each executable owns its cases. The six internal domain
+targets run in independent processes.

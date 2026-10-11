@@ -241,6 +241,7 @@ collect timings. Keep machine-specific timing logs outside reference documents.
 
 The `internal` group uses six ordinary executable targets. Their source directories
 define their coverage; each executable registers and runs its complete domain.
+
 | Target | Source directories under `tests/internal` |
 | --- | --- |
 | `carven-test-analysis` | `semantic/analysis` |
@@ -250,14 +251,15 @@ define their coverage; each executable registers and runs its complete domain.
 | `carven-test-execution` | `semantic/evaluation`, `semantic/format`, `interpreter`, `runtime` |
 | `carven-test-foundation` | `frontend`, `source`, `driver`, `diagnostics`, `support`, harness assertions |
 
-The domain targets have no dependencies on each other. Compiler modules, test
-support, and `carven-test-internal-fixtures` are shared producers; each compiles
-its sources once. The fixture target contains modules and the death-test helper
-without registering cases. Each domain compiles its own cases and links its own
-executable. Use `./xmakew build -g tests/internal` to build all domains and
-`./xmakew test -g internal` to run them. Xmake's test job
-limit controls their independent processes. Workspace owns `carven-test-workspace` in
-`tools/workspace/xmake.lua`; `./xmakew test -g workspace` runs its separate cases.
+Each domain owns its cases and links a separate executable. The targets share
+fixture modules through `carven-test-fixtures` and the entry object through
+`carven-test-runner`. `carven-test-support` supplies the framework, diagnostics,
+temporary directories, and termination checks.
+
+Use `./xmakew build -g tests/internal` to build the domains and
+`./xmakew test -g internal` to run them. Xmake's test job limit controls their
+independent processes. Workspace scenarios use `carven-test-workspace` in
+`tools/workspace/xmake.lua`; run them with `./xmakew test -g workspace`.
 
 Static analysis is available through `./xmakew check clang.tidy` for handwritten
 and generated C++. `.clang-tidy` configures handwritten checks;

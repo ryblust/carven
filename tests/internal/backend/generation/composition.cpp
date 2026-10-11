@@ -7,8 +7,8 @@ import :backend.target.name;
 import :backend.target.stmt;
 import :backend.target.symbol;
 import :backend.target.type;
+import :test.harness.death;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import std;
 
 namespace {

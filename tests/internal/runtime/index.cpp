@@ -5,8 +5,8 @@ module;
 
 module carven:test.internal.runtime.index;
 
+import :test.harness.death;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import std;
 
 namespace {

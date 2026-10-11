@@ -10,9 +10,8 @@ target("carven-test-workspace")
     set_default(false)
     set_group("tests/workspace")
     set_kind("binary")
-    add_deps("carven-workspace-modules", "carven-test-support")
+    add_deps("carven-workspace-modules", "carven-test-runner")
     add_includedirs(path.join(os.projectdir(), "crafts"))
-    add_files(path.join(os.projectdir(), "tests", "harness", "main.cpp"))
     add_files(path.join(os.scriptdir(), "tests", "*.cpp"))
     add_tests("workspace", {
         group = "workspace", run_timeout = has_config("sanitizers") and 180000 or 60000,

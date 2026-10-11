@@ -91,6 +91,9 @@ own workloads.
 `workloads.lua` fills explicit markers in `workload.cv.fixture`, adding
 `static_factory.cv.fixture` for static cases. `workload.cpp` runs the C++ Task
 implementations, and `runtime_workload.cpp` supplies direct runtime orchestration.
+Timing, allocation, stack, and no-exception profiles use separate
+`measurement.cpp` object targets. Each profile's executables depend on its
+measurement target.
 `measurement.hpp` and `measurement.cpp` own configuration, measured intervals,
 allocation tracking and stack observations. Source generation and native builds
 read the saved input snapshot.

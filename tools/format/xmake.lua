@@ -17,9 +17,8 @@ target_end()
 target("carven-format-test-internal")
     set_default(false)
     set_kind("binary")
-    add_deps("carven-format-modules", "carven-test-support")
+    add_deps("carven-format-modules", "carven-test-runner")
     add_files(path.join(os.scriptdir(), "tests", "internal", "*.cpp"))
-    add_files(path.join(os.projectdir(), "tests", "harness", "main.cpp"))
     add_tests("format", {group = "format", run_timeout = 60000,
         runargs = {"--exclude", "Format corpus:*"}})
     add_tests("corpus", {group = "format", run_timeout = 60000,

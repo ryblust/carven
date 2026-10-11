@@ -4,8 +4,8 @@ import :source.manager;
 import :source.module_path;
 import :source.provenance.verify;
 import :source.provenance;
+import :test.harness.death;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import std;
 
 namespace {

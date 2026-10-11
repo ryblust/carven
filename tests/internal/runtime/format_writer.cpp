@@ -3,8 +3,8 @@ module;
 
 module carven:test.internal.runtime.format_writer;
 
+import :test.harness.death;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import std;
 
 namespace {

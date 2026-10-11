@@ -12,9 +12,9 @@ import :backend.target.symbol;
 import :backend.target.type;
 import :backend.target.unit;
 import :backend.target.verify;
+import :test.harness.death;
 import :test.harness.framework;
 import :test.internal.backend.target.fixture;
-import :test.internal.harness.death;
 import std;
 
 namespace {

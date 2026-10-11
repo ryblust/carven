@@ -19,9 +19,9 @@ import :semantic.semir.type;
 import :source.batch;
 import :source.manager;
 import :source.text;
+import :test.harness.death;
 import :test.harness.diagnostics;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import :test.internal.semantic.analysis.fixture;
 import std;
 

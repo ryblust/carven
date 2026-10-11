@@ -43,8 +43,9 @@ target("carven-test-interop")
     add_rules("@carven/carven", {tests = "runner"})
 
     set_languages("c++20")
-    add_includedirs(interop_dir)
-    add_files(table.unpack(interop_sources))
+    for _, source in ipairs(interop_sources) do
+        add_files(source, {includedirs = interop_dir})
+    end
 
     add_tests("behavior", {group = "interop"})
     add_tests("structural-output", {group = "interop"})
@@ -83,15 +84,14 @@ for _, variant in ipairs({
         set_default(false)
         add_rules("@carven/carven", {tests = "runner"})
         set_languages("c++20")
-        add_includedirs(interop_dir)
         if variant.portable then
             add_defines("CARVEN_SIMD_FORCE_PORTABLE")
         else
             add_vectorexts("avx2")
         end
-        add_files(path.join(interop_dir, "simd", "**.cv"))
-        add_files(path.join(interop_dir, "simd", "runner.cpp"))
-        add_files(path.join(interop_dir, "simd", "utf.cpp"))
+        add_files(path.join(interop_dir, "simd", "**.cv"), {includedirs = interop_dir})
+        add_files(path.join(interop_dir, "simd", "runner.cpp"), {includedirs = interop_dir})
+        add_files(path.join(interop_dir, "simd", "utf.cpp"), {includedirs = interop_dir})
         add_tests("behavior", {group = "interop", run_timeout = 30000})
         for _, operation in ipairs({
             "wide-short-load", "wide-prefix", "short-load", "partial-offset", "lane", "mask-prefix",
@@ -140,9 +140,12 @@ for _, mode in ipairs({
         add_rules("@carven/carven")
         set_languages(mode.standard)
         set_exceptions("cxx")
-        add_includedirs(interop_dir)
-        add_files(path.join(interop_dir, "exceptions", "terminate.cpp"))
-        add_files(path.join(interop_dir, "exceptions", "precomputed.cv"))
+        add_files(path.join(interop_dir, "exceptions", "terminate.cpp"), {
+            includedirs = interop_dir,
+        })
+        add_files(path.join(interop_dir, "exceptions", "precomputed.cv"), {
+            includedirs = interop_dir,
+        })
         for _, operation in ipairs(mode.operations) do
             add_tests(operation, {group = "interop"})
         end
@@ -178,11 +181,10 @@ target("carven-test-interop-async-ownership")
     set_default(false)
     add_rules("@carven/carven")
     set_languages("c++20")
-    add_includedirs(interop_dir)
-    add_files(path.join(interop_dir, "async", "ownership.cv"))
+    add_files(path.join(interop_dir, "async", "ownership.cv"), {includedirs = interop_dir})
     for _, case in ipairs({"fixed", "tracked", "tail"}) do
-        add_files(path.join(interop_dir, "async", case .. ".cv"))
-        add_files(path.join(interop_dir, "async", case .. ".cpp"))
+        add_files(path.join(interop_dir, "async", case .. ".cv"), {includedirs = interop_dir})
+        add_files(path.join(interop_dir, "async", case .. ".cpp"), {includedirs = interop_dir})
     end
     add_tests("ownership", {group = "interop", run_timeout = 30000})
     on_test(function (target)
@@ -243,13 +245,12 @@ if is_plat("macosx", "linux") then
         set_kind("binary")
         add_rules("@carven/carven")
         set_languages("c++20")
-        add_includedirs(interop_dir)
-        add_files(path.join(interop_dir, "async", "bridge.cv"))
-        add_files(path.join(interop_dir, "async", "bridge.cpp"))
-        add_files(path.join(interop_dir, "async", "bridge_provider.cpp"))
-        add_files(path.join(interop_dir, "async", "transfer.cv"))
-        add_files(path.join(interop_dir, "async", "transfer.cpp"))
-        add_files(path.join(interop_dir, "async", "transfer_provider.cpp"))
+        add_files(path.join(interop_dir, "async", "bridge.cv"), {includedirs = interop_dir})
+        add_files(path.join(interop_dir, "async", "bridge.cpp"), {includedirs = interop_dir})
+        add_files(path.join(interop_dir, "async", "bridge_provider.cpp"), {includedirs = interop_dir})
+        add_files(path.join(interop_dir, "async", "transfer.cv"), {includedirs = interop_dir})
+        add_files(path.join(interop_dir, "async", "transfer.cpp"), {includedirs = interop_dir})
+        add_files(path.join(interop_dir, "async", "transfer_provider.cpp"), {includedirs = interop_dir})
         if is_plat("linux") then
             add_syslinks("pthread")
         end
@@ -295,9 +296,8 @@ target("carven-test-interop-async-cleanup")
     set_kind("binary")
     add_rules("@carven/carven")
     set_languages("c++20")
-    add_includedirs(interop_dir)
-    add_files(path.join(interop_dir, "async", "cleanup.cv"))
-    add_files(path.join(interop_dir, "async", "cleanup.cpp"))
+    add_files(path.join(interop_dir, "async", "cleanup.cv"), {includedirs = interop_dir})
+    add_files(path.join(interop_dir, "async", "cleanup.cpp"), {includedirs = interop_dir})
     add_tests("lexical-cleanup", {group = "interop", run_timeout = 30000})
     on_test(function (target)
         local output, errors = os.iorunv(target:targetfile(), {}, {timeout = 30000})

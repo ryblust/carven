@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/modules/private/action/build/content_depend.lua
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,75 @@
 +-- Track input and output contents in dependency records.
 +import("core.project.depend")
 +
@@ -71,13 +71,10 @@
 +    end
 +    opt.changed = true
 +    -- Save dependency records only after the callback succeeds.
-+    local built = false
-+    depend.on_changed(function ()
++    return depend.on_changed(function ()
 +        callback()
-+        built = true
 +        return {outputhash = fingerprint(opt.output, true)}
 +    end, opt)
-+    return built
 +end
 --- a/modules/private/action/build/object.lua
 +++ b/modules/private/action/build/object.lua
@@ -336,7 +333,7 @@
          local headerunits, stlheaderunits = scanner.sort_headerunits(target, built_headerunits)
          if jobgraph.add_orders then -- jobgraph
              -- build headerunits
-@@ -787,3 +863,39 @@
+@@ -787,3 +863,37 @@
          profiler.leave(target:fullname(), "c++ modules", "builder", "objectfiles")
      end
  end
@@ -353,16 +350,14 @@
 +            local clang_version = support.import_implementation_of(target, "support").get_clang_version(target)
 +            local direct_only = target:policy("build.c++.modules.non_cascading_changes")
 +                and clang_version and semver.compare(clang_version, "19.0") >= 0
++            local records = assert(target:data("cxx.modules.scan_records"))
 +            for _, sourcefile in ipairs(built_modules) do
 +                local module = mapper.get(target, sourcefile)
-+                local reused, from = support.is_reused(target, sourcefile)
-+                local owner = reused and from or target
-+                local records = owner:data("cxx.modules.scan_records")
-+                local record = assert(records and records[sourcefile] or depend.load(owner:dependfile(sourcefile)))
++                local record = assert(records[sourcefile])
 +                local files = table.clone(assert(record.files))
 +                -- Search-path membership can change preprocessing even when no
 +                -- previously included file changes (for example __has_include).
-+                table.insert(files, owner:dependfile(sourcefile))
++                table.insert(files, target:dependfile(sourcefile))
 +                _append_imported_bmifiles(target, module, files, {}, direct_only)
 +                content_depend.set_inputs(target, sourcefile, files)
 +            end
@@ -548,7 +543,7 @@
                      end
 
                      if insert then
-@@ -519,95 +543,136 @@
+@@ -519,95 +543,132 @@
      local is_std = path.basename(sourcefile) == "std" or path.basename(sourcefile) == "std.compat"
      local rescan = target:is_rebuilt() and not from_package and not is_std
      local changed = _scanner(target).scan_dependency_for(target, sourcefile, rescan, opt)
@@ -689,23 +684,19 @@
 +            end)
          end)
 +        -- Reused facts are read only after their provider publishes its graph.
-+        -- Repeated imports from a provider share one completion edge.
-+        local dependencyjobs = {}
++        -- The native graph deduplicates edges for repeated provider imports.
 +        for _, sourcefile in ipairs(sourcefiles) do
 +            local reused, from = support.is_reused(target, sourcefile)
 +            if reused then
 +                local dependencyjob = content_based and get_computedagjob_for(from) or get_scanfilejob_for(from, sourcefile)
-+                if not dependencyjobs[dependencyjob] then
-+                    dependencyjobs[dependencyjob] = true
-+                    if jobgraph:has(dependencyjob) then
-+                        jobgraph:add_orders(dependencyjob, parsejob)
-+                    else
-+                        local jobdeps = memcache:get2(from:fullname(), "jobdeps") or {}
-+                        jobdeps.parse = jobdeps.parse or {}
-+                        jobdeps.parse[dependencyjob] = jobdeps.parse[dependencyjob] or {}
-+                        jobdeps.parse[dependencyjob][parsejob] = true
-+                        memcache:set2(from:fullname(), "jobdeps", jobdeps)
-+                    end
++                if jobgraph:has(dependencyjob) then
++                    jobgraph:add_orders(dependencyjob, parsejob)
++                else
++                    local jobdeps = memcache:get2(from:fullname(), "jobdeps") or {}
++                    jobdeps.parse = jobdeps.parse or {}
++                    jobdeps.parse[dependencyjob] = jobdeps.parse[dependencyjob] or {}
++                    jobdeps.parse[dependencyjob][parsejob] = true
++                    memcache:set2(from:fullname(), "jobdeps", jobdeps)
 +                end
 +            end
 +        end
@@ -741,7 +732,7 @@
                  end
              end
          end
-@@ -760,9 +825,10 @@
+@@ -760,9 +821,10 @@
 
      profiler.enter(target:fullname(), "c++ modules", "scanner", "compute module dependency dag")
      local memcache = support.memcache()
@@ -754,7 +745,7 @@
      if changed or not built_artifacts then
          local built_modules = {}
          local built_headerunits = {}
-@@ -770,7 +836,7 @@
+@@ -770,12 +832,15 @@
 
          -- feed the dag
          local nodes = {}
@@ -763,16 +754,28 @@
              table.insert(nodes, module.headerunit and node or module.sourcefile)
          end
          -- table.unique(nodes)
-@@ -795,7 +861,7 @@
+         local edges = _get_edges(target, nodes, modules)
+         local dag = graph.new(true)
++        for _, node in ipairs(nodes) do
++            dag:add_vertex(node)
++        end
+         for _, e in ipairs(edges) do
+             dag:add_edge(e[1], e[2])
+         end
+@@ -795,12 +860,6 @@
              end
          end
          local sourcefiles_sorted_set = hashset.from(sourcefiles_sorted)
 -        for sourcefile, _ in pairs(modules) do
-+        for sourcefile, _ in table.orderpairs(modules) do
-             if not sourcefiles_sorted_set:has(sourcefile) then
-                 table.insert(sourcefiles_sorted, sourcefile)
-                 sourcefiles_sorted_set:insert(sourcefile)
-@@ -834,7 +900,12 @@
+-            if not sourcefiles_sorted_set:has(sourcefile) then
+-                table.insert(sourcefiles_sorted, sourcefile)
+-                sourcefiles_sorted_set:insert(sourcefile)
+-            end
+-        end
+         -- prepare objectfiles list built by the target
+         local culleds
+         for _, sourcefile in ipairs(sourcefiles_sorted) do
+@@ -834,7 +893,12 @@
                  if insert then
                      if reused then
                          if not support.is_bmionly(target, sourcefile) or module.name == "std" or module.name == "std.compat" then
@@ -786,7 +789,7 @@
                              table.insert(objectfiles, tostring(objectfile))
                          end
                      elseif module.headerunit then
-@@ -876,7 +947,7 @@
+@@ -876,7 +940,7 @@
          built_headerunits = table.unique(built_headerunits)
 
          built_artifacts = {modules = built_modules, headerunits = built_headerunits, objectfiles = objectfiles}
@@ -797,30 +800,24 @@
      assert(built_artifacts, "shouldn't assert here, please open an issue")
 --- a/rules/c++/modules/clang/builder.lua
 +++ b/rules/c++/modules/clang/builder.lua
-@@ -31,6 +31,12 @@
+@@ -31,6 +31,7 @@
  import("support")
  import(".mapper")
  import(".builder", {inherit = true})
 +import("private.action.build.content_depend", {alias = "content_depend"})
-+
-+function _use_clang_module_pipeline(target)
-+    return target:policy("build.c++.modules.two_phases")
-+        and target:has_tool("cxx", "clang", "clangxx", "clang_cl")
-+end
 
  function _get_bmifile(target, module)
      local has_reduced_bmi = support.get_modulesreducedbmiflag(target)
-@@ -65,6 +71,9 @@
+@@ -65,6 +66,8 @@
 
      local modules_reduced_bmi_flag = support.get_modulesreducedbmiflag(target)
      local has_two_phases = target:policy("build.c++.modules.two_phases")
-+    local use_clang_module_pipeline = _use_clang_module_pipeline(target)
 +    local clang_version = support.get_clang_version(target)
-+    local use_reduced_bmi = use_clang_module_pipeline and clang_version and semver.compare(clang_version, "23.0") >= 0
++    local use_reduced_bmi = has_two_phases and clang_version and semver.compare(clang_version, "23.0") >= 0
      local flags
      if opt.bmi then
          local module_outputflag = support.get_moduleoutputflag(target)
-@@ -72,7 +81,7 @@
+@@ -72,7 +75,7 @@
          flags = {"-x", "c++-module"}
 
          if not opt.objectfile then
@@ -829,25 +826,25 @@
              if target:has_tool("cxx", "clang_cl") then
                  table.join2(flags, "/clang:-o", "/clang:" .. module.bmifile)
              end
-@@ -92,7 +101,7 @@
+@@ -92,7 +95,7 @@
          end
      else
          flags = {}
 -        if not has_two_phases or not module.bmifile then
-+        if (use_clang_module_pipeline and support.has_module_extension(module.sourcefile)) or not has_two_phases or not module.bmifile then
++        if (has_two_phases and support.has_module_extension(module.sourcefile)) or not has_two_phases or not module.bmifile then
              flags = {"-x", "c++"}
          end
          local std = (module.name == "std" or module.name == "std.compat")
-@@ -171,7 +180,7 @@
+@@ -171,7 +174,7 @@
 
      opt = opt or {}
      local sourcefile = module.sourcefile
 -    if not opt.bmi and opt.objectfile and module.bmifile then
-+    if not _use_clang_module_pipeline(target) and not opt.bmi and opt.objectfile and module.bmifile then
++    if not support.has_two_phase_compilation_support(target) and not opt.bmi and opt.objectfile and module.bmifile then
          sourcefile = module.bmifile
      end
      local outputfile = ((opt.bmi and not opt.objectfile) or opt.headerunit) and module.bmifile or module.objectfile
-@@ -302,6 +311,22 @@
+@@ -302,6 +305,22 @@
      local dryrun = option.get("dry-run")
      local enable_hash_comparison = target:policy("build.c++.modules.non_cascading_changes")
 
@@ -968,7 +965,7 @@
 +    table.insert(temporaries, depfile)
 +    for index, sourcefile in ipairs(sourcefiles) do
 +        local depkey = "carven_scan_" .. index
-+        local flags = table.clone(compinst:compflags({sourcefile = sourcefile, target = target, sourcekind = "cxx"}))
++        local flags = compinst:compflags({sourcefile = sourcefile, target = target, sourcekind = "cxx"})
 +        table.remove_if(flags, function(_, flag)
 +            return flag:startswith("-fmodule-file=") or flag:startswith("-fmodule-output=")
 +                or flag:startswith("-fprebuilt-module-path=")
@@ -1052,49 +1049,53 @@
      before_buildcmd_files("builder.build_bmis")
 --- a/rules/c++/modules/support.lua
 +++ b/rules/c++/modules/support.lua
-@@ -28,6 +28,7 @@
+@@ -28,6 +28,8 @@
  import("lib.detect.find_file")
  import("core.project.project")
  import("core.project.config")
++import("core.project.depend")
 +import("private.action.build.content_depend", {alias = "content_depend"})
 
  function _support(target)
      return import_implementation_of(target, "support")
-@@ -304,15 +305,26 @@
+@@ -304,16 +306,16 @@
  -- load module infos
  function load_moduleinfo(target, sourcefile)
      local reused, from = is_reused(target, sourcefile)
 -    local dependfile = reused and from:dependfile(sourcefile) or target:dependfile(sourcefile)
 -
 -    local is_file = os.isfile(dependfile)
-+    local owner = reused and from or target
-+    local records = owner:data("cxx.modules.scan_records")
-+    local record = records and records[sourcefile]
-+    local dependfile
-+    local is_file = record ~= nil
-+    if not is_file then
-+        dependfile = owner:dependfile(sourcefile)
-+        is_file = os.isfile(dependfile)
-+    end
-     if is_file then
+-    if is_file then
 -        local data = io.load(dependfile)
-+        local data = record or io.load(dependfile)
-         if data then
+-        if data then
 -            local moduleinfo = json.decode(data.moduleinfo)
 -            moduleinfo.sourcefile = sourcefile
 -            return moduleinfo
-+            -- Provider-owned records are replaced by every completed scan batch.
-+            -- Consumers read the same decoded P1689 facts; target paths remain
-+            -- the responsibility of scanner._parse_moduleinfo.
-+            if not data.decoded_moduleinfo then
-+                data.decoded_moduleinfo = json.decode(data.moduleinfo)
-+                data.decoded_moduleinfo.sourcefile = sourcefile
-+            end
-+            return data.decoded_moduleinfo
-         end
+-        end
++    local owner = reused and from or target
++    local records = owner:data("cxx.modules.scan_records")
++    local data = records and records[sourcefile] or depend.load(owner:dependfile(sourcefile))
++    if data then
++        -- Consumers share decoded provider facts; parsing owns target paths.
++        if not data.decoded_moduleinfo then
++            data.decoded_moduleinfo = json.decode(data.moduleinfo)
++            data.decoded_moduleinfo.sourcefile = sourcefile
++        end
++        return data.decoded_moduleinfo
      end
 
-@@ -377,6 +389,22 @@
+     local targets = memcache():get("targets")
+@@ -321,7 +323,8 @@
+     if not (targets and targets[target_fullname]) then
+         return nil, string.format("module scanner did not run for target(%s), maybe a custom `on_prepare()` script overrides the modules one", target_fullname)
+     end
+-    if not is_file then
++    local dependfile = owner:dependfile(sourcefile)
++    if not os.isfile(dependfile) then
+         return nil, string.format("target(%s): dependfile for '%s' not found at '%s'", target_fullname, sourcefile, dependfile)
+     end
+     return nil, string.format("target(%s): failed to load moduleinfo for '%s'", target_fullname, sourcefile)
+@@ -377,6 +380,21 @@
  -- get localcache
  function localcache()
      return _localcache.cache("cxxmodules")
@@ -1102,21 +1103,38 @@
 +
 +-- Content-based builds reconstruct derived graphs from the current configuration.
 +function derivedcache(target)
-+    local targetcache = target:memcache()
-+    local cache = targetcache:get("cxx.modules.derivedcache")
-+    if not cache then
-+        cache = localcache()
-+        if content_depend.enabled(target) then
-+            cache:set2(target:fullname(), "module_mapper", nil)
-+            cache:set2(target:fullname(), "c++.modules.built_artifacts", nil)
-+            cache = memcache()
-+        end
-+        targetcache:set("cxx.modules.derivedcache", cache)
++    if not content_depend.enabled(target) then
++        return localcache()
++    end
++    local cache = target:memcache()
++    if not cache:get("cxx.modules.derived") then
++        local persistent = localcache()
++        persistent:set2(target:fullname(), "module_mapper", nil)
++        persistent:set2(target:fullname(), "c++.modules.built_artifacts", nil)
++        cache:set("cxx.modules.derived", true)
 +    end
 +    return cache
  end
 
  -- get modules cache directory
+--- a/plugins/project/utils/target_cmds.lua
++++ b/plugins/project/utils/target_cmds.lua
+@@ -24,11 +24,14 @@
+ import("core.base.hashset")
+ import("core.project.rule")
+ import("private.utils.batchcmds")
++import("private.utils.target", {alias = "target_utils"})
+ import("private.action.build.target", {alias = "target_buildutils"})
+
+ -- prepare targets
+ function prepare_targets(targets)
+-    local targets_root = targets or target_buildutils.get_root_targets()
++    -- Match project export selection, including non-default targets and -t.
++    -- The native job graph visits providers and deduplicates shared dependencies.
++    local targets_root = targets or table.values(target_utils.get_project_targets())
+     target_buildutils.run_targetjobs(targets_root, {job_kind = "prepare", for_generator = true, jobs = os.default_njob()})
+ end
+
 --- a/modules/private/utils/toolchain.lua
 +++ b/modules/private/utils/toolchain.lua
 @@ -616,7 +616,9 @@

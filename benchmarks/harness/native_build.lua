@@ -26,21 +26,23 @@ local linker = import("core.tool.linker")
 config.load()
 local result = {}
 for name, target in pairs(project.targets()) do
-    local program, kind = target:tool("cxx")
-    local tool = find_tool(kind, {program = program, version = true})
-    local ld_program, ld_kind = target:tool("ld")
-    local ld_tool = find_tool(ld_kind, {program = ld_program, version = true})
-    local cxx = target:compiler("cxx")
-    local ld = linker.load(target:kind(), {"cxx"}, {target = target})
-    result[name] = {executable = path.absolute(target:targetfile()), cxx = program,
-        cxx_kind = kind, cxx_version = tool and tool.version or "unobserved",
-        ld = ld_program, ld_kind = ld_kind, ld_version = ld_tool and ld_tool.version or "unobserved",
-        toolchains = target:get("toolchains"), runtimes = target:get("runtimes"),
-        languages = target:get("languages"), optimize = target:get("optimize"),
-        defines = target:get("defines"), cxxflags = target:get("cxxflags"),
-        ldflags = target:get("ldflags"), syslinks = target:get("syslinks"),
-        resolved_cxxflags = cxx:compflags(), resolved_ldflags = ld:linkflags(),
-        exceptions = target:get("exceptions"), platform = target:plat(), arch = target:arch()}
+    if target:is_binary() then
+        local program, kind = target:tool("cxx")
+        local tool = find_tool(kind, {program = program, version = true})
+        local ld_program, ld_kind = target:tool("ld")
+        local ld_tool = find_tool(ld_kind, {program = ld_program, version = true})
+        local cxx = target:compiler("cxx")
+        local ld = linker.load(target:kind(), {"cxx"}, {target = target})
+        result[name] = {executable = path.absolute(target:targetfile()), cxx = program,
+            cxx_kind = kind, cxx_version = tool and tool.version or "unobserved",
+            ld = ld_program, ld_kind = ld_kind, ld_version = ld_tool and ld_tool.version or "unobserved",
+            toolchains = target:get("toolchains"), runtimes = target:get("runtimes"),
+            languages = target:get("languages"), optimize = target:get("optimize"),
+            defines = target:get("defines"), cxxflags = target:get("cxxflags"),
+            ldflags = target:get("ldflags"), syslinks = target:get("syslinks"),
+            resolved_cxxflags = cxx:compflags(), resolved_ldflags = ld:linkflags(),
+            exceptions = target:get("exceptions"), platform = target:plat(), arch = target:arch()}
+    end
 end
 print(json.encode(result))
 ]]

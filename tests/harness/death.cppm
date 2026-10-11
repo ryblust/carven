@@ -1,4 +1,4 @@
-module carven:test.internal.harness.death;
+module carven:test.harness.death;
 
 import :support.function_ref;
 import std;

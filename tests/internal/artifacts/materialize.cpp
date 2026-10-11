@@ -3,9 +3,9 @@ module carven:test.internal.artifacts.materialize;
 import :artifacts.materialize;
 import :artifacts;
 import :support.path;
+import :test.harness.death;
 import :test.harness.directory;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import std;
 
 namespace {

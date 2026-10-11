@@ -130,10 +130,9 @@ for _, case in ipairs(cases) do
         set_languages("c++20")
         add_rules("@carven/carven")
 
-        if case.name == "native-parser" then
-            add_includedirs(path.join(examples_dir, case.dir))
-        end
-        add_files(path.join(examples_dir, case.dir, "*.cv"))
+        add_files(path.join(examples_dir, case.dir, "*.cv"), {
+            includedirs = case.name == "native-parser" and path.join(examples_dir, case.dir) or nil,
+        })
         if case.name == "cpp-host" then
             add_files(path.join(examples_dir, case.dir, "main.cpp"))
         end

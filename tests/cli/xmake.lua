@@ -712,7 +712,6 @@ for _, spec in ipairs(native_specs) do
         add_rules("@carven/carven", {tests = spec.tests})
         set_languages("c++20")
         if spec.name == "runtime" then
-            add_includedirs(path.join(cli_dir, "commands", "runtime_traps"))
             add_defines("NDEBUG")
         end
         on_load(function (target)
@@ -720,7 +719,10 @@ for _, spec in ipairs(native_specs) do
                 local prepared_source = path.join(source_root, destination)
                 os.mkdir(path.directory(prepared_source))
                 os.cp(path.join(cli_dir, source), prepared_source, {copy_if_different = true})
-                target:add("files", prepared_source)
+                target:add("files", prepared_source, {
+                    includedirs = spec.name == "runtime"
+                        and path.join(cli_dir, "commands", "runtime_traps") or nil,
+                })
             end
         end)
         for _, name in ipairs(table.orderkeys(spec.scenarios)) do

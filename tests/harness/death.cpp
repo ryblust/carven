@@ -14,10 +14,10 @@ module;
 #include <unistd.h>
 #endif
 
-module carven:test.internal.harness.death.impl;
+module carven:test.harness.death.impl;
 
+import :test.harness.death;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import std;
 
 namespace {

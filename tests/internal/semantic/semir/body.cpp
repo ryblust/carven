@@ -20,8 +20,8 @@ import :source.batch;
 import :source.manager;
 import :source.module_path;
 import :source.text;
+import :test.harness.death;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import std;
 
 namespace {

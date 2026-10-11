@@ -15,9 +15,9 @@ import :backend.target.unit;
 import :backend.target.verify;
 import :backend.target;
 import :support.unique_indirect;
+import :test.harness.death;
 import :test.harness.framework;
 import :test.internal.backend.target.fixture;
-import :test.internal.harness.death;
 import std;
 
 namespace {

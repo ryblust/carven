@@ -1,5 +1,4 @@
 local internal_dir = os.scriptdir()
-local harness_main = path.join(os.projectdir(), "tests", "harness", "main.cpp")
 local crafts_dir = path.join(os.projectdir(), "crafts")
 
 local domains = {
@@ -16,14 +15,13 @@ local domains = {
     }},
 }
 
-target("carven-test-internal-fixtures")
+target("carven-test-fixtures")
     set_default(false)
     set_group("tests/internal")
     set_kind("moduleonly")
-    add_deps("carven-modules", "carven-test-support")
+    add_deps("carven-test-support")
     add_includedirs(crafts_dir)
     add_files(path.join(internal_dir, "**.cppm"))
-    add_files(path.join(internal_dir, "harness", "death.cpp"))
 target_end()
 
 -- Leave headroom for sanitizer instrumentation and shared-runner variability.
@@ -34,9 +32,8 @@ for _, domain in ipairs(domains) do
         set_default(false)
         set_group("tests/internal")
         set_kind("binary")
-        add_deps("carven-modules", "carven-test-support", "carven-test-internal-fixtures")
+        add_deps("carven-test-fixtures", "carven-test-runner")
         add_includedirs(crafts_dir)
-        add_files(harness_main)
         for _, source in ipairs(domain.sources) do
             add_files(path.join(internal_dir, source))
         end

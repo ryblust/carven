@@ -75,15 +75,10 @@ scan and publication of reused providers. Consumers share their providers'
 parsed module facts within the invocation. Units with header-unit dependencies
 keep their target-specific parsing path. The content-based path reconstructs
 the module mapper, DAG, and build jobs from the current configuration on every
-invocation; derived mappers and build-artifact lists stay in the existing memory
-cache. Module facts remain in the persistent `c++.modules` cache for installation
-and uninstallation. Compilation-database generation follows the same preparation
-path and reuses valid scan records.
-
-Derived-cache selection uses Xmake's existing target memory cache and its
-configuration invalidation. Old persistent derived fields are cleared when that
-selection is first made, rather than on every mapper lookup. Reading a current
-provider scan record does not compute a fallback dependency-file path.
+invocation; derived mappers and build-artifact lists use the target's native memory
+cache and its configuration invalidation. Module facts remain in the persistent
+`c++.modules` cache for installation and uninstallation. Provider scan records
+are read from memory or loaded through `depend.load`.
 
 Module reuse checks read the current compiler flags on each comparison. Their
 filtered and sorted forms are shared within the invocation, keyed by the full
@@ -94,11 +89,8 @@ the object paths in the provider's validated current scan facts.
 Reused ordinary module implementation files are compiled by their provider.
 Consumers link the provider's objects without compiling those files again.
 
-Module DAG inputs and isolated modules use sorted source keys. Together with
-sorted dependency names, this gives equivalent module graphs a stable topological
-order and keeps their object lists independent of Lua table insertion order.
-This controls one source of link-layout variation; it does not guarantee identical
-binaries across different toolchains, flags, or other build inputs.
+Module graphs use sorted source keys and dependency names to keep graph and
+object-list ordering consistent between equivalent inputs.
 
 After prerequisites finish, each BMI and object job compares source, header,
 scan-record and imported BMI contents, compiler identity, flags, and output
@@ -132,6 +124,9 @@ Use the repository wrapper for local build commands:
 ./xmakew build
 ./xmakew project -k compile_commands
 ```
+
+Without `-t`, project exports include all targets, including those with
+`set_default(false)`. Use `-t <target>` to select the exported target.
 
 On Windows, use `.\xmakew.ps1` with the same arguments. The project selects
 LLVM-MinGW and shared libc++ for the default Windows platform. Add the

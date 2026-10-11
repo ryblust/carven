@@ -7,8 +7,8 @@ import :semantic.semir.constant;
 import :semantic.semir.constant_access;
 import :semantic.semir.operation;
 import :semantic.semir.type;
+import :test.harness.death;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import :test.internal.semantic.evaluation.fixture;
 import std;
 

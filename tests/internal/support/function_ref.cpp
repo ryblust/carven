@@ -1,8 +1,8 @@
 module carven:test.internal.support.function_ref;
 
 import :support.function_ref;
+import :test.harness.death;
 import :test.harness.framework;
-import :test.internal.harness.death;
 import std;
 
 namespace {
