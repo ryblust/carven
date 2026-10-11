@@ -1,6 +1,6 @@
 private async fn accept_cancellation() {
     eprintln("child accepts cancellation:", cancellation_requested());
-    await cancellation_point();
+    await cancel_point();
     eprintln("unreachable child");
 }
 

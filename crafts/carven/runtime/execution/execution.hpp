@@ -454,7 +454,16 @@ public:
         : frame(std::exchange(other.frame, nullptr)) {}
 
     auto operator=(const AsyncOperation&) -> AsyncOperation& = delete;
-    auto operator=(AsyncOperation&&) -> AsyncOperation& = delete;
+
+    auto operator=(AsyncOperation&& other) noexcept -> AsyncOperation& {
+        if (this != &other) {
+            if (frame != nullptr) {
+                detail::destroy(frame, frame.promise().state);
+            }
+            frame = std::exchange(other.frame, nullptr);
+        }
+        return *this;
+    }
 
     ~AsyncOperation() noexcept {
         if (frame != nullptr) {
@@ -931,7 +940,7 @@ inline auto cancel(Child<Result, Failures...>& child) noexcept -> void {
     child.task.request_cancel();
 }
 
-class CancellationPointAwaiter final {
+class CancelPointAwaiter final {
 public:
     auto await_ready() const noexcept -> bool { return true; }
 
@@ -966,7 +975,7 @@ public:
     auto await_resume() const noexcept -> Completion<void> { return Completion<void>::success(); }
 };
 
-inline auto await_cancellation_point() noexcept -> CancellationPointAwaiter {
+inline auto await_cancel_point() noexcept -> CancelPointAwaiter {
     return {};
 }
 
@@ -974,8 +983,8 @@ inline auto await_yield_once() noexcept -> YieldAwaiter {
     return {};
 }
 
-inline auto cancellation_point() noexcept -> AsyncOperation<void> {
-    co_return co_await await_cancellation_point();
+inline auto cancel_point() noexcept -> AsyncOperation<void> {
+    co_return co_await await_cancel_point();
 }
 
 inline auto yield_once() noexcept -> AsyncOperation<void> {

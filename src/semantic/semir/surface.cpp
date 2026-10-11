@@ -309,7 +309,7 @@ auto SemIRProgram::publish_surfaces() noexcept -> void {
     callable_surfaces.resize(declarations().callables().size());
     for (const auto entry : declarations().functions()) {
         const auto callable = entry.value.callable;
-        if (definition_placement(callable) != DefinitionPlacement::None) {
+        if (!is_source_template(callable)) {
             continue;
         }
         const auto body = declarations().body_for_callable(callable);

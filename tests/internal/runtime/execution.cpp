@@ -64,7 +64,7 @@ Fixed::Fixed(int source) noexcept
 
 static_assert(std::is_move_constructible_v<async::Completion<Fixed>>);
 static_assert(!std::is_copy_constructible_v<async::Completion<Fixed>>);
-static_assert(!std::is_move_assignable_v<async::AsyncOperation<int>>);
+static_assert(std::is_nothrow_move_assignable_v<async::AsyncOperation<int>>);
 static_assert(!std::is_move_constructible_v<async::Child<int>>);
 
 auto deep(int depth, int& bodies) noexcept -> async::AsyncOperation<int> {
@@ -135,7 +135,7 @@ auto accepting(
 auto cancel_child(bool& yield_succeeded, bool& same_task, bool& parent_unrequested) noexcept
     -> async::AsyncOperation<void> {
     auto scope = async::ChildScope(co_await async::current_activation());
-    auto checkpoint = async::cancellation_point();
+    auto checkpoint = async::cancel_point();
     auto child = scope.start(accepting(yield_succeeded, same_task, std::move(checkpoint)));
     async::cancel(child);
     async::cancel(child);
@@ -234,7 +234,7 @@ auto closing_parent(bool& alive, std::vector<int>& log) noexcept -> async::Async
     auto backing = Backing(alive, log);
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(grandchild(alive, log));
-    auto checkpoint = co_await async::cancellation_point();
+    auto checkpoint = co_await async::cancel_point();
     // Cancellation selects an outcome; lexical closure still drains the child.
     co_await scope.close(async::ClosingPolicy::RequestCancelAndClose);
     co_return checkpoint;
@@ -273,7 +273,7 @@ auto close_siblings(bool& alive, std::vector<int>& log, int first_turns, int sec
 }
 
 auto cancelled_before_close(std::vector<int>& log) noexcept -> async::AsyncOperation<void> {
-    auto result = co_await async::cancellation_point();
+    auto result = co_await async::cancel_point();
     log.push_back(result.is_cancelled() ? 1 : -1);
     co_return result;
 }
@@ -333,7 +333,7 @@ auto explicit_boundary(std::vector<int>& log) noexcept -> async::AsyncOperation<
 
 auto inherited_checkpoint(bool& inherited) noexcept -> async::AsyncOperation<void> {
     inherited = async::cancellation_requested();
-    co_return co_await async::cancellation_point();
+    co_return co_await async::cancel_point();
 }
 
 auto cancelled_context(bool& before, bool& after, bool& inherited) noexcept
@@ -1048,6 +1048,31 @@ const TestSuite suite([] static noexcept {
         expect_equal(result.success_if()->value, 20000);
         expect_equal(bodies, 20001);
     };
+    "Runtime async: owner replacement destroys cold backing and transfers execution"_test =
+        [] static noexcept {
+            auto old_alive = false;
+            auto new_alive = false;
+            auto old_log = std::vector<int>();
+            auto new_log = std::vector<int>();
+            {
+                auto destination = captured_result(Capture(old_alive, old_log), old_log, false);
+                auto source = captured_result(Capture(new_alive, new_log), new_log, false);
+                destination = std::move(source);
+                expect(!old_alive);
+                expect(old_log == std::vector<int>({3}));
+                expect(new_alive);
+                expect(new_log.empty());
+                auto& alias = destination;
+                destination = std::move(alias);
+                source = std::move(destination);
+                auto result = async::drive_root(std::move(source));
+                expect(result.success_if() != nullptr);
+                expect(!new_alive);
+                expect(new_log == std::vector<int>({1, 3}));
+            }
+            expect(old_log == std::vector<int>({3}));
+            expect(new_log == std::vector<int>({1, 3}));
+        };
     "Runtime async: deep lexical close drains without recursive frame destruction"_test =
         [] static noexcept {
             auto bodies = 0;

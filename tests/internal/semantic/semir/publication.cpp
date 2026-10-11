@@ -245,7 +245,7 @@ const TestSuite suite([] static noexcept {
         expect_equal(program.static_instances().size(), 1uz);
         for (const auto entry : program.declarations().callables()) {
             const auto body = callable_body_id(entry.value);
-            if (program.definition_placement(entry.id) == DefinitionPlacement::None) {
+            if (program.is_source_template(entry.id)) {
                 expect(!body);
             } else {
                 require(body.has_value());

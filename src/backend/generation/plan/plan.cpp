@@ -492,13 +492,28 @@ TargetPlan::TargetPlan(
     verify_target_artifact_logical_paths(artifact_logical_paths);
 }
 
-auto TargetPlan::build(const SemIRProgram& semantic, const TargetPlanningRequest& request) noexcept
-    -> TargetPlan {
+auto target_definition_placement(const SemIRProgram& semantic, CallableID callable) noexcept
+    -> TargetDefinitionPlacement {
+    if (semantic.static_instance(callable)) {
+        return TargetDefinitionPlacement::Use;
+    }
+    return semantic.is_source_template(callable) ? TargetDefinitionPlacement::None
+                                                 : TargetDefinitionPlacement::Owner;
+}
+
+auto TargetPlan::build(
+    const SemIRProgram& semantic,
+    const TargetPlanningRequest& request,
+    const std::flat_set<ModuleID>& library_modules
+) noexcept -> TargetPlan {
+    if (library_modules.size() != (request.library ? request.library->modules.size() : 0uz)) {
+        invariant_violation("target planning requires resolved library membership");
+    }
     const auto identity = TargetPlanIdentity::fresh();
     const auto closures = plan_closures(semantic);
-    auto names = plan_names(semantic, request, closures);
+    auto names = plan_names(semantic, request, library_modules, closures);
     auto failures = plan_failure_abi(semantic);
-    auto artifacts = plan_artifacts(semantic, request, closures, identity);
+    auto artifacts = plan_artifacts(semantic, request, library_modules, closures, identity);
     return TargetPlan(
         semantic.identity(),
         identity,
@@ -561,9 +576,10 @@ PlannedCompilation::PlannedCompilation(const SemIRProgram& semantic, TargetPlan 
 
 auto PlannedCompilation::build(
     const SemIRProgram& semantic,
-    const TargetPlanningRequest& request
+    const TargetPlanningRequest& request,
+    const std::flat_set<ModuleID>& library_modules
 ) noexcept -> PlannedCompilation {
-    auto target = TargetPlan::build(semantic, request);
+    auto target = TargetPlan::build(semantic, request, library_modules);
     return PlannedCompilation(semantic, std::move(target));
 }
 

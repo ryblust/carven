@@ -2,7 +2,7 @@ import .duration using { Duration, RangeError };
 import .clock using TimePoint;
 
 export async fn sleep(duration: Duration) throw RangeError {
-    await cancellation_point();
+    await cancel_point();
     if duration.nanoseconds <= 0 { return; }
     let deadline = TimePoint::after(duration)?;
     await deadline.wait();

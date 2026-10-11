@@ -34,7 +34,8 @@ auto count_nodes(std::string source) noexcept -> std::size_t {
         semantic_owner,
         {.test_mode = TestGenerationMode::None,
          .linkage_domain = *LinkageDomain::explicit_value("display"),
-         .library = std::nullopt}
+         .library = std::nullopt},
+        {}
     );
     auto query = DisplayQuery {};
     for (const auto artifact : compilation.target().artifacts()) {

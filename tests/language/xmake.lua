@@ -211,6 +211,11 @@ for _, scenario in ipairs({
             .. "contracts\n17\n13\n5\n10\n23\n20\n1\n12\n25\n2\n12\n9\n3\n12110\n129\n12384\n182\n",
     },
     {
+        target = "carven-test-language-async-owners",
+        source = "owners.cv",
+        output = "true\n",
+    },
+    {
         target = "carven-test-language-async-composition",
         source = "composition.cv",
         output = "true\n",

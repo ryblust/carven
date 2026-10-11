@@ -1,0 +1,1 @@
+export fn other() -> i32 => 7;

@@ -42,7 +42,8 @@ const TestSuite suite([] static noexcept {
                     semantic_owner,
                     {.test_mode = TestGenerationMode::None,
                      .linkage_domain = *LinkageDomain::explicit_value("pattern_size"),
-                     .library = std::nullopt}
+                     .library = std::nullopt},
+                    {}
                 );
 
                 struct Query final {

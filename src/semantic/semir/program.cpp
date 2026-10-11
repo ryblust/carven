@@ -397,14 +397,10 @@ auto SemIRProgram::source_function(CallableID callable) const noexcept
     return declaration_store.function_for_callable(callable);
 }
 
-auto SemIRProgram::definition_placement(CallableID callable) const noexcept -> DefinitionPlacement {
-    if (static_instance(callable) != nullptr) {
-        return DefinitionPlacement::Use;
-    }
+auto SemIRProgram::is_source_template(CallableID callable) const noexcept -> bool {
     const auto signature = declaration_store.callable(callable).signature;
-    return callable_signature_store.signature(signature).has_static_parameters()
-        ? DefinitionPlacement::None
-        : DefinitionPlacement::Owner;
+    return static_instance(callable) == nullptr
+        && callable_signature_store.signature(signature).has_static_parameters();
 }
 
 auto SemIRProgram::executes(BodyID body) const noexcept -> bool {

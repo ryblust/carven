@@ -142,8 +142,9 @@ and both `crafts/` directories as native include roots. A missing project
 added explicitly by test targets. Inline tests follow the target's test emission
 mode.
 
-Application targets list their own sources. Module names follow project-relative
-source paths. Toolchain paths require no user configuration. Native provider
+Application targets list their own sources. Module names use project-relative
+paths with the `.cv` suffix removed. Directory separators and dots separate module
+components. Toolchain paths require no user configuration. Native provider
 dependencies and optional test modes use ordinary target configuration.
 
 The rule passes the complete `.cv` batch to Carven before native dependency

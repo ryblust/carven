@@ -205,13 +205,7 @@ template<std::size_t TableBytes, std::size_t IndexBytes>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL
 lookup(Value<TableBytes> table, Value<IndexBytes> indices) noexcept -> Value<IndexBytes> {
     auto result = Value<IndexBytes> {};
-#if defined(__clang__) || defined(__GNUC__)
-    typedef std::uint8_t TableVector __attribute__((vector_size(TableBytes)));
-    auto lanes = TableVector {};
-    std::memcpy(&lanes, table.bytes.data(), TableBytes);
-#else
     const auto& lanes = table.bytes;
-#endif
     for (auto i = std::size_t {0}; i < IndexBytes; ++i) {
         const auto index = std::size_t {indices.bytes[i]};
         result.bytes[i] = index < TableBytes ? lanes[index] : std::uint8_t {0};

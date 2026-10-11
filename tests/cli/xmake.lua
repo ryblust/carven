@@ -1,4 +1,31 @@
 local case_specs = {
+    ["input/mapped"] = {
+        inputs = {"second.cv"},
+        fixtures = {["../../commands/manifest/input.cv"] = "crafts/toolchain/crafts/input.cv"},
+        steps = {
+            {args = {"compile", "--explicit-inputs", "--source=logical.input=crafts/toolchain/crafts/input.cv",
+                     "--artifact-manifest=manifest.json", "-o", "emit"},
+                output_files = {"emit/logical/input.cpp", "manifest.json"},
+                file_contains = {["manifest.json"] = {'"module": "logical.input"', 'crafts/toolchain/crafts/input.cv'}}},
+            {args = {"check", "--explicit-inputs", "--source=logical.input=crafts/toolchain/crafts/input.cv"},
+                stderr_contains = {"check passed"}},
+            {args = {"check", "--explicit-inputs", "--source=logical.input=crafts/toolchain/crafts/input.cv",
+                     "--source=logical.input=crafts/toolchain/crafts/input.cv"},
+                stderr_contains = {"check passed"}},
+            {args = {"compile", "--explicit-inputs", "--source=first=crafts/toolchain/crafts/input.cv",
+                     "--source=second=crafts/toolchain/crafts/input.cv", "-o", "conflict"},
+                exit_code = 1, stderr_contains = {"conflicting module identities"}, absent_files = {"conflict"}},
+            {args = {"compile", "--explicit-inputs", "--source=same=crafts/toolchain/crafts/input.cv",
+                     "--source=same=second.cv", "-o", "duplicate"},
+                exit_code = 1, stderr_contains = {"duplicate module path"}, absent_files = {"duplicate"}},
+            {args = {"compile", "--explicit-inputs", "--source=logical.input=crafts/toolchain/crafts/input.cv", "--stdout"},
+                stdout_contains = {"==> logical/input.cpp <=="}},
+            {args = {"compile", "--explicit-inputs", "--source=bad..module=crafts/toolchain/crafts/input.cv"},
+                exit_code = 1, stderr_contains = {"invalid source mapping"}},
+            {args = {"compile", "--source=logical.input=crafts/toolchain/crafts/input.cv"},
+                exit_code = 1, stderr_contains = {"source mappings require --explicit-inputs"}},
+        },
+    },
     ["commands/manifest"] = {
         inputs = {"input.cv"},
         fixtures = {["../../diagnostics/syntax/input.cv"] = "invalid.cv"},
@@ -628,7 +655,6 @@ case_specs["commands/source_collection"] = {
 }
 
 local cli_dir = path.join(os.projectdir(), "tests", "cli")
-local xmake_rule_dir = path.join(cli_dir, "xmake_rule")
 
 local native_specs = {
     {
@@ -756,52 +782,3 @@ target("carven-test-cli")
         return harness(target, opt, case_specs)
     end)
 target_end()
-
-for _, domain in ipairs({"a", "b"}) do
-    target("carven-test-cli-default-domain-" .. domain)
-        set_default(false)
-        set_kind("object")
-        add_rules("@carven/carven")
-
-        set_languages("c++20")
-        add_files(path.join(xmake_rule_dir, "domain.cv"))
-
-    target_end()
-end
-
-target("carven-test-cli-default-domain-isolation")
-    set_default(false)
-    set_languages("c++20")
-    add_deps(
-        "carven-test-cli-default-domain-a",
-        "carven-test-cli-default-domain-b"
-    )
-    add_files(path.join(xmake_rule_dir, "main.cpp"))
-    add_tests("default-domain-isolation", {group = "cli", run_timeout = 30000})
-target_end()
-
--- Ordinary consumers select the same sources with independent native settings.
--- Keep package-rule integration targets owned by the CLI test collection.
-for _, configuration in ipairs({
-    {name = "a", value = 17, offset = 25},
-    {name = "b", value = 19, offset = 23},
-}) do
-    target("carven-test-cli-native-config-" .. configuration.name)
-        set_default(false)
-        set_kind("binary")
-        set_languages("c++20")
-        add_rules("@carven/carven")
-        add_files(path.join(xmake_rule_dir, "configuration.cv"), {
-            includedirs = path.join(xmake_rule_dir, "native"),
-            defines = "CARVEN_FILE_VALUE=" .. configuration.value,
-        })
-        add_files(path.join(xmake_rule_dir, "configuration.cpp"), {
-            defines = "CARVEN_NATIVE_OFFSET=" .. configuration.offset,
-        })
-        local output = configuration.value .. " " .. configuration.offset .. "\n"
-        add_tests("native-per-file-config", {
-            group = "cli", run_timeout = 30000, plain = true,
-            pass_outputs = {output, (output:gsub("\n", "\r\n"))},
-        })
-    target_end()
-end

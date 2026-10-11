@@ -6,7 +6,7 @@ import std;
 enum class AsyncIntrinsic {
     CancelChild,
     CancellationRequested,
-    CancellationPoint,
+    CancelPoint,
     YieldOnce,
     WaitReady,
     CloseChild

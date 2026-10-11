@@ -74,16 +74,6 @@ private:
     friend class SemIRProgram;
 };
 
-// Where the executable definition of a callable lives.
-enum class DefinitionPlacement {
-    // A function with static parameters executes only through its instances.
-    None,
-    // One definition, in the artifact of the owning module.
-    Owner,
-    // One inline definition in every artifact that uses it.
-    Use,
-};
-
 struct CallableSurface final {
     // Source-template references, independent of callers' static arguments.
     std::vector<TypeID> types;
@@ -122,7 +112,7 @@ public:
     // The function a callable implements: its declaration, or the function
     // an instance was produced from.
     auto source_function(CallableID callable) const noexcept -> std::optional<FunctionID>;
-    auto definition_placement(CallableID callable) const noexcept -> DefinitionPlacement;
+    auto is_source_template(CallableID callable) const noexcept -> bool;
     auto callable_surface(CallableID callable) const noexcept -> const CallableSurface&;
     // Before publication, distinguishes executable bodies from source templates
     // and static roots. Every surviving published body returns true; removed

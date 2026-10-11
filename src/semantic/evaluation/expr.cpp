@@ -982,7 +982,7 @@ auto SemanticExecutor::expression_value(
                 co_return ExecutionVoid {};
             }
             case AsyncIntrinsic::YieldOnce:
-            case AsyncIntrinsic::CancellationPoint:
+            case AsyncIntrinsic::CancelPoint:
                 co_return std::make_unique<ExecutionColdOperation>(ExecutionColdOperation {
                     .type = source.type.construction(),
                     .action = operation.kind,

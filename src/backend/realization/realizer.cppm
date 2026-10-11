@@ -70,13 +70,13 @@ private:
     auto realize_async_exits(std::vector<TargetStmt>& statements) noexcept -> void;
 
     struct AsyncExit final {
-        TargetIdentifier label;
+        std::optional<TargetIdentifier> label;
         std::vector<TargetLocalID> closing_scopes;
         bool cancel;
         TargetStmt continuation;
     };
 
-    std::map<std::string, AsyncExit> async_exits;
+    std::map<std::size_t, AsyncExit> async_exits;
     std::optional<LoweringDeferredStorage> pending_completion;
 
     struct FailureSlot final {

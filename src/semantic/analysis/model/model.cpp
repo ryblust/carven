@@ -195,7 +195,7 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
                 } else if constexpr (std::same_as<Shape, SliceTypeValue>) {
                     return ConstructionSliceTypeValue {shape.element};
                 } else if constexpr (std::same_as<Shape, VectorTypeValue>) {
-                    return AnalysisSequenceType {shape.element};
+                    return AnalysisVectorType {shape.element};
                 } else if constexpr (std::same_as<Shape, PointerTypeValue>) {
                     return AnalysisPointerType {shape.target, shape.access};
                 } else if constexpr (std::same_as<Shape, OperationTypeValue>) {
@@ -226,7 +226,7 @@ auto AnalysisModelView::compute_shape(ConstructionTypeRef type) const noexcept
             } else if constexpr (std::same_as<Shape, GenericSliceType>) {
                 return ConstructionSliceTypeValue {shape.element};
             } else if constexpr (std::same_as<Shape, GenericVectorType>) {
-                return AnalysisSequenceType {shape.element};
+                return AnalysisVectorType {shape.element};
             } else if constexpr (std::same_as<Shape, GenericPointerType>) {
                 return AnalysisPointerType {shape.target, shape.access};
             } else if constexpr (std::same_as<Shape, GenericOperationType>) {
@@ -311,7 +311,7 @@ auto AnalysisModelView::contents(ConstructionTypeRef type) const noexcept -> Typ
             } else if constexpr (std::same_as<Shape, ConstructionSliceTypeValue>) {
                 masks[index] = storage_view_content;
                 depend(value.element, callable_view_content);
-            } else if constexpr (std::same_as<Shape, AnalysisSequenceType>) {
+            } else if constexpr (std::same_as<Shape, AnalysisVectorType>) {
                 masks[index] = storage_owner_content;
                 depend(value.element, all_type_contents);
             } else if constexpr (std::same_as<Shape, ConstructionOperationTypeValue>) {

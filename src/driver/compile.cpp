@@ -216,6 +216,7 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
             "\n"
             "Options:\n"
             "      --explicit-inputs     Use exactly the supplied source files\n"
+            "      --source=<module>=<path> Supply a mapped source (repeatable)\n"
             "      --timings             Show total and stage timings on stderr\n"
             "  -h, --help                Show this help\n"
             "\n"
@@ -239,7 +240,8 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
         executable,
         request->input_paths,
         timings.output(),
-        request->explicit_inputs
+        request->explicit_inputs,
+        request->mapped_inputs
     );
     if (!sources) {
         return emit_driver_error(sources.error());
@@ -257,6 +259,12 @@ auto run_compile_command(std::string_view executable, std::span<const char* cons
     auto selection = std::optional<std::span<const CanonicalModulePath>>();
     if (std::holds_alternative<StandardOutputArtifactDestination>(request->destination)) {
         for (const auto& source : sources->carven) {
+            if (std::ranges::any_of(request->mapped_inputs, [&](const SourceInput& input) noexcept {
+                    return input.module_path == source.module_path;
+                })) {
+                displayed_modules.push_back(source.module_path);
+                continue;
+            }
             for (const auto input : request->input_paths) {
                 auto error = std::error_code();
                 if (std::filesystem::equivalent(

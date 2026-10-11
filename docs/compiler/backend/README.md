@@ -25,11 +25,13 @@ that own their paths, bytes, and optional implementation source origins. Source
 ownership comes from the implementation's semantic module provenance. One
 published program can serve multiple generation requests without repeating
 semantic analysis or static execution.
-Planning selects names, interfaces, failure representation, and
-artifact schedules. Each artifact is lowered into a fresh `ArtifactLowering`
-and target-unit identity. Repeated lowering produces independent units. Type and
-signature-result caches belong to that artifact lowering and track incomplete
-resolution separately from completed target identities.
+Planning selects names, interfaces, failure representation, definition placement,
+and artifact schedules. Generation resolves requested library modules once;
+naming and artifact planning share the resulting ModuleIDs. Each artifact is
+lowered into a fresh `ArtifactLowering` and target-unit identity. Repeated lowering
+produces independent units. Type and signature-result caches belong to that
+artifact lowering and track incomplete resolution separately from completed
+target identities.
 
 `lower_body` prepares a published semantic body and finishes `BodyRealizer` while
 that preparation remains alive. `BodyLoweringInputs` supplies parameter identities,

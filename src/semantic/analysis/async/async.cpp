@@ -41,8 +41,8 @@ auto find_async_builtin(std::string_view name) noexcept -> std::optional<AsyncBu
     if (name == "cancellation_requested") {
         return AsyncIntrinsic::CancellationRequested;
     }
-    if (name == "cancellation_point") {
-        return AsyncIntrinsic::CancellationPoint;
+    if (name == "cancel_point") {
+        return AsyncIntrinsic::CancelPoint;
     }
     if (name == "yield_once") {
         return AsyncIntrinsic::YieldOnce;
@@ -177,7 +177,7 @@ auto admitted_value(
                 pending.push_back(array->element);
                 continue;
             }
-            if (const auto* sequence = std::get_if<AnalysisSequenceType>(&value)) {
+            if (const auto* sequence = std::get_if<AnalysisVectorType>(&value)) {
                 pending.push_back(sequence->element);
                 continue;
             }

@@ -76,11 +76,9 @@ overloading is not supported.
 
 Bare source declaration names require identifier tokens, so reserved keywords
 cannot name declarations. Fixed builtin type names and the type constructors
-`ptr` and `Range` are additionally reserved for module declarations; locals,
-parameters, and members may use those identifier spellings. Root builtin
-callable names such as `print` may be shadowed. The
-[name classification](grammar.md#22-identifiers-and-keywords) distinguishes these
-semantic reservations from keywords and contextual spellings.
+`ptr`, `Range`, `Vector`, and `AsyncOperation` are additionally reserved for module
+declarations; locals, parameters, and members may use those identifier spellings.
+Root builtin callable names such as `print` may be shadowed.
 
 Module path components and qualified/member components accept identifier-shaped
 keyword tokens. This permits keyword-named native members and paths without

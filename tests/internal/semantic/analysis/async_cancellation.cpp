@@ -102,8 +102,8 @@ struct Failure {}
 async fn ready() {}
 async fn yielding() { await yield_once(); }
 async fn failure_only() throw Failure { throw Failure {}; }
-async fn checked() { await cancellation_point(); }
-async fn failure_checked() throw Failure { await cancellation_point(); throw Failure {}; }
+async fn checked() { await cancel_point(); }
+async fn failure_checked() throw Failure { await cancel_point(); throw Failure {}; }
 async fn recover_failure() { try { await failure_only()?; } catch { Failure(_) => {}, } }
 async fn recover_checked() { try { await failure_checked()?; } catch { Failure(_) => {}, } }
 )");
@@ -130,7 +130,7 @@ async fn recover_checked() { try { await failure_checked()?; } catch { Failure(_
         [] static noexcept {
             const auto program = cancellation_program(R"(
 struct Error {}
-async fn checked() throw Error { await cancellation_point(); throw Error {}; }
+async fn checked() throw Error { await cancel_point(); throw Error {}; }
 async fn waiting() -> (usize, bool) {
     async let child = checked(); let selected = await wait_ready(child);
     await close(child); return selected;
@@ -138,7 +138,7 @@ async fn waiting() -> (usize, bool) {
 async fn closing() { async let child = checked(); await close(child); }
 async fn parent_checked() {
     async let child = checked(); print(await wait_ready(child));
-    await cancellation_point(); await close(child);
+    await cancel_point(); await close(child);
 }
 )");
             check_completion(program, "waiting", false, {});
@@ -198,7 +198,7 @@ async fn parent_checked() {
                 CancellationCase {
                     .name = "stored checkpoint retains its acceptance after transfer",
                     .source = R"(async fn probe() {
-    let original = cancellation_point();
+    let original = cancel_point();
     let moved = &&original;
     await moved;
 })",
@@ -207,7 +207,7 @@ async fn parent_checked() {
                 CancellationCase {
                     .name = "factory returns the transferred yield, not its discarded checkpoint",
                     .source = R"(fn factory() {
-    let discarded = cancellation_point();
+    let discarded = cancel_point();
     let original = yield_once();
     let moved = &&original;
     return &&moved;
@@ -218,7 +218,7 @@ async fn probe() { await factory(); })",
                 CancellationCase {
                     .name = "factory returns a transferred checkpoint",
                     .source = R"(fn factory() {
-    let original = cancellation_point();
+    let original = cancel_point();
     let moved = &&original;
     return &&moved;
 }
@@ -243,7 +243,7 @@ async fn probe(flag: bool) { await factory(flag); })",
                 CancellationCase {
                     .name = "if can select a checkpoint",
                     .source = R"(fn factory(flag: bool) {
-    return if flag { yield_once() } else { cancellation_point() };
+    return if flag { yield_once() } else { cancel_point() };
 }
 async fn probe(flag: bool) { await factory(flag); })",
                     .cancelled = true
@@ -259,7 +259,7 @@ async fn probe(value: i32) { await factory(value); })",
                 CancellationCase {
                     .name = "match can select a checkpoint",
                     .source = R"(fn factory(value: i32) {
-    return match value { 0 => yield_once(), _ => cancellation_point(), };
+    return match value { 0 => yield_once(), _ => cancel_point(), };
 }
 async fn probe(value: i32) { await factory(value); })",
                     .cancelled = true
@@ -285,7 +285,7 @@ fn factory(flag: bool) throw Failure {
     return yield_once();
 }
 async fn probe(flag: bool) {
-    let selected = try { factory(flag)? } catch { Failure(_) => cancellation_point(), };
+    let selected = try { factory(flag)? } catch { Failure(_) => cancel_point(), };
     await selected;
 })",
                     .cancelled = true
@@ -297,15 +297,15 @@ async fn probe(flag: bool) {
     "Async cancellation: child closure and cold construction do not propagate acceptance"_test =
         [] static noexcept {
             const auto program = cancellation_program(R"(
-async fn cold_only() { let unused = cancellation_point(); }
+async fn cold_only() { let unused = cancel_point(); }
 async fn query_only() -> bool => cancellation_requested();
-async fn discarded_then_yield() { let unused = cancellation_point(); await yield_once(); }
+async fn discarded_then_yield() { let unused = cancel_point(); await yield_once(); }
 async fn closed_child() {
-    async let child = cancellation_point();
+    async let child = cancel_point();
     cancel child;
 }
 async fn observed_yield() { async let child = yield_once(); await child; }
-async fn observed_checkpoint() { async let child = cancellation_point(); await child; }
+async fn observed_checkpoint() { async let child = cancel_point(); await child; }
 )");
             check_completion(program, "cold_only", false, {});
             check_completion(program, "query_only", false, {});
@@ -323,7 +323,7 @@ async fn ready_recursive(depth: i32) -> i32 {
     return await ready_recursive(depth - 1);
 }
 async fn checked_recursive(depth: i32) -> i32 {
-    if depth == 0 { await cancellation_point(); return 1; }
+    if depth == 0 { await cancel_point(); return 1; }
     return await checked_recursive(depth - 1);
 }
 async fn ready_first(depth: i32) -> i32 {
@@ -339,7 +339,7 @@ async fn checked_first(depth: i32) -> i32 {
     return await checked_second(depth - 1);
 }
 async fn checked_second(depth: i32) -> i32 {
-    if depth == 0 { await cancellation_point(); return 1; }
+    if depth == 0 { await cancel_point(); return 1; }
     return await checked_first(depth - 1);
 }
 )");
@@ -354,7 +354,7 @@ async fn checked_second(depth: i32) -> i32 {
     "Async cancellation: operand execution is separate from the outer observation"_test =
         [] static noexcept {
             const auto program = cancellation_program(R"(
-async fn checked() -> i32 { await cancellation_point(); return 7; }
+async fn checked() -> i32 { await cancel_point(); return 7; }
 async fn ready(value: i32) -> i32 => value;
 async fn probe() -> i32 => await ready(await checked());
 )");
@@ -366,7 +366,7 @@ async fn probe() -> i32 => await ready(await checked());
         [] static noexcept {
             const auto program = cancellation_program(R"(
 async fn ready() -> i32 => 7;
-async fn checked() -> i32 { await cancellation_point(); return 7; }
+async fn checked() -> i32 { await cancel_point(); return 7; }
 fn factory(const accepting: bool) {
     const if accepting { return checked(); }
     return ready();

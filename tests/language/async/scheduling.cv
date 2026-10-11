@@ -45,7 +45,7 @@ const fn requested() -> bool => cancellation_requested();
 
 const async fn accepting(&trace: i32) {
     mark(&trace, 1);
-    let checkpoint = cancellation_point();
+    let checkpoint = cancel_point();
     await yield_once();
     mark(&trace, if requested() { 3 } else { 8 });
     await checkpoint;
@@ -88,7 +88,7 @@ const async fn closing_child(&backing: i32, &trace: i32) {
     mark(&trace, 1);
     await yield_once();
     trace = trace * 100 + if requested() { backing } else { 0 };
-    await cancellation_point();
+    await cancel_point();
     mark(&trace, 9);
 }
 

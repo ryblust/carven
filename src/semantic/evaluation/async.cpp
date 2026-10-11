@@ -337,7 +337,7 @@ auto SemanticExecutor::consume(ExecutionColdOperation operation, ProgramOriginID
     }
     switch (std::get<AsyncIntrinsic>(operation.action)) {
         case AsyncIntrinsic::YieldOnce: co_await Parking(*this); co_return ExecutionVoid {};
-        case AsyncIntrinsic::CancellationPoint:
+        case AsyncIntrinsic::CancelPoint:
             if (cancellation_requested()) {
                 co_return std::unexpected(
                     ExecutionFailure {ExecutionCancelled {

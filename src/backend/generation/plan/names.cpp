@@ -322,6 +322,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
 auto plan_names(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
+    const std::flat_set<ModuleID>& library_modules,
     const TargetClosureCatalog& closures
 ) noexcept -> TargetNamePlan {
     const auto& declarations = semantic.declarations();
@@ -499,9 +500,7 @@ auto plan_names(
             derive_module_namespace_id(path.value()).namespace_identifier()
         );
         const auto& module_domain =
-            request.library && std::ranges::contains(request.library->modules, path)
-            ? *library_namespace
-            : domain_namespace;
+            library_modules.contains(module_record.id) ? *library_namespace : domain_namespace;
         auto relative = std::vector<TargetIdentifier>(
             module_domain.components().begin(),
             module_domain.components().end()

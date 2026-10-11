@@ -14,8 +14,9 @@ that broader tests cannot adequately expose. Avoid mirroring private data layout
 helper call sequences, or standard-library behavior.
 
 Native program tests are ordinary consumer targets using the packaged
-`@carven/carven` rule. Their source selection, per-file C++ options, generation,
-native compilation, linking, and reuse follow the same path as user projects.
+`@carven/carven` rule. The build system owns source selection, target
+configuration, generation scheduling, artifact publication, and native build
+caches.
 Use these targets to establish language values, effects, lifetimes, and native
 ABI behavior. A compiler-process case establishes a CLI contract; it does not
 repeat native behavior already covered by a consumer target. Keep one
@@ -23,7 +24,8 @@ representative direct-run case for its argument, process, and installed-toolchai
 boundary.
 
 Generation tests observe artifact paths, source attribution, raw bytes, and
-interface stability across edits. Exact target-node counts, temporary names,
+interface stability. Incremental workloads observe artifact changes across edits
+and validate the resulting programs. Exact target-node counts, temporary names,
 selected runtime helpers, and optimization-specific storage layouts are not
 contracts. Focused scale cases may bound growth for deep or shared input graphs
 without fixing the generated representation. Source rejection tests exercise
@@ -38,7 +40,7 @@ the public compilation boundary instead of reproducing semantic helper decisions
 | `crafts` | Public source-package APIs and runtime headers | Library behavior and runtime header self-containment |
 | `interop` | C++ providers and consumers | Boundary signatures, native calls, and source fragments |
 | `examples` | User-facing programs | Documented output from actual example executables |
-| `cli` | Compiler processes, interpreted execution, and build integration | Arguments, reports, exit status, files, scheduling, and generation policy |
+| `cli` | Compiler processes and interpreted execution | Arguments, reports, exit status, source selection, and emitted files |
 | `format` | Source formatting and file operations | Source preservation, layout, errors, batch results, and replacement |
 | `workspace` | Source snapshots and analysis queries | Versioned locations, complete selection reuse, invalidation, and navigation |
 

@@ -895,8 +895,8 @@ auto realize_operation(
                 }
                 const auto symbol = value.kind == AsyncIntrinsic::CancellationRequested
                     ? TargetSymbol::RuntimeAsyncCancellationRequested
-                    : value.kind == AsyncIntrinsic::CancellationPoint
-                    ? TargetSymbol::RuntimeAsyncCancellationPoint
+                    : value.kind == AsyncIntrinsic::CancelPoint
+                    ? TargetSymbol::RuntimeAsyncCancelPoint
                     : value.kind == AsyncIntrinsic::YieldOnce ? TargetSymbol::RuntimeAsyncYieldOnce
                                                               : TargetSymbol::RuntimeAsyncCancel;
                 return call_expression(intrinsic_expression(symbol), std::move(operands));

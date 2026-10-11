@@ -12,12 +12,14 @@ C++ overload resolution selects the `std::string_view` or `const String&` adapte
 both return views of the input storage. Semantic loans and generated cleanup
 scopes retain the backing owner.
 
-Builtin String lowers to the owner in `string.hpp`, with private `std::string`
-storage. The shared Read storage policy preserves caller aliasing for named owners and
-projected fields/elements across sequencing and failure barriers. Text operations
-select runtime factories and members through target syntax and record their
-support-header dependencies. Write receivers remain places; range projections
-borrow the receiver's text storage.
+Builtin String lowers to the owner in `text/string.hpp`, whose storage is a
+`std::variant<std::string, std::string_view>`. `String::from_static` borrows static
+text; `String::from_str` copies text into owned storage. Writable values use owned
+storage. The shared Read storage policy preserves caller aliasing for named owners
+and projected fields/elements across sequencing and failure barriers. Text
+operations select runtime factories and members through target syntax and record
+their support-header dependencies. Write receivers remain places; range
+projections borrow the receiver's text storage.
 
 Native byte storage enters through `String::from_utf8`, which validates UTF-8
 before adopting it.

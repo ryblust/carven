@@ -39,7 +39,7 @@ const async fn ready() -> bool {
 }
 
 const async fn accepting() {
-    await cancellation_point();
+    await cancel_point();
 }
 
 const async fn cancelled_child() -> bool {

@@ -523,7 +523,7 @@ auto OwnershipBodyAnalyzer::range(const SemRangeLoop& value, OwnershipState stat
                                       result.normal->state
                                   );
     if (!range_value) {
-        const auto sequence_value = std::holds_alternative<AnalysisSequenceType>(
+        const auto sequence_value = std::holds_alternative<AnalysisVectorType>(
             analysis.model.shape(iterable.type.construction())
         );
         for (const auto& selected : sequence_value ? elements : result.normal->storage) {

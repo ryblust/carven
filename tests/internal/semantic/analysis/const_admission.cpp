@@ -159,7 +159,7 @@ const TestSuite suite([] static noexcept {
             const auto cases = std::to_array<std::string_view>({
                 " const async fn leaf() { await yield_once(); } const { await leaf(); }",
                 "const async fn leaf() -> i32 => 7; const { async let child = leaf(); assert(await child == 7); }",
-                "const async fn leaf() { await cancellation_point(); } "
+                "const async fn leaf() { await cancel_point(); } "
                 "const test \"close cancelled child\" { async let child = leaf(); cancel child; }",
                 " const outside = cancellation_requested();",
             });
@@ -187,7 +187,7 @@ const TestSuite suite([] static noexcept {
             auto sources = SourceManager();
             const auto source = sources.append_virtual("analysis.cv", R"(
             struct Failure {}
-            const async fn leaf() throw Failure { await cancellation_point(); }
+            const async fn leaf() throw Failure { await cancel_point(); }
             const "cancelled root" {
                 async let child = leaf();
                 cancel child;

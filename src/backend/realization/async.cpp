@@ -184,7 +184,7 @@ auto BodyRealizer::ExpressionBuilder::native_await_intrinsic(const SemAwait& sou
         std::get_if<SemAsyncIntrinsic>(&BodyPreparation::operation(*source.operand).value);
     if (intrinsic == nullptr
         || (intrinsic->kind != AsyncIntrinsic::YieldOnce
-            && intrinsic->kind != AsyncIntrinsic::CancellationPoint)) {
+            && intrinsic->kind != AsyncIntrinsic::CancelPoint)) {
         return nullptr;
     }
     return intrinsic;

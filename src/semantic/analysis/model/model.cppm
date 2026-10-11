@@ -31,7 +31,7 @@ struct AnalysisPointerType final {
     PointerAccess access;
 };
 
-struct AnalysisSequenceType final {
+struct AnalysisVectorType final {
     ConstructionTypeRef element;
 };
 
@@ -42,7 +42,7 @@ using AnalysisTypeShape = std::variant<
     ConstructionArrayTypeValue,
     ConstructionTupleTypeValue,
     ConstructionSliceTypeValue,
-    AnalysisSequenceType,
+    AnalysisVectorType,
     RangeTypeValue,
     AnalysisPointerType,
     FunctionTypeValue,

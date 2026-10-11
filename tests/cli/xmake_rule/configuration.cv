@@ -1,9 +1,0 @@
-import "provider.hpp";
-
-private import(cpp) fn configured_value() -> i32;
-private import(cpp) fn native_offset() -> i32;
-
-fn main() {
-    assert(configured_value() + native_offset() == 42);
-    println(configured_value(), native_offset());
-}

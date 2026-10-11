@@ -1,1 +1,0 @@
-fn domain_value() -> i32 => 42;

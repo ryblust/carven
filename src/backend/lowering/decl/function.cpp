@@ -209,8 +209,8 @@ auto lower_carven_function(
               }},
         .constexpr_specifier = false,
         .static_specifier = false,
-        .inline_specifier =
-            context.semantic().definition_placement(callable_id) == DefinitionPlacement::Use,
+        .inline_specifier = target_definition_placement(context.semantic(), callable_id)
+            == TargetDefinitionPlacement::Use,
     };
 }
 

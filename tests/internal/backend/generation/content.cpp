@@ -1,6 +1,7 @@
 module carven:test.internal.backend.generation.content;
 
 import :backend.generation.linkage;
+import :backend.generation.names;
 import :backend.generation.plan;
 import :backend.generation.request;
 import :backend.lower;
@@ -23,7 +24,38 @@ import std;
 
 namespace {
 
+template<typename Program>
+concept CanPlanProgram = requires (
+    Program&& program,
+    const TargetPlanningRequest& request,
+    const std::flat_set<ModuleID>& library_modules
+) { PlannedCompilation::build(std::forward<Program>(program), request, library_modules); };
+
+static_assert(CanPlanProgram<SemIRProgram&>);
+static_assert(CanPlanProgram<const SemIRProgram&>);
+static_assert(!CanPlanProgram<SemIRProgram>);
+static_assert(!CanPlanProgram<const SemIRProgram>);
+
 const TestSuite suite([] static noexcept {
+    "Content names: identity, collisions and input order preserve distinct references"_test =
+        [] static noexcept {
+            const auto requests = std::array {
+                TargetContentName {.preferred = "same", .content = "first"},
+                TargetContentName {.preferred = "same", .content = "second"},
+                TargetContentName {.preferred = "same", .content = "first"},
+            };
+            auto occupied = std::flat_set<std::string> {"same"};
+            const auto names = claim_content_identifiers(requests, occupied);
+            expect(names[0] == names[2]);
+            expect(names[0] != names[1]);
+            expect(names[0].spelling() != "same");
+            const auto reordered = std::array {requests[1], requests[0], requests[2]};
+            auto other_occupied = std::flat_set<std::string> {"same"};
+            const auto other = claim_content_identifiers(reordered, other_occupied);
+            expect(names[0] == other[1]);
+            expect(names[1] == other[0]);
+        };
+
     "Content identity: deep canonical queries have bounded traversal and encoding"_test =
         [] static noexcept {
             constexpr auto depth = 20'000uz;
@@ -86,7 +118,8 @@ const TestSuite suite([] static noexcept {
                     .test_mode = TestGenerationMode::None,
                     .linkage_domain = *LinkageDomain::explicit_value("query_graph"),
                     .library = std::nullopt,
-                }
+                },
+                {}
             );
 
             auto largest_key = 0uz;

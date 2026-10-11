@@ -117,6 +117,11 @@ enum class TargetJumpRole {
     ForLoopContinue,
 };
 
+// Realization resolves this transfer before sealing the native target unit.
+struct TargetPendingExitStmt final {
+    std::size_t identity;
+};
+
 struct TargetGotoStmt final {
     TargetIdentifier label;
     TargetJumpRole role;
@@ -191,6 +196,7 @@ using TargetStmtValue = TreeValue<
     TargetContinueStmt,
     TargetUnreachableStmt,
     TargetRuntimeTrapStmt,
+    TargetPendingExitStmt,
     TargetGotoStmt,
     TargetLabelStmt,
     TargetIfStmt,

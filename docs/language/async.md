@@ -118,6 +118,12 @@ and direct-call rules as other composition operations. Duration literals and the
 builtin require no type imports; import a type only when naming it in source,
 such as a parameter annotation or a failure declaration.
 
+Duration literals and `timeout` require `std::time.duration.Duration` with one
+`nanoseconds: i64` field. `timeout` also requires the empty records
+`std::time.duration.RangeError` and `std::time.timeout.Timeout`. These declarations
+must be exported structs. The compiler checks their module identities and shapes
+when used by these facilities.
+
 Construction retains the protected input without executing it or reading the
 clock. At execution, pending cancellation is accepted first. A nonpositive
 interval then selects `Timeout` without starting protected work or reading the
@@ -175,7 +181,7 @@ The following builtin callables are available without imports:
 | Operation | Behavior |
 | --- | --- |
 | `cancellation_requested()` | Read the current task's request; false outside async execution |
-| `cancellation_point()` | Cold void operation accepting a pending request as cancelled completion |
+| `cancel_point()` | Cold void operation accepting a pending request as cancelled completion |
 | `yield_once()` | Cold void operation that queues the current task continuation at the FIFO tail when executed |
 | `await wait_ready(first, second, ...)` | Wait for a child's terminal completion; return its input position and committed cancellation bit as `(usize, bool)` |
 | `await close(child)` | Request cancellation, wait for completion, discard its outcome, and release its active backing loan |

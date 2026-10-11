@@ -360,7 +360,7 @@ auto BodyRealizer::ExpressionBuilder::build(
             // These zero-input cold intrinsics have no construction effects.
             const auto symbol = intrinsic->kind == AsyncIntrinsic::YieldOnce
                 ? TargetSymbol::RuntimeAsyncAwaitYieldOnce
-                : TargetSymbol::RuntimeAsyncAwaitCancellationPoint;
+                : TargetSymbol::RuntimeAsyncAwaitCancelPoint;
             fragment.executes = true;
             fragment.observes = true;
             auto invocation = call_expression(intrinsic_expression(symbol), {});

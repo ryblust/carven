@@ -18,18 +18,18 @@ auto BodyRealizer::emit_async_exit(
         destination.terminate(std::move(continuation), target);
         return;
     }
-    const auto label = names.fresh(TargetTemporaryNameKind::Region);
+    const auto identity = async_exits.size();
     async_exits.emplace(
-        std::string(label.spelling()),
+        identity,
         AsyncExit {
-            .label = label,
+            .label = std::nullopt,
             .closing_scopes = std::move(closing_scopes),
             .cancel = cancel,
             .continuation = std::move(continuation),
         }
     );
     destination.terminate(
-        generated_statement(TargetGotoStmt {.label = label, .role = TargetJumpRole::RegionExit}),
+        generated_statement(TargetPendingExitStmt {.identity = identity}),
         target
     );
 }
@@ -57,7 +57,7 @@ auto BodyRealizer::realize_async_exits(std::vector<TargetStmt>& statements) noex
         }
         exit.label = names.fresh(TargetTemporaryNameKind::Region);
         output.push_back(generated_statement(
-            TargetGotoStmt {.label = exit.label, .role = TargetJumpRole::RegionExit}
+            TargetGotoStmt {.label = *exit.label, .role = TargetJumpRole::RegionExit}
         ));
         pending.push_back(std::move(exit));
     };
@@ -72,12 +72,13 @@ auto BodyRealizer::realize_async_exits(std::vector<TargetStmt>& statements) noex
                 variable != nullptr) {
                 locals.push_back(variable->local);
             }
-            if (const auto* jump = std::get_if<TargetGotoStmt>(&statement.value)) {
-                if (auto node = async_exits.extract(std::string(jump->label.spelling()));
-                    !node.empty()) {
-                    expand(std::move(node.mapped()), locals, output, pending);
-                    continue;
+            if (const auto* exit = std::get_if<TargetPendingExitStmt>(&statement.value)) {
+                auto node = async_exits.extract(exit->identity);
+                if (node.empty()) {
+                    invariant_violation("async exit has no realization record");
                 }
+                expand(std::move(node.mapped()), locals, output, pending);
+                continue;
             }
             auto incoming = std::vector<AsyncExit>();
             co_await statement.value.visit(
@@ -124,7 +125,7 @@ auto BodyRealizer::realize_async_exits(std::vector<TargetStmt>& statements) noex
                     ));
                 }
                 output.push_back(generated_statement(
-                    TargetLabelStmt {.label = exit.label, .role = TargetJumpRole::RegionExit}
+                    TargetLabelStmt {.label = *exit.label, .role = TargetJumpRole::RegionExit}
                 ));
                 expand(std::move(exit), locals, output, pending);
             }

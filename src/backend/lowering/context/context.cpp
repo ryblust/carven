@@ -1,6 +1,7 @@
 module carven:backend.lowering.context.impl;
 
 import :backend.generation.names;
+import :backend.generation.plan;
 import :backend.lowering.context;
 import :semantic.semir.decl;
 import :source.provenance;
@@ -174,7 +175,8 @@ auto ModuleLowering::enumeration_name(EnumID id, TypeNameScope scope) noexcept -
 
 auto ModuleLowering::callable_name(CallableID id) noexcept -> TargetName {
     const auto provider = names().callable_owner(id);
-    if (provider == module_id || semantic().definition_placement(id) == DefinitionPlacement::Use) {
+    if (provider == module_id
+        || target_definition_placement(semantic(), id) == TargetDefinitionPlacement::Use) {
         require_callable(id);
     }
     artifact_lowering.require_interface(provider);
@@ -199,7 +201,7 @@ auto ModuleLowering::require_callable(CallableID id) noexcept -> void {
 
 auto ArtifactLowering::require_callable(ModuleID owner, CallableID id) noexcept -> void {
     static_cast<void>(semantic().declarations().callable(id));
-    if (semantic().definition_placement(id) == DefinitionPlacement::Use) {
+    if (target_definition_placement(semantic(), id) == TargetDefinitionPlacement::Use) {
         if (active_definition) {
             use_placed_edges[*active_definition].insert(id);
         }

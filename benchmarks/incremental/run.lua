@@ -1,26 +1,9 @@
 import("core.base.json")
 import("core.project.project")
-import("core.package.repository")
 import("benchmarks.harness.runner", {alias = "benchmark", rootdir = os.projectdir()})
 import("benchmarks.harness.inputs", {alias = "input_snapshot", rootdir = os.projectdir()})
 import("benchmarks.harness.native_build", {rootdir = os.projectdir()})
 import("benchmarks.incremental.workloads", {rootdir = os.projectdir()})
-
-function rules_repository()
-    -- Read the declaration: --compiler can skip rebuilding stale package metadata.
-    local name
-    for _, requirement in ipairs(table.wrap(project.get("requires"))) do
-        name = requirement:match("^(.-)@carven$")
-        if name then break end
-    end
-    assert(name, "declare the Carven rule repository in the project first")
-    for _, repo in ipairs(repository.repositories({global = false})) do
-        if repo:name() == name and os.isdir(repo:directory()) then
-            return repo:directory()
-        end
-    end
-    raise("configured Carven rule repository is unavailable; configure and build the project first")
-end
 
 function object_mtimes(root)
     local result = {}
@@ -136,7 +119,7 @@ function main(options)
             {key = "unrelated_objects", label = "Unrelated objects"},
         },
     })
-    local rules_repo, snapshot_root
+    local rules_prefix, snapshot_root
     local captured_cases = {}
     benchmark.run(session, selected, function (session, record, scenario, root)
         scenario = captured_cases[scenario.id]
@@ -144,8 +127,12 @@ function main(options)
         local crafts = path.join(snapshot_root, "crafts")
         inputs["xmake.lua"] = string.format([[set_project("carven-benchmark")
 add_rules("mode.debug")
-add_repositories(%q)
-add_requires("carven-benchmark@carven", {alias = "carven", system = false, configs = {rules_only = true}})
+package("carven")
+    set_kind("toolchain")
+    set_installdir(%q)
+    on_fetch(function () return {} end)
+package_end()
+add_requires("carven", {system = false})
 target("bench")
     set_kind("binary")
     set_languages("c++20")
@@ -153,7 +140,7 @@ target("bench")
     set_values("carven.program", %q)
     set_values("carven.craftsdir", %q)
     add_files("*.cv")
-]], "carven-benchmark " .. rules_repo, tostring(options.timings or false),
+]], rules_prefix, tostring(options.timings or false),
                 session.compiler, crafts)
         record.inputs = inputs
         record.baseline, record.edits = scenario.baseline or {}, scenario.edits or {}
@@ -243,12 +230,12 @@ target("bench")
             return raw
         end
     end, function (session)
-        rules_repo = rules_repository()
+        rules_prefix = assert(project.required_package("carven"):installdir(),
+            "configure and build the project before running incremental benchmarks")
         snapshot_root = input_snapshot.capture(session)
         for _, case in ipairs(workloads.cases(snapshot_root)) do captured_cases[case.id] = case end
         local metadata = session.results.metadata
-        metadata.rules_repository = benchmark.revision(rules_repo)
-        metadata.rules_repository.path = rules_repo
+        metadata.rules_directory = path.join(rules_prefix, "rules")
         benchmark.checkpoint(session)
     end)
 end

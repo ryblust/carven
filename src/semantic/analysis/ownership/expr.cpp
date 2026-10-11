@@ -10,7 +10,7 @@ import std;
 auto OwnershipBodyAnalyzer::selected_access_kind(const SemanticExpression& source) const noexcept
     -> OwnershipAccessKind {
     if (const auto* index = std::get_if<SemIndex>(&source.value)) {
-        if (std::holds_alternative<AnalysisSequenceType>(
+        if (std::holds_alternative<AnalysisVectorType>(
                 analysis.model.shape(index->source->type.construction())
             )) {
             return OwnershipAccessKind::Structural;

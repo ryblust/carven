@@ -187,9 +187,9 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "::carven::runtime::execution::cancellation_requested",
                 "carven/runtime/execution/execution.hpp"
             );
-        case TargetSymbol::RuntimeAsyncCancellationPoint:
+        case TargetSymbol::RuntimeAsyncCancelPoint:
             return runtime_symbol_info(
-                "::carven::runtime::execution::cancellation_point",
+                "::carven::runtime::execution::cancel_point",
                 "carven/runtime/execution/execution.hpp"
             );
         case TargetSymbol::RuntimeAsyncYieldOnce:
@@ -197,9 +197,9 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "::carven::runtime::execution::yield_once",
                 "carven/runtime/execution/execution.hpp"
             );
-        case TargetSymbol::RuntimeAsyncAwaitCancellationPoint:
+        case TargetSymbol::RuntimeAsyncAwaitCancelPoint:
             return runtime_symbol_info(
-                "::carven::runtime::execution::await_cancellation_point",
+                "::carven::runtime::execution::await_cancel_point",
                 "carven/runtime/execution/execution.hpp"
             );
         case TargetSymbol::RuntimeAsyncAwaitYieldOnce:

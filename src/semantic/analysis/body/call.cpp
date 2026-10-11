@@ -105,7 +105,8 @@ auto BodyElaborator::bind_call_argument(
         if (!place.has_value()) {
             return std::unexpected(place.error());
         }
-        if (place->expression.type.construction() != type) {
+        if (place->expression.type.construction() != type
+            && (is_cpp_type(built.type()) || is_cpp_type(type))) {
             *place = active_builder().cpp_place(
                 std::move(*place),
                 type,

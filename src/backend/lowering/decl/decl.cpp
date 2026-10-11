@@ -318,8 +318,8 @@ auto lower_module_schedule(
         }
         const auto& declaration = declarations.function(*function);
         functions.emplace(declaration.callable, *function);
-        if (context.semantic().definition_placement(declaration.callable)
-                == DefinitionPlacement::Owner
+        if (target_definition_placement(context.semantic(), declaration.callable)
+                == TargetDefinitionPlacement::Owner
             && std::ranges::contains(schedule.interface_callables, declaration.callable)) {
             context.require_callable(declaration.callable);
         }
@@ -354,7 +354,8 @@ auto lower_module_schedule(
     auto use_placed = std::map<CallableID, TargetItem>();
     while (const auto definition = artifact.next_definition()) {
         const auto callable = *definition;
-        if (context.semantic().definition_placement(callable) == DefinitionPlacement::Use) {
+        if (target_definition_placement(context.semantic(), callable)
+            == TargetDefinitionPlacement::Use) {
             auto& owner = artifact.module_context(context.names().callable_owner(callable));
             use_placed.emplace(callable, lower_use_placed_function(owner, callable, false));
             continue;

@@ -182,6 +182,19 @@ auto CancellationAnalysis::visit_expression(
     };
     expression.value.visit([&](const auto& operation) noexcept {
         using Operation = std::remove_cvref_t<decltype(operation)>;
+        if constexpr (std::same_as<Operation, SemCall> || std::same_as<Operation, SemColdCall>) {
+            // Write exposes the existing owner to replacement. Without a proven
+            // post-call producer, its initial source cannot exclude cancellation.
+            for (const auto& argument : operation.arguments) {
+                if (argument.access == AccessMode::Write) {
+                    if (const auto* binding = std::get_if<SemBinding>(&argument.expression.value)) {
+                        if (is_operation(body.binding(binding->binding).type)) {
+                            connect(unknown, binding_node(body, binding->binding).node);
+                        }
+                    }
+                }
+            }
+        }
         if constexpr (std::same_as<Operation, SemBinding>) {
             if (value) {
                 connect(binding_node(body, operation.binding).node, *value);

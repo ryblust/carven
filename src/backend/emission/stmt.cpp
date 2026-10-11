@@ -3,6 +3,7 @@ module carven:backend.emission.stmt.impl;
 import :backend.emission.render;
 import :backend.target.symbol;
 import :support.visit;
+import :support.invariant;
 import std;
 
 namespace {
@@ -137,6 +138,9 @@ auto TargetRenderer::render_statement_node(const TargetStmt& statement) noexcept
                 return text(
                     std::format("{}();", target_symbol_info(value.native_symbol()).spelling)
                 );
+            },
+            [](const TargetPendingExitStmt&) static noexcept -> LayoutNodeID {
+                invariant_violation("unresolved exit reached emission");
             },
             [&](const TargetGotoStmt& value) noexcept {
                 return concat({text("goto "), render_identifier(value.label), text(";")});

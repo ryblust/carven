@@ -144,6 +144,7 @@ auto verify_target_artifact_logical_paths(std::span<const std::string> logical_p
 auto plan_artifacts(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
+    const std::flat_set<ModuleID>& library_modules,
     const TargetClosureCatalog& closures,
     TargetPlanIdentity identity
 ) noexcept -> TargetPlanTable<TargetArtifactPlan, TargetArtifactID> {
@@ -158,12 +159,7 @@ auto plan_artifacts(
     auto schedules = std::vector<std::optional<TargetModuleSchedule>>(module_count);
     auto surface_declarations = std::vector<std::vector<DeclarationRef>>(module_count);
     for (const auto module_record : declarations.modules()) {
-        const auto library_module =
-            request.library
-            && std::ranges::contains(
-                request.library->modules,
-                provenance.module_record(module_record.value.provenance_module).path
-            );
+        const auto library_module = library_modules.contains(module_record.id);
         const auto test_mode = library_module ? TestGenerationMode::None : request.test_mode;
         module_ids.push_back(module_record.id);
         module_by_index[module_record.id.index()] = module_record.id;
@@ -257,7 +253,8 @@ auto plan_artifacts(
                 const auto& declaration = declarations.function(*function);
                 auto& surface = surface_declarations[declaration.module_id.index()];
                 if (declaration.visibility != DeclarationVisibility::Module
-                    || semantic.definition_placement(callable) == DefinitionPlacement::None
+                    || target_definition_placement(semantic, callable)
+                        == TargetDefinitionPlacement::None
                     || std::ranges::contains(surface, DeclarationRef {*function})) {
                     continue;
                 }
@@ -466,8 +463,10 @@ auto plan_artifacts(
                     Overloaded {
                         [&](FunctionID id) noexcept {
                             // Only owner definitions need a shared interface declaration.
-                            if (semantic.definition_placement(declarations.function(id).callable)
-                                    == DefinitionPlacement::Owner
+                            if (target_definition_placement(
+                                    semantic,
+                                    declarations.function(id).callable
+                                ) == TargetDefinitionPlacement::Owner
                                 && (declarations.function(id).visibility
                                         != DeclarationVisibility::Module
                                     || interface_callables.contains(

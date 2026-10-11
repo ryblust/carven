@@ -65,7 +65,7 @@ auto generate_artifacts(
     if (!library) {
         return std::unexpected(library.error());
     }
-    const auto compilation = PlannedCompilation::build(semantic, request);
+    const auto compilation = PlannedCompilation::build(semantic, request, *library);
     for (const auto entry : compilation.target().artifacts()) {
         if (const auto* interface = std::get_if<TargetInterfaceArtifact>(&entry.value)) {
             const auto count =

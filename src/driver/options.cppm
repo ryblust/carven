@@ -1,6 +1,7 @@
 module carven:driver.options;
 
 import :backend.generation.request;
+import :driver.sources;
 import std;
 
 struct DirectoryArtifactDestination final {
@@ -19,6 +20,7 @@ struct CompileCommandOptions final {
     std::optional<LinkageDomain> linkage_domain;
     std::optional<SourceLibrary> library;
     std::vector<std::string_view> input_paths;
+    std::vector<SourceInput> mapped_inputs;
     bool explicit_inputs;
     bool timings;
 };
@@ -35,6 +37,7 @@ enum class CompileOptionErrorKind {
     LibraryDomainSpecifiedMoreThanOnce,
     InvalidLibraryModule,
     IncompleteLibraryOptions,
+    InvalidSourceInput,
     UnknownOption,
     NoSourceInput,
 };

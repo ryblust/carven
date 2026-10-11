@@ -109,6 +109,10 @@ children, so unconditional cleanup after conditional observation is valid.
 Failure and cancelled exits request cancellation before closure. Pattern rejection,
 guards, handlers, rethrow, and loop backedges use the shared ownership flow.
 
+Write access permits an operation binding to be replaced, so cancellation
+analysis treats its post-call producer as unknown. Awaiting that owner may
+propagate cancellation.
+
 Cold composition takes each input owner and merges its ownership relationships
 into the resulting operation. Stored inputs require explicit Take. Constructor
 failure releases previously acquired cold inputs without starting their bodies.

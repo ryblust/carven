@@ -63,7 +63,7 @@ async fn catch_after_close() -> i32 {
 async fn delayed(&finished: i32) {
     for var step: i32 = 0; step < 16; ++step {
         await yield_once();
-        await cancellation_point();
+        await cancel_point();
     }
     finished = 1;
 }

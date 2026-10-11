@@ -21,6 +21,7 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
             "\n"
             "Options:\n"
             "      --explicit-inputs Use exactly the supplied source files\n"
+            "      --source=<module>=<path> Supply a mapped source (repeatable)\n"
             "      --timings         Show total and stage timings on stderr\n"
             "  -h, --help            Show this help\n"
             "\n"
@@ -34,6 +35,7 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
     auto show_timings = false;
     auto explicit_inputs = false;
     auto paths = std::vector<std::string_view>();
+    auto mapped_inputs = std::vector<SourceInput>();
     for (const auto argument : args) {
         const auto arg = std::string_view(argument);
         if (arg == "--timings") {
@@ -44,17 +46,30 @@ auto run_check_command(std::string_view executable, std::span<const char* const>
             explicit_inputs = true;
             continue;
         }
+        if (arg.starts_with("--source=")) {
+            auto input = parse_source_input(arg.substr(std::string_view("--source=").size()));
+            if (!input) {
+                return emit_driver_error(input.error(), "carven check");
+            }
+            mapped_inputs.push_back(std::move(*input));
+            continue;
+        }
         if (arg.starts_with('-')) {
             return emit_driver_error(std::format("unknown check option '{}'", arg), "carven check");
         }
         paths.push_back(arg);
     }
-    if (paths.empty()) {
+    if (paths.empty() && mapped_inputs.empty()) {
         return emit_driver_error("check requires at least one source file", "carven check");
     }
     auto timings = CommandTimings(show_timings, "check");
-    const auto sources =
-        collect_command_sources(executable, paths, timings.output(), explicit_inputs);
+    const auto sources = collect_command_sources(
+        executable,
+        paths,
+        timings.output(),
+        explicit_inputs,
+        mapped_inputs
+    );
     if (!sources) {
         return emit_driver_error(sources.error());
     }

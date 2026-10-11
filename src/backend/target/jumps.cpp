@@ -149,6 +149,9 @@ auto JumpVerifier::enter_statement(const TargetStmt& statement) noexcept -> bool
             },
             [](const TargetUnreachableStmt&) static noexcept { return true; },
             [](const TargetRuntimeTrapStmt&) static noexcept { return true; },
+            [&](const TargetPendingExitStmt&) noexcept {
+                return fail("unresolved exit reached target publication");
+            },
             [&](const TargetGotoStmt& value) noexcept {
                 if (value.role == TargetJumpRole::ForLoopContinue && state.loop_depth == 0) {
                     return fail("normalized-for continue jump is outside a loop");

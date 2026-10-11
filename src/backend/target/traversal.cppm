@@ -462,6 +462,7 @@ auto traverse_target_statement_impl(Node& statement, Visitor& visitor) noexcept 
             [](TargetTraversalNode<Node, TargetContinueStmt>&) static noexcept { return true; },
             [](TargetTraversalNode<Node, TargetUnreachableStmt>&) static noexcept { return true; },
             [](TargetTraversalNode<Node, TargetRuntimeTrapStmt>&) static noexcept { return true; },
+            [](TargetTraversalNode<Node, TargetPendingExitStmt>&) static noexcept { return true; },
             [](TargetTraversalNode<Node, TargetGotoStmt>&) static noexcept { return true; },
             [](TargetTraversalNode<Node, TargetLabelStmt>&) static noexcept { return true; },
             [&](TargetTraversalNode<Node, TargetIfStmt>& value) noexcept {

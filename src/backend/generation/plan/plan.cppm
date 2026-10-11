@@ -15,6 +15,11 @@ import :semantic.semir.ids;
 import :semantic.semir.program;
 import std;
 
+enum class TargetDefinitionPlacement { None, Owner, Use };
+
+auto target_definition_placement(const SemIRProgram& semantic, CallableID callable) noexcept
+    -> TargetDefinitionPlacement;
+
 struct TargetEntityName final {
     ModuleID owner_module;
     TargetName relative_name;
@@ -230,8 +235,11 @@ public:
     auto artifact(TargetArtifactID id) const noexcept -> const TargetArtifactPlan&;
 
 private:
-    static auto build(const SemIRProgram& semantic, const TargetPlanningRequest& request) noexcept
-        -> TargetPlan;
+    static auto build(
+        const SemIRProgram& semantic,
+        const TargetPlanningRequest& request,
+        const std::flat_set<ModuleID>& library_modules
+    ) noexcept -> TargetPlan;
 
     TargetPlan(
         ProgramIdentity semantic_identity,
@@ -255,10 +263,16 @@ private:
 class PlannedCompilation final {
 public:
     // The program must remain alive and unmoved while the plan or its views are used.
-    static auto build(const SemIRProgram& semantic, const TargetPlanningRequest& request) noexcept
-        -> PlannedCompilation;
-    static auto build(const SemIRProgram&&, const TargetPlanningRequest&) noexcept
-        -> PlannedCompilation = delete;
+    static auto build(
+        const SemIRProgram& semantic,
+        const TargetPlanningRequest& request,
+        const std::flat_set<ModuleID>& library_modules
+    ) noexcept -> PlannedCompilation;
+    static auto build(
+        const SemIRProgram&&,
+        const TargetPlanningRequest&,
+        const std::flat_set<ModuleID>&
+    ) noexcept -> PlannedCompilation = delete;
     PlannedCompilation(const PlannedCompilation&) = delete;
     PlannedCompilation(PlannedCompilation&& other) noexcept = default;
     ~PlannedCompilation() = default;
@@ -279,6 +293,7 @@ auto plan_closures(const SemIRProgram& semantic) noexcept -> TargetClosureCatalo
 auto plan_names(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
+    const std::flat_set<ModuleID>& library_modules,
     const TargetClosureCatalog& closures
 ) noexcept -> TargetNamePlan;
 
@@ -290,6 +305,7 @@ auto target_source_origin(CompilationProvenanceView provenance, ProgramOriginID 
 auto plan_artifacts(
     const SemIRProgram& semantic,
     const TargetPlanningRequest& request,
+    const std::flat_set<ModuleID>& library_modules,
     const TargetClosureCatalog& closures,
     TargetPlanIdentity identity
 ) noexcept -> TargetPlanTable<TargetArtifactPlan, TargetArtifactID>;

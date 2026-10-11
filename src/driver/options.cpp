@@ -2,6 +2,7 @@ module carven:driver.options.impl;
 
 import :backend.generation.request;
 import :driver.options;
+import :driver.sources;
 import :source.module_path;
 import :support.path;
 import std;
@@ -34,6 +35,7 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
         .linkage_domain = std::nullopt,
         .library = std::nullopt,
         .input_paths = {},
+        .mapped_inputs = {},
         .explicit_inputs = false,
         .timings = false,
     };
@@ -90,6 +92,14 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
             request.timings = true;
         } else if (arg == "--explicit-inputs") {
             request.explicit_inputs = true;
+        } else if (arg.starts_with("--source=")) {
+            auto input = parse_source_input(arg.substr(std::string_view("--source=").size()));
+            if (!input) {
+                return std::unexpected(
+                    compile_option_error(CompileOptionErrorKind::InvalidSourceInput, arg)
+                );
+            }
+            request.mapped_inputs.push_back(std::move(*input));
         } else if (arg.starts_with("--artifact-manifest=")) {
             if (request.artifact_manifest) {
                 return std::unexpected(
@@ -180,7 +190,7 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
         }
     }
 
-    if (request.input_paths.empty()) {
+    if (request.input_paths.empty() && request.mapped_inputs.empty()) {
         return std::unexpected(compile_option_error(CompileOptionErrorKind::NoSourceInput));
     }
     if (library_domain || !library_modules.empty() || emit_library) {
@@ -219,6 +229,11 @@ auto format_compile_option_error(const CompileOptionError& error) noexcept -> st
             return std::format("invalid canonical library module '{}'", *error.option);
         case CompileOptionErrorKind::IncompleteLibraryOptions:
             return "library generation requires --library-domain and at least one --library-module";
+        case CompileOptionErrorKind::InvalidSourceInput:
+            return std::format(
+                "invalid source mapping '{}'; expected --source=<canonical-module>=<path.cv>",
+                *error.option
+            );
         case CompileOptionErrorKind::UnknownOption:
             return std::format("unknown option '{}'", *error.option);
         case CompileOptionErrorKind::NoSourceInput:

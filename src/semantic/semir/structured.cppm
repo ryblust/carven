@@ -548,6 +548,7 @@ struct SemExpandedLoop final {
 };
 
 struct SemanticStatementCleanup;
+
 using SemanticStatementValue = TreeValue<
     SemanticStatementCleanup,
     SemReturn,

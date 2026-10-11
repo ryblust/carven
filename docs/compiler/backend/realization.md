@@ -548,7 +548,9 @@ turn. The shared execution runtime owns scheduling, clocks, timed waiting, task
 cancellation, and completion storage. Generated dependencies use its single entry,
 `carven/runtime/execution/execution.hpp`.
 Generated code owns source evaluation order, lexical child scopes, and result
-delivery.
+delivery. Async exits record the child scopes to close and the continuation.
+Scope traversal resolves exits and introduces labels when closure must cross
+native storage scopes. Target publication requires every exit to be resolved.
 
 Await separates success, nominal failure, and cancelled completion. Published
 callable and await facts determine whether to emit cancellation propagation.
@@ -563,7 +565,7 @@ Suspending operands execute in their owning coroutine. Preparation records
 coroutine-context requirements so expression factories cannot capture an await or
 coroutine exit. Target verification checks this boundary and distinguishes ordinary
 returns from coroutine returns. Direct awaits of `yield_once` and
-`cancellation_point` use runtime awaitables; stored operations keep their ordinary
+`cancel_point` use runtime awaitables; stored operations keep their ordinary
 cold representation.
 
 `wait_ready` and `close` have distinct semantic nodes. The former lowers to a fixed

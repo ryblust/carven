@@ -142,6 +142,9 @@ from compiler knowledge and a compact source contract. Source implementability
 is one consideration alongside usability and total complexity. Treat builtins
 as complete language APIs with explicit, bounded contracts.
 
+Decide default visibility, compiler recognition, and implementation location
+independently.
+
 `print` accepts heterogeneous arguments. The compiler knows their number and
 types, checks supported values, and preserves evaluation order while selecting
 output operations. This provides variable-arity printing without requiring a

@@ -216,7 +216,7 @@ auto OwnershipBodyAnalyzer::select_element_storage(
     }
     auto selected_storage = std::vector<OwnershipPlace>();
     for (auto selected : result) {
-        if (const auto* owner = std::get_if<AnalysisSequenceType>(&shape)) {
+        if (const auto* owner = std::get_if<AnalysisVectorType>(&shape)) {
             selected_storage.append_range(
                 select_owned_storage(selected, owner->element, index, selection, state)
             );

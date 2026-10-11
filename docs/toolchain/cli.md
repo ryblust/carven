@@ -299,6 +299,14 @@ The caller supplies the complete `.cv` batch, including every source dependency.
 Build systems use this mode to own source selection and keep library builds
 independent of unrelated files in the working directory.
 
+With `--explicit-inputs`, `compile` and `check` accept repeatable
+`--source=<canonical-module>=<path.cv>` arguments alongside positional inputs.
+The module identity is independent of the relative or absolute file path, as in
+`--source=app.main=/work/src/main.cv`. The first `=` after `--source=` separates
+the module from the path. Identical physical files are deduplicated. Conflicting
+module identities for one file and duplicate module identities across different
+files are rejected. The manifest records the supplied module identities and paths.
+
 `--artifact-manifest=<file>` writes JSON facts after all selected artifacts
 have been written successfully. Parent directories are created. The file records the
 complete analyzed input batch and the actual generated artifact inventory:

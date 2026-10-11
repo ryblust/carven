@@ -57,7 +57,8 @@ const TestSuite suite([] static noexcept {
                         semantic_owner,
                         {.test_mode = TestGenerationMode::None,
                          .linkage_domain = *LinkageDomain::explicit_value("linear_composition"),
-                         .library = std::nullopt}
+                         .library = std::nullopt},
+                        {}
                     );
 
                     struct Query final {
