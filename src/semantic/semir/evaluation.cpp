@@ -82,10 +82,10 @@ auto integer_operation_may_trap(
 
 auto evaluation_rule(const SemIRProgram& semantic, const SemanticExpression& expression) noexcept
     -> EvaluationRule {
-    const auto none = EvaluationRule {.action = EvaluationAction::None, .operands = {}};
-    const auto required = EvaluationRule {.action = EvaluationAction::Required, .operands = {}};
-    const auto operands = [](const SemanticExpression& first,
-                             const SemanticExpression* second = nullptr) static noexcept {
+    constexpr auto none = EvaluationRule {.action = EvaluationAction::None, .operands = {}};
+    constexpr auto required = EvaluationRule {.action = EvaluationAction::Required, .operands = {}};
+    constexpr auto operands = [](const SemanticExpression& first,
+                                 const SemanticExpression* second = nullptr) static noexcept {
         return EvaluationRule {.action = EvaluationAction::Operands, .operands = {&first, second}};
     };
     return expression.value.visit(

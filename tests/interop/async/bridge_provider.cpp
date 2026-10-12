@@ -9,6 +9,7 @@
 #include <span>
 
 namespace {
+
 namespace async = carven::runtime::execution;
 namespace api = carven::api::tests::interop::async::bridge;
 using async_bridge::Context;

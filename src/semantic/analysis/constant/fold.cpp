@@ -120,7 +120,7 @@ auto fold_constant_expression(
             failure = diagnostic;
         }
     };
-    const auto children =
+    constexpr auto children =
         [](const auto& expressions) static noexcept -> std::optional<std::vector<ConstantID>> {
         auto values = std::vector<ConstantID>();
         for (const auto& expression : expressions) {

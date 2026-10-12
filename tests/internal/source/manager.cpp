@@ -17,8 +17,11 @@ const TestSuite suite([] static noexcept {
             const auto first = *sources.append_virtual("first.cv", "alpha\nbeta");
             const auto second = *sources.append_virtual("second.cv", "gamma");
 
-            expect_equal(first.index(), 0u);
-            expect_equal(second.index(), 1u);
+            expect(first != second);
+            expect(sources.contains(first));
+            expect(sources.contains(second));
+            expect_equal(sources.view(second).origin, std::string_view("second.cv"));
+            expect_equal(sources.view(second).text, std::string_view("gamma"));
             expect_equal(sources.view(first).origin, std::string_view("first.cv"));
             expect_equal(
                 sources.slice(locate(first, Span::from_bounds(6, 10))),
@@ -49,7 +52,7 @@ const TestSuite suite([] static noexcept {
             if (!expect(source.has_value())) {
                 return;
             }
-            expect_equal(source->index(), 0u);
+            expect(sources.contains(*source));
             expect_equal(sources.view(*source).origin, encoded_path);
             expect_equal(sources.view(*source).text, std::string_view("first\nsecond"));
             expect_equal(

@@ -111,9 +111,12 @@ include order.
   identity. Keep shared names distinct.
 - Use a global module fragment for macro-only test headers, required platform
   headers, or consumer headers exercised by tests.
-- Put translation-unit-private declarations in an anonymous namespace. Close
-  every namespace with a namespace comment, using the namespace name for named
-  namespaces.
+- Put translation-unit-private declarations in an anonymous namespace.
+- Separate every namespace opening from its contents with a blank line. Close
+  every namespace with a namespace comment; include the name for named namespaces.
+- Combine consecutive named namespace openings into a qualified namespace
+  definition when the entire body belongs to the innermost namespace. Preserve
+  any inline namespace qualifiers.
 - A support component exposes the contract used by generated code and craft
   support sources through its owning namespace. A subsystem namespace supplies
   the domain qualifier for its member names.
@@ -184,8 +187,10 @@ include order.
 
 ## Values and initialization
 
-- Use `const auto` for immutable value locals. Use `auto` for values that are
-  modified, moved from, or mutably borrowed.
+- Use `constexpr` for immutable value locals that permit constant-expression
+  initialization. Use `const auto` for immutable runtime values and `auto` for
+  values that are modified, moved from, or mutably borrowed.
+- Choose storage duration by object lifetime and identity.
 - `auto` may deduce a pointer; `auto*` is optional. Apply top-level constness to
   the pointer value independently of pointee constness. Preserve pointee
   constness through deduction; spell a pointer type explicitly when narrowing

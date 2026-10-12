@@ -9,7 +9,7 @@ namespace {
 const TestSuite suite([] static noexcept {
     "Parser interpolation: interpolation preserves expressions and specification spans"_test =
         [] static noexcept {
-            const auto source = std::string_view(
+            constexpr auto source = std::string_view(
                 R"(fn value(x: f64, width: i32) { let s = f"value {x:{width}.2f}"; })"
             );
             const auto tree = parse_valid(source);
@@ -40,7 +40,7 @@ const TestSuite suite([] static noexcept {
 
     "Parser: interpolation requires expressions and ordinary literal positions stay literal"_test =
         [] static noexcept {
-            const auto sources = std::array {
+            constexpr auto sources = std::array {
                 R"(fn bad() { let s = f"{}"; })",
                 R"(fn bad() { let s = f"{:04x}"; })",
                 R"(fn bad() { let s = f"{1 +}"; })",

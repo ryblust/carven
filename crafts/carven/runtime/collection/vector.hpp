@@ -29,7 +29,7 @@ class Vector final {
     constexpr auto writable() noexcept -> Element* { return const_cast<Element*>(storage); }
 
     static constexpr auto maximum_capacity() noexcept -> std::size_t {
-        const auto allocation_limit = std::numeric_limits<std::size_t>::max() / sizeof(Element);
+        constexpr auto allocation_limit = std::numeric_limits<std::size_t>::max() / sizeof(Element);
         return allocation_limit < length_mask ? allocation_limit : length_mask;
     }
 
@@ -44,7 +44,7 @@ class Vector final {
 
     constexpr auto grow() noexcept -> void {
         if (size() == capacity_value) {
-            const auto maximum = maximum_capacity();
+            constexpr auto maximum = maximum_capacity();
             if (capacity_value == maximum) {
                 trap("Vector capacity is out of bounds", SourceSite::native());
             }

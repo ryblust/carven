@@ -209,7 +209,7 @@ auto Parser::synchronize_top_level_item(std::size_t item_start) noexcept -> void
     for (auto index = item_start; index < cursor && index < tokens.size(); ++index) {
         advance_depth(tokens[index].kind);
     }
-    const auto starts_item = [](TokenKind kind) static noexcept -> bool {
+    constexpr auto starts_item = [](TokenKind kind) static noexcept -> bool {
         return kind == TokenKind::Private
             || kind == TokenKind::Export
             || kind == TokenKind::Enum
@@ -362,7 +362,7 @@ auto Parser::preflight_delimiter_nesting() noexcept -> bool {
 
     auto delimiters = std::vector<OpenDelimiter> {};
     delimiters.reserve(maximum_syntax_nesting);
-    const auto spelling = [](TokenKind kind) static noexcept -> std::string_view {
+    constexpr auto spelling = [](TokenKind kind) static noexcept -> std::string_view {
         switch (kind) {
             case TokenKind::LeftParen:    return "(";
             case TokenKind::RightParen:   return ")";

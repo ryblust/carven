@@ -530,7 +530,7 @@ const TestSuite suite([] static noexcept {
                 std::size_t aggregate_work;
                 ExecutionReason reason;
             };
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {
                     .name = "text Read borrows String storage",
                     .source = R"(test { let text: String = "ab"; text.chars; })",
@@ -739,7 +739,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 ExecutionReason reason;
                 std::string_view message;
             };
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {
                     .operation = "check",
                     .termination = ExecutionTermination::Continue,
@@ -827,7 +827,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 std::string_view message;
                 std::string_view rendered;
             };
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {
                     .name = "empty",
                     .message = "",
@@ -892,7 +892,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 std::size_t calls;
             };
 
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {"false && right()", true, false, 1uz},
                 Scenario {"true && right()", false, false, 2uz},
                 Scenario {"true && right()", true, true, 2uz},
@@ -938,7 +938,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                 std::int64_t result;
             };
 
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {
                     R"(const fn run() -> i32 {
             let initial = [[1, 2], [3, 4]];
@@ -1180,7 +1180,7 @@ const table = u8x32::splat(5);
                 std::string_view result;
             };
 
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {
                     R"(var text: String = "ab"; text.append("c"); return &&text;)",
                     3uz,

@@ -104,7 +104,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view covered;
             };
 
-            const auto cases = std::to_array<Case>({
+            constexpr auto cases = std::to_array<Case>({
                 {.type = "bool", .patterns = "false => {}, true => {}, _ => {},", .covered = "_"},
                 {.type = "f32", .patterns = "0.0 => {}, -0.0 => {}, _ => {},", .covered = "-0.0"},
                 {.type = "f32", .patterns = "-0.0 => {}, 0.0 => {}, _ => {},", .covered = "0.0"},

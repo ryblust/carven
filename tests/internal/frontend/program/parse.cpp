@@ -189,7 +189,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view relative_target;
             };
 
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {"nested.main", "std.utf", "nested.std.utf"},
                 Case {"crafts.app.nested.main", "crafts.app.std.utf", "crafts.app.nested.std.utf"},
                 Case {

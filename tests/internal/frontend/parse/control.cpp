@@ -268,7 +268,7 @@ const TestSuite suite([] static noexcept {
                 get<ASTMatchForm>(ast.statement(function_body(result).statements[0]));
             const auto& triple = get<ASTCasePattern>(ast.pattern(match.arms[0].pattern));
             require(triple.payload.has_value());
-            const auto modes = std::array {
+            constexpr auto modes = std::array {
                 ASTAccessMode::Read,
                 ASTAccessMode::Read,
                 ASTAccessMode::Write,

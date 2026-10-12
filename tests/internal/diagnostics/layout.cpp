@@ -299,7 +299,7 @@ const TestSuite suite([] static noexcept {
     "Diagnostic report: wide and combining scalars advance markers by terminal cells"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view("\"日本\" + e\u0301 + 1");
-            const auto start = static_cast<std::uint32_t>(text.rfind('+'));
+            constexpr auto start = static_cast<std::uint32_t>(text.rfind('+'));
             const auto diagnostic = make_diagnostic(
                 "wide",
                 {
@@ -311,7 +311,7 @@ const TestSuite suite([] static noexcept {
                     .message = "here",
                 }
             );
-            const auto source = SourceView {
+            constexpr auto source = SourceView {
                 .source_id = SourceID::from_index(0),
                 .text = text,
                 .origin = "wide.cv",
@@ -333,7 +333,7 @@ const TestSuite suite([] static noexcept {
             .text = "let a = 1;",
             .origin = "app.cv",
         };
-        const auto span = SourceSpan {
+        constexpr auto span = SourceSpan {
             .source_id = SourceID::from_index(0),
             .span = Span::from_bounds(4, 5),
         };
@@ -358,7 +358,7 @@ help: declare with 'var'
     "Diagnostic report: gutters grow to the largest displayed line number"_test =
         [] static noexcept {
             static constexpr auto text = std::string_view("1\n2\n3\n4\n5\n6\n7\n8\n9\ntarget");
-            const auto start = static_cast<std::uint32_t>(text.find("target"));
+            constexpr auto start = static_cast<std::uint32_t>(text.find("target"));
             const auto diagnostic = make_diagnostic(
                 "line ten",
                 {
@@ -371,7 +371,7 @@ help: declare with 'var'
                 }
             );
 
-            const auto source = SourceView {
+            constexpr auto source = SourceView {
                 .source_id = SourceID::from_index(0),
                 .text = text,
                 .origin = "ten.cv",

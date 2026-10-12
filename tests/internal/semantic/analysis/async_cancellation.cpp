@@ -190,7 +190,7 @@ async fn parent_checked() {
 
     "Async cancellation: storage and factory returns preserve the observed producer"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 CancellationCase {
                     .name = "stored yield transfers without accepting cancellation",
                     .source = R"(import std::async using yield_once;
@@ -245,7 +245,7 @@ async fn probe() { let stored = factory(); await stored; })",
 
     "Async cancellation: successful structured values join producer capabilities"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 CancellationCase {
                     .name = "if selects only nonaccepting producers",
                     .source = R"(import std::async using yield_once;

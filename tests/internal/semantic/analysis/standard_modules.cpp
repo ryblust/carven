@@ -8,6 +8,7 @@ import :test.internal.semantic.analysis.fixture;
 import std;
 
 namespace {
+
 const TestSuite suite([] static noexcept {
     "Standard modules: explicit defaults record usage and native selections can shadow defaults"_test =
         [] static noexcept {
@@ -44,7 +45,7 @@ const test "async aliases" {
         };
     "Standard modules: selected wrong kinds never fall back and specialized names require imports"_test =
         [] static noexcept {
-            const auto cases = std::to_array<std::pair<std::string_view, DiagnosticCode>>({
+            constexpr auto cases = std::to_array<std::pair<std::string_view, DiagnosticCode>>({
                 {"fn wrong<String>() { let x = String::from_str(\"hello\"); } fn use() { wrong<i32>(); }",
                  DiagnosticCode::TypeGenericDefinition},
                 {"fn run(value: u8x16) {}", DiagnosticCode::TypeUnresolved},
@@ -84,4 +85,5 @@ async fn run() { await limit(one(), 1); }
             );
         };
 });
+
 }

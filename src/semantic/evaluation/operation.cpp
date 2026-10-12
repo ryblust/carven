@@ -771,7 +771,7 @@ auto evaluate_binary_constant_value(
             return std::unexpected(ConstantEvaluationFailure::InvalidOperation);
         }
         if (arithmetic == IntegerArithmetic::Wrapping) {
-            const auto bits = [](IntegerConstant value) static noexcept {
+            constexpr auto bits = [](IntegerConstant value) static noexcept {
                 return value.negative() ? 0u - value.magnitude() : value.magnitude();
             };
             const auto finish = [&](std::uint64_t value) noexcept {

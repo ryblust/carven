@@ -48,7 +48,7 @@ auto count_nodes(std::string source) noexcept -> std::size_t {
 const TestSuite suite([] static noexcept {
     "Generation: shared display types have bounded target syntax"_test = [] static noexcept {
         constexpr auto width = 4uz;
-        const auto depths = std::array {2uz, 4uz, 6uz};
+        constexpr auto depths = std::array {2uz, 4uz, 6uz};
         for (const auto depth : depths) {
             auto source = std::string("struct N0 { value: i32 }\n");
             for (auto level = 1uz; level <= depth; ++level) {

@@ -97,7 +97,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect(sequence.continues());
-            const auto exit =
+            constexpr auto exit =
                 LoweringExitTarget {.kind = LoweringExitKind::FunctionReturn, .identity = 0};
             auto terminal = LoweringStmtBuilder {};
             terminal.terminate(return_statement(), exit);
@@ -117,7 +117,7 @@ const TestSuite suite([] static noexcept {
             bool parent_cleanup;
             bool child_cleanup;
         };
-        const auto scenarios = std::array {
+        constexpr auto scenarios = std::array {
             Scenario {
                 .name = "append crosses parent cleanup",
                 .composition = Composition::Append,
@@ -157,7 +157,8 @@ const TestSuite suite([] static noexcept {
         };
         each(scenarios, &Scenario::name, [](const Scenario& scenario) static noexcept {
             auto target = TargetUnitBuilder {};
-            const auto exit = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
+            constexpr auto exit =
+                LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
             auto parent = LoweringStmtBuilder {};
             parent.declare(boolean_variable(target, "parent"), scenario.parent_cleanup);
             auto child = LoweringStmtBuilder {};
@@ -191,7 +192,7 @@ const TestSuite suite([] static noexcept {
         parent.scope(std::move(child));
         expect(parent.continues());
         expect(!parent.needs_cleanup());
-        const auto exit = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
+        constexpr auto exit = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
         parent.terminate(return_statement(), exit);
         expect(parent.exits().contains(exit));
         expect(!parent.exits().crosses_cleanup(exit));
@@ -199,8 +200,9 @@ const TestSuite suite([] static noexcept {
 
     "Composition: cleanup facts follow the source order of each exit"_test = [] static noexcept {
         auto target = TargetUnitBuilder {};
-        const auto early = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
-        const auto late = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 2};
+        constexpr auto early =
+            LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
+        constexpr auto late = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 2};
         auto parent = LoweringStmtBuilder {};
         const auto branch = [&](LoweringExitTarget exit) noexcept {
             auto selected = LoweringStmtBuilder {};
@@ -234,11 +236,14 @@ const TestSuite suite([] static noexcept {
 
     "Composition: replacing an exit uses its original cleanup boundary"_test = [] static noexcept {
         auto target = TargetUnitBuilder {};
-        const auto early = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
-        const auto late = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 2};
-        const auto outward = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 3};
-        const auto owned = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 4};
-        const auto late_outward =
+        constexpr auto early =
+            LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 1};
+        constexpr auto late = LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 2};
+        constexpr auto outward =
+            LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 3};
+        constexpr auto owned =
+            LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 4};
+        constexpr auto late_outward =
             LoweringExitTarget {.kind = LoweringExitKind::Failure, .identity = 5};
         auto parent = LoweringStmtBuilder {};
         auto early_branch = LoweringStmtBuilder {};
@@ -277,8 +282,8 @@ const TestSuite suite([] static noexcept {
     };
 
     "Composition: region exits resume only at their own destination"_test = [] static noexcept {
-        const auto first = LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 1};
-        const auto second = LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 2};
+        constexpr auto first = LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 1};
+        constexpr auto second = LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 2};
         auto sequence = LoweringStmtBuilder {};
         sequence.terminate(return_statement(), first);
         expect(!(sequence.consume_exit(second)));
@@ -299,7 +304,8 @@ const TestSuite suite([] static noexcept {
     "Composition: selectable value regions that only return become expressions"_test =
         [] static noexcept {
             auto target = TargetUnitBuilder {};
-            const auto yield = LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 1};
+            constexpr auto yield =
+                LoweringExitTarget {.kind = LoweringExitKind::Value, .identity = 1};
             const auto selection = [&](LoweringRegionDelivery delivery) noexcept -> TargetExpr {
                 auto branches = std::vector<TargetIfBranch>();
                 branches.push_back(

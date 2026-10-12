@@ -21,7 +21,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             auto inputs = std::vector<SourceModuleInput>();
-            const auto modules = std::array {
+            constexpr auto modules = std::array {
                 std::pair<std::string_view, std::string_view> {
                     "crafts.carven.std.time.duration",
                     "export struct Duration { nanoseconds: i64 } export struct RangeError {}"

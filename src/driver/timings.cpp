@@ -55,7 +55,7 @@ CommandTimings::~CommandTimings() {
     const auto total = std::chrono::steady_clock::now() - *started;
     std::cout.flush();
     std::println(std::cerr, "\ncarven: {} {} in {}", command, outcome, format_duration(total));
-    const auto labels = std::array {
+    static constexpr auto labels = std::array {
         "Source collection",
         "Source loading",
         "Lexing",

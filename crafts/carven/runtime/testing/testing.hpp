@@ -88,6 +88,7 @@ class TestContext;
 namespace detail {
 
 inline thread_local TestContext* active_test_context = nullptr;
+
 } // namespace detail
 
 class TestContext final {

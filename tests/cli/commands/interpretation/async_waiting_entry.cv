@@ -1,0 +1,3 @@
+import .async_waiting using run_waiting;
+
+async fn main() => await run_waiting();

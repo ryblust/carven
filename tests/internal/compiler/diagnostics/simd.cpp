@@ -6,9 +6,10 @@ import :test.internal.compiler.diagnostics.fixture;
 import std;
 
 namespace {
+
 const TestSuite suite([] static noexcept {
     "Compiler: SIMD checks logical types and static bounds"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "wide byte lane bounds",
              .source = R"(import std::simd using *;
 const x = u8x32::splat(7).lane(32);)",
@@ -169,4 +170,5 @@ fn f(a: u8x32) -> u8x32 => a.shift_right(8);)",
         check_compiler_errors(cases);
     };
 });
+
 }

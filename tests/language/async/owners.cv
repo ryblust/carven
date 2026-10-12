@@ -65,7 +65,7 @@ async fn aggregate() -> bool {
     return current == 1;
 }
 
-async fn main() {
+export async fn run_owners() {
     await equivalent();
     println(await replacement() && await cancellation() && await aggregate());
 }

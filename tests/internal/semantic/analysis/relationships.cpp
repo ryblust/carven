@@ -388,7 +388,7 @@ const TestSuite suite([] static noexcept {
             for (const auto [id, body] : program.bodies().entries()) {
                 static_cast<void>(id);
                 const auto origin = body.region().origin;
-                const auto backing = OwnershipPlace {0uz, {}};
+                constexpr auto backing = OwnershipPlace {0uz, {}};
                 const auto source = OwnershipRelationships(
                     OwnershipRelationshipRows {
                         .callable_loans =
@@ -434,7 +434,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             std::ranges::sort(origins);
-            const auto backing = OwnershipPlace {0uz, {}};
+            constexpr auto backing = OwnershipPlace {0uz, {}};
             auto first = OwnershipRelationships(
                 OwnershipRelationshipRows {
                     .callable_loans =

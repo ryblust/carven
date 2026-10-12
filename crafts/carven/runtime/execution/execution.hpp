@@ -42,6 +42,7 @@ auto drive_root(AsyncOperation<Result, Failures...>&& operation, Pump* pump = nu
 enum class ClosingPolicy { CloseOnly, RequestCancelAndClose };
 
 namespace detail {
+
 inline auto require_protocol(bool condition) noexcept -> void {
     if (!condition) {
         std::terminate();
@@ -344,6 +345,7 @@ inline auto OperationState::wait(detail::CompletionRegistration& registration) n
 }
 
 namespace detail {
+
 inline auto destroy(std::coroutine_handle<> handle, const OperationState& state) noexcept -> void {
     require_protocol(state.task == nullptr || handle.done());
     require_protocol(std::holds_alternative<std::monostate>(state.waiter));
@@ -510,6 +512,7 @@ public:
 };
 
 namespace detail {
+
 struct ChildSlot final {
     ChildSlot* next;
     ChildScope* scope;
@@ -519,6 +522,7 @@ struct ChildSlot final {
     void (*discard)(void*) noexcept;
     bool (*cancelled)(void*) noexcept;
 };
+
 } // namespace detail
 
 class ChildScope final {
@@ -649,14 +653,19 @@ inline auto ChildScope::CloseAwaiter::await_resume() const noexcept -> void {
 template<typename Result, typename... Failures>
 class Child final {
     using Handle = typename AsyncOperation<Result, Failures...>::Handle;
+
     detail::ChildSlot slot;
     TaskContext task;
     detail::WorkNode startup;
+
     friend class ChildScope;
+
     template<typename... Inputs>
     friend struct detail::CompositionSlots;
+
     template<typename T, typename... E>
     friend auto cancel(Child<T, E...>&) noexcept -> void;
+
     template<typename... Children>
     friend auto wait_ready(Children&...) noexcept -> WaitReadyAwaiter<sizeof...(Children)>;
 

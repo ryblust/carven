@@ -10,7 +10,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "UTF craft: returned text protects input storage from mutation"_test = [] static noexcept {
-        const auto modules = std::to_array<std::string_view>({
+        constexpr auto modules = std::to_array<std::string_view>({
             "utf.error",
             "utf.scan",
             "utf.block",
@@ -38,7 +38,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "UTF craft: encoded views protect encoding storage from mutation"_test = [] static noexcept {
-        const auto modules = std::to_array<std::string_view>({
+        constexpr auto modules = std::to_array<std::string_view>({
             "utf.error",
             "utf.codec",
             "utf.scan",
@@ -67,7 +67,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: unchecked text construction checks types and backing"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "scalar input must be u32",
                  .source = "fn bad(v: i32) { let c = char::from_u32_unchecked(v); }",
                  .code = DiagnosticCode::TypeMismatch,
@@ -122,7 +122,7 @@ const TestSuite suite([] static noexcept {
 
     "Text construction: static execution diagnoses invalid UTF8 preconditions"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "invalid leading byte",
                  .source = "const fn invalid() -> String { let bytes = [0xffu8]; "
                            "return str::from_utf8_unchecked(bytes) as String; } "

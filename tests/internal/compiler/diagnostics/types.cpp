@@ -424,7 +424,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Compiler diagnostics: structure equality is unavailable across source contexts"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "scalar fields do not imply equality",
              .source =
                  "struct Record { value: i32 } fn compare(a: Record, b: Record) -> bool => a == b;",

@@ -58,7 +58,7 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
         return {};
     };
 
-    const auto output_path = [](std::string_view value) static noexcept
+    constexpr auto output_path = [](std::string_view value) static noexcept
         -> std::expected<std::filesystem::path, CompileOptionError> {
         auto path = std::filesystem::path(value);
         if (path.empty()) {
@@ -75,7 +75,7 @@ auto parse_compile_command_options(std::span<const char* const> args) noexcept
         }
         return output_path(args[++index]);
     };
-    const auto linkage_domain = [](std::string_view value) static noexcept
+    constexpr auto linkage_domain = [](std::string_view value) static noexcept
         -> std::expected<LinkageDomain, CompileOptionError> {
         auto domain = LinkageDomain::explicit_value(std::string(value));
         if (!domain.has_value()) {

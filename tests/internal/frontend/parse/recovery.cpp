@@ -57,7 +57,7 @@ const TestSuite tests([] static noexcept {
             if (!expect(result.value.has_value())) {
                 return;
             }
-            const auto names = std::array {std::string_view("first"), std::string_view("last")};
+            constexpr auto names = std::array {std::string_view("first"), std::string_view("last")};
             check_function_names(*result.value, text, names);
             const auto strict = parse_source(text);
             if (!expect(!strict.has_value())
@@ -84,7 +84,7 @@ const TestSuite tests([] static noexcept {
             std::string_view name;
             std::string_view discarded;
         };
-        const auto inputs = std::array {
+        constexpr auto inputs = std::array {
             Input {
                 .name = "block",
                 .discarded = "fn broken() { if true { let bad = ; fn nested(1) {} } }"
@@ -110,7 +110,7 @@ const TestSuite tests([] static noexcept {
                 return;
             }
             expect(has_errors(result));
-            const auto names = std::array {std::string_view("recovered")};
+            constexpr auto names = std::array {std::string_view("recovered")};
             check_function_names(*result.value, text, names);
         });
     };
@@ -129,7 +129,7 @@ const TestSuite tests([] static noexcept {
                 return;
             }
             expect_diagnostic(result.diagnostics, DiagnosticCode::ParseNestingTooDeep);
-            const auto names = std::array {std::string_view("recovered")};
+            constexpr auto names = std::array {std::string_view("recovered")};
             check_function_names(*result.value, text, names);
         };
 
@@ -139,7 +139,7 @@ const TestSuite tests([] static noexcept {
                 std::string_view name;
                 std::string_view text;
             };
-            const auto inputs = std::array {
+            constexpr auto inputs = std::array {
                 Input {.name = "module import", .text = "import .helper using ;\nfn intact() {}"},
                 Input {.name = "header import", .text = "import <vector> using ;\nfn intact() {}"},
             };
@@ -155,7 +155,7 @@ const TestSuite tests([] static noexcept {
             std::string_view name;
             std::string_view text;
         };
-        const auto inputs = std::array {
+        constexpr auto inputs = std::array {
             Input {.name = "unclosed", .text = "fn intact() {}\nfn broken() {"},
             Input {.name = "mismatched", .text = "fn intact() {}\nfn broken() { let x = [1); }"},
         };

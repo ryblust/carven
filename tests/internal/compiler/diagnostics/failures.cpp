@@ -53,7 +53,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view primary_text;
             };
 
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 WarningExpectation {
                     .source = "struct Alpha {} struct Beta {} "
                               "private fn produce() -> i32 throw Alpha { throw Alpha {}; } "
@@ -388,7 +388,7 @@ const TestSuite suite([] static noexcept {
                 std::optional<DiagnosticCode> error;
             };
 
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {"fn main() {}", std::nullopt},
                 Case {"fn main() -> i32 { return 7; }", std::nullopt},
                 Case {"struct E {} fn main() throw E { throw E {}; }", std::nullopt},

@@ -205,7 +205,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Semantic stable selection: guard access follows actual storage aliases"_test = [] static noexcept {
-        const auto invalid = std::array {
+        constexpr auto invalid = std::array {
             "fn invalid() { var x = 1; match x { _ if if true { x = 2; true } else { false } => {}, _ => {}, } }",
             "fn set(&x: i32) -> bool { x = 2; return true; } "
             "fn invalid() { var x = 1; match x { _ if set(&x) => {}, _ => {}, } }",

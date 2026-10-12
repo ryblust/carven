@@ -384,7 +384,7 @@ const TestSuite suite([] static noexcept {
         auto diagnostics = DiagnosticSink();
         auto source = fixture(sources, diagnostics);
         const auto body = BodyBuilder(std::move(source.reservation), source.compilation);
-        const auto arms = std::array<PatternCoverageArm, 0> {};
+        constexpr auto arms = std::array<PatternCoverageArm, 0> {};
         auto coverage = compute_pattern_coverage(
             source.compilation,
             body.pattern_table(),

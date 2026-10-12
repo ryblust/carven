@@ -73,7 +73,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            const auto module_names = std::array<std::string_view, 2uz> {
+            constexpr auto module_names = std::array<std::string_view, 2uz> {
                 "semir.publication.provenance_first",
                 "semir.publication.provenance_second",
             };
@@ -107,7 +107,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            const auto module_names = std::array<std::string_view, 2uz> {
+            constexpr auto module_names = std::array<std::string_view, 2uz> {
                 "semir.publication.item_owner_first",
                 "semir.publication.item_owner_second",
             };

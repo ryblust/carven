@@ -10,7 +10,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Compile options: defaults preserve source inputs"_test = [] static noexcept {
-        const auto args = std::to_array<const char*>({"main.cv", "nested/worker.cv"});
+        constexpr auto args = std::to_array<const char*>({"main.cv", "nested/worker.cv"});
         const auto result = parse_compile_command_options(args);
 
         if (!expect(result.has_value())) {
@@ -32,7 +32,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Compile options: explicit modes retain their selected values"_test = [] static noexcept {
-        const auto output_args = std::to_array<const char*>({
+        constexpr auto output_args = std::to_array<const char*>({
             "--tests=runner",
             "--output-dir=emit",
             "--linkage-domain=-domain=value",
@@ -57,7 +57,7 @@ const TestSuite suite([] static noexcept {
         expect_equal(output->linkage_domain->kind(), LinkageDomainKind::Explicit);
         expect_equal(output->linkage_domain->value(), std::string_view("-domain=value"));
 
-        const auto stdout_args =
+        constexpr auto stdout_args =
             std::to_array<const char*>({"--stdout", "--tests=main", "main.cv"});
         const auto stdout = parse_compile_command_options(stdout_args);
 

@@ -22,7 +22,7 @@ const TestSuite suite([] static noexcept {
             std::string_view primary;
             std::uint32_t start;
         };
-        const auto scenarios = std::array {
+        constexpr auto scenarios = std::array {
             Scenario {
                 .name = "left child is checked before right child",
                 .source =
@@ -80,7 +80,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant generic admission: unused definitions check their bound call capability"_test =
         [] static noexcept {
-            const auto rejected = std::to_array<std::string_view>({
+            constexpr auto rejected = std::to_array<std::string_view>({
                 "private fn ordinary() {} private const fn invalid<T>(&&value: T) -> T { ordinary(); return &&value; }",
                 "private fn forward<T>(&&value: T) -> T => &&value; private const fn invalid<T>(&&value: T) -> T => forward<T>(&&value);",
                 "private import(cpp) fn provider(); private const fn invalid<T>(&&value: T) -> T { provider(); return &&value; }",
@@ -105,7 +105,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view source;
                 DiagnosticCode diagnostic;
             };
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {
                     .name = "unmarked source cold construction is not statically admitted",
                     .source = "async fn ordinary() -> i32 => 7; "
@@ -155,7 +155,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Constant async admission: static roots own cooperative source scheduling"_test = [] static noexcept {
-        const auto cases = std::to_array<std::string_view>({
+        constexpr auto cases = std::to_array<std::string_view>({
             "import std::async using yield_once;\n\n const async fn leaf() { await yield_once(); } const { await leaf(); }",
             "const async fn leaf() -> i32 => 7; const { async let child = leaf(); assert(await child == 7); }",
             "import std::async using cancel_point;\n\nconst async fn leaf() { await cancel_point(); } "
@@ -228,7 +228,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant function admission: executable bodies are proved at their definitions"_test =
         [] static noexcept {
-            const auto sources = std::to_array<std::string_view>({
+            constexpr auto sources = std::to_array<std::string_view>({
                 R"(const fn empty() {})",
                 R"(const fn character(value: u32) -> char => char::from_u32_unchecked(value);)",
                 R"(struct Failure {} const fn fail() throw Failure { throw Failure {}; })",
@@ -296,7 +296,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view source;
             };
 
-            const auto scenarios = std::to_array<Scenario>({
+            constexpr auto scenarios = std::to_array<Scenario>({
                 {"inactive ordinary call", R"(fn ordinary() {}
             fn example() { if false { ordinary(); } })"},
                 {"inactive short circuit call", R"(fn ordinary() -> bool => true;
@@ -325,7 +325,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Constant function admission: capability proof requires marked reachable callees"_test = [] static noexcept {
-        const auto accepted = std::to_array<std::string_view>({
+        constexpr auto accepted = std::to_array<std::string_view>({
             "import(cpp) fn native(); const fn guaranteed() { return; native(); }",
             "import(cpp) fn native(); const fn guaranteed(flag: bool) { if flag { return; } else { return; } native(); }",
             "import(cpp) fn native(); const fn example(value: i32) { "
@@ -347,7 +347,7 @@ const TestSuite suite([] static noexcept {
             static_cast<void>(analyze_test_program(std::string(source)));
         });
 
-        const auto rejected = std::to_array<std::string_view>({
+        constexpr auto rejected = std::to_array<std::string_view>({
             "fn ordinary() -> i32 => 42; const fn guaranteed() -> i32 => ordinary();",
             "fn leaf() -> i32 => 42; const fn middle() -> i32 => leaf(); "
             "const fn outer() -> i32 => middle();",
@@ -373,7 +373,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant functions: control dispatch does not construct an unreachable native result"_test =
         [] static noexcept {
-            const auto accepted = std::to_array<std::string_view>({
+            constexpr auto accepted = std::to_array<std::string_view>({
                 R"(struct Failure {}
             fn ordinary(value: ::Native) {}
             const fn example() throw Failure {
@@ -394,7 +394,7 @@ const TestSuite suite([] static noexcept {
                 static_cast<void>(analyze_test_program(std::string(source)));
             });
 
-            const auto rejected = std::to_array<std::string_view>({
+            constexpr auto rejected = std::to_array<std::string_view>({
                 R"(const fn example() { let value = if true { ::Native {} } else { ::Native {} }; })",
                 R"(const fn example(value: i32) {
             let selected = match value { _ => ::Native {}, };
@@ -411,14 +411,14 @@ const TestSuite suite([] static noexcept {
 
     "Constant functions: view signatures do not require executable target storage"_test =
         [] static noexcept {
-            const auto accepted = std::to_array<std::string_view>({
+            constexpr auto accepted = std::to_array<std::string_view>({
                 "const fn ignore(action: fn(::Native) -> ::Native) {}",
                 "const fn length(values: [::Native]) -> usize => values.length();",
             });
             each(accepted, std::identity {}, [&](const auto& source) noexcept {
                 static_cast<void>(analyze_test_program(std::string(source)));
             });
-            const auto rejected = std::to_array<std::string_view>({
+            constexpr auto rejected = std::to_array<std::string_view>({
                 "const fn own(value: ::Native) {}",
                 "const fn own(values: [::Native; 2]) {}",
                 "const fn invoke(action: fn(::Native) -> ::Native, value: ::Native) { action(value); }",
@@ -431,7 +431,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant function admission: required contexts call only explicit const functions"_test =
         [] static noexcept {
-            const auto rejected = std::to_array<std::string_view>({
+            constexpr auto rejected = std::to_array<std::string_view>({
                 "fn ordinary() -> i32 => 1 + 2; const answer = ordinary();",
                 "fn ordinary() -> usize => 2; fn use(value: [i32; ordinary()]) {}",
                 "fn ordinary() -> i32 => 42; const { let answer = ordinary(); }",

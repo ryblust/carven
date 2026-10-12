@@ -166,7 +166,7 @@ const TestSuite suite([] static noexcept {
 
     "Match selection: tuple patterns validate shape and binding identity"_test =
         [] static noexcept {
-            const auto invalid_shapes = std::array {
+            constexpr auto invalid_shapes = std::array {
                 "fn select(value: (bool, bool)) -> i32 => match value { (item,) => 1, _ => 2, };",
                 "fn select(value: i32) -> i32 => match value { () => 1, _ => 2, };",
                 "fn select(value: (i32, bool)) -> i32 => match value { (_, 1) => 1, _ => 2, };",

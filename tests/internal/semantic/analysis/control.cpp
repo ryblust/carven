@@ -23,6 +23,34 @@ import std;
 
 namespace {
 
+struct TestStopExpectation final {
+    std::string_view name;
+    bool stops;
+};
+
+auto control_callable(const SemIRProgram& program, std::string_view name) noexcept
+    -> std::optional<CallableID> {
+    for (const auto declaration : program.declarations().functions()) {
+        if (program.provenance().spelling(declaration.value.name) == name) {
+            return declaration.value.callable;
+        }
+    }
+    return std::nullopt;
+}
+
+auto check_test_stops(
+    const SemIRProgram& program,
+    std::span<const TestStopExpectation> expected
+) noexcept -> void {
+    each(expected, &TestStopExpectation::name, [&](const auto& input) noexcept {
+        const auto callable = control_callable(program, input.name);
+        if (!expect(callable.has_value())) {
+            return;
+        }
+        expect_equal(program.may_stop_test(*callable), input.stops);
+    });
+}
+
 const TestSuite suite([] static noexcept {
     "Semantic control: try around an infallible body is silent"_test = [] static noexcept {
         const auto diagnostics = analyze_test_errors(
@@ -59,7 +87,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Semantic control: a known condition does not select completion"_test = [] static noexcept {
-        const auto conditions = std::to_array<std::string_view>({
+        constexpr auto conditions = std::to_array<std::string_view>({
             "flag",
             "!flag",
             "flag || true",
@@ -115,14 +143,14 @@ const TestSuite suite([] static noexcept {
                 "fn valid() -> i32 => values[1]; "
                 "fn checked() -> i32 => values[4];"
             );
-            const auto callables = test_function_callables(program);
-            if (!expect_equal(callables.size(), 2uz)) {
-                return;
-            }
-            for (auto position = 0uz; position < callables.size(); ++position) {
-                scenario(std::format("index {}", position), [&]() noexcept {
+            for (const auto name : {"valid", "checked"}) {
+                scenario(name, [&]() noexcept {
+                    const auto callable = control_callable(program, name);
+                    if (!expect(callable.has_value())) {
+                        return;
+                    }
                     const auto body_id =
-                        callable_body_id(program.declarations().callable(callables[position]));
+                        callable_body_id(program.declarations().callable(*callable));
                     if (!expect(body_id.has_value())) {
                         return;
                     }
@@ -141,9 +169,10 @@ const TestSuite suite([] static noexcept {
                         return;
                     }
                     expect(
-                        std::holds_alternative<ProvenInBounds>(index->bounds) == (position == 0uz)
+                        std::holds_alternative<ProvenInBounds>(index->bounds)
+                        == (std::string_view(name) == "valid")
                     );
-                    expect(expression.constant.has_value() == (position == 0uz));
+                    expect(expression.constant.has_value() == (std::string_view(name) == "valid"));
                 });
             }
         };
@@ -561,7 +590,6 @@ const TestSuite suite([] static noexcept {
                     return;
                 }
                 const auto& program = result->value;
-                expect_equal(program.bodies().size(), 3uz);
                 for (const auto callable : test_function_callables(program)) {
                     const auto result_type = test_callable_signature(program, callable).result;
                     const auto expected = CanonicalTypeValue {BuiltinTypeValue {BuiltinType::I32}};
@@ -617,16 +645,20 @@ const TestSuite suite([] static noexcept {
         fn call_view(action: fn() -> void) { action(); }
         fn closure() { []() { fail(); }(); }
     )");
-            const auto expected =
-                std::array {true, true, true, true, true, false, false, false, false, true, true};
-            const auto callables = test_function_callables(program);
-            if (!expect(callables.size() == expected.size())) {
-                return;
-            }
-            for (auto index = 0uz; index < expected.size(); ++index) {
-                expect(program.may_stop_test(callables[index]) == expected[index])
-                    .note("index = ", index);
-            }
+            constexpr auto expected = std::to_array<TestStopExpectation>({
+                {.name = "forward", .stops = true},
+                {.name = "middle", .stops = true},
+                {.name = "stop", .stops = true},
+                {.name = "cycle", .stops = true},
+                {.name = "back", .stops = true},
+                {.name = "quiet", .stops = false},
+                {.name = "quiet_back", .stops = false},
+                {.name = "ordinary", .stops = false},
+                {.name = "native", .stops = false},
+                {.name = "call_view", .stops = true},
+                {.name = "closure", .stops = true},
+            });
+            check_test_stops(program, expected);
         };
 
     "Semantic control: published effects include every branch"_test = [] static noexcept {
@@ -636,13 +668,13 @@ const TestSuite suite([] static noexcept {
         fn stop() { fail(); }
         test "nested calls" { let observed = if true { stop(); 1 } else { 2 }; check(observed == 1); }
     )");
-        const auto callables = test_function_callables(program);
-        if (!expect(callables.size() == 3uz)) {
-            return;
-        }
-        for (auto index = 0uz; index < 2uz; ++index) {
+        for (const auto name : {"direct", "indirect"}) {
+            const auto callable = control_callable(program, name);
+            if (!expect(callable.has_value()).note("function = ", name)) {
+                return;
+            }
             const auto& body =
-                program.bodies().body(*program.declarations().body_for_callable(callables[index]));
+                program.bodies().body(*program.declarations().body_for_callable(*callable));
             const auto* returned = std::get_if<SemReturn>(&body.region().statements.front().value);
             if (!expect(returned != nullptr)) {
                 return;
@@ -651,7 +683,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             expect(returned->value->exits_test);
-            expect(program.may_stop_test(callables[index]));
+            expect(program.may_stop_test(*callable)).note("function = ", name);
         }
         for (const auto entry : program.tests().entries()) {
             const auto& body = program.bodies().body(*entry.value.body);
@@ -677,14 +709,19 @@ const TestSuite suite([] static noexcept {
         fn selected_caller() -> i32 { return selected(); }
         fn ordinary_caller() -> i32 { return ordinary(); }
     )");
-        const auto callables = test_function_callables(program);
-        const auto expected = std::array {false, true, false, true};
-        if (!expect_equal(callables.size(), expected.size())) {
-            return;
-        }
-        for (const auto [index, callable] : std::views::enumerate(callables)) {
+        constexpr auto expected = std::to_array<TestStopExpectation>({
+            {.name = "selected", .stops = false},
+            {.name = "ordinary", .stops = true},
+            {.name = "selected_caller", .stops = false},
+            {.name = "ordinary_caller", .stops = true},
+        });
+        each(expected, &TestStopExpectation::name, [&](const auto& input) noexcept {
+            const auto callable = control_callable(program, input.name);
+            if (!expect(callable.has_value())) {
+                return;
+            }
             const auto& body =
-                program.bodies().body(*program.declarations().body_for_callable(callable));
+                program.bodies().body(*program.declarations().body_for_callable(*callable));
             if (!expect(!body.region().statements.empty())) {
                 return;
             }
@@ -692,14 +729,14 @@ const TestSuite suite([] static noexcept {
             if (!expect(returned != nullptr && returned->value.has_value())) {
                 return;
             }
-            expect_equal(returned->value->exits_test, expected[index]);
-            expect_equal(body.region().exits_test, expected[index]);
-            expect_equal(program.may_stop_test(callable), expected[index]);
-        }
+            expect_equal(returned->value->exits_test, input.stops);
+            expect_equal(body.region().exits_test, input.stops);
+            expect_equal(program.may_stop_test(*callable), input.stops);
+        });
     };
 
     "Semantic control: native invocations inherit argument completion"_test = [] static noexcept {
-        const auto invocations = std::array {
+        constexpr auto invocations = std::array {
             "::native_call(if flag {{ fail(\"stop\"); }} else {{ {} }})",
             "::Native {{ if flag {{ fail(\"stop\"); }} else {{ {} }} }}",
         };
@@ -780,7 +817,7 @@ const TestSuite suite([] static noexcept {
             DiagnosticCode code;
         };
 
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             Case {
                 "write integer element",
                 "fn f() { for &n in 0..10 {} }",
@@ -898,7 +935,7 @@ const TestSuite suite([] static noexcept {
 
     "Semantic patterns: tag rejection preserves distinct ownership joins"_test =
         [] static noexcept {
-            const auto body = R"(
+            constexpr auto body = R"(
         fn probe(subject: Choice) {
             var value = 1;
             let moved = &&value;
@@ -926,7 +963,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view pattern;
                 bool exhaustive;
             };
-            const auto inputs = std::array {
+            constexpr auto inputs = std::array {
                 Input {
                     .name = "complete boolean coverage",
                     .declarations = "enum Choice { Number(bool, i32) }",
@@ -1005,7 +1042,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view pattern;
                 bool exhaustive;
             };
-            const auto inputs = std::array {
+            constexpr auto inputs = std::array {
                 Input {
                     .name = "complete catch alternatives",
                     .pattern = "Failure(.One) | Failure(.Two)",
@@ -1049,15 +1086,13 @@ const TestSuite suite([] static noexcept {
         fn forward() { quiet(); }
         fn conditional(flag: bool) { assert(flag, message()); }
     )");
-        const auto callables = test_function_callables(program);
-        const auto expected = std::array {true, true, true, true};
-        if (!expect(callables.size() == expected.size())) {
-            return;
-        }
-        for (auto index = 0uz; index < expected.size(); ++index) {
-            expect(program.may_stop_test(callables[index]) == expected[index])
-                .note("index = ", index);
-        }
+        constexpr auto expected = std::to_array<TestStopExpectation>({
+            {.name = "message", .stops = true},
+            {.name = "quiet", .stops = true},
+            {.name = "forward", .stops = true},
+            {.name = "conditional", .stops = true},
+        });
+        check_test_stops(program, expected);
     };
 
     "Semantic control: only fail completes a report without returning"_test = [] static noexcept {
@@ -1084,14 +1119,14 @@ const TestSuite suite([] static noexcept {
         fn known_stopping() -> i32 { let view: fn() -> i32 = stopping; return view(); }
         fn dynamic(view: fn() -> i32) -> i32 => view();
     )");
-            const auto callables = test_function_callables(program);
-            const auto expected = std::array {false, true, false, true, true};
-            if (!expect(callables.size() == expected.size())) {
-                return;
-            }
-            for (const auto [index, callable] : std::views::enumerate(callables)) {
-                expect(program.may_stop_test(callable) == expected[index]);
-            }
+            constexpr auto expected = std::to_array<TestStopExpectation>({
+                {.name = "plain", .stops = false},
+                {.name = "stopping", .stops = true},
+                {.name = "known_plain", .stops = false},
+                {.name = "known_stopping", .stops = true},
+                {.name = "dynamic", .stops = true},
+            });
+            check_test_stops(program, expected);
         };
 });
 

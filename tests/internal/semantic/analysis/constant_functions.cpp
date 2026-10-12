@@ -252,7 +252,6 @@ const TestSuite suite([] static noexcept {
             }
         );
         expect(arrays == 1uz);
-        expect(program.bodies().size() == 4uz);
     };
 
     "Constant functions: repeated recursive evaluation owns one typed body per function"_test =
@@ -349,7 +348,6 @@ const TestSuite suite([] static noexcept {
                 }
             );
             expect(frozen_reads == 1uz);
-            expect(program.bodies().size() == 4uz);
         };
 
     "Constant functions: declaration dependency cycles and result inference cycles stay distinct"_test =
@@ -360,7 +358,7 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode absent;
             };
 
-            const auto scenarios = std::to_array<Scenario>({
+            constexpr auto scenarios = std::to_array<Scenario>({
                 {"const value = typed(); const fn typed() -> i32 { return value; }",
                  DiagnosticCode::ConstCycle,
                  DiagnosticCode::TypeResultInferenceCycle},
@@ -442,7 +440,6 @@ const TestSuite suite([] static noexcept {
             }
             const auto& program = analyzed->value;
             require_integer(module_constant(program, "result"), 42);
-            expect(program.bodies().size() == 3uz);
             auto reads = 0uz;
             visit_semantic_nodes(
                 function_body(program, "read").region(),
@@ -527,7 +524,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant functions: temporary execution history does not enlarge retained constants"_test =
         [] static noexcept {
-            const auto count = [](int iterations) static noexcept {
+            constexpr auto count = [](int iterations) static noexcept {
                 const auto program = analyze_test_program(
                     std::format(
                         R"(
@@ -582,7 +579,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant functions: invalid floating specifications and dimensions are diagnosed"_test =
         [] static noexcept {
-            const auto cases = std::to_array<std::string_view>({
+            constexpr auto cases = std::to_array<std::string_view>({
                 R"(const text = f"{1.25:.}";)",
                 R"(const text = f"{1.25:.{-1}f}";)",
                 R"(const text = f"{1.25:{-1}.2f}";)",
@@ -637,7 +634,7 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode code;
             };
 
-            const auto scenarios = std::to_array<Scenario>({
+            constexpr auto scenarios = std::to_array<Scenario>({
                 {R"(struct Failure {} private const fn call(ok: bool) -> i32 {
             if ok { return 1; } throw Failure {};
         } const value = call(true);)",

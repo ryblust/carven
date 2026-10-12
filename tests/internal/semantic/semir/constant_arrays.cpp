@@ -99,7 +99,7 @@ const TestSuite suite([] static noexcept {
     "SemIR publication invariant: tuple constants retain product shape and unit identity"_test =
         [] static noexcept {
             enum class Malformation { Arity, ElementType, EmptyTuple, NonVoidUnit };
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Malformation::Arity,
                 Malformation::ElementType,
                 Malformation::EmptyTuple,
@@ -193,7 +193,7 @@ const TestSuite suite([] static noexcept {
                 Malformation malformation;
             };
 
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {
                     .name = "array-constant-non-array",
                     .malformation = Malformation::NonArrayType
@@ -282,7 +282,7 @@ const TestSuite suite([] static noexcept {
 
     "SemIR constants invariant: array children already belong to the same store"_test =
         [] static noexcept {
-            const auto scenarios = std::array {false, true};
+            constexpr auto scenarios = std::array {false, true};
             each(
                 scenarios,
                 [](bool foreign) static noexcept -> std::string_view {

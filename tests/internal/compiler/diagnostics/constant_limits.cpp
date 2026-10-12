@@ -12,7 +12,7 @@ namespace {
 const TestSuite suite([] static noexcept {
     "Compiler diagnostics: constant resource limits retain source locations and bounded call traces"_test =
         [] static noexcept {
-            const auto cases = std::to_array<std::string_view>({
+            constexpr auto cases = std::to_array<std::string_view>({
                 "const fn recursive() -> i32 => recursive(); "
                 "const result = recursive();",
                 "fn count(const index: i32) -> i32 { "

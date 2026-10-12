@@ -252,7 +252,7 @@ auto NullabilityBodyAnalyzer::pattern_condition(
     std::span<const SemPatternBounds> bounds,
     NullState state
 ) noexcept -> ContinuationTask<NullCondition> {
-    const auto initial = [](NullState input) static noexcept {
+    constexpr auto initial = [](NullState input) static noexcept {
         return NullCondition {
             .yes = NullNormal {.state = std::move(input), .value = {}},
             .no = {},

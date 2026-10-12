@@ -168,7 +168,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Format: invalid syntax fails without changing input"_test = [] static noexcept {
-        const auto cases = std::to_array<std::pair<std::string_view, std::string_view>>({
+        constexpr auto cases = std::to_array<std::pair<std::string_view, std::string_view>>({
             {"Incomplete parameter list", "fn f("},
             {"Invalid character", "@"},
         });
@@ -193,7 +193,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Format: import lists include closing punctuation in the line width"_test = [] static noexcept {
-        const auto prefixes = std::to_array<std::string_view>({
+        constexpr auto prefixes = std::to_array<std::string_view>({
             "import <vector> using std::{",
             "import std::utf.text using {",
         });
@@ -221,7 +221,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Format: import trailing commas follow layout and preserve comments"_test = [] static noexcept {
-        const auto cases = std::to_array<std::pair<std::string_view, std::string_view>>({
+        constexpr auto cases = std::to_array<std::pair<std::string_view, std::string_view>>({
             {"import math using {first, second,};", "import math using { first, second };\n"},
             {"import math using {\nfirst,\nsecond,\n};", "import math using { first, second };\n"},
             {"import math using {first // last name\n};",

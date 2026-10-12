@@ -66,7 +66,7 @@ auto floating_expression(ModuleLowering& context, Floating value, TypeID type) n
         return {.value = TargetLiteralExpr {.value = TargetFloatLiteral {.value = value}}};
     }
     using Bits = std::conditional_t<std::same_as<Floating, float>, std::uint32_t, std::uint64_t>;
-    const auto storage =
+    constexpr auto storage =
         std::same_as<Floating, float> ? TargetSymbol::StdUInt32 : TargetSymbol::StdUInt64;
     auto bits = TargetExpr {
         .value = TargetConstructionExpr {

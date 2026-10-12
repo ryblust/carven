@@ -10,7 +10,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Compiler: static arguments require an explicit constant source"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {
                 .name = "let initialized by a literal",
                 .source = R"(fn lane(const index: i32) -> i32 => index;
@@ -90,7 +90,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler: static parameters cannot escape as runtime values or cross an open native ABI"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {
                     .name = "unbound static function stored as a runtime value",
                     .source = R"(fn lane(const index: i32) -> i32 => index;
@@ -109,7 +109,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Compiler: fixed body types and lambda definitions need closed static roots"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "a fixed array type cannot depend on an unbound static parameter",
              .source =
                  "fn use(const count: i32) { const extent = count; let values: [i32; extent] = [1, 2]; }",
@@ -136,7 +136,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler: a failed static body reports its error once to every requester"_test =
         [] static noexcept {
-            const auto cases = std::to_array<std::string_view>({
+            constexpr auto cases = std::to_array<std::string_view>({
                 "const fn broken(const d: i32) -> i32 { const x = 1 / d; return x; } "
                 "const test { broken(0); } const test { broken(0); }",
                 "const fn zero() -> i32 => 0; "
@@ -157,7 +157,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Compiler: static control requires static inputs and Read iteration"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {
                 .name = "const for over a runtime range",
                 .source = R"(fn use(count: i32) { const for index in 0..count {} })",
@@ -240,7 +240,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Compiler: inactive runtime paths still require local static roots"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {
                 .name = "constant local in an unselected branch",
                 .source = R"(fn use(runtime: i32) {

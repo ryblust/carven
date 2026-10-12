@@ -4,7 +4,7 @@ import :source.identifier;
 import std;
 
 auto is_identifier_spelling(std::string_view spelling) noexcept -> bool {
-    const auto is_ascii_letter = [](char value) static noexcept {
+    constexpr auto is_ascii_letter = [](char value) static noexcept {
         return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z');
     };
     const auto is_identifier_start = [&](char value) noexcept {

@@ -32,7 +32,7 @@ const TestSuite suite([] static noexcept {
                 draft.intern_constant({.type = integer, .value = IntegerConstant::zero()}) == first
             );
             const auto floating = draft.builtin_type(BuiltinType::F64);
-            const auto bits = std::array {
+            constexpr auto bits = std::array {
                 0ull,
                 0x8000000000000000ull,
                 0x7ff8000000000001ull,
@@ -55,7 +55,7 @@ const TestSuite suite([] static noexcept {
             auto fixture = ConstantEvaluationFixture();
             auto& draft = fixture.compilation;
             const auto type = draft.builtin_type(BuiltinType::F32x4);
-            const auto patterns =
+            constexpr auto patterns =
                 std::array<std::uint32_t, 4> {0u, 0x80000000u, 0x7fc00001u, 0x7fc00002u};
             auto identities = std::set<ConstantID>();
             for (const auto pattern : patterns) {

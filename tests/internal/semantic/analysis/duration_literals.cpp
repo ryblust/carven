@@ -74,7 +74,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view literal;
                 std::int64_t ticks;
             };
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {"0ns", 0},
                 Case {"12ns", 12},
                 Case {"7us", 7'000},

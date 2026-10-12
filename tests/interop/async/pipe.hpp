@@ -233,7 +233,7 @@ public:
             const auto remaining =
                 static_cast<std::uint64_t>(deadline) - static_cast<std::uint64_t>(now);
             const auto milliseconds = remaining / 1000000 + (remaining % 1000000 != 0);
-            const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<int>::max());
+            constexpr auto maximum = static_cast<std::uint64_t>(std::numeric_limits<int>::max());
             const auto timeout = static_cast<int>(milliseconds < maximum ? milliseconds : maximum);
             if (::poll(descriptors.data(), static_cast<::nfds_t>(descriptors.size()), timeout)
                 >= 0) {

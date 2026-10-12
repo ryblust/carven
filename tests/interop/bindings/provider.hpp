@@ -117,6 +117,7 @@ inline auto moves() -> std::int32_t {
 inline auto live() -> std::int32_t {
     return Owner::live;
 }
+
 } // namespace native
 
 inline auto plain(std::int32_t value) -> std::int32_t {

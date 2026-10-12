@@ -9,7 +9,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Compiler diagnostics: interpolation consumes Read operands and protects backing"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "Write marker",
              .source = R"(fn bad() { var x = 1; let s = f"{&x}"; })",
              .code = DiagnosticCode::AccessCallMismatch,
@@ -66,7 +66,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: constant interpolation preserves access type and execution boundaries"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "constant Write marker",
                  .source = R"(const x = 1; const text = f"{&x}";)",
                  .code = DiagnosticCode::AccessCallMismatch,
@@ -118,7 +118,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: constant widths retain format grammar and resource limits"_test =
         [] static noexcept {
-            const auto sources = std::to_array<std::string_view>({
+            constexpr auto sources = std::to_array<std::string_view>({
                 R"(const text = f"{7:2{2}}";)",
                 R"(const text = f"{7:{2}{3}}";)",
                 R"(const text = f"{7:{0}4}";)",
@@ -138,7 +138,7 @@ const TestSuite suite([] static noexcept {
                 }};
                 check_compiler_errors(cases);
             });
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "direct field text budget",
                  .source = R"(const text = f"{1:1048577}";)",
                  .code = DiagnosticCode::ConstLimit,
@@ -163,7 +163,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: formatted append requires interpolation and writable storage"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "immutable destination",
                  .source = R"(fn bad() { let text = String {}; text.append_format(f"{7}"); })",
                  .code = DiagnosticCode::AccessImmutable,
@@ -203,7 +203,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: formatted append keeps destination separate from input storage"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "owning Read aliases destination",
                  .source =
                      R"(fn bad() { var text: String = "value"; text.append_format(f"{text}"); })",

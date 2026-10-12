@@ -314,7 +314,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view expected;
             };
 
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {
                     .outer = TargetBinaryOperator::LogicalOr,
                     .inner = TargetBinaryOperator::LogicalAnd,
@@ -424,7 +424,7 @@ const TestSuite suite([] static noexcept {
                     .expected = "a >> (b + c);"
                 },
             };
-            const auto name = [](std::string_view spelling) static noexcept {
+            constexpr auto name = [](std::string_view spelling) static noexcept {
                 return TargetExpr {
                     .value = TargetNameExpr {
                         .name = TargetName(TargetIdentifier::from_spelling(spelling))
@@ -462,7 +462,7 @@ const TestSuite suite([] static noexcept {
             TargetVariableBinding binding;
             std::string_view declaration;
         };
-        const auto scenarios = std::array {
+        constexpr auto scenarios = std::array {
             Scenario {
                 .name = "ordinary value",
                 .binding = TargetVariableBinding::ConstValue,
@@ -587,7 +587,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             for (const auto normalize : {false, true}) {
                 const auto artifact = emitted_statement([&](TargetUnitBuilder& builder) noexcept {
-                    const auto member = []() static noexcept -> TargetExpr {
+                    constexpr auto member = []() static noexcept -> TargetExpr {
                         return {
                             .value = TargetMemberExpr {
                                 .operand = UniqueIndirect(

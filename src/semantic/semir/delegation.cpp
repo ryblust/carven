@@ -59,6 +59,7 @@ auto visit_query_operands(const CppQueryType& query, Visitor visit) noexcept -> 
         }
     });
 }
+
 } // namespace
 
 auto cpp_query_type(

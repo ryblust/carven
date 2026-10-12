@@ -12,9 +12,7 @@
 #include <cstring>
 #include <type_traits>
 
-namespace carven::runtime::simd {
-inline namespace portable {
-namespace backend {
+namespace carven::runtime::simd::inline portable::backend {
 
 // Float lanes keep their native object representation. Masks are canonical, so
 // every byte of a true lane is 255 regardless of byte order.
@@ -217,7 +215,7 @@ template<std::size_t Bytes, std::size_t Count, bool Left>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL shift(Value<Bytes> a) noexcept -> Value<Bytes> {
     static_assert(Count < 8);
     return map<std::uint8_t, Bytes>(a, a, [](auto byte, auto) noexcept {
-        const auto count = static_cast<std::uint8_t>(Count);
+        constexpr auto count = static_cast<std::uint8_t>(Count);
         return Left ? byte << count : byte >> count;
     });
 }
@@ -293,6 +291,4 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL extract(Value<Bytes> a, Value<Bytes> b)
     return result;
 }
 
-} // namespace backend
-} // namespace portable
-} // namespace carven::runtime::simd
+} // namespace carven::runtime::simd::portable::backend

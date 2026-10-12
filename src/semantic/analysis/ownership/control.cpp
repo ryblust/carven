@@ -119,7 +119,7 @@ auto OwnershipBodyAnalyzer::pattern_condition(
     std::span<const SemPatternBounds> bounds,
     OwnershipState state
 ) noexcept -> ContinuationTask<OwnershipCondition> {
-    const auto initial = [](OwnershipState input) static noexcept {
+    constexpr auto initial = [](OwnershipState input) static noexcept {
         return OwnershipCondition {
             .yes = OwnershipNormal {.state = std::move(input), .value = {}, .storage = {}},
             .no = {},
@@ -129,8 +129,8 @@ auto OwnershipBodyAnalyzer::pattern_condition(
     const auto evaluate = [&](const SemanticExpression& bound, OwnershipState input) noexcept {
         return complete_expression(bound, std::move(input));
     };
-    const auto join = [](std::optional<OwnershipNormal>& destination,
-                         const std::optional<OwnershipNormal>& source) static noexcept {
+    constexpr auto join = [](std::optional<OwnershipNormal>& destination,
+                             const std::optional<OwnershipNormal>& source) static noexcept {
         join_normal_ownership(destination, source);
     };
     co_return (co_await analyze_pattern_condition(

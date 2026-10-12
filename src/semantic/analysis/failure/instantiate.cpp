@@ -521,7 +521,7 @@ auto FailureConstraintStore::application(
         }
         return result;
     };
-    const auto term_atoms = [](const FailureParameterEnvironment& arguments) static noexcept {
+    constexpr auto term_atoms = [](const FailureParameterEnvironment& arguments) static noexcept {
         auto terms = std::set<FailureTermID>();
         for (const auto& [parameter, value] : arguments) {
             static_cast<void>(parameter);

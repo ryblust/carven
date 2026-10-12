@@ -477,7 +477,7 @@ const TestSuite suite([] static noexcept {
             std::string_view operation;
             std::string_view message;
         };
-        const auto inputs = std::array {
+        constexpr auto inputs = std::array {
             Input {
                 .name = "division",
                 .declaration = "fn divide(value: i32) { println(4 / value); }",

@@ -12,7 +12,7 @@ import std;
 
 SemIRBody::SemIRBody(SemIRBodyData data) noexcept
     : data(std::move(data)) {
-    const auto require_resolved = [](const SemanticRegion& region) static noexcept {
+    constexpr auto require_resolved = [](const SemanticRegion& region) static noexcept {
         visit_semantic_nodes(
             region,
             Overloaded {

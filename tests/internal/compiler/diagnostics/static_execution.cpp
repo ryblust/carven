@@ -48,7 +48,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view prefix;
                 std::string_view suffix;
             };
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {.name = "module block", .prefix = "const {", .suffix = "}"},
                 Scenario {.name = "static test", .prefix = "const test {", .suffix = "}"},
                 Scenario {
@@ -104,7 +104,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler: selected static statement transfers stop later static roots"_test =
         [] static noexcept {
-            const auto sources = std::array<std::string_view, 3uz> {
+            constexpr auto sources = std::array<std::string_view, 3uz> {
                 R"(
                     fn stop(flag: bool, const selected: bool, const divisor: i32) {
                         if flag {
@@ -156,7 +156,7 @@ const TestSuite suite([] static noexcept {
             std::string_view body;
             bool enters_step;
         };
-        const auto scenarios = std::array {
+        constexpr auto scenarios = std::array {
             Scenario {
                 .name = "break leaves the step's static root unentered",
                 .body = "break;",
@@ -208,7 +208,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view source;
                 bool completes;
             };
-            const auto scenarios = std::to_array<Scenario>({
+            constexpr auto scenarios = std::to_array<Scenario>({
                 {
                     .name = "a stopped range bound leaves the whole match",
                     .source = R"(
@@ -353,7 +353,7 @@ const TestSuite suite([] static noexcept {
             std::string_view source;
             bool enters_bound;
         };
-        const auto scenarios = std::to_array<Scenario>({
+        constexpr auto scenarios = std::to_array<Scenario>({
             {
                 .name = "a stopped payload excludes the next payload bound",
                 .source = R"(
@@ -446,7 +446,7 @@ const TestSuite suite([] static noexcept {
             std::string_view source;
             bool enters_root;
         };
-        const auto scenarios = std::to_array<Scenario>({
+        constexpr auto scenarios = std::to_array<Scenario>({
             {
                 .name = "a terminal match guard excludes the next bound",
                 .source = R"(
@@ -646,7 +646,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Compiler: static execution rejects an executed native construction"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             CompilerErrorExpectation {
                 .name = "native construction in const block",
                 .source =
@@ -692,7 +692,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler: constant calls through callable values require a const target"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "ordinary function selected through a local callable",
                  .source = R"(fn answer() -> i32 => 42;
              const test "indirect" { let selected = answer; check(selected() == 42); })",
@@ -851,7 +851,7 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode code;
             };
 
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {
                     "fn f(value: i32) { const { println(value); } }",
                     DiagnosticCode::ConstAdmission
@@ -882,7 +882,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Compiler: const blocks enforce lexical loans and stage isolation"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "block loan prevents mutation even without a later read",
              .source = R"(const {
              var text: String = "local";
@@ -925,7 +925,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Compiler: a static stage cannot call the function it belongs to"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "local constant",
              .source = "const fn value() -> i32 { const copy = value(); return 1; } "
                        "const initial = value();",
@@ -1007,7 +1007,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view context;
             };
 
-            const auto scenarios = std::to_array<Scenario>({
+            constexpr auto scenarios = std::to_array<Scenario>({
                 {"anonymous const block",
                  "const { divide(0); }",
                  "while evaluating this const block"},
@@ -1094,7 +1094,7 @@ const TestSuite suite([] static noexcept {
             std::string_view source;
             std::string_view output;
         };
-        const auto cases = std::to_array<Input>({
+        constexpr auto cases = std::to_array<Input>({
             {.name = "required declaration call",
              .source =
                  "const result = target(runtime_input(1), static_input(1), runtime_input(2), static_input(2));",
@@ -1162,7 +1162,7 @@ const TestSuite suite([] static noexcept {
             std::string_view source;
             std::string_view output;
         };
-        const auto cases = std::to_array<Input>({
+        constexpr auto cases = std::to_array<Input>({
             {.name = "empty const for",
              .source = R"(
             fn use(const amount: i32) { const for index in 0..0 { const value = provider(amount); lane(index); } }

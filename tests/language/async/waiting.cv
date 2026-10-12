@@ -119,6 +119,6 @@ const test "Async waiting: terminal observation and explicit closure" {
     check(result);
 }
 
-async fn main() {
+export async fn run_waiting() {
     println(await exercise() && result);
 }

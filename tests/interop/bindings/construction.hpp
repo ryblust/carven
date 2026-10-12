@@ -60,4 +60,5 @@ struct Byte final {
 struct Float final {
     float value;
 };
+
 } // namespace construction_probe

@@ -1,6 +1,7 @@
 #include "scan.hpp"
 
 namespace simd_benchmark {
+
 namespace {
 
 auto matches(std::uint8_t value) noexcept -> bool {

@@ -252,7 +252,7 @@ const TestSuite suite([] static noexcept {
                 std::array {false, true},
                 [](bool stop) static noexcept { return stop ? "early stop" : "complete"; },
                 [](bool stop) static noexcept {
-                    const auto expression = [](bool value) static noexcept -> TargetStmt {
+                    constexpr auto expression = [](bool value) static noexcept -> TargetStmt {
                         return {
                             .value = TargetExprStmt {.expression = literal(value)},
                             .attribution = attribution(),
@@ -277,7 +277,7 @@ const TestSuite suite([] static noexcept {
                         expected.push_back(TraversalObservation::TrueValue);
                     }
                     expect(visitor.observations == expected);
-                    const auto boolean =
+                    constexpr auto boolean =
                         [](const TargetStmt& statement) static noexcept -> std::optional<bool> {
                         const auto* expression = std::get_if<TargetExprStmt>(&statement.value);
                         if (!expect(expression != nullptr)) {
@@ -569,8 +569,8 @@ const TestSuite suite([] static noexcept {
     "Target builder: type queries retain call structure across table growth"_test =
         [] static noexcept {
             auto builder = TargetTestingFixture::unit_builder();
-            const auto query = [](bool grouped) static noexcept -> TargetType {
-                const auto name = [](std::string_view text) static noexcept -> TargetExpr {
+            constexpr auto query = [](bool grouped) static noexcept -> TargetType {
+                constexpr auto name = [](std::string_view text) static noexcept -> TargetExpr {
                     return {.value = TargetNameExpr {.name = TargetName(identifier(text))}};
                 };
                 auto arguments = std::vector<TargetExpr>();
@@ -633,7 +633,7 @@ const TestSuite suite([] static noexcept {
                 Reference reference;
             };
 
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {.name = "visible local", .reference = Reference::Visible},
                 Scenario {.name = "foreign unit", .reference = Reference::Foreign},
                 Scenario {.name = "out of range", .reference = Reference::OutOfRange},

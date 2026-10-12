@@ -26,6 +26,7 @@ import :support.task;
 import std;
 
 namespace {
+
 struct NativeCoroutineQuery final {
     bool& found;
     auto enter_expression(const TargetExpr& expression, TargetExpressionRole) noexcept -> bool;
@@ -44,6 +45,7 @@ auto NativeCoroutineQuery::enter_statement(const TargetStmt& statement) noexcept
     found |= std::holds_alternative<TargetCoReturnStmt>(statement.value);
     return true;
 }
+
 } // namespace
 
 BodyRealizer::BodyRealizer(

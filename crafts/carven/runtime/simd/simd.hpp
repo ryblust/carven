@@ -48,8 +48,7 @@
 #include <cstring>
 #include <type_traits>
 
-namespace carven::runtime::simd {
-inline namespace CARVEN_SIMD_ABI {
+namespace carven::runtime::simd::inline CARVEN_SIMD_ABI {
 
 inline constexpr auto uses_native_backend = CARVEN_SIMD_NATIVE_BACKEND;
 
@@ -441,8 +440,7 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL operator^(Mask<T, N> a, Mask<T, N> b) n
     return Mask<T, N> {.value = backend::bit_xor<sizeof(T) * N>(a.native(), b.native())};
 }
 
-} // namespace CARVEN_SIMD_ABI
-} // namespace carven::runtime::simd
+} // namespace carven::runtime::simd::CARVEN_SIMD_ABI
 
 #undef CARVEN_SIMD_NATIVE_BACKEND
 #undef CARVEN_SIMD_ABI

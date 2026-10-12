@@ -134,7 +134,7 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode code;
             };
 
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {
                     .source = "const values: [u32] = [1i32];",
                     .code = DiagnosticCode::TypeMismatch
@@ -192,7 +192,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant slices: frozen storage does not extend ordinary local array borrows"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 "fn bad() { let view = [1, 2].as_slice(); }",
                 "const source: [i32; 2] = [1, 2]; fn bad() { var copy = source; let view = copy.as_slice(); copy[0] = 9; }",
             };

@@ -72,7 +72,7 @@ auto validate_manifest_destination(
     const ArtifactDestination& destination,
     const GeneratedArtifactSet& artifacts
 ) noexcept -> std::expected<void, std::string> {
-    const auto resolve = [](const std::filesystem::path& candidate) static noexcept
+    constexpr auto resolve = [](const std::filesystem::path& candidate) static noexcept
         -> std::expected<std::filesystem::path, std::error_code> {
         auto error = std::error_code();
         const auto absolute = std::filesystem::absolute(candidate, error);

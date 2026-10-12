@@ -443,7 +443,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "SemIR body: every nested fact is resolved before delivery"_test = [] static noexcept {
-        const auto scenarios = std::array<std::string_view, 4> {
+        constexpr auto scenarios = std::array<std::string_view, 4> {
             "completed tree",
             "nested region",
             "catch metadata",
@@ -536,7 +536,7 @@ const TestSuite suite([] static noexcept {
     "SemIR body: normal-completion facts match the expression type and program"_test =
         [] static noexcept {
             enum class Fact { Missing, Boolean, WrongType, Foreign };
-            const auto cases =
+            constexpr auto cases =
                 std::array {Fact::Missing, Fact::Boolean, Fact::WrongType, Fact::Foreign};
             each(
                 cases,

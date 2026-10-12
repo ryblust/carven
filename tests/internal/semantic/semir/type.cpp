@@ -289,7 +289,7 @@ const TestSuite suite([] static noexcept {
                 bool reverse;
             };
 
-            const auto scenarios = std::to_array<Scenario>({
+            constexpr auto scenarios = std::to_array<Scenario>({
                 {.seeded = false, .reverse = false},
                 {.seeded = true, .reverse = false},
                 {.seeded = true, .reverse = true},

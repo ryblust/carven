@@ -55,7 +55,7 @@ const TestSuite suite([] static noexcept {
     "Continuation tasks: dependencies preserve one execution and ordered cleanup"_test =
         [] static noexcept {
             constexpr auto depth = 32768uz;
-            const auto outcomes = std::array {false, true};
+            constexpr auto outcomes = std::array {false, true};
             each(
                 outcomes,
                 [](bool fail) static noexcept { return fail ? "failure" : "success"; },

@@ -29,7 +29,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Async ownership: initial source rejection precedes target lowering"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             std::pair {
                 std::string_view(
                     "async fn leaf() -> i32 => 1; async fn bad() { let op = leaf(); print(await op); print(await op); }"
@@ -194,7 +194,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Async intrinsics: core direct calls preserve ordinary local shadowing"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             std::pair {
                 std::string_view(
                     "import std::async using cancel_requested;\nimport std::async using yield_once;\n\n fn query() -> bool => cancel_requested(); fn shadow() { let yield_once = 7; print(yield_once); } async fn run() { await yield_once(); }"
@@ -1070,7 +1070,7 @@ fn release(&view: str, flag: bool) { if flag { view = ""; } }
                 DiagnosticCode code;
                 std::string_view primary_range;
             };
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {
                     .name = "earlier query precedes an independently solved error",
                     .source = R"(fn plain() -> i32 => 1;
@@ -1157,7 +1157,7 @@ fn escaping() {
                 std::string_view name;
                 std::string_view source;
             };
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {
                     .name = "loop backedge observes its Take",
                     .source = R"(struct Payload { value: i32 }

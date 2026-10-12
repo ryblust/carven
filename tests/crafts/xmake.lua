@@ -1,4 +1,4 @@
--- SIMD scanners and UTF/JSON validation also run with the portable backend.
+-- SIMD APIs, scanners, and UTF/JSON validation also run with the portable backend.
 for _, variant in ipairs({
     {name = "carven-test-crafts", test = "crafts"},
     {name = "carven-test-crafts-portable", test = "crafts-portable", portable = true},
@@ -8,10 +8,12 @@ for _, variant in ipairs({
         set_languages("c++20")
         if variant.portable then
             add_defines("CARVEN_SIMD_FORCE_PORTABLE")
+        else
+            add_vectorexts("avx2")
         end
         add_rules("@carven/carven", {tests = variant.portable and "main" or "runner"})
         if variant.portable then
-            add_files("carven/std/utf/validation.cv", "carven/std/simd/scan.cv",
+            add_files("carven/std/utf/validation.cv", "carven/std/simd/*.cv",
                 "carven/std/json/validation.cv")
         else
             add_files("carven/**.cv", "main.cv")
@@ -24,5 +26,3 @@ for _, variant in ipairs({
         end)
     target_end()
 end
-
-includes("carven/runtime")

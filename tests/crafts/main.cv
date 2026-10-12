@@ -1,8 +1,6 @@
 import .carven.std.time.sleep using run_sleep;
 import .carven.std.time.timeout using run_timeout;
-
 import std::time.duration using RangeError;
-
 import <carven/generated/carven-test-runner.hpp>;
 
 async fn main() -> i32 throw RangeError {

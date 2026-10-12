@@ -269,7 +269,7 @@ const TestSuite suite([] static noexcept {
 
     "Generic definitions: unused heads enforce their type and storage contracts"_test =
         [] static noexcept {
-            const auto invalid = std::array {
+            constexpr auto invalid = std::array {
                 std::pair {"struct Box<T, T> { value: T }", DiagnosticCode::TypeGenericDefinition},
                 std::pair {
                     "struct Pair<T, U> {} struct Box<T> { value: Pair<T> }",
@@ -466,7 +466,7 @@ const TestSuite suite([] static noexcept {
 
     "Generic storage: callable views propagate through values and stop at pointers"_test =
         [] static noexcept {
-            const auto invalid = std::array<std::string_view, 8> {
+            constexpr auto invalid = std::array<std::string_view, 8> {
                 "struct Callback<T> { callback: fn() -> void }",
                 "class Callback<T> { callback: fn() -> void }",
                 "enum Callback<T> { None, Call(fn() -> void) }",
@@ -553,7 +553,7 @@ const TestSuite suite([] static noexcept {
 
     "Generic surfaces: transparent fixed dependencies and phantom arguments are checked"_test =
         [] static noexcept {
-            const auto invalid = std::array<std::string_view, 4> {
+            constexpr auto invalid = std::array<std::string_view, 4> {
                 "private struct Hidden {} export struct Box<T> { value: Hidden }",
                 "private struct Hidden {} export struct Box<T> { callback: ptr<fn(i32) -> Hidden> }",
                 "private struct Hidden {} export enum Maybe<T> { None, Some(Hidden) }",

@@ -9,7 +9,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Compiler diagnostics: slices retain storage and nested borrows"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "array mutation",
              .source = "fn bad() { var a = [1, 2]; let v: [i32] = a; a[1] = 3; }",
              .code = DiagnosticCode::AccessBorrowConflict,
@@ -167,7 +167,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: slice methods enforce their operand contracts"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "array borrowing takes no arguments",
                  .source = "fn bad(a: [i32; 1]) { a.as_slice(0usize); }",
                  .code = DiagnosticCode::TypeMethodCallArity,

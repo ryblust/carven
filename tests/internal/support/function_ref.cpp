@@ -18,7 +18,7 @@ auto decrement(int value) noexcept -> int {
 }
 
 auto function_view() noexcept -> IntCallback {
-    const auto pointer = &increment;
+    constexpr auto pointer = &increment;
     return IntCallback(pointer);
 }
 
@@ -91,7 +91,7 @@ const TestSuite suite([] static noexcept {
         expect_equal(first(2), 2);
         expect_equal(second(3), 5);
         expect_equal(IntCallback(target)(4), 9);
-        const auto constant = [offset = 10](int value) noexcept {
+        constexpr auto constant = [offset = 10](int value) noexcept {
             return offset + value;
         };
         const auto readonly = IntCallback(constant);
@@ -100,7 +100,7 @@ const TestSuite suite([] static noexcept {
 
     "FunctionRef: invocation preserves references and transfers owned arguments"_test =
         [] static noexcept {
-            const auto target =
+            constexpr auto target =
                 [](int& left, int&& right, std::unique_ptr<int> owned) static noexcept -> int& {
                 left += right + *owned;
                 return left;
@@ -118,7 +118,7 @@ const TestSuite suite([] static noexcept {
             const auto copied = CopyOnlyArgument(7);
             const auto function = FunctionRef<int(CopyOnlyArgument) noexcept>(&read_copy_only);
             expect_equal(function(copied), 7);
-            const auto read = [](const CopyOnlyArgument& value) static noexcept {
+            constexpr auto read = [](const CopyOnlyArgument& value) static noexcept {
                 return value.value;
             };
             const auto object = FunctionRef<int(CopyOnlyArgument) noexcept>(read);
@@ -140,10 +140,10 @@ const TestSuite suite([] static noexcept {
     "FunctionRef: invocation supports member functions and member references"_test =
         [] static noexcept {
             auto target = MemberTarget {.value = 1};
-            const auto method = &MemberTarget::add;
+            constexpr auto method = &MemberTarget::add;
             const auto invoke = MemberCallback(method);
             expect_equal(invoke(target, 2), 3);
-            const auto member = &MemberTarget::value;
+            constexpr auto member = &MemberTarget::value;
             const auto read = DataCallback(member);
             auto& value = read(target);
             expect(std::addressof(value) == std::addressof(target.value));
@@ -154,7 +154,7 @@ const TestSuite suite([] static noexcept {
     "FunctionRef: empty optional recipients reject invocation"_test = [] static noexcept {
         auto empty = IntCallback();
         expect(!empty);
-        const auto null_pointer = static_cast<int (*)(int) noexcept>(nullptr);
+        constexpr auto null_pointer = static_cast<int (*)(int) noexcept>(nullptr);
         expect(!IntCallback(null_pointer));
         empty = &increment;
         expect(static_cast<bool>(empty));

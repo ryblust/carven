@@ -93,7 +93,7 @@ const TestSuite suite([] static noexcept {
 
     "Input path: invalid module names identify the first offending component"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 std::pair {
                     std::string_view("bad-dir/main.cv"),
                     std::string_view(
@@ -140,7 +140,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Input path: invalid paths are rejected before source acquisition"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             std::pair {
                 std::string_view(""),
                 std::string_view("input path cannot be empty"),
@@ -198,7 +198,7 @@ const TestSuite suite([] static noexcept {
             }
         );
 
-        const auto with_nul = std::string_view("nul\0name.cv", 11);
+        constexpr auto with_nul = std::string_view("nul\0name.cv", 11);
         const auto nul_result = derive_input_module_path(with_nul);
         if (!expect(!nul_result.has_value())) {
             return;

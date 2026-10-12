@@ -201,34 +201,18 @@ PrintedPair {
     target_end()
 end
 
--- Entry failure and cancellation keep separate processes; ordinary async cases share a driver.
+-- Ordinary async cases share a void entry. Keep the i32 entry result contract
+-- and escaped failure/cancellation in their own processes.
 for _, scenario in ipairs({
     {
         target = "carven-test-language-async-behavior",
-        sources = {"behavior.cv", "containers.cv", "tuples.cv", "tail.cv", "constant.cv", "contracts.cv"},
+        sources = {"behavior.cv", "containers.cv", "tuples.cv", "tail.cv", "constant.cv", "contracts.cv",
+            "owners.cv", "composition.cv", "waiting.cv", "scheduling.cv"},
         output = "containers\ntrue\ntuples\n42\ntail\ntrue\ntrue\ntrue\ntrue\ntrue\n"
             .. "constant\ntrue\ntrue\ntrue\n1234\n10065\n1241\ntrue\n"
-            .. "contracts\n17\n13\n5\n10\n23\n20\n1\n12\n25\n2\n12\n9\n3\n12110\n129\n12384\n182\n",
-    },
-    {
-        target = "carven-test-language-async-owners",
-        source = "owners.cv",
-        output = "true\n",
-    },
-    {
-        target = "carven-test-language-async-composition",
-        source = "composition.cv",
-        output = "true\n",
-    },
-    {
-        target = "carven-test-language-async-waiting",
-        source = "waiting.cv",
-        output = "true\n",
-    },
-    {
-        target = "carven-test-language-async-scheduling",
-        source = "scheduling.cv",
-        output = "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n",
+            .. "contracts\n17\n13\n5\n10\n23\n20\n1\n12\n25\n2\n12\n9\n3\n12110\n129\n12384\n182\n"
+            .. "owners\ntrue\ncomposition\ntrue\nwaiting\ntrue\n"
+            .. "scheduling\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n",
     },
     {
         target = "carven-test-language-async",

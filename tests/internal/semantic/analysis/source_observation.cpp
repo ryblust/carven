@@ -194,7 +194,7 @@ const TestSuite tests([] static noexcept {
                 DiagnosticCode code;
                 bool has_occurrences;
             };
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {
                     "declaration failure after a demanded body",
                     "const fn seed() => 1; const answer: i32 = seed(); struct Broken { value: Missing }",

@@ -1,5 +1,4 @@
 local internal_dir = os.scriptdir()
-local crafts_dir = path.join(os.projectdir(), "crafts")
 
 local domains = {
     {name = "analysis", sources = {"semantic/analysis/**.cpp"}},
@@ -7,7 +6,7 @@ local domains = {
     {name = "semir", sources = {"semantic/semir/**.cpp", "semantic/visibility/**.cpp"}},
     {name = "backend", sources = {"backend/**.cpp", "artifacts/**.cpp"}},
     {name = "execution", sources = {
-        "semantic/evaluation/**.cpp", "semantic/format/**.cpp", "interpreter/**.cpp", "runtime/**.cpp",
+        "semantic/evaluation/**.cpp", "semantic/format/**.cpp", "interpreter/**.cpp",
     }},
     {name = "foundation", sources = {
         "frontend/**.cpp", "source/**.cpp", "driver/**.cpp", "diagnostics/**.cpp", "support/**.cpp",
@@ -20,7 +19,6 @@ target("carven-test-fixtures")
     set_group("tests/internal")
     set_kind("moduleonly")
     add_deps("carven-test-support")
-    add_includedirs(crafts_dir)
     add_files(path.join(internal_dir, "**.cppm"))
 target_end()
 
@@ -33,7 +31,6 @@ for _, domain in ipairs(domains) do
         set_group("tests/internal")
         set_kind("binary")
         add_deps("carven-test-fixtures", "carven-test-runner")
-        add_includedirs(crafts_dir)
         for _, source in ipairs(domain.sources) do
             add_files(path.join(internal_dir, source))
         end

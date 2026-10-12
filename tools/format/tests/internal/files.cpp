@@ -68,7 +68,7 @@ const TestSuite suite([] static noexcept {
                 return;
             }
             auto error = std::error_code();
-            const auto permissions =
+            constexpr auto permissions =
                 std::filesystem::perms::owner_read | std::filesystem::perms::owner_write;
             std::filesystem::permissions(path, permissions, error);
             if (!expect(!(error))) {

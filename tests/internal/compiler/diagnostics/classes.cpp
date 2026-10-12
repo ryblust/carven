@@ -9,7 +9,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Compiler diagnostics: class privacy reports the selected source member"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "private field",
              .source = "class C { value: i32, } fn read(c: C) -> i32 { return c.value; }",
              .code = DiagnosticCode::AccessClassPrivate,

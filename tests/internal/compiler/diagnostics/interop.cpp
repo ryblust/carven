@@ -267,7 +267,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: explicit selections and C strings enforce their contracts"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {"different paths",
                  "import <a> using first::f; import <b> using second::f; fn main() {}",
                  DiagnosticCode::Catalog,

@@ -209,7 +209,7 @@ const TestSuite suite([] static noexcept {
                 Malformation malformation;
             };
 
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {
                     .name = "slice-constant-non-slice",
                     .malformation = Malformation::NonSliceType
@@ -285,7 +285,7 @@ const TestSuite suite([] static noexcept {
 
     "SemIR constants invariant: slice children already belong to the same store"_test =
         [] static noexcept {
-            const auto scenarios = std::array {false, true};
+            constexpr auto scenarios = std::array {false, true};
             each(
                 scenarios,
                 [](bool foreign) static noexcept -> std::string_view {

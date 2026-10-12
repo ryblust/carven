@@ -37,7 +37,7 @@ the public compilation boundary instead of reproducing semantic helper decisions
 | --- | --- | --- |
 | `internal` | Focused compiler boundaries | Algorithmic boundaries, diagnostics, and invariants not adequately established by program-level tests |
 | `language` | Compiled and executed Carven programs | Values, access, ownership, control, failure, modules, closures, and testing behavior |
-| `crafts` | Public source-package APIs and runtime headers | Library behavior and runtime header self-containment |
+| `crafts` | Public source-package APIs | Library behavior through C++20 consumer builds |
 | `interop` | C++ providers and consumers | Boundary signatures, native calls, and source fragments |
 | `examples` | User-facing programs | Documented output from actual example executables |
 | `cli` | Compiler processes and interpreted execution | Arguments, reports, exit status, source selection, and emitted files |
@@ -50,9 +50,10 @@ input class, execution path, and observation. Prefer one behavioral case at
 the owning boundary over assertions on intermediate node kinds, temporary storage,
 helper names, or enumeration-to-enumeration mappings.
 
-Internal C++ tests use the compiler configuration. Generated-source and consumer
-tests use the C++20 baseline, with additional standard modes for native capability
-branches. Shared semantic cases use shared sources across these modes.
+Internal C++ tests use the shared harness and compiler configuration. Crafts,
+generated-source, and consumer tests use the C++20 baseline, with additional
+standard modes for native capability branches. Shared semantic cases use shared
+sources across these modes.
 Compiler processes for self-contained language, diagnostic, reporting, and
 artifact fixtures use `--explicit-inputs` and name their complete source set.
 This keeps their analysis cost proportional to the fixture. Source-discovery,
@@ -160,12 +161,12 @@ avoid repeating context already supplied by their directory or module, such as
 or shared namespace needs them to distinguish responsibilities.
 
 Extend existing targets when entry definitions, compiler settings, linkage, and
-execution requirements match. Source files are not target boundaries: ordinary
-async scenarios share a driver, while entry failures and cancellation retain
-independent processes. Use ordinary Xmake targets and assertions for
-execution and output checks. Pure C++ consumers include runtime headers directly
-and do not attach the Carven source-generation rule. Custom harnesses supply additional process,
-diagnostic, or artifact observations.
+execution requirements match. Run ordinary async scenarios through a shared
+driver. Keep distinct entry contracts, escaped failures, and cancellation in
+separate processes. Use ordinary Xmake targets and assertions for execution and
+output checks. Pure C++ consumers include runtime headers directly and do not
+attach the Carven source-generation rule. Custom harnesses supply additional
+process, diagnostic, or artifact observations.
 
 Cases initialize their own observable state. Temporary directories and captured
 streams use fresh paths for each invocation, including concurrent runs. Fixtures
@@ -191,9 +192,9 @@ the expected diagnostic, subject, and source attribution. Accepted counterparts
 use the normal interop build. Rejections compile on each run and retain artifacts
 on failure.
 
-Runtime header self-containment checks live in `tests/crafts/carven/runtime/`. They use
-one translation unit per component entry and instantiate its interface. Behavioral observations belong in
-runtime or generated-program tests.
+Exercise runtime behavior through generated C++20 consumers in Crafts, language,
+and interop tests. Place direct C++ observations of native signatures, inputs,
+and storage validity in interop.
 
 Terminating operations run in isolated processes with a specific expected outcome.
 Validate setup before entering a death-test action; the action contains only the
@@ -250,7 +251,7 @@ define their coverage; each executable registers and runs its complete domain.
 | `carven-test-compiler` | `compiler` |
 | `carven-test-semir` | `semantic/semir`, `semantic/visibility` |
 | `carven-test-backend` | `backend`, `artifacts` |
-| `carven-test-execution` | `semantic/evaluation`, `semantic/format`, `interpreter`, `runtime` |
+| `carven-test-execution` | `semantic/evaluation`, `semantic/format`, `interpreter` |
 | `carven-test-foundation` | `frontend`, `source`, `driver`, `diagnostics`, `support`, harness assertions |
 
 Each domain owns its cases and links a separate executable. The targets share

@@ -207,7 +207,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant arrays: unused functions do not require executable element types"_test =
         [] static noexcept {
-            const auto sources = std::to_array<std::string_view>({
+            constexpr auto sources = std::to_array<std::string_view>({
                 "fn invalid(value: [ptr<i32>; 1]) -> [ptr<i32>; 1] => value;",
                 "fn invalid(value: [[i32]; 1]) -> [[i32]; 1] => value;",
             });

@@ -860,7 +860,7 @@ auto OwnershipBodyAnalyzer::call_body(
     }
     normalize_storage_loans(external_readers);
     const auto input_objects = restored_sources.size();
-    const auto restore_place = [](OwnershipPlace place, OwnershipPlace source) noexcept {
+    constexpr auto restore_place = [](OwnershipPlace place, OwnershipPlace source) noexcept {
         source.path.append_range(place.path);
         return source;
     };

@@ -222,7 +222,7 @@ auto BodyContractVerifier::compatible_pattern_type(TypeID left, TypeID right) co
             const auto* other = std::get_if<ArrayTypeValue>(&b);
             return other && array->extent == other->extent && self(array->element, other->element);
         }
-        const auto callable = [](const CanonicalTypeValue& type) static noexcept {
+        constexpr auto callable = [](const CanonicalTypeValue& type) static noexcept {
             return std::holds_alternative<FunctionTypeValue>(type)
                 || std::holds_alternative<ClosureTypeValue>(type)
                 || std::holds_alternative<CallableViewTypeValue>(type);

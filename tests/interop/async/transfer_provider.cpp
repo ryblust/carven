@@ -8,6 +8,7 @@
 #include <limits>
 
 namespace {
+
 namespace async = carven::runtime::execution;
 using async_transfer::Context;
 using IoError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
@@ -56,6 +57,7 @@ auto complete(async_interop::PipeQueue::Completion result, const Context& contex
     context.counts.push_back(success->value);
     return Result::success(static_cast<std::int32_t>(success->value));
 }
+
 } // namespace
 
 async_transfer::Context::Context(

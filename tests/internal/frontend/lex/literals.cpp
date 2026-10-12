@@ -55,7 +55,7 @@ const TestSuite suite([] static noexcept {
 
     "Lexer: tuple positions keep chained dots without changing ordinary floating literals"_test =
         [] static noexcept {
-            const auto expected = std::to_array<TokenCase>({
+            constexpr auto expected = std::to_array<TokenCase>({
                 {.spelling = "pair", .kind = TokenKind::Identifier},
                 {.spelling = ".", .kind = TokenKind::Dot},
                 {.spelling = "0", .kind = TokenKind::NumberLiteral},
@@ -162,7 +162,7 @@ auto raw = R"tag({ // not Carven })tag";
             "---\n"
             "after();\n"
         );
-        const auto source = SourceView {
+        constexpr auto source = SourceView {
             .source_id = SourceID::from_index(0),
             .text = early_close,
             .origin = "early-close.cv",
@@ -184,7 +184,7 @@ auto raw = R"tag({ // not Carven })tag";
     "Lexer: C++ header names retain their dedicated spelling"_test = [] static noexcept {
         static constexpr auto text =
             std::string_view("import <vendor/api.hpp>; import \"native/provider.hpp\";");
-        const auto source = SourceView {
+        constexpr auto source = SourceView {
             .source_id = SourceID::from_index(0),
             .text = text,
             .origin = "header-token-test.cv",
@@ -310,7 +310,7 @@ auto raw = R"tag({ // not Carven })tag";
         };
 
     "Lexer: quoted tokens carry decoded values"_test = [] static noexcept {
-        const auto string_source = SourceView {
+        constexpr auto string_source = SourceView {
             .source_id = SourceID::from_index(0),
             .text = "\"a\\n\\u{4e09}\"",
             .origin = "tokenize-test.cv",
@@ -325,7 +325,7 @@ auto raw = R"tag({ // not Carven })tag";
         const auto& string_value = std::get<StringLiteralValue>(string.value.literal_value(0uz));
         expect_equal(string_value.bytes, std::string_view("a\n三"));
 
-        const auto character_source = SourceView {
+        constexpr auto character_source = SourceView {
             .source_id = SourceID::from_index(0),
             .text = "'\\u{1f600}'",
             .origin = "tokenize-test.cv",
@@ -346,7 +346,7 @@ auto raw = R"tag({ // not Carven })tag";
 
     "Lexer: stored literal value associations follow token positions"_test = [] static noexcept {
         static constexpr auto text = std::string_view("let value = 42; false \"text\" true 'x'");
-        const auto source = SourceView {
+        constexpr auto source = SourceView {
             .source_id = SourceID::from_index(0),
             .text = text,
             .origin = "tokenize-test.cv",
@@ -384,12 +384,12 @@ auto raw = R"tag({ // not Carven })tag";
     };
 
     "Lexer: C strings share decoding and reject NUL at its source"_test = [] static noexcept {
-        const auto valid =
+        constexpr auto valid =
             std::to_array<std::string_view>({R"(c"")", R"(c"hello\n")", R"(c"你好")"});
         each(valid, std::identity {}, [](const auto& text) static noexcept {
             check_token(text, TokenKind::CStringLiteral);
         });
-        const auto zeros = std::to_array<std::string_view>({R"("a\0b")", R"("a\u{0}b")"});
+        constexpr auto zeros = std::to_array<std::string_view>({R"("a\0b")", R"("a\u{0}b")"});
         each(zeros, std::identity {}, [](std::string_view text) static noexcept {
             const auto result = scan_string_literal(text, StringLiteralKind::CString);
             if (!expect(!(result.has_value()))) {
@@ -399,11 +399,11 @@ auto raw = R"tag({ // not Carven })tag";
             expect(((result.error().error_length) == (text.size() - 4uz)))
                 .note("result.error().error_length == text.size() - 4uz");
         });
-        const auto invalid = std::to_array<std::string_view>({R"(c"\q")", R"(c"unterminated)"});
+        constexpr auto invalid = std::to_array<std::string_view>({R"(c"\q")", R"(c"unterminated)"});
         each(invalid, std::identity {}, [](const auto& text) static noexcept {
             check_lexical_error(text);
         });
-        const auto separated = std::array {
+        constexpr auto separated = std::array {
             TokenCase {"c", TokenKind::Identifier},
             TokenCase {R"("x")", TokenKind::StringLiteral}
         };
@@ -416,7 +416,7 @@ auto raw = R"tag({ // not Carven })tag";
             std::string_view expected;
         };
 
-        const auto cases = std::to_array<Case>({
+        constexpr auto cases = std::to_array<Case>({
             {R"CV(r"C:\tools\bin\")CV", "C:\\tools\\bin\\"},
             {R"CV(r#"{"name": "我", "value": "\n"}"#)CV", R"({"name": "我", "value": "\n"})"},
             {R"CV(r##"a"#b"##)CV", "a\"#b"},
@@ -432,7 +432,7 @@ auto raw = R"tag({ // not Carven })tag";
             expect(result->value.bytes == item.expected).note("item.source = ", item.source);
             check_token(item.source, TokenKind::StringLiteral);
         });
-        const auto separated = std::array {
+        constexpr auto separated = std::array {
             TokenCase {"r", TokenKind::Identifier},
             TokenCase {R"("x")", TokenKind::StringLiteral},
         };
@@ -443,7 +443,7 @@ auto raw = R"tag({ // not Carven })tag";
         }
         expect(boundary->consumed == 9uz);
         expect(boundary->value.bytes == "text");
-        const auto malformed = std::to_array<std::string_view>({
+        constexpr auto malformed = std::to_array<std::string_view>({
             "r#",
             "r#\"x\"",
             "r##\"x\"#",
@@ -463,7 +463,7 @@ auto raw = R"tag({ // not Carven })tag";
                 std::string_view expected;
             };
 
-            const auto cases = std::to_array<Case>({
+            constexpr auto cases = std::to_array<Case>({
                 {"\"\"\"\n    A\n      B\n\"\"\"", "A\n  B"},
                 {"\"\"\"\n    A\n      B\n          \"\"\"", "A\n  B"},
                 {"\"\"\"\n    A  \n      \n  \n    B\n\"\"\"", "A  \n  \n\nB"},
@@ -493,7 +493,7 @@ auto raw = R"tag({ // not Carven })tag";
                 expect(result->value.bytes == item.expected).note("item.source = ", item.source);
                 check_token(item.source, TokenKind::StringLiteral);
             });
-            const auto invalid = std::to_array<std::string_view>({
+            constexpr auto invalid = std::to_array<std::string_view>({
                 "\"\"\"inline\"\"\"",
                 "\"\"\" \n\"\"\"",
                 "\"\"\"\nA\"\"\"",

@@ -187,7 +187,7 @@ const test "Constant scheduler: source execution contracts" {
     check(!outside_request);
 }
 
-async fn main() {
+export async fn run_scheduling() {
     println(await ordering() == ordered);
     println(await cancellation() == cancelled);
     println(await child_failure() == caught);

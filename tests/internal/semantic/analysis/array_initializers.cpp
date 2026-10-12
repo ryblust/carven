@@ -62,7 +62,7 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode code;
             };
 
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {.source = "const values = [];", .code = DiagnosticCode::TypeEmptyArray},
                 Case {
                     .source = "const values: [i32; 2] = [1];",

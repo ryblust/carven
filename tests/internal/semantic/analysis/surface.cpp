@@ -11,7 +11,7 @@ namespace {
 const TestSuite suite([] static noexcept {
     "Declaration surfaces: function result visibility follows the resolved type"_test =
         [] static noexcept {
-            const auto sources = std::array<std::string_view, 4uz> {
+            constexpr auto sources = std::array<std::string_view, 4uz> {
                 "private struct Hidden {} export fn leak() -> Hidden { return Hidden {}; }",
                 "private struct Hidden {} export fn leak() -> Hidden => Hidden {};",
                 "private struct Hidden {} export fn leak() => Hidden {};",

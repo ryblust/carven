@@ -134,7 +134,7 @@ const TestSuite suite([] static noexcept {
     "SemIR publication invariant: struct constants require exact nominal field types and arity"_test =
         [] static noexcept {
             enum class Malformation { NonStruct, Missing, Swapped, Extra };
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 std::pair {"struct-non-struct-type", Malformation::NonStruct},
                 std::pair {"struct-missing-field", Malformation::Missing},
                 std::pair {"struct-swapped-fields", Malformation::Swapped},

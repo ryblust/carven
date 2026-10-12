@@ -1008,7 +1008,7 @@ const TestSuite suite([] static noexcept {
                 bool caller_view;
                 bool accepted;
             };
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {
                     .name = "known siblings",
                     .target = "0",
@@ -1098,7 +1098,7 @@ const TestSuite suite([] static noexcept {
                 bool release;
                 bool accepted;
             };
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {
                     .name = "unknown ancestor conflicts with a live Write holder",
                     .target = "index",
@@ -1154,7 +1154,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view recursive_arguments;
                 bool accepted;
             };
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {
                     .name = "known siblings with an unused unknown ancestor",
                     .second = "1",
@@ -1217,7 +1217,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view write;
                 bool accepted;
             };
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {
                     .name = "known sibling",
                     .returned = "0",
@@ -1301,8 +1301,8 @@ const TestSuite suite([] static noexcept {
     "Vector ownership: recursive child and whole failures preserve borrowed regions"_test =
         [] static noexcept {
             const auto prelude = recursive_child_whole_borrows(true);
-            const auto caller = [](std::string_view success,
-                                   std::string_view failure) static noexcept {
+            constexpr auto caller = [](std::string_view success,
+                                       std::string_view failure) static noexcept {
                 return std::format(
                     R"(
                     fn probe(&root: Node, depth: usize, choose: bool, fail: bool) -> usize {{
@@ -1322,7 +1322,7 @@ const TestSuite suite([] static noexcept {
                     failure
                 );
             };
-            const auto siblings = std::string_view(
+            constexpr auto siblings = std::string_view(
                 "root.left[0].other.clear(); root.left[1].text.clear(); root.right[0].text.clear();"
             );
             static_cast<void>(analyze_test_program(prelude + caller(siblings, siblings)));
@@ -1386,8 +1386,8 @@ const TestSuite suite([] static noexcept {
                     return rotate(whole, node.right[0], depth - 1, choose, fail)?;
                 }
             )");
-            const auto caller = [](std::string_view success,
-                                   std::string_view failure) static noexcept {
+            constexpr auto caller = [](std::string_view success,
+                                       std::string_view failure) static noexcept {
                 return std::format(
                     R"(
                     fn probe(&root: Node, depth: usize, choose: bool, fail: bool) -> usize {{
@@ -1404,7 +1404,7 @@ const TestSuite suite([] static noexcept {
                     failure
                 );
             };
-            const auto independent = std::string_view(
+            constexpr auto independent = std::string_view(
                 "root.left[0].other.clear(); root.left[1].text.clear(); root.right[1].text.clear();"
             );
             static_cast<void>(analyze_test_program(source + caller(independent, independent)));
@@ -1433,7 +1433,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Vector views: loans protect owners and cannot escape local backing"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             R"(fn bad() { var v: Vector<i32> = [1, 2]; let view: [i32] = v; v.reserve(2); })",
             R"(fn bad() { var v: Vector<i32> = [1, 2]; let view = v.slice(0, 1); v[1] = 3; })",
             R"(fn bad() { let v: Vector<i32> = [1, 2]; let view: [i32] = v; let moved = &&v; })",
@@ -1544,7 +1544,7 @@ const TestSuite suite([] static noexcept {
             static_cast<void>(analyze_test_program(prelude + R"(
                 const count = build(8).children.length();
             )"));
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 R"(const count = build(40).children.length();)",
                 R"(const fn grow() -> usize {
                     var root = Node {};

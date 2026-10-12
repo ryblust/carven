@@ -8,7 +8,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Lexer: interpolation prefix and scoped delimiters"_test = [] static noexcept {
-        const auto expected = std::to_array<TokenCase>({
+        constexpr auto expected = std::to_array<TokenCase>({
             {"f", TokenKind::Identifier},
             {"\"x\"", TokenKind::StringLiteral},
             {"f\"", TokenKind::InterpolationStart},
@@ -30,7 +30,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Lexer: interpolation escapes stay text and retain source spans"_test = [] static noexcept {
-        const auto source = SourceView {
+        constexpr auto source = SourceView {
             .source_id = SourceID::from_index(0),
             .text = R"(f"\u{7b}\0\u{7d}{{}}")",
             .origin = "interpolation.cv"
@@ -48,7 +48,7 @@ const TestSuite suite([] static noexcept {
         }
         expect(text->bytes == std::string_view("{\0}{}", 5));
         expect(slice(source.text, result.value.tokens()[1].span) == R"(\u{7b}\0\u{7d}{{}})");
-        const auto invalid = std::array {
+        constexpr auto invalid = std::array {
             R"(f"}")",
             R"(f"{(x]}")",
             R"(f"abc)",
@@ -88,7 +88,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Lexer: multiline interpolation excludes hole code from text layout"_test = [] static noexcept {
-        const auto source = SourceView {
+        constexpr auto source = SourceView {
             .source_id = SourceID::from_index(0),
             .text = "f\"\"\"\n    Result: {\n0\n    :04}\n      {{done}}\\n\n\"\"\";",
             .origin = "multiline.cv",
@@ -116,7 +116,7 @@ const TestSuite suite([] static noexcept {
             std::string_view expected;
         };
 
-        const auto cases = std::to_array<Case>({
+        constexpr auto cases = std::to_array<Case>({
             {"f\"\"\"\n\"\"\"", ""},
             {"f\"\"\"\n  \n \t\n\"\"\"", "\n"},
             {"f\"\"\"\r\n  A\r\n    B\r\n\"\"\"", "A\n  B"},
@@ -148,7 +148,7 @@ const TestSuite suite([] static noexcept {
             }
             expect(text == item.expected).note("item.source = ", item.source);
         });
-        const auto invalid = std::to_array<std::string_view>({
+        constexpr auto invalid = std::to_array<std::string_view>({
             "f\"\"\"inline\"\"\"",
             "f\"\"\"\nA\"\"\"",
             "f\"\"\"\n{0}\"\"\"",

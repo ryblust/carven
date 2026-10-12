@@ -13,7 +13,7 @@ import std;
 
 namespace {
 
-const auto empty_relationship_rows = OwnershipRelationshipRows {};
+constexpr auto empty_relationship_rows = OwnershipRelationshipRows {};
 
 auto empty_rows(const OwnershipRelationshipRows& rows) noexcept -> bool {
     return rows.callable_loans.empty()

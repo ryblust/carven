@@ -68,7 +68,7 @@ constexpr auto utf8_scalar_is_valid(std::string_view text) noexcept -> bool {
 // bounds exclude overlong encodings, surrogates, and values above U+10FFFF.
 inline auto utf8_blocks_are_valid(std::string_view text) noexcept -> bool {
     using Bytes = simd::U8x32;
-    const auto byte = [](std::uint8_t value) noexcept {
+    constexpr auto byte = [](std::uint8_t value) noexcept {
         return Bytes::splat(value);
     };
     auto previous = byte(0);

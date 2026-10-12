@@ -205,7 +205,7 @@ auto LoweringStmtBuilder::result_region(
     LoweringRegionDelivery delivery
 ) && noexcept -> TargetExpr {
     require_value_region(*this, yield);
-    const auto returned = [](std::vector<TargetStmt>& body) static noexcept -> TargetExpr* {
+    constexpr auto returned = [](std::vector<TargetStmt>& body) static noexcept -> TargetExpr* {
         auto* value =
             body.size() == 1uz ? std::get_if<TargetReturnStmt>(&body.front().value) : nullptr;
         return value != nullptr && value->expression ? &*value->expression : nullptr;

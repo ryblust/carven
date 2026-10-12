@@ -410,7 +410,7 @@ auto render_diagnostic(
         append_separator(output, gutter_width);
         for (auto index = 0uz; index < frames.size(); ++index) {
             // Labels on one source line share its text and stack their markers.
-            const auto single_line = [](const LabelFrame& frame) static noexcept -> bool {
+            constexpr auto single_line = [](const LabelFrame& frame) static noexcept -> bool {
                 return frame.first_line == frame.last_line;
             };
             const auto shares_line = index > 0

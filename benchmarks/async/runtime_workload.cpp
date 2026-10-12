@@ -6,6 +6,7 @@
 #include <utility>
 
 namespace async_benchmark {
+
 namespace async = carven::runtime::execution;
 
 #if CARVEN_ASYNC_BENCH_STORED

@@ -731,7 +731,7 @@ const TestSuite suite([] static noexcept {
             expect(
                 std::holds_alternative<ASTCppNamespaceSelection>(imports[2].using_clause->selection)
             );
-            const auto invalid = std::array {
+            constexpr auto invalid = std::array {
                 "import <vector> using *;",
                 "import <vector> using {};",
                 "import <vector> using std::;",
@@ -789,7 +789,7 @@ const TestSuite suite([] static noexcept {
 
     "Parser declaration: module components accept keyword spellings in every reference form"_test =
         [] static noexcept {
-            const auto cases = std::to_array<std::string_view>({
+            constexpr auto cases = std::to_array<std::string_view>({
                 "import using using *;",
                 "import .import.export using value;",
                 "import match::using.true using {value};",
@@ -821,7 +821,7 @@ const TestSuite suite([] static noexcept {
                 get<ASTExpressionBody>(get<ASTFunctionBody>(function(tree, 1).implementation).body);
             const auto& lambda = get<ASTLambdaExpr>(ast.expression(outer.expression).value);
             expect(is<ASTExpressionBody>(lambda.body));
-            const auto invalid = std::to_array<std::string_view>({
+            constexpr auto invalid = std::to_array<std::string_view>({
                 "fn missing() => ;",
                 "fn missing() => 1",
                 "import(cpp) fn invalid() => 1;",

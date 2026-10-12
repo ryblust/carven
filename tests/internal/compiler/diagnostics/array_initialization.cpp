@@ -10,7 +10,7 @@ namespace {
 const TestSuite suite([] static noexcept {
     "Array initialization: extent and element contracts reject invalid source"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "separate lambda expressions retain different nominal types",
                  .source = "fn bad() { let values = [[]() -> i32 => 1, []() -> i32 => 2]; }",
                  .code = DiagnosticCode::TypeMismatch,
@@ -74,7 +74,7 @@ const TestSuite suite([] static noexcept {
 
     "Const arrays: freezing preserves ownership and ordinary backing lifetimes"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "whole-array Take leaves the source unavailable",
                  .source = "const fn bad() -> i32 { var values = [1, 2]; "
                            "let moved = &&values; return values[0]; } const result = bad();",
@@ -97,7 +97,7 @@ const TestSuite suite([] static noexcept {
 
     "Const indexing: unresolved names and wrong index types retain diagnostics"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "an unresolved index is diagnosed before constant call execution",
                  .source = "const fn data() -> [i32; 1] => [1]; const result = data()[unknown];",
                  .code = DiagnosticCode::NameUnresolved,

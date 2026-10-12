@@ -26,7 +26,7 @@ const TestSuite suite([] static noexcept {
             const auto local = TargetTestingFixture::type_id(owner, 0);
             const auto foreign =
                 TargetTestingFixture::type_id(TargetTestingFixture::unit_identity(), 0);
-            const auto types = std::array {TargetType {
+            constexpr auto types = std::array {TargetType {
                 .value =
                     TargetIntrinsicType {.symbol = TargetSymbol::Bool, .type_argument_ids = {}},
                 .const_qualified = false,
@@ -64,7 +64,7 @@ const TestSuite suite([] static noexcept {
 
     "Target static declarations: intrinsic names provide their own headers"_test =
         [] static noexcept {
-            const auto symbols = std::array {
+            constexpr auto symbols = std::array {
                 std::tuple(
                     TargetSymbol::StdNullopt,
                     "optional",
@@ -78,7 +78,7 @@ const TestSuite suite([] static noexcept {
             };
             for (const auto& [symbol, header, group] : symbols) {
                 const auto owner = TargetTestingFixture::unit_identity();
-                const auto types = std::array {TargetType {
+                constexpr auto types = std::array {TargetType {
                     .value =
                         TargetIntrinsicType {.symbol = TargetSymbol::Auto, .type_argument_ids = {}},
                     .const_qualified = false,
@@ -110,7 +110,7 @@ const TestSuite suite([] static noexcept {
 
     "Target type aliases: sealing rejects foreign and out-of-range references"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 std::pair("alias-type-foreign", true),
                 std::pair("alias-type-out-of-range", false),
             };

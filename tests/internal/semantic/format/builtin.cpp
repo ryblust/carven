@@ -11,7 +11,7 @@ namespace {
 const TestSuite suite([] static noexcept {
     "Builtin formatting: integer bytes agree with native standard formatting"_test =
         [] static noexcept {
-            const auto numbers = std::to_array<std::int64_t>({
+            constexpr auto numbers = std::to_array<std::int64_t>({
                 0,
                 1,
                 -1,
@@ -20,7 +20,7 @@ const TestSuite suite([] static noexcept {
                 std::numeric_limits<std::int64_t>::min(),
                 std::numeric_limits<std::int64_t>::max(),
             });
-            const auto specifications = std::to_array<std::string_view>({
+            constexpr auto specifications = std::to_array<std::string_view>({
                 "",
                 "d",
                 "0",
@@ -71,8 +71,8 @@ const TestSuite suite([] static noexcept {
                 std::string_view text;
             };
 
-            const auto embedded = std::string_view("a\0我", 5uz);
-            const auto scenarios = std::array {
+            constexpr auto embedded = std::string_view("a\0我", 5uz);
+            constexpr auto scenarios = std::array {
                 Scenario {
                     .name = "false boolean",
                     .value = BooleanConstant {.value = false},
@@ -116,7 +116,7 @@ const TestSuite suite([] static noexcept {
 
     "Builtin formatting: floating policies match native output and bound work"_test =
         [] static noexcept {
-            const auto check = []<typename Float>(Float value) static noexcept {
+            constexpr auto check = []<typename Float>(Float value) static noexcept {
                 const auto constant = [&]() noexcept -> BuiltinFormatValue {
                     if constexpr (std::same_as<Float, float>) {
                         return F32Constant {.value = value};
@@ -186,7 +186,7 @@ const TestSuite suite([] static noexcept {
                   std::numeric_limits<float>::infinity()}) {
                 check(value);
             }
-            const auto invalid_cases = std::to_array<std::string_view>(
+            constexpr auto invalid_cases = std::to_array<std::string_view>(
                 {"x", "00", ".", "..2f", "2.3.4f", "{}", ".{}f", "{>5", "L", "+-f"}
             );
             each(invalid_cases, std::identity {}, [](std::string_view invalid) static noexcept {
@@ -197,7 +197,7 @@ const TestSuite suite([] static noexcept {
                 }
                 expect(result.error() == BuiltinFormatFailureKind::Unsupported);
             });
-            const auto oversized_cases = std::to_array<std::string_view>(
+            constexpr auto oversized_cases = std::to_array<std::string_view>(
                 {"999999999999999999999999f", ".99999999999999999999999f", ".2048f"}
             );
             each(oversized_cases, std::identity {}, [](std::string_view oversized) static noexcept {
@@ -223,7 +223,7 @@ const TestSuite suite([] static noexcept {
                     }}}
                 }}}
             };
-            const auto widths = std::array {0, 1, 4};
+            constexpr auto widths = std::array {0, 1, 4};
             each(
                 widths,
                 [](int width) static noexcept { return std::format("width {}", width); },

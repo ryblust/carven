@@ -195,7 +195,7 @@ const TestSuite suite([] static noexcept {
                 std::optional<std::uint64_t> bits;
             };
 
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 Case {
                     .spelling = "1.0000000596046447",
                     .suffix = NumericSuffix::F32,
@@ -269,7 +269,7 @@ const TestSuite suite([] static noexcept {
                     .bits = std::nullopt
                 },
             };
-            const auto signs = std::array {LiteralSign::Positive, LiteralSign::Negative};
+            constexpr auto signs = std::array {LiteralSign::Positive, LiteralSign::Negative};
             each(cases, &Case::spelling, [&](const auto& item) noexcept {
                 each(
                     signs,

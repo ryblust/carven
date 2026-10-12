@@ -13,7 +13,7 @@ auto parse_floating_format_specification(std::string_view specification) noexcep
         .presentation = '\0',
         .unadorned = true
     };
-    const auto alignment = [](char byte) static noexcept {
+    constexpr auto alignment = [](char byte) static noexcept {
         return byte == '<' || byte == '>' || byte == '^';
     };
     if (!specification.empty()) {

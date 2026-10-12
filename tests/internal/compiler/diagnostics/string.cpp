@@ -9,7 +9,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Compiler diagnostics: String access and operation contracts"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "named view blocks mutation",
              .source = "fn invalid() { var s: String = \"abc\"; let v: str = s; s.push('!'); }",
              .code = DiagnosticCode::AccessBorrowConflict,
@@ -117,7 +117,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Compiler diagnostics: String escapes failures and foreign boundaries"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "local return",
              .source = "fn bad() -> str { let s = String {}; return s; }",
              .code = DiagnosticCode::AccessBorrowConflict,
@@ -206,7 +206,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: callable adaptation retains captured text loans"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "temporary closure passed as a callable view",
                  .source = "fn make(v: str) => [v]() -> usize { return v.byte_length(); }; "
                            "fn invoke(cb: fn() -> usize, &s: String) { s.clear(); let _ = cb(); } "
@@ -225,7 +225,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: String relationships survive joins and projected copies"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "branch join retains either backing",
                  .source =
                      "fn invalid(choose: bool) { var first = String {}; var second = String {}; "
@@ -262,7 +262,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: multiline errors retain original source locations"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "escape after indentation",
                  .source = "fn invalid() { let s = \"\"\"\n    \\q\n\"\"\"; }",
                  .code = DiagnosticCode::Lexical,

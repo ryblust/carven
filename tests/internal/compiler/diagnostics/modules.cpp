@@ -289,7 +289,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: implicit entry locals remain local to their body"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 CompilerErrorExpectation {
                     .name = "module function cannot capture entry local",
                     .source = "let local = 42; fn read() => local;",

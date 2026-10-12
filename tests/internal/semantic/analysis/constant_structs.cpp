@@ -48,7 +48,7 @@ const TestSuite suite([] static noexcept {
                         program.types().type(type->element).value
                     )
                 );
-                const auto keys = std::array {3ll, 9ll};
+                constexpr auto keys = std::array {3ll, 9ll};
                 for (auto index = 0uz; index < slice->elements.size(); ++index) {
                     const auto& entry = program.constants().constant(slice->elements[index]);
                     expect(entry.type == type->element);
@@ -80,7 +80,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant structs: unused functions do not require executable field types"_test =
         [] static noexcept {
-            const auto types = std::to_array<std::string_view>({"ptr<i32>", "[i32]"});
+            constexpr auto types = std::to_array<std::string_view>({"ptr<i32>", "[i32]"});
             for (const auto type : types) {
                 const auto program = analyze_test_program(
                     std::format(
@@ -100,7 +100,7 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode code;
             };
 
-            const auto cases = std::to_array<Scenario>({
+            constexpr auto cases = std::to_array<Scenario>({
                 {"enum Choice { Item } struct Entry { value: Choice } const value = Entry {};",
                  DiagnosticCode::TypeDefaultInitialization},
                 {"struct Entry { value: i32 } const value = Entry { extra: 1 };",
@@ -149,7 +149,7 @@ const TestSuite suite([] static noexcept {
             for (auto level = 0uz; level < 61uz; ++level) {
                 nested = std::format("[{}; 1]", nested);
             }
-            const auto source = [](std::string_view field) static noexcept {
+            constexpr auto source = [](std::string_view field) static noexcept {
                 return std::format(
                     "struct Base {{ values: [i32; 2] }} struct Root {{ known: Base, deep: {} }} "
                     "fn identity(value: Root) -> Root => value;",

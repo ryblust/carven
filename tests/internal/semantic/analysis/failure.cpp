@@ -259,7 +259,7 @@ const TestSuite suite([] static noexcept {
 
     "Semantic failures: every failure position requires the completed nominal Copy capability"_test =
         [] static noexcept {
-            const auto sources = std::array<std::string_view, 6> {
+            constexpr auto sources = std::array<std::string_view, 6> {
                 R"(import std::async using Operation;
 
                     fn declared() throw Failure {}
@@ -316,7 +316,7 @@ const TestSuite suite([] static noexcept {
             bool source_first;
             bool seeded;
         };
-        const auto scenarios = std::array {
+        constexpr auto scenarios = std::array {
             Scenario {.name = "source first", .source_first = true, .seeded = true},
             Scenario {.name = "gate first", .source_first = false, .seeded = true},
             Scenario {.name = "no surviving seeds", .source_first = false, .seeded = false},

@@ -13,7 +13,7 @@ const TestSuite suite([] static noexcept {
             std::string_view text;
             std::string_view expected;
         };
-        const auto cases = std::to_array<Case>({
+        constexpr auto cases = std::to_array<Case>({
             {.name = "empty", .text = "", .expected = R"("")"},
             {.name = "UTF-8", .text = "你好 café", .expected = R"("你好 café")"},
             {.name = "quotes", .text = "\"\\", .expected = R"("\"\\")"},

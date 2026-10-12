@@ -202,7 +202,7 @@ const TestSuite suite([] static noexcept {
 
     "Lexer: discarded text does not disturb source spans"_test = [] static noexcept {
         static constexpr auto text = std::string_view(" \t// first\r\nlet\nvalue");
-        const auto source = SourceView {
+        constexpr auto source = SourceView {
             .source_id = SourceID::from_index(0),
             .text = text,
             .origin = "tokenize-test.cv",
@@ -223,7 +223,7 @@ const TestSuite suite([] static noexcept {
 
     "Lexer: multiple lexical errors do not require an end sentinel"_test = [] static noexcept {
         static constexpr auto text = std::string_view("@ let value = 1; $");
-        const auto source = SourceView {
+        constexpr auto source = SourceView {
             .source_id = SourceID::from_index(0),
             .text = text,
             .origin = "tokenize-test.cv",

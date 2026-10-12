@@ -11,9 +11,7 @@
 
 #include <arm_neon.h>
 
-namespace carven::runtime::simd {
-inline namespace neon {
-namespace backend {
+namespace carven::runtime::simd::inline neon::backend {
 
 // Wide logical vectors use two 128-bit registers.
 template<std::size_t Bytes>
@@ -257,12 +255,13 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL shift(Value<Bytes> a) noexcept -> Value
 
 template<std::size_t Bytes, bool Float>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL bits(Value<Bytes> a) noexcept -> std::uint32_t {
-    const auto chunk_bits = [](uint8x16_t chunk) noexcept -> std::uint32_t {
+    constexpr auto chunk_bits = [](uint8x16_t chunk) noexcept -> std::uint32_t {
         if constexpr (Float) {
-            const auto weights = std::array<std::uint32_t, 4> {1, 2, 4, 8};
+            static constexpr auto weights = std::array<std::uint32_t, 4> {1, 2, 4, 8};
             return vaddvq_u32(vandq_u32(vreinterpretq_u32_u8(chunk), vld1q_u32(weights.data())));
         } else {
-            const auto weights = std::array<std::uint8_t, 8> {1, 2, 4, 8, 16, 32, 64, 128};
+            static constexpr auto weights =
+                std::array<std::uint8_t, 8> {1, 2, 4, 8, 16, 32, 64, 128};
             const auto weight = vld1_u8(weights.data());
             const auto low = vaddv_u8(vand_u8(vget_low_u8(chunk), weight));
             const auto high = vaddv_u8(vand_u8(vget_high_u8(chunk), weight));
@@ -305,7 +304,7 @@ template<std::size_t Bytes, bool Float>
 CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL count(Value<Bytes> a) noexcept -> std::size_t {
     // Widen narrow sums and combine wide halves before reducing to avoid mask packing.
     if constexpr (Float) {
-        const auto lanes = [](uint8x16_t chunk) noexcept {
+        constexpr auto lanes = [](uint8x16_t chunk) noexcept {
             return vshrq_n_u32(vreinterpretq_u32_u8(chunk), 31);
         };
         if constexpr (Bytes == 16) {
@@ -314,7 +313,7 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL count(Value<Bytes> a) noexcept -> std::
             return vaddvq_u32(vaddq_u32(lanes(a.low), lanes(a.high)));
         }
     } else {
-        const auto lanes = [](uint8x16_t chunk) noexcept {
+        constexpr auto lanes = [](uint8x16_t chunk) noexcept {
             return vshrq_n_u8(chunk, 7);
         };
         if constexpr (Bytes == 16) {
@@ -352,6 +351,4 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL extract(Value<Bytes> a, Value<Bytes> b)
     }
 }
 
-} // namespace backend
-} // namespace neon
-} // namespace carven::runtime::simd
+} // namespace carven::runtime::simd::neon::backend

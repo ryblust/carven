@@ -1,8 +1,12 @@
+import .composition using run_composition;
 import .constant using run_constant;
 import .containers using run_containers;
 import .contracts using run_contracts;
+import .owners using run_owners;
+import .scheduling using run_scheduling;
 import .tail using run_tail;
 import .tuples using run_tuples;
+import .waiting using run_waiting;
 
 async fn main() {
     println("containers");
@@ -15,4 +19,12 @@ async fn main() {
     await run_constant();
     println("contracts");
     await run_contracts();
+    println("owners");
+    await run_owners();
+    println("composition");
+    await run_composition();
+    println("waiting");
+    await run_waiting();
+    println("scheduling");
+    await run_scheduling();
 }

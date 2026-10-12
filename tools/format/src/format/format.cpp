@@ -861,7 +861,7 @@ auto SyntaxFormatter::needs_separator(std::size_t index) const noexcept -> bool 
     if (index == 0 || index == tokens.size() || source.trivia_before(index).empty()) {
         return false;
     }
-    const auto interpolation = [](TokenKind kind) static noexcept {
+    constexpr auto interpolation = [](TokenKind kind) static noexcept {
         return kind >= TokenKind::InterpolationStart && kind <= TokenKind::InterpolationSpec;
     };
     if (interpolation(tokens[index - 1uz].kind) || interpolation(tokens[index].kind)) {

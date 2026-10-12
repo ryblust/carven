@@ -7,7 +7,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Assertions: optional output distinguishes absent and nested values"_test = [] static noexcept {
-        const auto printed = [](const auto& value) static noexcept {
+        constexpr auto printed = [](const auto& value) static noexcept {
             auto output = std::ostringstream();
             write_test_value(output, value);
             return std::move(output).str();

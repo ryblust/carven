@@ -741,6 +741,8 @@ auto type_contains_callable_view(const ProgramDraft& draft, ConstructionTypeRef 
     return std::holds_alternative<CallableViewTypeValue>(concrete.value);
 }
 
+namespace {
+
 template<typename EnumCapability, typename ElementCapability>
 auto supports_equality(
     const CanonicalType& canonical,
@@ -771,6 +773,8 @@ auto supports_equality(
     );
 }
 
+} // namespace
+
 auto type_supports_equality(const ProgramDraft& draft, ConstructionTypeRef type) noexcept -> bool {
     return draft.equality_support(std::array {type}).front();
 }
@@ -786,6 +790,8 @@ auto type_supports_equality(
         [&](TypeID id) noexcept { return type_supports_equality(types, declarations, id); }
     );
 }
+
+namespace {
 
 auto decide_unary_builtin(UnaryOperator op, std::optional<BuiltinType> builtin) noexcept
     -> OperatorDecision {
@@ -974,6 +980,8 @@ auto decide_builtin_cast(
     }
     return operation_error("invalid 'as' conversion", DiagnosticCode::TypeCast);
 }
+
+} // namespace
 
 auto decide_unary_operator(
     const ProgramDraft& facts,

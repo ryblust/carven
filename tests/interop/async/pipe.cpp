@@ -130,7 +130,7 @@ auto cold() noexcept -> void {
     auto pipe = Pipe();
     auto queue = PipeQueue();
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
-    const auto data = std::array {std::byte {42}};
+    constexpr auto data = std::array {std::byte {42}};
     auto buffer = std::array<std::byte, 1> {};
     check(raw_write(pipe.writer(), data) == 1, "preload cold read observation");
     {
@@ -158,7 +158,7 @@ auto cold() noexcept -> void {
 }
 
 auto transfer_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::AsyncOperation<void> {
-    const auto data = std::array {std::byte {1}, std::byte {2}, std::byte {3}};
+    constexpr auto data = std::array {std::byte {1}, std::byte {2}, std::byte {3}};
     auto buffer = std::array<std::byte, 4> {};
     auto written = co_await queue.write_some(pipe.writer(), data);
     check(bytes(written) == data.size(), "ready write returns exact byte count");
@@ -191,7 +191,7 @@ auto eof_body(PipeQueue& queue, Pipe& pipe) noexcept -> async::AsyncOperation<vo
     auto child = scope.start(read(queue, pipe.reader(), buffer, observed));
     co_await async::await_yield_once();
     check(queue.pending_count() == 1, "EOF read registers before writer closes");
-    const auto data = std::array {std::byte {4}, std::byte {5}, std::byte {6}};
+    constexpr auto data = std::array {std::byte {4}, std::byte {5}, std::byte {6}};
     check(raw_write(pipe.writer(), data) == data.size(), "write bytes before HUP");
     pipe.close_writer();
     auto first = co_await child.observe();
@@ -256,7 +256,7 @@ auto writer_task(PipeQueue& queue, int fd, Observation& reading, bool& released)
         queue.pending_count() == 1 && reading.started == 1 && reading.finished == 0,
         "reader registers EAGAIN before sibling writer starts"
     );
-    const auto data = std::array {std::byte {7}, std::byte {8}};
+    constexpr auto data = std::array {std::byte {7}, std::byte {8}};
     auto result = co_await queue.write_some(fd, data);
     check(bytes(result) == data.size(), "sibling task writes actual pipe bytes");
     released = true;
@@ -316,7 +316,7 @@ public:
         );
         waited = true;
         auto writer = std::thread([descriptor = fd]() noexcept {
-            const auto data = std::array {std::byte {9}};
+            constexpr auto data = std::array {std::byte {9}};
             check(
                 raw_write(descriptor, data) == 1,
                 "external thread writes pipe without touching driver"
@@ -375,7 +375,7 @@ auto timer_cancel() noexcept -> void {
     auto pipe = Pipe();
     auto queue = PipeQueue();
     auto observed = Observation {.started = 0, .finished = 0, .cancelled = false};
-    const auto data = std::array {std::byte {9}};
+    constexpr auto data = std::array {std::byte {9}};
     check(raw_write(pipe.writer(), data) == 1, "preload read competing with a distant timer");
     auto result = async::drive_root(timed_read(queue, pipe, true, observed), &queue);
     check(
@@ -525,7 +525,7 @@ auto committed_body(PipeQueue& queue, Pipe& pipe, bool& released, Observation& o
         queue.pending_count() == 1 && observed.finished == 0,
         "commit test starts at registered read boundary"
     );
-    const auto data = std::array {std::byte {10}};
+    constexpr auto data = std::array {std::byte {10}};
     check(raw_write(pipe.writer(), data) == 1, "make registered descriptor readable");
     queue.poll(*activation.task->driver);
     check(
@@ -605,7 +605,7 @@ auto rearm() noexcept -> void {
 }
 
 auto fill(Pipe& pipe) noexcept -> std::size_t {
-    const auto block = std::array<std::byte, 4096> {};
+    constexpr auto block = std::array<std::byte, 4096> {};
     auto filled = std::size_t(0);
     for (const auto width : {block.size(), std::size_t(1)}) {
         for (;;) {

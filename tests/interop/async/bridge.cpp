@@ -18,8 +18,10 @@
 auto run_transfer_cases() noexcept -> void;
 
 namespace {
+
 namespace async = carven::runtime::execution;
 namespace api = carven::api::tests::interop::async::bridge;
+
 using async_bridge::Context;
 using async_bridge::Observations;
 using async_bridge::TrivialContext;

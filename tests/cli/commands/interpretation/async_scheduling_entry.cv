@@ -1,0 +1,3 @@
+import .async_scheduling using run_scheduling;
+
+async fn main() => await run_scheduling();

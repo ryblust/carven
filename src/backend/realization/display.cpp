@@ -253,7 +253,7 @@ auto ModuleLowering::display_emitter_type(TypeID type) noexcept -> TargetTypeID 
     const auto helper_type = named_type(names().module_support_name(active_module(), name));
     display_types.emplace(type, helper_type);
     auto locals = make_callable_name_allocator();
-    const auto scope = TargetScopeID {.ordinal = 0};
+    constexpr auto scope = TargetScopeID {.ordinal = 0};
     const auto writer = target().add_local(locals.local_symbol("writer", 0, scope));
     const auto value = target().add_local(locals.local_symbol("value", 1, scope));
     const auto depth = target().add_local(locals.local_symbol("depth", 2, scope));

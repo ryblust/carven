@@ -60,7 +60,7 @@ const TestSuite suite([] static noexcept {
         const auto path = path_from_utf8(encoded);
 
         expect_equal(path_to_generic_utf8(path), encoded);
-        const auto expected = std::filesystem::path::preferred_separator == '\\'
+        constexpr auto expected = std::filesystem::path::preferred_separator == '\\'
             ? std::string_view("alpha/beta.cv")
             : std::string_view("alpha\\beta.cv");
         expect_equal(path_to_generic_utf8(path_from_utf8("alpha\\beta.cv")), expected);

@@ -1,0 +1,3 @@
+import .async_composition using run_composition;
+
+async fn main() => await run_composition();

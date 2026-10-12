@@ -34,7 +34,7 @@ const TestSuite suite([] static noexcept {
 
     "Address-of: indirect callable Read cannot establish a tracked borrow"_test =
         [] static noexcept {
-            const auto sources = std::array<std::string_view, 3> {
+            constexpr auto sources = std::array<std::string_view, 3> {
                 R"(
                     fn identity(value: i32) -> i32 => value;
                     fn rejected() {
@@ -86,7 +86,7 @@ const TestSuite suite([] static noexcept {
 
     "Address-of: indirect callable Write cannot establish a tracked borrow"_test =
         [] static noexcept {
-            const auto sources = std::array<std::string_view, 2> {
+            constexpr auto sources = std::array<std::string_view, 2> {
                 R"(
                     fn identity(value: i32) -> i32 => value;
                     fn rejected() {

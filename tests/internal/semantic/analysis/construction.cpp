@@ -144,7 +144,7 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode excluded;
                 std::string_view primary;
             };
-            const auto cases = std::to_array<Scenario>({
+            constexpr auto cases = std::to_array<Scenario>({
                 {
                     .name = "Body nonenum context precedes missing case lookup",
                     .source =

@@ -55,7 +55,7 @@ auto contract_consumer() noexcept -> bool {
     if (record.count != 9 || record.text.as_str() != "record") {
         return false;
     }
-    const auto values = std::array<std::int32_t, 2> {4, 8};
+    constexpr auto values = std::array<std::int32_t, 2> {4, 8};
     if (api::array(values) != values || api::view("view") != "view") {
         return false;
     }
@@ -66,7 +66,7 @@ auto contract_consumer() noexcept -> bool {
         || api::closure()(4) != 7) {
         return false;
     }
-    const auto callback = [](std::int32_t value) noexcept {
+    constexpr auto callback = [](std::int32_t value) noexcept {
         return value + 2;
     };
     if (api::callback(+callback) != 9) {

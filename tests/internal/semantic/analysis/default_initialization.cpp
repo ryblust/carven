@@ -29,7 +29,7 @@ const TestSuite suite([] static noexcept {
         const count = make<NoDefault>().values.length();
         fn empty<T>() -> [T; 0] { return {}; }
     )"));
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 "fn invalid<T>() -> T { return {}; }",
                 "fn invalid<T>() -> [T; 1] { return {}; }",
                 "struct Holder<T> { value: T } fn invalid<T>() -> Holder<T> { return {}; }",

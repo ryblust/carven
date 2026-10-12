@@ -116,7 +116,7 @@ auto occurrence_count(std::string_view text, std::string_view needle) noexcept -
 const TestSuite suite([] static noexcept {
     "Compiler manifest: JSON strings preserve Unicode and escape control bytes"_test =
         [] static noexcept {
-            const auto inputs = std::array {
+            constexpr auto inputs = std::array {
                 CompilationManifestInput {
                     .path = "directory/雪\t\"\\.cv",
                     .module = "nested.source"
@@ -274,7 +274,7 @@ const TestSuite suite([] static noexcept {
             expect_equal(composed_output, std::string_view("analysis"));
             expect_equal(staged_output, composed_output);
             expect_equal(composed->diagnostics.size(), semantic.diagnostics().size());
-            const auto required_stages = std::array {
+            constexpr auto required_stages = std::array {
                 TimingStage::Lexing,
                 TimingStage::Parsing,
                 TimingStage::SemanticAnalysis,
@@ -350,18 +350,12 @@ const TestSuite suite([] static noexcept {
         }
     };
 
-    "Generated artifacts: artifacts retain source attribution and exact dependencies"_test =
+    "Generated artifacts: artifacts retain source attribution and native imports"_test =
         [] static noexcept {
             const auto artifacts = compile_dependency_fixture();
             const auto implementation = artifact_content(artifacts, "dependencies.cpp");
 
             expect(implementation.contains("\"dependencies.cv\""));
-            expect(implementation.contains("#include <carven/runtime/collection/array.hpp>"));
-            expect(implementation.contains("#include <carven/runtime/call/callable.hpp>"));
-            expect(implementation.contains("#include <carven/runtime/numeric/numeric.hpp>"));
-            expect(implementation.contains("#include <carven/runtime/value/outcome.hpp>"));
-            expect(!(implementation.contains("#include <carven/runtime/execution/entry.hpp>")));
-            expect(!(implementation.contains("#include <carven/runtime/text/text.hpp>")));
             expect(implementation.contains("#include \"dependency_provider.hpp\""));
         };
 

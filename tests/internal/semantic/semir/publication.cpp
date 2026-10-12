@@ -304,7 +304,7 @@ const TestSuite suite([] static noexcept {
                 std::string_view name;
                 bool explicit_residual;
             };
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {.name = "explicit residual", .explicit_residual = true},
                 Scenario {.name = "source fallback", .explicit_residual = false},
             };
@@ -560,7 +560,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             auto sources = SourceManager();
             auto diagnostics = DiagnosticSink();
-            const auto module_names = std::array<std::string_view, 2uz> {
+            constexpr auto module_names = std::array<std::string_view, 2uz> {
                 "semir.publication.order_first",
                 "semir.publication.order_second",
             };

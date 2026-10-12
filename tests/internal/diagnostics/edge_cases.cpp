@@ -16,7 +16,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Diagnostic report: long lines keep the marked location visible"_test = [] static noexcept {
-        const auto positions = std::array {0u, 200u, 399u};
+        constexpr auto positions = std::array {0u, 200u, 399u};
         each(
             positions,
             [](auto position) static noexcept { return std::to_string(position); },
@@ -267,7 +267,7 @@ const TestSuite suite([] static noexcept {
 
     "Diagnostic report: CRLF boundaries retain byte locations without visible terminators"_test =
         [] static noexcept {
-            const auto source = SourceView {
+            constexpr auto source = SourceView {
                 .source_id = SourceID::from_index(0),
                 .text = "a\r\nb\r\n",
                 .origin = "crlf.cv",

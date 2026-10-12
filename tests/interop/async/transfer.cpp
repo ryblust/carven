@@ -15,12 +15,15 @@
 #include <unistd.h>
 
 namespace {
+
 namespace async = carven::runtime::execution;
 namespace api = carven::api::tests::interop::async::transfer;
+
 using async_transfer::Context;
 using async_interop::PipeQueue;
 using IoError = decltype(carven::api::tests::interop::async::bridge::make_io_error(0));
-const auto data = std::array {
+
+constexpr auto data = std::array {
     std::byte {0},
     std::byte {255},
     std::byte {1},
@@ -271,7 +274,8 @@ public:
 auto backpressure() noexcept -> void {
     auto transfer = Transfer();
     transfer.preload();
-    const auto block = std::array {std::byte {85}, std::byte {85}, std::byte {85}, std::byte {85}};
+    constexpr auto block =
+        std::array {std::byte {85}, std::byte {85}, std::byte {85}, std::byte {85}};
     std::size_t filled = 0;
     for (;;) {
         ssize_t count;
@@ -345,6 +349,7 @@ auto cancelled_close() noexcept -> void {
     );
     transfer.balanced();
 }
+
 } // namespace
 
 auto run_transfer_cases() noexcept -> void {

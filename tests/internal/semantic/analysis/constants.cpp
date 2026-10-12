@@ -37,7 +37,7 @@ const TestSuite suite([] static noexcept {
             if (!expect_equal(values.size(), 4uz)) {
                 return;
             }
-            const auto expected_integers = std::array {3ll, 5ll, 3ll};
+            constexpr auto expected_integers = std::array {3ll, 5ll, 3ll};
             for (auto index = 0uz; index < expected_integers.size(); ++index) {
                 const auto* integer = std::get_if<IntegerConstant>(
                     &program.constants().constant(values[index]).value

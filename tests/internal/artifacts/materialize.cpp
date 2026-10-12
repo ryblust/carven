@@ -47,7 +47,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Artifacts: logical paths are normalized relative paths"_test = [] static noexcept {
-        const auto valid = std::to_array<std::string_view>({
+        constexpr auto valid = std::to_array<std::string_view>({
             "api.hpp",
             "carven/api/example.hpp",
             ".carven-artifacts",
@@ -55,7 +55,7 @@ const TestSuite suite([] static noexcept {
         each(valid, std::identity {}, [](std::string_view path) static noexcept {
             expect(validate_artifact_logical_path(path).has_value());
         });
-        const auto invalid = std::to_array<std::string_view>({
+        constexpr auto invalid = std::to_array<std::string_view>({
             "",
             "/api.hpp",
             "api.hpp/",

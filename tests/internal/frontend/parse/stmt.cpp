@@ -385,7 +385,7 @@ const TestSuite suite([] static noexcept {
 
     "Parser statement: ranges require value endpoints and a closed upper bound"_test =
         [] static noexcept {
-            const auto invalid = std::array {
+            constexpr auto invalid = std::array {
                 "fn f() { let r = ..10; }",
                 "fn f() { let r = 0..; }",
                 "fn f() { let r = 0..1..2; }",

@@ -100,7 +100,7 @@ const TestSuite suite([] static noexcept {
     };
 
     "Compiler diagnostics: Take conversions preserve source access"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "String owner is unavailable after conversion",
              .source =
                  "fn take(&&value: str) {} fn bad() { let text: String = \"hello\"; take(&&text); println(text); }",

@@ -71,7 +71,7 @@ auto check_contract(const ContractCase& input) noexcept -> void {
 }
 
 auto check_timeout_contract(const ContractCase& input) noexcept -> void {
-    const auto modules = std::array {
+    constexpr auto modules = std::array {
         std::pair<std::string_view, std::string_view> {
             "crafts.carven.std.time.duration",
             "export struct Duration { nanoseconds: i64 } export struct RangeError {}"
@@ -95,7 +95,7 @@ auto check_timeout_contract(const ContractCase& input) noexcept -> void {
 const TestSuite suite([] static noexcept {
     "Async contracts: generic definitions and concrete instances share admission"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 ContractCase {
                     .name = "unused generic Read slice is rejected at its definition",
                     .source = "async fn invalid<T>(values: [T]) {}",
@@ -339,7 +339,7 @@ async fn valid<T>() { checked<T>(); }
         };
 
     "Async owners: explicit signatures use ordinary Take and owning slots"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             ContractCase {
                 .name = "public synchronous relay transfers a typed cold owner",
                 .source = R"(import std::async using Operation;
@@ -560,7 +560,7 @@ async fn run() {
     };
 
     "Async names: ordinary declarations and native selections precede builtins"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             ContractCase {
                 .name = "module declaration selects its ordinary signature",
                 .source =
@@ -641,7 +641,7 @@ async fn run() {
     };
 
     "Async names: await observers use the selected callable"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             ContractCase {
                 .name = "grouped builtin observers remain direct await operands",
                 .source =
@@ -694,7 +694,7 @@ async fn run() {
     };
 
     "Async names: only visible module imports affect lookup"_test = [] static noexcept {
-        const auto modules = std::array {
+        constexpr auto modules = std::array {
             std::pair<std::string_view, std::string_view> {
                 "provider",
                 "export const fn yield_once() -> i32 => 9; "
@@ -708,7 +708,7 @@ async fn run() {
                 "import provider using *; export fn marker() {}"
             }
         };
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             ContractCase {
                 .name = "explicit Carven imports select source in bodies and constants",
                 .source =
@@ -746,7 +746,7 @@ async fn run() {
 
     "Async composition: builtin lookup preserves ordinary names and cold ownership"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 ContractCase {
                     .name = "heterogeneous join keeps nested and void elements",
                     .source = R"(import std::async using when_all;
@@ -901,7 +901,7 @@ fn run() { let callback = when_all; }
 
     "Async timeout: builtin admission uses standard nominal types and cold ownership"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 ContractCase {
                     .name = "owned cold input retains success and nominal failures",
                     .source = R"(import std::time using timeout;
@@ -1052,7 +1052,7 @@ const async fn run() -> i32 throw Timeout + RangeError {
 
     "Async class operations: associated functions retain ordinary explicit inputs"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 ContractCase {
                     .name = "associated async body accesses its lexical class representation",
                     .source = R"(import std::async using yield_once;
@@ -1110,7 +1110,7 @@ async fn run() -> i32 { let value = Value::new(); return value.value; })",
         };
 
     "Async cancellation: cancel requires an admitted lexical child"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             ContractCase {
                 .name = "cold operation is not a lexical child",
                 .source = "async fn leaf() {} async fn run() { "
@@ -1137,7 +1137,7 @@ async fn run() -> i32 { let value = Value::new(); return value.value; })",
     };
 
     "Async terminal waiting: direct child admission and affine availability"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             ContractCase {
                 .name = "heterogeneous children produce ordinary selection facts",
                 .source = R"(import std::async using wait_ready;
@@ -1319,7 +1319,7 @@ async fn run() { print(await wait_ready(3), await close(4)); })",
 
     "Async terminal closing: borrowed backing is released only by consumption"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 ContractCase {
                     .name = "wait leaves the scalar Write loan live",
                     .source = R"(import std::async using wait_ready;
@@ -1368,7 +1368,7 @@ async fn run() { var value = 1;
         };
 
     "Async templates: static arguments select residual cold bodies"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             ContractCase {
                 .name = "selected yield with dynamic runtime input",
                 .source = R"(import std::async using yield_once;
@@ -1440,7 +1440,7 @@ async fn run() -> i32 => await leaf(false);)",
     };
 
     "Async native contracts: signatures and cold source backing"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             ContractCase {
                 .name = "native import and source export share async completion",
                 .source = R"(export struct Error { code: i32 }
@@ -1580,7 +1580,7 @@ async fn run() {
     };
     "Async contracts: guards and rethrow carry consumption to real successors"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 ContractCase {
                     .name = "match rejection keeps guard consumption",
                     .source = R"(async fn leaf() -> i32 => 1;
@@ -1749,7 +1749,7 @@ async fn run() {
         };
 
     "Async contracts: loop cycles preserve single consumption"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             ContractCase {
                 .name = "header owner cannot be consumed on a backedge",
                 .source = "async fn leaf() -> i32 => 1; async fn run() { "
@@ -1807,7 +1807,7 @@ async fn run() {
     };
 
     "Ownership contracts: proven truth selects normal successors"_test = [] static noexcept {
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             ContractCase {
                 .name = "true branch consumes a scalar owner",
                 .source =
@@ -1862,7 +1862,7 @@ async fn run() {
 
     "Async contracts: projected lifetime loans distinguish sibling storage"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 ContractCase {
                     .name = "sibling native Write preserves retained scalar backing",
                     .source = R"(struct Pair { scalar: i32, text: String }
@@ -1918,7 +1918,7 @@ async fn run() {
 
     "Async contracts: returned backing and exit intent follow actual ownership"_test =
         [] static noexcept {
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 ContractCase {
                     .name = "wrapper retains only its returned operation backing",
                     .source = R"(async fn leaf(&value: i32) -> i32 => value;

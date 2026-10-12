@@ -202,7 +202,7 @@ const TestSuite suite([] static noexcept {
                 std::int64_t expected;
             };
 
-            const auto scenarios = std::array {
+            constexpr auto scenarios = std::array {
                 Scenario {BuiltinType::I8, BinaryOperator::Add, 127, 1, -128},
                 Scenario {BuiltinType::I8, BinaryOperator::Subtract, -128, 1, 127},
                 Scenario {BuiltinType::I8, BinaryOperator::Multiply, 64, 2, -128},
@@ -323,7 +323,7 @@ const TestSuite suite([] static noexcept {
                     BinaryOperator operation;
                     double expected;
                 };
-                const auto cases = std::array {
+                constexpr auto cases = std::array {
                     Case {.operation = BinaryOperator::Add, .expected = 8.0},
                     Case {.operation = BinaryOperator::Subtract, .expected = 4.0},
                     Case {.operation = BinaryOperator::Multiply, .expected = 12.0},
@@ -396,7 +396,7 @@ const TestSuite suite([] static noexcept {
                     return;
                 }
                 expect(std::isnan(std::get<Floating>(nan->value).value));
-                const auto comparisons = std::array {
+                constexpr auto comparisons = std::array {
                     BinaryOperator::Equal,
                     BinaryOperator::Less,
                     BinaryOperator::LessEqual,

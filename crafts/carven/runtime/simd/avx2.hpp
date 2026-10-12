@@ -11,9 +11,7 @@
 
 #include <immintrin.h>
 
-namespace carven::runtime::simd {
-inline namespace avx2 {
-namespace backend {
+namespace carven::runtime::simd::inline avx2::backend {
 
 template<std::size_t Bytes>
 struct Storage;
@@ -344,6 +342,4 @@ CARVEN_SIMD_INLINE auto CARVEN_SIMD_CALL extract(Value<Bytes> a, Value<Bytes> b)
     }
 }
 
-} // namespace backend
-} // namespace avx2
-} // namespace carven::runtime::simd
+} // namespace carven::runtime::simd::avx2::backend

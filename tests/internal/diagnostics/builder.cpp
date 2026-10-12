@@ -11,7 +11,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Diagnostic: builder preserves code, labels, notes, and severity"_test = [] static noexcept {
-        const auto span = SourceSpan {
+        constexpr auto span = SourceSpan {
             .source_id = SourceID::from_index(0),
             .span = Span::from_bounds(2, 4),
         };

@@ -381,10 +381,11 @@ local interpretation = {
     inputs = {
         "input.cv", "unsupported.cv", "inactive_native.cv", "failure.cv", "implicit_failure.cv", "implicit_recovery.cv", "limit.cv", "wrapping.cv",
         "declarations.cv", "static_only.cv", "static_failure.cv", "main.cv", "floating.cv", "typed_failures.cv", "escaped_failure.cv", "composition_budget.cv",
+        "async_waiting_entry.cv", "async_composition_entry.cv", "async_scheduling_entry.cv",
     },
     cases = {
-        ["async-waiting"] = {args = {"interpret", "async_waiting.cv"}, stdout_contains = {"true\n"}},
-        ["async-composition"] = {args = {"interpret", "async_composition.cv"}, stdout_contains = {"true\n"}},
+        ["async-waiting"] = {args = {"interpret", "async_waiting_entry.cv", "async_waiting.cv"}, stdout_contains = {"true\n"}},
+        ["async-composition"] = {args = {"interpret", "async_composition_entry.cv", "async_composition.cv"}, stdout_contains = {"true\n"}},
         ["composition-budget"] = {args = {"interpret", "--max-steps", "128", "composition_budget.cv"}, exit_code = 1,
             stdout_not_contains = {"unreachable"}, stderr_contains = {"CV-INTERPRET-LIMIT"}},
         ["missing-input"] = {args = {"interpret"}, exit_code = 1, stderr_contains = {"requires at least one source file", "carven interpret --help"}},
@@ -394,7 +395,7 @@ local interpretation = {
             stderr_contains = {"tests: 1 passed; 0 failed"}},
         ["text-backing"] = {args = {"interpret", "--tests", "text_backing.cv"},
             stderr_contains = {"tests: 1 passed; 0 failed"}},
-        ["async-scheduling"] = {args = {"interpret", "async_scheduling.cv"}, stdout = "async_scheduling.txt",
+        ["async-scheduling"] = {args = {"interpret", "async_scheduling_entry.cv", "async_scheduling.cv"}, stdout = "async_scheduling.txt",
             stderr_contains = {"CV-LINT-UNUSED-LOCAL", "unused local binding"}},
         ["async-failure"] = {args = {"interpret", "async_failure.cv"}, exit_code = 1,
             stderr_ordered = {"root failure selected", "child cancellation requested: true", "child closed",

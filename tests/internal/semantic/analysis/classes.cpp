@@ -20,7 +20,7 @@ const TestSuite suite([] static noexcept {
             fn update(&self) { self.value += 1; }
         }
     )");
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 "fn outside() -> C { return C { value: 2 }; }",
                 "fn outside() -> C { return C {}; }",
                 "class D { fn outside(c: C) -> i32 { return c.value; } }",
@@ -38,7 +38,7 @@ const TestSuite suite([] static noexcept {
         [] static noexcept {
             const auto prelude =
                 std::string("class C { value: i32, fn new() -> C { return { value: 1 }; } } ");
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 "struct S { value: C } fn f() -> S { return S {}; }",
                 "struct S { values: [C; 2] } fn f() -> S { return S {}; }",
                 "class D { value: C, fn new() -> D { return D {}; } }",
@@ -114,7 +114,7 @@ const TestSuite suite([] static noexcept {
         }
         const object = C::new();
     )");
-        const auto cases = std::array {
+        constexpr auto cases = std::array {
             std::pair {"const value = C::runtime_create();", DiagnosticCode::ConstAdmission},
             std::pair {"const value = object.runtime_read();", DiagnosticCode::ConstAdmission},
             std::pair {"const value = C::secret();", DiagnosticCode::AccessClassPrivate},
@@ -153,7 +153,7 @@ const TestSuite suite([] static noexcept {
         const relayed = relay(&&V { number: 9 });
         const awaited = await consume_async(&&V { number: 10 });
     )"));
-            const auto cases = std::array {
+            constexpr auto cases = std::array {
                 "const result = consume(&&original);",
                 "const result = consume(&&(original));",
                 "const result = consume(&&tuple.0);",

@@ -9,10 +9,8 @@ for _, domain in ipairs({
     "lifetimes",
     "pointers",
     "providers",
-    "number",
     "scalars",
     "text",
-    "time",
 }) do
     for _, extension in ipairs({"cv", "cpp"}) do
         local pattern = path.join(interop_dir, domain, "*." .. extension)

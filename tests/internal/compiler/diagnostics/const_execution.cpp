@@ -10,7 +10,7 @@ namespace {
 const TestSuite suite([] static noexcept {
     "Const functions: execution failures identify the operation inside the called body"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "division by a value supplied at the constant call",
                  .source = "const fn divide(value: i32) -> i32 => 12 / value; "
                            "const result = divide(0);",
@@ -31,7 +31,7 @@ const TestSuite suite([] static noexcept {
         };
 
     "Const functions: definitions obey source ownership contracts without execution"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "view of a local owner cannot escape",
              .source =
                  R"(const fn escape() -> str { let text: String = "local"; return text.as_str(); })",
@@ -58,7 +58,7 @@ const TestSuite suite([] static noexcept {
 
     "Const functions: static execution cannot observe or publish expired text views"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "returned text cannot outlive its local owner",
                  .source = R"(
              const fn escape() -> str {

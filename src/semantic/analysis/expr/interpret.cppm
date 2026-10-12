@@ -26,10 +26,10 @@ auto interpret_expression(
     using ValueTask = ExpressionTask<typename Site::Value>;
     using SelectionTask = ExpressionTask<typename Site::Selection>;
     using DispatchedTask = std::variant<ValueTask, SelectionTask>;
-    const auto value_task = [](ValueTask task) static noexcept {
+    constexpr auto value_task = [](ValueTask task) static noexcept {
         return DispatchedTask(std::in_place_index<0>, std::move(task));
     };
-    const auto selection_task = [](SelectionTask task) static noexcept {
+    constexpr auto selection_task = [](SelectionTask task) static noexcept {
         return DispatchedTask(std::in_place_index<1>, std::move(task));
     };
     auto task = source.value.visit([&](const auto& form) noexcept -> DispatchedTask {

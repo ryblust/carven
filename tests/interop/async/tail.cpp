@@ -4,9 +4,11 @@
 #include <cstddef>
 
 namespace {
+
 std::int32_t trace = 0;
 std::array<const void*, 8> addresses {};
 std::size_t address_count = 0;
+
 }
 
 TailOwner::TailOwner(std::int32_t value) noexcept
@@ -52,6 +54,7 @@ auto tail_addresses() noexcept -> std::int32_t {
 }
 
 namespace {
+
 struct FrameToken final {
     bool active = true;
     FrameToken() = default;
@@ -74,6 +77,7 @@ auto native_frame(FrameToken token) noexcept
     static_cast<void>(token);
     co_return carven::runtime::execution::Completion<std::int32_t>::success(1);
 }
+
 }
 
 auto tail_native() noexcept -> carven::runtime::execution::AsyncOperation<std::int32_t> {

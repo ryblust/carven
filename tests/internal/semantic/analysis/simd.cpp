@@ -19,7 +19,7 @@ const TestSuite suite([] static noexcept {
                     for (auto lane = 0uz; lane < table_width; ++lane) {
                         entries += std::format("{}{},", lane == 0 ? "" : " ", lane + 1);
                     }
-                    const auto positions = std::array {0u, 15u, 16u, 31u, 32u, 255u};
+                    constexpr auto positions = std::array {0u, 15u, 16u, 31u, 32u, 255u};
                     auto indices = std::string();
                     auto expected = std::vector<std::uint32_t>();
                     for (auto lane = 0uz; lane < index_width; ++lane) {

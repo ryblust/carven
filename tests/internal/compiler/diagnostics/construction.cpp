@@ -9,7 +9,7 @@ namespace {
 
 const TestSuite suite([] static noexcept {
     "Defaults: type availability and construction completeness"_test = [] static noexcept {
-        const auto cases = std::to_array<CompilerErrorExpectation>({
+        constexpr auto cases = std::to_array<CompilerErrorExpectation>({
             {.name = "numeric enum has no implicit selected case",
              .source = "enum Choice { Item } fn f() { let value = Choice {}; }",
              .code = DiagnosticCode::TypeDefaultInitialization,
@@ -51,7 +51,7 @@ const TestSuite suite([] static noexcept {
 
     "Compiler diagnostics: contextual construction requires a known admissible destination"_test =
         [] static noexcept {
-            const auto cases = std::to_array<CompilerErrorExpectation>({
+            constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "no destination",
                  .source = "let value = { field: 1 };",
                  .code = DiagnosticCode::TypeConstructContext,

@@ -789,7 +789,7 @@ auto solve_failure_constraints(
         });
         return {.members = std::move(rejected), .sites = std::move(sites)};
     };
-    const auto copy = [](std::span<const TypeID> source) static noexcept {
+    constexpr auto copy = [](std::span<const TypeID> source) static noexcept {
         return std::vector<TypeID>(source.begin(), source.end());
     };
     for (const auto& constraint : constraints.constraints()) {
