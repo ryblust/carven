@@ -177,7 +177,7 @@ const TestSuite suite([] static noexcept {
                     .name = "enum case",
                     .source = "enum Color { Red, Green } fn invalid() { let value = Color::Gren; }",
                     .code = DiagnosticCode::TypeMemberUnresolved,
-                    .message = "enum 'Color' has no case named 'Gren'; did you mean 'Green'?",
+                    .message = "enum 'app::Color' has no case named 'Gren'; did you mean 'Green'?",
                 },
                 {
                     .name = "unrelated name",

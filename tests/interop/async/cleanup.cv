@@ -1,3 +1,4 @@
+import std::async using yield_once;
 import "async/cleanup.hpp" using async_cleanup_probe::{ Lease, resource_released };
 import "lifetimes/tail_outcomes.hpp" using tail_outcome_probe::{ Guard, record };
 

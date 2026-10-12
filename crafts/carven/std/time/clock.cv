@@ -1,5 +1,5 @@
 import .duration using { Duration, RangeError, checked_add_nanoseconds };
-
+import std::async using Operation;
 import <carven/std/time/native.hpp>;
 
 private import(cpp) fn carven_time_now_nanoseconds() -> i64;
@@ -29,7 +29,7 @@ export class TimePoint {
 
     fn has_passed(self) -> bool => self.nanoseconds_since_epoch <= carven_time_now_nanoseconds();
 
-    fn wait(self) -> AsyncOperation<void> => carven_time_wait_until_nanoseconds(
+    fn wait(self) -> Operation<void> => carven_time_wait_until_nanoseconds(
         self.nanoseconds_since_epoch
     );
 }

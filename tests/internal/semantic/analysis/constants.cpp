@@ -80,7 +80,8 @@ const TestSuite suite([] static noexcept {
 
     "Semantic constants: static control and argument failures belong to static roots"_test =
         [] static noexcept {
-            const auto program = analyze_test_program(R"(
+            const auto program = analyze_test_program(R"(import std::simd using u8x16;
+
             struct Error {}
             const fn enabled() -> bool throw Error => true;
             const fn count() -> i32 throw Error => 2;

@@ -28,14 +28,19 @@ struct ASTTupleBindingTarget final {
 
 auto binding_target_span(const ASTBindingTarget& target) noexcept -> Span;
 
-struct ASTSingleImport final {
+struct ASTImportItem final {
     Span name_span;
+    std::optional<Span> alias_span;
+};
+
+struct ASTSingleImport final {
+    ASTImportItem item;
 };
 
 struct ASTWildcardImport final {};
 
 struct ASTImportList final {
-    std::vector<Span> names;
+    std::vector<ASTImportItem> names;
 };
 
 struct ASTImportSelection final {

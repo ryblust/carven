@@ -958,14 +958,14 @@ auto SemanticExecutor::expression_value(
         });
     } else if constexpr (std::same_as<Operation, SemAsyncIntrinsic>) {
         switch (operation.kind) {
-            case AsyncIntrinsic::CancellationRequested: {
+            case AsyncIntrinsic::CancelRequested: {
                 auto result_type = type(source.type.construction(), source.origin);
                 if (!result_type) {
                     co_return std::unexpected(std::move(result_type.error()));
                 }
                 co_return ConstantAtom {
                     .type = *result_type,
-                    .value = BooleanConstant {.value = cancellation_requested()},
+                    .value = BooleanConstant {.value = cancel_requested()},
                 };
             }
             case AsyncIntrinsic::CancelChild: {

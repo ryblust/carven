@@ -1,5 +1,5 @@
 import tests.interop.async.bridge using IoError;
-
+import std::async using yield_once;
 import "async/transfer.hpp" using async_transfer::Context;
 
 #[cpp] ---

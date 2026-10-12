@@ -197,9 +197,9 @@ auto target_symbol_info(TargetSymbol symbol) noexcept -> TargetSymbolInfo {
                 "::carven::runtime::execution::composition_operand",
                 "carven/runtime/execution/execution.hpp"
             );
-        case TargetSymbol::RuntimeAsyncCancellationRequested:
+        case TargetSymbol::RuntimeAsyncCancelRequested:
             return runtime_symbol_info(
-                "::carven::runtime::execution::cancellation_requested",
+                "::carven::runtime::execution::cancel_requested",
                 "carven/runtime/execution/execution.hpp"
             );
         case TargetSymbol::RuntimeAsyncCancelPoint:

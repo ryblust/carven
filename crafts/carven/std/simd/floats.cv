@@ -1,3 +1,5 @@
+import std::simd using { f32x8, mask8 };
+
 // Eight f32 lanes use the same load, mask and ordinary operator contracts as bytes.
 export struct FloatBlock {
     value: f32x8,

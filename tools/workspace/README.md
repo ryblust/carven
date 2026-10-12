@@ -46,12 +46,14 @@ be serialized.
 | `syntax` | Source and diagnostics, with an error-free AST or recovered complete top-level items. |
 | `document_symbols`, `workspace_symbols` | Parsed declarations; workspace symbols contain top-level declarations. |
 | `semantic` | Full analysis of the selected project, including diagnostics and static output. |
-| `hover` | Types at recorded source tokens. |
-| `definition` | A resolved source declaration. |
+| `hover` | Optional types and source/provided entity identities at recorded tokens. |
+| `definition` | A source declaration or the selected local import alias. |
 | `references` | Recorded occurrences of a resolved declaration across the selected project, including its declaration. |
 
 Hover and definition select the document's transitive import closure through the
-compiler import resolver. Their diagnostics, captured output, and versions describe
+frontend source dependency discovery, including configured prerequisites of
+provided contracts and duration literals. Semantic analysis checks the required
+contracts when they are used. Their diagnostics, captured output, and versions describe
 that selection. A target outside the project returns no result or analysis owner.
 Semantic and reference queries analyze the complete caller-selected project.
 Every uncached selection reuses retained document parsing but runs all semantic
@@ -66,7 +68,12 @@ syntax accessor exposes an AST only when parsing succeeds without errors.
 
 ## Source observations
 
-Compiler analysis records source tokens, resolved definitions, and optional types.
+Compiler analysis records source tokens, selected entities, local alias bindings,
+and optional types. Definitions derive from the selected entity and local binding.
+Provided entities carry export keys for module information.
+References group by entity across aliases and include import selections.
+`WorkspaceSemanticAnalysis::alias_references` restricts rename locations to one
+local alias and its uses, excluding export names and other aliases.
 Queries index these observations. Published `TypeID` values belong to the returned
 program. Failed analysis can retain definitions and known builtin types from
 admitted declarations and successfully constructed bodies. A failed body discards

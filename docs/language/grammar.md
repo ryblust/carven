@@ -105,9 +105,9 @@ There is no escaped-identifier syntax.
 | --- | --- | --- | --- | --- | --- |
 | Reserved keywords, including `async`, `await`, `cancel`, and `fn` | Lexical token classification | Their language productions; also identifier-shaped name positions below | Bare declaration, binding, and expression names cannot use these tokens | Cannot be shadowed as bare names | [Token classification](../../tests/internal/frontend/lex/tokens.cpp), [source identifiers](../../tests/internal/source/identifier.cpp) |
 | `self` and `cpp` | Identifier token; contextual syntax or semantic checks | `self` is an untyped first class-operation receiver; `cpp` selects the native declaration form | Only those positions have special meaning | Ordinary names elsewhere | [Class operations](../../tests/language/types/classes.cv), [declaration parser](../../tests/internal/frontend/parse/decl.cpp) |
-| `ptr` and `Range` | Identifier token; pointer parsing or interval type resolution | Unqualified `ptr<T>` / `ptr<&T>` and `Range<T>` in type position | Module declaration names are reserved | Locals, parameters, and members may use these names; type forms retain their meaning | [Type parser](../../tests/internal/frontend/parse/type.cpp), [name diagnostics](../../tests/internal/compiler/diagnostics/names.cpp) |
-| Builtin type names, including `String`, `i32`, `Vector`, and `AsyncOperation` | Identifier token; semantic type resolution | Named types, construction, and defined type factories | Module declaration names are reserved | Locals, parameters, and members may use these names; type resolution remains independent | [Builtin type diagnostics](../../tests/internal/compiler/diagnostics/simd.cpp), [text lookup](../../tests/language/text/lookup.cv), [operation types](../../tests/internal/semantic/analysis/async_contracts.cpp) |
-| Root builtin callables, including `print`, `assert`, `addressof`, and `when_all` | Identifier token; ordinary name lookup | Ordinary expression and call productions | No lexical or module-name reservation | Local bindings, module declarations, and imports may shadow them | Source call contracts |
+| `ptr` | Identifier token; structural type parsing | `ptr<T>` and `ptr<&T>` | Module declarations, type parameters, and import local names are reserved | Runtime bindings do not change structural type syntax | [Type parser](../../tests/internal/frontend/parse/type.cpp) |
+| Provided type names, including `String`, `i32`, `Vector`, `Range`, and `Operation` | Identifier token; shared binding selection | Named types, construction, and associated operations | No additional reservation | Type parameters and module bindings may shadow them; runtime locals shadow only expression uses | [Modules and names](modules.md) |
+| Provided callables, including `print`, `assert`, `addressof`, and `when_all` | Identifier token; ordinary name lookup | Ordinary expression and call productions | No lexical or module-name reservation | Local bindings, module declarations, and imports may shadow them | Source call contracts |
 | Literal prefixes `c`, `r`, and `f` | Lexical recognition of an adjacent literal introducer | C strings, raw strings, and interpolated strings under their literal productions | Bare `c`, `r`, and `f` remain identifiers | Ordinary names may use them; bindings do not alter adjacent prefix recognition | [Literal and prefix boundaries](../../tests/internal/frontend/lex/literals.cpp) |
 | `#[cpp]` | Exact lexical source-fragment introducer | One complete `CPP_SOURCE_FRAGMENT` token at module scope | Bare `cpp` remains an identifier; no general attribute-name grammar | Name lookup does not participate in fragment recognition | [Fragment tokens](../../tests/internal/frontend/lex/literals.cpp), [fragment placement](../../tests/internal/frontend/parse/decl.cpp) |
 | Module path components | Identifier-shaped tokens; module-reference parsing | Module and craft path components; `std::` selects the standard-library domain | Paths do not reserve bare names | Path selection follows module resolution | [Module paths](../../tests/internal/source/module_path.cpp), [import parser](../../tests/internal/frontend/parse/decl.cpp) |
@@ -393,15 +393,17 @@ module-path = module-component, { ".", module-component };
 
 using-clause = "using", import-selection;
 
-import-selection = IDENTIFIER | "*" | using-list;
+import-selection = import-item | "*" | using-list;
+import-item = IDENTIFIER, [ "as", IDENTIFIER ];
 
-using-list = "{", IDENTIFIER, { ",", IDENTIFIER }, [ "," ], "}";
+using-list = "{", import-item, { ",", import-item }, [ "," ], "}";
 ```
 
 Module components accept every identifier-shaped spelling, including keywords.
-C++ selection paths and lists also accept keyword spellings as names. Lists
-contain only simple names; qualified names, nested lists, aliases, and wildcards
-are not list items. A shared C++ path precedes
+C++ selection paths and lists also accept keyword spellings as names. Carven lists
+contain simple export names with optional local aliases; qualified
+names, nested lists, and wildcards are not list items. Native selections do not
+accept aliases. A shared C++ path precedes
 the list: `import <print> using std::{ print, println };`.
 
 The semicolon terminates the complete import declaration. A closing brace ends

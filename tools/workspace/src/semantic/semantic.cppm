@@ -35,7 +35,8 @@ struct WorkspaceDocumentLocation final {
 
 struct WorkspaceHoverInformation final {
     WorkspaceDocumentLocation location;
-    SourceType type;
+    std::optional<SourceType> type;
+    std::optional<SourceEntity> entity;
 };
 
 // One complete compilation result, including failed analysis and captured static
@@ -59,6 +60,10 @@ public:
 
     // Includes declaration occurrences. Unknown targets return no result.
     auto references(std::string_view document, std::uint32_t offset) const noexcept
+        -> std::optional<std::vector<WorkspaceDocumentLocation>>;
+
+    // Rename only the selected local alias, never its provided/source export.
+    auto alias_references(std::string_view document, std::uint32_t offset) const noexcept
         -> std::optional<std::vector<WorkspaceDocumentLocation>>;
 
     auto source(std::string_view document) const noexcept -> std::optional<SourceView>;

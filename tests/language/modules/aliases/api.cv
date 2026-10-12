@@ -1,0 +1,5 @@
+export struct Value {
+    number: i32
+}
+
+export const fn number() -> i32 => 7;

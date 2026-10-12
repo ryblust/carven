@@ -27,7 +27,6 @@ import :semantic.analysis.source.builder;
 import :semantic.analysis.types;
 import :semantic.analysis.types.display;
 import :semantic.analysis.types.standard;
-import :semantic.analysis.types;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.evaluation.output;
@@ -35,6 +34,7 @@ import :semantic.semir.decl;
 import :semantic.semir.structured;
 import :semantic.semir.traversal;
 import :semantic.semir.type;
+import :source.standard;
 import :support.invariant;
 import :support.unique_indirect;
 import :support.visit;
@@ -288,7 +288,15 @@ auto BodyElaborator::resolve_constant_name(std::string_view name, Span span) noe
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
     }
-    co_return (co_await (*selected)->form.visit(
+    const auto* selected_symbol = catalog().symbol(*selected);
+    if (!selected_symbol) {
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::TypeValueRequired,
+            std::format("'{}' does not name a constant value", name)
+        ));
+    }
+    co_return (co_await selected_symbol->form.visit(
         Overloaded {
             [&](const CatalogConstantForm& form) noexcept
                 -> AnalysisTask<std::optional<ConstantID>> {
@@ -349,21 +357,15 @@ auto BodyElaborator::resolve_static_callable(std::string_view name, Span span) n
         co_return std::optional<ResolvedStaticCallable>();
     }
     if (catalog().lookup(source_module_id, name).empty()) {
-        if (const auto builtin = find_async_builtin(name)) {
-            auto native = lookup_cpp_name(
-                draft(),
-                catalog(),
-                import_usage(),
-                source_module_id,
-                CppNameLookup::ModuleScope,
-                std::span(&span, 1uz)
-            );
-            if (!native) {
-                co_return std::unexpected(native.error());
-            }
-            if (*native && (**native).lookup == CppNameLookup::Global) {
-                co_return std::optional<ResolvedStaticCallable>();
-            }
+        co_return std::optional<ResolvedStaticCallable>();
+    }
+    auto selected = (co_await find_global(name, span));
+    if (!selected) {
+        co_return std::unexpected(selected.error());
+    }
+    const auto* selected_symbol = catalog().symbol(*selected);
+    if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
+        if (const auto builtin = provided_async_builtin(*provided)) {
             auto resolved = co_await resolve_async_builtin(
                 draft(),
                 catalog(),
@@ -379,18 +381,16 @@ auto BodyElaborator::resolve_static_callable(std::string_view name, Span span) n
         }
         co_return std::optional<ResolvedStaticCallable>();
     }
-    auto selected = (co_await find_global(name, span));
-    if (!selected) {
-        co_return std::unexpected(selected.error());
-    }
-    if (const auto* generic = std::get_if<CatalogGenericForm>(&(*selected)->form)) {
+    if (const auto* generic =
+            (selected_symbol ? std::get_if<CatalogGenericForm>(&selected_symbol->form) : nullptr)) {
         const auto definition = draft().generic_declaration_copy(generic->definition);
         if (std::holds_alternative<GenericFunctionDefinition>(definition)) {
             co_return std::optional<ResolvedStaticCallable>(generic->definition);
         }
         co_return std::optional<ResolvedStaticCallable>();
     }
-    const auto* function = std::get_if<CatalogFunctionForm>(&(*selected)->form);
+    const auto* function =
+        (selected_symbol ? std::get_if<CatalogFunctionForm>(&selected_symbol->form) : nullptr);
     if (function == nullptr) {
         co_return std::optional<ResolvedStaticCallable>();
     }
@@ -442,22 +442,35 @@ auto BodyElaborator::resolve_type_qualifier(ASTExprID expression) noexcept
     }
     const auto text = spelling(name->name_span);
     observe_source(name->name_span, std::nullopt, std::nullopt);
-    if (const auto builtin = source_builtin_type(text)) {
-        co_return std::optional(draft().builtin_type(*builtin));
-    }
     if (find_local(text) != nullptr) {
         co_return std::optional<TypeID>();
+    }
+    if (generic_parameter_index(draft(), generic_context ? &*generic_context : nullptr, text)) {
+        co_return std::unexpected(fail(
+            name->name_span,
+            DiagnosticCode::TypeGenericDefinition,
+            "static type qualifier requires a concrete type"
+        ));
     }
     auto selected = (co_await find_global(text, name->name_span));
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
     }
-    if (const auto* record = std::get_if<CatalogStructForm>(&(*selected)->form)) {
+    const auto* selected_symbol = catalog().symbol(*selected);
+    if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
+        if (const auto builtin = provided_builtin_type(*provided)) {
+            co_return std::optional(draft().builtin_type(*builtin));
+        }
+        co_return std::optional<TypeID>();
+    }
+    if (const auto* record =
+            (selected_symbol ? std::get_if<CatalogStructForm>(&selected_symbol->form) : nullptr)) {
         co_return std::optional(
             draft().intern_type({.value = StructTypeValue {.structure = record->structure}})
         );
     }
-    const auto* enumeration = std::get_if<CatalogEnumForm>(&(*selected)->form);
+    const auto* enumeration =
+        (selected_symbol ? std::get_if<CatalogEnumForm>(&selected_symbol->form) : nullptr);
     if (enumeration == nullptr) {
         co_return std::optional<TypeID>();
     }

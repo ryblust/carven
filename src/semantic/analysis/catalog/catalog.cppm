@@ -5,9 +5,11 @@ import :frontend.ast.ids;
 import :frontend.ast.tree;
 import :frontend.program;
 import :semantic.analysis.program;
+import :semantic.analysis.source;
 import :semantic.semir.ids;
 import :semantic.semir.program;
 import :semantic.visibility;
+import :source.standard;
 import :source.text;
 import :support.typed_id;
 import std;
@@ -103,22 +105,26 @@ enum class CatalogImportSelectionKind {
     Wildcard,
 };
 
-struct CatalogImportSelectedSymbol final {
-    CatalogSymbolID symbol_id;
+using CatalogEntity = std::variant<CatalogSymbolID, ProvidedExport>;
+
+struct CatalogImportSelection final {
+    CatalogEntity entity;
     std::string name;
     Span origin;
+    Span export_origin;
+    bool aliased;
 };
 
 struct CatalogImportBinding final {
     ImportBindingID binding_id;
     ProgramModuleID importer;
     ASTModuleImportID declaration_id;
-    ProgramModuleID target;
+    ResolvedModuleTarget target;
     Span declaration_span;
     Span reference_span;
     Span selection_span;
     CatalogImportSelectionKind selection_kind;
-    std::vector<CatalogImportSelectedSymbol> selected_symbols;
+    std::vector<CatalogImportSelection> selections;
 };
 
 struct CatalogCppBinding final {
@@ -129,7 +135,7 @@ struct CatalogCppBinding final {
 };
 
 struct CatalogLookupCandidate final {
-    CatalogSymbolID symbol_id;
+    CatalogEntity entity;
     std::optional<ImportBindingID> import_binding;
 };
 
@@ -172,6 +178,10 @@ public:
     auto imports() const noexcept -> std::span<const CatalogImportBinding>;
     auto find_module(ProgramModuleID id) const noexcept -> const CatalogModule*;
     auto symbol(CatalogSymbolID id) const noexcept -> const CatalogSymbol*;
+
+    auto symbol(CatalogEntity entity) const noexcept -> const CatalogSymbol*;
+    auto source_entity(const ProgramDraft& draft, CatalogEntity entity) const noexcept
+        -> SourceEntity;
 
     // Declaration selections derive from the same source metadata used by lookup.
     auto declaration_location(const ProgramDraft& draft, CatalogSymbolID id) const noexcept

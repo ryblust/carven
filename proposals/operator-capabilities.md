@@ -36,9 +36,11 @@ The design must preserve these existing or accepted constraints:
 - `&&` and `||` short-circuit left to right. Other operands evaluate left to right,
   exactly once.
 - Access-position `&` and `&&` denote Write and Take, not overloadable operators.
-- Equality is currently a compiler-derived recursive property shared by runtime
-  comparison, aggregate equality, pattern normalization, and constant facts.
-  Floating patterns consider `0.0` and `-0.0` equal.
+- Equality support is compiler-selected. Arrays and tuples derive elementwise
+  support, and eligible payload enums derive case/payload support. Ordinary
+  structures and value classes do not support `==` or `!=`. Supported comparison,
+  pattern normalization, and constant facts must remain consistent; floating
+  patterns consider `0.0` and `-0.0` equal.
 - Only complete plain assignment restores a Taken `var`; compound assignment
   preserves its existing availability requirements.
 - Generic definition-site checking is implemented. The accepted capability design
@@ -163,7 +165,9 @@ C++ operators. Operand representation does not initiate further semantic lookup.
   domain; a runtime-header path cannot supply that identity.
 - **Options:** Language-builtin identities; official declarations at reserved
   `crafts.carven.std...` paths referenced through `std::`; or compiler-provided
-  declarations visible through ordinary imports or a prelude.
+  declarations visible through ordinary imports or a prelude. Standard-module
+  imports and local `using` aliases already exist; they can expose a declaration
+  but do not themselves establish compiler-known capability identity or evidence.
 - **Closure condition:** Define consistent lookup, desugaring, coherence, and
   missing-name diagnostics for the candidate. `OPEN-01` selects the carrier.
 
@@ -268,3 +272,9 @@ Decision experiments and the delivered slice cover:
 - left-to-right, exactly-once operands with ordinary failure and access behavior;
 - C++20/C++23 compilation, linking, and execution, without fixing private generated
   names or capability representation.
+
+## References
+
+- [Generic extensions](generic-extensions.md): unimplemented evidence and normalization contracts.
+- [Aggregates](../docs/language/aggregates.md): current equality and value rules.
+- [Modules](../docs/language/modules.md): standard imports, visibility, and local aliases.

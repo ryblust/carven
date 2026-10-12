@@ -2,6 +2,7 @@ module carven:semantic.analysis.names.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
+import :diagnostics.suggestion;
 import :semantic.analysis.names;
 import :semantic.analysis.program;
 import :source.cpp.identifier;
@@ -133,4 +134,67 @@ auto lookup_class_operation(
         DiagnosticCode::TypeMemberUnresolved,
         std::format("class has no operation named '{}'", name)
     );
+}
+
+auto select_catalog_entity(
+    const ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ImportUsage& usage,
+    ProgramModuleID module,
+    std::string_view name,
+    Span origin,
+    SourceObservation* observations,
+    DiagnosticCode unresolved
+) noexcept -> AnalysisResult<CatalogEntity> {
+    const auto location = locate(draft.syntax_tree(module).view().source_id(), origin);
+    const auto candidates = catalog.lookup(module, name);
+    if (candidates.empty()) {
+        return std::unexpected(draft.diagnostics().error(
+            DiagnosticBuilder(
+                unresolved,
+                std::format(
+                    "unresolved {}name '{}'{}",
+                    unresolved == DiagnosticCode::TypeUnresolved ? "type " : "",
+                    name,
+                    spelling_suggestion(name, catalog.visible_names(module))
+                )
+            )
+                .primary(location)
+                .build()
+        ));
+    }
+    if (candidates.size() != 1uz) {
+        auto diagnostic = DiagnosticBuilder(
+            DiagnosticCode::NameAmbiguous,
+            std::format("name '{}' is provided by more than one wildcard import", name)
+        );
+        diagnostic.primary(location, "ambiguous reference");
+        for (const auto& candidate : candidates) {
+            if (candidate.import_binding) {
+                const auto& binding = catalog.imports()[candidate.import_binding->index()];
+                diagnostic.related(
+                    locate(location.source_id, binding.reference_span),
+                    "candidate import"
+                );
+            }
+        }
+        return std::unexpected(draft.diagnostics().error(diagnostic.build()));
+    }
+    const auto& candidate = candidates.front();
+    const auto entity = catalog.source_entity(draft, candidate.entity);
+    auto alias = std::optional<SourceSpan>();
+    if (candidate.import_binding) {
+        usage.record(*candidate.import_binding);
+        const auto& binding = catalog.imports()[candidate.import_binding->index()];
+        for (const auto& selected : binding.selections) {
+            if (selected.name == name && selected.aliased) {
+                alias = locate(location.source_id, selected.origin);
+                break;
+            }
+        }
+    }
+    if (observations) {
+        observations->record(draft, location, entity, std::nullopt, alias);
+    }
+    return candidate.entity;
 }

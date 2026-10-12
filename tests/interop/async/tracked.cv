@@ -1,3 +1,4 @@
+import std::async using yield_once;
 import "async/tracked.hpp";
 
 import(cpp) fn make_tracked() -> ::Tracked;

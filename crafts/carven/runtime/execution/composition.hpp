@@ -227,7 +227,7 @@ template<CompositionPolicy Policy, typename Result, typename... Failures, typena
 auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
     using Output = Completion<Result, Failures...>;
     constexpr auto count = sizeof...(Inputs);
-    if (cancellation_requested()) {
+    if (cancel_requested()) {
         co_return Output::cancelled();
     }
     if constexpr (count == 0) {
@@ -245,19 +245,19 @@ auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
         auto fallback = std::optional<std::size_t>();
         auto output = std::optional<Output>();
         while (remaining != 0) {
-            if (cancellation_requested()) {
+            if (cancel_requested()) {
                 output.emplace(Output::cancelled());
                 break;
             }
             const auto selected = co_await WaitReadyAwaiter<count>(children, &active, true);
-            if (selected.head == count || cancellation_requested()) {
+            if (selected.head == count || cancel_requested()) {
                 output.emplace(Output::cancelled());
                 break;
             }
             const auto state = slots.consume(selected.head, 0);
             active[selected.head] = false;
             --remaining;
-            if (cancellation_requested()) {
+            if (cancel_requested()) {
                 output.emplace(Output::cancelled());
                 break;
             }
@@ -300,7 +300,7 @@ auto compose(Inputs... inputs) noexcept -> AsyncOperation<Result, Failures...> {
             }
         }
         if (!output) {
-            if (cancellation_requested()) {
+            if (cancel_requested()) {
                 output.emplace(Output::cancelled());
             } else if constexpr (Policy == CompositionPolicy::WhenAll) {
                 output.emplace(

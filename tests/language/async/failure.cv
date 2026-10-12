@@ -1,8 +1,10 @@
+import std::async using { cancel_requested, yield_once };
+
 private struct Failure {}
 
 private async fn finish_during_close() {
     await yield_once();
-    eprintln("child cancellation requested:", cancellation_requested());
+    eprintln("child cancellation requested:", cancel_requested());
     eprintln("child closed");
 }
 

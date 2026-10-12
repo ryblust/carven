@@ -1,7 +1,7 @@
 # Recoverable frontend analysis and compilation control
 
 - **Status:** Draft
-- **Implementation:** Not started
+- **Implementation:** Not started for the replacement analysis model below
 - **Scope:** Diagnostic production, recovering syntax, partial semantic queries, compilation admission, cancellation, and analysis fault isolation
 
 ## Summary
@@ -60,6 +60,21 @@ LSP supervisor: document revisions, protocol, analysis-worker restart
 - Both internal invariant failures and low-level capacity exhaustion can abort.
   Semantic execution has work limits, but source-language task cancellation is
   distinct from cancellation of a compiler or editor request.
+
+`SourceDocument`, `ParsedDocument`, and `CompilationAnalysis` already provide
+shared immutable source/syntax and an owned complete analysis result, including
+failed-source diagnostics, optional source observations, and captured static
+output. Workspace bulk edits publish atomically; unchanged content reuses parsing,
+and bounded complete-selection caches retain results across version-only edits.
+Navigation records local import aliases and follows provided-contract and duration
+prerequisites as well as explicit imports.
+
+These are existing foundations rather than delivery tasks for this proposal.
+They do not supply lossless damaged syntax, types owned independently of program
+publication, per-query semantic invalidation, request cancellation, or worker
+isolation. The remaining work is the replacement model and its coordination
+contracts below. Further reuse measurements belong to
+[compiler optimization](compiler-optimization.md#workspace-reuse).
 
 ## Research basis
 
@@ -493,6 +508,8 @@ fresh-analysis, revision, and effect-accounting contracts.
 ### Carven contracts and implementation
 
 - [Compiler architecture](../docs/compiler/README.md)
+- [Owned compilation analysis](../src/compiler/analysis.cppm)
+- [Workspace regression cases](../tools/workspace/tests/workspace.cpp)
 - [Failure handling conventions](../docs/development/conventions.md#failure-handling)
 - [Workspace analysis](../tools/workspace/README.md)
 - [Parser recovery](../src/frontend/parse/parser.cpp)

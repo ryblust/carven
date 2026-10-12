@@ -97,7 +97,9 @@ auto check_single_observation(const CancellationCase& input) noexcept -> void {
 const TestSuite suite([] static noexcept {
     "Async cancellation: cancellation is independent of nominal failures"_test =
         [] static noexcept {
-            const auto program = cancellation_program(R"(
+            const auto program = cancellation_program(R"(import std::async using cancel_point;
+import std::async using yield_once;
+
 struct Failure {}
 async fn ready() {}
 async fn yielding() { await yield_once(); }
@@ -128,7 +130,10 @@ async fn recover_checked() { try { await failure_checked()?; } catch { Failure(_
 
     "Async cancellation: terminal facts and draining do not forward child effects"_test =
         [] static noexcept {
-            const auto program = cancellation_program(R"(
+            const auto program = cancellation_program(R"(import std::async using cancel_point;
+import std::async using wait_ready;
+import std::async using close;
+
 struct Error {}
 async fn checked() throw Error { await cancel_point(); throw Error {}; }
 async fn waiting() -> (usize, bool) {
@@ -188,7 +193,9 @@ async fn parent_checked() {
             const auto cases = std::array {
                 CancellationCase {
                     .name = "stored yield transfers without accepting cancellation",
-                    .source = R"(async fn probe() {
+                    .source = R"(import std::async using yield_once;
+
+async fn probe() {
     let original = yield_once();
     let moved = &&original;
     await moved;
@@ -197,7 +204,9 @@ async fn parent_checked() {
                 },
                 CancellationCase {
                     .name = "stored checkpoint retains its acceptance after transfer",
-                    .source = R"(async fn probe() {
+                    .source = R"(import std::async using cancel_point;
+
+async fn probe() {
     let original = cancel_point();
     let moved = &&original;
     await moved;
@@ -206,7 +215,10 @@ async fn parent_checked() {
                 },
                 CancellationCase {
                     .name = "factory returns the transferred yield, not its discarded checkpoint",
-                    .source = R"(fn factory() {
+                    .source = R"(import std::async using cancel_point;
+import std::async using yield_once;
+
+fn factory() {
     let discarded = cancel_point();
     let original = yield_once();
     let moved = &&original;
@@ -217,7 +229,9 @@ async fn probe() { await factory(); })",
                 },
                 CancellationCase {
                     .name = "factory returns a transferred checkpoint",
-                    .source = R"(fn factory() {
+                    .source = R"(import std::async using cancel_point;
+
+fn factory() {
     let original = cancel_point();
     let moved = &&original;
     return &&moved;
@@ -234,7 +248,9 @@ async fn probe() { let stored = factory(); await stored; })",
             const auto cases = std::array {
                 CancellationCase {
                     .name = "if selects only nonaccepting producers",
-                    .source = R"(fn factory(flag: bool) {
+                    .source = R"(import std::async using yield_once;
+
+fn factory(flag: bool) {
     return if flag { yield_once() } else { yield_once() };
 }
 async fn probe(flag: bool) { await factory(flag); })",
@@ -242,7 +258,10 @@ async fn probe(flag: bool) { await factory(flag); })",
                 },
                 CancellationCase {
                     .name = "if can select a checkpoint",
-                    .source = R"(fn factory(flag: bool) {
+                    .source = R"(import std::async using cancel_point;
+import std::async using yield_once;
+
+fn factory(flag: bool) {
     return if flag { yield_once() } else { cancel_point() };
 }
 async fn probe(flag: bool) { await factory(flag); })",
@@ -250,7 +269,9 @@ async fn probe(flag: bool) { await factory(flag); })",
                 },
                 CancellationCase {
                     .name = "match selects only nonaccepting producers",
-                    .source = R"(fn factory(value: i32) {
+                    .source = R"(import std::async using yield_once;
+
+fn factory(value: i32) {
     return match value { 0 => yield_once(), _ => yield_once(), };
 }
 async fn probe(value: i32) { await factory(value); })",
@@ -258,7 +279,10 @@ async fn probe(value: i32) { await factory(value); })",
                 },
                 CancellationCase {
                     .name = "match can select a checkpoint",
-                    .source = R"(fn factory(value: i32) {
+                    .source = R"(import std::async using cancel_point;
+import std::async using yield_once;
+
+fn factory(value: i32) {
     return match value { 0 => yield_once(), _ => cancel_point(), };
 }
 async fn probe(value: i32) { await factory(value); })",
@@ -266,7 +290,9 @@ async fn probe(value: i32) { await factory(value); })",
                 },
                 CancellationCase {
                     .name = "try and catch return nonaccepting producers",
-                    .source = R"(struct Failure {}
+                    .source = R"(import std::async using yield_once;
+
+struct Failure {}
 fn factory(flag: bool) throw Failure {
     if flag { throw Failure {}; }
     return yield_once();
@@ -279,7 +305,10 @@ async fn probe(flag: bool) {
                 },
                 CancellationCase {
                     .name = "catch success can return a checkpoint",
-                    .source = R"(struct Failure {}
+                    .source = R"(import std::async using cancel_point;
+import std::async using yield_once;
+
+struct Failure {}
 fn factory(flag: bool) throw Failure {
     if flag { throw Failure {}; }
     return yield_once();
@@ -296,9 +325,12 @@ async fn probe(flag: bool) {
 
     "Async cancellation: child closure and cold construction do not propagate acceptance"_test =
         [] static noexcept {
-            const auto program = cancellation_program(R"(
+            const auto program = cancellation_program(R"(import std::async using cancel_requested;
+import std::async using cancel_point;
+import std::async using yield_once;
+
 async fn cold_only() { let unused = cancel_point(); }
-async fn query_only() -> bool => cancellation_requested();
+async fn query_only() -> bool => cancel_requested();
 async fn discarded_then_yield() { let unused = cancel_point(); await yield_once(); }
 async fn closed_child() {
     async let child = cancel_point();
@@ -317,7 +349,8 @@ async fn observed_checkpoint() { async let child = cancel_point(); await child; 
 
     "Async cancellation: recursive dependencies converge from accepting producers"_test =
         [] static noexcept {
-            const auto program = cancellation_program(R"(
+            const auto program = cancellation_program(R"(import std::async using cancel_point;
+
 async fn ready_recursive(depth: i32) -> i32 {
     if depth == 0 { return 1; }
     return await ready_recursive(depth - 1);
@@ -353,7 +386,8 @@ async fn checked_second(depth: i32) -> i32 {
 
     "Async cancellation: operand execution is separate from the outer observation"_test =
         [] static noexcept {
-            const auto program = cancellation_program(R"(
+            const auto program = cancellation_program(R"(import std::async using cancel_point;
+
 async fn checked() -> i32 { await cancel_point(); return 7; }
 async fn ready(value: i32) -> i32 => value;
 async fn probe() -> i32 => await ready(await checked());
@@ -364,7 +398,8 @@ async fn probe() -> i32 => await ready(await checked());
 
     "Async cancellation: static factories publish only selected producer flows"_test =
         [] static noexcept {
-            const auto program = cancellation_program(R"(
+            const auto program = cancellation_program(R"(import std::async using cancel_point;
+
 async fn ready() -> i32 => 7;
 async fn checked() -> i32 { await cancel_point(); return 7; }
 fn factory(const accepting: bool) {

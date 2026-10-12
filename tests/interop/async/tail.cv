@@ -1,3 +1,4 @@
+import std::async using yield_once;
 import "async/tail.hpp";
 
 import(cpp) fn tail_reset();

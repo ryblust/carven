@@ -56,6 +56,27 @@ auto ProgramConstruction::construct() noexcept -> AnalysisTask<void> {
                 source->declarations().record(draft, name, name, field.type);
             }
         }
+        for (const auto& binding : catalog.imports()) {
+            if (binding.selection_kind == CatalogImportSelectionKind::Wildcard) {
+                continue;
+            }
+            for (const auto& selection : binding.selections) {
+                const auto entity = catalog.source_entity(draft, selection.entity);
+                const auto source_id = draft.syntax_tree(binding.importer).view().source_id();
+                const auto alias = selection.aliased
+                    ? std::optional(locate(source_id, selection.origin))
+                    : std::nullopt;
+                source->declarations().record(
+                    draft,
+                    locate(source_id, selection.export_origin),
+                    entity,
+                    std::nullopt
+                );
+                if (alias) {
+                    source->declarations().record(draft, *alias, entity, std::nullopt, alias);
+                }
+            }
+        }
         source->admit_declarations();
     }
     const auto body_scope = TimingScope(draft.timings(), TimingStage::SemanticBodies);

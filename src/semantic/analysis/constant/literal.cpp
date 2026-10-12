@@ -10,16 +10,6 @@ import :semantic.semir.constant;
 import :semantic.semir.type;
 import std;
 
-auto duration_literal_scale(NumericSuffix suffix) noexcept -> std::optional<std::uint64_t> {
-    switch (suffix) {
-        case NumericSuffix::Nanoseconds:  return 1;
-        case NumericSuffix::Microseconds: return 1'000;
-        case NumericSuffix::Milliseconds: return 1'000'000;
-        case NumericSuffix::Seconds:      return 1'000'000'000;
-        default:                          return std::nullopt;
-    }
-}
-
 namespace {
 
 auto builtin_type(const ProgramDraft& draft, TypeID type) noexcept -> std::optional<BuiltinType> {

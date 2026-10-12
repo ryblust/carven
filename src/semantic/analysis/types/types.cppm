@@ -11,10 +11,11 @@ import :semantic.analysis.program;
 import :semantic.analysis.source.builder;
 import :semantic.semir.generic;
 import :semantic.semir.program;
+import :source.standard;
 import :support.function_ref;
 import std;
 
-auto source_builtin_type(std::string_view name) noexcept -> std::optional<BuiltinType>;
+auto provided_builtin_type(ProvidedExport identity) noexcept -> std::optional<BuiltinType>;
 auto source_type_name_is_reserved(std::string_view name) noexcept -> bool;
 
 // The callable outlives each returned task, including nested type resolution.
@@ -27,6 +28,12 @@ struct GenericTypeContext final {
     std::span<const ProgramSpellingID> parameters;
     std::span<const GenericParameterKind> parameter_kinds;
 };
+
+auto generic_parameter_index(
+    const ProgramDraft& draft,
+    const GenericTypeContext* context,
+    std::string_view name
+) noexcept -> std::optional<std::uint32_t>;
 
 auto resolve_source_generic_argument(
     ProgramDraft& draft,

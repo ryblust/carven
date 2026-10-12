@@ -80,7 +80,8 @@ const TestSuite suite([] static noexcept {
              }) {
             expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeVectorElement);
         }
-        static_cast<void>(analyze_test_program(R"(
+        static_cast<void>(analyze_test_program(R"(import std::simd using u8x16;
+
             struct Borrowed { text: str }
             struct Node<T> { value: T, children: Vector<Node<T>> }
             fn use(values: Vector<ptr<Borrowed>>, nodes: Node<String>) {}
@@ -1528,6 +1529,7 @@ const TestSuite suite([] static noexcept {
     "Vector execution: dynamic storage bounds cover Take construction and nested Write"_test =
         [] static noexcept {
             const auto prelude = std::string(R"(
+                import std::async using when_all;
                 struct Node { children: Vector<Node> }
                 const fn build(depth: i32) -> Node {
                     var node = Node {};

@@ -9,6 +9,8 @@ contracts below.
 ## Cold operations and await
 
 ```carven
+import std::async using yield_once;
+
 async fn next(value: i32) -> i32 {
     await yield_once();
     return value + 1;
@@ -25,13 +27,13 @@ async fn main() {
 Calling an `async fn` constructs an operation without executing its body. The
 function's `-> T` is its successful completion type. Its declared `throw` set is
 delivered when awaited. Operations with equal success and solved failure types
-have the same type even when produced by different functions. Write
-`AsyncOperation<T>` for an operation without nominal failures, or
-`AsyncOperation<T, throw Error + OtherError>` for its complete completion contract.
+have the same type even when produced by different functions.
+Import `Operation` from `std::async`; use `Operation<T>` for an operation without nominal failures, or
+`Operation<T, throw Error + OtherError>` for its complete completion contract.
 The type can also be inferred from a cold call. Inside a parameterized
-declaration, `AsyncOperation<T, throw E>` uses an independent success type and
+declaration, `Operation<T, throw E>` uses an independent success type and
 [failure-set parameter](failures.md#failure-set-parameters).
-`AsyncOperation<void, throw ()>` and `AsyncOperation<void>` both complete successfully with
+`Operation<void, throw ()>` and `Operation<void>` both complete successfully with
 the unit value `()` and have no nominal failure alternatives. Cancellation remains
 a separate completion.
 
@@ -49,7 +51,9 @@ prove their retained backing remains valid. Use a Take parameter to transfer
 the complete owner:
 
 ```carven
-fn relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
+import std::async using Operation;
+
+fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
 ```
 
 An async successful result cannot itself contain an operation.
@@ -63,11 +67,13 @@ arguments, returns, and loop steps may contain await and preserve source evaluat
 ## Cold composition
 
 The builtin composition operations `when_all`, `when_any`, and
-`first_successful` use ordinary name lookup and require no import. Each takes
+`first_successful` are imported from `std::async` and use ordinary name lookup. Each takes
 cold operations and returns a cold operation. They require a direct call and
 cannot be used as callable values.
 
 ```carven
+import std::async using when_all;
+
 async fn main() {
     let results = await when_all(next(4), next(8));
     println(results.0, results.1);
@@ -110,13 +116,13 @@ Result assembly follows ordinary value-transfer requirements.
 
 ## Deadlines
 
-`timeout(operation, duration)` consumes one cold operation and a standard
-`Duration`. It preserves the protected operation's successful type and adds the
-standard `Timeout` and `RangeError` types to its nominal failures. These are
-ordinary standard-library types. The builtin follows the same ordinary lookup
-and direct-call rules as other composition operations. Duration literals and the
-builtin require no type imports; import a type only when naming it in source,
-such as a parameter annotation or a failure declaration.
+Import `timeout` from `std::time`. `timeout(operation, duration)` consumes one
+cold operation and a standard `Duration`. It preserves the protected operation's
+successful type and adds the standard `Timeout` and `RangeError` types to its
+nominal failures. These are ordinary standard-library types. The builtin follows
+the same ordinary lookup and direct-call rules as other composition operations.
+Duration literals and the builtin require no type imports; import a type only
+when naming it in source, such as a parameter annotation or a failure declaration.
 
 Duration literals and `timeout` require `std::time.duration.Duration` with one
 `nanoseconds: i64` field. `timeout` also requires the empty records
@@ -140,6 +146,7 @@ later cancellation requests and losing outcomes cannot replace the result.
 Noncooperative protected work can delay closure beyond the deadline.
 
 ```carven
+import std::time using timeout;
 import std::time.duration using RangeError;
 import std::time.timeout using Timeout;
 
@@ -176,18 +183,19 @@ cancel child;
 It cannot be used as a callable, shadowed by a bare source name, or applied to a
 cold operation. Parenthesized operands and arbitrary expressions are not admitted.
 
-The following builtin callables are available without imports:
+Import the following callables from `std::async`:
 
 | Operation | Behavior |
 | --- | --- |
-| `cancellation_requested()` | Read the current task's request; false outside async execution |
+| `cancel_requested()` | Read the current task's request; false outside async execution |
 | `cancel_point()` | Cold void operation accepting a pending request as cancelled completion |
 | `yield_once()` | Cold void operation that queues the current task continuation at the FIFO tail when executed |
 | `await wait_ready(first, second, ...)` | Wait for a child's terminal completion; return its input position and committed cancellation bit as `(usize, bool)` |
 | `await close(child)` | Request cancellation, wait for completion, discard its outcome, and release its active backing loan |
 
 Async builtin names follow ordinary lookup. Local bindings, module declarations,
-Carven imports, and explicit native selections may shadow them. Opened C++
+and module bindings determine the selected entity. Explicit native selections
+retain their conflict rules with explicit Carven imports. Opened C++
 namespaces provide fallback for names not otherwise resolved. The selected
 declaration determines the call contract in both synchronous and async bodies.
 Each async builtin requires a direct call; taking one as a callable value,
@@ -206,6 +214,8 @@ children belonging to the current activation. They cannot be stored as operation
 values. Candidates may have different result types and declared failure sets.
 
 ```carven
+import std::async using { wait_ready, close };
+
 async let first = next(4);
 async let second = next(8);
 let (index, cancelled) = await wait_ready(first, second);

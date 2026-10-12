@@ -1,3 +1,5 @@
+import std::async using Operation;
+
 private struct Box<T> {
     value: T,
 }
@@ -19,7 +21,7 @@ private const fn empty_slice<T>() -> [T] {
 
 private const async fn produce() -> i32 => 42;
 
-private const async fn complete<T, throw E>(&&pending: AsyncOperation<T, throw E>) -> T throw E {
+private const async fn complete<T, throw E>(&&pending: Operation<T, throw E>) -> T throw E {
     return (await pending)?;
 }
 
@@ -29,10 +31,10 @@ const {
 }
 
 const test "Generic functions: cold operations transfer through checked value algorithms" {
-    let pending: AsyncOperation<i32> = produce();
+    let pending: Operation<i32> = produce();
     let boxed = hold(&&pending);
     let released = release(&&boxed);
-    check(await relay<AsyncOperation<i32>>(&&released) == 42);
+    check(await relay<Operation<i32>>(&&released) == 42);
     let inferred = produce();
     check(await complete(&&inferred) == 42);
     let explicit = produce();

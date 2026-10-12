@@ -13,6 +13,10 @@ as ordinary calls with Read, Write, or Take receivers. Callable views already
 provide borrowed indirect calls through a fixed checked signature. The language
 has no general nominal erased-value or dynamic-conformance facility.
 
+Owning closure values and builtin `Operation<T, throw E>` also have implemented
+call or completion contracts. Neither supplies general nominal conformance,
+existential type packaging, or an open dynamic operation table.
+
 A dynamic value needs a contract for available operations and a holding form for
 its concrete value. The holding form determines ownership, borrowing, allocation,
 nullability, and lifetime. Static generic evidence is selected during compilation.
@@ -99,5 +103,6 @@ testing a C++ representation.
   current value, access, and lifetime rules.
 - [Generic extensions](generic-extensions.md): checked polymorphic calls, static evidence, and finite
   instances required by generic elimination.
+- [Functions](../docs/language/functions.md) and [async](../docs/language/async.md): existing closures, callable views, and operation values.
 - [Mitchell and Plotkin, Abstract Types Have Existential Type](https://www.cs.cmu.edu/~crary/819-f09/MitchellPlotkin88.pdf):
   existential packaging, hidden type identity, and polymorphic elimination.

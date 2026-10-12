@@ -11,6 +11,7 @@ import :frontend.program.verify;
 import :source.batch;
 import :source.document;
 import :source.provenance;
+import :source.standard;
 import :support.invariant;
 import :support.timing;
 import :support.visit;
@@ -174,6 +175,10 @@ auto close_import_graph(
                 continue;
             }
             const auto target = provenance.find_program_module(*resolved);
+            if (const auto provided = find_provided_module(resolved->value())) {
+                imports.push_back({.declaration = declaration, .target = *provided});
+                continue;
+            }
             if (!target.has_value()) {
                 diagnostics.push_back(import_error(
                     source.manager_source_id(),
@@ -231,6 +236,14 @@ auto validate_inputs(
                 std::format(
                     "source snapshot {} is supplied more than once",
                     input.source_id.index()
+                )
+            ));
+        }
+        if (find_provided_module(input.module_path.value())) {
+            diagnostics.push_back(compilation_input_error(
+                std::format(
+                    "source module '{}' conflicts with a compiler-provided module",
+                    input.module_path.value()
                 )
             ));
         }

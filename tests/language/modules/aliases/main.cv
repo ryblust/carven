@@ -1,0 +1,25 @@
+import .api using { Value as Model, number as read };
+import carven::std.core using String as OtherText;
+import std::core using { String as Text, Vector as Items, assert as verify };
+import std::simd using u8x16 as Bytes;
+
+struct String {
+    value: i32
+}
+
+const test "source and provided aliases retain identity" {
+    let item = Model { number: read() };
+    let text: OtherText = Text::from_str("value");
+    let own = String { value: item.number };
+    let items = Items<i32> {};
+    verify(items.length() == 0);
+    verify(text.byte_length() == 5);
+    check(own.value == 7);
+    check(Bytes::splat(3).lane(0) == 3);
+}
+
+test "provided aliases use the native backend" {
+    let text = Text::from_str("native");
+    check(text.byte_length() == 6);
+    check(Bytes::splat(7).lane(1) == read() as u8);
+}

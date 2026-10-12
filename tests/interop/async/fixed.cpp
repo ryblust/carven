@@ -58,7 +58,7 @@ public:
         }
         observed->destroyed = true;
         parent->request_cancel();
-        observed->requested = parent->cancellation_requested();
+        observed->requested = parent->cancel_requested();
     }
 
     auto publish(execution::TaskContext& task) noexcept -> void {

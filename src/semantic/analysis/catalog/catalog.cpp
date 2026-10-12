@@ -93,20 +93,6 @@ auto import_error(SourceID source, std::string message, Span span) noexcept -> D
         .build();
 }
 
-auto find_symbol(
-    const AnalysisCatalog& catalog,
-    const CatalogModule& module_record,
-    std::string_view name
-) noexcept -> const CatalogSymbol* {
-    for (const auto id : module_record.symbols) {
-        const auto& symbol = catalog.view().symbols()[id.index()];
-        if (symbol.name == name) {
-            return std::addressof(symbol);
-        }
-    }
-    return nullptr;
-}
-
 auto visible_to(
     const ProgramDraft& draft,
     DeclarationVisibility visibility,
@@ -142,7 +128,11 @@ auto contains_local_declaration(
     return found != candidates.end()
         && std::ranges::any_of(found->second, [&](const auto& candidate) noexcept {
                return !candidate.import_binding.has_value()
-                   && std::ranges::contains(module_record.symbols, candidate.symbol_id);
+                   && std::holds_alternative<CatalogSymbolID>(candidate.entity)
+                   && std::ranges::contains(
+                       module_record.symbols,
+                       std::get<CatalogSymbolID>(candidate.entity)
+                   );
            });
 }
 
@@ -235,6 +225,21 @@ auto AnalysisCatalogView::find_module(ProgramModuleID id) const noexcept -> cons
 auto AnalysisCatalogView::symbol(CatalogSymbolID id) const noexcept -> const CatalogSymbol* {
     return id.index() >= catalog->symbols.size() ? nullptr
                                                  : std::addressof(catalog->symbols[id.index()]);
+}
+
+auto AnalysisCatalogView::symbol(CatalogEntity entity) const noexcept -> const CatalogSymbol* {
+    const auto* id = std::get_if<CatalogSymbolID>(&entity);
+    return id ? symbol(*id) : nullptr;
+}
+
+auto AnalysisCatalogView::source_entity(
+    const ProgramDraft& draft,
+    CatalogEntity entity
+) const noexcept -> SourceEntity {
+    if (const auto* id = std::get_if<CatalogSymbolID>(&entity)) {
+        return declaration_location(draft, *id);
+    }
+    return std::get<ProvidedExport>(entity);
 }
 
 auto AnalysisCatalogView::declaration_location(
@@ -634,7 +639,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                 append_candidate(
                     local_candidates,
                     result.symbols[symbol_id.index()].name,
-                    {.symbol_id = symbol_id, .import_binding = std::nullopt}
+                    {.entity = symbol_id, .import_binding = std::nullopt}
                 );
             }
 
@@ -858,12 +863,12 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
         auto& candidates = result.visible_candidates[module_index];
 
         struct ExplicitSelection final {
-            CatalogSymbolID symbol;
+            CatalogEntity entity;
             Span origin;
         };
 
         auto explicit_names = std::flat_map<std::string, ExplicitSelection, std::less<>>();
-        auto wildcard_targets = std::flat_map<ProgramModuleID, ImportBindingID>();
+        auto wildcard_targets = std::map<ResolvedModuleTarget, ImportBindingID>();
 
         const auto closed_imports = draft.resolved_imports(module_id);
         if (closed_imports.size() != ast_module.module_imports.size()) {
@@ -874,14 +879,40 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
             const auto& module_import = ast.module_import(import_id);
             const auto& reference = module_import.module_reference;
             const auto target_id = closed_import.target;
-            const auto& target_module = result.modules[target_id.index()];
+            const auto* source_target = std::get_if<ProgramModuleID>(&target_id);
+            auto target_entities = std::vector<CatalogEntity>();
+            if (source_target) {
+                for (const auto id : result.modules[source_target->index()].symbols) {
+                    target_entities.emplace_back(id);
+                }
+            } else {
+                for (const auto& entry : provided_exports()) {
+                    if (entry.module == std::get<ProvidedModule>(target_id)) {
+                        target_entities.emplace_back(entry.identity);
+                    }
+                }
+            }
+            const auto entity_name = [&](CatalogEntity entity) noexcept -> std::string_view {
+                if (const auto* symbol = result.view().symbol(entity)) {
+                    return symbol->name;
+                }
+                return provided_export(std::get<ProvidedExport>(entity)).name;
+            };
+            const auto entity_visible = [&](CatalogEntity entity) noexcept {
+                const auto* symbol = result.view().symbol(entity);
+                return !symbol
+                    || visible_to(draft, symbol->visibility, symbol->module_id, module_id);
+            };
+            const auto target_path = source_target
+                ? std::string(draft.module_path_copy(*source_target).value())
+                : std::string(provided_module_path(std::get<ProvidedModule>(target_id)));
 
-            auto selected_names = std::vector<Span>();
+            auto selected_names = std::vector<ASTImportItem>();
             auto selection_kind = CatalogImportSelectionKind::Single;
             module_import.selection.value.visit(
                 [&]<typename Selection>(const Selection& selection) noexcept {
                     if constexpr (std::same_as<Selection, ASTSingleImport>) {
-                        selected_names.push_back(selection.name_span);
+                        selected_names.push_back(selection.item);
                     } else if constexpr (std::same_as<Selection, ASTImportList>) {
                         selection_kind = CatalogImportSelectionKind::List;
                         selected_names.assign(selection.names.begin(), selection.names.end());
@@ -908,13 +939,23 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                 .reference_span = reference.span,
                 .selection_span = module_import.selection.span,
                 .selection_kind = selection_kind,
-                .selected_symbols = {},
+                .selections = {},
             });
 
             auto names_in_declaration = std::flat_map<std::string, Span, std::less<>>();
 
-            for (const auto name_span : selected_names) {
+            for (const auto& item : selected_names) {
+                const auto name_span = item.alias_span.value_or(item.name_span);
                 const auto name = draft.source_slice_copy(module_id, name_span);
+                const auto export_name = draft.source_slice_copy(module_id, item.name_span);
+                if (name == "ptr") {
+                    diagnostics.push_back(import_error(
+                        source_id,
+                        "'ptr' is reserved for pointer type syntax",
+                        name_span
+                    ));
+                    continue;
+                }
                 if (const auto prior = names_in_declaration.find(name);
                     prior != names_in_declaration.end()) {
                     diagnostics.push_back(duplicate_selection_error(
@@ -926,20 +967,24 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     continue;
                 }
                 names_in_declaration.emplace(std::string(name), name_span);
-                const auto* symbol = find_symbol(result, target_module, name);
-                if (symbol == nullptr) {
+                const auto found =
+                    std::ranges::find_if(target_entities, [&](CatalogEntity entity) noexcept {
+                        return entity_name(entity) == export_name;
+                    });
+                if (found == target_entities.end()) {
                     diagnostics.push_back(import_error(
                         source_id,
                         std::format(
                             "module '{}' has no declaration named '{}'",
-                            draft.module_path_copy(target_id).value(),
-                            name
+                            target_path,
+                            export_name
                         ),
-                        name_span
+                        item.name_span
                     ));
                     continue;
                 }
-                if (!visible_to(draft, symbol->visibility, symbol->module_id, module_id)) {
+                const auto entity = *found;
+                if (!entity_visible(entity)) {
                     diagnostics.push_back(import_error(
                         source_id,
                         std::format(
@@ -960,7 +1005,7 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     continue;
                 }
                 if (const auto prior = explicit_names.find(name); prior != explicit_names.end()) {
-                    if (prior->second.symbol == symbol->symbol_id) {
+                    if (prior->second.entity == entity) {
                         diagnostics.push_back(duplicate_selection_error(
                             source_id,
                             name_span,
@@ -983,18 +1028,20 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                 }
                 explicit_names.emplace(
                     std::string(name),
-                    ExplicitSelection {.symbol = symbol->symbol_id, .origin = name_span}
+                    ExplicitSelection {.entity = entity, .origin = name_span}
                 );
-                result.import_bindings[binding_id.index()].selected_symbols.push_back({
-                    .symbol_id = symbol->symbol_id,
+                result.import_bindings[binding_id.index()].selections.push_back({
+                    .entity = entity,
                     .name = std::string(name),
                     .origin = name_span,
+                    .export_origin = item.name_span,
+                    .aliased = item.alias_span.has_value(),
                 });
                 remove_wildcard_candidates(result, candidates, name);
                 append_candidate(
                     candidates,
                     name,
-                    {.symbol_id = symbol->symbol_id, .import_binding = binding_id}
+                    {.entity = entity, .import_binding = binding_id}
                 );
             }
 
@@ -1008,32 +1055,31 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
                     source_id,
                     module_import.selection.span,
                     first.selection_span,
-                    std::format(
-                        "module '{}' is imported by wildcard more than once",
-                        draft.module_path_copy(target_id).value()
-                    )
+                    std::format("module '{}' is imported by wildcard more than once", target_path)
                 ));
                 continue;
             }
             wildcard_targets.emplace(target_id, binding_id);
-            for (const auto symbol_id : target_module.symbols) {
-                const auto& symbol = result.symbols[symbol_id.index()];
-                if (!visible_to(draft, symbol.visibility, symbol.module_id, module_id)) {
+            for (const auto entity : target_entities) {
+                const auto name = entity_name(entity);
+                if (!entity_visible(entity)) {
                     continue;
                 }
-                result.import_bindings[binding_id.index()].selected_symbols.push_back({
-                    .symbol_id = symbol_id,
-                    .name = symbol.name,
+                result.import_bindings[binding_id.index()].selections.push_back({
+                    .entity = entity,
+                    .name = std::string(name),
                     .origin = module_import.selection.span,
+                    .export_origin = module_import.selection.span,
+                    .aliased = false,
                 });
-                if (contains_local_declaration(candidates, local_module, symbol.name)
-                    || has_explicit_candidate(result, candidates, symbol.name)) {
+                if (contains_local_declaration(candidates, local_module, name)
+                    || has_explicit_candidate(result, candidates, name)) {
                     continue;
                 }
                 append_candidate(
                     candidates,
-                    symbol.name,
-                    {.symbol_id = symbol_id, .import_binding = binding_id}
+                    name,
+                    {.entity = entity, .import_binding = binding_id}
                 );
             }
         }
@@ -1054,6 +1100,21 @@ auto build_analysis_catalog(ProgramDraft& draft) noexcept
     if (!diagnostics.empty()) {
         return std::unexpected(std::move(diagnostics));
     }
+    for (auto index = 0uz; index < module_count; ++index) {
+        auto& candidates = result.visible_candidates[index];
+        for (const auto& info : provided_exports()) {
+            if (info.default_available
+                && !candidates.contains(info.name)
+                && !result.cpp_selections[index].contains(info.name)) {
+                append_candidate(
+                    candidates,
+                    info.name,
+                    {.entity = info.identity, .import_binding = std::nullopt}
+                );
+            }
+        }
+    }
+
     return result;
 }
 

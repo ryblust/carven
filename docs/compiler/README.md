@@ -91,8 +91,11 @@ publishes an immutable semantic program. Errors prevent delivery; warnings accom
 a successful result.
 
 `semantic.analysis.source` defines optional source observations delivered through
-`SourceAnalysisOutput`. Analysis records resolved definitions and types at their
-source tokens. Successful publication supplies types owned by the returned
+`SourceAnalysisOutput`. Analysis records selected source or provided entities,
+local alias binding origins, and types at source tokens. Definitions derive from
+these identities: an alias navigates to its binding, a source entity to its
+declaration. Entity references include all local spellings. Provided exports
+supply module metadata. Successful publication supplies types owned by the returned
 program; failed analysis can retain definitions and known builtin types from
 admitted declarations and completed bodies. Observations do not establish program
 validity. The recipient borrows one batch during delivery and copies retained
@@ -102,7 +105,7 @@ records. An empty recipient performs no recording.
 snapshots, query selections, navigation indexes, and bounded caches of complete
 analysis results. Bulk document updates validate and publish together, copying
 the document table once. Navigation selects a document's
-transitive import closure; semantic and reference queries use the explicit
+transitive source prerequisites, including imports and duration literals; semantic and reference queries use the explicit
 project selection. Every uncached selection reuses retained parsing and runs the
 complete semantic transaction and publication checks. Snapshots retain source
 revisions and query results

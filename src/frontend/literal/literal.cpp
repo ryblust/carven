@@ -34,3 +34,13 @@ auto std::formatter<NumericSuffix>::display_name(NumericSuffix suffix) noexcept
     }
     std::unreachable();
 }
+
+auto duration_literal_scale(NumericSuffix suffix) noexcept -> std::optional<std::uint64_t> {
+    switch (suffix) {
+        case NumericSuffix::Nanoseconds:  return 1;
+        case NumericSuffix::Microseconds: return 1'000;
+        case NumericSuffix::Milliseconds: return 1'000'000;
+        case NumericSuffix::Seconds:      return 1'000'000'000;
+        default:                          return std::nullopt;
+    }
+}

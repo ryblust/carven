@@ -4,6 +4,7 @@ import :frontend.document;
 import :semantic.semir.program;
 import :semantic.semir.type;
 import :source.module_path;
+import :source.standard;
 import :source.text;
 import :test.harness.framework;
 import :workspace.analysis;
@@ -39,11 +40,104 @@ auto expect_type(const WorkspaceHoverQuery& query, BuiltinType type) noexcept ->
     require(query.analysis.result && query.result);
     const auto* program = query.analysis.result->program();
     require(program != nullptr);
-    const auto* published = std::get_if<TypeID>(&query.result->type);
+    const auto* published =
+        query.result->type ? std::get_if<TypeID>(&*query.result->type) : nullptr;
     expect(published != nullptr && *published == program->types().builtin_type(type));
 }
 
 const TestSuite tests([] static noexcept {
+    "Workspace: provided aliases preserve entity references and local rename scope"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto project = std::array {project_module("app.cv", "app")};
+            const auto text = std::string(
+                "import std::core using { String as Text, String as Other }; fn build() -> Text => Other::from_str(\"value\");"
+            );
+            update(host, "app.cv", 1, text);
+            const auto snapshot = host.snapshot();
+            const auto hover = snapshot.hover(project, "app.cv", offset(text, "Text =>"));
+            require(hover.result && hover.result->entity);
+            const auto* identity = std::get_if<ProvidedExport>(&*hover.result->entity);
+            expect(identity && *identity == ProvidedExport::String);
+            const auto definition = snapshot.definition(project, "app.cv", offset(text, "Text =>"));
+            require(definition.result.has_value());
+            expect_equal(definition.result->range.start(), offset(text, "Text,"));
+            const auto references = snapshot.references(project, "app.cv", offset(text, "Text =>"));
+            require(references.result.has_value());
+            auto reference_offsets = std::vector<std::uint32_t>();
+            for (const auto& location : *references.result) {
+                expect_equal(location.document, "app.cv");
+                reference_offsets.push_back(location.range.start());
+            }
+            expect_equal(
+                reference_offsets,
+                (std::vector<std::uint32_t> {
+                    offset(text, "String as Text"),
+                    offset(text, "Text,"),
+                    offset(text, "String as Other"),
+                    offset(text, "Other }"),
+                    offset(text, "Text =>"),
+                    offset(text, "Other::")
+                })
+            );
+            const auto aliases =
+                hover.analysis.result->alias_references("app.cv", offset(text, "Text =>"));
+            require(aliases.has_value());
+            auto alias_offsets = std::vector<std::uint32_t>();
+            for (const auto& location : *aliases) {
+                expect_equal(location.document, "app.cv");
+                alias_offsets.push_back(location.range.start());
+            }
+            expect_equal(
+                alias_offsets,
+                (std::vector<std::uint32_t> {offset(text, "Text,"), offset(text, "Text =>")})
+            );
+            expect(!snapshot.definition(project, "app.cv", offset(text, "String as")).result);
+        };
+    "Workspace: duration literals carry source prerequisites without imports"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto project = std::array {
+                project_module("app.cv", "app"),
+                project_module("duration.cv", "crafts.carven.std.time.duration"),
+                project_module("other.cv", "other")
+            };
+            const auto text = std::string("fn run() { let value = 1ms; }");
+            update(host, "app.cv", 1, text);
+            update(host, "duration.cv", 1, "export struct Duration { nanoseconds: i64 }");
+            update(host, "other.cv", 1, "fn unfinished(");
+            const auto query = host.snapshot().hover(project, "app.cv", offset(text, "1ms"));
+            require(query.result && query.result->type);
+            expect(query.analysis.result->program() != nullptr);
+            expect(query.analysis.result->source("duration.cv").has_value());
+            expect(!query.analysis.result->source("other.cv").has_value());
+        };
+    "Workspace: timeout navigation includes available contract source modules"_test =
+        [] static noexcept {
+            auto host = WorkspaceAnalysisHost();
+            const auto project = std::array {
+                project_module("app.cv", "app"),
+                project_module("duration.cv", "crafts.carven.std.time.duration"),
+                project_module("timeout.cv", "crafts.carven.std.time.timeout")
+            };
+            const auto text = std::string(
+                "import std::time using timeout as limit; async fn one() -> i32 => 1; async fn run() { let result = try { await limit(one(), 1ms)? } catch { _ => 0, }; }"
+            );
+            update(host, "app.cv", 1, text);
+            update(
+                host,
+                "duration.cv",
+                1,
+                "export struct Duration { nanoseconds: i64 } export struct RangeError {}"
+            );
+            update(host, "timeout.cv", 1, "export struct Timeout {}");
+            const auto query = host.snapshot().hover(project, "app.cv", offset(text, "limit(one"));
+            require(query.analysis.result);
+            expect(query.analysis.result->program() != nullptr);
+            expect(query.analysis.result->source("duration.cv").has_value());
+            expect(query.analysis.result->source("timeout.cv").has_value());
+        };
+
     "Workspace: editing dependencies updates navigation while retained results stay valid"_test =
         [] static noexcept {
             auto host = WorkspaceAnalysisHost(1);
@@ -111,7 +205,8 @@ const TestSuite tests([] static noexcept {
                 expect_equal(slice(source->text, location.range), "answer");
                 expect_equal(location.version, 2ll);
             }
-            const auto expected = std::vector<std::string> {"app.cv", "lib.cv", "other.cv"};
+            const auto expected =
+                std::vector<std::string> {"app.cv", "app.cv", "lib.cv", "other.cv", "other.cv"};
             expect(locations == expected);
             expect_type(old_hover, BuiltinType::I32);
             expect_type(before.hover(project, "app.cv", offset(app, "result")), BuiltinType::I32);

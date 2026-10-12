@@ -1,3 +1,5 @@
+import std::async using yield_once;
+
 const async fn rotate(a: i32, b: i32, depth: i32) -> i32 {
     if depth == 0 { return a * 10 + b; }
     return await rotate(b, a, depth - 1);

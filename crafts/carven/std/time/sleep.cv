@@ -1,5 +1,6 @@
 import .clock using TimePoint;
 import .duration using { Duration, RangeError };
+import std::async using cancel_point;
 
 export async fn sleep(duration: Duration) throw RangeError {
     await cancel_point();

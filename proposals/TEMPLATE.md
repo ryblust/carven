@@ -23,6 +23,9 @@ Explain the current behavior and constraints needed to understand the design.
 Keep the proposal understandable without following references.
 Keep only the current constraints needed to understand unfinished decisions.
 Remove completed design sections once permanent documentation covers them.
+An implemented prerequisite is context, not an unfinished implementation slice.
+Name the remaining extension precisely when a neighboring mechanism already
+exists, and link its permanent contract or owning source/test boundary.
 
 ## Goals and non-goals
 

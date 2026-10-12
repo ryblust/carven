@@ -2,7 +2,6 @@ module carven:semantic.analysis.types.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
-import :diagnostics.suggestion;
 import :semantic.analysis.names;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
@@ -12,46 +11,39 @@ import :support.invariant;
 import :support.visit;
 import std;
 
-auto source_builtin_type(std::string_view name) noexcept -> std::optional<BuiltinType> {
-    static constexpr auto names = std::array {
-        std::pair {std::string_view("bool"), BuiltinType::Bool},
-        std::pair {std::string_view("char"), BuiltinType::Char},
-        std::pair {std::string_view("String"), BuiltinType::String},
-        std::pair {std::string_view("str"), BuiltinType::Str},
-        std::pair {std::string_view("i8"), BuiltinType::I8},
-        std::pair {std::string_view("i16"), BuiltinType::I16},
-        std::pair {std::string_view("i32"), BuiltinType::I32},
-        std::pair {std::string_view("i64"), BuiltinType::I64},
-        std::pair {std::string_view("u8"), BuiltinType::U8},
-        std::pair {std::string_view("u16"), BuiltinType::U16},
-        std::pair {std::string_view("u32"), BuiltinType::U32},
-        std::pair {std::string_view("u64"), BuiltinType::U64},
-        std::pair {std::string_view("isize"), BuiltinType::Isize},
-        std::pair {std::string_view("usize"), BuiltinType::Usize},
-        std::pair {std::string_view("f32"), BuiltinType::F32},
-        std::pair {std::string_view("f64"), BuiltinType::F64},
-        std::pair {std::string_view("void"), BuiltinType::Void},
-        std::pair {std::string_view("u8x32"), BuiltinType::U8x32},
-        std::pair {std::string_view("mask32"), BuiltinType::Mask32},
-        std::pair {std::string_view("f32x8"), BuiltinType::F32x8},
-        std::pair {std::string_view("mask8"), BuiltinType::Mask8},
-        std::pair {std::string_view("u8x16"), BuiltinType::U8x16},
-        std::pair {std::string_view("mask16"), BuiltinType::Mask16},
-        std::pair {std::string_view("f32x4"), BuiltinType::F32x4},
-        std::pair {std::string_view("mask4"), BuiltinType::Mask4},
-    };
-    const auto found = std::ranges::find(names, name, [](const auto& entry) static noexcept {
-        return entry.first;
-    });
-    return found == names.end() ? std::nullopt : std::optional(found->second);
+auto provided_builtin_type(ProvidedExport identity) noexcept -> std::optional<BuiltinType> {
+    switch (identity) {
+        case ProvidedExport::Bool:   return BuiltinType::Bool;
+        case ProvidedExport::Char:   return BuiltinType::Char;
+        case ProvidedExport::String: return BuiltinType::String;
+        case ProvidedExport::Str:    return BuiltinType::Str;
+        case ProvidedExport::I8:     return BuiltinType::I8;
+        case ProvidedExport::I16:    return BuiltinType::I16;
+        case ProvidedExport::I32:    return BuiltinType::I32;
+        case ProvidedExport::I64:    return BuiltinType::I64;
+        case ProvidedExport::U8:     return BuiltinType::U8;
+        case ProvidedExport::U16:    return BuiltinType::U16;
+        case ProvidedExport::U32:    return BuiltinType::U32;
+        case ProvidedExport::U64:    return BuiltinType::U64;
+        case ProvidedExport::Isize:  return BuiltinType::Isize;
+        case ProvidedExport::Usize:  return BuiltinType::Usize;
+        case ProvidedExport::F32:    return BuiltinType::F32;
+        case ProvidedExport::F64:    return BuiltinType::F64;
+        case ProvidedExport::Void:   return BuiltinType::Void;
+        case ProvidedExport::U8x32:  return BuiltinType::U8x32;
+        case ProvidedExport::Mask32: return BuiltinType::Mask32;
+        case ProvidedExport::F32x8:  return BuiltinType::F32x8;
+        case ProvidedExport::Mask8:  return BuiltinType::Mask8;
+        case ProvidedExport::U8x16:  return BuiltinType::U8x16;
+        case ProvidedExport::Mask16: return BuiltinType::Mask16;
+        case ProvidedExport::F32x4:  return BuiltinType::F32x4;
+        case ProvidedExport::Mask4:  return BuiltinType::Mask4;
+        default:                     return std::nullopt;
+    }
 }
 
 auto source_type_name_is_reserved(std::string_view name) noexcept -> bool {
-    return name == "ptr"
-        || name == "Range"
-        || name == "Vector"
-        || name == "AsyncOperation"
-        || source_builtin_type(name).has_value();
+    return name == "ptr";
 }
 
 namespace {
@@ -90,7 +82,7 @@ auto require_type_argument(
     return *type;
 }
 
-auto select_global_symbol(
+auto select_global_entity(
     const ProgramDraft& draft,
     AnalysisCatalogView catalog,
     ImportUsage& import_usage,
@@ -98,59 +90,17 @@ auto select_global_symbol(
     std::string_view name,
     Span origin,
     SourceObservation* observations
-) noexcept -> AnalysisResult<const CatalogSymbol*> {
-    const auto candidates = catalog.lookup(module_id, name);
-    if (candidates.empty()) {
-        return std::unexpected(fail(
-            draft,
-            module_id,
-            origin,
-            DiagnosticCode::TypeUnresolved,
-            std::format(
-                "unresolved type name '{}'{}",
-                name,
-                spelling_suggestion(name, catalog.visible_names(module_id))
-            )
-        ));
-    }
-    if (candidates.size() != 1uz) {
-        auto diagnostic = DiagnosticBuilder(
-            DiagnosticCode::NameAmbiguous,
-            std::format("name '{}' is provided by more than one wildcard import", name)
-        );
-        diagnostic.primary(locate(source_id(draft, module_id), origin), "ambiguous reference");
-        for (const auto& candidate : candidates) {
-            const auto* symbol = catalog.symbol(candidate.symbol_id);
-            if (symbol == nullptr) {
-                invariant_violation("catalog lookup returned an invalid symbol identity");
-            }
-            diagnostic.related(
-                locate(source_id(draft, symbol->module_id), symbol->declaration_span),
-                std::format(
-                    "candidate from '{}'",
-                    draft.module_path_copy(symbol->module_id).value()
-                )
-            );
-        }
-        return std::unexpected(draft.diagnostics().error(diagnostic.build()));
-    }
-    const auto& selected = candidates.front();
-    if (selected.import_binding.has_value()) {
-        import_usage.record(*selected.import_binding);
-    }
-    const auto* symbol = catalog.symbol(selected.symbol_id);
-    if (symbol == nullptr) {
-        invariant_violation("catalog lookup returned an invalid symbol identity");
-    }
-    if (observations) {
-        observations->record(
-            draft,
-            locate(source_id(draft, module_id), origin),
-            catalog.declaration_location(draft, selected.symbol_id),
-            std::nullopt
-        );
-    }
-    return symbol;
+) noexcept -> AnalysisResult<CatalogEntity> {
+    return select_catalog_entity(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        name,
+        origin,
+        observations,
+        DiagnosticCode::TypeUnresolved
+    );
 }
 
 auto resolve_named_value(
@@ -167,14 +117,7 @@ auto resolve_named_value(
     SourceObservation* observations
 ) noexcept -> AnalysisTask<ConstructionTypeRef> {
     const auto root = draft.source_slice_copy(module_id, named.components.front().name_span);
-    if (generic_context
-        && !named.global_root
-        && std::ranges::any_of(
-            generic_context->parameters,
-            [&](ProgramSpellingID parameter) noexcept {
-                return draft.spelling_copy(parameter) == root;
-            }
-        )) {
+    if (!named.global_root && generic_parameter_index(draft, generic_context, root)) {
         co_return std::unexpected(fail(
             draft,
             module_id,
@@ -183,14 +126,32 @@ auto resolve_named_value(
             "this type position requires a concrete type rather than a type parameter"
         ));
     }
-    if (!named.global_root && named.components.size() == 1uz && root == "AsyncOperation") {
+    auto selected_entity = std::optional<CatalogEntity>();
+    if (!named.global_root && !catalog.lookup(module_id, root).empty()) {
+        auto selected = select_global_entity(
+            draft,
+            catalog,
+            import_usage,
+            module_id,
+            root,
+            named.components.front().name_span,
+            observations
+        );
+        if (!selected) {
+            co_return std::unexpected(selected.error());
+        }
+        selected_entity = *selected;
+    }
+    const auto* provided =
+        selected_entity ? std::get_if<ProvidedExport>(&*selected_entity) : nullptr;
+    if (provided && named.components.size() == 1uz && *provided == ProvidedExport::Operation) {
         if (named.arguments.empty() || named.arguments.size() > 2uz) {
             co_return std::unexpected(fail(
                 draft,
                 module_id,
                 origin,
                 DiagnosticCode::TypeGenericArguments,
-                "AsyncOperation requires a result type and an optional throw failure set"
+                "Operation requires a result type and an optional throw failure set"
             ));
         }
         const auto result_argument =
@@ -218,7 +179,7 @@ auto resolve_named_value(
             *success,
             module_id,
             origin,
-            "AsyncOperation successful result"
+            "Operation successful result"
         );
         if (!checked) {
             co_return std::unexpected(checked.error());
@@ -233,7 +194,7 @@ auto resolve_named_value(
                     module_id,
                     argument.span,
                     DiagnosticCode::TypeGenericArguments,
-                    "AsyncOperation's second argument must be a throw failure set"
+                    "Operation's second argument must be a throw failure set"
                 ));
             }
             auto resolved = co_await resolve_failure_types(
@@ -255,7 +216,7 @@ auto resolve_named_value(
         }
         co_return make_operation_type(draft, *success, failures);
     }
-    if (!named.global_root && named.components.size() == 1uz && root == "Vector") {
+    if (provided && named.components.size() == 1uz && *provided == ProvidedExport::Vector) {
         if (named.arguments.size() != 1uz) {
             co_return std::unexpected(fail(
                 draft,
@@ -298,7 +259,7 @@ auto resolve_named_value(
             draft.intern_type({.value = VectorTypeValue {.element = concrete}})
         };
     }
-    if (!named.global_root && named.components.size() == 1uz && root == "Range") {
+    if (provided && named.components.size() == 1uz && *provided == ProvidedExport::Range) {
         if (named.arguments.size() != 1uz) {
             co_return std::unexpected(fail(
                 draft,
@@ -345,8 +306,7 @@ auto resolve_named_value(
             "range element must be an integer type"
         ));
     }
-    if (named.global_root.has_value()
-        || (!source_builtin_type(root).has_value() && catalog.lookup(module_id, root).empty())) {
+    if (named.global_root.has_value() || !selected_entity) {
         auto components = std::vector<Span>();
         for (const auto& component : named.components) {
             components.push_back(component.name_span);
@@ -416,7 +376,7 @@ auto resolve_named_value(
     }
     const auto component = named.components.front().name_span;
     const auto name = draft.source_slice_copy(module_id, component);
-    if (const auto builtin = source_builtin_type(name)) {
+    if (const auto builtin = provided ? provided_builtin_type(*provided) : std::nullopt) {
         if (!named.arguments.empty()) {
             co_return std::unexpected(fail(
                 draft,
@@ -428,22 +388,25 @@ auto resolve_named_value(
         }
         co_return ConstructionTypeRef {draft.builtin_type(*builtin)};
     }
-    const auto selected = select_global_symbol(
-        draft,
-        catalog,
-        import_usage,
-        module_id,
-        name,
-        component,
-        observations
-    );
+    const auto selected = selected_entity ? AnalysisResult<CatalogEntity>(*selected_entity)
+                                          : select_global_entity(
+                                                draft,
+                                                catalog,
+                                                import_usage,
+                                                module_id,
+                                                name,
+                                                component,
+                                                observations
+                                            );
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
     }
-    if (const auto* generic = std::get_if<CatalogGenericForm>(&(*selected)->form)) {
+    const auto* selected_symbol = catalog.symbol(*selected);
+    if (const auto* generic =
+            (selected_symbol ? std::get_if<CatalogGenericForm>(&selected_symbol->form) : nullptr)) {
         if (requests) {
-            auto ready =
-                (co_await requests->ensure_declaration((*selected)->symbol_id, module_id, origin));
+            auto ready = (co_await requests
+                              ->ensure_declaration(selected_symbol->symbol_id, module_id, origin));
             if (!ready) {
                 co_return std::unexpected(ready.error());
             }
@@ -511,14 +474,16 @@ auto resolve_named_value(
             "type arguments require a type-parameterized declaration"
         ));
     }
-    if (const auto* structure = std::get_if<CatalogStructForm>(&(*selected)->form)) {
+    if (const auto* structure =
+            (selected_symbol ? std::get_if<CatalogStructForm>(&selected_symbol->form) : nullptr)) {
         co_return ConstructionTypeRef {draft.intern_type(
             CanonicalType {
                 .value = StructTypeValue {.structure = structure->structure},
             }
         )};
     }
-    if (const auto* enumeration = std::get_if<CatalogEnumForm>(&(*selected)->form)) {
+    if (const auto* enumeration =
+            (selected_symbol ? std::get_if<CatalogEnumForm>(&selected_symbol->form) : nullptr)) {
         co_return ConstructionTypeRef {draft.intern_type(
             CanonicalType {
                 .value = EnumTypeValue {.enumeration = enumeration->enumeration},
@@ -974,22 +939,13 @@ auto resolve_generic_type_contents(
     ConstructionRequests* requests,
     SourceObservation* observations
 ) noexcept -> AnalysisTask<GenericTypeID> {
-    const auto parameter_index =
-        [&](std::string_view name) noexcept -> std::optional<std::uint32_t> {
-        for (auto index = 0uz; index < context.parameters.size(); ++index) {
-            if (draft.spelling(context.parameters[index]) == name) {
-                return static_cast<std::uint32_t>(index);
-            }
-        }
-        return std::nullopt;
-    };
     co_return (co_await source.value.visit(
         Overloaded {
             [&](const ASTNamedType& named) noexcept -> AnalysisTask<GenericTypeID> {
                 if (!named.global_root && named.components.size() == 1uz) {
                     const auto component = named.components.front().name_span;
                     const auto name = draft.source_slice_copy(module_id, component);
-                    if (const auto index = parameter_index(name)) {
+                    if (const auto index = generic_parameter_index(draft, &context, name)) {
                         if (*index < context.parameter_kinds.size()
                             && context.parameter_kinds[*index] != GenericParameterKind::Type) {
                             co_return std::unexpected(fail(
@@ -1014,14 +970,32 @@ auto resolve_generic_type_contents(
                             GenericTypeParameter {.definition = context.definition, .index = *index}
                         );
                     }
-                    if (name == "AsyncOperation") {
+                    auto selected_entity = std::optional<CatalogEntity>();
+                    if (!catalog.lookup(module_id, name).empty()) {
+                        const auto selected = select_global_entity(
+                            draft,
+                            catalog,
+                            import_usage,
+                            module_id,
+                            name,
+                            component,
+                            observations
+                        );
+                        if (!selected) {
+                            co_return std::unexpected(selected.error());
+                        }
+                        selected_entity = *selected;
+                    }
+                    const auto* provided =
+                        selected_entity ? std::get_if<ProvidedExport>(&*selected_entity) : nullptr;
+                    if (provided && *provided == ProvidedExport::Operation) {
                         if (named.arguments.empty() || named.arguments.size() > 2uz) {
                             co_return std::unexpected(fail(
                                 draft,
                                 module_id,
                                 source.span,
                                 DiagnosticCode::TypeGenericArguments,
-                                "AsyncOperation requires a result type and an optional throw failure set"
+                                "Operation requires a result type and an optional throw failure set"
                             ));
                         }
                         const auto result_argument =
@@ -1055,7 +1029,7 @@ auto resolve_generic_type_contents(
                                     module_id,
                                     argument.span,
                                     DiagnosticCode::TypeGenericArguments,
-                                    "AsyncOperation's second argument must be a throw failure set"
+                                    "Operation's second argument must be a throw failure set"
                                 ));
                             }
                             auto resolved = co_await resolve_failure_types(
@@ -1082,7 +1056,7 @@ auto resolve_generic_type_contents(
                             }
                         );
                     }
-                    if (name == "Vector") {
+                    if (provided && *provided == ProvidedExport::Vector) {
                         if (named.arguments.size() != 1uz) {
                             co_return std::unexpected(fail(
                                 draft,
@@ -1117,21 +1091,10 @@ auto resolve_generic_type_contents(
                             GenericVectorType {.element = *element}
                         );
                     }
-                    if (!catalog.lookup(module_id, name).empty()) {
-                        const auto selected = select_global_symbol(
-                            draft,
-                            catalog,
-                            import_usage,
-                            module_id,
-                            name,
-                            component,
-                            observations
-                        );
-                        if (!selected) {
-                            co_return std::unexpected(selected.error());
-                        }
+                    if (const auto* selected_symbol =
+                            selected_entity ? catalog.symbol(*selected_entity) : nullptr) {
                         if (const auto* generic =
-                                std::get_if<CatalogGenericForm>(&(*selected)->form)) {
+                                std::get_if<CatalogGenericForm>(&selected_symbol->form)) {
                             // Symbolic applications bind argument domains without
                             // demanding recursive nominal fields. The completed
                             // declaration checker validates parameter kinds.
@@ -1781,4 +1744,19 @@ auto resolve_failure_types(
         co_return parameters.front();
     }
     co_return draft.union_generic_failures(std::move(parameters));
+}
+
+auto generic_parameter_index(
+    const ProgramDraft& draft,
+    const GenericTypeContext* context,
+    std::string_view name
+) noexcept -> std::optional<std::uint32_t> {
+    if (context) {
+        for (auto index = 0uz; index < context->parameters.size(); ++index) {
+            if (draft.spelling(context->parameters[index]) == name) {
+                return static_cast<std::uint32_t>(index);
+            }
+        }
+    }
+    return std::nullopt;
 }

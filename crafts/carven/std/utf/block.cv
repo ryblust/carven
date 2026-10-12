@@ -1,3 +1,4 @@
+import std::simd using { u8x16, u8x32, mask32 };
 import std::simd.bytes using { shift_in, shift_right };
 
 // Lookup4-style adjacent-byte classification. Each bit denotes a constraint;

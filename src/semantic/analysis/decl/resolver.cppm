@@ -62,8 +62,8 @@ private:
 
     auto resolve_fresh(const CatalogSymbol& symbol) noexcept -> AnalysisTask<void>;
 
-    auto select_symbol(ProgramModuleID module_id, std::string_view name, Span origin) noexcept
-        -> AnalysisResult<const CatalogSymbol*>;
+    auto select_entity(ProgramModuleID module_id, std::string_view name, Span origin) noexcept
+        -> AnalysisResult<CatalogEntity>;
 
     struct ConstantScope final {
         DeclResolver& resolver;

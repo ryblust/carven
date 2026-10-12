@@ -6,6 +6,7 @@ import :diagnostics.suggestion;
 import :frontend.ast.decl;
 import :semantic.analysis.body.context;
 import :semantic.analysis.catalog;
+import :semantic.analysis.names;
 import :semantic.analysis.types;
 import :semantic.semir.body;
 import :semantic.semir.decl;
@@ -150,7 +151,7 @@ auto BodyElaborator::local_was_used(std::string_view name) const noexcept -> boo
 }
 
 auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
-    -> AnalysisTask<const CatalogSymbol*> {
+    -> AnalysisTask<CatalogEntity> {
     const auto candidates = catalog().lookup(source_module_id, name);
     if (candidates.empty()) {
         auto known = catalog().visible_names(source_module_id);
@@ -164,34 +165,25 @@ auto BodyElaborator::find_global(std::string_view name, Span span) noexcept
             std::format("unresolved name '{}'{}", name, spelling_suggestion(name, known))
         ));
     }
-    if (candidates.size() != 1uz) {
-        co_return std::unexpected(fail(
-            span,
-            DiagnosticCode::NameAmbiguous,
-            std::format("name '{}' is provided by more than one import", name)
-        ));
+    auto selected = select_catalog_entity(
+        draft(),
+        catalog(),
+        import_usage(),
+        source_module_id,
+        name,
+        span,
+        observe_sources ? &source_occurrences : nullptr
+    );
+    if (!selected) {
+        co_return std::unexpected(selected.error());
     }
-    if (candidates.front().import_binding.has_value()) {
-        import_usage().record(*candidates.front().import_binding);
+    if (const auto* id = std::get_if<CatalogSymbolID>(&*selected)) {
+        auto completed = co_await batch->requests.ensure_declaration(*id, source_module_id, span);
+        if (!completed) {
+            co_return std::unexpected(completed.error());
+        }
     }
-    const auto* result = catalog().symbol(candidates.front().symbol_id);
-    if (result == nullptr) {
-        invariant_violation("catalog lookup returned an invalid symbol");
-    }
-
-    auto completed =
-        (co_await batch->requests.ensure_declaration(result->symbol_id, source_module_id, span));
-    if (!completed) {
-        co_return std::unexpected(completed.error());
-    }
-    if (observe_sources) {
-        observe_source(
-            span,
-            catalog().declaration_location(draft(), result->symbol_id),
-            std::nullopt
-        );
-    }
-    co_return result;
+    co_return *selected;
 }
 
 auto BodyElaborator::find_enum_case(EnumID owner, std::string_view name, Span span) noexcept

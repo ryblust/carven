@@ -82,19 +82,30 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
         if (!name_reference.has_value()) {
             co_return std::unexpected(name_reference.error());
         }
-        if (name_reference->has_value() && (**name_reference).lookup == CppNameLookup::Global) {
+        if (name_reference->has_value()) {
             co_return CppSelection {.target = std::move(**name_reference), .span = span};
         }
-        const auto builtin = text == "print" ? std::optional(BuiltinFunction::Print)
-            : text == "println"              ? std::optional(BuiltinFunction::Println)
-            : text == "eprint"               ? std::optional(BuiltinFunction::Eprint)
-            : text == "eprintln"             ? std::optional(BuiltinFunction::Eprintln)
-            : text == "assert"               ? std::optional(BuiltinFunction::Assert)
-            : text == "check"                ? std::optional(BuiltinFunction::Check)
-            : text == "require"              ? std::optional(BuiltinFunction::Require)
-            : text == "fail"                 ? std::optional(BuiltinFunction::Fail)
-            : text == "addressof"            ? std::optional(BuiltinFunction::Addressof)
-                                             : std::nullopt;
+    }
+    auto selected = (co_await find_global(text, name.name_span));
+    if (!selected.has_value()) {
+        co_return std::unexpected(selected.error());
+    }
+    const auto* selected_symbol = catalog().symbol(*selected);
+    if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
+        const auto builtin = [&]() noexcept -> std::optional<BuiltinFunction> {
+            switch (*provided) {
+                case ProvidedExport::Print:     return BuiltinFunction::Print;
+                case ProvidedExport::Println:   return BuiltinFunction::Println;
+                case ProvidedExport::Eprint:    return BuiltinFunction::Eprint;
+                case ProvidedExport::Eprintln:  return BuiltinFunction::Eprintln;
+                case ProvidedExport::Assert:    return BuiltinFunction::Assert;
+                case ProvidedExport::Check:     return BuiltinFunction::Check;
+                case ProvidedExport::Require:   return BuiltinFunction::Require;
+                case ProvidedExport::Fail:      return BuiltinFunction::Fail;
+                case ProvidedExport::Addressof: return BuiltinFunction::Addressof;
+                default:                        return std::nullopt;
+            }
+        }();
         if (builtin) {
             co_return BuiltinSelection {
                 .function = *builtin,
@@ -103,13 +114,13 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
                 .operand_sources = std::nullopt
             };
         }
-        if (const auto async_builtin = find_async_builtin(text)) {
+        if (const auto async = provided_async_builtin(*provided)) {
             auto resolved = co_await resolve_async_builtin(
                 draft(),
                 catalog(),
                 construction_requests(),
                 source_module_id,
-                *async_builtin,
+                *async,
                 span
             );
             if (!resolved) {
@@ -124,17 +135,17 @@ auto BodyElaborator::select_name(const ASTNameExpr& name, Span span) noexcept
             if (const auto* contract = std::get_if<TimeoutContract>(&*resolved)) {
                 co_return TimeoutSelection {.contract = *contract, .span = span};
             }
-            invariant_violation("async builtin resolved a source declaration");
-        }
-        if (name_reference->has_value()) {
-            co_return CppSelection {.target = std::move(**name_reference), .span = span};
+            invariant_violation("provided async operation resolved a source declaration");
         }
     }
-    auto selected = (co_await find_global(text, name.name_span));
-    if (!selected.has_value()) {
-        co_return std::unexpected(selected.error());
+    if (!selected_symbol) {
+        co_return std::unexpected(fail(
+            span,
+            DiagnosticCode::TypeValueRequired,
+            std::format("'{}' does not name a runtime value", text)
+        ));
     }
-    co_return (co_await (*selected)->form.visit(
+    co_return (co_await selected_symbol->form.visit(
         Overloaded {
             [&](const CatalogFunctionForm& function) noexcept -> AnalysisTask<BuiltExpression> {
                 auto completed =

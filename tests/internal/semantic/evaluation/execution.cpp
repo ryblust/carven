@@ -363,7 +363,7 @@ const TestSuite suite([] static noexcept {
     "Constant scheduler: repeated region closure completes each iteration's child"_test =
         [] static noexcept {
             with_execution(
-                R"(
+                R"(import std::async using yield_once;
 
             const async fn record(&trace: i32, digit: i32) {
                 await yield_once();
@@ -396,7 +396,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant scheduler: children share the root step budget"_test = [] static noexcept {
         with_execution(
-            R"(
+            R"(import std::async using yield_once;
 
             const async fn work() -> i32 {
                 for var index = 0; index < 4; index += 1 { await yield_once(); }
@@ -444,7 +444,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant scheduler: a fatal child keeps its call trace and emitted output"_test =
         [] static noexcept {
-            const auto text = std::string(R"(
+            const auto text = std::string(R"(import std::async using yield_once;
 
             const fn division(zero: i32) -> i32 => 10 / zero;
             const async fn bad() -> i32 { println("before"); return division(0); }
@@ -484,7 +484,7 @@ const TestSuite suite([] static noexcept {
     "Constant scheduler: suspended assertions retain task-local operand observations"_test =
         [] static noexcept {
             with_execution(
-                R"(
+                R"(import std::async using yield_once;
 
             const async fn value(number: i32) -> i32 { await yield_once(); return number; }
             const async fn inspect() {
@@ -972,7 +972,10 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     3
                 },
                 Scenario {
-                    R"(const table = u8x16::splat(7); const indices = u8x32::splat(0);
+                    R"(import std::simd using u8x16;
+import std::simd using u8x32;
+
+const table = u8x16::splat(7); const indices = u8x32::splat(0);
         const fn run() -> i32 {
             var input = indices; return table.lookup(input).lane(0) as i32;
         })",
@@ -980,7 +983,10 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     7
                 },
                 Scenario {
-                    R"(const table = u8x32::splat(9); const indices = u8x16::splat(0);
+                    R"(import std::simd using u8x16;
+import std::simd using u8x32;
+
+const table = u8x32::splat(9); const indices = u8x16::splat(0);
         const fn run() -> i32 {
             var input = indices; return table.lookup(input).lane(0) as i32;
         })",
@@ -988,7 +994,9 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     9
                 },
                 Scenario {
-                    R"(const table = u8x32::splat(5);
+                    R"(import std::simd using u8x32;
+
+const table = u8x32::splat(5);
         const fn run() -> i32 { var input = table; return input.lane(0) as i32; })",
                     0uz,
                     5
@@ -1741,7 +1749,11 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
     "Semantic execution: child readiness and close retain pending parent cancellation"_test =
         [] static noexcept {
             with_execution(
-                R"(
+                R"(import std::async using cancel_requested;
+import std::async using yield_once;
+import std::async using wait_ready;
+import std::async using close;
+
                 const async fn value(number: i32, delayed: bool) -> i32 {
                     if delayed { await yield_once(); }
                     return number;
@@ -1760,7 +1772,7 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
                     await close(pending);
                     await close(pending);
                     return committed == (1usize, false) && repeated == (0usize, false)
-                        && one == 7 && two == 9 && cancellation_requested();
+                        && one == 7 && two == 9 && cancel_requested();
                 }
                 const async fn run() -> bool {
                     async let child = parent();
@@ -1785,7 +1797,9 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
         };
     "Semantic execution: child close cannot discard fatal source traps"_test = [] static noexcept {
         with_execution(
-            R"(
+            R"(import std::async using yield_once;
+import std::async using close;
+
                 const async fn broken(divisor: i32) -> i32 {
                     await yield_once();
                     return 1 / divisor;
@@ -1813,13 +1827,14 @@ test { let owner = Payload { number: 1 }; ::native(owner); })",
     "Semantic execution: suspended readiness and close preserve execution budgets"_test =
         [] static noexcept {
             for (const auto selection : {false, true}) {
-                const auto source = std::string(R"(
+                const auto source =
+                    std::string(R"(import std::async using { yield_once, wait_ready, close };
+
                     const async fn forever() { while true { await yield_once(); } }
                     const async fn run() {
                         async let first = forever();
                 )")
-                    + (selection ? R"(
-                        async let second = forever();
+                    + (selection ? R"(                        async let second = forever();
                         let selected = await wait_ready(first, second);
                         println("unreachable selection");
                         await close(first);

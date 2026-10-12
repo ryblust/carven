@@ -154,38 +154,39 @@ const TestSuite suite([] static noexcept {
             });
         };
 
-    "Constant async admission: static roots own cooperative source scheduling"_test =
-        [] static noexcept {
-            const auto cases = std::to_array<std::string_view>({
-                " const async fn leaf() { await yield_once(); } const { await leaf(); }",
-                "const async fn leaf() -> i32 => 7; const { async let child = leaf(); assert(await child == 7); }",
-                "const async fn leaf() { await cancel_point(); } "
-                "const test \"close cancelled child\" { async let child = leaf(); cancel child; }",
-                " const outside = cancellation_requested();",
-            });
-            each(cases, std::identity {}, [](std::string_view text) static noexcept {
-                auto sources = SourceManager();
-                const auto source = sources.append_virtual("analysis.cv", std::string(text));
-                require(source.has_value());
-                const auto modules = std::array {
-                    SourceModuleInput {
-                        .source_id = *source,
-                        .module_path = semantic_test_module_path()
-                    },
-                };
-                auto parsed = parse_program(sources, SourceBatch {.modules = modules});
-                if (!expect(parsed.has_value()).note("source = ", text)) {
-                    return;
-                }
-                const auto analyzed = analyze(std::move(*parsed));
-                expect(analyzed.has_value()).note("source = ", text);
-            });
-        };
+    "Constant async admission: static roots own cooperative source scheduling"_test = [] static noexcept {
+        const auto cases = std::to_array<std::string_view>({
+            "import std::async using yield_once;\n\n const async fn leaf() { await yield_once(); } const { await leaf(); }",
+            "const async fn leaf() -> i32 => 7; const { async let child = leaf(); assert(await child == 7); }",
+            "import std::async using cancel_point;\n\nconst async fn leaf() { await cancel_point(); } "
+            "const test \"close cancelled child\" { async let child = leaf(); cancel child; }",
+            "import std::async using cancel_requested; const outside = cancel_requested();",
+        });
+        each(cases, std::identity {}, [](std::string_view text) static noexcept {
+            auto sources = SourceManager();
+            const auto source = sources.append_virtual("analysis.cv", std::string(text));
+            require(source.has_value());
+            const auto modules = std::array {
+                SourceModuleInput {
+                    .source_id = *source,
+                    .module_path = semantic_test_module_path()
+                },
+            };
+            auto parsed = parse_program(sources, SourceBatch {.modules = modules});
+            if (!expect(parsed.has_value()).note("source = ", text)) {
+                return;
+            }
+            const auto analyzed = analyze(std::move(*parsed));
+            expect(analyzed.has_value()).note("source = ", text);
+        });
+    };
 
     "Constant async cancellation: nominal catch cannot intercept a labelled root exit"_test =
         [] static noexcept {
             auto sources = SourceManager();
-            const auto source = sources.append_virtual("analysis.cv", R"(
+            const auto source =
+                sources.append_virtual("analysis.cv", R"(import std::async using cancel_point;
+
             struct Failure {}
             const async fn leaf() throw Failure { await cancel_point(); }
             const "cancelled root" {

@@ -486,7 +486,7 @@ auto cancelled_close_body(
     async::cancel(child);
     co_await scope.close(async::ClosingPolicy::CloseOnly);
     check(
-        !alive && destroyed == 1 && !async::cancellation_requested(),
+        !alive && destroyed == 1 && !async::cancel_requested(),
         "unobserved cancelled child closes once and restores parent context"
     );
     co_return async::Completion<void>::success();

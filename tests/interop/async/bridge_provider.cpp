@@ -132,7 +132,7 @@ auto bridge_note(const Context& context, std::int32_t stage) noexcept -> void {
 auto bridge_native_character(std::int32_t value, bool fail) noexcept
     -> async::AsyncOperation<char32_t, IoError> {
     using Result = async::Completion<char32_t, IoError>;
-    if (async::cancellation_requested()) {
+    if (async::cancel_requested()) {
         co_return Result::cancelled();
     }
     if (fail) {

@@ -6,6 +6,13 @@
 
 ## Extension boundary
 
+Type and failure-set parameters on named functions and nominal declarations,
+definition-site body checking, local call inference, fixed tuple substitution,
+and first-order recursive-growth rejection are implemented. Static function
+parameters and residual specialization are also implemented; they do not add
+value-dependent types or generic value arguments. Their current contracts belong
+in the language references rather than implementation tasks here.
+
 Unknown type parameters admit forwarding and whole-value Take; additional
 operations need capability evidence. Associated projections must extend finite
 instance formation with a termination argument. Parameterized class operations
@@ -396,6 +403,9 @@ representation in the contract.
   [functions](../docs/language/functions.md#parameterized-functions), and
   [failure sets](../docs/language/failures.md#failure-set-parameters): implemented rules.
 - [Dynamic values](dynamic-values.md): runtime holding and dispatch.
-- [Design directions](design-directions.md): reflection, persistent reuse, and binary distribution.
+- [Design directions](design-directions.md): reflection and binary distribution.
+- [Compiler optimization](compiler-optimization.md#workspace-reuse): further workspace and persistent reuse experiments.
+- [Generic declaration construction](../src/semantic/analysis/decl/generic.cpp): implemented parameter kinds and rejection of class operations.
+- [Generic analysis tests](../tests/internal/semantic/analysis/generics.cpp): definition checking, concrete applications, and finite formation.
 - [Go parameter-flow checking](https://go.dev/src/cmd/compile/internal/types2/mono.go):
   a reference for the first-order recursive-growth boundary that extensions must preserve.

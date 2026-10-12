@@ -140,18 +140,18 @@ const TestSuite suite([] static noexcept {
     "Parser async: builtin calls use ordinary names while native roots remain explicit"_test =
         [] static noexcept {
             constexpr auto text =
-                std::string_view("fn f() { cancellation_requested(); ::async::when_all(); }");
+                std::string_view("fn f() { cancel_requested(); ::async::when_all(); }");
             const auto tree = parse_valid(text);
             const auto ast = tree.view();
             const auto& call = get<ASTCallExpr>(expression_statement(tree, 0uz));
             const auto& name = get<ASTNameExpr>(ast.expression(call.callee));
-            expect_equal(slice(text, name.name_span), std::string_view("cancellation_requested"));
+            expect_equal(slice(text, name.name_span), std::string_view("cancel_requested"));
             const auto& native_call = get<ASTCallExpr>(expression_statement(tree, 1uz));
             expect(is<ASTCppNameExpr>(ast.expression(native_call.callee)));
             check_invalid("fn f() { async::when_all(); }");
             check_invalid("fn f() { let value = (async)::when_all(); }");
             parse_valid(
-                "fn f() { let value = if true { cancellation_requested() } else { false }; for cancellation_requested(); false; {} }"
+                "fn f() { let value = if true { cancel_requested() } else { false }; for cancel_requested(); false; {} }"
             );
         };
 

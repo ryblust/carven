@@ -56,7 +56,7 @@ enum class TargetSymbol {
     RuntimeAsyncFirstSuccessful,
     RuntimeAsyncTimeout,
     RuntimeAsyncCompositionOperand,
-    RuntimeAsyncCancellationRequested,
+    RuntimeAsyncCancelRequested,
     RuntimeAsyncCancelPoint,
     RuntimeAsyncYieldOnce,
     RuntimeAsyncAwaitCancelPoint,

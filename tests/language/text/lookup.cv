@@ -1,9 +1,11 @@
+import std::core using String as Text;
+
 fn make(String: i32) -> String {
     let _ = String;
-    return (String::from_str)("builtin");
+    return (Text::from_str)("builtin");
 }
 
-test "String: builtin factory lookup is independent of local value names" {
+test "String: type alias preserves factory access under local shadowing" {
     let text: String = make(42);
     check(text == "builtin");
 }

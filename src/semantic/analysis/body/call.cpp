@@ -20,8 +20,8 @@ import :semantic.analysis.expr.operand;
 import :semantic.analysis.expr.scope;
 import :semantic.analysis.names;
 import :semantic.analysis.operations;
-import :semantic.analysis.types.display;
 import :semantic.analysis.types;
+import :semantic.analysis.types.display;
 import :semantic.analysis.validation;
 import :semantic.evaluation.operation;
 import :semantic.semir.decl;
@@ -206,7 +206,10 @@ auto BodyElaborator::call_expression(
             if (!selected) {
                 co_return std::unexpected(selected.error());
             }
-            if (const auto* generic = std::get_if<CatalogGenericForm>(&(*selected)->form)) {
+            const auto* selected_symbol = catalog().symbol(*selected);
+            if (const auto* generic =
+                    (selected_symbol ? std::get_if<CatalogGenericForm>(&selected_symbol->form)
+                                     : nullptr)) {
                 const auto declaration = draft().generic_declaration_copy(generic->definition);
                 if (std::holds_alternative<GenericFunctionDefinition>(declaration)) {
                     co_return co_await generic_call_expression(
@@ -228,7 +231,10 @@ auto BodyElaborator::call_expression(
             if (!selected.has_value()) {
                 co_return std::unexpected(selected.error());
             }
-            if (const auto* enum_case = std::get_if<CatalogEnumCaseForm>(&(*selected)->form)) {
+            const auto* selected_symbol = catalog().symbol(*selected);
+            if (const auto* enum_case =
+                    (selected_symbol ? std::get_if<CatalogEnumCaseForm>(&selected_symbol->form)
+                                     : nullptr)) {
                 const auto type = draft().intern_type(
                     CanonicalType {
                         .value = EnumTypeValue {.enumeration = enum_case->owner},

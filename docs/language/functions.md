@@ -103,7 +103,7 @@ context. A failure-set argument uses `throw`, for example
 clause requests bounded inference from the public signature, actual argument
 types, and immediate expected result.
 It does not inspect the body or previous applications. A whole parameter such as
-`AsyncOperation<T, throw E>` can infer both its success type and its failure set;
+`Operation<T, throw E>` can infer both its success type and its failure set;
 inference does not recover a unique `E` from an ambiguous union such as
 `E + Error`. Missing or conflicting evidence requires explicit arguments.
 Each actual argument is evaluated once.

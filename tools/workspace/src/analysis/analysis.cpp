@@ -1,7 +1,7 @@
 module carven:workspace.analysis.impl;
 
 import :frontend.document;
-import :frontend.program.parse;
+import :frontend.program.dependencies;
 import :source.document;
 import :source.text;
 import :support.timing;
@@ -296,20 +296,12 @@ auto WorkspaceQueries::navigation_modules(
         if (!ast) {
             continue;
         }
-        for (const auto& import : ast->module_imports()) {
-            const auto path = resolve_import_path(
-                parsed->source().text,
-                module.module_path,
-                import.module_reference
-            );
-            if (!path) {
-                continue;
+        for (const auto& path :
+             source_dependencies(*ast, module.module_path, parsed->source().text)) {
+            const auto found = by_path.find(path.value());
+            if (found != by_path.end()) {
+                pending.push_back(found->second);
             }
-            const auto found = by_path.find(path->value());
-            if (found == by_path.end()) {
-                continue;
-            }
-            pending.push_back(found->second);
         }
     }
     return modules;

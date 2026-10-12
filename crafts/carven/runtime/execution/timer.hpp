@@ -14,12 +14,14 @@ namespace carven::runtime::execution::detail {
 using SteadyDuration = std::chrono::steady_clock::duration;
 using SteadyRep = SteadyDuration::rep;
 using NanosecondsPerTick = std::ratio_divide<SteadyDuration::period, std::nano>;
+
 static_assert(
     std::is_integral_v<SteadyRep>
         && std::is_signed_v<SteadyRep>
         && std::numeric_limits<SteadyRep>::digits == 63,
     "execution timers require a signed 64-bit integral steady-clock representation"
 );
+
 static_assert(
     NanosecondsPerTick::den == 1 && NanosecondsPerTick::num > 0,
     "execution timers require steady-clock ticks containing whole nanoseconds"
@@ -70,7 +72,7 @@ struct TimerRegistration final {
     TimerRegistration* next;
     std::int64_t deadline;
     void* receiver;
-    bool (*cancellation_requested)(void*) noexcept;
+    bool (*cancel_requested)(void*) noexcept;
     void (*complete)(void*, bool) noexcept;
 };
 
@@ -144,7 +146,7 @@ public:
             auto* registration = first;
             while (registration != nullptr) {
                 auto* next = registration->next;
-                if (registration->cancellation_requested(registration->receiver)) {
+                if (registration->cancel_requested(registration->receiver)) {
                     finish(*registration, true);
                 }
                 registration = next;

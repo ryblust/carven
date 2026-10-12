@@ -893,8 +893,8 @@ auto realize_operation(
                     || value.kind == AsyncIntrinsic::CloseChild) {
                     invariant_violation("child control intrinsic requires direct await");
                 }
-                const auto symbol = value.kind == AsyncIntrinsic::CancellationRequested
-                    ? TargetSymbol::RuntimeAsyncCancellationRequested
+                const auto symbol = value.kind == AsyncIntrinsic::CancelRequested
+                    ? TargetSymbol::RuntimeAsyncCancelRequested
                     : value.kind == AsyncIntrinsic::CancelPoint
                     ? TargetSymbol::RuntimeAsyncCancelPoint
                     : value.kind == AsyncIntrinsic::YieldOnce ? TargetSymbol::RuntimeAsyncYieldOnce

@@ -142,9 +142,11 @@ precondition without adding validation.
 ## Owning String and text borrowing
 
 `String` is a builtin owning UTF-8 value, available without imports and distinct
-from `str`, user declarations, and C++ types. Unqualified `String` in type
-position or a factory qualifier selects the builtin before ordinary declarations.
-Ordinary value lookup is unchanged; `::String` selects an external C++ name.
+from `str`, user declarations, and C++ types. Its default binding belongs to
+`std::core` and follows ordinary name selection. Module declarations can shadow
+the type name; runtime locals also shadow factory qualifiers. Use an explicit
+alias such as `import std::core using String as Text;` to retain access.
+`::String` selects an external C++ name.
 
 A String owns contiguous, valid UTF-8 bytes, including internal NUL. It performs
 no normalization, case folding, or BOM removal. Equality and inequality compare

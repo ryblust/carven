@@ -28,7 +28,7 @@ template<
     typename Input>
 auto timeout(Input input, std::int64_t duration) noexcept -> AsyncOperation<Result, Failures...> {
     using Output = Completion<Result, Failures...>;
-    if (cancellation_requested()) {
+    if (cancel_requested()) {
         co_return Output::cancelled();
     }
     if (duration <= 0) {

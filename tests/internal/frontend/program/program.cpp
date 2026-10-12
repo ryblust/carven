@@ -100,7 +100,7 @@ const TestSuite suite([] static noexcept {
                 .note(
                     "main_imports.front().declaration == program.syntax_tree(main_module).view().ast_module().module_imports.front()"
                 );
-            expect(((main_imports.front().target) == (model_module)))
+            expect(((std::get<ProgramModuleID>(main_imports.front().target)) == (model_module)))
                 .note("main_imports.front().target == model_module");
             expect(program.resolved_imports(model_module).empty());
             expect((program.provenance()

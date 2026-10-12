@@ -90,11 +90,13 @@ generated C++; the semantic interpreter cannot execute their native bodies.
 
 `std::time.timeout` defines `Timeout`, the nominal deadline failure used by the
 builtin `timeout(operation, duration)`. Import `Timeout` when naming it
-in a failure declaration or catch. The builtin and duration literals require no
-imports. Ordinary declarations and local bindings take precedence over builtin
-names, as they do for `print`.
+in a failure declaration or catch. Import the operation from `std::time`; duration
+literals require no name binding. The imported operation follows ordinary name
+selection and supports local aliases. Its source-record requirements are checked
+when the provided contract is used, not merely imported.
 
 ```carven
+import std::time using timeout;
 import std::time.duration using RangeError;
 import std::time.timeout using Timeout;
 

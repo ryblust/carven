@@ -2,7 +2,7 @@
 
 - **Status:** Exploration
 - **Implementation:** Not started for the candidates below
-- **Scope:** Reducing compiler and generated-program costs while preserving existing source contracts
+- **Scope:** Reducing compiler, workspace-reuse, and generated-program costs while preserving existing source contracts
 
 ## Summary
 
@@ -13,6 +13,7 @@ needed for adoption.
 | Area | Question | Evidence for selecting an experiment |
 | --- | --- | --- |
 | Compiler data and queries | Can ownership, preparation, or data organization avoid repeated work? | A reproducible time, memory, or scaling cost |
+| Workspace reuse | Can smaller computations or longer-lived requests avoid repeated complete analysis? | Measured edit or request overlap under identical source coverage |
 | Stage parallelism | Can independent work overlap within a bounded resource budget? | Sufficient independent work after scheduling and memory costs |
 | C++ realization | Can a snapshot, reservation, or result carrier be avoided? | A concrete redundant generated operation with an equivalent alternative |
 | Constant output | Can completed values use smaller target expressions? | Output growth in representative programs |
@@ -21,6 +22,27 @@ needed for adoption.
 
 Compiler wall time, CPU time, peak RSS, generated size, native compilation, and
 program runtime and memory are measured separately.
+
+## Current boundary
+
+Workspace already reuses unchanged parsing and bounded complete-selection
+analysis results. Shared `SourceLibrary` generation and Xmake library producers
+already reuse native implementation objects across compatible consumers. These
+are different mechanisms: every fresh compilation still analyzes its full source
+batch, and native object reuse does not provide semantic query reuse.
+
+Semantic analysis already folds admitted constant operations, and static
+specialization refreshes value facts and index bounds after substitution. Backend
+preparation consumes published facts to select constant print text, known lane
+paths, and builtin formatting writers; realization consumes proven index bounds.
+Writers use checked minimum/maximum capacity
+bounds and direct `std::to_chars` conversion; proven UTF-8 formatting avoids a
+validation scan. Direct owning format returns can use a local String and NRVO.
+These completed mechanisms are documented in
+[semantic execution](../docs/compiler/analysis/evaluation.md),
+[preparation](../docs/compiler/backend/preparation.md), and
+[builtin realization](../docs/compiler/backend/builtins.md).
+The experiments below concern additional work beyond those contracts.
 
 ## Measurements
 
@@ -226,8 +248,94 @@ Preserve SemIR known-result boundaries: facts do not change ordinary source
 reachability, failure, ownership, or return analysis. Storage stability does not
 establish a known value. Test mutation,
 aliases, calls, loops, and joins. `touch() && false` still executes touch;
-`false && touch()` does not. Known slice length does not remove bounds checks.
+`false && touch()` does not. A known slice length alone does not prove a dynamic
+index safe; a known in-range index and extent already allow an unchecked path.
 Preserve failure, storage observation, borrowed owners, and condition cleanup.
+
+## Workspace reuse
+
+Complete analysis of a selected source batch remains the build correctness
+boundary. Source selection, computation granularity, and result lifetime are
+independent choices. The [frontend-analysis proposal](frontend-analysis.md) owns
+partial semantic facts, query dependencies, cancellation, effects, admission,
+and worker isolation. This section owns performance evidence and build integration;
+it introduces no second semantic query database. Editor recovery may change
+semantic representation independently of an incremental build cache.
+
+### Existing reuse and remaining costs
+
+The compiler owns shared source, parsing, complete analysis, and borrowed-generation
+contracts. Workspace supplies the session and revision layer; Xmake owns project
+targets, native compilation, and scheduling. Ordinary CLI commands discover
+Crafts; build integrations supply exact batches. Test generation is explicit,
+and artifact manifests project the actual generated artifact set. These current
+contracts belong in the compiler, workspace, and CLI references.
+
+Unchanged documents reuse parsing, but a content edit still requires a complete
+semantic transaction for an uncached selection. Cache hits require the same
+content and module mapping; overlapping selections do not share semantic work.
+Snapshots are cheap to retain. Bulk updates copy the document table once;
+independent updates copy it per revision. Navigation still constructs selection
+indexes and prerequisite closures. Old snapshots may retain results beyond the
+current cache's capacity. Measure these costs separately.
+
+One-shot CLI processes do not retain workspace results across requests or builds.
+Shared interfaces help only when their callers retain the relevant owners.
+Published SemIR has released construction data and static-only bodies, and its
+IDs belong to one program. It is neither a reusable standard-library image nor
+a way to replay only a later command's static roots. Until effect contracts
+authorize reuse, each new command performs its complete semantic transaction.
+
+### Candidate experiments
+
+| Measured cost | Candidate | Required boundary |
+| --- | --- | --- |
+| Repeated navigation rebuilds the same closure | Snapshot-owned module/prerequisite indexes | Imports, missing lookups, provided contracts, duration prerequisites, remapping, and revisions invalidate the correct selection |
+| Document-table copying remains costly after bulk updates | Persistent document maps | Atomic publication and independently retained old snapshots |
+| Body edits repeat unrelated semantics | Scope, declaration, body, or domain-specific SCC queries | Frontend-analysis dependency, identity, effect, and admission contracts |
+| Compatible generation requests repeat analysis | Compiler-owned multi-request worker | Xmake schedules targets; command execution obligations remain explicit |
+| Separate processes reconstruct valuable immutable results | Persistent compiler cache | Stable identities, compiler/configuration keys, dependency validation, atomic writes, and bounded IO |
+
+Begin with conservative dependencies. A source file, import SCC, or native library
+boundary does not prove semantic independence. Inferred contracts, generic
+specialization, constants, and ownership can cross each boundary. Lookup tracks
+failed lookups and competing candidates as well as selected declarations.
+
+### Request lifetime
+
+Evaluate in-memory reuse in the existing long-lived editor host before adding a
+process service. A justified build worker accepts compiler requests and retains
+bounded source/analysis owners. It does not evaluate Xmake targets, watch trees,
+invoke native compilers, or own native jobs. Reuse the frontend proposal's worker
+isolation and lifecycle contracts.
+
+A worker lasting one Xmake process shares only that build's requests. Reuse across
+invocations needs a persistent worker or disk cache. Include startup, IPC,
+recovery, retention, and validation costs. Do not merge semantically distinct
+targets merely to increase cache hits.
+
+### Evidence and decision gates
+
+Use cold compilation, same-content rewrite, leaf-body edits, exported-contract
+edits, const/generic edits, and import addition/removal workloads. Add an in-process
+trace for bulk loading, repeated navigation, overlapping selections, and compatible
+generation requests. Record wall/CPU time, parsing versus semantics, peak and
+retained memory, and native work separately. Alternate fresh/reused Release runs
+with identical coverage; Debug editor latency is a separate result. A warm identical
+query is not an edit benchmark.
+
+Select an acceptable cold-time/memory budget and required edit-latency improvement
+before experimenting. Savings must exceed lookup, hashing, retention, and transport
+costs. Parsing reuse does not establish semantic throughput gains, and rare request
+overlap does not justify a worker solely to retain a cache. Complete fresh analysis
+is the correctness oracle.
+
+Compare fresh/reused diagnostics, static output, paths/bytes, and source locations
+across real edits, including previously missing names, local aliases, provided
+prerequisites, recursive contracts, and const/generic dependencies. Extend existing
+Xmake scenarios for native behavior. Do not fix cache sizes, pointer identities,
+query visitation order, or pass counts. Generated-program speed needs separate
+execution measurements.
 
 ## Formatting and output
 
@@ -287,4 +395,9 @@ require disproportionate complexity.
 - [Benchmarks](../benchmarks/README.md) and [testing](../docs/development/testing.md): measurement and validation commands.
 - [Realization](../docs/compiler/backend/realization.md) and [known results](../docs/compiler/analysis/semir.md#known-results-and-execution-requirements): current semantic boundaries.
 - [Uninitialized storage](uninitialized-storage.md): construction-destination contracts for direct delivery.
-- [Infrastructure candidates](design-directions.md#deferred-infrastructure): concurrent queries and persistent caches.
+- [Infrastructure candidates](design-directions.md#deferred-infrastructure): concurrent semantic queries and independent execution IR.
+- [Workspace API](../tools/workspace/README.md),
+  [compiler architecture](../docs/compiler/README.md), and
+  [CLI](../docs/toolchain/cli.md): implemented reuse, source-library generation, and invocation boundaries.
+- [Frontend analysis](frontend-analysis.md): proposed semantic query and worker contracts.
+- [rustc incremental compilation](https://rustc-dev-guide.rust-lang.org/queries/incremental-compilation-in-detail.html): tracked dependencies and identity, persistence, and hashing costs.

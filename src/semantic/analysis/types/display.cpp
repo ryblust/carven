@@ -8,6 +8,7 @@ import :semantic.semir.generic;
 import :semantic.semir.ids;
 import :semantic.semir.operation;
 import :semantic.semir.type;
+import :source.provenance.ids;
 import :support.visit;
 import std;
 
@@ -90,6 +91,15 @@ auto tuple_name(const Elements& elements, const Name& name) noexcept -> std::str
     return text;
 }
 
+auto nominal_name(const ProgramDraft& draft, ModuleID module, ProgramSpellingID name) noexcept
+    -> std::string {
+    return std::format(
+        "{}::{}",
+        draft.module_path_copy(draft.module_declaration_copy(module).provenance_module).value(),
+        draft.spelling_copy(name)
+    );
+}
+
 auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::string {
     const auto name = [&](TypeID nested) noexcept {
         return canonical_name(draft, nested);
@@ -108,12 +118,13 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
                 return std::string(builtin_name(value.kind));
             },
             [&](const StructTypeValue& value) noexcept {
-                return draft.spelling_copy(
-                    draft.construction_struct_declaration_copy(value.structure).name
-                );
+                const auto declaration =
+                    draft.construction_struct_declaration_copy(value.structure);
+                return nominal_name(draft, declaration.module_id, declaration.name);
             },
             [&](const EnumTypeValue& value) noexcept {
-                return draft.spelling_copy(draft.enum_declaration_copy(value.enumeration).name);
+                const auto declaration = draft.enum_declaration_copy(value.enumeration);
+                return nominal_name(draft, declaration.module_id, declaration.name);
             },
             [&](const ArrayTypeValue& value) noexcept {
                 return std::format("[{}; {}]", name(value.element), value.extent);
@@ -142,7 +153,7 @@ auto canonical_name(const ProgramDraft& draft, TypeID type) noexcept -> std::str
                 return callable_name(signature.parameters, name(signature.result), name);
             },
             [&](const OperationTypeValue& value) noexcept {
-                return std::format("AsyncOperation<{}>", name(value.success));
+                return std::format("Operation<{}>", name(value.success));
             },
             [](const CppTypeValue& value) static noexcept {
                 const auto* reference = cpp_type_name(value);
@@ -201,11 +212,11 @@ auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noex
                     );
                 },
                 [&](const GenericOperationType& value) noexcept {
-                    return std::format("AsyncOperation<{}>", name(value.success));
+                    return std::format("Operation<{}>", name(value.success));
                 },
                 [&](const GenericNominalApplication& value) noexcept {
                     const auto contract = draft.generic_declaration_contract_copy(value.definition);
-                    auto text = draft.spelling_copy(contract.name) + "<";
+                    auto text = nominal_name(draft, contract.module_id, contract.name) + "<";
                     for (const auto [index, argument] : std::views::enumerate(value.arguments)) {
                         if (index != 0) {
                             text += ", ";
@@ -252,7 +263,7 @@ auto type_display_name(const ProgramDraft& draft, ConstructionTypeRef type) noex
                     return std::format("[{}]", name(value.element));
                 },
                 [&](const ConstructionOperationTypeValue& value) noexcept {
-                    return std::format("AsyncOperation<{}>", name(value.success));
+                    return std::format("Operation<{}>", name(value.success));
                 },
                 [&](const ConstructionCallableViewTypeValue& value) noexcept {
                     return callable_name(value.parameters, name(value.result), name);

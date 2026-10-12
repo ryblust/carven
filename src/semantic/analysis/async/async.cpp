@@ -8,6 +8,7 @@ import :semantic.analysis.types.standard;
 import :semantic.semir.children;
 import :semantic.semir.decl;
 import :semantic.semir.traversal;
+import :source.standard;
 import :source.text;
 import :support.invariant;
 import :support.visit;
@@ -23,8 +24,7 @@ auto resolve_timeout_contract(
     Span span
 ) noexcept -> AnalysisTask<TimeoutContract> {
     auto types = std::vector<TypeID>();
-    for (const auto record :
-         {StandardRecord::Duration, StandardRecord::Timeout, StandardRecord::TimeRangeError}) {
+    for (const auto record : provided_contract_dependencies(ProvidedExport::Timeout)) {
         auto type =
             co_await resolve_standard_record(draft, catalog, requests, module, span, record);
         if (!type) {
@@ -37,32 +37,32 @@ auto resolve_timeout_contract(
 
 } // namespace
 
-auto find_async_builtin(std::string_view name) noexcept -> std::optional<AsyncBuiltin> {
-    if (name == "cancellation_requested") {
-        return AsyncIntrinsic::CancellationRequested;
+auto provided_async_builtin(ProvidedExport identity) noexcept -> std::optional<AsyncBuiltin> {
+    if (identity == ProvidedExport::CancelRequested) {
+        return AsyncIntrinsic::CancelRequested;
     }
-    if (name == "cancel_point") {
+    if (identity == ProvidedExport::CancelPoint) {
         return AsyncIntrinsic::CancelPoint;
     }
-    if (name == "yield_once") {
+    if (identity == ProvidedExport::YieldOnce) {
         return AsyncIntrinsic::YieldOnce;
     }
-    if (name == "wait_ready") {
+    if (identity == ProvidedExport::WaitReady) {
         return AsyncIntrinsic::WaitReady;
     }
-    if (name == "close") {
+    if (identity == ProvidedExport::Close) {
         return AsyncIntrinsic::CloseChild;
     }
-    if (name == "when_all") {
+    if (identity == ProvidedExport::WhenAll) {
         return AsyncCompositionPolicy::WhenAll;
     }
-    if (name == "when_any") {
+    if (identity == ProvidedExport::WhenAny) {
         return AsyncCompositionPolicy::WhenAny;
     }
-    if (name == "first_successful") {
+    if (identity == ProvidedExport::FirstSuccessful) {
         return AsyncCompositionPolicy::FirstSuccessful;
     }
-    if (name == "timeout") {
+    if (identity == ProvidedExport::Timeout) {
         return TimeoutBuiltin {};
     }
     return std::nullopt;

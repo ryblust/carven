@@ -1,8 +1,10 @@
 module carven:semantic.analysis.names;
 
+import :diagnostics.code;
 import :semantic.analysis.catalog;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
+import :semantic.analysis.source.builder;
 import :semantic.semir.program;
 import :source.text;
 import std;
@@ -34,3 +36,14 @@ auto check_class_representation_access(
     std::optional<StructID> lexical_class,
     Span span
 ) noexcept -> AnalysisResult<void>;
+
+auto select_catalog_entity(
+    const ProgramDraft& draft,
+    AnalysisCatalogView catalog,
+    ImportUsage& usage,
+    ProgramModuleID module,
+    std::string_view name,
+    Span origin,
+    SourceObservation* observations,
+    DiagnosticCode unresolved = DiagnosticCode::NameUnresolved
+) noexcept -> AnalysisResult<CatalogEntity>;

@@ -1,3 +1,5 @@
+import std::async using { cancel_point, yield_once, wait_ready, close };
+
 const async fn value(number: i32, delayed: bool) -> i32 {
     if delayed { await yield_once(); }
     return number;

@@ -32,7 +32,7 @@ const TestSuite suite([] static noexcept {
                 },
                 std::pair<std::string_view, std::string_view> {
                     "main",
-                    "import std::time.duration using Duration; "
+                    "import std::time using timeout;\n\nimport std::time.duration using Duration; "
                     "import std::time.duration using RangeError; "
                     "import std::time.timeout using Timeout; "
                     "async fn leaf() -> i32 => 7; "

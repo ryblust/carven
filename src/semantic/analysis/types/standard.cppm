@@ -5,9 +5,8 @@ import :semantic.analysis.construction.requests;
 import :semantic.analysis.diagnostics;
 import :semantic.analysis.program;
 import :semantic.semir.type;
+import :source.standard;
 import :source.text;
-
-enum class StandardRecord { Duration, Timeout, TimeRangeError };
 
 auto resolve_standard_record(
     ProgramDraft& draft,

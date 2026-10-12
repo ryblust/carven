@@ -1,3 +1,5 @@
+import std::simd using { u8x16, mask16, f32x4, mask4, u8x32, mask32, f32x8, mask8 };
+
 // Narrow logical types remain usable beside the craft's wider default blocks.
 private const fn verify_narrow_primitives() -> bool {
     let bytes: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];

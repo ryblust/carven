@@ -6,23 +6,10 @@ import :semantic.analysis.types.standard;
 import :semantic.semir.decl;
 import :semantic.visibility;
 import :source.module_path;
+import :source.standard;
 import std;
 
 namespace {
-
-auto record_name(StandardRecord record) noexcept -> std::string_view {
-    switch (record) {
-        case StandardRecord::Duration:       return "Duration";
-        case StandardRecord::Timeout:        return "Timeout";
-        case StandardRecord::TimeRangeError: return "RangeError";
-    }
-    std::unreachable();
-}
-
-auto record_module(StandardRecord record) noexcept -> std::string_view {
-    return record == StandardRecord::Timeout ? "crafts.carven.std.time.timeout"
-                                             : "crafts.carven.std.time.duration";
-}
 
 auto reject(
     ProgramDraft& draft,
@@ -40,8 +27,8 @@ auto reject(
 
 auto matches(const ProgramDraft& draft, const CatalogSymbol& symbol, StandardRecord record) noexcept
     -> bool {
-    return symbol.name == record_name(record)
-        && draft.module_path_copy(symbol.module_id).value() == record_module(record);
+    return symbol.name == standard_record_key(record).name
+        && draft.module_path_copy(symbol.module_id).value() == standard_record_key(record).module;
 }
 
 auto complete_record(
@@ -59,7 +46,10 @@ auto complete_record(
             module,
             span,
             DiagnosticCode::TypeMismatch,
-            std::format("standard '{}' must be an exported struct", record_name(record))
+            std::format(
+                "standard '{}' must be an exported struct",
+                standard_record_key(record).name
+            )
         ));
     }
     auto completed = co_await requests.ensure_declaration(symbol.symbol_id, module, span);
@@ -78,7 +68,10 @@ auto complete_record(
             module,
             span,
             DiagnosticCode::TypeMismatch,
-            std::format("standard '{}' has an incompatible representation", record_name(record))
+            std::format(
+                "standard '{}' has an incompatible representation",
+                standard_record_key(record).name
+            )
         ));
     }
     co_return draft.intern_type({.value = StructTypeValue {structure->structure}});
@@ -105,6 +98,6 @@ auto resolve_standard_record(
         module,
         span,
         DiagnosticCode::TypeUnresolved,
-        std::format("required standard type '{}' is unavailable", record_name(record))
+        std::format("required standard type '{}' is unavailable", standard_record_key(record).name)
     ));
 }

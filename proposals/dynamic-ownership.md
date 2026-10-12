@@ -4,6 +4,14 @@
 - **Implementation:** Not started
 - **Scope:** Dynamic object owners, allocation policy, and construction in owned storage
 
+## Current boundary
+
+String and Vector already own dynamic storage, and async operations already have
+accountable completion and cancellation owners. Those builtin contracts do not
+provide a general `Unique<T>` or `Shared<T>`, custom source-defined lifecycle
+operations, or allocator parameters. Source `ptr<T>` remains a nullable nonowning
+handle. The owner contracts below are still proposed.
+
 ## Construction and lifetime
 
 The proposed owners manage a separate object's allocation and lifetime through
@@ -77,3 +85,11 @@ must cover handle copies, final release, target access, and retained borrows;
 cross-thread tests belong only to a selected concurrency contract. Vector element
 admission for either owner additionally needs conditional copying and relocation
 of move-only elements.
+
+## References
+
+- [Owning vectors](../docs/language/aggregates.md#owning-vectors) and
+  [String](../docs/language/text.md): implemented builtin storage owners.
+- [Async](../docs/language/async.md): implemented operation ownership and cancellation.
+- [Pointers](../docs/language/pointers.md): current nonowning handles.
+- [Uninitialized storage](uninitialized-storage.md): proposed construction destinations and cleanup handoff.

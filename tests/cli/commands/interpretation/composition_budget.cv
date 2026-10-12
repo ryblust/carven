@@ -1,3 +1,4 @@
+import std::async using { yield_once, when_all };
 
 const async fn forever() {
     while true {

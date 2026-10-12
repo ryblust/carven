@@ -78,10 +78,18 @@ auto ASTDumper::render_module_import(
                 );
                 render_span_field(
                     child_prefix(nested_prefix, true),
-                    true,
+                    !selection.item.alias_span.has_value(),
                     "name",
-                    selection.name_span
+                    selection.item.name_span
                 );
+                if (selection.item.alias_span) {
+                    render_span_field(
+                        child_prefix(nested_prefix, true),
+                        true,
+                        "alias",
+                        *selection.item.alias_span
+                    );
+                }
             },
             [&](ASTWildcardImport) noexcept {
                 append_line(
@@ -107,8 +115,18 @@ auto ASTDumper::render_module_import(
                     true,
                     "names",
                     selection.names,
-                    [&](Span name, std::string_view item_prefix, bool item_last) noexcept {
-                        render_span_field(item_prefix, item_last, "name", name);
+                    [&](const ASTImportItem& item,
+                        std::string_view item_prefix,
+                        bool item_last) noexcept {
+                        render_span_field(
+                            item_prefix,
+                            item_last && !item.alias_span,
+                            "name",
+                            item.name_span
+                        );
+                        if (item.alias_span) {
+                            render_span_field(item_prefix, item_last, "alias", *item.alias_span);
+                        }
                     }
                 );
             },

@@ -1,3 +1,4 @@
+import std::async using { yield_once, when_all };
 import std::json.error using { JSONError, ValueError };
 import std::json.value using Value;
 

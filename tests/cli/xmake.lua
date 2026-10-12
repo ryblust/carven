@@ -594,7 +594,7 @@ case_specs["commands/runtime_traps"] = {
         {args = {"interpret", "--explicit-inputs", "range_entry.cv", "range.cv"}, exit_code = 1,
             stderr_contains = {"slice range is out of bounds", "range.cv:2:12"}},
         {args = {"interpret", "--explicit-inputs", "lane_entry.cv", "lane.cv"}, exit_code = 1,
-            stderr_contains = {"SIMD index or memory range is out of bounds", "lane.cv:2:12"}},
+            stderr_contains = {"SIMD index or memory range is out of bounds", "lane.cv:4:12"}},
     },
 }
 

@@ -2,7 +2,7 @@
 
 - **Status:** Exploration
 - **Implementation:** Not started
-- **Scope:** Structured static roots, text traversal, address observation, literal identity, and retained reference graphs
+- **Scope:** Direct structured constant initializer and extent expressions, scalar text traversal, address observation, literal identity, and retained reference graphs
 
 ## Summary
 
@@ -13,6 +13,18 @@ address observations and retained reference graphs need explicit identity and
 stability guarantees.
 
 ## Execution boundary
+
+Structured control already executes in `const fn`, `const` blocks, and static
+tests. Static parameters, `const if`, and `const for` already produce residual
+runtime bodies. Arrays, tuples, structures, payload enums, String, Vector, and
+slices have admitted execution and retained-value paths. These implemented
+contracts belong to the [execution reference](../docs/compiler/analysis/evaluation.md);
+they are not pending extensions here.
+
+The remaining structured-root slice is direct `if`, `match`, or `try` in a
+constant initializer or array extent. `StaticRootSite` rejects those forms even
+though the shared executor supports them inside admitted bodies. Extending root
+construction and declaration-time scope is therefore still necessary.
 
 Execution places use domain and object identities with projection paths.
 Address-observation and graph-retention designs must preserve invalidation by
@@ -98,10 +110,11 @@ dependency rules.
 
 ## Text traversal admission
 
-Static scalar traversal through `.chars()` remains unsupported. A text-processing
-consumer can select this extension. Reuse the text backing and Unicode scalar
-contracts, and define cursor lifetime, mutation invalidation, iteration work
-accounting, and rejection of escaping views.
+Static scalar traversal through `.chars` remains unsupported; this is a computed
+range projection, not a method call. Byte traversal through `.bytes` is already
+admitted. A text-processing consumer can select scalar traversal. Reuse the text
+backing and Unicode scalar contracts, and define cursor lifetime, mutation
+invalidation, iteration work accounting, and rejection of escaping views.
 
 ## Retained reference graphs
 
@@ -172,3 +185,10 @@ address relations within each environment, then compare environment-independent
 results. Do not strip all address text from comparisons in a way that hides alias
 errors. Preserve source contracts for copying, cleanup, typed failure, and resource
 stops while implementing the selected observation.
+
+## References
+
+- [Semantic execution](../docs/compiler/analysis/evaluation.md): current roots, storage, and freezing.
+- [Static-root construction](../src/semantic/analysis/constant/root.cppm): source admission for initializer and extent expressions.
+- [Constant admission tests](../tests/internal/semantic/analysis/const_admission.cpp): structured body support and rejected scalar traversal.
+- [Text](../docs/language/text.md): `.bytes` and `.chars` source contracts.

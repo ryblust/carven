@@ -268,7 +268,12 @@ private:
         visit(value.underscore_span);
     }
 
-    auto visit(const ASTSingleImport& value) noexcept -> void { visit(value.name_span); }
+    auto visit(const ASTImportItem& value) noexcept -> void {
+        visit(value.name_span);
+        visit(value.alias_span);
+    }
+
+    auto visit(const ASTSingleImport& value) noexcept -> void { visit(value.item); }
 
     auto visit(const ASTWildcardImport&) noexcept -> void {}
 

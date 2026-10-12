@@ -1,3 +1,4 @@
+import std::simd using { f32x8, mask8 };
 import std::simd.floats using { block_count, load_block, extract, swizzle, store, store_partial };
 
 const frozen = f32x8::from_array([1.0, -2.0, 0.5, 4.0, 1.0, -2.0, 0.5, 4.0]);

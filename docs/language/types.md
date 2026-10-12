@@ -23,12 +23,12 @@ f32 f64
 u8x16 mask16 f32x4 mask4 u8x32 mask32 f32x8 mask8
 ```
 
-These names, along with the type constructors `ptr`, `Range`, `Vector`, and
-`AsyncOperation`, are reserved
-for module declarations. Locals, parameters, and members may use those spellings;
-type resolution retains the builtin meaning. They are identifier tokens rather
-than reserved keywords. The [name classification](grammar.md#22-identifiers-and-keywords)
-defines their syntactic positions and reservation scope.
+Scalar and text names, `Vector`, and `Range` are defaults from `std::core`.
+Import SIMD names from `std::simd` and `Operation` from `std::async`. These are
+ordinary bindings: declarations, imports, and type parameters can shadow them,
+and aliases preserve their canonical type identities. Runtime locals do not
+occupy type positions, but do shadow expression qualifiers. Only structural
+`ptr` retains its contextual reservation.
 
 `u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, and `mask8`
 are explicit fixed-width logical SIMD types.
@@ -96,7 +96,9 @@ Operations. `throw E` declares a failure-set parameter, which may appear in
 failure contracts but cannot be used as an object type:
 
 ```carven
-struct Pending<T, throw E> { operation: AsyncOperation<T, throw E> }
+import std::async using Operation;
+
+struct Pending<T, throw E> { operation: Operation<T, throw E> }
 ```
 
 An application supplies every argument explicitly and in its declared kind,

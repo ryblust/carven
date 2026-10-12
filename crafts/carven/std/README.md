@@ -14,6 +14,11 @@ nominal deadline failure.
 using shared SIMD scans.
 - [Number](number/README.md) converts complete numeric text into scalar values.
 
+Import specialized primitives from the compiler-provided `std::async`, `std::simd`,
+and `std::time` modules. Common core, printing, and test names are available by
+default. Source APIs use the paths and declaration visibility of their `.cv`
+modules.
+
 Carven source uses language operations without importing runtime implementations.
 Crafts own their native support alongside their source modules. Runtime support
 provides shared language operations and does not depend on standard crafts.

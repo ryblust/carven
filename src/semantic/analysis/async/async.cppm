@@ -7,13 +7,14 @@ import :semantic.analysis.expr.scope;
 import :semantic.analysis.model;
 import :semantic.semir.async;
 import :semantic.semir.program;
+import :source.standard;
 import std;
 
 struct TimeoutBuiltin final {};
 
 using AsyncBuiltin = std::variant<AsyncIntrinsic, AsyncCompositionPolicy, TimeoutBuiltin>;
 
-auto find_async_builtin(std::string_view name) noexcept -> std::optional<AsyncBuiltin>;
+auto provided_async_builtin(ProvidedExport identity) noexcept -> std::optional<AsyncBuiltin>;
 
 auto resolve_async_builtin(
     ProgramDraft& draft,

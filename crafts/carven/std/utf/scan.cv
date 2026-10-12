@@ -1,6 +1,6 @@
 import .block using invalid_utf8_block;
 import .error using { UTF8Error, UTF8ErrorKind };
-
+import std::simd using u8x32;
 import std::simd.bytes using ascii_prefix;
 
 // Craft-internal state. Zero initialization starts an empty stream.

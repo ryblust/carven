@@ -19,5 +19,3 @@ auto normalize_literal(
     std::optional<ConstructionTypeRef> expected = std::nullopt,
     LiteralSign sign = LiteralSign::Positive
 ) noexcept -> std::expected<ConstantFact, ConstantEvaluationFailure>;
-
-auto duration_literal_scale(NumericSuffix suffix) noexcept -> std::optional<std::uint64_t>;

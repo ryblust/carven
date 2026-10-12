@@ -188,7 +188,7 @@ auto SemanticExecutor::ReadySelection::commit(std::size_t index, bool value) noe
 }
 
 auto SemanticExecutor::ReadySelection::await_ready() noexcept -> bool {
-    if (cancellation_task && executor.cancellation_requested()) {
+    if (cancellation_task && executor.cancel_requested()) {
         commit(children.size(), true);
         return true;
     }
@@ -252,7 +252,7 @@ auto SemanticExecutor::park(
     }
 }
 
-auto SemanticExecutor::cancellation_requested() const noexcept -> bool {
+auto SemanticExecutor::cancel_requested() const noexcept -> bool {
     for (auto* task = current; task != nullptr; task = task->parent) {
         if (task->requested) {
             return true;
@@ -293,7 +293,7 @@ auto SemanticExecutor::consume(ExecutionColdOperation operation, ProgramOriginID
         co_return co_await compose(std::move(operation), origin);
     }
     if (const auto* timeout = std::get_if<ExecutionTimeoutAction>(&operation.action)) {
-        if (cancellation_requested()) {
+        if (cancel_requested()) {
             co_return std::unexpected(
                 ExecutionFailure {ExecutionCancelled {
                     .origin = origin,
@@ -338,7 +338,7 @@ auto SemanticExecutor::consume(ExecutionColdOperation operation, ProgramOriginID
     switch (std::get<AsyncIntrinsic>(operation.action)) {
         case AsyncIntrinsic::YieldOnce: co_await Parking(*this); co_return ExecutionVoid {};
         case AsyncIntrinsic::CancelPoint:
-            if (cancellation_requested()) {
+            if (cancel_requested()) {
                 co_return std::unexpected(
                     ExecutionFailure {ExecutionCancelled {
                         .origin = origin,
@@ -349,7 +349,7 @@ auto SemanticExecutor::consume(ExecutionColdOperation operation, ProgramOriginID
             }
             co_return ExecutionVoid {};
         case AsyncIntrinsic::CancelChild:
-        case AsyncIntrinsic::CancellationRequested:
+        case AsyncIntrinsic::CancelRequested:
         case AsyncIntrinsic::WaitReady:
         case AsyncIntrinsic::CloseChild:
             invariant_violation("immediate async intrinsic stored as a cold operation");

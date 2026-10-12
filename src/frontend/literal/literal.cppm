@@ -82,3 +82,5 @@ struct std::formatter<NumericSuffix> final {
 private:
     static auto display_name(NumericSuffix suffix) noexcept -> std::string_view;
 };
+
+auto duration_literal_scale(NumericSuffix suffix) noexcept -> std::optional<std::uint64_t>;

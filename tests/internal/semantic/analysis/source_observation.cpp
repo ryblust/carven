@@ -108,9 +108,9 @@ const TestSuite tests([] static noexcept {
             }
             const auto* field = occurrence_at(occurrences, observed_source.find("box.value") + 4uz);
             require(field != nullptr);
-            require(field->definition.has_value());
-            expect_equal(field->definition->span.start(), observed_source.find("value: T"));
-            expect_equal(slice(observed_source, field->definition->span), "value");
+            require(field->definition().has_value());
+            expect_equal(field->definition()->span.start(), observed_source.find("value: T"));
+            expect_equal(slice(observed_source, field->definition()->span), "value");
             require(field->type.has_value());
             expect(
                 std::get<TypeID>(*field->type)
@@ -119,14 +119,14 @@ const TestSuite tests([] static noexcept {
             const auto* rigid =
                 occurrence_at(occurrences, observed_source.find("generic_value: T"));
             require(rigid != nullptr);
-            expect(rigid->definition.has_value());
+            expect(rigid->definition().has_value());
             expect(!rigid->type.has_value());
             const auto* captured =
                 occurrence_at(occurrences, observed_source.find("=> parameter") + 3uz);
             require(captured != nullptr);
-            require(captured->definition.has_value());
+            require(captured->definition().has_value());
             expect_equal(
-                captured->definition->span.start(),
+                captured->definition()->span.start(),
                 observed_source.find("parameter: i32")
             );
             expect(occurrence_at(occurrences, observed_source.find("=> index") + 3uz) == nullptr);

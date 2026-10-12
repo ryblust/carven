@@ -141,24 +141,27 @@ fn run(value: str) { let pending = inspect(value); }
                 ContractCase {
                     .name =
                         "known native boundary rejects operation input in an unused generic body",
-                    .source = R"(
-private import(cpp) fn inspect(value: AsyncOperation<i32>);
-fn invalid<T>(value: AsyncOperation<i32>, marker: T) { inspect(value); }
+                    .source = R"(import std::async using Operation;
+
+private import(cpp) fn inspect(value: Operation<i32>);
+fn invalid<T>(value: Operation<i32>, marker: T) { inspect(value); }
 )",
                     .rejection = DiagnosticCode::AsyncAdmission
                 },
                 ContractCase {
                     .name = "native import rejects operation input in an ordinary body",
-                    .source = R"(
-private import(cpp) fn inspect(value: AsyncOperation<i32>);
-fn invalid(value: AsyncOperation<i32>) { inspect(value); }
+                    .source = R"(import std::async using Operation;
+
+private import(cpp) fn inspect(value: Operation<i32>);
+fn invalid(value: Operation<i32>) { inspect(value); }
 )",
                     .rejection = DiagnosticCode::AsyncAdmission
                 },
                 ContractCase {
                     .name = "native import rejects a nested operation owner",
-                    .source = R"(
-struct Box { value: AsyncOperation<i32> }
+                    .source = R"(import std::async using Operation;
+
+struct Box { value: Operation<i32> }
 private import(cpp) fn inspect(value: Box);
 fn invalid<T>(value: Box, marker: T) { inspect(value); }
 )",
@@ -166,10 +169,11 @@ fn invalid<T>(value: Box, marker: T) { inspect(value); }
                 },
                 ContractCase {
                     .name = "source calls preserve typed operation Read and Take contracts",
-                    .source = R"(
-fn inspect(value: AsyncOperation<i32>) {}
-fn relay(&&value: AsyncOperation<i32>) -> AsyncOperation<i32> => &&value;
-fn valid<T>(&&value: AsyncOperation<i32>, marker: T) -> AsyncOperation<i32> {
+                    .source = R"(import std::async using Operation;
+
+fn inspect(value: Operation<i32>) {}
+fn relay(&&value: Operation<i32>) -> Operation<i32> => &&value;
+fn valid<T>(&&value: Operation<i32>, marker: T) -> Operation<i32> {
     inspect(value); return relay(&&value);
 }
 )",
@@ -177,45 +181,50 @@ fn valid<T>(&&value: AsyncOperation<i32>, marker: T) -> AsyncOperation<i32> {
                 },
                 ContractCase {
                     .name = "unused generic caller rejects a closed Take slice argument",
-                    .source = R"(
+                    .source = R"(import std::async using Operation;
+
 async fn sink<T>(&&value: T) {}
-fn invalid<U>(&&values: [i32]) -> AsyncOperation<void> => sink<[i32]>(&&values);
+fn invalid<U>(&&values: [i32]) -> Operation<void> => sink<[i32]>(&&values);
 )",
                     .rejection = DiagnosticCode::AsyncOwnership
                 },
                 ContractCase {
                     .name = "unused generic caller rejects a closed Read borrowed argument",
-                    .source = R"(
+                    .source = R"(import std::async using Operation;
+
 async fn sink<T>(value: T) {}
-fn invalid<U>(value: str) -> AsyncOperation<void> => sink<str>(value);
+fn invalid<U>(value: str) -> Operation<void> => sink<str>(value);
 )",
                     .rejection = DiagnosticCode::AsyncOwnership
                 },
                 ContractCase {
                     .name = "generic caller rejects known borrowed fields beside unknown payload",
-                    .source = R"(
+                    .source = R"(import std::async using Operation;
+
 struct View<T> { value: T, text: str }
 async fn sink<T>(&&value: T) {}
-fn invalid<U>(&&value: View<U>) -> AsyncOperation<void> => sink(&&value);
+fn invalid<U>(&&value: View<U>) -> Operation<void> => sink(&&value);
 )",
                     .rejection = DiagnosticCode::AsyncOwnership
                 },
                 ContractCase {
                     .name = "unused generic caller checks substituted completion backing",
-                    .source = R"(
+                    .source = R"(import std::async using Operation;
+
 async fn forward<T>(&&value: T) -> T => &&value;
-fn invalid<U>(&&pending: AsyncOperation<i32>) -> AsyncOperation<AsyncOperation<i32>> {
-    return forward<AsyncOperation<i32>>(&&pending);
+fn invalid<U>(&&pending: Operation<i32>) -> Operation<Operation<i32>> {
+    return forward<Operation<i32>>(&&pending);
 }
 )",
                     .rejection = DiagnosticCode::AsyncOwnership
                 },
                 ContractCase {
                     .name = "dependent caller and closed owning arguments keep valid admission",
-                    .source = R"(
+                    .source = R"(import std::async using Operation;
+
 async fn sink<T>(&&value: T) {}
-fn dependent<U>(&&value: U) -> AsyncOperation<void> => sink(&&value);
-fn closed<U>(&&values: [i32; 1]) -> AsyncOperation<void> => sink<[i32; 1]>(&&values);
+fn dependent<U>(&&value: U) -> Operation<void> => sink(&&value);
+fn closed<U>(&&values: [i32; 1]) -> Operation<void> => sink<[i32; 1]>(&&values);
 )",
                     .rejection = std::nullopt
                 },
@@ -329,104 +338,111 @@ async fn valid<T>() { checked<T>(); }
             each(cases, &ContractCase::name, check_contract);
         };
 
-    "Async owners: explicit signatures use ordinary Take and owning slots"_test =
-        [] static noexcept {
-            const auto cases = std::array {
-                ContractCase {
-                    .name = "public synchronous relay transfers a typed cold owner",
-                    .source = R"(
+    "Async owners: explicit signatures use ordinary Take and owning slots"_test = [] static noexcept {
+        const auto cases = std::array {
+            ContractCase {
+                .name = "public synchronous relay transfers a typed cold owner",
+                .source = R"(import std::async using Operation;
+
 async fn leaf() -> i32 => 7;
-export fn relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
-async fn run() { let pending: AsyncOperation<i32> = relay(&&leaf()); print(await pending); }
+export fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
+async fn run() { let pending: Operation<i32> = relay(&&leaf()); print(await pending); }
 )",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "async forwarding preserves nominal failures",
-                    .source = R"(
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "async forwarding preserves nominal failures",
+                .source = R"(import std::async using Operation;
+
 struct Error {}
 async fn leaf() -> i32 throw Error { throw Error {}; }
-async fn forward(&&pending: AsyncOperation<i32, throw Error>) -> i32 throw Error {
+async fn forward(&&pending: Operation<i32, throw Error>) -> i32 throw Error {
     return await pending?;
 }
 async fn run() { let value = try { await forward(&&leaf())? } catch { Error(_) => 9, }; }
 )",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "tuple record and array slots transfer complete owners",
-                    .source = R"(
-struct Box { pending: AsyncOperation<i32> }
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "tuple record and array slots transfer complete owners",
+                .source = R"(import std::async using Operation;
+
+struct Box { pending: Operation<i32> }
 async fn leaf() -> i32 => 7;
-fn boxed(&&pending: AsyncOperation<i32>) -> Box => Box { pending: &&pending };
+fn boxed(&&pending: Operation<i32>) -> Box => Box { pending: &&pending };
 async fn run() {
     let box = boxed(&&leaf()); print(await (&&box).pending);
-    let pair: (AsyncOperation<i32>, void) = (leaf(), ());
+    let pair: (Operation<i32>, void) = (leaf(), ());
     let (pending, empty) = &&pair; print(await pending);
-    let array: [AsyncOperation<i32>; 1] = [leaf()]; print(await (&&array)[0]);
+    let array: [Operation<i32>; 1] = [leaf()]; print(await (&&array)[0]);
 }
 )",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "direct Read copy of a cold owner is unavailable",
-                    .source = R"(
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "direct Read copy of a cold owner is unavailable",
+                .source = R"(import std::async using Operation;
+
 async fn leaf() -> i32 => 7;
-fn relay(pending: AsyncOperation<i32>) -> AsyncOperation<i32> => pending;
+fn relay(pending: Operation<i32>) -> Operation<i32> => pending;
 )",
-                    .rejection = DiagnosticCode::AsyncOwnership
-                },
-                ContractCase {
-                    .name = "ordinary Read parameters borrow operations without consuming them",
-                    .source = R"(
+                .rejection = DiagnosticCode::AsyncOwnership
+            },
+            ContractCase {
+                .name = "ordinary Read parameters borrow operations without consuming them",
+                .source = R"(import std::async using Operation;
+
 async fn leaf() -> i32 => 7;
-fn inspect(pending: AsyncOperation<i32>) -> bool => true;
+fn inspect(pending: Operation<i32>) -> bool => true;
 async fn run() {
     let pending = leaf(); print(inspect(pending), inspect(pending)); print(await pending);
 }
 )",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "ordinary Read array parameters permit readonly slice receivers",
-                    .source = R"(
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "ordinary Read array parameters permit readonly slice receivers",
+                .source = R"(import std::async using Operation;
+
 async fn leaf() -> i32 => 7;
-fn inspect(values: [AsyncOperation<i32>; 1]) -> usize => values.as_slice().length();
-fn inspect_slice(values: [AsyncOperation<i32>]) -> usize => values.length();
+fn inspect(values: [Operation<i32>; 1]) -> usize => values.as_slice().length();
+fn inspect_slice(values: [Operation<i32>]) -> usize => values.length();
 async fn run() {
     let values = [leaf()]; print(inspect(values), inspect(values), inspect_slice(values));
     print(await (&&values)[0]);
 }
 )",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "unknown type Read forwarding borrows without requiring Copy",
-                    .source = R"(
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "unknown type Read forwarding borrows without requiring Copy",
+                .source = R"(import std::async using Operation;
+
 async fn leaf() -> i32 => 7;
 fn inspect<T>(value: T) -> bool => true;
 fn forward<T>(value: T) -> bool => inspect(value);
 async fn run() {
-    let pending: AsyncOperation<i32> = leaf(); print(forward(pending)); print(await pending);
+    let pending: Operation<i32> = leaf(); print(forward(pending)); print(await pending);
 }
 )",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "unknown array elements permit readonly slice receivers",
-                    .source = R"(
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "unknown array elements permit readonly slice receivers",
+                .source = R"(import std::async using Operation;
+
 async fn leaf() -> i32 => 7;
 fn inspect<T>(values: [T; 1]) -> usize => values.as_slice().length();
 async fn run() {
-    let values: [AsyncOperation<i32>; 1] = [leaf()];
+    let values: [Operation<i32>; 1] = [leaf()];
     print(inspect(values)); print(await (&&values)[0]);
 }
 )",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "owning array and Vector indices deliver independent String values",
-                    .source = R"(
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "owning array and Vector indices deliver independent String values",
+                .source = R"(
 fn from_array(&&values: [String; 2]) -> String => (&&values)[0];
 fn from_sequence(&&values: Vector<String>) -> String => (&&values)[0];
 fn run() {
@@ -435,103 +451,113 @@ fn run() {
     let second = from_sequence(&&values);
 }
 )",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "consumed slice descriptor does not consume its operation element",
-                    .source = R"(
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "consumed slice descriptor does not consume its operation element",
+                .source = R"(
 async fn leaf() -> i32 => 7;
 async fn run() {
     let values = [leaf()]; let view = values.as_slice();
     print(await (&&view)[0]);
 }
 )",
-                    .rejection = DiagnosticCode::AccessTakeOperand
-                },
-                ContractCase {
-                    .name = "aggregate Read cannot copy an operation slot",
-                    .source = R"(
-struct Box { pending: AsyncOperation<i32> }
+                .rejection = DiagnosticCode::AccessTakeOperand
+            },
+            ContractCase {
+                .name = "aggregate Read cannot copy an operation slot",
+                .source = R"(import std::async using Operation;
+
+struct Box { pending: Operation<i32> }
 async fn leaf() -> i32 => 7;
 fn run() { let box = Box { pending: leaf() }; let copied = box; }
 )",
-                    .rejection = DiagnosticCode::AsyncOwnership
-                },
-                ContractCase {
-                    .name = "Take relay retains the original backing until observation",
-                    .source = R"(
+                .rejection = DiagnosticCode::AsyncOwnership
+            },
+            ContractCase {
+                .name = "Take relay retains the original backing until observation",
+                .source = R"(import std::async using Operation;
+import std::async using yield_once;
+
 async fn leaf(&value: i32) -> i32 { await yield_once(); return value; }
-fn relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
+fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
 async fn run() {
     var value = 7; let pending = relay(&&leaf(&value));
     let moved = &&value; print(await pending);
 }
 )",
-                    .rejection = DiagnosticCode::AccessBorrowConflict
-                },
-                ContractCase {
-                    .name = "async returned owner awaits completion relationship forwarding",
-                    .source = R"(
+                .rejection = DiagnosticCode::AccessBorrowConflict
+            },
+            ContractCase {
+                .name = "async returned owner awaits completion relationship forwarding",
+                .source = R"(import std::async using Operation;
+import std::async using yield_once;
+
 async fn leaf(&value: i32) -> i32 { await yield_once(); return value; }
-async fn relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
+async fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
 async fn run() {
     var value = 7; let pending = await relay(&&leaf(&value));
     let moved = &&value; print(await pending);
 }
 )",
-                    .rejection = DiagnosticCode::AsyncOwnership
-                },
-                ContractCase {
-                    .name = "owner observation releases the transferred loan",
-                    .source = R"(
+                .rejection = DiagnosticCode::AsyncOwnership
+            },
+            ContractCase {
+                .name = "owner observation releases the transferred loan",
+                .source = R"(import std::async using Operation;
+import std::async using yield_once;
+
 async fn leaf(&value: i32) -> i32 { await yield_once(); return value; }
-fn relay(&&pending: AsyncOperation<i32>) -> AsyncOperation<i32> => &&pending;
+fn relay(&&pending: Operation<i32>) -> Operation<i32> => &&pending;
 async fn run() {
-    var value = 7; let pending: AsyncOperation<i32> = relay(&&leaf(&value));
+    var value = 7; let pending: Operation<i32> = relay(&&leaf(&value));
     print(await pending); let moved = &&value;
 }
 )",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "operation failure arguments remain nominal",
-                    .source = "fn relay(&&pending: AsyncOperation<i32, throw i32>) {}",
-                    .rejection = DiagnosticCode::EffectThrowType
-                },
-                ContractCase {
-                    .name = "owner replacement releases only the previous retained backing",
-                    .source = R"(
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "operation failure arguments remain nominal",
+                .source =
+                    "import std::async using Operation;\n\nfn relay(&&pending: Operation<i32, throw i32>) {}",
+                .rejection = DiagnosticCode::EffectThrowType
+            },
+            ContractCase {
+                .name = "owner replacement releases only the previous retained backing",
+                .source = R"(import std::async using Operation;
+
 async fn leaf(&value: i32) -> i32 => value;
 async fn run() {
     var first = 1; var second = 2;
-    var pending: AsyncOperation<i32> = leaf(&first);
+    var pending: Operation<i32> = leaf(&first);
     pending = leaf(&second);
     let moved = &&first; print(await pending); let other = &&second;
 }
 )",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "owner replacement retains its new backing",
-                    .source = R"(
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "owner replacement retains its new backing",
+                .source = R"(import std::async using Operation;
+
 async fn leaf(&value: i32) -> i32 => value;
 async fn run() {
     var first = 1; var second = 2;
-    var pending: AsyncOperation<i32> = leaf(&first);
+    var pending: Operation<i32> = leaf(&first);
     pending = leaf(&second);
     let moved = &&second; print(await pending);
 }
 )",
-                    .rejection = DiagnosticCode::AccessBorrowConflict
-                },
-                ContractCase {
-                    .name = "fixed type constructors reject failure-kind arguments",
-                    .source = "struct Error {} fn relay(value: Vector<throw Error>) {}",
-                    .rejection = DiagnosticCode::TypeGenericArguments
-                },
-            };
-            each(cases, &ContractCase::name, check_contract);
+                .rejection = DiagnosticCode::AccessBorrowConflict
+            },
+            ContractCase {
+                .name = "fixed type constructors reject failure-kind arguments",
+                .source = "struct Error {} fn relay(value: Vector<throw Error>) {}",
+                .rejection = DiagnosticCode::TypeGenericArguments
+            },
         };
+        each(cases, &ContractCase::name, check_contract);
+    };
 
     "Async names: ordinary declarations and native selections precede builtins"_test = [] static noexcept {
         const auto cases = std::array {
@@ -544,12 +570,13 @@ async fn run() {
             ContractCase {
                 .name = "local callable shadows builtin",
                 .source =
-                    "fn run() { let when_all = [](value: i32) -> i32 => value; let result: i32 = when_all(7); }",
+                    "import std::async using when_all;\n\nfn run() { let when_all = [](value: i32) -> i32 => value; let result: i32 = when_all(7); }",
                 .rejection = std::nullopt
             },
             ContractCase {
                 .name = "noncallable local does not fall back to builtin",
-                .source = "fn run() { let when_all = 7; when_all(); }",
+                .source =
+                    "import std::async using when_all;\n\nfn run() { let when_all = 7; when_all(); }",
                 .rejection = DiagnosticCode::TypeNotCallable
             },
             ContractCase {
@@ -572,7 +599,7 @@ async fn run() {
             ContractCase {
                 .name = "constant roots select ordinary source declarations",
                 .source =
-                    "const fn cancellation_requested() -> i32 => 11; const result: i32 = cancellation_requested(); const { assert(result == 11); }",
+                    "const fn cancel_requested() -> i32 => 11; const result: i32 = cancel_requested(); const { assert(result == 11); }",
                 .rejection = std::nullopt
             },
             ContractCase {
@@ -583,19 +610,19 @@ async fn run() {
             ContractCase {
                 .name = "constant root preserves explicit native selection",
                 .source =
-                    "import <native> using vendor::cancellation_requested; const result = cancellation_requested();",
+                    "import <native> using vendor::cancel_requested; const result = cancel_requested();",
                 .rejection = DiagnosticCode::ConstInitializer
             },
             ContractCase {
                 .name = "constant builtin precedes opened native fallback",
                 .source =
-                    "import <native> using vendor::*; const result: bool = cancellation_requested();",
+                    "import std::async using cancel_requested; import <native> using vendor::*; const result: bool = cancel_requested();",
                 .rejection = std::nullopt
             },
             ContractCase {
                 .name = "opened native lookup remains a fallback",
                 .source =
-                    "import <native> using vendor::*; async fn run() { await yield_once(); let requested: bool = cancellation_requested(); }",
+                    "import std::async using cancel_requested;\nimport std::async using yield_once;\n\nimport <native> using vendor::*; async fn run() { await yield_once(); let requested: bool = cancel_requested(); }",
                 .rejection = std::nullopt
             },
             ContractCase {
@@ -606,7 +633,7 @@ async fn run() {
             ContractCase {
                 .name = "static roots construct builtins without source declarations",
                 .source =
-                    "const async fn leaf() -> i32 => 1; const result = await when_all(leaf());",
+                    "import std::async using when_all;\n\nconst async fn leaf() -> i32 => 1; const result = await when_all(leaf());",
                 .rejection = std::nullopt
             },
         };
@@ -618,7 +645,7 @@ async fn run() {
             ContractCase {
                 .name = "grouped builtin observers remain direct await operands",
                 .source =
-                    "async fn leaf() {} async fn run() { async let child = leaf(); await ((wait_ready)(child)); await (close)(child); }",
+                    "import std::async using wait_ready;\nimport std::async using close;\n\nasync fn leaf() {} async fn run() { async let child = leaf(); await ((wait_ready)(child)); await (close)(child); }",
                 .rejection = std::nullopt
             },
             ContractCase {
@@ -630,13 +657,13 @@ async fn run() {
             ContractCase {
                 .name = "local callable observer names use ordinary arguments",
                 .source =
-                    "async fn leaf(value: i32) -> i32 => value; async fn run() { let wait_ready = [](value: i32) -> AsyncOperation<i32> => leaf(value); let result: i32 = await wait_ready(7); }",
+                    "import std::async using Operation;\nimport std::async using wait_ready;\n\nasync fn leaf(value: i32) -> i32 => value; async fn run() { let wait_ready = [](value: i32) -> Operation<i32> => leaf(value); let result: i32 = await wait_ready(7); }",
                 .rejection = std::nullopt
             },
             ContractCase {
                 .name = "local close binding blocks builtin observer",
                 .source =
-                    "async fn leaf() {} async fn run() { let close = 7; async let child = leaf(); await close(child); await child; }",
+                    "import std::async using close;\n\nasync fn leaf() {} async fn run() { let close = 7; async let child = leaf(); await close(child); await child; }",
                 .rejection = DiagnosticCode::TypeNotCallable
             },
             ContractCase {
@@ -671,7 +698,7 @@ async fn run() {
             std::pair<std::string_view, std::string_view> {
                 "provider",
                 "export const fn yield_once() -> i32 => 9; "
-                "export const fn cancellation_requested() -> i32 => 11; "
+                "export const fn cancel_requested() -> i32 => 11; "
                 "export const fn when_all(value: i32) -> i32 => value; "
                 "export const async fn wait_ready() -> i32 => 7; "
                 "export const async fn close() {}"
@@ -685,7 +712,7 @@ async fn run() {
             ContractCase {
                 .name = "explicit Carven imports select source in bodies and constants",
                 .source =
-                    "import provider using { yield_once, cancellation_requested }; const value: i32 = yield_once(); fn run() -> i32 => cancellation_requested();",
+                    "import provider using { yield_once, cancel_requested }; const value: i32 = yield_once(); fn run() -> i32 => cancel_requested();",
                 .rejection = std::nullopt
             },
             ContractCase {
@@ -697,13 +724,13 @@ async fn run() {
             ContractCase {
                 .name = "unimported declarations do not suppress builtin lookup",
                 .source =
-                    "const value = await when_all(); async fn run() { await yield_once(); let requested: bool = cancellation_requested(); }",
+                    "import std::async using cancel_requested;\nimport std::async using yield_once;\nimport std::async using when_all;\n\nconst value = await when_all(); async fn run() { await yield_once(); let requested: bool = cancel_requested(); }",
                 .rejection = std::nullopt
             },
             ContractCase {
                 .name = "imports do not leak through another module",
                 .source =
-                    "import relay using marker; fn prepare() { marker(); } const value = await when_all(); async fn run() { await yield_once(); let requested: bool = cancellation_requested(); }",
+                    "import std::async using cancel_requested;\nimport std::async using yield_once;\nimport std::async using when_all;\n\nimport relay using marker; fn prepare() { marker(); } const value = await when_all(); async fn run() { await yield_once(); let requested: bool = cancel_requested(); }",
                 .rejection = std::nullopt
             },
             ContractCase {
@@ -722,7 +749,8 @@ async fn run() {
             const auto cases = std::array {
                 ContractCase {
                     .name = "heterogeneous join keeps nested and void elements",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 async fn scalar() -> i32 => 1;
 async fn unit() {}
 async fn pair() -> (i32, bool) => (2, true);
@@ -732,7 +760,8 @@ async fn run() { let (number, nothing, nested) = await when_all(scalar(), unit()
                 },
                 ContractCase {
                     .name = "zero and one input preserve arity",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 async fn leaf() -> i32 => 1;
 async fn run() { let empty: () = await when_all(); let (only,) = await when_all(leaf()); let value: i32 = only; }
 )",
@@ -741,13 +770,14 @@ async fn run() { let empty: () = await when_all(); let (only,) = await when_all(
                 ContractCase {
                     .name = "builtin composition has no explicit generic arguments",
                     .source =
-                        "const async fn leaf() -> i32 => 1; const value = await when_all<i32>(leaf());",
+                        "import std::async using when_all;\n\nconst async fn leaf() -> i32 => 1; const value = await when_all<i32>(leaf());",
                     .rejection = DiagnosticCode::TypeGenericArguments
                 },
 
                 ContractCase {
                     .name = "named cold owner is explicitly transferred",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 async fn leaf() -> i32 => 1;
 async fn run() { let cold = leaf(); let (value,) = await when_all(&&cold); }
 )",
@@ -755,7 +785,8 @@ async fn run() { let cold = leaf(); let (value,) = await when_all(&&cold); }
                 },
                 ContractCase {
                     .name = "unmarked named operation cannot be adopted",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 async fn leaf() {}
 async fn run() { let cold = leaf(); await when_all(cold); }
 )",
@@ -763,7 +794,8 @@ async fn run() { let cold = leaf(); await when_all(cold); }
                 },
                 ContractCase {
                     .name = "active lexical child is not a cold input",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 async fn leaf() {}
 async fn run() { async let child = leaf(); await when_all(&&child); }
 )",
@@ -771,7 +803,8 @@ async fn run() { async let child = leaf(); await when_all(&&child); }
                 },
                 ContractCase {
                     .name = "duplicate transfers are rejected by ordinary affine flow",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 async fn leaf() {}
 async fn run() { let cold = leaf(); await when_all(&&cold, &&cold); }
 )",
@@ -779,7 +812,8 @@ async fn run() { let cold = leaf(); await when_all(&&cold, &&cold); }
                 },
                 ContractCase {
                     .name = "composite owns retained loans until observation",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 private import(cpp) fn make_context() -> ::Context;
 private import(cpp) async fn provider(context: ::Context) -> i32;
 async fn run() {
@@ -791,7 +825,8 @@ async fn run() {
                 },
                 ContractCase {
                     .name = "transfer to composite does not release native backing",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 private import(cpp) fn make_context() -> ::Context;
 private import(cpp) async fn provider(context: ::Context) -> i32;
 async fn run() {
@@ -803,7 +838,8 @@ async fn run() {
                 },
                 ContractCase {
                     .name = "construction and deferred failures remain separate",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 struct Failure {}
 async fn leaf() -> i32 throw Failure { throw Failure {}; }
 fn prepare() { let group = when_all(leaf()); }
@@ -813,7 +849,8 @@ async fn run() -> (i32,) throw Failure => await when_all(leaf())?;
                 },
                 ContractCase {
                     .name = "constructor argument failures still need propagation",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 struct Failure {}
 fn number() -> i32 throw Failure { throw Failure {}; }
 async fn leaf(value: i32) -> i32 => value;
@@ -823,7 +860,9 @@ async fn run() { await when_all(leaf(number())); }
                 },
                 ContractCase {
                     .name = "race returns source position and common result",
-                    .source = R"(
+                    .source = R"(import std::async using when_any;
+import std::async using first_successful;
+
 async fn leaf() -> i32 => 1;
 async fn run() { let (index, value) = await when_any(leaf(), leaf()); let position: usize = index; let number: i32 = value; let (winner, result) = await first_successful(leaf()); }
 )",
@@ -831,7 +870,8 @@ async fn run() { let (index, value) = await when_any(leaf(), leaf()); let positi
                 },
                 ContractCase {
                     .name = "race rejects unlike successes",
-                    .source = R"(
+                    .source = R"(import std::async using when_any;
+
 async fn number() -> i32 => 1;
 async fn boolean() -> bool => true;
 async fn run() { await when_any(number(), boolean()); }
@@ -840,7 +880,8 @@ async fn run() { await when_any(number(), boolean()); }
                 },
                 ContractCase {
                     .name = "race requires an input",
-                    .source = R"(
+                    .source = R"(import std::async using when_any;
+
 async fn run() { await when_any(); }
 )",
                     .rejection = DiagnosticCode::TypeCallArity
@@ -848,7 +889,8 @@ async fn run() { await when_any(); }
 
                 ContractCase {
                     .name = "composition builtin requires a direct call",
-                    .source = R"(
+                    .source = R"(import std::async using when_all;
+
 fn run() { let callback = when_all; }
 )",
                     .rejection = DiagnosticCode::AsyncAdmission
@@ -862,7 +904,8 @@ fn run() { let callback = when_all; }
             const auto cases = std::array {
                 ContractCase {
                     .name = "owned cold input retains success and nominal failures",
-                    .source = R"(
+                    .source = R"(import std::time using timeout;
+
 struct Failure {}
 async fn leaf() -> i32 throw Failure { throw Failure {}; }
 async fn run() -> i32 throw Failure + Timeout + RangeError {
@@ -874,7 +917,8 @@ async fn run() -> i32 throw Failure + Timeout + RangeError {
                 },
                 ContractCase {
                     .name = "construction does not execute deferred failures",
-                    .source = R"(
+                    .source = R"(import std::time using timeout;
+
 async fn leaf() -> i32 => 7;
 fn run() { let pending = timeout(leaf(), Duration { nanoseconds: 1 }); }
 )",
@@ -882,28 +926,32 @@ fn run() { let pending = timeout(leaf(), Duration { nanoseconds: 1 }); }
                 },
                 ContractCase {
                     .name = "zero arguments reject before operand admission",
-                    .source = "fn run() { let pending = timeout(); }",
+                    .source =
+                        "import std::time using timeout;\n\nfn run() { let pending = timeout(); }",
                     .rejection = DiagnosticCode::TypeCallArity
                 },
                 ContractCase {
                     .name = "duration is required",
-                    .source = "async fn leaf() {} fn run() { let pending = timeout(leaf()); }",
+                    .source =
+                        "import std::time using timeout;\n\nasync fn leaf() {} fn run() { let pending = timeout(leaf()); }",
                     .rejection = DiagnosticCode::TypeCallArity
                 },
                 ContractCase {
                     .name = "extra arguments are rejected",
                     .source =
-                        "async fn leaf() {} fn run() { let pending = timeout(leaf(), Duration {}, 1); }",
+                        "import std::time using timeout;\n\nasync fn leaf() {} fn run() { let pending = timeout(leaf(), Duration {}, 1); }",
                     .rejection = DiagnosticCode::TypeCallArity
                 },
                 ContractCase {
                     .name = "ordinary values cannot replace a cold operation",
-                    .source = "fn run() { let pending = timeout(7, Duration {}); }",
+                    .source =
+                        "import std::time using timeout;\n\nfn run() { let pending = timeout(7, Duration {}); }",
                     .rejection = DiagnosticCode::AsyncAdmission
                 },
                 ContractCase {
                     .name = "matching fields do not replace the standard Duration identity",
-                    .source = R"(
+                    .source = R"(import std::time using timeout;
+
 struct Interval { nanoseconds: i64 }
 async fn leaf() {}
 fn run() { let pending = timeout(leaf(), Interval { nanoseconds: 1 }); }
@@ -912,7 +960,8 @@ fn run() { let pending = timeout(leaf(), Interval { nanoseconds: 1 }); }
                 },
                 ContractCase {
                     .name = "named operation requires explicit ownership transfer",
-                    .source = R"(
+                    .source = R"(import std::time using timeout;
+
 async fn leaf() {}
 fn run() { let pending = leaf(); let wrapped = timeout(pending, Duration {}); }
 )",
@@ -920,14 +969,17 @@ fn run() { let pending = leaf(); let wrapped = timeout(pending, Duration {}); }
                 },
                 ContractCase {
                     .name = "Read operation parameter cannot supply an owner",
-                    .source = R"(
-fn run(pending: AsyncOperation<void>) { let wrapped = timeout(&&pending, Duration {}); }
+                    .source = R"(import std::async using Operation;
+import std::time using timeout;
+
+fn run(pending: Operation<void>) { let wrapped = timeout(&&pending, Duration {}); }
 )",
                     .rejection = DiagnosticCode::AccessTakeOperand
                 },
                 ContractCase {
                     .name = "active child cannot be consumed as a cold operation",
-                    .source = R"(
+                    .source = R"(import std::time using timeout;
+
 async fn leaf() {}
 async fn run() throw Timeout + RangeError {
     async let child = leaf();
@@ -938,7 +990,8 @@ async fn run() throw Timeout + RangeError {
                 },
                 ContractCase {
                     .name = "timeout retains the protected operation backing",
-                    .source = R"(
+                    .source = R"(import std::time using timeout;
+
 async fn leaf(&value: i32) -> i32 => value;
 async fn run() throw Timeout + RangeError {
     var value = 1;
@@ -951,7 +1004,8 @@ async fn run() throw Timeout + RangeError {
                 },
                 ContractCase {
                     .name = "nonpositive static deadlines do not start protected work",
-                    .source = R"(
+                    .source = R"(import std::time using timeout;
+
 const async fn leaf(&started: i32) -> i32 { ++started; return 7; }
 const {
     var started = 0;
@@ -971,7 +1025,8 @@ const {
                 },
                 ContractCase {
                     .name = "positive static deadline requires unavailable clock execution",
-                    .source = R"(
+                    .source = R"(import std::time using timeout;
+
 const async fn leaf() -> i32 => 7;
 const {
     try { let _ = await timeout(leaf(), Duration { nanoseconds: 1 })?; }
@@ -982,7 +1037,8 @@ const {
                 },
                 ContractCase {
                     .name = "const definitions cannot promise native clock capability",
-                    .source = R"(
+                    .source = R"(import std::time using timeout;
+
 const async fn leaf() -> i32 => 7;
 const async fn run() -> i32 throw Timeout + RangeError {
     return await timeout(leaf(), Duration {})?;
@@ -999,7 +1055,9 @@ const async fn run() -> i32 throw Timeout + RangeError {
             const auto cases = std::array {
                 ContractCase {
                     .name = "associated async body accesses its lexical class representation",
-                    .source = R"(class Value {
+                    .source = R"(import std::async using yield_once;
+
+class Value {
     value: i32,
     fn new(value: i32) -> Value => { value: value };
     async fn read(value: Value) -> i32 { await yield_once(); return value.value; }
@@ -1078,169 +1136,196 @@ async fn run() -> i32 { let value = Value::new(); return value.value; })",
         each(cases, &ContractCase::name, check_contract);
     };
 
-    "Async terminal waiting: direct child admission and affine availability"_test =
-        [] static noexcept {
-            const auto cases = std::array {
-                ContractCase {
-                    .name = "heterogeneous children produce ordinary selection facts",
-                    .source = R"(async fn first() -> i32 => 1;
+    "Async terminal waiting: direct child admission and affine availability"_test = [] static noexcept {
+        const auto cases = std::array {
+            ContractCase {
+                .name = "heterogeneous children produce ordinary selection facts",
+                .source = R"(import std::async using wait_ready;
+import std::async using close;
+
+async fn first() -> i32 => 1;
 async fn second() -> bool => true;
 async fn run() {
     async let a = first(); async let b = second();
     let (position, cancelled): (usize, bool) = await wait_ready(a, b);
     print(position, cancelled); await close(a); await close(b);
 })",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "closing merges consumed and live branches and is idempotent",
-                    .source = R"(async fn leaf() -> i32 => 1;
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "closing merges consumed and live branches and is idempotent",
+                .source = R"(import std::async using close;
+
+async fn leaf() -> i32 => 1;
 async fn run(selected: bool) {
     async let child = leaf();
     if selected { print(await child); }
     await close(child); await close(child);
 })",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "closing discards nominal child failures",
-                    .source = R"(struct Error {} async fn leaf() throw Error { throw Error {}; }
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "closing discards nominal child failures",
+                .source = R"(import std::async using close;
+
+struct Error {} async fn leaf() throw Error { throw Error {}; }
 async fn run() { async let child = leaf(); await close(child); })",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "wait alone does not satisfy normal exit intent",
-                    .source = "async fn leaf() {} async fn run() { "
-                              "async let child = leaf(); print(await wait_ready(child)); }",
-                    .rejection = DiagnosticCode::AsyncChildIntent
-                },
-                ContractCase {
-                    .name = "wait requires at least one candidate",
-                    .source = "async fn run() { print(await wait_ready()); }",
-                    .rejection = DiagnosticCode::TypeCallArity
-                },
-                ContractCase {
-                    .name = "close requires exactly one candidate",
-                    .source = "async fn leaf() {} async fn run() { "
-                              "async let child = leaf(); await close(child, child); }",
-                    .rejection = DiagnosticCode::TypeCallArity
-                },
-                ContractCase {
-                    .name = "wait rejects duplicate identity",
-                    .source = "async fn leaf() {} async fn run() { "
-                              "async let child = leaf(); print(await wait_ready(child, child)); }",
-                    .rejection = DiagnosticCode::AsyncOwnership
-                },
-                ContractCase {
-                    .name = "cold owner is not a wait candidate",
-                    .source = "async fn leaf() {} async fn run() { "
-                              "let operation = leaf(); print(await wait_ready(operation)); }",
-                    .rejection = DiagnosticCode::AsyncOwnership
-                },
-                ContractCase {
-                    .name = "close rejects cold owners",
-                    .source = "async fn leaf() {} async fn run() { "
-                              "let operation = leaf(); await close(operation); }",
-                    .rejection = DiagnosticCode::AsyncOwnership
-                },
-                ContractCase {
-                    .name = "wait does not evaluate arbitrary candidate expressions",
-                    .source = "async fn leaf() {} async fn run() { "
-                              "print(await wait_ready(leaf())); }",
-                    .rejection = DiagnosticCode::AsyncOwnership
-                },
-                ContractCase {
-                    .name = "missing candidate preserves ordinary name diagnostics",
-                    .source = "async fn run() { await close(missing); }",
-                    .rejection = DiagnosticCode::NameUnresolved
-                },
-                ContractCase {
-                    .name = "bare wait call cannot create a stored observer",
-                    .source = "async fn leaf() {} async fn run() { "
-                              "async let child = leaf(); let probe = wait_ready(child); }",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name = "bare close call cannot create a stored observer",
-                    .source = "async fn leaf() {} async fn run() { "
-                              "async let child = leaf(); let probe = close(child); }",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name = "wait is not an ordinary callable value",
-                    .source = "fn run() { let observer = wait_ready; }",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name = "synchronous await retains async admission",
-                    .source = "fn run() { await wait_ready(); }",
-                    .rejection = DiagnosticCode::AsyncAdmission
-                },
-                ContractCase {
-                    .name = "already observed candidate is unavailable to wait",
-                    .source = "async fn leaf() {} async fn run() { "
-                              "async let child = leaf(); await child; "
-                              "print(await wait_ready(child)); }",
-                    .rejection = DiagnosticCode::AccessUnavailable
-                },
-                ContractCase {
-                    .name = "potentially observed candidate is unavailable to wait",
-                    .source = "async fn leaf() {} async fn run(selected: bool) { "
-                              "async let child = leaf(); if selected { await child; } "
-                              "print(await wait_ready(child)); await close(child); }",
-                    .rejection = DiagnosticCode::AccessUnavailable
-                },
-                ContractCase {
-                    .name = "closed child cannot be awaited",
-                    .source = "async fn leaf() {} async fn run() { "
-                              "async let child = leaf(); await close(child); await child; }",
-                    .rejection = DiagnosticCode::AccessUnavailable
-                },
-                ContractCase {
-                    .name = "outer consumed candidate is rejected on a loop backedge",
-                    .source = R"(async fn leaf() {} async fn run() {
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "wait alone does not satisfy normal exit intent",
+                .source =
+                    "import std::async using wait_ready;\n\nasync fn leaf() {} async fn run() { "
+                    "async let child = leaf(); print(await wait_ready(child)); }",
+                .rejection = DiagnosticCode::AsyncChildIntent
+            },
+            ContractCase {
+                .name = "wait requires at least one candidate",
+                .source =
+                    "import std::async using wait_ready;\n\nasync fn run() { print(await wait_ready()); }",
+                .rejection = DiagnosticCode::TypeCallArity
+            },
+            ContractCase {
+                .name = "close requires exactly one candidate",
+                .source = "import std::async using close;\n\nasync fn leaf() {} async fn run() { "
+                          "async let child = leaf(); await close(child, child); }",
+                .rejection = DiagnosticCode::TypeCallArity
+            },
+            ContractCase {
+                .name = "wait rejects duplicate identity",
+                .source =
+                    "import std::async using wait_ready;\n\nasync fn leaf() {} async fn run() { "
+                    "async let child = leaf(); print(await wait_ready(child, child)); }",
+                .rejection = DiagnosticCode::AsyncOwnership
+            },
+            ContractCase {
+                .name = "cold owner is not a wait candidate",
+                .source =
+                    "import std::async using wait_ready;\n\nasync fn leaf() {} async fn run() { "
+                    "let operation = leaf(); print(await wait_ready(operation)); }",
+                .rejection = DiagnosticCode::AsyncOwnership
+            },
+            ContractCase {
+                .name = "close rejects cold owners",
+                .source = "import std::async using close;\n\nasync fn leaf() {} async fn run() { "
+                          "let operation = leaf(); await close(operation); }",
+                .rejection = DiagnosticCode::AsyncOwnership
+            },
+            ContractCase {
+                .name = "wait does not evaluate arbitrary candidate expressions",
+                .source =
+                    "import std::async using wait_ready;\n\nasync fn leaf() {} async fn run() { "
+                    "print(await wait_ready(leaf())); }",
+                .rejection = DiagnosticCode::AsyncOwnership
+            },
+            ContractCase {
+                .name = "missing candidate preserves ordinary name diagnostics",
+                .source =
+                    "import std::async using close;\n\nasync fn run() { await close(missing); }",
+                .rejection = DiagnosticCode::NameUnresolved
+            },
+            ContractCase {
+                .name = "bare wait call cannot create a stored observer",
+                .source =
+                    "import std::async using wait_ready;\n\nasync fn leaf() {} async fn run() { "
+                    "async let child = leaf(); let probe = wait_ready(child); }",
+                .rejection = DiagnosticCode::AsyncAdmission
+            },
+            ContractCase {
+                .name = "bare close call cannot create a stored observer",
+                .source = "import std::async using close;\n\nasync fn leaf() {} async fn run() { "
+                          "async let child = leaf(); let probe = close(child); }",
+                .rejection = DiagnosticCode::AsyncAdmission
+            },
+            ContractCase {
+                .name = "wait is not an ordinary callable value",
+                .source =
+                    "import std::async using wait_ready;\n\nfn run() { let observer = wait_ready; }",
+                .rejection = DiagnosticCode::AsyncAdmission
+            },
+            ContractCase {
+                .name = "synchronous await retains async admission",
+                .source = "import std::async using wait_ready;\n\nfn run() { await wait_ready(); }",
+                .rejection = DiagnosticCode::AsyncAdmission
+            },
+            ContractCase {
+                .name = "already observed candidate is unavailable to wait",
+                .source =
+                    "import std::async using wait_ready;\n\nasync fn leaf() {} async fn run() { "
+                    "async let child = leaf(); await child; "
+                    "print(await wait_ready(child)); }",
+                .rejection = DiagnosticCode::AccessUnavailable
+            },
+            ContractCase {
+                .name = "potentially observed candidate is unavailable to wait",
+                .source =
+                    "import std::async using wait_ready;\nimport std::async using close;\n\nasync fn leaf() {} async fn run(selected: bool) { "
+                    "async let child = leaf(); if selected { await child; } "
+                    "print(await wait_ready(child)); await close(child); }",
+                .rejection = DiagnosticCode::AccessUnavailable
+            },
+            ContractCase {
+                .name = "closed child cannot be awaited",
+                .source = "import std::async using close;\n\nasync fn leaf() {} async fn run() { "
+                          "async let child = leaf(); await close(child); await child; }",
+                .rejection = DiagnosticCode::AccessUnavailable
+            },
+            ContractCase {
+                .name = "outer consumed candidate is rejected on a loop backedge",
+                .source = R"(import std::async using wait_ready;
+
+async fn leaf() {} async fn run() {
     async let child = leaf();
     for var index: i32 = 0; index < 2; ++index {
         print(await wait_ready(child)); await child;
     }
 })",
-                    .rejection = DiagnosticCode::AccessUnavailable
-                },
-                ContractCase {
-                    .name = "ordinary local callable keeps the wait name",
-                    .source = R"(private fn ordinary(value: i32) => yield_once();
+                .rejection = DiagnosticCode::AccessUnavailable
+            },
+            ContractCase {
+                .name = "ordinary local callable keeps the wait name",
+                .source = R"(import std::async using yield_once;
+import std::async using wait_ready;
+
+private fn ordinary(value: i32) => yield_once();
 async fn run() { let wait_ready = ordinary; await wait_ready(3); })",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "static specialization preserves lexical observer identities",
-                    .source =
-                        R"(async fn leaf() {} async fn selected(const observe: bool) -> (usize, bool) {
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "static specialization preserves lexical observer identities",
+                .source =
+                    R"(import std::async using wait_ready;
+import std::async using close;
+
+async fn leaf() {} async fn selected(const observe: bool) -> (usize, bool) {
     async let child = leaf();
     const if observe {
         let result = await wait_ready(child); await close(child); return result;
     } else { await close(child); return (0usize, false); }
 }
 async fn run() { print(await selected(true), await selected(false)); })",
-                    .rejection = std::nullopt
-                },
-                ContractCase {
-                    .name = "ordinary module declarations keep observer names",
-                    .source = R"(async fn wait_ready(value: i32) -> i32 => value;
+                .rejection = std::nullopt
+            },
+            ContractCase {
+                .name = "ordinary module declarations keep observer names",
+                .source = R"(async fn wait_ready(value: i32) -> i32 => value;
 async fn close(value: i32) -> i32 => value;
 async fn run() { print(await wait_ready(3), await close(4)); })",
-                    .rejection = std::nullopt
-                },
-            };
-            each(cases, &ContractCase::name, check_contract);
+                .rejection = std::nullopt
+            },
         };
+        each(cases, &ContractCase::name, check_contract);
+    };
 
     "Async terminal closing: borrowed backing is released only by consumption"_test =
         [] static noexcept {
             const auto cases = std::array {
                 ContractCase {
                     .name = "wait leaves the scalar Write loan live",
-                    .source = R"(async fn leaf(&value: i32) -> i32 => value;
+                    .source = R"(import std::async using wait_ready;
+import std::async using close;
+
+async fn leaf(&value: i32) -> i32 => value;
 async fn run() { var value = 1; async let child = leaf(&value);
     print(await wait_ready(child)); let moved = &&value; await close(child);
 })",
@@ -1248,7 +1333,9 @@ async fn run() { var value = 1; async let child = leaf(&value);
                 },
                 ContractCase {
                     .name = "close releases the scalar Write loan",
-                    .source = R"(async fn leaf(&value: i32) -> i32 => value;
+                    .source = R"(import std::async using close;
+
+async fn leaf(&value: i32) -> i32 => value;
 async fn run() { var value = 1; async let child = leaf(&value);
     await close(child); let moved = &&value; print(moved);
 })",
@@ -1256,7 +1343,9 @@ async fn run() { var value = 1; async let child = leaf(&value);
                 },
                 ContractCase {
                     .name = "conditional await followed by close releases merged loans",
-                    .source = R"(async fn leaf(&value: i32) -> i32 => value;
+                    .source = R"(import std::async using close;
+
+async fn leaf(&value: i32) -> i32 => value;
 async fn run(selected: bool) { var value = 1; async let child = leaf(&value);
     if selected { print(await child); }
     await close(child); let moved = &&value; print(moved);
@@ -1265,7 +1354,9 @@ async fn run(selected: bool) { var value = 1; async let child = leaf(&value);
                 },
                 ContractCase {
                     .name = "close preserves the borrowed backing of other children",
-                    .source = R"(async fn leaf(&value: i32) -> i32 => value;
+                    .source = R"(import std::async using close;
+
+async fn leaf(&value: i32) -> i32 => value;
 async fn run() { var value = 1;
     async let a = leaf(&value); async let b = leaf(&value);
     await close(a); let moved = &&value; await close(b);
@@ -1280,7 +1371,8 @@ async fn run() { var value = 1;
         const auto cases = std::array {
             ContractCase {
                 .name = "selected yield with dynamic runtime input",
-                .source = R"(
+                .source = R"(import std::async using yield_once;
+
 private async fn leaf(value: i32, const deferred: bool) -> i32 {
     const if deferred { await yield_once(); } return value;
 }
@@ -1339,7 +1431,8 @@ async fn run() -> i32 => await leaf(false);)",
             },
             ContractCase {
                 .name = "marked source bodies admit cooperative yield",
-                .source = "const async fn leaf() { await yield_once(); } const { await leaf(); }",
+                .source =
+                    "import std::async using yield_once;\n\nconst async fn leaf() { await yield_once(); } const { await leaf(); }",
                 .rejection = std::nullopt
             },
         };

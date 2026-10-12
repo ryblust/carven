@@ -519,14 +519,14 @@ const TestSuite suite([] static noexcept {
             Input {
                 .name = "SIMD lane",
                 .declaration =
-                    "fn lane(value: u8x16, index: usize) { println(value.lane(index)); }",
+                    "import std::simd using u8x16;\n\nfn lane(value: u8x16, index: usize) { println(value.lane(index)); }",
                 .operation = "lane(u8x16::splat(7), 16);",
                 .message = "SIMD index or memory range is out of bounds"
             },
             Input {
                 .name = "SIMD load",
                 .declaration =
-                    "fn load(values: [u8], index: usize) { let _ = u8x16::load(values, index); }",
+                    "import std::simd using u8x16;\n\nfn load(values: [u8], index: usize) { let _ = u8x16::load(values, index); }",
                 .operation = "load([1u8], 0);",
                 .message = "SIMD index or memory range is out of bounds"
             },

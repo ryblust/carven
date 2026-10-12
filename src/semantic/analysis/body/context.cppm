@@ -471,8 +471,7 @@ private:
     // as a runtime local. The block executes before that storage exists.
     auto runtime_local_outside_block(std::string_view name) const noexcept -> bool;
 
-    auto find_global(std::string_view name, Span span) noexcept
-        -> AnalysisTask<const CatalogSymbol*>;
+    auto find_global(std::string_view name, Span span) noexcept -> AnalysisTask<CatalogEntity>;
 
     auto find_enum_case(EnumID owner, std::string_view name, Span span) noexcept
         -> std::optional<EnumCaseID>;

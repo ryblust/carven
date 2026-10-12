@@ -88,15 +88,18 @@ auto WorkspaceSemanticAnalysis::hover(
     std::uint32_t offset
 ) const noexcept -> std::optional<WorkspaceHoverInformation> {
     const auto* occurrence = select(document, offset);
-    if (occurrence == nullptr || !occurrence->type) {
+    if (occurrence == nullptr || (!occurrence->type && !occurrence->entity)) {
         return std::nullopt;
     }
     const auto location = locate_source(occurrence->location);
-    return location
-        ? std::optional(
-              WorkspaceHoverInformation {.location = *location, .type = *occurrence->type}
-          )
-        : std::nullopt;
+    return location ? std::optional(
+                          WorkspaceHoverInformation {
+                              .location = *location,
+                              .type = occurrence->type,
+                              .entity = occurrence->entity
+                          }
+                      )
+                    : std::nullopt;
 }
 
 auto WorkspaceSemanticAnalysis::definition(
@@ -104,9 +107,9 @@ auto WorkspaceSemanticAnalysis::definition(
     std::uint32_t offset
 ) const noexcept -> std::optional<WorkspaceDocumentLocation> {
     const auto* occurrence = select(document, offset);
-    return occurrence == nullptr || !occurrence->definition
+    return occurrence == nullptr || !occurrence->definition()
         ? std::nullopt
-        : locate_source(*occurrence->definition);
+        : locate_source(*occurrence->definition());
 }
 
 auto WorkspaceSemanticAnalysis::references(
@@ -114,16 +117,13 @@ auto WorkspaceSemanticAnalysis::references(
     std::uint32_t offset
 ) const noexcept -> std::optional<std::vector<WorkspaceDocumentLocation>> {
     const auto* selected = select(document, offset);
-    if (selected == nullptr || !selected->definition) {
+    if (selected == nullptr || !selected->entity) {
         return std::nullopt;
     }
     auto result = std::vector<WorkspaceDocumentLocation>();
-    const auto target = *selected->definition;
     for (const auto& [source_id, occurrences] : source_occurrences) {
         for (const auto& occurrence : occurrences) {
-            if (!occurrence.definition
-                || occurrence.definition->source_id != target.source_id
-                || occurrence.definition->span != target.span) {
+            if (occurrence.entity != selected->entity) {
                 continue;
             }
             if (auto location = locate_source(occurrence.location)) {
@@ -208,4 +208,25 @@ auto analyze_workspace_project(
     return std::shared_ptr<const WorkspaceSemanticAnalysis>(
         new WorkspaceSemanticAnalysis(std::move(analyzed), std::move(source_ids))
     );
+}
+
+auto WorkspaceSemanticAnalysis::alias_references(
+    std::string_view document,
+    std::uint32_t offset
+) const noexcept -> std::optional<std::vector<WorkspaceDocumentLocation>> {
+    const auto* selected = select(document, offset);
+    if (selected == nullptr || !selected->alias) {
+        return std::nullopt;
+    }
+    auto result = std::vector<WorkspaceDocumentLocation>();
+    for (const auto& [source_id, occurrences] : source_occurrences) {
+        for (const auto& occurrence : occurrences) {
+            if (occurrence.alias == selected->alias) {
+                if (auto location = locate_source(occurrence.location)) {
+                    result.push_back(std::move(*location));
+                }
+            }
+        }
+    }
+    return result;
 }

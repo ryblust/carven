@@ -143,8 +143,9 @@ added explicitly by test targets. Inline tests follow the target's test emission
 mode.
 
 Application targets list their own sources. Module names use project-relative
-paths with the `.cv` suffix removed. Directory separators and dots separate module
-components. Toolchain paths require no user configuration. Native provider
+paths with the `.cv` suffix removed. Directory separators define module
+components; each directory name and file stem must match `[A-Za-z_][A-Za-z0-9_]*`.
+Toolchain paths require no user configuration. Native provider
 dependencies and optional test modes use ordinary target configuration.
 
 The rule passes the complete `.cv` batch to Carven before native dependency
@@ -157,7 +158,8 @@ promote and track. Implementation source ownership associates native per-file
 settings with the originating `.cv` input.
 The compiler deduplicates canonical file paths and rejects duplicate module
 identities. The rule uses `--explicit-inputs`, so the CLI adds no other source roots. Imports
-resolve within the supplied batch; `std::` selects modules under `crafts/carven/std/`.
+resolve against the supplied source batch and provided standard modules.
+`std::` selects the canonical `crafts.carven.std` prefix.
 
 The installed standard-library implementations and native support sources belong
 to a shared object target owned by the package rule. Consumers retain their own
@@ -169,7 +171,10 @@ Project-local Crafts remain ordinary target inputs.
 
 Generation runs in a staging directory before updating live artifacts. A failed
 compiler invocation leaves live output intact; promotion itself can fail partway
-through. The Xmake rule owns batch scheduling, incremental promotion, and recovery.
+through. Xmake dependency records track the source files, compiler, rule files,
+invocation arguments, and generated outputs. Promotion preserves timestamps of
+unchanged content. Xmake's C++ rules own native header dependencies, object
+compilation, and linking.
 
 The installed layout places `crafts/` beside `bin/`. The official `carven` craft
 contains runtime support and the standard library. Capability modules keep their

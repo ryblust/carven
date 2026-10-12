@@ -5,8 +5,13 @@ states the problem, remaining questions, and evidence needed to select a scope.
 
 ## Library consumers
 
-`Option<T>` is a possible generic-enum consumer. If public Option/Result APIs are
-selected, define their value and ownership contracts. Result also needs explicit
+Parameterized payload enums, fixed tuple decomposition, and typed failure
+propagation are implemented. They do not provide public Option/Result APIs or
+general iterator capabilities.
+
+`Option<T>` is a possible library consumer of the implemented generic-enum model.
+If public Option/Result APIs are selected, define their value and ownership
+contracts. Result also needs explicit
 failure capture and a defined relationship to typed control effects.
 
 Iterator protocols need a concrete source API and access contract. Type
@@ -103,10 +108,16 @@ contract for the selected boundary.
 A consumer or measured cost problem supplies the evidence for selecting each
 candidate.
 
+Recovering syntax, partial semantic queries, dependencies, revision-aware identity,
+and cancellation belong to [frontend analysis](frontend-analysis.md). Further
+workspace reuse, computation granularity, persistent maps/caches, and worker cost
+experiments belong to [compiler optimization](compiler-optimization.md#workspace-reuse).
+Unchanged parsing and complete-selection caches are already implemented; finer
+semantic incrementality remains open in those owners.
+
 | Direction | Reactivation evidence and retained questions |
 | --- | --- |
-| Query system or concurrent queries | Repeated analysis or independent demand justifies it; define unique computation, pending/running/completed/failed states, wait relationships and cycle handling, deterministic identity commit, and fixed-point convergence |
-| Incremental analysis, persistent IDs, or syntax caches | An interactive or measured reuse workload needs them; define content/version/options keys, source identity rebinding, invalidation, and the import-directory contract |
+| Concurrent semantic queries | Measured independent query demand justifies parallelism after the frontend query contracts; define unique computation, pending/running/completed/failed states, wait relationships and cycle handling, deterministic identity commit, and fixed-point convergence |
 | Independent execution IR | Dispatch cost, repeated execution, debugger stepping, or pause/resume justifies a separate representation; preserve demand-driven completion, cleanup, failure, and budgets without rejecting unexecuted native branches during preparation |
 | Generated C++ module interfaces | A supported consumer needs them; preserve artifact identity and dependencies while BMI orchestration remains a build-system responsibility |
 | Reflection and declaration generation | A consumer identifies the required query surface and bounded generation model |

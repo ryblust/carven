@@ -374,7 +374,10 @@ auto BodyElaborator::build_pattern(
                     if (!selected.has_value()) {
                         co_return std::unexpected(selected.error());
                     }
-                    const auto* enumeration = std::get_if<CatalogEnumForm>(&(*selected)->form);
+                    const auto* selected_symbol = catalog().symbol(*selected);
+                    const auto* enumeration =
+                        (selected_symbol ? std::get_if<CatalogEnumForm>(&selected_symbol->form)
+                                         : nullptr);
                     if (enumeration == nullptr || enumeration->enumeration != owner) {
                         co_return std::unexpected(fail(
                             qualified->span,

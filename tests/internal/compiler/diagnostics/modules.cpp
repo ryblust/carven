@@ -17,6 +17,39 @@ import std;
 namespace {
 
 const TestSuite suite([] static noexcept {
+    "Compiler diagnostics: aliases distinguish same-name types from different modules"_test =
+        [] static noexcept {
+            auto sources = SourceManager();
+            auto inputs = std::vector<SourceModuleInput>();
+            for (
+                const auto& [module, text] :
+                std::array<std::pair<std::string_view, std::string_view>, 3> {
+                    {{"first", "export struct Value {}"},
+                     {"second", "export struct Value {}"},
+                     {"app",
+                      "import first using Value as First; import second using Value as Second; fn wrong(value: First) -> Second => value;"}}
+                }) {
+                inputs.push_back(
+                    {*sources.append_virtual(std::string(module) + ".cv", std::string(text)),
+                     *CanonicalModulePath::from_value(module)}
+                );
+            }
+            const auto result = compile(
+                sources,
+                SourceBatch {.modules = inputs},
+                TargetPlanningRequest {
+                    .test_mode = TestGenerationMode::None,
+                    .linkage_domain = *LinkageDomain::explicit_value("test:type-identities"),
+                    .library = std::nullopt,
+                }
+            );
+            require(!result.has_value());
+            const auto* diagnostic = find_diagnostic(result.error(), DiagnosticCode::TypeMismatch);
+            require(diagnostic != nullptr);
+            expect(diagnostic->finding.message.contains("first::Value"));
+            expect(diagnostic->finding.message.contains("second::Value"));
+        };
+
     "Compiler diagnostics: Vector element errors retain the type use in later modules"_test =
         [] static noexcept {
             for (const auto annotation : {"Vector<str>", "Vector<Borrowed>"}) {

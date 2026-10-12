@@ -243,10 +243,7 @@ auto pre_cancel_body(
     async::cancel(child);
     auto result = co_await child.observe();
     check(result.is_cancelled(), "cancel before start is accepted at timer consumption");
-    check(
-        !async::cancellation_requested(),
-        "child cancellation does not request parent cancellation"
-    );
+    check(!async::cancel_requested(), "child cancellation does not request parent cancellation");
     co_await scope.close(async::ClosingPolicy::CloseOnly);
     co_return async::Completion<void>::success();
 }
@@ -315,7 +312,7 @@ auto ancestor(
     auto child = scope.start(borrowed_timer(timers, alive, descendant));
     auto result = co_await timer(timers, 1h, own);
     check(
-        result.is_cancelled() && async::cancellation_requested(),
+        result.is_cancelled() && async::cancel_requested(),
         "registered ancestor accepts requested cancellation"
     );
     co_await scope.close(async::ClosingPolicy::CloseOnly);
@@ -344,7 +341,7 @@ auto cancelled_close_body(
     async::cancel(child);
     co_await scope.close(async::ClosingPolicy::CloseOnly);
     check(
-        !alive && destroyed == 1 && !async::cancellation_requested(),
+        !alive && destroyed == 1 && !async::cancel_requested(),
         "unobserved child closes once and restores parent context"
     );
     co_return async::Completion<void>::success();

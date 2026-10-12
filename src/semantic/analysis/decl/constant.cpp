@@ -118,12 +118,15 @@ auto DeclResolver::resolve_constant_name(
     std::string_view name,
     Span origin
 ) noexcept -> AnalysisTask<std::optional<ConstantID>> {
-    auto selected = select_symbol(module_id, name, origin);
+    auto selected = select_entity(module_id, name, origin);
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
     }
-    if (const auto* form = std::get_if<CatalogConstantForm>(&(*selected)->form)) {
-        auto result = (co_await resolve((*selected)->symbol_id, module_id, origin));
+    const auto* selected_symbol = catalog.symbol(*selected);
+    if (const auto* form =
+            (selected_symbol ? std::get_if<CatalogConstantForm>(&selected_symbol->form)
+                             : nullptr)) {
+        auto result = (co_await resolve(selected_symbol->symbol_id, module_id, origin));
         if (!result.has_value()) {
             co_return std::unexpected(result.error());
         }
@@ -177,13 +180,7 @@ auto DeclResolver::resolve_type_qualifier(
         co_return std::optional<TypeID>();
     }
     const auto spelling = draft.source_slice_copy(module_id, name->name_span);
-    if (generic_context
-        && std::ranges::any_of(
-            generic_context->parameters,
-            [&](ProgramSpellingID parameter) noexcept {
-                return draft.spelling_copy(parameter) == spelling;
-            }
-        )) {
+    if (generic_parameter_index(draft, generic_context, spelling)) {
         co_return std::unexpected(declaration_failure(
             draft,
             module_id,
@@ -192,19 +189,25 @@ auto DeclResolver::resolve_type_qualifier(
             "static type qualifier requires a concrete type"
         ));
     }
-    if (const auto builtin = source_builtin_type(spelling)) {
-        co_return std::optional(draft.builtin_type(*builtin));
-    }
-    auto selected = select_symbol(module_id, spelling, name->name_span);
+    auto selected = select_entity(module_id, spelling, name->name_span);
     if (!selected.has_value()) {
         co_return std::unexpected(selected.error());
     }
-    if (const auto* record = std::get_if<CatalogStructForm>(&(*selected)->form)) {
+    const auto* selected_symbol = catalog.symbol(*selected);
+    if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
+        if (const auto builtin = provided_builtin_type(*provided)) {
+            co_return std::optional(draft.builtin_type(*builtin));
+        }
+        co_return std::optional<TypeID>();
+    }
+    if (const auto* record =
+            (selected_symbol ? std::get_if<CatalogStructForm>(&selected_symbol->form) : nullptr)) {
         co_return std::optional(
             draft.intern_type({.value = StructTypeValue {.structure = record->structure}})
         );
     }
-    const auto* enumeration = std::get_if<CatalogEnumForm>(&(*selected)->form);
+    const auto* enumeration =
+        (selected_symbol ? std::get_if<CatalogEnumForm>(&selected_symbol->form) : nullptr);
     if (enumeration == nullptr) {
         co_return std::optional<TypeID>();
     }

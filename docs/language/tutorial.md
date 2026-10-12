@@ -87,7 +87,7 @@ Supply both files to the compiler, for example
 `./xmakew run carven compile --stdout main.cv math.cv`. Application files are
 explicit inputs. The commands also collect all `.cv` and `.cpp` files under the
 toolchain's `crafts/carven/` and the working directory's `crafts/`. Imports resolve
-within the resulting module batch.
+against that source batch and the compiler-provided standard modules.
 
 An unprefixed module reference starts at the current craft's root. A leading
 `.` starts in the importing module's directory. `json::parser` selects a module
@@ -103,7 +103,17 @@ For a file at `crafts/foo/models/user.cv`:
 | `.std.utf` | `crafts/foo/models/std/utf.cv` |
 
 Use `using { first, second }` to select several names or `using *` for all
-visible names.
+visible names. Add `as` to choose a local name:
+
+```carven
+import std::core using String as Text;
+import std::simd.bytes using load_block as load_bytes;
+```
+
+Common core, printing, and test names are available by default. Specialized names
+require imports, such as `import std::async using Operation;` or
+`import std::simd using u8x16;`. Source APIs use paths such as
+`std::simd.bytes` or `std::json.value`.
 
 Functions, structures, enums, and constants may be `private`, bare, or `export`.
 Private declarations are module-local; bare means no visibility modifier and

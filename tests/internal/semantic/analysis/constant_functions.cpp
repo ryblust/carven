@@ -100,7 +100,7 @@ const TestSuite suite([] static noexcept {
                 observations = ++*state;
             };
             const auto program = analyze_async_program(
-                R"(
+                R"(import std::async using yield_once;
 
             const async fn extent() -> i32 {
                 await yield_once();
@@ -137,7 +137,7 @@ const TestSuite suite([] static noexcept {
 
     "Constant async: a stored intrinsic factory delays its scheduling action"_test =
         [] static noexcept {
-            const auto program = analyze_async_program(R"(
+            const auto program = analyze_async_program(R"(import std::async using yield_once;
 
             private const fn deferred_turn() => yield_once();
             const async fn marker(&trace: i32) { trace = trace * 10 + 7; }
@@ -393,9 +393,9 @@ const TestSuite suite([] static noexcept {
             };
             append(
                 "application",
-                "import providers using *; const fn cancellation_requested() -> i32 => 11; "
-                "const requested = cancellation_requested(); const yielded = yield_once(); "
-                "async fn run() -> i32 => cancellation_requested() + yield_once();"
+                "import providers using *; const fn cancel_requested() -> i32 => 11; "
+                "const requested = cancel_requested(); const yielded = yield_once(); "
+                "async fn run() -> i32 => cancel_requested() + yield_once();"
             );
             append("providers", "export const fn yield_once() -> i32 => 7;");
             auto syntax = parse_program(sources, SourceBatch {.modules = inputs});

@@ -28,7 +28,7 @@ const TestSuite suite([] static noexcept {
                         expected.push_back(position < table_width ? position + 1 : 0);
                     }
                     const auto source = std::format(
-                        R"(
+                        R"(import std::simd using *;
                         const fn gather(const table: u8x{0}, indices: u8x{1}) -> u8x{1} => table.lookup(indices);
                         const result = gather(u8x{0}::from_array([{2}]), u8x{1}::from_array([{3}]));
                         fn runtime(indices: u8x{1}) -> u8x{1} => gather(u8x{0}::from_array([{2}]), indices);

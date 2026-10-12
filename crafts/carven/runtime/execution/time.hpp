@@ -20,9 +20,9 @@ public:
               .next = nullptr,
               .deadline = deadline,
               .receiver = this,
-              .cancellation_requested =
+              .cancel_requested =
                   [](void* receiver) noexcept {
-                      return static_cast<TimerAwaiter*>(receiver)->resume.cancellation_requested();
+                      return static_cast<TimerAwaiter*>(receiver)->resume.cancel_requested();
                   },
               .complete =
                   [](void* receiver, bool cancelled) noexcept {
@@ -46,7 +46,7 @@ public:
         resume.bind(handle);
         driver = handle.promise().state.task->driver;
         auto& queue = driver->timer_queue();
-        cancelled = resume.cancellation_requested();
+        cancelled = resume.cancel_requested();
         if (cancelled || registration.deadline <= queue.now()) {
             return false;
         }

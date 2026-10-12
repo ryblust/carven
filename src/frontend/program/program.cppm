@@ -3,13 +3,16 @@ module carven:frontend.program;
 import :frontend.ast.ids;
 import :frontend.ast.tree;
 import :source.provenance;
+import :source.standard;
 import std;
 
 class SyntaxProgramBuilder;
 
+using ResolvedModuleTarget = std::variant<ProgramModuleID, ProvidedModule>;
+
 struct ResolvedModuleImport final {
     ASTModuleImportID declaration;
-    ProgramModuleID target;
+    ResolvedModuleTarget target;
 };
 
 using ResolvedModuleImportGraph = std::vector<std::vector<ResolvedModuleImport>>;

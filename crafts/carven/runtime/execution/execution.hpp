@@ -98,11 +98,11 @@ struct TaskContext final {
     Driver* driver;
     TaskContext* parent;
     bool requested;
-    auto cancellation_requested() const noexcept -> bool;
+    auto cancel_requested() const noexcept -> bool;
     auto request_cancel() noexcept -> void;
 };
 
-inline auto TaskContext::cancellation_requested() const noexcept -> bool {
+inline auto TaskContext::cancel_requested() const noexcept -> bool {
     for (auto* task = this; task != nullptr; task = task->parent) {
         if (task->requested) {
             return true;
@@ -198,7 +198,7 @@ inline auto Driver::poll() noexcept -> void {
         auto* registration = cancellation_first;
         while (registration != nullptr) {
             auto* next = registration->next;
-            if (registration->task->cancellation_requested()) {
+            if (registration->task->cancel_requested()) {
                 registration->notify(*registration);
             }
             registration = next;
@@ -261,9 +261,9 @@ public:
 
     auto bound() const noexcept -> bool { return node.task != nullptr; }
 
-    auto cancellation_requested() const noexcept -> bool {
+    auto cancel_requested() const noexcept -> bool {
         detail::require_protocol(bound());
-        return node.task->cancellation_requested();
+        return node.task->cancel_requested();
     }
 
     auto enqueue(Driver& driver) noexcept -> void {
@@ -371,8 +371,8 @@ inline auto current_activation() noexcept -> CurrentActivationAwaiter {
     return {};
 }
 
-inline auto cancellation_requested() noexcept -> bool {
-    return detail::current_task != nullptr && detail::current_task->cancellation_requested();
+inline auto cancel_requested() noexcept -> bool {
+    return detail::current_task != nullptr && detail::current_task->cancel_requested();
 }
 
 template<typename Result, typename... Failures>
@@ -907,7 +907,7 @@ public:
                 ready = index;
             }
         }
-        if (accept_cancellation && caller.task->cancellation_requested()) {
+        if (accept_cancellation && caller.task->cancel_requested()) {
             commit_cancellation();
             return false;
         }
@@ -948,8 +948,7 @@ public:
     auto await_suspend(std::coroutine_handle<>) const noexcept -> void {}
 
     auto await_resume() const noexcept -> Completion<void> {
-        return cancellation_requested() ? Completion<void>::cancelled()
-                                        : Completion<void>::success();
+        return cancel_requested() ? Completion<void>::cancelled() : Completion<void>::success();
     }
 };
 

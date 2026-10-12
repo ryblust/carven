@@ -93,7 +93,7 @@ public:
         template<typename Promise>
         auto await_suspend(std::coroutine_handle<Promise> handle) noexcept -> bool {
             resume.bind(handle);
-            if (resume.cancellation_requested()) {
+            if (resume.cancel_requested()) {
                 completion.emplace(Completion::cancelled());
                 return false;
             }
@@ -183,7 +183,7 @@ public:
         while (*link != nullptr) {
             auto* request = *link;
             auto ready = [&]() noexcept -> std::optional<Completion> {
-                if (request->resume.cancellation_requested()) {
+                if (request->resume.cancel_requested()) {
                     return Completion::cancelled();
                 }
                 if (descriptors[index].revents != 0) {

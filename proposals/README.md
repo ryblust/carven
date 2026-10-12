@@ -3,6 +3,10 @@
 This directory holds unfinished designs and accepted work awaiting implementation.
 Current contracts belong in `docs/`.
 
+The inventory below was checked against the repository on 2026-10-12. Existing
+foundations do not mark an extension complete; the remaining contract determines
+whether its proposal stays here.
+
 ## Contents
 
 - [TEMPLATE.md](TEMPLATE.md): proposal structure and field guidance.
@@ -15,19 +19,38 @@ Current contracts belong in `docs/`.
 
 | Proposal | Decision owned here |
 | --- | --- |
-| [Standard modules](standard-modules.md) | Compiler-provided standard modules, default bindings, import renaming, unified symbol selection, and Craft source-package integration |
 | [Generic extensions](generic-extensions.md) | Static capabilities, associated types, parameterized class operations, and finite boundary extensions |
 | [Operator capabilities](operator-capabilities.md) | Mapping existing tokens to checked operations; consumes generic evidence |
 | [Dynamic values](dynamic-values.md) | Erased holding forms, nominal conformance, and dispatch |
 | [Dynamic ownership](dynamic-ownership.md) | Unique/shared object owners, allocator policy, and factory construction in owned storage |
-| [Semantic execution](semantic-execution.md) | Structured static roots, text traversal, address observations, and retained reference graphs |
-| [Compiler optimization](compiler-optimization.md) | Compiler costs, C++ realization, and formatting/output experiments preserving source contracts |
+| [Semantic execution](semantic-execution.md) | Direct structured initializer/extent roots, scalar text traversal, address observations, and retained reference graphs |
+| [Compiler optimization](compiler-optimization.md) | Compiler and workspace-reuse costs, C++ realization, and formatting/output experiments preserving source contracts |
 | [Frontend analysis](frontend-analysis.md) | Recovering syntax, partial semantics, diagnostic ownership, query coordination, publication, and analysis fault isolation |
-| [Workspace compilation](workspace-compilation.md) | Evidence for further reuse, computation granularity, request lifetime, and build integration |
 | [Data representation](data-representation.md) | Record, tuple, and enum representations, native-layout boundaries, compact handles, and collection layouts |
 | [Uninitialized storage](uninitialized-storage.md) | Construction destinations, partial initialization, native lifetime, and library storage in constant execution |
 | [Concurrency](concurrency.md) | Cross-thread values, memory ordering, threads, and synchronization |
 | [Documentation comments](doc-comments.md) | Source attachment, retained content, and its artifact consumer |
+
+## Implemented boundaries and remaining work
+
+No standalone proposal is fully implemented. Workspace reuse experiments share
+the compiler-optimization owner; frontend analysis owns their semantic query and
+worker prerequisites. The other domains retain distinct source contracts or
+developed representation and validation criteria.
+
+| Domain | Implemented boundary | Remaining scope |
+| --- | --- | --- |
+| Generic extensions | [Type/failure-set parameters](../docs/language/types.md#nominal-type-parameters), checked named generic functions, static inputs, finite first-order formation | Capability evidence, associated types, parameterized class operations, and generic native boundaries |
+| Operator capabilities | Builtin operators and compiler-selected equality | User-defined token hooks and their identity/signature/evidence rules |
+| Dynamic values | [Closures and callable views](../docs/language/functions.md), fixed-signature indirect calls, operation values | Nominal erased holding, conformance, existential packaging, and dispatch |
+| Dynamic ownership | [String](../docs/language/text.md), [Vector](../docs/language/aggregates.md#owning-vectors), and async owners | General Unique/Shared owners, allocation policy, and factory construction |
+| Semantic execution | [Structured executor](../docs/compiler/analysis/evaluation.md), specialization, compound constants, and byte traversal | Direct structured initializer/extent roots, scalar traversal, address/literal policy, and reference graphs |
+| Compiler optimization | [Prepared formatting and output](../docs/compiler/backend/builtins.md), known-value paths, [workspace caches](../tools/workspace/README.md), shared native library producers | Further measured reuse, parallelism, storage/delivery, constant output, and formatting experiments |
+| Frontend analysis | Top-level recovery, owned complete analysis, retained snapshots, limited observations after semantic errors, strict publication | Lossless damaged syntax, independent partial types, semantic queries, request control, and worker isolation |
+| Data representation | Declaration-order records, recursive tuples, variant-based enums/failures | Target layout facts, native forms, field ordering, compact carriers, and collection representations |
+| Uninitialized storage | [Native direct/delayed construction](../docs/compiler/backend/realization.md) | Source destinations, completion evidence, partial initialization, and library cleanup ownership |
+| Concurrency | [Same-thread async](../docs/language/async.md) and explicit native boundary obligations | Cross-thread admission, memory ordering, threads, and synchronization |
+| Documentation comments | Retained source bytes and ordinary comments | Documentation recognition, attachment, markup, and an artifact consumer |
 
 ## Status
 
@@ -43,7 +66,10 @@ Design maturity and implementation progress are recorded separately.
 
 Implementation uses `Not started`, `In progress`, `Partial`, `Complete`, or
 `Not applicable`. Record whole-proposal status at the top and slice-specific
-status with the slice.
+status with the slice. Scope implementation status to the remaining design;
+identify implemented foundations separately. Accepted decisions do not establish
+implementation, and an implemented neighboring mechanism does not complete a
+proposal's different source or tooling contract.
 
 Exploration records questions, alternatives, and counterexamples. Implementation
 scope is selected separately, with a defined contract and validation criteria.

@@ -4,10 +4,11 @@ Import byte helpers from `std::simd.bytes` and floating helpers from
 `std::simd.floats`. The compiler supplies fixed logical vector and mask types.
 Operations have the same lane semantics in static execution and native code.
 
-Vector types and their primitive operations are built into the language and do
-not require an import. Import the craft when using its block and algorithm
-helpers. Generated SIMD operations and runtime UTF-8 validation use the native
-support header. Text support therefore also depends on its selected backend.
+Import named vector and mask types from the compiler-provided `std::simd` module.
+Inferred values retain their primitive operations without naming their types.
+Import block and algorithm helpers from their source modules. Generated SIMD
+operations and runtime UTF-8 validation use the native support header.
+Text support therefore also depends on its selected backend.
 
 The runtime supplies native value representations and primitive operations;
 the compiler executor supplies their static-execution equivalents. Library

@@ -155,7 +155,7 @@ private:
         ExecutionResult<ExecutionCompletion> result
     ) noexcept -> ExecutionTask<ExecutionCompletion>;
 
-    auto cancellation_requested() const noexcept -> bool;
+    auto cancel_requested() const noexcept -> bool;
     auto request_cancel(ExecutionLogicalTask& task) noexcept -> void;
     auto poll_cancellation() noexcept -> void;
     auto stop(ExecutionFailure failure) noexcept -> ExecutionFailure;

@@ -41,9 +41,9 @@ failure contract. Failure types in a published contract must be visible to that
 contract's audience.
 
 The same Copy requirement applies to function and callable failure clauses,
-`AsyncOperation<T, throw E>` members, thrown payloads, and typed catch alternatives.
+`Operation<T, throw E>` members, thrown payloads, and typed catch alternatives.
 It is checked after nominal fields are complete, including nested fields and
-enum payloads. A nominal value that owns an `AsyncOperation` cannot be a failure
+enum payloads. A nominal value that owns an `Operation` cannot be a failure
 payload. Empty arrays retain their ordinary Copy rule, and native C++ fields
 retain the existing delegated Copy boundary. Moving a payload into `throw`
 does not remove the requirement that its failure type be copyable.
@@ -66,13 +66,15 @@ empty set. It is neither a payload type nor a value parameter. Type and
 failure-set arguments occupy distinct positions in the declaration:
 
 ```carven
-async fn consume<T, throw E>(&&operation: AsyncOperation<T, throw E>) -> T throw E {
+import std::async using Operation;
+
+async fn consume<T, throw E>(&&operation: Operation<T, throw E>) -> T throw E {
     return (await operation)?;
 }
 ```
 
 An explicit application can supply `throw Error + IO` or `throw ()` for `E`.
-A parameter can appear in a callable's `throw` clause or an AsyncOperation contract,
+A parameter can appear in a callable's `throw` clause or an Operation contract,
 alone or in a union such as `E + Error`. An application normalizes that union as
 a set: a member contributed by both `E` and `Error` appears once. Argument
 inference follows [Parameterized functions](functions.md#parameterized-functions).

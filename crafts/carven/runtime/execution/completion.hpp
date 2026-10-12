@@ -12,9 +12,11 @@
 namespace carven::runtime::execution {
 
 namespace detail {
+
 // Its concrete type depends only on Result, never on a failure set.
 template<typename Result>
 using SuccessState = carven::runtime::detail::SuccessState<Result>;
+
 } // namespace detail
 
 // Primitive success is a value; class and failure payloads have independent

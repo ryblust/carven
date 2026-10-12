@@ -3,8 +3,8 @@ module carven:frontend.program.verify.impl;
 import :frontend.ast.ids;
 import :frontend.ast.storage;
 import :frontend.ast.topology;
-import :frontend.program.verify;
 import :frontend.program;
+import :frontend.program.verify;
 import :source.provenance.ids;
 import :source.provenance.verify;
 import :source.text;
@@ -247,9 +247,11 @@ auto verify_resolved_imports(
                 )
             );
         }
-        if (!program.provenance().contains(edge.target)
-            || edge.target.index() >= module_count
-            || edge.target == module_id) {
+        const auto* target = std::get_if<ProgramModuleID>(&edge.target);
+        if (target
+            && (!program.provenance().contains(*target)
+                || target->index() >= module_count
+                || *target == module_id)) {
             return verification_error(
                 SyntaxProgramErrorKind::InvalidResolvedImportGraph,
                 std::format(

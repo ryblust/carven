@@ -41,7 +41,7 @@ auto construct_async_intrinsic(
         ));
     }
     auto& draft = site.draft();
-    const auto type = kind == AsyncIntrinsic::CancellationRequested
+    const auto type = kind == AsyncIntrinsic::CancelRequested
         ? ConstructionTypeRef(draft.builtin_type(BuiltinType::Bool))
         : make_operation_type(
               draft,

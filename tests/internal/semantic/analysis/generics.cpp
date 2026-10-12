@@ -22,10 +22,11 @@ const TestSuite suite([] static noexcept {
                  }) {
                 const auto program = analyze_test_program(
                     std::format(
-                        R"(
+                        R"(import std::async using Operation;
+
                     const async fn produce() -> i32 => 42;
                     const fn relay<T>(&&value: T) -> T => &&value;
-                    const async fn consume<T, throw E>(&&operation: AsyncOperation<T, throw E>) -> T throw E {{
+                    const async fn consume<T, throw E>(&&operation: Operation<T, throw E>) -> T throw E {{
                         return (await operation)?;
                     }}
                     const result = {};
@@ -46,17 +47,18 @@ const TestSuite suite([] static noexcept {
         };
     "Generic effects: operation contracts carry an independent inferred failure set"_test =
         [] static noexcept {
-            static_cast<void>(analyze_test_program(R"(
+            static_cast<void>(analyze_test_program(R"(import std::async using Operation;
+
                 struct Error { code: i32 }
-                struct Holder<T, throw E> { pending: AsyncOperation<T, throw E> }
-                fn forward<T, throw E>(&&operation: AsyncOperation<T, throw E>) -> AsyncOperation<T, throw E> => &&operation;
-                fn hold<T, throw E>(&&operation: AsyncOperation<T, throw E>) -> Holder<T, throw E> {
+                struct Holder<T, throw E> { pending: Operation<T, throw E> }
+                fn forward<T, throw E>(&&operation: Operation<T, throw E>) -> Operation<T, throw E> => &&operation;
+                fn hold<T, throw E>(&&operation: Operation<T, throw E>) -> Holder<T, throw E> {
                     return Holder<T, throw E> { pending: &&operation };
                 }
-                fn release<T, throw E>(&&holder: Holder<T, throw E>) -> AsyncOperation<T, throw E> => (&&holder).pending;
+                fn release<T, throw E>(&&holder: Holder<T, throw E>) -> Operation<T, throw E> => (&&holder).pending;
                 async fn success() -> i32 => 42;
                 async fn fallible() -> i32 throw Error => 42;
-                async fn consume<T, throw E>(&&operation: AsyncOperation<T, throw E>) -> T throw E {
+                async fn consume<T, throw E>(&&operation: Operation<T, throw E>) -> T throw E {
                     return (await operation)?;
                 }
                 async fn use() -> i32 throw Error {
@@ -103,16 +105,17 @@ const TestSuite suite([] static noexcept {
         };
     "Generic effects: independent producer equations infer one shared contract"_test =
         [] static noexcept {
-            const auto shared = std::string(R"(
+            const auto shared = std::string(R"(import std::async using Operation;
+
                 struct Error {}
                 struct OtherError {}
-                fn discard<T, throw E>(&&left: AsyncOperation<T, throw E>, &&right: AsyncOperation<T, throw E>) {}
+                fn discard<T, throw E>(&&left: Operation<T, throw E>, &&right: Operation<T, throw E>) {}
                 const async fn first() -> i32 => 42;
                 const async fn second() -> i32 => 7;
                 async fn fallible() -> i32 throw Error => 42;
                 async fn also_fallible() -> i32 throw Error => 7;
                 async fn different() -> i32 throw OtherError => 7;
-                const async fn both<T, throw E>(&&left: AsyncOperation<T, throw E>, &&right: AsyncOperation<T, throw E>) -> T throw E {
+                const async fn both<T, throw E>(&&left: Operation<T, throw E>, &&right: Operation<T, throw E>) -> T throw E {
                     let value = (await left)?;
                     let _ = (await right)?;
                     return &&value;
@@ -134,11 +137,12 @@ const TestSuite suite([] static noexcept {
         };
     "Generic effects: transparent inferred producers preserve recursive effect environments"_test =
         [] static noexcept {
-            static_cast<void>(analyze_test_program(R"(
-                private async fn relay<throw F>(&&operation: AsyncOperation<i32, throw F>) -> i32 {
+            static_cast<void>(analyze_test_program(R"(import std::async using Operation;
+
+                private async fn relay<throw F>(&&operation: Operation<i32, throw F>) -> i32 {
                     return (await operation)?;
                 }
-                private async fn recur<throw E>(&&operation: AsyncOperation<i32, throw E>, again: bool) -> i32 {
+                private async fn recur<throw E>(&&operation: Operation<i32, throw E>, again: bool) -> i32 {
                     if again { return (await recur(&&relay(&&operation), false))?; }
                     return (await operation)?;
                 }

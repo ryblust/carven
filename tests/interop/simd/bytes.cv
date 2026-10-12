@@ -1,3 +1,5 @@
+import std::simd using { mask4, u8x32, u8x32 as Bytes, mask32 };
+
 import std::simd.bytes using {
     block_count,
     load_block,
@@ -25,7 +27,7 @@ private const fn reversed_lanes() -> [u8; 32] {
     return result;
 }
 
-const fn qualified_factory(u8x32: u8) -> u8x32 => (u8x32)::splat(u8x32);
+const fn qualified_factory(u8x32: u8) -> u8x32 => (Bytes)::splat(u8x32);
 
 const frozen_vector = qualified_factory(7).with_lane(15, 99);
 const frozen_mask = mask32::from_bits(0x8001);

@@ -22,6 +22,18 @@ auto path(std::string_view value) noexcept -> CanonicalModulePath {
 }
 
 const TestSuite suite([] static noexcept {
+    "Syntax program: source inputs cannot replace provided identities"_test = [] static noexcept {
+        auto sources = SourceManager();
+        const auto source = sources.append_virtual("core.cv", "export struct User {}");
+        require(source.has_value());
+        const auto inputs = std::array {
+            SourceModuleInput {.source_id = *source, .module_path = path("crafts.carven.std.core")}
+        };
+        const auto parsed = parse_program(sources, SourceBatch {.modules = inputs});
+        require(!parsed.has_value());
+        expect_equal(parsed.error().front().finding.code, DiagnosticCode::CompilationInput);
+    };
+
     "Syntax program: real module sources publish through the program parser"_test =
         [] static noexcept {
             auto sources = SourceManager();
@@ -236,10 +248,14 @@ const TestSuite suite([] static noexcept {
                         return;
                     }
                     for (auto index = 0uz; index < expected.size(); ++index) {
-                        expect(((provenance.module_record(imports[index].target).path.value())
-                                == (expected[index])))
+                        expect(
+                            ((provenance
+                                  .module_record(std::get<ProgramModuleID>(imports[index].target))
+                                  .path.value())
+                             == (expected[index]))
+                        )
                             .note(
-                                "provenance.module_record(imports[index].target).path.value() == expected[index]",
+                                "provenance.module_record(std::get<ProgramModuleID>(imports[index].target)).path.value() == expected[index]",
                                 "item.importer = ",
                                 item.importer
                             );

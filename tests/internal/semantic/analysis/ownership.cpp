@@ -91,7 +91,7 @@ const TestSuite suite([] static noexcept {
                 DiagnosticCode::AsyncOwnership
             },
             std::pair {
-                std::string_view("async fn bad(value: u8x32) {}"),
+                std::string_view("import std::simd using u8x32;\n\nasync fn bad(value: u8x32) {}"),
                 DiagnosticCode::AsyncOwnership
             },
             std::pair {
@@ -197,11 +197,16 @@ const TestSuite suite([] static noexcept {
         const auto cases = std::array {
             std::pair {
                 std::string_view(
-                    " fn query() -> bool => cancellation_requested(); fn shadow() { let yield_once = 7; print(yield_once); } async fn run() { await yield_once(); }"
+                    "import std::async using cancel_requested;\nimport std::async using yield_once;\n\n fn query() -> bool => cancel_requested(); fn shadow() { let yield_once = 7; print(yield_once); } async fn run() { await yield_once(); }"
                 ),
                 false
             },
-            std::pair {std::string_view(" fn bad() { let checkpoint = yield_once; }"), true},
+            std::pair {
+                std::string_view(
+                    "import std::async using yield_once;\n\n fn bad() { let checkpoint = yield_once; }"
+                ),
+                true
+            },
         };
         for (const auto& [source, rejected] : cases) {
             auto sources = SourceManager();
@@ -229,8 +234,7 @@ const TestSuite suite([] static noexcept {
                         [&](const SemanticExpression& expression) noexcept {
                             if (const auto* intrinsic =
                                     std::get_if<SemAsyncIntrinsic>(&expression.value)) {
-                                found_query |=
-                                    intrinsic->kind == AsyncIntrinsic::CancellationRequested;
+                                found_query |= intrinsic->kind == AsyncIntrinsic::CancelRequested;
                                 found_yield |= intrinsic->kind == AsyncIntrinsic::YieldOnce;
                             }
                         }

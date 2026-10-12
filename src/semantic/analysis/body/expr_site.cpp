@@ -863,42 +863,33 @@ auto BodyElaborator::await_expression(const ASTPrefixExpr& source, Span span) no
     while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(operand_id).value)) {
         operand_id = group->expression;
     }
-    auto prepared_operand = std::optional<BuiltExpression>();
     if (const auto* call = std::get_if<ASTCallExpr>(&ast.expression(operand_id).value)) {
         auto callee_id = call->callee;
         while (const auto* group = std::get_if<ASTGroupExpr>(&ast.expression(callee_id).value)) {
             callee_id = group->expression;
         }
-        const auto* name = std::get_if<ASTNameExpr>(&ast.expression(callee_id).value);
-        const auto text = name ? spelling(name->name_span) : std::string();
-        const auto builtin = name ? find_async_builtin(text) : std::nullopt;
-        const auto* observer = builtin ? std::get_if<AsyncIntrinsic>(&*builtin) : nullptr;
-        if (observer
-            && (*observer == AsyncIntrinsic::WaitReady || *observer == AsyncIntrinsic::CloseChild)
-            && find_local(text) == nullptr
-            && catalog().lookup(source_module_id, text).empty()) {
-            auto callee = co_await select_expression(call->callee);
-            if (!callee) {
-                co_return std::unexpected(callee.error());
-            }
-            if (const auto* intrinsic = std::get_if<AsyncIntrinsicSelection>(&*callee); intrinsic
-                && (intrinsic->kind == AsyncIntrinsic::WaitReady
-                    || intrinsic->kind == AsyncIntrinsic::CloseChild)) {
+        if (const auto* name = std::get_if<ASTNameExpr>(&ast.expression(callee_id).value)) {
+            const auto text = spelling(name->name_span);
+            const auto candidates = catalog().lookup(source_module_id, text);
+            const auto* provided = candidates.size() == 1uz
+                ? std::get_if<ProvidedExport>(&candidates.front().entity)
+                : nullptr;
+            if (find_local(text) == nullptr
+                && provided
+                && (*provided == ProvidedExport::WaitReady || *provided == ProvidedExport::Close)) {
+                auto callee = co_await select_expression(call->callee);
+                if (!callee) {
+                    co_return std::unexpected(callee.error());
+                }
+                const auto* intrinsic = std::get_if<AsyncIntrinsicSelection>(&*callee);
+                if (intrinsic == nullptr) {
+                    invariant_violation("selected child observer lost its intrinsic identity");
+                }
                 co_return co_await await_child_intrinsic(*call, intrinsic->kind, span);
             }
-            auto operand = co_await call_expression(
-                *call,
-                ast.expression(operand_id).span,
-                std::move(*callee)
-            );
-            if (!operand) {
-                co_return std::unexpected(operand.error());
-            }
-            prepared_operand.emplace(std::move(*operand));
         }
     }
-    auto operand = prepared_operand ? AnalysisResult<BuiltExpression>(std::move(*prepared_operand))
-                                    : co_await expression(source.operand_id);
+    auto operand = co_await expression(source.operand_id);
     if (!operand) {
         co_return std::unexpected(operand.error());
     }

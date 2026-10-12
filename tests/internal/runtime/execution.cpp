@@ -118,7 +118,7 @@ auto fifo(std::vector<int>& log) noexcept -> async::AsyncOperation<void> {
 
 auto nested_checkpoint(bool& same_task, async::AsyncOperation<void> checkpoint) noexcept
     -> async::AsyncOperation<void> {
-    same_task = async::cancellation_requested();
+    same_task = async::cancel_requested();
     co_return co_await async::AsyncOperation<void>(std::move(checkpoint));
 }
 
@@ -129,7 +129,7 @@ auto accepting(
 ) noexcept -> async::AsyncOperation<void> {
     auto turn = async::yield_once();
     auto yielded = co_await async::AsyncOperation<void>(std::move(turn));
-    yield_succeeded = yielded.success_if() != nullptr && async::cancellation_requested();
+    yield_succeeded = yielded.success_if() != nullptr && async::cancel_requested();
     co_return co_await nested_checkpoint(same_task, std::move(checkpoint));
 }
 
@@ -140,7 +140,7 @@ auto cancel_child(bool& yield_succeeded, bool& same_task, bool& parent_unrequest
     auto child = scope.start(accepting(yield_succeeded, same_task, std::move(checkpoint)));
     async::cancel(child);
     async::cancel(child);
-    parent_unrequested = !async::cancellation_requested();
+    parent_unrequested = !async::cancel_requested();
     auto completion = co_await child.observe();
     co_await scope.close(async::ClosingPolicy::CloseOnly);
     co_return completion;
@@ -333,15 +333,15 @@ auto explicit_boundary(std::vector<int>& log) noexcept -> async::AsyncOperation<
 }
 
 auto inherited_checkpoint(bool& inherited) noexcept -> async::AsyncOperation<void> {
-    inherited = async::cancellation_requested();
+    inherited = async::cancel_requested();
     co_return co_await async::cancel_point();
 }
 
 auto cancelled_context(bool& before, bool& after, bool& inherited) noexcept
     -> async::AsyncOperation<void> {
-    before = async::cancellation_requested();
+    before = async::cancel_requested();
     auto yielded = co_await async::yield_once();
-    after = yielded.success_if() != nullptr && async::cancellation_requested();
+    after = yielded.success_if() != nullptr && async::cancel_requested();
     auto scope = async::ChildScope(co_await async::current_activation());
     auto child = scope.start(inherited_checkpoint(inherited));
     auto result = co_await child.observe();
@@ -350,9 +350,9 @@ auto cancelled_context(bool& before, bool& after, bool& inherited) noexcept
 }
 
 auto unrequested_context(bool& before, bool& after) noexcept -> async::AsyncOperation<void> {
-    before = !async::cancellation_requested();
+    before = !async::cancel_requested();
     auto yielded = co_await async::yield_once();
-    after = yielded.success_if() != nullptr && !async::cancellation_requested();
+    after = yielded.success_if() != nullptr && !async::cancel_requested();
     co_return async::Completion<void>::success();
 }
 
@@ -373,7 +373,7 @@ auto sibling_contexts(bool& restored, bool& inherited) noexcept -> async::AsyncO
         && sibling_after
         && cancelled_result.is_cancelled()
         && sibling_result.success_if() != nullptr
-        && !async::cancellation_requested();
+        && !async::cancel_requested();
     co_await scope.close(async::ClosingPolicy::CloseOnly);
     co_return async::Completion<void>::success();
 }
@@ -634,7 +634,7 @@ auto composition_timing(CompositionTiming& timing) noexcept -> async::AsyncOpera
 auto composition_until_cancel(bool& closed, std::vector<int>& started) noexcept
     -> async::AsyncOperation<int> {
     started.push_back(1);
-    while (!async::cancellation_requested()) {
+    while (!async::cancel_requested()) {
         co_await async::await_yield_once();
     }
     closed = true;
@@ -708,7 +708,7 @@ auto readiness_cancellation() noexcept -> async::AsyncOperation<bool> {
     auto drained = scope.start(readiness_value(2, 9));
     co_await async::close(drained);
     co_await async::close(drained);
-    const auto sticky = async::cancellation_requested();
+    const auto sticky = async::cancel_requested();
     co_await scope.close(async::ClosingPolicy::CloseOnly);
     co_return async::Completion<bool>::success(
         successful.head == 0
@@ -928,7 +928,7 @@ const TestSuite suite([] static noexcept {
                     .next = nullptr,
                     .deadline = deadlines[index],
                     .receiver = &receivers[index],
-                    .cancellation_requested =
+                    .cancel_requested =
                         [](void* receiver) static noexcept {
                             return static_cast<Receiver*>(receiver)->requested;
                         },
@@ -1145,11 +1145,11 @@ const TestSuite suite([] static noexcept {
             auto yielded = false;
             auto same_task = false;
             auto parent_unrequested = false;
-            expect(!async::cancellation_requested());
+            expect(!async::cancel_requested());
             auto result = async::drive_root(cancel_child(yielded, same_task, parent_unrequested));
             expect(result.is_cancelled());
             expect(yielded && same_task && parent_unrequested);
-            expect(!async::cancellation_requested());
+            expect(!async::cancel_requested());
         };
     "Runtime async: direct dependencies run until explicit yield and ready observation adds no turn"_test =
         [] static noexcept {
@@ -1165,7 +1165,7 @@ const TestSuite suite([] static noexcept {
             auto result = async::drive_root(sibling_contexts(restored, inherited));
             expect(result.success_if() != nullptr);
             expect(restored && inherited);
-            expect(!async::cancellation_requested());
+            expect(!async::cancel_requested());
         };
     "Runtime async: callee publication never waits for caller siblings"_test = [] static noexcept {
         auto finished = 0;

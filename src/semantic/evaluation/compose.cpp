@@ -15,7 +15,7 @@ auto SemanticExecutor::compose(ExecutionColdOperation operation, ProgramOriginID
             .blocks = current->blocks,
         };
     };
-    if (cancellation_requested()) {
+    if (cancel_requested()) {
         co_return std::unexpected(cancelled());
     }
     auto success = type(action.success, origin);
@@ -107,7 +107,7 @@ auto SemanticExecutor::compose(ExecutionColdOperation operation, ProgramOriginID
         if (auto checked = step(origin); !checked) {
             co_return std::unexpected(std::move(checked.error()));
         }
-        if (cancellation_requested()) {
+        if (cancel_requested()) {
             outcome.emplace(std::unexpected(cancelled()));
             if (auto checked = stop_children(); !checked) {
                 co_return std::unexpected(std::move(checked.error()));
@@ -130,7 +130,7 @@ auto SemanticExecutor::compose(ExecutionColdOperation operation, ProgramOriginID
         }
         const auto selection = co_await ReadySelection(*this, std::move(candidates), true);
         const auto selected = selection.first;
-        if (selected == positions.size() || cancellation_requested()) {
+        if (selected == positions.size() || cancel_requested()) {
             outcome.emplace(std::unexpected(cancelled()));
             if (auto checked = stop_children(); !checked) {
                 co_return std::unexpected(std::move(checked.error()));

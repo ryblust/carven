@@ -47,6 +47,8 @@ private:
 struct SourceSpan final {
     SourceID source_id;
     Span span;
+
+    auto operator==(const SourceSpan&) const noexcept -> bool = default;
 };
 
 struct SourceLoadError final {

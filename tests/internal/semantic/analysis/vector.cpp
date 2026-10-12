@@ -23,25 +23,17 @@ const TestSuite suite([] static noexcept {
         static_cast<void>(program);
     };
 
-    "Vector types: source constructors have one reserved name and one value argument"_test =
-        [] static noexcept {
-            expect(source_type_name_is_reserved("Vector"));
-            expect(source_type_name_is_reserved("ptr"));
-            expect(source_type_name_is_reserved("Range"));
-            expect(!source_type_name_is_reserved("Holder"));
-            expect_diagnostic(analyze_test_errors("struct Vector {}"), DiagnosticCode::Catalog);
-            expect_diagnostic(
-                analyze_test_errors("struct Holder<Vector> {}"),
-                DiagnosticCode::TypeGenericDefinition
-            );
-            for (const auto text : {
-                     "struct Box { value: Vector }",
-                     "struct Box { value: Vector<i32, u32> }",
-                     "struct Box<T> { value: Vector<T, T> }",
-                 }) {
-                expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeUnresolved);
-            }
-            static_cast<void>(analyze_test_program(R"(
+    "Vector types: only the structural pointer name is reserved"_test = [] static noexcept {
+        static_cast<void>(analyze_test_program("struct Vector {}"));
+        static_cast<void>(analyze_test_program("struct Holder<Vector> { value: Vector }"));
+        for (const auto text : {
+                 "struct Box { value: Vector }",
+                 "struct Box { value: Vector<i32, u32> }",
+                 "struct Box<T> { value: Vector<T, T> }",
+             }) {
+            expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeUnresolved);
+        }
+        static_cast<void>(analyze_test_program(R"(
                 struct Box { value: Vector<void> }
                 struct Holder<T> { value: Vector<(T, void)> }
                 fn accepted(value: Holder<void>) -> Holder<void> => value;
@@ -52,13 +44,13 @@ const TestSuite suite([] static noexcept {
                     products.push((1, ()));
                 }
             )"));
-            for (const auto text : {
-                     "struct Box { value: Vector<(i32, str)> }",
-                     "struct Box<T> { value: Vector<(T, str)> }",
-                 }) {
-                expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeVectorElement);
-            }
-        };
+        for (const auto text : {
+                 "struct Box { value: Vector<(i32, str)> }",
+                 "struct Box<T> { value: Vector<(T, str)> }",
+             }) {
+            expect_diagnostic(analyze_test_errors(text), DiagnosticCode::TypeVectorElement);
+        }
+    };
 
     "Vector calls: source access agrees with the selected intrinsic"_test = [] static noexcept {
         static_cast<void>(analyze_test_program(R"(

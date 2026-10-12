@@ -9,9 +9,10 @@ import std;
 
 struct SourceOccurrenceDraft final {
     SourceSpan location;
-    std::optional<SourceSpan> definition;
     std::optional<ConstructionTypeRef> type;
     std::optional<BuiltinType> builtin_type;
+    std::optional<SourceEntity> entity;
+    std::optional<SourceSpan> alias;
 };
 
 class ProgramDraft;
@@ -23,8 +24,9 @@ public:
     auto record(
         const ProgramDraft& draft,
         SourceSpan location,
-        std::optional<SourceSpan> definition,
-        std::optional<ConstructionTypeRef> type
+        std::optional<SourceEntity> entity,
+        std::optional<ConstructionTypeRef> type,
+        std::optional<SourceSpan> alias = std::nullopt
     ) noexcept -> void;
 
     auto expression(

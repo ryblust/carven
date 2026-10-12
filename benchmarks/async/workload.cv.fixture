@@ -1,3 +1,4 @@
+import std::async using yield_once;
 import "measurement.hpp";
 
 import(cpp) fn cv_async_bench_iterations() -> u64;

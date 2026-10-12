@@ -24,6 +24,12 @@ source form. Permanent language documentation defines no cross-thread memory
 model, data-race freedom, thread-safety, happens-before, Send/Sync-like capability,
 or cross-thread task-lifetime guarantee.
 
+`std::async` composition, timeout operations, and `std::time` timers already
+execute through the same-thread runtime. Their scheduling and cancellation
+contracts are implemented, but no task migration or cross-thread value admission
+is defined. Compiler-stage parallelism is a separate implementation experiment
+in [compiler optimization](compiler-optimization.md#bounded-stage-parallelism).
+
 Write access is non-owning and nonexclusive: a mutable owner can be passed to
 multiple Write parameters in one call. It therefore supplies no unique mutable
 alias proof. A future model could add concurrency-specific capabilities,
@@ -182,3 +188,10 @@ target fallback and C++ boundary obligations; and ownership without orphaned
 work or implicit detach. Blocking operations in async contexts need an explicit
 integration contract. Check diagnostics, compile, link, and execute generated
 C++, and measure resources relevant to the selected operation.
+
+## References
+
+- [Async](../docs/language/async.md): current same-thread composition and cancellation.
+- [Ownership](../docs/language/ownership.md): nonexclusive Write and borrowing.
+- [C++ interoperation](../docs/language/interop.md): existing native concurrency obligations.
+- [Dynamic ownership](dynamic-ownership.md): proposed Unique/Shared owner contracts.

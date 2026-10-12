@@ -3,6 +3,25 @@
 This reference describes declaration and expression construction, dependency
 completion, solving, and delegated C++ operations.
 
+## Module and name selection
+
+`source.standard` owns provided module and export identities, per-name defaults,
+and source-record contract keys. Frontend normalization resolves canonical paths
+to source or provided targets. Each source target owns its syntax and generated
+implementation. Exact source/provided path collisions are input errors.
+
+The catalog stores source declarations with their source ownership. Name bindings
+select either a declaration identity or a provided export identity. Explicit
+selections, aliases, wildcards, conflicts, and defaults use this same binding
+model. `select_catalog_entity` records the selected entity and import usage;
+lexical and type-parameter lookup belong to their surrounding scopes. Semantic
+construction dispatches on the selected identity and produces canonical types and
+operations consumed by the existing analysis and C++ generation stages.
+
+Source contract checking completes required records when an operation needs them.
+Frontend prerequisite discovery uses the same record keys, together with literal
+requirements, to select available source modules for workspace navigation.
+
 ## Expression construction
 
 Within `analysis/constant`, `literal` normalizes source literals, `admission`
@@ -81,7 +100,7 @@ The source catalog reserves a generic definition identity rather than a concrete
 struct or enum identity. Each parameter has a type or failure-set kind; an
 application keeps those argument domains distinct. Declaration construction binds
 parameter references, nominal applications, and array, Tuple, slice, Vector,
-pointer, and AsyncOperation constructors into checked type expressions. These descriptors
+pointer, and Operation constructors into checked type expressions. These descriptors
 contain semantic identities rather than AST nodes or unresolved names. Definition
 checking validates application arity, parameter-flow growth, and symbolic by-value
 storage cycles, including unused definitions.
@@ -113,7 +132,7 @@ from the table of published concrete bodies.
 
 Concrete instance formation reserves a callable before replacing types and
 already bound generic calls in the checked body. It reuses that reservation for
-recursive calls. Array, Tuple, slice, and AsyncOperation construction retains unresolved
+recursive calls. Array, Tuple, slice, and Operation construction retains unresolved
 failure terms until the shared failure solver completes them. Instantiation does
 not revisit source syntax or re-run definition diagnostics.
 

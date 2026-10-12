@@ -1,10 +1,12 @@
-const fn inspect(&pending: AsyncOperation<void>) {}
+import std::async using { Operation, cancel_point, yield_once, wait_ready, close };
 
-const fn replace(&pending: AsyncOperation<void>) {
+const fn inspect(&pending: Operation<void>) {}
+
+const fn replace(&pending: Operation<void>) {
     pending = cancel_point();
 }
 
-const fn relay(&pending: AsyncOperation<void>) {
+const fn relay(&pending: Operation<void>) {
     replace(&pending);
 }
 
@@ -24,7 +26,7 @@ const async fn replacement() -> bool {
 
 const async fn equivalent() {
     var inferred = yield_once();
-    var typed: AsyncOperation<void> = yield_once();
+    var typed: Operation<void> = yield_once();
     inspect(&inferred);
     inspect(&typed);
     await inferred;

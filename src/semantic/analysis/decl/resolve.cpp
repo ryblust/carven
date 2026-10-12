@@ -2,7 +2,6 @@ module carven:semantic.analysis.decl.resolve.impl;
 
 import :diagnostics.builder;
 import :diagnostics.code;
-import :diagnostics.suggestion;
 import :frontend.ast.decl;
 import :frontend.ast.expr;
 import :frontend.ast.interop;
@@ -18,9 +17,9 @@ import :semantic.analysis.names;
 import :semantic.analysis.nominal.containment;
 import :semantic.analysis.operations;
 import :semantic.analysis.program;
-import :semantic.analysis.types.standard;
 import :semantic.analysis.source.builder;
 import :semantic.analysis.types;
+import :semantic.analysis.types.standard;
 import :semantic.semir.constant;
 import :semantic.semir.decl;
 import :semantic.semir.program;
@@ -28,6 +27,7 @@ import :semantic.semir.type;
 import :semantic.visibility;
 import :source.module_path;
 import :source.provenance.ids;
+import :source.standard;
 import :source.text;
 import :support.invariant;
 import :support.visit;
@@ -363,59 +363,21 @@ auto DeclResolver::resolve_fresh(const CatalogSymbol& symbol) noexcept -> Analys
     ));
 }
 
-auto DeclResolver::select_symbol(
+auto DeclResolver::select_entity(
     ProgramModuleID module_id,
     std::string_view name,
     Span origin
-) noexcept -> AnalysisResult<const CatalogSymbol*> {
-    const auto candidates = catalog.lookup(module_id, name);
-    if (candidates.empty()) {
-        return std::unexpected(declaration_failure(
-            draft,
-            module_id,
-            origin,
-            DiagnosticCode::NameUnresolved,
-            std::format(
-                "unresolved name '{}'{}",
-                name,
-                spelling_suggestion(name, catalog.visible_names(module_id))
-            )
-        ));
-    }
-    if (candidates.size() != 1uz) {
-        auto diagnostic = DiagnosticBuilder(
-            DiagnosticCode::NameAmbiguous,
-            std::format("name '{}' is provided by more than one wildcard import", name)
-        );
-        diagnostic.primary(
-            locate(declaration_source_id(draft, module_id), origin),
-            "ambiguous reference"
-        );
-        for (const auto& candidate : candidates) {
-            const auto& selected = require_catalog_symbol(catalog, candidate.symbol_id);
-            diagnostic.related(
-                locate(declaration_source_id(draft, selected.module_id), selected.declaration_span),
-                std::format(
-                    "candidate from '{}'",
-                    draft.module_path_copy(selected.module_id).value()
-                )
-            );
-        }
-        return std::unexpected(draft.diagnostics().error(diagnostic.build()));
-    }
-    const auto& selected = candidates.front();
-    if (selected.import_binding.has_value()) {
-        import_usage.record(*selected.import_binding);
-    }
-    if (auto* observations = draft.source_analysis()) {
-        observations->declarations().record(
-            draft,
-            locate(declaration_source_id(draft, module_id), origin),
-            catalog.declaration_location(draft, selected.symbol_id),
-            std::nullopt
-        );
-    }
-    return std::addressof(require_catalog_symbol(catalog, selected.symbol_id));
+) noexcept -> AnalysisResult<CatalogEntity> {
+    auto* source = draft.source_analysis();
+    return select_catalog_entity(
+        draft,
+        catalog,
+        import_usage,
+        module_id,
+        name,
+        origin,
+        source ? &source->declarations() : nullptr
+    );
 }
 
 auto DeclResolver::ConstantScope::evaluate_constant_expression(
@@ -468,21 +430,15 @@ auto DeclResolver::ConstantScope::representation_access(StructID owner, Span spa
 auto DeclResolver::ConstantScope::resolve_static_callable(std::string_view name, Span span) noexcept
     -> AnalysisTask<std::optional<ResolvedStaticCallable>> {
     if (resolver.catalog.lookup(module_id, name).empty()) {
-        if (const auto builtin = find_async_builtin(name)) {
-            auto native = lookup_cpp_name(
-                resolver.draft,
-                resolver.catalog,
-                resolver.import_usage,
-                module_id,
-                CppNameLookup::ModuleScope,
-                std::span(&span, 1uz)
-            );
-            if (!native) {
-                co_return std::unexpected(native.error());
-            }
-            if (*native && (**native).lookup == CppNameLookup::Global) {
-                co_return std::optional<ResolvedStaticCallable>();
-            }
+        co_return std::optional<ResolvedStaticCallable>();
+    }
+    auto selected = resolver.select_entity(module_id, name, span);
+    if (!selected) {
+        co_return std::unexpected(selected.error());
+    }
+    const auto* selected_symbol = resolver.catalog.symbol(*selected);
+    if (const auto* provided = std::get_if<ProvidedExport>(&*selected)) {
+        if (const auto builtin = provided_async_builtin(*provided)) {
             auto resolved = co_await resolve_async_builtin(
                 resolver.draft,
                 resolver.catalog,
@@ -498,13 +454,10 @@ auto DeclResolver::ConstantScope::resolve_static_callable(std::string_view name,
         }
         co_return std::optional<ResolvedStaticCallable>();
     }
-    auto selected = resolver.select_symbol(module_id, name, span);
-    if (!selected) {
-        co_return std::unexpected(selected.error());
-    }
-    if (const auto* generic = std::get_if<CatalogGenericForm>(&(*selected)->form)) {
+    if (const auto* generic =
+            (selected_symbol ? std::get_if<CatalogGenericForm>(&selected_symbol->form) : nullptr)) {
         auto completed =
-            co_await resolver.ensure_available((*selected)->symbol_id, module_id, span);
+            co_await resolver.ensure_available(selected_symbol->symbol_id, module_id, span);
         if (!completed) {
             co_return std::unexpected(completed.error());
         }
@@ -514,11 +467,12 @@ auto DeclResolver::ConstantScope::resolve_static_callable(std::string_view name,
         }
         co_return std::optional<ResolvedStaticCallable>();
     }
-    const auto* function = std::get_if<CatalogFunctionForm>(&(*selected)->form);
+    const auto* function =
+        (selected_symbol ? std::get_if<CatalogFunctionForm>(&selected_symbol->form) : nullptr);
     if (function == nullptr) {
         co_return std::optional<ResolvedStaticCallable>();
     }
-    auto result = (co_await resolver.ensure_available((*selected)->symbol_id, module_id, span));
+    auto result = (co_await resolver.ensure_available(selected_symbol->symbol_id, module_id, span));
     if (!result) {
         co_return std::unexpected(result.error());
     }

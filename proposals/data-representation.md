@@ -36,10 +36,18 @@ nominal values: they introduce no allocation, inheritance, or virtual dispatch.
 Field contents determine ownership and native lifecycle behavior.
 
 `TargetPlan` owns names, failure ABI ordering, and artifact plans over a published
-immutable `SemIRProgram`. `TargetPlanningRequest` currently contains test mode and
-linkage domain, not target layout facts. Structure constants are reconstructed in
-semantic field order by `backend.lowering.constant`. These consumers need one
-representation plan if physical order or encoding changes.
+immutable `SemIRProgram`. `TargetPlanningRequest` contains test mode, linkage
+domain, and an optional `SourceLibrary` describing shared library modules, linkage,
+and implementation emission. It supplies no target layout facts. Structure
+constants are reconstructed in semantic field order by `backend.lowering.constant`.
+These consumers need one representation plan if physical order or encoding changes.
+
+Tuples already use the recursive `runtime::Tuple<Head, Tail...>` aggregate in
+`value/tuple.hpp`, with `[[no_unique_address]]` members, direct construction of
+immovable elements, and positional access. Flat-product selection remains a
+measurement candidate. Existing enum case records and failure carriers supply no
+niche or pointer-tag plan, and no source `struct(c)` or `struct(cpp)` layout form
+is implemented.
 
 The evaluator already works with logical values and object identities rather than
 native record bytes. Keep that separation. Generated programs use C++20; a
@@ -164,8 +172,9 @@ order with the same size can expose a more useful niche, while a smaller isolate
 field may not reduce final stride. Do not reuse padding as persistent tag storage;
 ordinary C++ copies and member operations need not preserve those bytes.
 
-Empty-member overlap and Boolean bit packing are separate candidates. Empty
-objects may have observable addresses, and C++ object-identity rules still apply.
+Extending empty-member overlap to ordinary records and adding Boolean bit packing
+are separate candidates. Empty objects may have observable addresses, and C++
+object-identity rules still apply.
 Bit packing removes independent Boolean places and can couple otherwise separate
 writes to one physical read-modify-write operation.
 
@@ -574,6 +583,10 @@ suite do not predict Carven's gains.
 - [C++ representation](../docs/compiler/backend/representation.md) and [compiler architecture](../docs/compiler/README.md): current ownership and publication boundaries.
 - [Async](../docs/language/async.md) and [tuples](../docs/language/aggregates.md#tuples): implemented completion and product contracts.
 - [Concurrency](concurrency.md): future shared-memory obligations.
+- [Planning request](../src/backend/generation/request/request.cppm),
+  [nominal lowering](../src/backend/lowering/decl/nominal.cpp), and
+  [constant reconstruction](../src/backend/lowering/constant/constant.cpp): current plan inputs and physical order.
+- [Tuple runtime](../crafts/carven/runtime/value/tuple.hpp): current product representation.
 
 ### Compiler and runtime precedents
 

@@ -339,7 +339,8 @@ const TestSuite suite([] static noexcept {
 
     "Storage effects: helper scalar writes preserve pending operation backing"_test =
         [] static noexcept {
-            static_cast<void>(analyze_test_program(R"(
+            static_cast<void>(analyze_test_program(R"(import std::async using close;
+
                     async fn bump(&value: i32) -> i32 { value += 1; return value; }
                     fn helper_set(&value: i32) { value = 4; }
                     fn relay(&value: i32) { helper_set(&value); }

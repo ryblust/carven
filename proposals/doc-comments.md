@@ -18,11 +18,11 @@ Source spelling (`OPEN-01`), attachment and retention (`OPEN-02`), markup
 
 ### Current behavior
 
-The grammar defines `//` line comments as discarded lexical material. Block
-comment spellings are opaque bytes only inside C++ source fragments. The lexer
-does not distinguish documentation from ordinary comments, and later compiler
-stages cannot associate comment content with a declaration. Carven also has no
-documentation artifact or generator.
+The lexer skips `//` line comments, including `///` and `//!`, without producing
+documentation tokens. Immutable source owners and the formatter can preserve
+the original comment bytes, but no compiler fact attaches them to a declaration.
+Block-comment spellings are opaque bytes only inside C++ source fragments.
+Carven has no documentation artifact or generator.
 
 ### Problem
 
@@ -58,7 +58,8 @@ or documentation generation because they disappear before parsing.
 ## Design
 
 The following candidate illustrates module and declaration documentation.
-It is not valid Carven documentation syntax today:
+Today these lines are accepted as ordinary comments and carry no documentation
+meaning:
 
 ```carven
 //! Describes the current module.
@@ -170,3 +171,9 @@ selected attachment representation. After `OPEN-03` and `OPEN-04`, artifact
 validation must prove the selected output separately. Ordinary comments must
 remain discarded and neither ordinary nor documentation comments may alter
 generated program behavior.
+
+## References
+
+- [Grammar](../docs/language/grammar.md): ordinary comments and declarations.
+- [Lexer](../src/frontend/lex/lex.cpp): current comment skipping.
+- [Parsed documents](../src/frontend/document/document.cpp): retained source and syntax ownership.

@@ -1,3 +1,5 @@
+import std::async using { cancel_requested, cancel_point, yield_once };
+
 async fn leaf(value: i32) -> i32 => value + 1;
 async fn other(value: i32) -> i32 => value + 2;
 fn cold(value: i32) => leaf(value);
@@ -143,7 +145,7 @@ async fn mark_child(&trace: i32) -> i32 {
 
 async fn yielding_leaf(value: i32) -> i32 {
     await yield_once();
-    if cancellation_requested() { return 99; }
+    if cancel_requested() { return 99; }
     return value + 1;
 }
 
@@ -200,7 +202,7 @@ async fn main() -> i32 {
     println(await leaf(11));
     println(finished);
     cancel sibling;
-    println(cancellation_requested());
+    println(cancel_requested());
     println(await repeated_returns());
     println(await fresh_capture());
     println(await fresh_turn_boundary());

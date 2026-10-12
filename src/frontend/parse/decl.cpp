@@ -162,11 +162,20 @@ auto Parser::parse_module_import() noexcept -> ASTModuleImportID {
     auto module_reference = parse_module_reference();
     expect(TokenKind::Using, "expected 'using' in import declaration");
 
+    const auto parse_item = [&]() noexcept -> ASTImportItem {
+        const auto name = expect(TokenKind::Identifier, "expected imported name").span;
+        auto alias = std::optional<Span>();
+        if (match(TokenKind::As)) {
+            alias = expect(TokenKind::Identifier, "expected local import name after 'as'").span;
+        }
+        return {.name_span = name, .alias_span = alias};
+    };
     auto selection = [&]() noexcept -> ASTImportSelection {
-        if (const auto name = match(TokenKind::Identifier)) {
+        if (check(TokenKind::Identifier)) {
+            const auto item = parse_item();
             return {
-                .span = name->span,
-                .value = ASTSingleImport {.name_span = name->span},
+                .span = join(item.name_span, item.alias_span.value_or(item.name_span)),
+                .value = ASTSingleImport {.item = item},
             };
         }
         if (const auto wildcard = match(TokenKind::Star)) {
@@ -176,12 +185,12 @@ auto Parser::parse_module_import() noexcept -> ASTModuleImportID {
             };
         }
         if (const auto left = match(TokenKind::LeftBrace)) {
-            auto names = std::vector<Span> {};
+            auto names = std::vector<ASTImportItem> {};
             if (check(TokenKind::RightBrace)) {
                 fail_here("an explicit import list must contain at least one name");
             } else {
                 while (!failed) {
-                    names.push_back(expect(TokenKind::Identifier, "expected imported name").span);
+                    names.push_back(parse_item());
                     if (!match(TokenKind::Comma)) {
                         break;
                     }

@@ -349,10 +349,10 @@ const TestSuite suite([] static noexcept {
                     .primary_text = "println",
                 },
                 {
-                    .name = "std testing is an ordinary missing module",
-                    .source = "import std::testing using check; fn invalid() {}",
+                    .name = "unknown standard module is unresolved",
+                    .source = "import std::missing using check; fn invalid() {}",
                     .code = DiagnosticCode::ImportResolution,
-                    .primary_text = "std::testing",
+                    .primary_text = "std::missing",
                 },
             });
             check_compiler_errors(cases);

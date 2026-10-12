@@ -43,7 +43,7 @@ public:
         template<typename Promise>
         auto await_suspend(std::coroutine_handle<Promise> handle) noexcept -> bool {
             resume.bind(handle);
-            if (resume.cancellation_requested()) {
+            if (resume.cancel_requested()) {
                 outcome = Outcome::Cancelled;
                 return false;
             }
@@ -101,7 +101,7 @@ public:
         auto* previous = static_cast<Awaiter*>(nullptr);
         while (*link != nullptr) {
             auto* timer = *link;
-            const auto cancelled = timer->resume.cancellation_requested();
+            const auto cancelled = timer->resume.cancel_requested();
             if (!cancelled && timer->deadline > now) {
                 previous = timer;
                 link = &timer->next;

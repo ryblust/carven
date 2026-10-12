@@ -7,8 +7,9 @@ Module resolution and declaration visibility determine which names a program can
 ## Compilations, crafts, and modules
 
 A compilation is one closed compiler boundary supplied by the driver or build
-system. Its module catalog contains the source batch assembled by that caller. Every
-source input has one canonical module path, a nonempty sequence of components matching
+system. Its module catalog contains the source batch assembled by that caller and
+the compiler-provided standard modules. Every source input has one canonical
+module path, a nonempty sequence of components matching
 `[A-Za-z_][A-Za-z0-9_]*`, including keyword spellings.
 Deriving canonical module paths from host filenames is driver policy; the
 language rules operate on the resulting paths.
@@ -40,9 +41,11 @@ components after `.` are appended to that directory. For example, `.value` in
 
 Unprefixed and leading-`.` references stay inside the importer's module domain.
 Craft-qualified references select the named craft, with `std::` selecting
-`crafts.carven.std`. Resolution succeeds only when the resulting path names
-another module in the supplied input batch; an absent module or self-import is
-an error.
+`crafts.carven.std`. Normalize the path once, then resolve that exact identity to
+a supplied source module or a compiler-provided module. An absent target or source
+self-import is an error. A supplied source at an exact provided-module path is a
+collision error; deeper source paths remain ordinary modules. `std::core` and
+`carven::std.core` select the same module.
 
 For an importer at `crafts/foo/models/user.cv`, the three forms select:
 
@@ -54,8 +57,8 @@ For an importer at `crafts/foo/models/user.cv`, the three forms select:
 
 Cross-module selection always requires an explicit import. A selected name
 must be visible to the importer under the declaration rules below. Explicit
-selections cannot collide with a local declaration or bind one name to different
-symbols, and they deterministically shadow same-name wildcard candidates.
+selections cannot collide with a module declaration or select one local name
+twice, and they deterministically shadow same-name wildcard candidates.
 Multiple wildcard providers are ambiguous only when an actual use requires that
 name. Importing a module selects its declarations; it does not bring that
 module's imported bindings into the importing scope. Import declarations have
@@ -66,6 +69,56 @@ otherwise unused declaration produces one `CV-LINT-UNUSED-IMPORT` warning.
 The same prefix may contain C++ header imports. These supply native
 declarations; a `using` clause also supplies external name lookup. They do not
 resolve Carven modules.
+
+## Standard modules and defaults
+
+| Provided module | Exports | Available without an import |
+| --- | --- | --- |
+| `std::core` | `bool`, `char`, `void`, `str`, `String`; `i8`, `i16`, `i32`, `i64`, `isize`; `u8`, `u16`, `u32`, `u64`, `usize`; `f32`, `f64`; `Vector`, `Range`; `assert`, `addressof` | These listed names |
+| `std::io` | `print`, `println`, `eprint`, `eprintln` | These listed names |
+| `std::testing` | `check`, `require`, `fail` | These listed names |
+| `std::async` | `Operation`, `cancel_requested`, `cancel_point`, `yield_once`, `wait_ready`, `close`, `when_all`, `when_any`, `first_successful` | None |
+| `std::simd` | `u8x16`, `mask16`, `f32x4`, `mask4`, `u8x32`, `mask32`, `f32x8`, `mask8` | None |
+| `std::time` | `timeout` | None |
+
+The table specifies which names are available by default. Explicit imports of
+those names use ordinary import usage tracking. Test helpers retain their
+active-test admission rules; `assert` works outside tests.
+
+Provided modules expose compiler-supported types and operations through ordinary
+module paths and import selections. `std::core` contains scalar and text types,
+`Vector`, `Range`, assertions, and address operations. Printing, testing, async,
+SIMD, and time have separate module owners.
+
+Crafts are source packages. Import their APIs through source module paths such as
+`std::json.value`, `std::simd.bytes`, and `std::time.duration`, under ordinary
+visibility rules. `std::simd` supplies primitive types; `std::simd.bytes` supplies
+source algorithms. A directory alone does not define an importable module.
+The compiler, runtime, and standard sources ship together.
+
+`timeout` uses the source records `Duration` and `RangeError` from
+`std::time.duration`, and `Timeout` from `std::time.timeout`. These records must
+be supplied when its contract is checked. Importing `timeout` binds only the
+selected operation.
+
+## Import aliases
+
+```carven
+import std::core using String as Text;
+import std::async using { Operation, when_all as join };
+import std::simd.bytes using load_block as load_bytes;
+import std::simd.floats using load_block as load_floats;
+```
+
+The export name before `as` is checked against the target module's visibility;
+the alias is the sole local name introduced by that selection. Both are ordinary
+identifiers. Single and list selections share these rules; wildcard imports have
+no alias clause. Distinct local names may select the same entity. Repeating a
+local name is an error even for the same entity. Aliases are not re-exported.
+
+Aliases preserve the selected entity and its type, ownership, failure, and call
+contracts.
+Default bindings are independent: `print as write` does not remove default `print`.
 
 ## Import style
 
@@ -92,10 +145,10 @@ share one module namespace. Duplicate module declarations are invalid; function
 overloading is not supported.
 
 Bare source declaration names require identifier tokens, so reserved keywords
-cannot name declarations. Fixed builtin type names and the type constructors
-`ptr`, `Range`, `Vector`, and `AsyncOperation` are additionally reserved for module
-declarations; locals, parameters, and members may use those identifier spellings.
-Root builtin callable names such as `print` may be shadowed.
+cannot name declarations. Only `ptr` has an additional reservation for module
+declarations, type parameters, and import local names, because `ptr<T>` and
+`ptr<&T>` are structural type syntax. Named builtin exports can be shadowed.
+Runtime locals, parameters, and members retain their ordinary identifier rules.
 
 Module path components and qualified/member components accept identifier-shaped
 keyword tokens. This permits keyword-named native members and paths without
@@ -109,14 +162,27 @@ therefore does not control whether a module declaration can be named; valid
 forward constant dependencies and forward or mutually recursive function calls
 are supported. A cycle among constant-required facts is invalid.
 
-Unqualified lookup checks the innermost lexical scope first, then enclosing
-scopes, module declarations, and imports. A declaration in an inner lexical
-scope may shadow an outer binding. Declaring the same name twice in one lexical
-scope is invalid. Visible Carven import candidates, including wildcard imports,
-and explicit native selections take precedence over root builtin callables. Known
-builtins take precedence over opened C++ namespaces, which supply fallback
-lookup for otherwise unresolved names. Lambda bodies add a capture boundary: a free runtime binding
-must be captured explicitly before ordinary lexical lookup may cross it.
+Expression lookup selects lexical bindings, then module declarations and Carven
+imports, explicit native selections, default standard bindings, and finally
+opened C++ namespaces. Module declarations suppress wildcard candidates; explicit
+Carven imports suppress wildcards but conflict with module declarations.
+Several wildcard providers remain ambiguous even if they select the same entity.
+Explicit native selections conflict with actual Carven bindings, but can replace
+default names. A selected wrong-kind entity is an error; lookup never falls back
+to a default because its contract would fit better.
+
+Type positions select type parameters before this module layer and ignore runtime
+locals and parameters. Expression qualifiers select lexical bindings and type
+parameters before the module layer. A type parameter requires a concrete type
+before it can supply associated operations. For runtime shadowing,
+`fn f(String: i32) -> String` still names the default result type, but that
+parameter blocks `String::from_str`. Import `String as Text` to use
+`Text::from_str` in that scope. Literal suffixes, inferred types, and structural
+syntax retain their canonical meanings independently of bound names.
+
+A declaration in an inner lexical scope may shadow an outer binding; declaring
+the same name twice in one lexical scope is invalid. Lambda bodies retain their
+capture boundary: free runtime bindings must be captured explicitly.
 
 Named module functions, structures, classes, enums, and module constants use one visibility
 model:
@@ -138,10 +204,8 @@ module domain and can import each other's bare declarations.
 Every declaration is visible in its defining module. In expressions, `::`
 selects type-associated operations, enum cases, or qualified native names.
 `char::from_u32_unchecked` selects an associated operation of the `char` type.
-Root builtins such as `print` and `when_all` use ordinary unqualified lookup.
-Resolve the name before checking its call contract; an incompatible user
-declaration produces a diagnostic rather than falling back to a builtin.
-Standard library modules use the explicit `std::` import prefix.
+Provided callables such as `print` and imported `when_all` use ordinary
+unqualified lookup.
 
 A declaration surface may refer only to nominal declarations whose audience
 contains the surface's audience. This structural check recursively covers

@@ -1,3 +1,13 @@
+import std::async using {
+    cancel_requested,
+    cancel_point,
+    yield_once,
+    wait_ready,
+    close,
+    when_all,
+    when_any,
+    first_successful,
+};
 
 struct Failure {
     code: i32,
@@ -41,7 +51,7 @@ const async fn touch(&value: i32) {
 }
 
 const async fn waiting(&stopped: i32) -> i32 {
-    while !cancellation_requested() {
+    while !cancel_requested() {
         await yield_once();
     }
     ++stopped;

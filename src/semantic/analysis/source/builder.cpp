@@ -26,8 +26,11 @@ auto SourceAnalysisBuilder::add(SourceOccurrenceDraft occurrence) noexcept -> vo
     if (inserted) {
         return;
     }
-    if (occurrence.definition) {
-        found->second.definition = occurrence.definition;
+    if (occurrence.entity) {
+        found->second.entity = occurrence.entity;
+    }
+    if (occurrence.alias) {
+        found->second.alias = occurrence.alias;
     }
     if (occurrence.type) {
         found->second.type = occurrence.type;
@@ -72,7 +75,10 @@ auto SourceAnalysisBuilder::finish(bool published) && noexcept -> std::vector<So
             type = *occurrence.builtin_type;
         }
         result.push_back(
-            {.location = occurrence.location, .definition = occurrence.definition, .type = type}
+            {.location = occurrence.location,
+             .type = type,
+             .entity = occurrence.entity,
+             .alias = occurrence.alias}
         );
     }
     return result;
@@ -81,8 +87,9 @@ auto SourceAnalysisBuilder::finish(bool published) && noexcept -> std::vector<So
 auto SourceObservation::record(
     const ProgramDraft& draft,
     SourceSpan location,
-    std::optional<SourceSpan> definition,
-    std::optional<ConstructionTypeRef> type
+    std::optional<SourceEntity> entity,
+    std::optional<ConstructionTypeRef> type,
+    std::optional<SourceSpan> alias
 ) noexcept -> void {
     if (location.span.empty()) {
         return;
@@ -97,7 +104,11 @@ auto SourceObservation::record(
         }
     }
     occurrences.push_back(
-        {.location = location, .definition = definition, .type = type, .builtin_type = builtin}
+        {.location = location,
+         .type = type,
+         .builtin_type = builtin,
+         .entity = entity,
+         .alias = alias}
     );
 }
 

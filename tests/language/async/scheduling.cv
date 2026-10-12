@@ -1,3 +1,5 @@
+import std::async using { cancel_requested, cancel_point, yield_once };
+
 const fn mark(&trace: i32, digit: i32) {
     trace = trace * 10 + digit;
 }
@@ -41,7 +43,7 @@ const async fn ordering() -> i32 {
     return await direct_order() * 1000000 + await yield_order() * 1000 + await completed_order();
 }
 
-const fn requested() -> bool => cancellation_requested();
+const fn requested() -> bool => cancel_requested();
 
 const async fn accepting(&trace: i32) {
     mark(&trace, 1);
@@ -164,10 +166,10 @@ const caught = await child_failure();
 const closed = await backing_close();
 const selected = await return_before_close();
 const nested = await nested_turn();
-const outside_request = cancellation_requested();
+const outside_request = cancel_requested();
 
 const {
-    assert(!cancellation_requested());
+    assert(!cancel_requested());
     var trace = 0;
     async let child = recorded(&trace, 7);
     await child;

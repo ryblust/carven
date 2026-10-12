@@ -40,8 +40,11 @@ require callers to establish Unicode validity while retaining type and known
 lifetime checks.
 
 The backend already constructs results in final storage and uses `DeferredResult`
-for delayed construction and cleanup. A source-level raw-storage API remains open.
-Generated C++ has a C++20 baseline.
+for delayed construction and cleanup. Recursive tuples directly initialize
+immovable elements, and fallible delivery can construct a success in its carrier.
+These native realization mechanisms are implemented; they do not expose a
+source-level raw-storage API, completion assertion, or library-defined cleanup
+protocol. Generated C++ has a C++20 baseline.
 
 An immovable native component completed in separate operand storage across a
 failure barrier cannot then be transferred into the final aggregate. Existing
@@ -223,3 +226,5 @@ compilation cost separately.
   reuse storage.
 - [Concurrency](concurrency.md): synchronization and visibility for cross-thread
   construction and access.
+- [Realization](../docs/compiler/backend/realization.md) and
+  [tuple lifetime cases](../tests/interop/lifetimes/tuples.cv): existing direct construction and its native boundary.

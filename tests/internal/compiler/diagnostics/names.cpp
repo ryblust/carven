@@ -60,25 +60,17 @@ const TestSuite suite([] static noexcept {
             check_compiler_errors(cases);
         };
 
-    "Compiler diagnostics: core type constructor names cannot declare module symbols"_test =
+    "Compiler diagnostics: structural pointer name cannot declare module symbols"_test =
         [] static noexcept {
             constexpr auto cases = std::to_array<CompilerErrorExpectation>({
                 {.name = "pointer constructor cannot name a structure",
                  .source = "struct ptr {}",
                  .code = DiagnosticCode::Catalog,
                  .primary_text = "ptr"},
-                {.name = "range constructor cannot name an enum",
-                 .source = "enum Range { Value }",
-                 .code = DiagnosticCode::Catalog,
-                 .primary_text = "Range"},
                 {.name = "pointer constructor cannot name a function",
                  .source = "fn ptr() {}",
                  .code = DiagnosticCode::Catalog,
                  .primary_text = "ptr"},
-                {.name = "range constructor cannot name a constant",
-                 .source = "const Range = 7;",
-                 .code = DiagnosticCode::Catalog,
-                 .primary_text = "Range"},
             });
             check_compiler_errors(cases);
         };
